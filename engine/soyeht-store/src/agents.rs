@@ -71,6 +71,36 @@ pub fn runtime<T: DeserializeOwned>(db: &Connection, pane: &str) -> Result<Optio
     raw.map(|raw| Ok(serde_json::from_str(&raw)?)).transpose()
 }
 
+pub fn attention(db: &Connection, workspace: &str) -> Result<Vec<soyeht_protocol::AttentionItem>> {
+    let mut statement = db.prepare("SELECT a.payload FROM agent_attention a JOIN panes p ON p.id=a.pane_id WHERE a.workspace_id=?1 AND p.closed=0 ORDER BY a.ordinal")?;
+    let rows = statement.query_map([workspace], |row| row.get::<_, String>(0))?;
+    rows.map(|raw| Ok(serde_json::from_str(&raw?)?)).collect()
+}
+
+pub fn save_attention(
+    tx: &Transaction<'_>,
+    workspace: &str,
+    item: &soyeht_protocol::AttentionItem,
+) -> Result<()> {
+    let raw = serde_json::to_string(item)?;
+    if raw.len() > 4096 || item.message.len() > 1024 {
+        return Err(Error::Invalid("attention item exceeds its limit"));
+    }
+    let belongs: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM panes WHERE id=?1 AND workspace_id=?2)",
+        params![item.pane_id, workspace],
+        |r| r.get(0),
+    )?;
+    if !belongs {
+        return Err(Error::Invalid(
+            "attention pane belongs to another workspace",
+        ));
+    }
+    tx.execute("INSERT INTO agent_attention(attention_id,pane_id,workspace_id,payload) VALUES (?1,?2,?3,?4) ON CONFLICT(attention_id) DO UPDATE SET payload=excluded.payload WHERE agent_attention.pane_id=excluded.pane_id AND agent_attention.workspace_id=excluded.workspace_id",params![item.attention_id,item.pane_id,workspace,raw])?;
+    tx.execute("DELETE FROM agent_attention WHERE workspace_id=?1 AND ordinal NOT IN (SELECT ordinal FROM agent_attention WHERE workspace_id=?1 ORDER BY ordinal DESC LIMIT 128)",[workspace])?;
+    Ok(())
+}
+
 pub fn save_runtime<T: Serialize>(
     tx: &Transaction<'_>,
     pane: &str,
@@ -347,7 +377,40 @@ pub fn answer(tx: &Transaction<'_>, id: &str, result: &Value) -> Result<Decision
     })
 }
 
+pub fn start_effect(tx: &Transaction<'_>, id: &str, metadata: &Value) -> Result<()> {
+    let request = request(tx, id)?.ok_or(Error::Invalid("native effect not found"))?;
+    generation_matches(tx, &request.pane_id, request.generation)?;
+    if request.result.is_some()
+        || !request.method.starts_with("fs/") && !request.method.starts_with("terminal/")
+    {
+        return Err(Error::Invalid("request is not a pending native effect"));
+    }
+    if request.public.get("started").is_some() {
+        return Err(Error::Invalid("native effect already started"));
+    }
+    let mut public = request.public;
+    public["started"] = metadata.clone();
+    tx.execute(
+        "UPDATE agent_requests SET public=?1 WHERE request_id=?2",
+        params![public.to_string(), id],
+    )?;
+    Ok(())
+}
+
 pub fn save_message(tx: &Transaction<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
+    save_message_in(tx, pane, message, "agent_transcript")
+}
+
+pub fn stage_message(tx: &Transaction<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
+    save_message_in(tx, pane, message, "agent_replay_transcript")
+}
+
+fn save_message_in(
+    tx: &Transaction<'_>,
+    pane: &str,
+    message: &TranscriptMessage,
+    table: &str,
+) -> Result<()> {
     generation_matches(tx, pane, message.generation)?;
     let seq = message
         .seq
@@ -359,7 +422,7 @@ pub fn save_message(tx: &Transaction<'_>, pane: &str, message: &TranscriptMessag
     }
     let prior: Option<String> = tx
         .query_row(
-            "SELECT payload FROM agent_transcript WHERE pane_id=?1 AND seq=?2",
+            &format!("SELECT payload FROM {table} WHERE pane_id=?1 AND seq=?2"),
             params![pane, seq.to_be_bytes().as_slice()],
             |r| r.get(0),
         )
@@ -371,32 +434,65 @@ pub fn save_message(tx: &Transaction<'_>, pane: &str, message: &TranscriptMessag
             || prior.kind != message.kind
             || prior.role != message.role
             || prior.prompt_id != message.prompt_id
-            || (prior.complete && prior != *message)
+            || (prior.complete
+                && matches!(
+                    prior.kind,
+                    soyeht_protocol::TranscriptKind::Message
+                        | soyeht_protocol::TranscriptKind::Thought
+                        | soyeht_protocol::TranscriptKind::System
+                )
+                && prior != *message)
         {
             return Err(Error::Invalid(
                 "transcript identity or completed content changed",
             ));
         }
     }
-    tx.execute("INSERT INTO agent_transcript(pane_id,seq,local_id,generation,payload,bytes) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(pane_id,seq) DO UPDATE SET payload=excluded.payload,bytes=excluded.bytes",params![pane,seq.to_be_bytes().as_slice(),message.local_id,message.generation,raw,raw.len() as i64])?;
+    tx.execute(&format!("INSERT INTO {table}(pane_id,seq,local_id,generation,payload,bytes) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(pane_id,seq) DO UPDATE SET payload=excluded.payload,bytes=excluded.bytes"),params![pane,seq.to_be_bytes().as_slice(),message.local_id,message.generation,raw,raw.len() as i64])?;
     let mut bytes: i64 = tx.query_row(
-        "SELECT COALESCE(SUM(bytes),0) FROM agent_transcript WHERE pane_id=?1",
+        &format!("SELECT COALESCE(SUM(bytes),0) FROM {table} WHERE pane_id=?1"),
         [pane],
         |r| r.get(0),
     )?;
     while bytes > limits::PANE_RETENTION_BYTES as i64 {
         let (old, size): (Vec<u8>, i64) = tx.query_row(
-            "SELECT seq,bytes FROM agent_transcript WHERE pane_id=?1 ORDER BY seq LIMIT 1",
+            &format!("SELECT seq,bytes FROM {table} WHERE pane_id=?1 ORDER BY seq LIMIT 1"),
             [pane],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         tx.execute(
-            "DELETE FROM agent_transcript WHERE pane_id=?1 AND seq=?2",
+            &format!("DELETE FROM {table} WHERE pane_id=?1 AND seq=?2"),
             params![pane, old],
         )?;
         bytes -= size;
     }
     Ok(())
+}
+
+pub fn discard_replay(tx: &Transaction<'_>, pane: &str) -> Result<()> {
+    tx.execute(
+        "DELETE FROM agent_replay_transcript WHERE pane_id=?1",
+        [pane],
+    )?;
+    Ok(())
+}
+
+pub fn publish_replay(tx: &Transaction<'_>, pane: &str, generation: u32) -> Result<()> {
+    generation_matches(tx, pane, generation)?;
+    let stale: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM agent_replay_transcript WHERE pane_id=?1 AND generation<>?2)",
+        params![pane, generation],
+        |r| r.get(0),
+    )?;
+    if stale {
+        return Err(Error::Invalid("replay belongs to a previous generation"));
+    }
+    tx.execute("DELETE FROM agent_transcript WHERE pane_id=?1", [pane])?;
+    tx.execute(
+        "INSERT INTO agent_transcript SELECT * FROM agent_replay_transcript WHERE pane_id=?1",
+        [pane],
+    )?;
+    discard_replay(tx, pane)
 }
 
 /// Newest page, returned in display order; `before` is exclusive. Eight-byte

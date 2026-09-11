@@ -56,7 +56,7 @@ pub struct Session {
     pub id: String,
     pub cwd: String,
     pub values: BTreeMap<String, Value>,
-    pub history: Vec<String>,
+    pub history: Vec<(String, String)>,
 }
 impl Session {
     pub fn new(cwd: String) -> Self {
@@ -75,7 +75,7 @@ impl Session {
     pub fn options(&self) -> Value {
         let select = |id: &str, name: &str, category: &str, values: &[&str]| json!({"id":id,"name":name,"category":category,"type":"select","currentValue":self.values[id],"options":values.iter().map(|value|json!({"value":value,"name":value})).collect::<Vec<_>>()});
         json!([
-            select("model","Model","model",&["model-a","model-b","rejected-model"]),
+            select("model","Model","model",&["model-a","model-b","rejected-model","delayed-model"]),
             select("effort","Effort","thought_level",&["low","medium","high"]),
             select("mode","Permission","mode",&["ask","accept_edits","allow_all"]),
             {"id":"fast","name":"Fast","type":"boolean","currentValue":self.values["fast"]}

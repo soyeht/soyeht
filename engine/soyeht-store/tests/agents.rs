@@ -63,6 +63,67 @@ fn message(seq: u64, text: &str, complete: bool) -> TranscriptMessage {
 }
 
 #[test]
+fn native_replay_is_private_until_atomic_publication_and_survives_restart() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    store
+        .mutate("test", "original", "original", |tx| {
+            agents::save_message(tx, "p", &message(1, "Original", true))?;
+            agents::save_runtime(tx, "p", 2, &json!({"phase":"Loading"}))?;
+            let mut staged = message(2, "Restored", true);
+            staged.generation = 2;
+            agents::stage_message(tx, "p", &staged)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+    let mut store = profile.store();
+    assert_eq!(
+        agents::transcript(store.connection(), "p", None, 100)
+            .unwrap()
+            .items[0]
+            .text,
+        "Original"
+    );
+    let failed = store.mutate("test", "publish", "publish", |tx| {
+        agents::publish_replay(tx, "p", 2)?;
+        Err(Error::Invalid("crash before publication commit"))
+    });
+    assert!(failed.is_err());
+    assert_eq!(
+        agents::transcript(store.connection(), "p", None, 100)
+            .unwrap()
+            .items[0]
+            .text,
+        "Original"
+    );
+    store
+        .mutate("test", "publish", "publish", |tx| {
+            agents::publish_replay(tx, "p", 2)?;
+            Ok((
+                json!({}),
+                vec![(
+                    "pane.session_started".into(),
+                    json!({"paneId":"p","generation":2}),
+                )],
+            ))
+        })
+        .unwrap();
+    let page = agents::transcript(store.connection(), "p", None, 100).unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].text, "Restored");
+    assert_eq!(page.items[0].generation, 2);
+    let staged: i64 = store
+        .connection()
+        .query_row("SELECT COUNT(*) FROM agent_replay_transcript", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(staged, 0);
+}
+
+#[test]
 fn request_identity_deadline_answer_and_native_outbox_survive_crash_boundaries() {
     let profile = Profile::new();
     let mut store = profile.store();
@@ -494,4 +555,87 @@ fn migration_from_v3_preserves_live_panes_and_takes_a_backup() {
             .unwrap(),
         3
     );
+}
+
+#[test]
+fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
+    let profile = Profile::new();
+    let mut old = Connection::open(profile.0.join("soyeht.db")).unwrap();
+    for sql in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+    ] {
+        old.execute_batch(sql).unwrap();
+    }
+    old.execute(
+        "INSERT INTO metadata VALUES ('db_id','v4-live'),('engine_generation','8')",
+        [],
+    )
+    .unwrap();
+    old.execute("INSERT INTO workspaces VALUES ('w','{}',0)", [])
+        .unwrap();
+    old.execute("INSERT INTO panes(id,workspace_id,payload,instance_key) VALUES ('p','w','{}','same-process')", []).unwrap();
+    let checkpoint =
+        json!({"phase":"Ready","acknowledged_offset":101,"session_id":"native-session"});
+    let tx = old.transaction().unwrap();
+    agents::save_runtime(&tx, "p", 1, &checkpoint).unwrap();
+    agents::receive(&tx, &incoming()).unwrap();
+    let output = outgoing();
+    agents::enqueue(&tx, &output).unwrap();
+    let progress = agents::advance(&tx, &output, 3).unwrap();
+    agents::advance(&tx, &progress, 4).unwrap();
+    agents::save_message(&tx, "p", &message(1, "Durable history", true)).unwrap();
+    tx.commit().unwrap();
+    drop(old);
+    let mut store = profile.store();
+    assert_eq!(store.db_id, "v4-live");
+    assert_eq!(store.next_engine_generation().unwrap(), 9);
+    assert_eq!(
+        agents::runtime::<Value>(store.connection(), "p")
+            .unwrap()
+            .unwrap(),
+        checkpoint
+    );
+    assert_eq!(
+        agents::open_requests(store.connection(), "p").unwrap()[0].source_seq,
+        incoming().source_seq
+    );
+    let resumed = agents::outbox(store.connection(), "p").unwrap();
+    assert_eq!(resumed[0].bytes, output.bytes);
+    assert_eq!(resumed[0].accepted_bytes, 7);
+    assert_eq!(resumed[0].attempt, 2);
+    assert_eq!(
+        agents::transcript(store.connection(), "p", None, 100)
+            .unwrap()
+            .items[0]
+            .text,
+        "Durable history"
+    );
+    assert!(
+        agents::attention(store.connection(), "w")
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+            .unwrap(),
+        5
+    );
+    let backups = fs::read_dir(profile.0.join("backups"))
+        .unwrap()
+        .collect::<std::io::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(backups.len(), 1);
+    let backup = Connection::open(backups[0].path()).unwrap();
+    assert_eq!(
+        backup
+            .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+            .unwrap(),
+        4
+    );
+    assert_eq!(agents::outbox(&backup, "p").unwrap()[0].accepted_bytes, 7);
 }

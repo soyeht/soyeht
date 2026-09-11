@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
+// Generated from contracts/protocol.json (sha256 5dc4cd347eaa8438e1cc4f60e0ba99635be6b99589e84015fcddcd2542904949). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,

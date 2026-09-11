@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
+// Generated from contracts/protocol.json (sha256 5dc4cd347eaa8438e1cc4f60e0ba99635be6b99589e84015fcddcd2542904949). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -207,6 +207,10 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "AttentionItem": return try codec(SoyehtProtocol.AttentionItem.self, data)
         case "AttentionChangedEvent": return try codec(SoyehtProtocol.AttentionChangedEvent.self, data)
         case "TurnStopReason": return try codec(SoyehtProtocol.TurnStopReason.self, data)
+        case "QueuedPromptSummary": return try codec(SoyehtProtocol.QueuedPromptSummary.self, data)
+        case "PaneQueueResumeParams": return try codec(SoyehtProtocol.PaneQueueResumeParams.self, data)
+        case "PaneQueueResumeResult": return try codec(SoyehtProtocol.PaneQueueResumeResult.self, data)
+        case "PaneQueueStateEvent": return try codec(SoyehtProtocol.PaneQueueStateEvent.self, data)
     default: throw NSError(domain: "Unknown schema", code: 1)
     }
 }

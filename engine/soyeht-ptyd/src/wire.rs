@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -42,6 +42,9 @@ pub enum Request {
     List,
     Spawn(Spawn),
     Close {
+        instance_id: String,
+    },
+    Kill {
         instance_id: String,
     },
     Input {

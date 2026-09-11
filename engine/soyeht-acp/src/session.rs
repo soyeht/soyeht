@@ -72,11 +72,56 @@ impl Initialization {
                 });
             }
         }
+        if auth_methods.len() > 32
+            || serde_json::to_vec(&auth_methods)?.len() > 256 * 1024
+            || auth_methods.iter().enumerate().any(|(index, method)| {
+                let id = &method.public.id;
+                id.is_empty()
+                    || id.chars().count() > 128
+                    || id.contains('\0')
+                    || method.public.name.is_empty()
+                    || method.public.name.chars().count() > 256
+                    || method
+                        .public
+                        .description
+                        .as_ref()
+                        .is_some_and(|v| v.chars().count() > 4096)
+                    || auth_methods[..index]
+                        .iter()
+                        .any(|prior| prior.public.id == *id)
+                    || method.args.len() > 64
+                    || method.env.len() > 64
+                    || method
+                        .args
+                        .iter()
+                        .any(|v| v.contains('\0') || v.len() > 16 * 1024)
+                    || method.env.iter().any(|(k, v)| {
+                        k.is_empty()
+                            || k.contains(['=', '\0'])
+                            || v.contains('\0')
+                            || k.len() + v.len() > 16 * 1024
+                    })
+                    || method.args.iter().map(String::len).sum::<usize>()
+                        + method
+                            .env
+                            .iter()
+                            .map(|(k, v)| k.len() + v.len())
+                            .sum::<usize>()
+                        > 64 * 1024
+            })
+        {
+            return Err(Error(
+                "authentication metadata exceeds identity or launch bounds".into(),
+            ));
+        }
+        let version = value["agentInfo"]["version"]
+            .as_str()
+            .unwrap_or("unreported");
+        if version.chars().count() > 256 {
+            return Err(Error("agent version exceeds metadata bounds".into()));
+        }
         Ok(Self {
-            version: value["agentInfo"]["version"]
-                .as_str()
-                .unwrap_or("unreported")
-                .into(),
+            version: version.into(),
             advertised_load: value["agentCapabilities"]["loadSession"]
                 .as_bool()
                 .unwrap_or(false),
@@ -105,7 +150,7 @@ pub fn probe_result(response: Result<&Value, &RpcError>) -> ProbeResult {
 pub fn session_id(response: &Value) -> Result<String, Error> {
     response["sessionId"]
         .as_str()
-        .filter(|id| !id.is_empty())
+        .filter(|id| !id.is_empty() && id.chars().count() <= 128 && !id.contains('\0'))
         .map(str::to_owned)
         .ok_or_else(|| Error("session/new response has no session ID".into()))
 }
@@ -124,6 +169,7 @@ pub fn stop_reason(response: &Value) -> Result<&str, Error> {
 #[derive(Debug, Clone)]
 pub enum Update {
     Message { thought: bool, content: Value },
+    UserMessage(Value),
     Tool { update: bool, fields: Value },
     Plan(Value),
     Usage(Value),
@@ -141,6 +187,13 @@ pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, 
         .as_str()
         .ok_or_else(|| Error("session update has no discriminator".into()))?;
     Ok(Some(match kind {
+        "user_message_chunk" => Update::UserMessage(
+            value
+                .get("content")
+                .filter(|v| v.is_object())
+                .ok_or_else(|| Error("user update has no content".into()))?
+                .clone(),
+        ),
         "agent_message_chunk" | "agent_thought_chunk" => {
             let content = value
                 .get("content")
@@ -224,6 +277,39 @@ mod tests {
         assert_ne!(a, fingerprint("different", "7", &json!({"a":1,"b":2})));
         assert_ne!(a, fingerprint("digest", "8", &json!({"a":1,"b":2})));
         assert_ne!(a, fingerprint("digest", "7", &json!({"a":2,"b":2})));
+    }
+
+    #[test]
+    fn native_metadata_cannot_break_public_ids_or_launch_limits() {
+        let valid = json!({"protocolVersion":1,"agentInfo":{"version":"1"},
+            "authMethods":[{"id":"login","name":"Sign in","type":"terminal","args":["login"],"env":{"MODE":"login"}}]});
+        assert!(Initialization::parse(&valid).is_ok());
+        for (field, value) in [
+            ("id", json!("")),
+            ("id", json!("x".repeat(129))),
+            ("name", json!("x".repeat(257))),
+            ("description", json!("x".repeat(4097))),
+            ("args", json!(["x".repeat(16 * 1024 + 1)])),
+            ("env", json!({"BAD=KEY":"x"})),
+        ] {
+            let mut rejected = valid.clone();
+            rejected["authMethods"][0][field] = value;
+            assert!(
+                Initialization::parse(&rejected).is_err(),
+                "accepted invalid {field}"
+            );
+        }
+        let mut duplicate = valid.clone();
+        duplicate["authMethods"]
+            .as_array_mut()
+            .unwrap()
+            .push(valid["authMethods"][0].clone());
+        assert!(Initialization::parse(&duplicate).is_err());
+        let mut version = valid;
+        version["agentInfo"]["version"] = json!("x".repeat(257));
+        assert!(Initialization::parse(&version).is_err());
+        assert!(session_id(&json!({"sessionId":"x".repeat(129)})).is_err());
+        assert!(session_id(&json!({"sessionId":"x".repeat(128)})).is_ok());
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 #[derive(Debug)]
 pub enum Error {
@@ -117,6 +117,9 @@ impl Store {
             }
             if version < 4 {
                 tx.execute_batch(include_str!("../migrations/004-agent-sessions.sql"))?;
+            }
+            if version < 5 {
+                tx.execute_batch(include_str!("../migrations/005-native-replay.sql"))?;
             }
             tx.commit()?;
         }
@@ -259,6 +262,13 @@ impl Store {
             ("panes".into(), json!(panes)),
             ("devices".into(), json!(devices)),
             ("requests".into(), json!(requests)),
+            (
+                "attention".into(),
+                json!(rows_json(
+                    &tx,
+                    "SELECT a.payload FROM agent_attention a JOIN panes p ON p.id=a.pane_id WHERE p.closed=0 ORDER BY a.ordinal"
+                )?),
+            ),
         ];
         tx.commit()?;
         Ok(Snapshot { cursor, sections })

@@ -68,7 +68,28 @@ pub fn run(
     }
     let mut output = String::new();
     runtime.update(&session,json!({"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Checking the test request."}}));
-    if text.starts_with("permission") {
+    if matches!(text.as_str(), "silent" | "ignore-cancel") {
+        while text == "ignore-cancel" || !cancelled.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(10));
+        }
+    } else if text.starts_with("permission") {
+        if matches!(text.as_str(), "permission-delayed" | "permission-overflow") {
+            thread::sleep(Duration::from_millis(500));
+        }
+        if text == "permission-overflow" {
+            let flood = Arc::clone(&runtime);
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(100));
+                for _ in 0..160 {
+                    flood.send(Message::Notification {
+                        method: "test/output".into(),
+                        params: json!({"text":"x".repeat(64 * 1024)}),
+                    });
+                }
+                std::fs::write(flood.settings.directory.join("overflow.done"), b"done")
+                    .expect("fake overflow marker");
+            });
+        }
         let edit = text == "permission-edit";
         let result = call(
             &runtime,
@@ -95,6 +116,17 @@ pub fn run(
             output = format!("Form result: {result}");
             emit(&runtime, &session, &output);
         }
+    } else if text == "terminal-missing" {
+        let result = call(
+            &runtime,
+            &session,
+            "terminal/create",
+            json!({"command":runtime.settings.directory.join("nonexistent-command")}),
+            &cancelled,
+            false,
+        );
+        output = format!("Terminal creation: {}", result.unwrap_or(Value::Null));
+        emit(&runtime, &session, &output);
     } else if text == "tools" {
         let cwd = runtime.sessions.lock().unwrap()[&session].cwd.clone();
         let path = std::path::Path::new(&cwd).join("fake-acp-note.txt");
@@ -172,7 +204,7 @@ pub fn run(
     }
     let mut sessions = runtime.sessions.lock().unwrap();
     if let Some(saved) = sessions.get_mut(&session) {
-        saved.history.push(output);
+        saved.history.push((text, output));
         if saved.save(&runtime.settings).is_err() {
             runtime.active.lock().unwrap().remove(&session);
             runtime.error(id, -32603, "Could not persist fake transcript");

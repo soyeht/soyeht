@@ -204,7 +204,15 @@ fn execute(
                 output: reader,
                 pid,
                 guard,
-            } = process::spawn(&config, &state.directory, &instance_id)?;
+            } = match process::spawn(&config, &state.directory, &instance_id) {
+                Ok(spawned) => spawned,
+                Err(failure) if config.kind == ProcessKind::Pty => {
+                    // PTY setup either never starts a child or kills and reaps
+                    // it before returning an error. No process needs adoption.
+                    return Ok(error("spawn_failed", &failure.to_string()));
+                }
+                Err(failure) => return Err(failure),
+            };
             let pipes = config.kind == ProcessKind::PipesAcp;
             let instance = Instance {
                 instance_id,
@@ -249,6 +257,19 @@ fn execute(
                 instance.spawn.instance_key.clone(),
             );
             Ok(Response::Instance(instance))
+        }
+        Request::Kill { instance_id } => {
+            let Some(live) = state.live.get(&instance_id) else {
+                return Ok(error("not_found", "process not found"));
+            };
+            let mut child = live.child.lock().expect("child lock");
+            if child.try_wait()?.is_none() {
+                process::terminate_group(child.id());
+                let _ = child.wait();
+            }
+            // Keep the live output and registry entry until Close. ACP kill
+            // stops a command but leaves its output available to the caller.
+            Ok(Response::Ok)
         }
         Request::Close { instance_id } => {
             if let Some(instance) = state

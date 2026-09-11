@@ -1,3 +1,4 @@
+pub mod agents;
 pub mod auth;
 pub mod core;
 pub mod dispatch;

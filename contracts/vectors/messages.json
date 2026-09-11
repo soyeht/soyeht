@@ -2284,7 +2284,6 @@
       "queue": [
         {
           "promptId": "00000000-0000-4000-8000-000000000001",
-          "text": "example",
           "origin": "human",
           "status": "queued",
           "queuedAt": "example"
@@ -4108,5 +4107,106 @@
     "name": "ProbeResult:inconclusive",
     "type": "ProbeResult",
     "value": "inconclusive"
+  },
+  {
+    "name": "QueuedPromptSummary",
+    "type": "QueuedPromptSummary",
+    "value": {
+      "promptId": "00000000-0000-4000-8000-000000000001",
+      "origin": "human",
+      "status": "queued",
+      "queuedAt": "example"
+    }
+  },
+  {
+    "name": "queue-page-cursor",
+    "type": "PaneQueueListParams",
+    "value": {
+      "paneId": "pane-1",
+      "cursor": "4.8",
+      "limit": 8
+    }
+  },
+  {
+    "name": "PaneQueueResumeParams",
+    "type": "PaneQueueResumeParams",
+    "value": {
+      "paneId": "pane",
+      "idempotencyKey": "resume"
+    }
+  },
+  {
+    "name": "PaneQueueResumeResult",
+    "type": "PaneQueueResumeResult",
+    "value": {
+      "paneId": "pane",
+      "paused": false
+    }
+  },
+  {
+    "name": "PaneQueueStateEvent",
+    "type": "PaneQueueStateEvent",
+    "value": {
+      "eventId": "1",
+      "at": "2026-09-11T00:00:00Z",
+      "paneId": "pane",
+      "paused": true,
+      "reason": "interrupted"
+    }
+  },
+  {
+    "name": "request:pane.queue.resume",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "resume",
+      "method": "pane.queue.resume",
+      "params": {
+        "paneId": "pane",
+        "idempotencyKey": "resume"
+      }
+    }
+  },
+  {
+    "name": "response:pane.queue.resume",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "resume",
+      "result": {
+        "paneId": "pane",
+        "paused": false
+      }
+    }
+  },
+  {
+    "name": "event:pane.queue.paused",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.queue.paused",
+      "params": {
+        "eventId": "1",
+        "at": "2026-09-11T00:00:00Z",
+        "paneId": "pane",
+        "paused": true,
+        "reason": "interrupted"
+      }
+    }
+  },
+  {
+    "name": "event:pane.queue.resumed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.queue.resumed",
+      "params": {
+        "eventId": "1",
+        "at": "2026-09-11T00:00:00Z",
+        "paneId": "pane",
+        "paused": false,
+        "reason": "interrupted"
+      }
+    }
   }
 ]

@@ -1,0 +1,456 @@
+use super::{
+    Changes, native_error, now_ms, questions, responses, state::Phase, timestamp, transcript,
+    updates,
+};
+use crate::{
+    core::Core,
+    errors::{self, Result},
+};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde_json::json;
+use soyeht_acp::{
+    Message, RpcError, client,
+    rpc::{Decoder, Record as NativeRecord},
+};
+use soyeht_protocol::{ErrorKind, PaneState, ProbeCapability, ProbeResult};
+use soyeht_ptyd::wire::{Request, Response};
+use soyeht_store::{agents, segments::Record};
+use uuid::Uuid;
+
+impl Core {
+    pub(crate) fn native_record(
+        &mut self,
+        pane: &str,
+        record: NativeRecord,
+        advances_stream: bool,
+    ) -> Result<()> {
+        let mut state = self.agent_state(pane)?;
+        let mut saved = self.panes[pane].stored.clone();
+        let was_no_signal = saved.pane.state == PaneState::NoSignal;
+        let mut changes = Changes::default();
+        match record.message {
+            response @ Message::Response { .. } => {
+                responses::response(
+                    self.store.connection(),
+                    &mut state,
+                    &mut saved,
+                    response,
+                    &mut changes,
+                )?;
+            }
+            Message::Notification { method, params } => {
+                if method == "session/update" {
+                    updates::update(
+                        self.store.connection(),
+                        pane,
+                        saved.pane.generation,
+                        &mut state,
+                        &params,
+                        &mut changes,
+                    )?;
+                }
+            }
+            Message::Request { id, method, params } => {
+                if let Some(prior) = agents::request_at(
+                    self.store.connection(),
+                    pane,
+                    saved.pane.generation,
+                    record.from_seq,
+                )
+                .map_err(errors::storage)?
+                {
+                    if prior.native_id != id || prior.method != method || prior.params != params {
+                        return Err(errors::error(
+                            ErrorKind::ResyncRequired,
+                            "Native request replay changed identity",
+                        ));
+                    }
+                    // Receipt and native outbox were committed together. The
+                    // outbox resumes its byte offset instead of sending twice.
+                } else if matches!(
+                    method.as_str(),
+                    "session/request_permission" | "elicitation/create"
+                ) {
+                    let mut question = Changes::default();
+                    if let Err(error) = questions::receive(
+                        &mut state,
+                        &mut saved,
+                        record.from_seq,
+                        id.clone(),
+                        &method,
+                        params,
+                        &mut question,
+                    ) {
+                        changes.outgoing.push(Message::Response {
+                            id,
+                            result: Err(RpcError {
+                                code: -32602,
+                                message: error.message,
+                                data: None,
+                            }),
+                        });
+                    } else {
+                        changes = question;
+                    }
+                } else if matches!(
+                    method.as_str(),
+                    "fs/read_text_file"
+                        | "fs/write_text_file"
+                        | "terminal/create"
+                        | "terminal/output"
+                        | "terminal/wait_for_exit"
+                        | "terminal/kill"
+                        | "terminal/release"
+                ) {
+                    if let Err(error) = super::effects::require_session(&state, &params) {
+                        changes.outgoing.push(Message::Response {
+                            id,
+                            result: Err(RpcError {
+                                code: -32602,
+                                message: error.message,
+                                data: None,
+                            }),
+                        });
+                    } else {
+                        changes.received.push(super::effects::receive(
+                            pane,
+                            saved.pane.generation,
+                            record.from_seq,
+                            id,
+                            method,
+                            params,
+                        ));
+                    }
+                } else {
+                    changes.outgoing.push(Message::Response {
+                        id,
+                        result: Err(RpcError {
+                            code: -32601,
+                            message: "Client method unavailable".into(),
+                            data: None,
+                        }),
+                    });
+                }
+            }
+        }
+        if advances_stream {
+            state.acknowledged_offset = record.to_seq;
+        }
+        state.last_update_ms = now_ms();
+        if saved.pane.state == PaneState::NoSignal {
+            saved.pane.state = if state.active.is_some() {
+                PaneState::Working
+            } else {
+                PaneState::Starting
+            };
+            saved.pane.phrase = "Agent protocol resumed".into();
+        }
+        if was_no_signal {
+            changes.remove_attention.push(format!("{pane}:no-signal"));
+        }
+        saved.pane.source = soyeht_protocol::StateSource::Protocol;
+        saved.pane.confidence = 1.0;
+        self.commit_agent(saved, state, changes, None, json!({}))?;
+        Ok(())
+    }
+
+    /// First consume any raw records synced before an engine crash. The public
+    /// checkpoint can lag the raw log, but it never advances beyond durable data.
+    fn decode_agent_log(&mut self, pane: &str) -> Result<()> {
+        let base = self.panes[pane].stored.sequence_base;
+        let offset = self.agents[pane].decoder.next_offset();
+        let end = self.panes[pane].screen.next_offset();
+        let mut from = base
+            .checked_add(offset)
+            .ok_or_else(|| errors::error(ErrorKind::InternalError, "Agent offset exhausted"))?;
+        let first = self.panes[pane].screen.first_offset();
+        if from < first {
+            self.agent_output_gap(pane, first - base)?;
+            from = first;
+        }
+        if from == end {
+            return Ok(());
+        }
+        let records = self.panes[pane]
+            .screen
+            .read(from, end, 64 * 1024)
+            .map_err(errors::io)?;
+        for record in records {
+            let (mut offset, mut bytes) = match record {
+                Record::Gap { to, .. } => {
+                    self.agent_output_gap(pane, to - base)?;
+                    continue;
+                }
+                Record::Data { offset, bytes } => (offset, bytes),
+            };
+            if self.agents[pane].state.discard_until_newline {
+                let newline = bytes.iter().position(|byte| *byte == b'\n');
+                let skipped = newline.map_or(bytes.len(), |at| at + 1);
+                self.skip_interrupted_agent_record(
+                    pane,
+                    offset - base + skipped as u64,
+                    newline.is_some(),
+                )?;
+                offset += skipped as u64;
+                bytes.drain(..skipped);
+                if bytes.is_empty() {
+                    continue;
+                }
+            }
+            let decoded = self
+                .agents
+                .get_mut(pane)
+                .expect("agent")
+                .decoder
+                .push(offset - base, &bytes);
+            let decoded = match decoded {
+                Ok(records) => records,
+                Err(error) => {
+                    let running = self.agents.get_mut(pane).expect("agent");
+                    running.decoder = Decoder::new(running.state.acknowledged_offset);
+                    return Err(native_error(error));
+                }
+            };
+            for record in decoded {
+                if let Err(error) = self.native_record(pane, record, true) {
+                    let running = self.agents.get_mut(pane).expect("agent");
+                    running.decoder = Decoder::new(running.state.acknowledged_offset);
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn poll_agent(&mut self, pane: &str) -> Result<()> {
+        if self.agents[pane].state.phase == Phase::Faulted {
+            return self.close_agent_processes(pane);
+        }
+        self.decode_agent_log(pane)?;
+        let saved = self.panes[pane].stored.clone();
+        let instance_id = saved.instance_id.clone().expect("adopted agent");
+        let seq = self.panes[pane].screen.next_offset() - saved.sequence_base;
+        let Response::Output(output) = self.pty_request(Request::Drain {
+            instance_id: instance_id.clone(),
+            from_seq: seq,
+        })?
+        else {
+            return Err(errors::error(
+                ErrorKind::PtydUnavailable,
+                "Invalid native output response",
+            ));
+        };
+        if output.from_seq != seq {
+            if output.from_seq < seq
+                || output
+                    .gap
+                    .as_ref()
+                    .is_none_or(|gap| gap.from_seq != seq || gap.to_seq != output.from_seq)
+            {
+                return Err(errors::error(
+                    ErrorKind::PtydUnavailable,
+                    "Invalid native output gap",
+                ));
+            }
+            self.panes
+                .get_mut(pane)
+                .expect("pane")
+                .screen
+                .append(Record::Gap {
+                    from: saved.sequence_base + seq,
+                    to: saved.sequence_base + output.from_seq,
+                })
+                .map_err(errors::io)?;
+        }
+        let bytes = STANDARD.decode(output.bytes).map_err(|_| {
+            errors::error(ErrorKind::PtydUnavailable, "Invalid native output encoding")
+        })?;
+        if output.next_seq != output.from_seq + bytes.len() as u64 {
+            return Err(errors::error(
+                ErrorKind::PtydUnavailable,
+                "Native output offsets disagree with bytes",
+            ));
+        }
+        if !bytes.is_empty() {
+            self.panes
+                .get_mut(pane)
+                .expect("pane")
+                .screen
+                .append(Record::Data {
+                    offset: saved.sequence_base + output.from_seq,
+                    bytes,
+                })
+                .map_err(errors::io)?;
+        }
+        self.decode_agent_log(pane)?;
+        self.pty_request(Request::Ack {
+            instance_id,
+            seq: self.agents[pane].state.acknowledged_offset,
+        })?;
+        if output.exited {
+            // Exit does not imply that the last page has been consumed. Keep
+            // draining before retiring the process or trying to write to it.
+            if output.next_seq != output.end_seq
+                || self.agents[pane].decoder.next_offset() != output.end_seq
+            {
+                return Ok(());
+            }
+            if self.agents[pane].state.phase != Phase::RestartAfterProbe {
+                return self.fail_agent(pane, "Agent process exited");
+            }
+        }
+        if !self.check_agent_deadlines(pane)? {
+            return Ok(());
+        }
+        self.advance_agent(pane)?;
+        self.flush_agent_outbox(pane)
+    }
+
+    pub(crate) fn restart_after_probe(&mut self, pane: &str) -> Result<()> {
+        let saved = self.panes[pane].stored.clone();
+        let retire_instance = saved.instance_id.clone().zip(saved.supervisor_id.clone());
+        if let Some(instance_id) = saved.instance_id {
+            self.pty_request(Request::Close { instance_id })?;
+        }
+        let mut saved = self.panes[pane].stored.clone();
+        let mut state = self.agent_state(pane)?;
+        saved.instance_key = Uuid::new_v4().to_string();
+        saved.pane.generation =
+            saved.pane.generation.checked_add(1).ok_or_else(|| {
+                errors::error(ErrorKind::InternalError, "Pane generation exhausted")
+            })?;
+        saved.instance_id = None;
+        saved.supervisor_id = None;
+        saved.pane.pid = None;
+        saved.sequence_base = self.panes[pane].screen.next_offset();
+        state.client = Default::default();
+        state.initialized = None;
+        state.options = Default::default();
+        state.probe_session_id = None;
+        state.probe_started_ms = None;
+        state.acknowledged_offset = 0;
+        state.discard_until_newline = false;
+        state.open_messages.clear();
+        state.replay_role = None;
+        state.phase = Phase::Initializing;
+        self.commit_agent(
+            saved,
+            state,
+            Changes {
+                retire_instance,
+                clear_replay: true,
+                ..Changes::default()
+            },
+            None,
+            json!({}),
+        )?;
+        self.agents.get_mut(pane).expect("agent").decoder = Decoder::new(0);
+        self.spawn_agent(pane)
+    }
+
+    fn advance_agent(&mut self, pane: &str) -> Result<()> {
+        self.poll_agent_authentication(pane)?;
+        self.run_native_files(pane)?;
+        self.run_native_terminals(pane)?;
+        let mut state = self.agent_state(pane)?;
+        if state.phase == Phase::RestartAfterProbe {
+            return self.restart_after_probe(pane);
+        }
+        if state.phase == Phase::Ready && !state.requested_options.is_empty() {
+            return self.configure_initial_agent(pane);
+        }
+        if state
+            .probe_started_ms
+            .is_some_and(|start| now_ms() - start >= 10_000)
+        {
+            let mut changes = Changes::default();
+            for method in responses::PROBED_METHODS {
+                if agents::probe(self.store.connection(), &state.fingerprint, method)
+                    .map_err(errors::storage)?
+                    .is_none()
+                {
+                    changes.probes.push(ProbeCapability {
+                        method: method.into(),
+                        result: ProbeResult::Inconclusive,
+                        checked_at: timestamp(),
+                    });
+                }
+            }
+            state.phase = Phase::RestartAfterProbe;
+            self.commit_agent(
+                self.panes[pane].stored.clone(),
+                state,
+                changes,
+                None,
+                json!({}),
+            )?;
+            return self.restart_after_probe(pane);
+        }
+        let mut open =
+            agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?;
+        for request in &open {
+            let selected = questions::automatic(&state, request, &self.panes[pane].stored.pane.cwd);
+            let expired = request.expires_ms <= now_ms();
+            if !expired && selected.is_none() {
+                continue;
+            }
+            let mut changes = Changes::default();
+            questions::decision(
+                &mut state,
+                request,
+                if expired { None } else { selected.as_deref() },
+                None,
+                if expired { "system" } else { "rule" },
+                expired,
+                &mut changes,
+            )?;
+            self.commit_agent(
+                self.panes[pane].stored.clone(),
+                state.clone(),
+                changes,
+                None,
+                json!({}),
+            )?;
+        }
+        open = agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?;
+        let mut saved = self.panes[pane].stored.clone();
+        if open.is_empty() && saved.pane.state == PaneState::WaitingForYou && state.active.is_some()
+        {
+            saved.pane.state = PaneState::Working;
+            saved.pane.phrase = "Agent is working".into();
+            self.commit_agent(
+                saved.clone(),
+                state.clone(),
+                Changes::default(),
+                None,
+                json!({}),
+            )?;
+        }
+        let Some(prompt) = state.take_next(saved.pane.generation, now_ms(), !open.is_empty())?
+        else {
+            return Ok(());
+        };
+        let session = state
+            .session_id
+            .clone()
+            .ok_or_else(|| errors::error(ErrorKind::InternalError, "Ready agent has no session"))?;
+        let mut changes = Changes::default();
+        transcript::user_prompt(
+            &mut state,
+            saved.pane.generation,
+            &prompt.text,
+            &mut changes,
+        )?;
+        responses::call(
+            &mut state,
+            &mut changes,
+            "session/prompt",
+            client::prompt(&session, &prompt.text),
+            &prompt.prompt_id,
+        )?;
+        saved.pane.state = PaneState::Working;
+        saved.pane.phrase = "Agent is working".into();
+        self.commit_agent(saved, state, changes, None, json!({}))?;
+        Ok(())
+    }
+}

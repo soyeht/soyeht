@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
+// Generated from contracts/protocol.json (sha256 5dc4cd347eaa8438e1cc4f60e0ba99635be6b99589e84015fcddcd2542904949). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -662,9 +662,10 @@ export interface AgentSession {
   "previousPermission"?: PermissionMode;
   "effectiveMode"?: string;
   "operation"?: ConfigOperation;
-  "queue": Array<PromptItem>;
+  "queue": Array<QueuedPromptSummary>;
   "draft": boolean;
   "activePromptId"?: Id;
+  "queuePaused"?: boolean;
 }
 
 export interface ProbeCapability {
@@ -781,11 +782,15 @@ export interface PanePromptResult {
 
 export interface PaneQueueListParams {
   "paneId": Id;
+  "cursor"?: Id;
+  "limit"?: number;
 }
 
 export interface PaneQueueListResult {
   "items": Array<PromptItem>;
   "draft": boolean;
+  "nextCursor"?: Id;
+  "paused"?: boolean;
 }
 
 export interface PaneQueueRemoveParams {
@@ -895,22 +900,27 @@ export interface PaneDraftResult {
 }
 
 export interface HarnessListParams {
-
+  "cursor"?: Id;
+  "limit"?: number;
 }
 
 export interface HarnessListResult {
   "items": Array<HarnessInfo>;
+  "nextCursor"?: Id;
 }
 
 export interface ModelListParams {
   "harness": Id;
   "paneId"?: Id;
+  "cursor"?: Id;
+  "limit"?: number;
 }
 
 export interface ModelListResult {
   "items": Array<ModelInfo>;
   "options": Array<ConfigOption>;
   "source": string;
+  "nextCursor"?: Id;
 }
 
 export interface PaneSessionStartedEvent {
@@ -1166,6 +1176,32 @@ export interface AttentionChangedEvent {
 
 export type TurnStopReason = "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled" | "error";
 
+export interface QueuedPromptSummary {
+  "promptId": Id;
+  "origin": PromptOrigin;
+  "status": PromptStatus;
+  "queuedAt": string;
+  "generation"?: number;
+}
+
+export interface PaneQueueResumeParams {
+  "paneId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface PaneQueueResumeResult {
+  "paneId": Id;
+  "paused": boolean;
+}
+
+export interface PaneQueueStateEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "paused": boolean;
+  "reason"?: string;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -1206,4 +1242,5 @@ export interface Methods {
   "pane.draft": { params: PaneDraftParams; result: PaneDraftResult };
   "harness.list": { params: HarnessListParams; result: HarnessListResult };
   "model.list": { params: ModelListParams; result: ModelListResult };
+  "pane.queue.resume": { params: PaneQueueResumeParams; result: PaneQueueResumeResult };
 }

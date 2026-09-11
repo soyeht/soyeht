@@ -291,7 +291,12 @@ async fn connection(
     tokio::select! {_=read_loop=>(),_=&mut write_task=>()}
     outbox.close();
     write_task.abort();
-    core.lock().expect("core").clients.remove(&id);
+    let mut core = core.lock().expect("core");
+    core.clients.remove(&id);
+    core.native_waiters.retain(|_, waiters| {
+        waiters.retain(|(connection, _)| connection != &id);
+        !waiters.is_empty()
+    });
 }
 
 fn operation_record(

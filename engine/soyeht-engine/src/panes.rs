@@ -13,11 +13,31 @@ use uuid::Uuid;
 
 impl Core {
     pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if params["mode"] != "terminal" {
-            return Err(errors::error(
-                ErrorKind::HarnessUnavailable,
-                "Agent panes are outside this protocol capability",
-            ));
+        let agent_mode = params["mode"] == "agent";
+        let mut agent = if agent_mode {
+            let harness = params["harness"].as_str().ok_or_else(|| {
+                errors::error(ErrorKind::InvalidParams, "Agent panes require a harness")
+            })?;
+            let (launch, digest) = crate::agents::registry::prepare(&self.directory, harness)?;
+            let permission = params
+                .get("permission")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid permission mode"))?
+                .unwrap_or(soyeht_protocol::PermissionMode::Ask);
+            Some(crate::agents::state::State::new(launch, digest, permission))
+        } else {
+            None
+        };
+        if let Some(state) = &mut agent {
+            for name in ["model", "effort"] {
+                if let Some(value) = params[name].as_str() {
+                    state
+                        .requested_options
+                        .insert(name.into(), soyeht_protocol::ConfigValue::V0(value.into()));
+                }
+            }
         }
         let workspace = model::workspace(
             &self.store,
@@ -30,17 +50,44 @@ impl Core {
                 "Pane directory must exist and be absolute",
             ));
         }
+        let canonical;
+        let cwd = if agent_mode {
+            canonical = Path::new(cwd).canonicalize().map_err(errors::io)?;
+            canonical.to_str().ok_or_else(|| {
+                errors::error(ErrorKind::InvalidParams, "Working directory must be UTF-8")
+            })?
+        } else {
+            cwd
+        };
         let pane = Pane {
-            agent: None,
+            agent: agent
+                .as_ref()
+                .map(|agent| agent.public(crate::agents::now_ms())),
             pane_id: Uuid::new_v4().to_string(),
             workspace_id: workspace.workspace_id,
             cwd: cwd.into(),
-            name: params["name"].as_str().unwrap_or("Shell").into(),
-            mode: PaneMode::Terminal,
+            name: params["name"]
+                .as_str()
+                .unwrap_or(if agent_mode { "Agent" } else { "Shell" })
+                .into(),
+            mode: if agent_mode {
+                PaneMode::Agent
+            } else {
+                PaneMode::Terminal
+            },
             state: PaneState::Starting,
-            source: StateSource::None,
-            confidence: 0.0,
-            phrase: "Starting shell".into(),
+            source: if agent_mode {
+                StateSource::Protocol
+            } else {
+                StateSource::None
+            },
+            confidence: if agent_mode { 1.0 } else { 0.0 },
+            phrase: if agent_mode {
+                "Starting agent"
+            } else {
+                "Starting shell"
+            }
+            .into(),
             generation: 1,
             cols: params["cols"].as_u64().unwrap_or(
                 self.setting("terminal.defaultCols")?
@@ -52,12 +99,13 @@ impl Core {
                     .as_u64()
                     .expect("row setting"),
             ) as u32,
-            record: self
-                .setting("record.default")?
-                .as_bool()
-                .expect("boolean setting"),
+            record: agent_mode
+                || self
+                    .setting("record.default")?
+                    .as_bool()
+                    .expect("boolean setting"),
             pid: None,
-            stream_id: Some(Uuid::new_v4().to_string()),
+            stream_id: (!agent_mode).then(|| Uuid::new_v4().to_string()),
         };
         let saved = StoredPane {
             pane,
@@ -75,6 +123,7 @@ impl Core {
         .map_err(errors::io)?;
         let mutation=self.mutate(connection,"pane.create",params,|tx| {
             tx.execute("INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base) VALUES (?1,?2,?3,?4,'0')",params![saved.pane.pane_id,saved.pane.workspace_id,serde_json::to_string(&saved.pane)?,saved.instance_key])?;
+            if let Some(agent)=&agent {soyeht_store::agents::save_runtime(tx,&saved.pane.pane_id,saved.pane.generation,agent)?;}
             Ok((json!({"paneId":saved.pane.pane_id}),vec![("pane.created".into(),json!({"pane":saved.pane}))]))
         })?;
         if !mutation.repeated {
@@ -86,6 +135,10 @@ impl Core {
                     screen,
                 },
             );
+            if let Some(agent) = agent {
+                self.agents
+                    .insert(id.clone(), crate::agents::Running::new(agent));
+            }
             // A disconnected supervisor leaves a durable creation intent for
             // reconciliation, never a second process on an RPC retry.
             if self.spawn(&id).is_err() {
@@ -97,6 +150,9 @@ impl Core {
 
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         let id = params["paneId"].as_str().expect("pane");
+        if method == "pane.close" && self.agents.contains_key(id) {
+            return self.close_agent(connection, params);
+        }
         let mut saved = self
             .panes
             .get(id)
@@ -125,6 +181,12 @@ impl Core {
                 json!({"cols":saved.pane.cols,"rows":saved.pane.rows})
             }
             "pane.record.set" => {
+                if saved.pane.mode == soyeht_protocol::PaneMode::Agent {
+                    return Err(errors::error(
+                        ErrorKind::InvalidParams,
+                        "Agent protocol history is always durable",
+                    ));
+                }
                 saved.pane.record = params["on"].as_bool().expect("record");
                 json!({"on":saved.pane.record})
             }
@@ -163,6 +225,7 @@ impl Core {
                 self.finish_close(id);
             }
             if method == "pane.resize"
+                && saved.pane.mode == PaneMode::Terminal
                 && let Some(instance_id) = saved.instance_id
             {
                 let _ = self.pty_request(Request::Resize {

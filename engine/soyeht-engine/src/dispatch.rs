@@ -196,9 +196,13 @@ impl Core {
                         "Idempotency key reused with different content",
                     ));
                 }
-                return Ok(Outcome::Reply(serde_json::from_str(&result).map_err(
-                    |_| errors::error(ErrorKind::InternalError, "Invalid cached receipt"),
-                )?));
+                let value = serde_json::from_str(&result).map_err(|_| {
+                    errors::error(ErrorKind::InternalError, "Invalid cached receipt")
+                })?;
+                if matches!(method, "pane.config.set" | "pane.yolo") {
+                    return self.native_rpc_result(connection, request["id"].clone(), key, value);
+                }
+                return Ok(Outcome::Reply(value));
             }
         }
         let result = match method {
@@ -233,6 +237,16 @@ impl Core {
                 self.pane_edit(connection, method, &params)?
             }
             "pane.input" => self.pane_input(connection, &params)?,
+            "pane.yolo" => self.agent_yolo(connection, &params)?,
+            "pane.auth.start" => self.agent_auth_start(connection, &params)?,
+            "harness.list" | "model.list" => self.agent_catalog(method, &params)?,
+            "pane.prompt" | "pane.queue.list" | "pane.queue.remove" | "pane.queue.resume"
+            | "pane.cancel" | "pane.config.set" | "pane.transcript" | "pane.draft" => {
+                self.agent_method(connection, method, &params)?
+            }
+            "pane.permission.answer" | "pane.elicitation.answer" => {
+                self.agent_answer(connection, method, &params)?
+            }
             "pane.stream.subscribe" => {
                 self.subscribe_stream(connection, request["id"].clone(), &params)?;
                 return Ok(Outcome::Queued);
@@ -266,18 +280,32 @@ impl Core {
                 ));
             }
         };
+        if matches!(method, "pane.config.set" | "pane.yolo") {
+            return self.native_rpc_result(
+                connection,
+                request["id"].clone(),
+                params["idempotencyKey"].as_str().expect("validated key"),
+                result,
+            );
+        }
         Ok(Outcome::Reply(result))
     }
 
     fn snapshot_parts(&mut self, connection: &str) -> Result<Outcome> {
         let snapshot = self.store.snapshot().map_err(errors::storage)?;
         let mut sections = snapshot.sections;
-        for name in ["tasks", "attention"] {
-            sections.push((name.into(), json!([])));
+        sections.push(("tasks".into(), json!([])));
+        let pairing = self.pending_pair_view()?;
+        if let Some((_, requests)) = sections.iter_mut().find(|(name, _)| name == "requests") {
+            requests
+                .as_array_mut()
+                .expect("request array")
+                .extend(pairing.as_array().expect("pairing array").iter().cloned());
+        } else {
+            sections.push(("requests".into(), pairing));
         }
-        sections.push(("requests".into(), self.pending_pair_view()?));
         sections.push(("capabilities".into(), json!(capabilities())));
-        let streams:Vec<_>=self.panes.values().filter(|p|!p.stored.closed).map(|p|json!({"paneId":p.stored.pane.pane_id,"streamId":p.stored.pane.stream_id,"generation":p.stored.pane.generation,"firstRetainedOffset":p.screen.first_offset().to_string(),"nextOffset":p.screen.next_offset().to_string(),"binaryPaneRef":0})).collect();
+        let streams:Vec<_>=self.panes.values().filter(|p|!p.stored.closed && p.stored.pane.mode == soyeht_protocol::PaneMode::Terminal).map(|p|json!({"paneId":p.stored.pane.pane_id,"streamId":p.stored.pane.stream_id,"generation":p.stored.pane.generation,"firstRetainedOffset":p.screen.first_offset().to_string(),"nextOffset":p.screen.next_offset().to_string(),"binaryPaneRef":0})).collect();
         sections.push(("streams".into(), json!(streams)));
         let snapshot_id = Uuid::new_v4().to_string();
         let mut pages = vec![];

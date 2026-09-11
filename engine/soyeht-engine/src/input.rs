@@ -19,6 +19,12 @@ impl Core {
             .ok_or_else(|| errors::error(ErrorKind::NotFound, "Pane not found"))?
             .stored
             .clone();
+        if saved.pane.mode != soyeht_protocol::PaneMode::Terminal {
+            return Err(errors::error(
+                ErrorKind::InvalidParams,
+                "Raw input requires a terminal pane",
+            ));
+        }
         let instance = saved
             .instance_id
             .ok_or_else(|| errors::error(ErrorKind::PaneBusy, "Pane is recovering"))?;

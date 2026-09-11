@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
+// Generated from contracts/protocol.json (sha256 5dc4cd347eaa8438e1cc4f60e0ba99635be6b99589e84015fcddcd2542904949). Do not edit.
 import Foundation
 
 
@@ -1331,10 +1331,11 @@ public struct AgentSession: Codable, Sendable {
     public var `previousPermission`: PermissionMode?
     public var `effectiveMode`: String?
     public var `operation`: ConfigOperation?
-    public var `queue`: [PromptItem]
+    public var `queue`: [QueuedPromptSummary]
     public var `draft`: Bool
     public var `activePromptId`: Id?
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [PromptItem], `draft`: Bool, `activePromptId`: Id? = nil) {
+    public var `queuePaused`: Bool?
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
@@ -1348,6 +1349,7 @@ public struct AgentSession: Codable, Sendable {
         self.`queue` = `queue`
         self.`draft` = `draft`
         self.`activePromptId` = `activePromptId`
+        self.`queuePaused` = `queuePaused`
     }
 }
 
@@ -1561,17 +1563,25 @@ public struct PanePromptResult: Codable, Sendable {
 
 public struct PaneQueueListParams: Codable, Sendable {
     public var `paneId`: Id
-    public init(`paneId`: Id) {
+    public var `cursor`: Id?
+    public var `limit`: UInt32?
+    public init(`paneId`: Id, `cursor`: Id? = nil, `limit`: UInt32? = nil) {
         self.`paneId` = `paneId`
+        self.`cursor` = `cursor`
+        self.`limit` = `limit`
     }
 }
 
 public struct PaneQueueListResult: Codable, Sendable {
     public var `items`: [PromptItem]
     public var `draft`: Bool
-    public init(`items`: [PromptItem], `draft`: Bool) {
+    public var `nextCursor`: Id?
+    public var `paused`: Bool?
+    public init(`items`: [PromptItem], `draft`: Bool, `nextCursor`: Id? = nil, `paused`: Bool? = nil) {
         self.`items` = `items`
         self.`draft` = `draft`
+        self.`nextCursor` = `nextCursor`
+        self.`paused` = `paused`
     }
 }
 
@@ -1770,25 +1780,33 @@ public struct PaneDraftResult: Codable, Sendable {
 }
 
 public struct HarnessListParams: Codable, Sendable {
-
-    public init() {
-
+    public var `cursor`: Id?
+    public var `limit`: UInt32?
+    public init(`cursor`: Id? = nil, `limit`: UInt32? = nil) {
+        self.`cursor` = `cursor`
+        self.`limit` = `limit`
     }
 }
 
 public struct HarnessListResult: Codable, Sendable {
     public var `items`: [HarnessInfo]
-    public init(`items`: [HarnessInfo]) {
+    public var `nextCursor`: Id?
+    public init(`items`: [HarnessInfo], `nextCursor`: Id? = nil) {
         self.`items` = `items`
+        self.`nextCursor` = `nextCursor`
     }
 }
 
 public struct ModelListParams: Codable, Sendable {
     public var `harness`: Id
     public var `paneId`: Id?
-    public init(`harness`: Id, `paneId`: Id? = nil) {
+    public var `cursor`: Id?
+    public var `limit`: UInt32?
+    public init(`harness`: Id, `paneId`: Id? = nil, `cursor`: Id? = nil, `limit`: UInt32? = nil) {
         self.`harness` = `harness`
         self.`paneId` = `paneId`
+        self.`cursor` = `cursor`
+        self.`limit` = `limit`
     }
 }
 
@@ -1796,10 +1814,12 @@ public struct ModelListResult: Codable, Sendable {
     public var `items`: [ModelInfo]
     public var `options`: [ConfigOption]
     public var `source`: String
-    public init(`items`: [ModelInfo], `options`: [ConfigOption], `source`: String) {
+    public var `nextCursor`: Id?
+    public init(`items`: [ModelInfo], `options`: [ConfigOption], `source`: String, `nextCursor`: Id? = nil) {
         self.`items` = `items`
         self.`options` = `options`
         self.`source` = `source`
+        self.`nextCursor` = `nextCursor`
     }
 }
 
@@ -2321,4 +2341,52 @@ public enum TurnStopReason: String, Codable, Sendable {
     case `refusal` = "refusal"
     case `cancelled` = "cancelled"
     case `error` = "error"
+}
+
+public struct QueuedPromptSummary: Codable, Sendable {
+    public var `promptId`: Id
+    public var `origin`: PromptOrigin
+    public var `status`: PromptStatus
+    public var `queuedAt`: String
+    public var `generation`: UInt32?
+    public init(`promptId`: Id, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil) {
+        self.`promptId` = `promptId`
+        self.`origin` = `origin`
+        self.`status` = `status`
+        self.`queuedAt` = `queuedAt`
+        self.`generation` = `generation`
+    }
+}
+
+public struct PaneQueueResumeParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneQueueResumeResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `paused`: Bool
+    public init(`paneId`: Id, `paused`: Bool) {
+        self.`paneId` = `paneId`
+        self.`paused` = `paused`
+    }
+}
+
+public struct PaneQueueStateEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `paused`: Bool
+    public var `reason`: String?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `paused`: Bool, `reason`: String? = nil) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`paused` = `paused`
+        self.`reason` = `reason`
+    }
 }

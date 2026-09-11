@@ -16,6 +16,12 @@ impl Core {
             .get(pane_id)
             .filter(|p| !p.stored.closed)
             .ok_or_else(|| errors::error(ErrorKind::NotFound, "Pane not found"))?;
+        if running.stored.pane.mode != soyeht_protocol::PaneMode::Terminal {
+            return Err(errors::error(
+                ErrorKind::InvalidParams,
+                "Binary streams require a terminal pane",
+            ));
+        }
         let stream_id = running
             .stored
             .pane

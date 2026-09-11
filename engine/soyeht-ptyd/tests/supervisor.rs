@@ -189,6 +189,69 @@ fn reconnect_adopts_the_same_shell_and_spawn_and_close_are_idempotent() {
 }
 
 #[test]
+fn killing_a_command_preserves_its_output_until_explicit_release() {
+    let (daemon, mut client) = Daemon::start();
+    let mut config = daemon.shell();
+    config.argv = vec![
+        "/bin/sh".into(),
+        "-c".into(),
+        "printf retained-output; sleep 30".into(),
+    ];
+    let instance = spawn(&mut client, config);
+    wait_text(
+        &mut client,
+        &instance.instance_id,
+        &mut 0,
+        "retained-output",
+    );
+    for _ in 0..2 {
+        assert!(matches!(
+            client
+                .request(Request::Kill {
+                    instance_id: instance.instance_id.clone()
+                })
+                .unwrap(),
+            Response::Ok
+        ));
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let Response::Output(output) = client
+            .request(Request::Drain {
+                instance_id: instance.instance_id.clone(),
+                from_seq: 0,
+            })
+            .unwrap()
+        else {
+            panic!("retained output required");
+        };
+        assert_eq!(STANDARD.decode(output.bytes).unwrap(), b"retained-output");
+        if output.exited {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(matches!(
+        client
+            .request(Request::Close {
+                instance_id: instance.instance_id.clone()
+            })
+            .unwrap(),
+        Response::Ok
+    ));
+    assert!(matches!(
+        client
+            .request(Request::Drain {
+                instance_id: instance.instance_id,
+                from_seq: 0
+            })
+            .unwrap(),
+        Response::Error { .. }
+    ));
+}
+
+#[test]
 fn generation_fencing_and_registry_survive_daemon_restart() {
     let (mut daemon, mut old) = Daemon::start();
     let config = daemon.shell();

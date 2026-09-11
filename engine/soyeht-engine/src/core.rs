@@ -4,7 +4,7 @@ use crate::{
     screen::Screen,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, PaneState, StateSource};
 use soyeht_ptyd::{
@@ -27,6 +27,8 @@ pub struct Core {
     pub generation: u64,
     pub ptyd: Option<Client>,
     pub panes: BTreeMap<String, RunningPane>,
+    pub agents: BTreeMap<String, crate::agents::Running>,
+    pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
 }
@@ -47,10 +49,28 @@ impl Core {
             generation,
             ptyd: None,
             panes: BTreeMap::new(),
+            agents: BTreeMap::new(),
+            native_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
             pair_address: "127.0.0.1:8291".into(),
         };
         for stored in model::panes(&core.store)? {
+            if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
+                let mut state: crate::agents::state::State =
+                    soyeht_store::agents::runtime(core.store.connection(), &stored.pane.pane_id)
+                        .map_err(errors::storage)?
+                        .ok_or_else(|| {
+                            errors::error(ErrorKind::InternalError, "Agent pane has no checkpoint")
+                        })?;
+                state.queue =
+                    soyeht_store::agents::queue(core.store.connection(), &stored.pane.pane_id)
+                        .map_err(errors::storage)?
+                        .into();
+                core.agents.insert(
+                    stored.pane.pane_id.clone(),
+                    crate::agents::Running::new(state),
+                );
+            }
             let screen = Screen::open(
                 &directory.join("sessions").join(&stored.pane.pane_id),
                 stored.pane.record,
@@ -138,6 +158,8 @@ impl Core {
             Ok(Response::Error { kind, message }) => Err(errors::error(
                 if kind == "stale_engine_generation" {
                     ErrorKind::StaleEngineGeneration
+                } else if kind == "spawn_failed" {
+                    ErrorKind::HarnessUnavailable
                 } else {
                     ErrorKind::PtydUnavailable
                 },
@@ -188,7 +210,13 @@ impl Core {
                     |r| r.get(0),
                 )
                 .map_err(|e| errors::storage(e.into()))?;
-            if !pending {
+            if !pending
+                && !crate::agents::delivery::receipt_pending(
+                    self.store.connection(),
+                    &operation_key,
+                )
+                .map_err(errors::storage)?
+            {
                 self.pty_request(Request::ConfirmInput { operation_key })?;
             }
         }
@@ -205,6 +233,25 @@ impl Core {
                 .iter()
                 .find(|i| i.spawn.instance_key == saved.instance_key);
             if saved.closed {
+                let child_keys: Vec<_> = self
+                    .agents
+                    .get(&id)
+                    .map(|a| {
+                        a.state
+                            .terminals
+                            .values()
+                            .map(|t| t.spawn.instance_key.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                for instance in instances
+                    .iter()
+                    .filter(|i| !i.closed && child_keys.contains(&i.spawn.instance_key))
+                {
+                    self.pty_request(Request::Close {
+                        instance_id: instance.instance_id.clone(),
+                    })?;
+                }
                 if let Some(instance) = existing.filter(|i| !i.closed) {
                     self.pty_request(Request::Close {
                         instance_id: instance.instance_id.clone(),
@@ -213,6 +260,31 @@ impl Core {
             } else if let Some(instance) = existing.filter(|i| !i.closed) {
                 self.adopt(&id, instance)?;
             } else {
+                if self.agents.contains_key(&id) {
+                    if self.agents[&id].state.phase == crate::agents::state::Phase::Faulted {
+                        self.close_agent_processes(&id)?;
+                        continue;
+                    }
+                    self.recover_missing_agent(&id)?;
+                    continue;
+                }
+                let auth_launch: bool = self
+                    .store
+                    .connection()
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM pane_launches WHERE pane_id=?1)",
+                        [&id],
+                        |r| r.get(0),
+                    )
+                    .map_err(|e| errors::storage(e.into()))?;
+                if auth_launch && saved.instance_id.is_some() {
+                    let mut stopped = saved;
+                    stopped.pane.pid = None;
+                    stopped.pane.state = PaneState::Dead;
+                    stopped.pane.phrase = "Sign-in process was lost".into();
+                    self.save_runtime(&id, stopped)?;
+                    continue;
+                }
                 if saved.instance_id.is_some() {
                     // A new supervisor cannot adopt an old process identifier.
                     // Reserve the replacement identity durably before spawning.
@@ -238,14 +310,37 @@ impl Core {
     }
 
     pub fn spawn(&mut self, id: &str) -> Result<()> {
+        if self.agents.contains_key(id) {
+            return self.spawn_agent(id);
+        }
         let pane = &self.panes[id].stored;
+        let launch: Option<String> = self
+            .store
+            .connection()
+            .query_row(
+                "SELECT payload FROM pane_launches WHERE pane_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| errors::storage(e.into()))?;
+        let launch: Option<Spawn> = launch
+            .map(|raw| {
+                serde_json::from_str(&raw).map_err(|_| {
+                    errors::error(ErrorKind::InternalError, "Invalid private pane launch")
+                })
+            })
+            .transpose()?;
         let config = Spawn {
             instance_key: pane.instance_key.clone(),
             generation: pane.pane.generation,
             kind: ProcessKind::Pty,
             cwd: pane.pane.cwd.clone(),
-            argv: vec!["/bin/zsh".into(), "-l".into()],
-            env: BTreeMap::new(),
+            argv: launch
+                .as_ref()
+                .map(|l| l.argv.clone())
+                .unwrap_or_else(|| vec!["/bin/zsh".into(), "-l".into()]),
+            env: launch.map(|l| l.env).unwrap_or_default(),
             cols: pane.pane.cols as u16,
             rows: pane.pane.rows as u16,
         };
@@ -259,6 +354,9 @@ impl Core {
     }
 
     fn adopt(&mut self, id: &str, instance: &Instance) -> Result<()> {
+        if self.agents.contains_key(id) {
+            return self.adopt_agent(id, instance);
+        }
         let mut saved = self.panes[id].stored.clone();
         saved.instance_id = Some(instance.instance_id.clone());
         saved.supervisor_id = Some(instance.supervisor_id.clone());
@@ -315,6 +413,19 @@ impl Core {
             .map(|(id, _)| id.clone())
             .collect();
         for id in ids {
+            if self.agents.contains_key(&id) {
+                if let Err(error) = self.poll_agent(&id) {
+                    if matches!(
+                        error.data.kind,
+                        ErrorKind::InvalidParams | ErrorKind::HarnessUnavailable
+                    ) {
+                        self.fail_agent(&id, &error.message)?;
+                    } else {
+                        return Err(error);
+                    }
+                }
+                continue;
+            }
             let saved = self.panes[&id].stored.clone();
             let instance_id = saved.instance_id.clone().expect("adopted");
             let next = self.panes[&id].screen.next_offset();

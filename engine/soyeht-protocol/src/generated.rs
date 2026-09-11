@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
+// Generated from contracts/protocol.json (sha256 5dc4cd347eaa8438e1cc4f60e0ba99635be6b99589e84015fcddcd2542904949). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1193,11 +1193,13 @@ pub struct AgentSession {
     #[serde(rename = "operation", skip_serializing_if = "Option::is_none")]
     pub operation: Option<ConfigOperation>,
     #[serde(rename = "queue")]
-    pub queue: Vec<PromptItem>,
+    pub queue: Vec<QueuedPromptSummary>,
     #[serde(rename = "draft")]
     pub draft: bool,
     #[serde(rename = "activePromptId", skip_serializing_if = "Option::is_none")]
     pub active_prompt_id: Option<Id>,
+    #[serde(rename = "queuePaused", skip_serializing_if = "Option::is_none")]
+    pub queue_paused: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProbeCapability {
@@ -1382,6 +1384,10 @@ pub struct PanePromptResult {
 pub struct PaneQueueListParams {
     #[serde(rename = "paneId")]
     pub pane_id: Id,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<Id>,
+    #[serde(rename = "limit", skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneQueueListResult {
@@ -1389,6 +1395,10 @@ pub struct PaneQueueListResult {
     pub items: Vec<PromptItem>,
     #[serde(rename = "draft")]
     pub draft: bool,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<Id>,
+    #[serde(rename = "paused", skip_serializing_if = "Option::is_none")]
+    pub paused: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneQueueRemoveParams {
@@ -1549,11 +1559,18 @@ pub struct PaneDraftResult {
     pub active: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct HarnessListParams {}
+pub struct HarnessListParams {
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<Id>,
+    #[serde(rename = "limit", skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HarnessListResult {
     #[serde(rename = "items")]
     pub items: Vec<HarnessInfo>,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelListParams {
@@ -1561,6 +1578,10 @@ pub struct ModelListParams {
     pub harness: Id,
     #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
     pub pane_id: Option<Id>,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<Id>,
+    #[serde(rename = "limit", skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelListResult {
@@ -1570,6 +1591,8 @@ pub struct ModelListResult {
     pub options: Vec<ConfigOption>,
     #[serde(rename = "source")]
     pub source: String,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneSessionStartedEvent {
@@ -2035,6 +2058,46 @@ pub enum TurnStopReason {
     #[serde(rename = "error")]
     Error,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct QueuedPromptSummary {
+    #[serde(rename = "promptId")]
+    pub prompt_id: Id,
+    #[serde(rename = "origin")]
+    pub origin: PromptOrigin,
+    #[serde(rename = "status")]
+    pub status: PromptStatus,
+    #[serde(rename = "queuedAt")]
+    pub queued_at: String,
+    #[serde(rename = "generation", skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneQueueResumeParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneQueueResumeResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "paused")]
+    pub paused: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneQueueStateEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "paused")]
+    pub paused: bool,
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -2116,6 +2179,8 @@ pub enum Request {
     HarnessList(HarnessListParams),
     #[serde(rename = "model.list")]
     ModelList(ModelListParams),
+    #[serde(rename = "pane.queue.resume")]
+    PaneQueueResume(PaneQueueResumeParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -2277,6 +2342,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         false,
     ),
     ("model.list", "ModelListParams", "ModelListResult", false),
+    (
+        "pane.queue.resume",
+        "PaneQueueResumeParams",
+        "PaneQueueResumeResult",
+        true,
+    ),
 ];
 
 pub fn error_code(kind: &ErrorKind) -> i64 {

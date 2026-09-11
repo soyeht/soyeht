@@ -111,7 +111,8 @@ impl Runtime {
                             .lock()
                             .unwrap()
                             .insert(session.id.clone(), session.clone());
-                        for text in &session.history {
+                        for (prompt, text) in &session.history {
+                            self.update(&session.id,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
                             self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
                         }
                         self.answer(id, json!({"configOptions":session.options()}));
@@ -132,7 +133,10 @@ impl Runtime {
                 let config = params["configId"].as_str().unwrap_or("");
                 let value = &params["value"];
                 let allowed = match config {
-                    "model" => matches!(value.as_str(), Some("model-a" | "model-b")),
+                    "model" => matches!(
+                        value.as_str(),
+                        Some("model-a" | "model-b" | "delayed-model")
+                    ),
                     "effort" => matches!(value.as_str(), Some("low" | "medium" | "high")),
                     "mode" => matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all")),
                     "fast" => value.is_boolean() && params["type"] == "boolean",
@@ -149,7 +153,25 @@ impl Runtime {
                     return;
                 }
                 *session = next;
-                self.answer(id, json!({"configOptions":session.options()}));
+                let response = json!({"configOptions":session.options()});
+                if value == "delayed-model" {
+                    let runtime = self.clone();
+                    std::fs::write(self.settings.directory.join("config-waiting"), b"ready")
+                        .unwrap();
+                    std::thread::spawn(move || {
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_secs(20);
+                        while !runtime.settings.directory.join("config-release").exists() {
+                            if std::time::Instant::now() >= deadline {
+                                return;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                        runtime.answer(id, response);
+                    });
+                } else {
+                    self.answer(id, response);
+                }
             }
             "session/prompt" => {
                 let session = params["sessionId"].as_str().unwrap_or("").to_owned();

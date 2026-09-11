@@ -2300,7 +2300,7 @@
         "queue": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/PromptItem"
+            "$ref": "#/$defs/QueuedPromptSummary"
           }
         },
         "draft": {
@@ -2308,6 +2308,9 @@
         },
         "activePromptId": {
           "$ref": "#/$defs/Id"
+        },
+        "queuePaused": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -2724,6 +2727,14 @@
       "properties": {
         "paneId": {
           "$ref": "#/$defs/Id"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Id"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
         }
       },
       "required": [
@@ -2741,6 +2752,12 @@
           }
         },
         "draft": {
+          "type": "boolean"
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Id"
+        },
+        "paused": {
           "type": "boolean"
         }
       },
@@ -3100,7 +3117,16 @@
     },
     "HarnessListParams": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "cursor": {
+          "$ref": "#/$defs/Id"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      },
       "required": [],
       "additionalProperties": true
     },
@@ -3112,6 +3138,9 @@
           "items": {
             "$ref": "#/$defs/HarnessInfo"
           }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -3127,6 +3156,14 @@
         },
         "paneId": {
           "$ref": "#/$defs/Id"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Id"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
         }
       },
       "required": [
@@ -3151,6 +3188,9 @@
         },
         "source": {
           "type": "string"
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -4133,6 +4173,94 @@
         "cancelled",
         "error"
       ]
+    },
+    "QueuedPromptSummary": {
+      "type": "object",
+      "properties": {
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "origin": {
+          "$ref": "#/$defs/PromptOrigin"
+        },
+        "status": {
+          "$ref": "#/$defs/PromptStatus"
+        },
+        "queuedAt": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "promptId",
+        "origin",
+        "status",
+        "queuedAt"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueueResumeParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueueResumeResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId",
+        "paused"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueueStateEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "paused"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -4487,6 +4615,15 @@
         "$ref": "#/$defs/ModelListResult"
       },
       "mutation": false
+    },
+    "pane.queue.resume": {
+      "params": {
+        "$ref": "#/$defs/PaneQueueResumeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneQueueResumeResult"
+      },
+      "mutation": true
     }
   },
   "x-events": {
@@ -4709,6 +4846,18 @@
     "attention.changed": {
       "params": {
         "$ref": "#/$defs/AttentionChangedEvent"
+      },
+      "durable": true
+    },
+    "pane.queue.paused": {
+      "params": {
+        "$ref": "#/$defs/PaneQueueStateEvent"
+      },
+      "durable": true
+    },
+    "pane.queue.resumed": {
+      "params": {
+        "$ref": "#/$defs/PaneQueueStateEvent"
       },
       "durable": true
     }
