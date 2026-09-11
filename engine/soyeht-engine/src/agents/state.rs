@@ -129,6 +129,17 @@ impl State {
             fingerprint: self.fingerprint.clone(),
             session_id: self.session_id.clone(),
             options: self.options.values.clone(),
+            auth_methods: self
+                .initialized
+                .as_ref()
+                .map(|value| {
+                    value
+                        .auth_methods
+                        .iter()
+                        .map(|method| method.public.clone())
+                        .collect()
+                })
+                .unwrap_or_default(),
             permission: self.permission.clone(),
             yolo: self.yolo,
             previous_permission: self.previous_permission.clone(),
@@ -360,6 +371,23 @@ mod tests {
                 .enqueue("🌍".repeat(16385), PromptOrigin::Human, "now".into())
                 .is_err()
         );
+    }
+
+    #[test]
+    fn public_state_keeps_authentication_choices_across_snapshot_reconnection() {
+        let mut state = state();
+        state.phase = Phase::NeedsLogin;
+        state.initialized = Some(
+            Initialization::parse(&serde_json::json!({
+                "protocolVersion": 1,
+                "authMethods": [{"id": "login", "name": "Sign in", "type": "terminal"}]
+            }))
+            .unwrap(),
+        );
+        let public = state.public(0);
+        assert_eq!(public.auth_methods.len(), 1);
+        assert_eq!(public.auth_methods[0].id, "login");
+        assert!(public.auth_methods[0].terminal);
     }
 
     #[test]

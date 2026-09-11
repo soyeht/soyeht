@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5dc4cd347eaa8438e1cc4f60e0ba99635be6b99589e84015fcddcd2542904949). Do not edit.
+// Generated from contracts/protocol.json (sha256 86a85213a5341d96808b5f6ec662d19a48c1b137e20d6808ae162887b74b7c08). Do not edit.
 public enum ProtocolLimits {
     public static let jsonBytes = 1048576
     public static let terminalPayloadBytes = 65536

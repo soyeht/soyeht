@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5dc4cd347eaa8438e1cc4f60e0ba99635be6b99589e84015fcddcd2542904949). Do not edit.
+// Generated from contracts/protocol.json (sha256 86a85213a5341d96808b5f6ec662d19a48c1b137e20d6808ae162887b74b7c08). Do not edit.
 import Foundation
 
 
@@ -1326,6 +1326,7 @@ public struct AgentSession: Codable, Sendable {
     public var `fingerprint`: String
     public var `sessionId`: Id?
     public var `options`: [ConfigOption]
+    public var `authMethods`: [AuthMethod]
     public var `permission`: PermissionMode
     public var `yolo`: Bool
     public var `previousPermission`: PermissionMode?
@@ -1335,12 +1336,13 @@ public struct AgentSession: Codable, Sendable {
     public var `draft`: Bool
     public var `activePromptId`: Id?
     public var `queuePaused`: Bool?
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil) {
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
         self.`sessionId` = `sessionId`
         self.`options` = `options`
+        self.`authMethods` = `authMethods`
         self.`permission` = `permission`
         self.`yolo` = `yolo`
         self.`previousPermission` = `previousPermission`
@@ -2388,5 +2390,18 @@ public struct PaneQueueStateEvent: Codable, Sendable {
         self.`paneId` = `paneId`
         self.`paused` = `paused`
         self.`reason` = `reason`
+    }
+}
+
+public struct PaneQueueSteeredEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `promptId`: Id
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `promptId`: Id) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`promptId` = `promptId`
     }
 }

@@ -43,11 +43,18 @@ import Testing
         reason: "interrupted")))
   #expect(client.agentPanes[paneId]?.queuePaused == true)
 
+  let authMethod = AuthMethod(id: "login", name: "Sign in", terminal: true)
+  let session = AgentSession(
+    harness: "agent", version: "1", fingerprint: "fingerprint", options: [],
+    authMethods: [authMethod], permission: .ask, yolo: false, queue: [], draft: false)
   let pane = Pane(
     paneId: paneId, workspaceId: "workspace", name: "Agent", cwd: "/tmp",
     mode: .agent, state: .idle, source: .protocol, confidence: 1, phrase: "Ready",
-    generation: 1, cols: 80, rows: 24, record: true)
+    generation: 1, cols: 80, rows: 24, record: true, agent: session)
   try client.applyAgentSnapshot([:], panes: [pane])
   #expect(client.agentPanes[paneId]?.permission == nil)
   #expect(client.agentPanes[paneId]?.queuePaused == false)
+  #expect(client.agentPanes[paneId]?.authMethods.count == 1)
+  #expect(client.agentPanes[paneId]?.authMethods.first?.id == "login")
+  #expect(client.agentPanes[paneId]?.authMethods.first?.terminal == true)
 }

@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug)]
 pub enum Error {
@@ -120,6 +120,9 @@ impl Store {
             }
             if version < 5 {
                 tx.execute_batch(include_str!("../migrations/005-native-replay.sql"))?;
+            }
+            if version < 6 {
+                tx.execute_batch(include_str!("../migrations/006-agent-auth-snapshot.sql"))?;
             }
             tx.commit()?;
         }

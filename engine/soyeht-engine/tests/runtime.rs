@@ -685,6 +685,9 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
     }
+    let reconnect = rig.client().pane(&pane);
+    assert_eq!(reconnect["agent"]["authMethods"][0]["id"], "login");
+    assert_eq!(reconnect["agent"]["authMethods"][0]["terminal"], true);
     let params = json!({"paneId":pane,"authMethodId":"login","idempotencyKey":"auth-start"});
     let start = client.call("pane.auth.start", params.clone());
     assert_eq!(start, client.call("pane.auth.start", params));

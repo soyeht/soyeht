@@ -623,7 +623,7 @@ fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
             .connection()
             .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
             .unwrap(),
-        5
+        6
     );
     let backups = fs::read_dir(profile.0.join("backups"))
         .unwrap()
@@ -638,4 +638,59 @@ fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
         4
     );
     assert_eq!(agents::outbox(&backup, "p").unwrap()[0].accepted_bytes, 7);
+}
+
+#[test]
+fn migration_from_v5_adds_reconnectable_authentication_state() {
+    let profile = Profile::new();
+    let old = Connection::open(profile.0.join("soyeht.db")).unwrap();
+    for sql in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+        include_str!("../migrations/005-native-replay.sql"),
+    ] {
+        old.execute_batch(sql).unwrap();
+    }
+    old.execute(
+        "INSERT INTO metadata VALUES ('db_id','v5-live'),('engine_generation','8')",
+        [],
+    )
+    .unwrap();
+    old.execute("INSERT INTO workspaces VALUES ('w','{}',0)", [])
+        .unwrap();
+    let pane = json!({
+        "paneId": "p", "workspaceId": "w", "name": "Agent", "cwd": "/tmp",
+        "mode": "agent", "state": "starting", "source": "protocol", "confidence": 1,
+        "phrase": "Sign-in required", "generation": 1, "cols": 80, "rows": 24,
+        "record": true,
+        "agent": {"harness": "auth", "version": "1", "fingerprint": "fp",
+            "options": [], "permission": "ask", "yolo": false, "queue": [], "draft": false}
+    });
+    old.execute(
+        "INSERT INTO panes(id,workspace_id,payload,instance_key) VALUES ('p','w',?1,'same-process')",
+        [pane.to_string()],
+    )
+    .unwrap();
+    drop(old);
+
+    let mut store = profile.store();
+    let panes = store
+        .snapshot()
+        .unwrap()
+        .sections
+        .into_iter()
+        .find(|(section, _)| section == "panes")
+        .unwrap()
+        .1;
+    assert_eq!(panes[0]["agent"]["authMethods"], json!([]));
+    let _: soyeht_protocol::Pane = serde_json::from_value(panes[0].clone()).unwrap();
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        6
+    );
 }
