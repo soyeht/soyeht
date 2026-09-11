@@ -43,6 +43,10 @@ impl Rig {
             assert!(Instant::now() < deadline);
             thread::sleep(Duration::from_millis(10));
         }
+        while rig.command(&["status"])["ptyd"]["connected"] != true {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(10));
+        }
         rig
     }
     fn command(&self, args: &[&str]) -> Value {
