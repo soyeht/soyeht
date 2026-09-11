@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 ea6797d079f3760fb7b2214734ee44e9842ee06f159f0419483b517b0f0cd8b3). Do not edit.
+// Generated from contracts/protocol.json (sha256 328945c30e743d42d7a6a305d2eebe01f938280d58bbf0f6f84d9742aefecc6f). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -136,6 +136,7 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "AuthMethod" => roundtrip::<AuthMethod>(value),
         "HarnessInfo" => roundtrip::<HarnessInfo>(value),
         "ModelInfo" => roundtrip::<ModelInfo>(value),
+        "ModelListSource" => roundtrip::<ModelListSource>(value),
         "HarnessLaunch" => roundtrip::<HarnessLaunch>(value),
         "HarnessConfiguration" => roundtrip::<HarnessConfiguration>(value),
         "ToolLocation" => roundtrip::<ToolLocation>(value),

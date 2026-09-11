@@ -353,7 +353,7 @@ private struct NewPaneSheet: View {
           Text("Accept edits in this directory").tag(PermissionMode.accept_edits)
           Text("Allow all agent actions").tag(PermissionMode.allow_all)
         }
-        if catalogue?.source == "not_probed",
+        if catalogue?.source == .not_probed,
           catalogue?.models.isEmpty != false
         {
           Text("The agent will use its default and report available models after opening.")

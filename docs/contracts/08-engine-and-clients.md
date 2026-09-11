@@ -193,7 +193,8 @@ Task IDs are always `{workspaceId, taskId}` together.
 `experiment.detector.set {name}`.
 
 **Other**: `attention.list`, `harness.list` (registry + detected + probed
-capabilities), `model.list {harness}` (session catalog when available),
+capabilities), `model.list {harness}` (session catalog when available, with
+closed source `not_probed | native_session`),
 `device.pair.start|decide`, `device.list`, `device.revoke`,
 `push.register|unregister`, `settings.get`/`settings.set {key, value}`
 (schema-typed keys), `engine.status` → `{version, generation,

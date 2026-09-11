@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 ea6797d079f3760fb7b2214734ee44e9842ee06f159f0419483b517b0f0cd8b3). Do not edit.
+// Generated from contracts/protocol.json (sha256 328945c30e743d42d7a6a305d2eebe01f938280d58bbf0f6f84d9742aefecc6f). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -139,6 +139,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "AuthMethod": return try codec(SoyehtProtocol.AuthMethod.self, data)
         case "HarnessInfo": return try codec(SoyehtProtocol.HarnessInfo.self, data)
         case "ModelInfo": return try codec(SoyehtProtocol.ModelInfo.self, data)
+        case "ModelListSource": return try codec(SoyehtProtocol.ModelListSource.self, data)
         case "HarnessLaunch": return try codec(SoyehtProtocol.HarnessLaunch.self, data)
         case "HarnessConfiguration": return try codec(SoyehtProtocol.HarnessConfiguration.self, data)
         case "ToolLocation": return try codec(SoyehtProtocol.ToolLocation.self, data)

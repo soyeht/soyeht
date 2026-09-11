@@ -126,7 +126,7 @@ fn agent_updates_require_known_kinds_and_their_payloads() {
 }
 
 #[test]
-fn legacy_state_and_probe_values_are_not_wire_aliases() {
+fn closed_enums_reject_legacy_and_unknown_values() {
     let vectors: Vec<Value> = serde_json::from_str(include_str!(
         "../../../contracts/vectors/invalid-messages.json"
     ))
@@ -138,6 +138,9 @@ fn legacy_state_and_probe_values_are_not_wire_aliases() {
             }
             Some("ProbeResult") => {
                 assert!(serde_json::from_value::<ProbeResult>(vector["value"].clone()).is_err())
+            }
+            Some("ModelListSource") => {
+                assert!(serde_json::from_value::<ModelListSource>(vector["value"].clone()).is_err())
             }
             _ => (),
         }

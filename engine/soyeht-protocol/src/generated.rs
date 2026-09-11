@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 ea6797d079f3760fb7b2214734ee44e9842ee06f159f0419483b517b0f0cd8b3). Do not edit.
+// Generated from contracts/protocol.json (sha256 328945c30e743d42d7a6a305d2eebe01f938280d58bbf0f6f84d9742aefecc6f). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1252,6 +1252,13 @@ pub struct ModelInfo {
     pub description: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ModelListSource {
+    #[serde(rename = "not_probed")]
+    NotProbed,
+    #[serde(rename = "native_session")]
+    NativeSession,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HarnessLaunch {
     #[serde(rename = "id")]
     pub id: Id,
@@ -1592,7 +1599,7 @@ pub struct ModelListResult {
     #[serde(rename = "options")]
     pub options: Vec<ConfigOption>,
     #[serde(rename = "source")]
-    pub source: String,
+    pub source: ModelListSource,
     #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<Id>,
 }

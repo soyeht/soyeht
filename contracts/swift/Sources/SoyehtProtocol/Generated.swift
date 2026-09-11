@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 ea6797d079f3760fb7b2214734ee44e9842ee06f159f0419483b517b0f0cd8b3). Do not edit.
+// Generated from contracts/protocol.json (sha256 328945c30e743d42d7a6a305d2eebe01f938280d58bbf0f6f84d9742aefecc6f). Do not edit.
 import Foundation
 
 
@@ -1411,6 +1411,11 @@ public struct ModelInfo: Codable, Sendable {
     }
 }
 
+public enum ModelListSource: String, Codable, Sendable {
+    case `not_probed` = "not_probed"
+    case `native_session` = "native_session"
+}
+
 public struct HarnessLaunch: Codable, Sendable {
     public var `id`: Id
     public var `name`: String
@@ -1815,9 +1820,9 @@ public struct ModelListParams: Codable, Sendable {
 public struct ModelListResult: Codable, Sendable {
     public var `items`: [ModelInfo]
     public var `options`: [ConfigOption]
-    public var `source`: String
+    public var `source`: ModelListSource
     public var `nextCursor`: Id?
-    public init(`items`: [ModelInfo], `options`: [ConfigOption], `source`: String, `nextCursor`: Id? = nil) {
+    public init(`items`: [ModelInfo], `options`: [ConfigOption], `source`: ModelListSource, `nextCursor`: Id? = nil) {
         self.`items` = `items`
         self.`options` = `options`
         self.`source` = `source`

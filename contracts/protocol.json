@@ -2441,6 +2441,13 @@
       ],
       "additionalProperties": true
     },
+    "ModelListSource": {
+      "type": "string",
+      "enum": [
+        "not_probed",
+        "native_session"
+      ]
+    },
     "HarnessLaunch": {
       "type": "object",
       "properties": {
@@ -3194,7 +3201,7 @@
           }
         },
         "source": {
-          "type": "string"
+          "$ref": "#/$defs/ModelListSource"
         },
         "nextCursor": {
           "$ref": "#/$defs/Id"

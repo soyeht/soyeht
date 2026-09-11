@@ -32,10 +32,12 @@ public struct AgentPaneView: Sendable {
 public struct AgentCatalogue: Sendable {
   public var models: [ModelInfo]
   public var options: [ConfigOption]
-  public var source: String
+  public var source: ModelListSource
 
-  public init(models: [ModelInfo] = [], options: [ConfigOption] = [], source: String = "not_probed")
-  {
+  public init(
+    models: [ModelInfo] = [], options: [ConfigOption] = [],
+    source: ModelListSource = .not_probed
+  ) {
     self.models = models
     self.options = options
     self.source = source
@@ -270,7 +272,7 @@ extension EngineClient {
       var cursor: String?
       var models: [ModelInfo] = []
       var options: [ConfigOption] = []
-      var source = "not_probed"
+      var source = ModelListSource.not_probed
       repeat {
         let page = try await self.request(
           "model.list",

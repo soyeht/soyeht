@@ -5,7 +5,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_protocol::{ErrorKind, HarnessInfo, ModelInfo, limits};
+use soyeht_protocol::{ErrorKind, HarnessInfo, ModelInfo, ModelListSource, limits};
 use soyeht_store::agents;
 
 fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
@@ -148,7 +148,7 @@ impl Core {
             .unwrap_or_default();
         page(
             items,
-            json!({"options":options,"source":if known.is_some() {"native_session"} else {"not_probed"}}),
+            json!({"options":options,"source":if known.is_some() {ModelListSource::NativeSession} else {ModelListSource::NotProbed}}),
             params,
         )
     }

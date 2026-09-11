@@ -62,6 +62,10 @@
     "value": []
   },
   {
+    "type": "ModelListSource",
+    "value": "cached_guess"
+  },
+  {
     "type": "PaneState",
     "value": "iniciando"
   },
