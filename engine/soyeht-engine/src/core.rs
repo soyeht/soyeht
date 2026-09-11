@@ -224,7 +224,7 @@ impl Core {
                     next.pane.stream_id = Some(Uuid::new_v4().to_string());
                     next.pane.pid = None;
                     next.pane.state = PaneState::Recuperando;
-                    next.pane.phrase = "Restaurando shell após perda do processo".into();
+                    next.pane.phrase = "Restoring shell after process loss".into();
                     next.instance_key = Uuid::new_v4().to_string();
                     next.instance_id = None;
                     next.supervisor_id = None;
@@ -271,9 +271,9 @@ impl Core {
         saved.pane.source = StateSource::None;
         saved.pane.confidence = 0.0;
         saved.pane.phrase = if instance.exit_code.is_some() {
-            "Shell encerrado"
+            "Shell exited"
         } else {
-            "Shell ativo"
+            "Shell active"
         }
         .into();
         self.pty_request(Request::Resize {
@@ -365,7 +365,7 @@ impl Core {
             if output.exited && saved.pane.state != PaneState::Morta {
                 let mut dead = saved;
                 dead.pane.state = PaneState::Morta;
-                dead.pane.phrase = "Shell encerrado".into();
+                dead.pane.phrase = "Shell exited".into();
                 self.save_runtime(&id, dead)?;
             }
         }

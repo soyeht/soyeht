@@ -28,7 +28,7 @@
       view.nativeForegroundColor = NSColor(
         red: 62 / 255, green: 74 / 255, blue: 102 / 255, alpha: 1)
       view.terminalDelegate = context.coordinator
-      view.setAccessibilityLabel("Terminal da pane selecionada")
+      view.setAccessibilityLabel("Selected pane terminal")
       let coordinator = context.coordinator
       client.terminalOutput = { [weak view, weak coordinator] bytes, reset in
         guard let view, let coordinator else { return }

@@ -13,11 +13,11 @@ public enum ClientFailure: Error, LocalizedError, Sendable {
   }
   public var errorDescription: String? {
     switch self {
-    case .disconnected: "Conexão interrompida. Reconectando…"
-    case .invalidFrame: "O engine enviou uma mensagem inválida."
-    case .invalidSnapshot: "O estado recebido está incompleto."
-    case .invalidStream: "A tela precisa ser sincronizada novamente."
-    case .timeout: "O engine não respondeu a tempo."
+    case .disconnected: "Connection interrupted. Reconnecting…"
+    case .invalidFrame: "The engine sent an invalid message."
+    case .invalidSnapshot: "Received state is incomplete."
+    case .invalidStream: "The screen needs to synchronize again."
+    case .timeout: "The engine did not respond in time."
     case .remote(let kind, let message): "\(message) (\(kind))"
     }
   }

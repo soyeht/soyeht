@@ -40,7 +40,7 @@ impl Core {
             state: PaneState::Iniciando,
             source: StateSource::None,
             confidence: 0.0,
-            phrase: "Iniciando shell".into(),
+            phrase: "Starting shell".into(),
             generation: 1,
             cols: params["cols"].as_u64().unwrap_or(
                 self.setting("terminal.defaultCols")?

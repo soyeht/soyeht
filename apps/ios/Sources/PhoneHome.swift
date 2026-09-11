@@ -27,16 +27,16 @@ struct PhoneHome: View {
             VStack(spacing: 20) {
               if client.credentialRejected {
                 Image(systemName: "lock.iphone").font(.largeTitle)
-                Text("Pareie novamente no Mac").font(.headline)
+                Text("Pair again on the Mac").font(.headline)
               } else {
                 ProgressView()
-                Text("Buscando o estado do Mac…").font(.headline)
+                Text("Fetching Mac state…").font(.headline)
               }
               Text(client.connectionText).font(.subheadline).multilineTextAlignment(.center)
                 .foregroundStyle(PhonePalette.secondary)
-              Text("Mantenha o Tailscale conectado nos dois dispositivos.")
+              Text("Keep Tailscale connected on both devices.")
                 .font(.footnote).multilineTextAlignment(.center)
-              Button("Esquecer este Mac") { forget = true }
+              Button("Forget this Mac") { forget = true }
             }.padding(28)
           }
         } else {
@@ -50,11 +50,11 @@ struct PhoneHome: View {
         if model.client != nil {
           ToolbarItem(placement: .topBarTrailing) {
             Menu {
-              Button("Esquecer este Mac", role: .destructive) { forget = true }
+              Button("Forget this Mac", role: .destructive) { forget = true }
             } label: {
               Image(systemName: "ellipsis.circle")
             }
-            .accessibilityLabel("Opções do Mac")
+            .accessibilityLabel("Mac options")
           }
         }
       }
@@ -69,22 +69,24 @@ struct PhoneHome: View {
         model.problem = message
       }
       .overlay(alignment: .topTrailing) {
-        Button("Fechar") { scanning = false }.buttonStyle(.borderedProminent).padding(24)
+        Button("Close") { scanning = false }.buttonStyle(.borderedProminent).padding(24)
       }
     }
     .alert(
-      "Não foi possível concluir",
+      "Could not complete",
       isPresented: Binding(get: { model.problem != nil }, set: { if !$0 { model.problem = nil } })
     ) {
       Button("OK") { model.problem = nil }
     } message: {
       Text(model.problem ?? "")
     }
-    .confirmationDialog("Esquecer este Mac?", isPresented: $forget, titleVisibility: .visible) {
-      Button("Esquecer", role: .destructive) { model.forgetMac() }
-      Button("Cancelar", role: .cancel) {}
+    .confirmationDialog("Forget this Mac?", isPresented: $forget, titleVisibility: .visible) {
+      Button("Forget", role: .destructive) { model.forgetMac() }
+      Button("Cancel", role: .cancel) {}
     } message: {
-      Text("A credencial será removida deste iPhone. Para revogar o acesso no engine, use o Mac.")
+      Text(
+        "The credential will be removed from this iPhone. To revoke access at the engine, use the Mac."
+      )
     }
   }
   private var onboarding: some View {
@@ -92,24 +94,24 @@ struct PhoneHome: View {
       VStack(spacing: 26) {
         Image(systemName: "laptopcomputer.and.iphone").font(.system(size: 64, weight: .light))
           .foregroundStyle(PhonePalette.accent).padding(.top, 38)
-        Text("Seu terminal, com você").font(.system(size: 28, weight: .bold, design: .rounded))
+        Text("Your terminal, with you").font(.system(size: 28, weight: .bold, design: .rounded))
           .multilineTextAlignment(.center)
         Text(
-          "No Mac, abra o Soyeht Dev e escolha “Adicionar iPhone”. Depois, leia o QR e confirme o acesso no Mac."
+          "On your Mac, open Soyeht Dev and choose “Add iPhone”. Then scan the QR and confirm access on the Mac."
         )
         .multilineTextAlignment(.center).foregroundStyle(PhonePalette.secondary)
         Button {
           scan()
         } label: {
-          Label("Ler QR do Mac", systemImage: "qrcode.viewfinder")
+          Label("Scan Mac QR", systemImage: "qrcode.viewfinder")
             .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity).padding(16)
         }.buttonStyle(.borderedProminent)
-        DisclosureGroup("Usar um link de pareamento") {
+        DisclosureGroup("Use a pairing link") {
           VStack(spacing: 12) {
             TextField("soyeht-next://pair…", text: $uri, axis: .vertical)
               .textInputAutocapitalization(.never).autocorrectionDisabled()
               .textFieldStyle(.roundedBorder).accessibilityIdentifier("pairing-uri")
-            Button("Conectar") {
+            Button("Connect") {
               let value = uri
               uri = ""
               model.pair(value)
@@ -117,7 +119,7 @@ struct PhoneHome: View {
             .disabled(uri.isEmpty)
           }.padding(.top, 10)
         }
-        Text("A tela é somente leitura. O shell continua no Mac.")
+        Text("The screen is read-only. The shell continues on the Mac.")
           .font(.footnote).foregroundStyle(PhonePalette.secondary).multilineTextAlignment(.center)
       }.padding(28)
     }
@@ -126,8 +128,8 @@ struct PhoneHome: View {
     List {
       if client.panes.isEmpty {
         ContentUnavailableView(
-          "Nenhum terminal aberto", systemImage: "terminal",
-          description: Text("Abra uma pane no Mac para continuar aqui.")
+          "No open terminals", systemImage: "terminal",
+          description: Text("Open a pane on the Mac to continue here.")
         )
         .listRowBackground(Color.clear)
       }
@@ -155,24 +157,24 @@ struct PhoneHome: View {
   private func pairingView(_ session: PairingSession) -> some View {
     VStack(spacing: 22) {
       ProgressView()
-      Text("Confirme no Mac").font(.system(.title2, design: .rounded, weight: .bold))
+      Text("Confirm on the Mac").font(.system(.title2, design: .rounded, weight: .bold))
       Text(session.status).multilineTextAlignment(.center)
       Text(session.fingerprint).font(.system(size: 14, design: .monospaced))
         .textSelection(.enabled).padding(18).background(
           PhonePalette.face, in: RoundedRectangle(cornerRadius: 16))
-      Button("Cancelar", role: .cancel) { model.cancelPairing() }
+      Button("Cancel", role: .cancel) { model.cancelPairing() }
     }.padding(28)
   }
   private func scan() {
     Task {
       guard DataScannerViewController.isSupported else {
         model.problem =
-          "A câmera de leitura não está disponível neste dispositivo. Use o link de pareamento."
+          "The scanner is unavailable on this device. Use the pairing link."
         return
       }
       let allowed = await AVCaptureDevice.requestAccess(for: .video)
       guard allowed, DataScannerViewController.isAvailable else {
-        model.problem = "Permita o uso da câmera nos Ajustes ou use o link de pareamento."
+        model.problem = "Allow camera access in Settings or use the pairing link."
         return
       }
       scanning = true
@@ -188,9 +190,9 @@ private struct PhonePane: View {
       if client.connected, let pane = client.panes.first(where: { $0.paneId == paneId }) {
         HStack {
           Text(pane.phrase)
-          if pane.generation > 1 { Text("· shell novo") }
+          if pane.generation > 1 { Text("· new shell") }
           Spacer()
-          Image(systemName: "eye").accessibilityLabel("Somente leitura")
+          Image(systemName: "eye").accessibilityLabel("Read-only")
         }.font(.caption).padding(12).foregroundStyle(PhonePalette.secondary)
         PhoneTerminal(client: client)
         if let gap = client.gapText {
@@ -200,7 +202,7 @@ private struct PhonePane: View {
         }
       } else {
         ContentUnavailableView(
-          "Atualizando a tela", systemImage: "arrow.trianglehead.2.clockwise",
+          "Updating screen", systemImage: "arrow.trianglehead.2.clockwise",
           description: Text(client.connectionText))
       }
     }.background(PhonePalette.face)

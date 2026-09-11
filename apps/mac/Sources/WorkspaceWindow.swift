@@ -33,7 +33,7 @@ struct WorkspaceWindow: View {
           .background(Palette.accent.opacity(0.12), in: Capsule()).foregroundStyle(Palette.accent)
         Spacer()
         Label(
-          client.connected ? "Conectado" : "Reconectando",
+          client.connected ? "Connected" : "Reconnecting",
           systemImage: client.connected ? "circle.fill" : "arrow.trianglehead.2.clockwise"
         )
         .font(.system(size: 12)).foregroundStyle(Palette.secondary)
@@ -41,7 +41,7 @@ struct WorkspaceWindow: View {
           client.beginPairing()
           showPairing = true
         } label: {
-          Label("Adicionar iPhone", systemImage: "iphone")
+          Label("Add iPhone", systemImage: "iphone")
             .padding(.horizontal, 16).padding(.vertical, 10).modifier(Raised(radius: 12))
         }.disabled(!client.connected)
       }.padding(.leading, 72).padding(.top, 3)
@@ -51,7 +51,7 @@ struct WorkspaceWindow: View {
             Text("WORKSPACES").font(.system(size: 10, weight: .bold)).tracking(1.4)
             Spacer()
             Button(action: createPane) { Image(systemName: "plus").padding(6) }
-              .help("Abrir um terminal em uma pasta").disabled(!client.connected)
+              .help("Open a terminal in a directory").disabled(!client.connected)
           }.foregroundStyle(Palette.secondary)
           ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -79,7 +79,7 @@ struct WorkspaceWindow: View {
                             ? Palette.accent.opacity(0.12) : .clear,
                           in: RoundedRectangle(cornerRadius: 12))
                     }.contextMenu {
-                      Button("Fechar terminal", role: .destructive) { paneToClose = pane.paneId }
+                      Button("Close terminal", role: .destructive) { paneToClose = pane.paneId }
                     }
                   }
                 }
@@ -88,7 +88,7 @@ struct WorkspaceWindow: View {
           }
           Spacer(minLength: 0)
           Button(action: createPane) {
-            Label("Novo terminal", systemImage: "plus")
+            Label("New terminal", systemImage: "plus")
               .font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
               .padding(.vertical, 13).modifier(Raised(radius: 12))
           }.disabled(!client.connected)
@@ -99,7 +99,7 @@ struct WorkspaceWindow: View {
               Image(systemName: "terminal").foregroundStyle(Palette.accent)
               Text(pane.name).font(.system(size: 15, weight: .semibold, design: .rounded))
               if pane.generation > 1 {
-                Text("shell novo").font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                Text("new shell").font(.system(size: 11)).foregroundStyle(Palette.secondary)
               }
               Spacer()
               Text(pane.phrase).font(.system(size: 12)).foregroundStyle(Palette.secondary)
@@ -108,7 +108,7 @@ struct WorkspaceWindow: View {
               } label: {
                 Image(systemName: "xmark").padding(6)
               }
-              .help("Fechar este terminal").disabled(!client.connected)
+              .help("Close this terminal").disabled(!client.connected)
             }.padding(.horizontal, 20).padding(.vertical, 16)
             Text(pane.cwd).font(.system(size: 11, design: .monospaced)).foregroundStyle(
               Palette.secondary
@@ -125,14 +125,14 @@ struct WorkspaceWindow: View {
             VStack(spacing: 18) {
               Image(systemName: "terminal").font(.system(size: 42, weight: .light)).foregroundStyle(
                 Palette.secondary)
-              Text("Seu espaço para começar").font(
+              Text("Your space to begin").font(
                 .system(size: 23, weight: .semibold, design: .rounded))
               Text(
-                "Abra um terminal em uma pasta. O processo continua\nmesmo quando você fecha esta janela."
+                "Open a terminal in a directory. The process continues\neven when you close this window."
               )
               .font(.system(size: 14)).foregroundStyle(Palette.secondary).multilineTextAlignment(
                 .center)
-              Button("Escolher pasta", action: createPane)
+              Button("Choose directory", action: createPane)
                 .padding(.horizontal, 22).padding(.vertical, 12).modifier(Raised(radius: 12))
                 .disabled(!client.connected)
             }.frame(maxWidth: .infinity)
@@ -148,19 +148,19 @@ struct WorkspaceWindow: View {
     }.padding(24).background(Palette.canvas).foregroundStyle(Palette.ink).buttonStyle(.plain)
       .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
       .alert(
-        "Fechar terminal?",
+        "Close terminal?",
         isPresented: Binding(get: { paneToClose != nil }, set: { if !$0 { paneToClose = nil } })
       ) {
-        Button("Cancelar", role: .cancel) { paneToClose = nil }
-        Button("Fechar", role: .destructive) {
+        Button("Cancel", role: .cancel) { paneToClose = nil }
+        Button("Close", role: .destructive) {
           if let id = paneToClose { client.closePane(id) }
           paneToClose = nil
         }
       } message: {
-        Text("O shell desta pane será encerrado.")
+        Text("This pane's shell will be terminated.")
       }
       .alert(
-        "Não foi possível concluir",
+        "Could not complete",
         isPresented: Binding(
           get: { client.problem != nil }, set: { if !$0 { client.problem = nil } })
       ) {
@@ -171,14 +171,14 @@ struct WorkspaceWindow: View {
       .overlay(alignment: .bottom) {
         if let request = client.pairRequests.first {
           VStack(alignment: .leading, spacing: 12) {
-            Text("Permitir acesso de \(request.deviceName)?").font(.headline)
-            Text("Confira esta impressão digital no iPhone:").font(.subheadline)
+            Text("Allow access for \(request.deviceName)?").font(.headline)
+            Text("Compare this fingerprint on the iPhone:").font(.subheadline)
             Text(request.fingerprint).font(.system(size: 12, design: .monospaced)).textSelection(
               .enabled)
             HStack {
-              Button("Recusar") { client.decidePairing(request, approve: false) }
+              Button("Deny") { client.decidePairing(request, approve: false) }
               Spacer()
-              Button("Permitir") { client.decidePairing(request, approve: true) }.buttonStyle(
+              Button("Allow") { client.decidePairing(request, approve: true) }.buttonStyle(
                 .borderedProminent)
             }
           }.padding(22).frame(width: 420).modifier(Raised(radius: 20)).padding(.bottom, 40)
@@ -190,7 +190,7 @@ struct WorkspaceWindow: View {
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.allowsMultipleSelection = false
-    panel.prompt = "Abrir terminal"
+    panel.prompt = "Open terminal"
     panel.begin { response in
       if response == .OK, let directory = panel.url { client.createPane(directory: directory) }
     }
@@ -200,15 +200,15 @@ struct WorkspaceWindow: View {
   }
   private var pairingContent: some View {
     VStack(spacing: 20) {
-      Text("Continue no iPhone").font(.system(size: 24, weight: .semibold, design: .rounded))
+      Text("Continue on iPhone").font(.system(size: 24, weight: .semibold, design: .rounded))
       Text(
-        "Abra o Soyeht Dev no iPhone e leia este código.\nOs dois dispositivos precisam estar na mesma tailnet."
+        "Open Soyeht Dev on iPhone and scan this code.\nBoth devices must be on the same tailnet."
       )
       .multilineTextAlignment(.center).foregroundStyle(Palette.secondary)
       if let code = client.pairCode, let image = qr(code.uri) {
         Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
           .padding(16).background(.white, in: RoundedRectangle(cornerRadius: 16))
-        Text("Código válido por 10 minutos.").font(.caption).foregroundStyle(Palette.secondary)
+        Text("Code valid for 10 minutes.").font(.caption).foregroundStyle(Palette.secondary)
       } else {
         ProgressView().frame(width: 292, height: 292)
       }
@@ -217,8 +217,8 @@ struct WorkspaceWindow: View {
         Text(request.fingerprint).font(.system(size: 11, design: .monospaced)).textSelection(
           .enabled)
         HStack {
-          Button("Recusar") { client.decidePairing(request, approve: false) }
-          Button("Permitir") {
+          Button("Deny") { client.decidePairing(request, approve: false) }
+          Button("Allow") {
             client.decidePairing(request, approve: true)
             showPairing = false
           }
@@ -227,30 +227,30 @@ struct WorkspaceWindow: View {
       }
       if !client.devices.isEmpty {
         VStack(alignment: .leading, spacing: 12) {
-          Text("iPhones pareados").font(.headline)
+          Text("Paired iPhones").font(.headline)
           ForEach(client.devices, id: \.deviceId) { device in
             HStack {
               Label(device.name, systemImage: "iphone")
               Spacer()
-              Button("Revogar", role: .destructive) { deviceToRevoke = device.deviceId }
+              Button("Revoke", role: .destructive) { deviceToRevoke = device.deviceId }
             }
           }
         }.padding(.vertical, 12)
       }
-      Button("Fechar") { showPairing = false }
+      Button("Close") { showPairing = false }
     }.padding(32).frame(width: 460).background(Palette.canvas).foregroundStyle(Palette.ink)
       .confirmationDialog(
-        "Revogar o acesso deste iPhone?",
+        "Revoke this iPhone's access?",
         isPresented: Binding(
           get: { deviceToRevoke != nil }, set: { if !$0 { deviceToRevoke = nil } })
       ) {
-        Button("Revogar", role: .destructive) {
+        Button("Revoke", role: .destructive) {
           if let id = deviceToRevoke { client.revokeDevice(id) }
           deviceToRevoke = nil
         }
-        Button("Cancelar", role: .cancel) { deviceToRevoke = nil }
+        Button("Cancel", role: .cancel) { deviceToRevoke = nil }
       } message: {
-        Text("As conexões serão fechadas. Um novo acesso exige outro pareamento.")
+        Text("Connections will close. Access will require pairing again.")
       }
   }
   private func qr(_ value: String) -> NSImage? {

@@ -39,7 +39,7 @@ struct QRScanner: UIViewControllerRepresentable {
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     do { try scanner.startScanning() } catch {
-      failure("Não foi possível iniciar a câmera. Use o link de pareamento.")
+      failure("Could not start the camera. Use the pairing link.")
     }
   }
   func dataScanner(
@@ -60,6 +60,6 @@ struct QRScanner: UIViewControllerRepresentable {
     _ dataScanner: DataScannerViewController,
     becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
   ) {
-    failure("A leitura foi interrompida. Tente novamente ou use o link de pareamento.")
+    failure("Scanning was interrupted. Try again or use the pairing link.")
   }
 }

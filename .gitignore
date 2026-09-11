@@ -12,5 +12,5 @@ __pycache__/
 *.pyc
 *.xcresult/
 
-# análise interna de outros produtos: NUNCA versionar
+# Private local analysis: never commit
 benchmark/

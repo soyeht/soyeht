@@ -203,7 +203,7 @@ impl Core {
             result["deviceToken"] = json!(pending.token);
             result["deviceId"] = json!(pending.device.as_ref().map(|d| &d.device_id));
         } else {
-            result["reason"] = json!("Recusado no Mac");
+            result["reason"] = json!("Denied on Mac");
         }
         if let Some(client) = self.clients.get(connection) {
             client

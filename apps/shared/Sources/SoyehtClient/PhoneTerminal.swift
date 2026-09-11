@@ -19,7 +19,7 @@
       view.nativeForegroundColor = UIColor(
         red: 62 / 255, green: 74 / 255, blue: 102 / 255, alpha: 1)
       view.terminalDelegate = context.coordinator
-      view.accessibilityLabel = "Tela do terminal, somente leitura"
+      view.accessibilityLabel = "Terminal screen, read-only"
       client.terminalOutput = { [weak view] bytes, reset in
         guard let view else { return }
         if reset { view.getTerminal().resetToInitialState() }

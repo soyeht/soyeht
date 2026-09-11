@@ -1,40 +1,39 @@
-# Protocolo executável
+# Executable protocol
 
-`protocol.json` é a fonte única dos formatos. `x-methods` liga cada método
-a seus parâmetros e resultado. `x-events` liga cada notificação a seus
-parâmetros e declara se ela tem cursor durável. `x-limits` define os limites
-compartilhados; `x-framing` descreve os inteiros do quadro binário.
+`protocol.json` is the single source of formats. `x-methods` binds each method
+to its parameters and result. `x-events` binds each notification to its parameters
+and declares whether it has a durable cursor. `x-limits` defines shared limits;
+`x-framing` describes binary frame integers.
 
-O formato é JSON Schema 2020-12. O gerador aceita referências locais em
-`$defs`, objetos com campos obrigatórios e opcionais, arrays, strings,
-números, inteiros, booleanos, null, enum e oneOf. Aceita os limites numéricos
-e de comprimento, pattern e contentEncoding declarados no esquema.
-Qualquer palavra-chave desconhecida em um tipo interrompe a geração.
+The format is JSON Schema 2020-12. The generator accepts local references in
+`$defs`, objects with required and optional fields, arrays, strings, numbers,
+integers, booleans, null, enum and oneOf. It accepts numeric and length limits,
+pattern and contentEncoding declared in the schema.
+Any unknown keyword in a type stops generation.
 
-Leitores ignoram campos desconhecidos, conforme o contrato 08. Enums
-permanecem fechados. Os modelos gerados representam os tipos; regras de
-estado, identidade, autorização e limites do transporte pertencem ao engine.
-O leitor TypeScript valida os parâmetros contra o esquema antes de entregar
-os tipos. Serde e Codable verificam os tipos durante a desserialização.
-Os limites de tamanho do quadro são verificados pelos três codecs binários.
+Readers ignore unknown fields, as required by contract 08. Enums remain closed.
+Generated models represent types; state rules, identity, authorization and transport
+limits belong to the engine. The TypeScript reader validates parameters against
+the schema before returning types. Serde and Codable check types during deserialization.
+Frame size limits are checked by all three binary codecs.
 
-Pedidos e notificações usam o envelope JSON-RPC 2.0. `welcome` é o resultado
-de `hello`. Desafio, partes do snapshot e eventos do stream são notificações
-sem cursor de estado; eventos duráveis levam `params.eventId`. Inteiros de
-64 bits vão como string decimal; no quadro binário vão como u64 big-endian.
+Requests and notifications use the JSON-RPC 2.0 envelope. `welcome` is the result
+of `hello`. Challenges, snapshot parts and stream events are notifications without
+a state cursor; durable events carry `params.eventId`. 64-bit integers travel as
+decimal strings; in binary frames they are big-endian u64.
 
-Para alterar um formato, edite o esquema e os vetores correspondentes:
+To change a format, edit the schema and corresponding vectors:
 
 ```sh
 python3 contracts/generate.py
 ```
 
-O gerador não usa rede. Ele produz os modelos Rust, Swift e TypeScript, os
-limites e os despachantes dos testes. Os arquivos produzidos entram no mesmo
-commit do esquema. `--check` não escreve nada e falha quando divergem.
+The generator does not use the network. It produces Rust, Swift and TypeScript
+models, limits and test dispatchers. Generated files are included in the same
+commit as the schema. `--check` writes nothing and fails if they differ.
 
-`vectors/messages.json` contém valores dos tipos e envelopes completos para
-cada método e evento. Os mesmos valores passam pelos tipos Rust e Swift e
-pelo leitor TypeScript. `vectors/frames.json` fixa bytes de referência nas
-duas direções. Controles negativos verificam truncamento, tamanho excessivo,
-tipo de quadro inválido, tipos JSON incorretos e enums desconhecidos.
+`vectors/messages.json` contains type values and full envelopes for every method
+and event. The same values pass through Rust and Swift types and the TypeScript
+reader. `vectors/frames.json` fixes reference bytes in both directions. Negative
+controls check truncation, excessive size, invalid frame kinds, incorrect JSON
+types and unknown enums.

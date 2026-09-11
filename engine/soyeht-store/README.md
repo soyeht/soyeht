@@ -1,30 +1,28 @@
-# Armazenamento do engine
+# Engine storage
 
-`database::Store` abre `soyeht.db`, aplica migrações e executa a transação
-de estado, eventos e resultado idempotente. O banco usa WAL, synchronous=FULL
-e foreign keys. O engine é seu único escritor. IDs de eventos usam o inteiro
-positivo do SQLite; offsets de terminal usam o domínio u64 do protocolo.
+`database::Store` opens `soyeht.db`, applies migrations and executes the transaction
+for state, events and the idempotent result. The database uses WAL,
+synchronous=FULL and foreign keys. The engine is its only writer. Event IDs use
+SQLite's positive integer range; terminal offsets use the protocol's u64 domain.
 
-`snapshot` lê estado e cursor juntos. `replay` usa cursor exclusivo e recusa
-um cursor antigo antes de devolver qualquer evento. A limpeza mantém no
-máximo dez mil eventos ou sete dias, sem perder o contador quando todos os
-eventos antigos saem. Resultados idempotentes têm retenção de 24 horas.
+`snapshot` reads state and cursor together. `replay` uses an exclusive cursor and
+refuses an old cursor before returning any event. Cleanup keeps at most ten
+thousand events or seven days without losing the counter when all old events
+are removed. Idempotent results have 24-hour retention.
 
-`segments::Log` mantém a tela da pane. O formato começa com `SOYPT001`.
-Cada registro tem tipo u8, offset u64, tamanho u32, payload e CRC32 u32;
-inteiros são big-endian. Tipo zero carrega bytes e tipo um carrega o fim de
-uma lacuna como u64. O máximo de dados por registro é 64 KiB. A gravação
-sincroniza antes de retornar.
+`segments::Log` maintains the pane's screen. The format begins with `SOYPT001`.
+Each record has a u8 type, u64 offset, u32 size, payload and u32 CRC32;
+integers are big-endian. Type zero carries bytes and type one carries the end of
+a gap as u64. The maximum data per record is 64 KiB. Writes synchronize before returning.
 
-A recuperação só descarta uma cauda incompleta no último arquivo. Corrupção
-de checksum, formato inválido ou lacuna sem marcador são erros. A limpeza
-remove segmentos antigos inteiros e sincroniza o diretório. Não há um log
-plano paralelo.
+Recovery discards only an incomplete tail in the last file. Checksum corruption,
+invalid format or an unmarked gap are errors. Cleanup removes entire old segments
+and synchronizes the directory. There is no parallel flat log.
 
 ```sh
 cargo test --manifest-path engine/Cargo.toml -p soyeht-store
 ```
 
-Os testes injetam falha dentro de uma transação, banco cheio, versão futura,
-cauda truncada e corrupção de checksum. Também verificam backup, idempotência,
-cursor, rotação de 512 KiB e retenção de 32 MiB.
+Tests inject failure inside a transaction, a full database, a future version,
+a truncated tail and checksum corruption. They also verify backup, idempotency,
+cursor handling, 512 KiB rotation and 32 MiB retention.

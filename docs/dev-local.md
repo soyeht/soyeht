@@ -1,6 +1,6 @@
-# Rodar o perfil Dev novo
+# Run the new Dev profile
 
-Instale as ferramentas de `docs/toolchains.md`. Compile na raiz:
+Install the tools listed in `docs/toolchains.md`. Build from the repository root:
 
 ```sh
 cargo build --manifest-path engine/Cargo.toml --locked --workspace
@@ -10,20 +10,19 @@ engine/target/debug/soyeht --profile dev pane create --shell
 engine/target/debug/soyeht --profile dev pane list
 ```
 
-O instalador cria somente os serviços `com.soyeht.next.dev.ptyd` e
-`com.soyeht.next.dev.engine`. Os executáveis, o banco e os logs ficam em
-`~/Library/Application Support/Soyeht.next/dev/`. Os arquivos dos serviços
-ficam em `~/Library/LaunchAgents/`. O engine escuta no loopback e no endereço
-da tailnet (IPv4 e IPv6), na porta 8291. Se a tailnet subir depois ou mudar de endereço, o engine detecta a mudança
-e sai; o launchd o reinicia com os endereços atuais. O supervisor permanece
-vivo, os shells são adotados e os clientes reconectam. A consulta usa apenas
-as interfaces locais do sistema, sem chamar outro programa.
+The installer creates only the `com.soyeht.next.dev.ptyd` and
+`com.soyeht.next.dev.engine` services. Executables, database and logs live in
+`~/Library/Application Support/Soyeht.next/dev/`. Service files live in
+`~/Library/LaunchAgents/`. The engine listens on loopback and tailnet addresses
+(IPv4 and IPv6), port 8291. If the tailnet becomes available later or changes
+address, the engine detects the change and exits; launchd restarts it with the
+current addresses. The supervisor stays alive, shells are adopted and clients
+reconnect. The query uses only local system interfaces, without calling another program.
 
-`pane create --shell --cwd CAMINHO` abre o shell nessa pasta e cria o
-workspace correspondente quando necessário. O diretório atual é o padrão.
-Para repetir uma criação com a mesma identidade, use
-`--idempotency-key CHAVE`. As respostas são JSON; erros saem em stderr com
-código de saída diferente de zero.
+`pane create --shell --cwd PATH` opens the shell in that directory and creates
+the corresponding workspace when needed. The current directory is the default.
+To repeat creation with the same identity, use `--idempotency-key KEY`.
+Responses are JSON; errors go to stderr with a nonzero exit code.
 
 ```sh
 engine/target/debug/soyeht --profile dev pane close ID
@@ -31,12 +30,12 @@ engine/target/debug/soyeht --profile dev device pair-start
 engine/target/debug/soyeht --profile dev device list
 ```
 
-O pareamento ainda precisa do consentimento no cliente Mac. Exibir o código
-pela CLI não autoriza um aparelho sozinho.
+Pairing still requires consent in the Mac client. Displaying the code through
+the CLI does not authorize a device by itself.
 
-Para substituir os binários do perfil novo, pare primeiro esses dois
-serviços. Isso encerra os shells desse perfil. O instalador recusa substituir
-um serviço que continua carregado.
+To replace the new profile's binaries, stop those two services first.
+This terminates that profile's shells. The installer refuses to replace
+a service that remains loaded.
 
 ```sh
 launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.engine"
@@ -45,12 +44,12 @@ cargo build --manifest-path engine/Cargo.toml --locked --workspace
 python3 scripts/install_dev.py
 ```
 
-Para atualizar apenas o engine e preservar os shells, pare somente o
-serviço `com.soyeht.next.dev.engine`, compile e rode
-`python3 scripts/install_dev.py --component engine`. O supervisor permanece
-ativo e o engine adota os mesmos processos.
+To update only the engine and preserve shells, stop only
+`com.soyeht.next.dev.engine`, build and run
+`python3 scripts/install_dev.py --component engine`. The supervisor remains
+active and the engine adopts the same processes.
 
-Os testes podem usar `--data-dir CAMINHO` para conectar a uma instalação
-temporária. Em um runner sem domínio gráfico, o instalador aceita
-`--domain user`; os comandos de inspeção e parada usam esse mesmo domínio.
-Nenhuma dessas opções aceita outro nome de perfil ou de serviço.
+Tests may use `--data-dir PATH` to connect to a temporary installation.
+On a runner without a graphical domain, the installer accepts `--domain user`;
+inspection and stop commands use that same domain.
+None of these options accepts another profile or service name.

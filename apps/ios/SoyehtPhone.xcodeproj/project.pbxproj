@@ -15,8 +15,8 @@
 			"buildConfigurationList" = "76F8DEC3DFE0BDB465198890";
 			"packageReferences" = ( "BC4A71180870F7945155FBB0", );
 			"targets" = ( "34A04005BCAF206EEC990BD9", );
-			"developmentRegion" = "pt-BR";
-			"knownRegions" = ( "pt-BR", "en", "Base", );
+			"developmentRegion" = "en";
+			"knownRegions" = ( "en", "Base", );
 			"isa" = "PBXProject";
 			"compatibilityVersion" = "Xcode 14.0";
 			"productRefGroup" = "0A3E27B8CA818264D75C8D81";

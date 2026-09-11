@@ -11,7 +11,7 @@ public final class EngineClient {
   public private(set) var connected = false
   public private(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
-  public private(set) var connectionText = "Conectando ao perfil Dev…"
+  public private(set) var connectionText = "Connecting to the Dev profile…"
   public var problem: String?
   public private(set) var selectedPaneId: String?
   public private(set) var gapText: String?
@@ -133,7 +133,7 @@ public final class EngineClient {
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
     connectionRevision &+= 1
     connected = true
-    connectionText = "Perfil Dev · conectado"
+    connectionText = "Dev profile · connected"
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
     if let pane = selectedPaneId { try await subscribe(pane) }
     await reader.value
@@ -196,7 +196,7 @@ public final class EngineClient {
         request.continuation.resume(
           throwing: ClientFailure.remote(
             message["error"]["data"]["kind"].string ?? "internal_error",
-            message["error"]["message"].string ?? "Pedido recusado"))
+            message["error"]["message"].string ?? "Request refused"))
         return
       }
       let result = message["result"]
@@ -220,7 +220,7 @@ public final class EngineClient {
     if message["id"] == .null, message["error"] != .null {
       throw ClientFailure.remote(
         message["error"]["data"]["kind"].string ?? "internal_error",
-        message["error"]["message"].string ?? "Conexão encerrada")
+        message["error"]["message"].string ?? "Connection closed")
     }
     guard let method = message["method"].string else { return }
     let params = message["params"]
@@ -261,7 +261,7 @@ public final class EngineClient {
     case "stream.gap":
       guard params["streamId"].string == position?.streamId else { return }
       try position?.gap(params.decoded(StreamGapEvent.self))
-      gapText = "Parte da saída não foi gravada. A tela contém uma lacuna."
+      gapText = "Some output was not recorded. The screen contains a gap."
     case "stream.replay_done":
       guard params["streamId"].string == position?.streamId else { return }
       guard params["nextOffset"].string == position?.next.map(String.init) else {
@@ -354,7 +354,7 @@ public final class EngineClient {
   public func input(_ data: Data) {
     guard !readOnly, connected, let pane = selectedPaneId, !data.isEmpty else { return }
     guard queuedInputBytes + data.count <= 1_048_576 else {
-      problem = "Entrada grande demais. Aguarde a fila de teclado esvaziar."
+      problem = "Input is too large. Wait for the keyboard queue to empty."
       return
     }
     inputQueue.append((pane, data))

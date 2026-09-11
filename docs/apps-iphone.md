@@ -1,39 +1,39 @@
-# App iPhone no perfil Dev
+# iPhone app in the Dev profile
 
-Build para Simulator, igual à CI:
+Simulator build, matching CI:
 
 ```sh
 bash scripts/check_ios.sh
 ```
 
-Para executar no Simulator com acesso ao Keychain, use assinatura local:
+To run in Simulator with Keychain access, use local signing:
 
 ```sh
-SOYEHT_DEVELOPMENT_TEAM=SEU_TIME bash scripts/check_ios.sh --sign-simulator
+SOYEHT_DEVELOPMENT_TEAM=YOUR_TEAM bash scripts/check_ios.sh --sign-simulator
 ```
 
-O build sem assinatura serve ao check de compilação da CI. Ele não oferece a
-identidade exigida pelo Keychain para executar o pareamento.
+The unsigned build serves CI compilation checks. It does not provide the
+identity required by Keychain to run pairing.
 
-Build local para aparelho com assinatura automática de desenvolvimento:
+Local device build with automatic development signing:
 
 ```sh
-SOYEHT_DEVELOPMENT_TEAM=SEU_TIME bash scripts/check_ios.sh --sign
+SOYEHT_DEVELOPMENT_TEAM=YOUR_TEAM bash scripts/check_ios.sh --sign
 ```
 
-Abra `apps/ios/SoyehtPhone.xcodeproj`, esquema `SoyehtPhone`, selecione o seu
-iPhone e execute com a conta de desenvolvimento do time. O bundle é
-`com.soyeht.next.dev.ios`. O app atual não participa desse build.
+Open `apps/ios/SoyehtPhone.xcodeproj`, scheme `SoyehtPhone`, select your iPhone
+and run with the team's development account. The bundle is
+`com.soyeht.next.dev.ios`. The current app does not participate in this build.
 
-No Mac novo, escolha “Adicionar iPhone”. No iPhone novo, escolha “Ler QR do Mac”.
-Compare as impressões digitais e permita no Mac. Abra uma pane pela lista.
-O iPhone lê o terminal; teclado ao vivo fica fora desta fatia. Os dois aparelhos
-precisam estar conectados à mesma tailnet.
+On the new Mac app, choose “Add iPhone”. On the new iPhone app, choose “Scan Mac QR”.
+Compare fingerprints and allow access on the Mac. Open a pane from the list.
+The iPhone reads the terminal; live keyboard input is outside this slice.
+Both devices must be connected to the same tailnet.
 
-Ao voltar do fundo, aguarde a sincronização completa. Se o acesso foi revogado,
-faça novo pareamento. “Esquecer este Mac” remove a credencial do iPhone; revogar
-no Mac encerra o acesso no engine e fecha conexões já abertas.
+On returning from the background, wait for full synchronization. If access was
+revoked, pair again. “Forget this Mac” removes the iPhone's credential; revoking
+on the Mac ends access at the engine and closes existing connections.
 
-Sem câmera compatível, o mesmo link pode ser colado ou aberto no app. O QR
-expira em dez minutos e só uma aprovação consome o código. Nunca coloque o link,
-o token ou a chave privada em um relatório ou issue.
+Without a compatible camera, the same link can be pasted or opened in the app.
+The QR expires in ten minutes and only one approval consumes the code.
+Never put the link, token or private key in a report or issue.

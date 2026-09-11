@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>pt-BR</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Soyeht Dev</string>
 	<key>CFBundleExecutable</key>
@@ -25,10 +25,10 @@
 	<key>SoyehtLicense</key>
 	<string>Apache-2.0</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Leia o QR mostrado pelo Soyeht Dev no Mac para parear este iPhone.</string>
+	<string>Scan the QR shown by Soyeht Dev on the Mac to pair this iPhone.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Conecte ao seu Mac pela tailnet para ler a tela das panes.</string>
-	<!-- HTTP e WebSocket usam a criptografia da tailnet. O parser aceita somente endereços da tailnet e loopback. Contrato 06. -->
+	<string>Connect to your Mac over the tailnet to read pane screens.</string>
+	<!-- HTTP and WebSocket use tailnet encryption. The parser only accepts tailnet and loopback addresses. Contract 06. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

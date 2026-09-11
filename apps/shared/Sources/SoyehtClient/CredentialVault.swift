@@ -38,6 +38,6 @@ public enum CredentialVault {
     guard status == errSecSuccess || status == errSecItemNotFound else { throw failure(status) }
   }
   private static func failure(_ status: OSStatus) -> ClientFailure {
-    .remote("keychain_unavailable", "Não foi possível acessar a credencial protegida (\(status)).")
+    .remote("keychain_unavailable", "Could not access the protected credential (\(status)).")
   }
 }

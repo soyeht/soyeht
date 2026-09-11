@@ -5,7 +5,7 @@ import SoyehtProtocol
 @MainActor @Observable
 public final class PairingSession {
   public private(set) var fingerprint = ""
-  public private(set) var status = "Conectando ao Mac…"
+  public private(set) var status = "Connecting to the Mac…"
   @ObservationIgnored private var wire: Wire?
   @ObservationIgnored private var earlyResult: PairResultEvent?
 
@@ -57,7 +57,7 @@ public final class PairingSession {
         }
         guard prove?.requestId == result.requestId else { throw ClientFailure.invalidFrame }
         _ = try await request("pair.prove", .encoded(prove!))
-        status = "Confira a impressão digital e permita o acesso no Mac."
+        status = "Compare the fingerprint and allow access on the Mac."
         while earlyResult == nil {
           guard Date() < deadline else { throw ClientFailure.timeout }
           try Task.checkCancellation()
@@ -72,7 +72,7 @@ public final class PairingSession {
         guard paired.requestId == result.requestId else { throw ClientFailure.invalidFrame }
         guard paired.approved, let token = paired.deviceToken, let device = paired.deviceId else {
           throw ClientFailure.remote(
-            "pairing_refused", paired.reason ?? "O Mac não permitiu o acesso.")
+            "pairing_refused", paired.reason ?? "The Mac did not allow access.")
         }
         return DeviceCredential(
           engineId: link.engineId, deviceId: device, address: link.address,
@@ -81,7 +81,7 @@ public final class PairingSession {
         wire.close()
         if Task.isCancelled { throw CancellationError() }
         guard attempt < 4, Date() < deadline else { throw error }
-        status = "Reconectando ao Mac…"
+        status = "Reconnecting to the Mac…"
         try await Task.sleep(for: .seconds(1))
       }
     }
@@ -113,7 +113,7 @@ public final class PairingSession {
       if message["error"] != .null {
         throw ClientFailure.remote(
           message["error"]["data"]["kind"].string ?? "pairing_failed",
-          message["error"]["message"].string ?? "Pareamento recusado.")
+          message["error"]["message"].string ?? "Pairing refused.")
       }
       return message["result"]
     }

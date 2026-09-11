@@ -25,7 +25,7 @@ public struct PairingLink: Sendable {
       Self.permittedHost(host), let url = endpoint.url
     else {
       throw ClientFailure.remote(
-        "invalid_pairing_code", "Este QR não é um pareamento válido do Soyeht Dev.")
+        "invalid_pairing_code", "This QR is not a valid Soyeht Dev pairing.")
     }
     self.engineId = engine
     self.code = code
@@ -64,7 +64,7 @@ public struct DeviceCredential: Codable, Sendable {
       nonce.count == 32
     else {
       throw ClientFailure.remote(
-        "engine_identity_changed", "A identidade do Mac mudou. Faça um novo pareamento.")
+        "engine_identity_changed", "The Mac identity changed. Pair again.")
     }
     let key = try Curve25519.Signing.PrivateKey(rawRepresentation: key)
     let bytes = Data("soyeht-hello-v1".utf8) + nonce + Data(engineId.utf8) + Data(token.utf8)
