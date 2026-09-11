@@ -10,6 +10,12 @@ python3 -m unittest discover -s scripts -p 'test_forbidden_terms.py'
 python3 scripts/forbidden_terms.py "$@"
 unset FORBIDDEN_TERMS
 
+python3 -m unittest discover -s scripts -p 'test_hardening_gate.py'
+python3 scripts/hardening_gate.py check-no-sql-outside-store "$@"
+python3 scripts/hardening_gate.py check-no-panic-in-production "$@"
+python3 scripts/hardening_gate.py check-verification-not-weakened "$@"
+python3 scripts/hardening_gate.py check-function-length "$@"
+
 python3 contracts/generate.py --check
 python3 -m unittest discover -s contracts -p 'test_*.py'
 python3 -m unittest discover -s scripts -p 'test_install_dev.py'
