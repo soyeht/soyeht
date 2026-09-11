@@ -27,8 +27,9 @@ and run with the team's development account. The bundle is
 
 On the new Mac app, choose “Add iPhone”. On the new iPhone app, choose “Scan Mac QR”.
 Compare fingerprints and allow access on the Mac. Open a pane from the list.
-The iPhone reads the terminal; live keyboard input is outside this slice.
-Both devices must be connected to the same tailnet.
+The iPhone reads terminals; live terminal keyboard input is outside this slice.
+For agent panes it also sends prompts, answers permission requests and changes
+yolo after engine confirmation. Both devices must be connected to the same tailnet.
 
 On returning from the background, wait for full synchronization. If access was
 revoked, pair again. “Forget this Mac” removes the iPhone's credential; revoking

@@ -28,6 +28,13 @@ Client tests use disposable processes and never the installed socket:
 swift test --package-path apps/shared
 ```
 
+An agent pane is created from the same new-pane sheet by selecting agent mode,
+an installed harness, its advertised model and effort, a permission mode and a
+working directory. The conversation view renders normalized messages, thoughts,
+tool calls, plans, inline terminal results, questions, queue state and confirmed
+configuration. See [the real ACP procedure](manual-acceptance-slice-2.md) for the
+authenticated adapter and physical-device checks.
+
 Open a terminal by choosing a directory. The list and screen follow the engine.
 Use “Add iPhone” to display the QR; compare the fingerprint on the phone before
 allowing access. The code expires in ten minutes. Pairing requires the engine

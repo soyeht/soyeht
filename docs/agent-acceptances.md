@@ -23,6 +23,22 @@ cover device authentication and WebSocket transport; actual Mac/iPhone rendering
 and the real-adapter procedure are separate checks. Passing this suite alone
 does not establish device UI or real-provider behavior.
 
+An authenticated, opt-in compatibility check uses the pinned official ACP
+adapter in a disposable profile:
+
+```sh
+SOYEHT_REAL_ACP=1 python3 scripts/e2e_real_acp.py \
+  --report .cache/e2e-real-acp.json
+```
+
+This command downloads the pinned adapter into a temporary directory. It uses a
+temporary project rule to force one harmless shell permission, answers it through
+a second engine client, changes and restores the advertised model, exercises yolo,
+and kills only the disposable engine while a real turn is active. It removes its
+services, files and adapter installation afterward. The command never runs in the
+normal merge gate unless `SOYEHT_REAL_ACP=1` is explicitly present. It does not
+replace the physical iPhone procedure.
+
 Permission expiry is accelerated by changing only the pending test request's
 timestamp while the disposable engine is stopped. No shorter production timeout
 or clock override is added. For the engine-outage case, only its uniquely named
