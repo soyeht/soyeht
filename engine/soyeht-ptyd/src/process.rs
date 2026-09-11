@@ -62,7 +62,7 @@ pub fn spawn(config: &Spawn) -> io::Result<(Child, File)> {
         .env_clear();
     // Only these inherited values are needed by shells; no engine credentials.
     for name in [
-        "HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "TMPDIR", "SHELL",
+        "HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "TMPDIR", "SHELL", "ZDOTDIR",
     ] {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);

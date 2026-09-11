@@ -32,6 +32,7 @@ cargo clippy --manifest-path engine/Cargo.toml --locked --workspace --all-target
 cargo build --manifest-path engine/Cargo.toml --locked --workspace
 cargo test --manifest-path engine/Cargo.toml --locked --workspace
 bash scripts/check_swift.sh
+python3 scripts/e2e.py --report .cache/e2e.json
 npm --prefix contracts/typescript ci --ignore-scripts
 npm --prefix contracts/typescript run check
 npm --prefix contracts/typescript test
