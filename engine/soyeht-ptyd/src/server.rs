@@ -1,0 +1,391 @@
+use crate::{process, registry::Registry, retention::Retention, wire::*};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use soyeht_protocol::{frame::Frame, limits};
+use std::collections::BTreeMap;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::net::Shutdown;
+use std::os::fd::AsRawFd;
+use std::os::unix::{
+    fs::{FileTypeExt, OpenOptionsExt, PermissionsExt},
+    net::{UnixListener, UnixStream},
+};
+use std::path::{Path, PathBuf};
+use std::process::Child;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread;
+use std::time::Duration;
+use uuid::Uuid;
+
+struct Live {
+    master: Mutex<File>,
+    child: Mutex<Child>,
+    retention: Mutex<Retention>,
+    exited: AtomicBool,
+    read_done: AtomicBool,
+}
+
+struct State {
+    directory: PathBuf,
+    supervisor_id: String,
+    registry: Registry,
+    live: BTreeMap<String, Arc<Live>>,
+    active: Option<(String, UnixStream)>,
+}
+
+fn error(kind: &str, message: &str) -> Response {
+    Response::Error {
+        kind: kind.into(),
+        message: message.into(),
+    }
+}
+
+fn send(stream: &mut UnixStream, response: &Response) -> io::Result<()> {
+    Frame::Json(serde_json::to_vec(response)?).write_to(stream)
+}
+
+pub fn run(directory: &Path) -> io::Result<()> {
+    fs::create_dir_all(directory)?;
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(directory.join("ptyd.lock"))?;
+    // SAFETY: lock is a live owned file, kept open for the server's lifetime.
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err(io::Error::other("ptyd already running"));
+    }
+    let socket = directory.join("ptyd.sock");
+    match fs::symlink_metadata(&socket) {
+        Ok(metadata) if metadata.file_type().is_socket() => fs::remove_file(&socket)?,
+        Ok(_) => return Err(io::Error::other("socket path is not a socket")),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => (),
+        Err(e) => return Err(e),
+    }
+    let registry = Registry::load(directory)?;
+    let listener = UnixListener::bind(&socket)?;
+    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
+    let state = Arc::new(Mutex::new(State {
+        directory: directory.to_owned(),
+        supervisor_id: Uuid::new_v4().to_string(),
+        registry,
+        live: BTreeMap::new(),
+        active: None,
+    }));
+    println!("{{\"event\":\"ptyd.ready\",\"version\":{VERSION}}}");
+    for incoming in listener.incoming() {
+        let stream = incoming?;
+        let state = Arc::clone(&state);
+        thread::spawn(move || {
+            let _ = connection(stream, state);
+        });
+    }
+    Ok(())
+}
+
+fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> io::Result<()> {
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    let Some(Frame::Json(bytes)) = Frame::read_from(&mut stream)? else {
+        return Ok(());
+    };
+    let Request::Hello {
+        version,
+        engine_generation,
+    } = serde_json::from_slice(&bytes)?
+    else {
+        return send(&mut stream, &error("unauthorized", "hello required"));
+    };
+    let connection_id = Uuid::new_v4().to_string();
+    {
+        let mut state = shared.lock().expect("state lock");
+        if version != VERSION {
+            return send(
+                &mut stream,
+                &error("version_unsupported", "incompatible supervisor protocol"),
+            );
+        }
+        if engine_generation < state.registry.engine_generation {
+            return send(
+                &mut stream,
+                &error("stale_engine_generation", "engine generation is stale"),
+            );
+        }
+        if engine_generation == state.registry.engine_generation && state.active.is_some() {
+            return send(
+                &mut stream,
+                &error("engine_connected", "an engine is already connected"),
+            );
+        }
+        let prior_generation = state.registry.engine_generation;
+        state.registry.engine_generation = engine_generation;
+        if let Err(error) = state.registry.save(&state.directory) {
+            state.registry.engine_generation = prior_generation;
+            return Err(error);
+        }
+        if let Some((_, old)) = state.active.take() {
+            let _ = old.shutdown(Shutdown::Both);
+        }
+        state.active = Some((connection_id.clone(), stream.try_clone()?));
+        if let Err(error) = send(
+            &mut stream,
+            &Response::Welcome {
+                version: VERSION,
+                supervisor_id: state.supervisor_id.clone(),
+            },
+        ) {
+            state.active = None;
+            return Err(error);
+        }
+    }
+    let result = (|| {
+        stream.set_read_timeout(None)?;
+        while let Some(frame) = Frame::read_from(&mut stream)? {
+            let Frame::Json(bytes) = frame else {
+                return Err(io::Error::other("JSON request required"));
+            };
+            let request = serde_json::from_slice(&bytes)?;
+            let mut state = shared.lock().expect("state lock");
+            if state.active.as_ref().map(|(id, _)| id.as_str()) != Some(connection_id.as_str()) {
+                return Err(io::Error::other("connection superseded"));
+            }
+            let response = execute(&mut state, &shared, request)
+                .unwrap_or_else(|e| error("operation_failed", &e.to_string()));
+            drop(state);
+            send(&mut stream, &response)?;
+        }
+        Ok(())
+    })();
+    let mut state = shared.lock().expect("state lock");
+    if state.active.as_ref().map(|(id, _)| id.as_str()) == Some(connection_id.as_str()) {
+        state.active = None;
+    }
+    result
+}
+
+fn execute(
+    state: &mut State,
+    shared: &Arc<Mutex<State>>,
+    request: Request,
+) -> io::Result<Response> {
+    match request {
+        Request::Hello { .. } => Ok(error("already_authenticated", "hello was already accepted")),
+        Request::List => Ok(Response::Instances(
+            state.registry.instances.values().cloned().collect(),
+        )),
+        Request::Spawn(config) => {
+            if let Some(existing) = state.registry.instances.get(&config.instance_key) {
+                return Ok(if existing.spawn == config {
+                    Response::Instance(existing.clone())
+                } else {
+                    error("idempotency_conflict", "spawn key has different parameters")
+                });
+            }
+            let (mut child, master) = process::spawn(&config)?;
+            let instance = Instance {
+                instance_id: Uuid::new_v4().to_string(),
+                supervisor_id: state.supervisor_id.clone(),
+                pid: child.id(),
+                spawn: config,
+                closed: false,
+                exit_code: None,
+            };
+            let reader = match master.try_clone() {
+                Ok(reader) => reader,
+                Err(error) => {
+                    process::terminate_group(child.id());
+                    let _ = child.wait();
+                    return Err(error);
+                }
+            };
+            let live = Arc::new(Live {
+                master: Mutex::new(master),
+                child: Mutex::new(child),
+                retention: Mutex::new(Retention::new(limits::PTY_RETENTION_BYTES)),
+                exited: AtomicBool::new(false),
+                read_done: AtomicBool::new(false),
+            });
+            state
+                .registry
+                .instances
+                .insert(instance.spawn.instance_key.clone(), instance.clone());
+            if let Err(error) = state.registry.save(&state.directory) {
+                state
+                    .registry
+                    .instances
+                    .remove(&instance.spawn.instance_key);
+                process::terminate_group(instance.pid);
+                let _ = live.child.lock().expect("child lock").wait();
+                return Err(error);
+            }
+            state
+                .live
+                .insert(instance.instance_id.clone(), Arc::clone(&live));
+            start_readers(
+                reader,
+                live,
+                Arc::clone(shared),
+                instance.spawn.instance_key.clone(),
+            );
+            Ok(Response::Instance(instance))
+        }
+        Request::Close { instance_id } => {
+            if let Some(instance) = state
+                .registry
+                .instances
+                .values_mut()
+                .find(|i| i.instance_id == instance_id)
+            {
+                let key = instance.spawn.instance_key.clone();
+                let was_closed = instance.closed;
+                instance.closed = true;
+                if !was_closed && let Err(error) = state.registry.save(&state.directory) {
+                    state
+                        .registry
+                        .instances
+                        .get_mut(&key)
+                        .expect("existing instance")
+                        .closed = false;
+                    return Err(error);
+                }
+                if let Some(live) = state.live.remove(&instance_id) {
+                    let mut child = live.child.lock().expect("child lock");
+                    if child.try_wait()?.is_none() {
+                        process::terminate_group(child.id());
+                        let _ = child.wait();
+                    }
+                    live.exited.store(true, Ordering::Release);
+                }
+            }
+            Ok(Response::Ok)
+        }
+        Request::Input { instance_id, bytes } => {
+            let Some(live) = state.live.get(&instance_id) else {
+                return Ok(error("not_found", "process not found"));
+            };
+            if live.exited.load(Ordering::Acquire) {
+                return Ok(error("process_exited", "process has exited"));
+            }
+            let bytes = STANDARD
+                .decode(bytes)
+                .map_err(|_| io::Error::other("invalid base64 input"))?;
+            if bytes.len() > limits::TERMINAL_PAYLOAD_BYTES {
+                return Ok(error("input_too_large", "input exceeds 64 KiB"));
+            }
+            let count = match live.master.lock().expect("master lock").write(&bytes) {
+                Ok(count) => count,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => 0,
+                Err(e) => return Err(e),
+            };
+            Ok(Response::Accepted { bytes: count })
+        }
+        Request::Resize {
+            instance_id,
+            cols,
+            rows,
+        } => {
+            let Some(live) = state.live.get(&instance_id) else {
+                return Ok(error("not_found", "process not found"));
+            };
+            process::resize(&live.master.lock().expect("master lock"), cols, rows)?;
+            Ok(Response::Ok)
+        }
+        Request::Drain {
+            instance_id,
+            from_seq,
+        } => {
+            let Some(live) = state.live.get(&instance_id) else {
+                return Ok(error("not_found", "process not found"));
+            };
+            let output = live.retention.lock().expect("retention lock").read(
+                from_seq,
+                limits::TERMINAL_PAYLOAD_BYTES,
+                live.exited.load(Ordering::Acquire) && live.read_done.load(Ordering::Acquire),
+            );
+            Ok(match output {
+                Ok(output) => Response::Output(output),
+                Err(kind) => error(kind, "invalid output cursor"),
+            })
+        }
+        Request::Ack { instance_id, seq } => {
+            let Some(live) = state.live.get(&instance_id) else {
+                return Ok(error("not_found", "process not found"));
+            };
+            Ok(
+                match live
+                    .retention
+                    .lock()
+                    .expect("retention lock")
+                    .acknowledge(seq)
+                {
+                    Ok(()) => Response::Ok,
+                    Err(kind) => error(kind, "invalid acknowledgement"),
+                },
+            )
+        }
+    }
+}
+
+fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, key: String) {
+    let reading = Arc::clone(&live);
+    thread::spawn(move || {
+        let mut bytes = [0; 16384];
+        loop {
+            match reader.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(count) => reading
+                    .retention
+                    .lock()
+                    .expect("retention lock")
+                    .append(&bytes[..count]),
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    let mut descriptor = libc::pollfd {
+                        fd: reader.as_raw_fd(),
+                        events: libc::POLLIN,
+                        revents: 0,
+                    };
+                    // SAFETY: reader owns this descriptor throughout poll; the
+                    // one-element array stays valid until the call returns.
+                    let ready = unsafe { libc::poll(&mut descriptor, 1, 1000) };
+                    if ready < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted
+                    {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        reading.read_done.store(true, Ordering::Release);
+    });
+    thread::spawn(move || {
+        loop {
+            let exit = live.child.lock().expect("child lock").try_wait();
+            match exit {
+                Ok(Some(status)) => {
+                    live.exited.store(true, Ordering::Release);
+                    let mut state = shared.lock().expect("state lock");
+                    if let Some(instance) = state.registry.instances.get_mut(&key) {
+                        instance.exit_code = Some(status.code().unwrap_or(-1));
+                    }
+                    if state.registry.save(&state.directory).is_err() {
+                        eprintln!("{{\"event\":\"ptyd.registry_write_failed\"}}");
+                    }
+                    break;
+                }
+                Err(_) => {
+                    live.exited.store(true, Ordering::Release);
+                    break;
+                }
+                Ok(None) => thread::sleep(Duration::from_millis(10)),
+            }
+        }
+    });
+}
