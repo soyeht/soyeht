@@ -171,7 +171,8 @@ It does not move tasks to `completed`; that belongs to the executor or you.
 `task_create`, `task_next`, `task_show`, `task_list` (lead and you),
 `task_update` (title/description/priority/dependencies), `task_comment`,
 `task_subitem_add`, `task_subitem_done`, `task_block {type, reason}`,
-`task_release` (return), `task_request_review`, `task_complete {summary}`,
+`task_release` (return), `task_request_review`, `task_complete {summary,
+contractChanges, outOfScopeEdits}` (fields defined in the 2026-09-11 addendum),
 `task_dispatch` (lead only), `task_unblock` (lead only), `loop_set`.
 A pane may modify only its own task, except for the lead.
 
@@ -237,4 +238,59 @@ constraints raised the precision of its changes from 8–10 % to 88–92 %,
 with almost no change in how much of the feature it delivered; the
 constraints are what stopped it from breaking the surroundings
 (SWE-Chain, arXiv 2605.14415, Table 4, p. 8; Python only).
+
+## Addendum (2026-09-11, decided by Caio): contract-drift review is a fixed step of review
+When a task enters `in_review`, the reviewer agent runs this step before
+reading anything else in the diff.
+
+1. It lists every public function, handler and protocol message the diff
+   touched.
+2. For each one it picks exactly one label, judging from the code alone:
+   `equivalent`, `style`, `algorithm` (same contract, different
+   operations), `input_gating` (a check on inputs was added or removed),
+   `silent_fallback` (an input or error is replaced by a default without
+   telling the caller), `error_handling` (a different error type, or an
+   error now caught or wrapped), `return_shape` (type or structure of the
+   result changed), `external_effects` (files, network, database, logs or
+   shared state changed differently), `extra_edits` (files or functions
+   outside the task's declared scope, beyond what the change mechanically
+   needs), `incomplete` (a stub, `todo!()`, `unimplemented!()` or a
+   placeholder return). When more than one applies, the most severe wins,
+   in this order: incomplete, input_gating, silent_fallback, error_handling,
+   return_shape, external_effects, extra_edits, algorithm, style, equivalent.
+3. Outcome per label:
+   - `incomplete`: return the task, no exceptions.
+   - `input_gating`, `silent_fallback`, `error_handling`, `return_shape`,
+     `external_effects`: return the task unless the executor declared that
+     function in `contractChanges` **and** the contract or ADR it cites is
+     updated in the same change.
+   - `extra_edits`: return the task unless every file outside the declared
+     scope is in `outOfScopeEdits` with a reason.
+   - Never approve on the promise that a later task will fix a drift.
+4. The review comment carries one line per function:
+   `path::name → label → ok | returned: reason`. It is a comment on the
+   task (§6), so the owner pane sees it as “your turn”.
+
+Executor side: `task_complete {summary, contractChanges: [{path, name,
+label, contractRef}], outOfScopeEdits: [{path, reason}]}`. Both lists may
+be empty, but they must be present; the engine rejects a completion
+without them with `INVALID_PARAMS`. The task detail (screen 4) shows the
+two lists under the summary.
+
+Language patterns the reviewer treats as candidates (our mapping; the
+study lists Python equivalents): Rust `.unwrap_or(..)`,
+`.unwrap_or_default()`, `.ok()` that drops the error, `let _ = fallible()`,
+an empty `if let Err(_)` arm, `map_err` that changes the error kind, a
+`_ =>` arm on an error enum, new `Option` or `#[serde(default)]` on a
+protocol type; Swift `try?`, `?? default`, `as?` with a fallback, a new
+`guard … else { return nil }`, an empty `catch`; TypeScript `?? default`,
+`|| default`, an empty `catch`, a new optional field on a generated type.
+
+Why: in a controlled study of 1,377 tasks, when the first agent altered
+input validation or error handling, the odds of the next agent failing
+rose 1.83×; the drift stayed untouched in 85.9 % of later changes and
+directly caused 20.6 % of the failures; complexity and size metrics
+explained nothing. The ten labels and their severity order are the
+study's own judge taxonomy (CodeThread, arXiv 2606.21804, p. 6–7, 14, 18).
+The outcomes in step 3 are our rule, not the study's.
 
