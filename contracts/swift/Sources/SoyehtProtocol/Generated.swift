@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 86a85213a5341d96808b5f6ec662d19a48c1b137e20d6808ae162887b74b7c08). Do not edit.
+// Generated from contracts/protocol.json (sha256 ea6797d079f3760fb7b2214734ee44e9842ee06f159f0419483b517b0f0cd8b3). Do not edit.
 import Foundation
 
 
@@ -2390,18 +2390,5 @@ public struct PaneQueueStateEvent: Codable, Sendable {
         self.`paneId` = `paneId`
         self.`paused` = `paused`
         self.`reason` = `reason`
-    }
-}
-
-public struct PaneQueueSteeredEvent: Codable, Sendable {
-    public var `eventId`: Decimal
-    public var `at`: String
-    public var `paneId`: Id
-    public var `promptId`: Id
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `promptId`: Id) {
-        self.`eventId` = `eventId`
-        self.`at` = `at`
-        self.`paneId` = `paneId`
-        self.`promptId` = `promptId`
     }
 }

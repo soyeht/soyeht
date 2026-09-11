@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 86a85213a5341d96808b5f6ec662d19a48c1b137e20d6808ae162887b74b7c08). Do not edit.
+// Generated from contracts/protocol.json (sha256 ea6797d079f3760fb7b2214734ee44e9842ee06f159f0419483b517b0f0cd8b3). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -2099,17 +2099,6 @@ pub struct PaneQueueStateEvent {
     pub paused: bool,
     #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PaneQueueSteeredEvent {
-    #[serde(rename = "eventId")]
-    pub event_id: Decimal,
-    #[serde(rename = "at")]
-    pub at: String,
-    #[serde(rename = "paneId")]
-    pub pane_id: Id,
-    #[serde(rename = "promptId")]
-    pub prompt_id: Id,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]

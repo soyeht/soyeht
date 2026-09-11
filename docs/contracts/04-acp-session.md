@@ -27,9 +27,9 @@ Raw terminal panes continue to exist and do not use this path.
    version + configuration), and stores actual results. It repeats when the
    fingerprint changes. Even with a stored result, if the operation fails at
    runtime, the engine applies §6's fallback (new session + notice). Never fails silently.
-4. **`session/new`** with `cwd` and a `mcpServers` list containing Soyeht's
-   own MCP (task tools, pane messaging, etc.). This gives every ACP agent
-   Soyeht tools without any configuration.
+4. **`session/new`** with `cwd`. In slice 2, `mcpServers` is an empty list.
+   Slice 3 adds Soyeht's own MCP (task tools, pane messaging, etc.) to this
+   list so every ACP agent receives those tools without manual configuration.
    Store `sessionId` + `cwd` + harness + version in pane state.
 5. **Options.** Read `configOptions` from the response (permission mode,
    model, effort) and apply the pane or task's requested values through
@@ -120,8 +120,9 @@ open turn, no notification for N s (N = 90, configurable); `dead` = process exit
 
 `pane.session_started {harness, version, options}`, `pane.update {...}` (one
 per `session/update` type), `pane.turn_ended {stopReason}`,
-`pane.permission_requested {id, title, options}`, `pane.permission_answered
-{id, by: mac|iphone|rule}`, `pane.queued {n}`, `pane.session_lost {reason}`,
+`pane.permission_requested {requestId, title, options}`, `pane.permission_answered
+{requestId, by: mac|iphone|rule}`, `pane.queued {n}`, `pane.queue.paused`,
+`pane.queue.resumed`, `pane.session_lost {reason}`,
 `pane.needs_login`.
 
 ## 10. Excluded scope
@@ -166,16 +167,15 @@ Rule: the engine has ONE internal lifecycle (prompt accepted → working → end
 
 ## Addendum (2026-09-11, decided by Caio after the benchmark)
 **Steer.** A message queued while the agent is busy (§3) can be promoted
-by the user with the "Send now" action on the queued item. On harnesses
-whose ACP session accepts a prompt mid-turn, the engine sends it
-immediately as a steering prompt and the item leaves the queue; on
-harnesses that do not, the action is disabled with the tooltip "this agent
-only reads new messages between turns". The queue pauses by itself when
-the user cancels the current turn (⌘.) and shows "queue paused because you
-interrupted" with a "Resume" button; nothing is sent until the user
-resumes. Events: `pane.queue.steered {promptId}`, `pane.queue.paused`,
-`pane.queue.resumed`. Which harnesses accept steering is part of the
-capability probe of contract 02.
+by the user with the "Send now" action only after a disposable fingerprint
+probe has proved a reviewed harness-specific steering operation. Standard
+ACP v1 does not define that operation, so slice 2 exposes no steering method
+or event and disables the action with the tooltip "this agent only reads new
+messages between turns". The method and `pane.queue.steered {promptId}` event
+must be added together with the first proven adapter. The queue pauses by itself
+when the user cancels the current turn (⌘.) and shows "queue paused because you
+interrupted" with a "Resume" button; nothing is sent until the user resumes.
+Slice 2 events are `pane.queue.paused` and `pane.queue.resumed`.
 
 **Context meter.** The agent pane header shows a small ring with the
 fraction of the model's context window in use, only when the harness

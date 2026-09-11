@@ -4268,30 +4268,6 @@
         "paused"
       ],
       "additionalProperties": true
-    },
-    "PaneQueueSteeredEvent": {
-      "type": "object",
-      "properties": {
-        "eventId": {
-          "$ref": "#/$defs/Decimal"
-        },
-        "at": {
-          "type": "string"
-        },
-        "paneId": {
-          "$ref": "#/$defs/Id"
-        },
-        "promptId": {
-          "$ref": "#/$defs/Id"
-        }
-      },
-      "required": [
-        "eventId",
-        "at",
-        "paneId",
-        "promptId"
-      ],
-      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -4889,12 +4865,6 @@
     "pane.queue.resumed": {
       "params": {
         "$ref": "#/$defs/PaneQueueStateEvent"
-      },
-      "durable": true
-    },
-    "pane.queue.steered": {
-      "params": {
-        "$ref": "#/$defs/PaneQueueSteeredEvent"
       },
       "durable": true
     }

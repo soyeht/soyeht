@@ -11,7 +11,7 @@ for Caio to run on the device. No tag or release was created.
 
 ## Delivered scope
 
-The shared schema now defines 40 methods, 40 events and 20 numeric error kinds.
+The shared schema now defines 40 methods, 39 events and 20 numeric error kinds.
 Agent panes include prompt submission, a durable queue, cancellation, permission
 and elicitation answers, confirmed configuration, yolo, sign-in, paginated
 transcript, draft presence, harness discovery and model discovery. Rust, Swift

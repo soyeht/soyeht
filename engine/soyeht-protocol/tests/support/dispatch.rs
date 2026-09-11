@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 86a85213a5341d96808b5f6ec662d19a48c1b137e20d6808ae162887b74b7c08). Do not edit.
+// Generated from contracts/protocol.json (sha256 ea6797d079f3760fb7b2214734ee44e9842ee06f159f0419483b517b0f0cd8b3). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -208,7 +208,6 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneQueueResumeParams" => roundtrip::<PaneQueueResumeParams>(value),
         "PaneQueueResumeResult" => roundtrip::<PaneQueueResumeResult>(value),
         "PaneQueueStateEvent" => roundtrip::<PaneQueueStateEvent>(value),
-        "PaneQueueSteeredEvent" => roundtrip::<PaneQueueSteeredEvent>(value),
         _ => panic!("unknown schema: {name}"),
     }
 }

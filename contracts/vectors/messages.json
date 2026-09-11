@@ -4162,16 +4162,6 @@
     }
   },
   {
-    "name": "PaneQueueSteeredEvent",
-    "type": "PaneQueueSteeredEvent",
-    "value": {
-      "eventId": "1",
-      "at": "2026-09-11T00:00:00Z",
-      "paneId": "pane",
-      "promptId": "prompt"
-    }
-  },
-  {
     "name": "request:pane.queue.resume",
     "type": "RequestEnvelope",
     "value": {
@@ -4223,20 +4213,6 @@
         "paneId": "pane",
         "paused": false,
         "reason": "interrupted"
-      }
-    }
-  },
-  {
-    "name": "event:pane.queue.steered",
-    "type": "NotificationEnvelope",
-    "value": {
-      "jsonrpc": "2.0",
-      "method": "pane.queue.steered",
-      "params": {
-        "eventId": "1",
-        "at": "2026-09-11T00:00:00Z",
-        "paneId": "pane",
-        "promptId": "prompt"
       }
     }
   }

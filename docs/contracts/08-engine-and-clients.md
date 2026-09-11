@@ -211,6 +211,9 @@ English in every contract (mapping table at the end). All carry
   `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`,
   `usage`, `terminal_output {terminalId, bytes}`, `config_option_update`)
 - `pane.turn_ended {promptId, stopReason}`, `pane.queued {n, promptIds}`
+- `pane.queue.paused {paneId, paused, reason}`,
+  `pane.queue.resumed {paneId, paused}`. `pane.queue.steered` is introduced
+  only with the proven steering method described by contract 04.
 - `pane.permission_requested {requestId, generation, title, detail,
   options: [{optionId, kind, name}], expiresAt}`,
   `pane.permission_answered {requestId, result: selected|cancelled|expired,
@@ -222,7 +225,8 @@ English in every contract (mapping table at the end). All carry
 - `pane.harness_switch_started {switchId, from, to}`,
   `pane.harness_switch_done {switchId, from, to, sessionId, generation}`,
   `pane.harness_switch_failed {switchId, from, to, reason, restored: bool}`
-- `pane.session_lost {reason, recovery: resumed|new_session_with_package|needs_login}`
+- `pane.session_lost {reason, recovery: resumed|new_session|needs_login}`.
+  Slice 4 adds `new_session_with_package` together with continuation packages.
 - `pane.needs_login`, `pane.auth_finished {ok}`
 - `loop.tick {paneId, round, of}`, `loop.stopped {paneId, reason}`
 - `task.created`, `task.moved {actor, from, to, reason}`, `task.claimed
