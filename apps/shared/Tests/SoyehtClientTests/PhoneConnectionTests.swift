@@ -16,6 +16,21 @@
       at: data, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     try "PROMPT='PHONE_READY> '\nHISTFILE=\nSAVEHIST=0\n".write(
       to: data.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
+    let fake = bins.appendingPathComponent("soyeht-fake-acp")
+    let registry: [[String: Any]] = [
+      [
+        "id": "swift-test",
+        "name": "Swift test agent",
+        "command": fake.path,
+        "args": [
+          "--state-dir", data.appendingPathComponent("native-agent").path,
+          "--load", "supported",
+        ],
+        "version": "1",
+      ]
+    ]
+    try JSONSerialization.data(withJSONObject: registry).write(
+      to: data.appendingPathComponent("harnesses.json"), options: .atomic)
     let log = data.appendingPathComponent("test.log")
     FileManager.default.createFile(atPath: log.path, contents: nil)
     let output = try FileHandle(forWritingTo: log)
@@ -95,25 +110,97 @@
     try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READY>") }
     local.input(Data("printf 'PHONE_READER_%s\\n' OK\r".utf8))
     try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READER_OK") }
+
+    local.createAgentPane(
+      directory: data, harness: "swift-test", model: nil, effort: nil, permission: .ask)
+    try await phoneWait("local agent session did not open") {
+      local.panes.contains { $0.mode == .agent && $0.agent?.sessionId != nil }
+    }
+    let agentId = try #require(local.panes.first { $0.mode == .agent }?.paneId)
+    try await phoneWait("remote client did not receive the agent pane") {
+      reader.panes.contains { $0.paneId == agentId }
+    }
+    reader.select(agentId)
+    reader.sendPrompt(agentId, text: "hello from phone")
+    try await phoneWait("two Swift clients did not receive the completed reply") {
+      [local, reader].allSatisfy { replica in
+        replica.agentPanes[agentId]?.messages.contains {
+          $0.role == .assistant && $0.complete && $0.text == "Echo: hello from phone"
+        } == true
+      }
+    }
+    try await phoneWait("two Swift clients did not converge on the same transcript") {
+      let localBytes = try? JSONEncoder().encode(local.agentPanes[agentId]?.messages ?? [])
+      let remoteBytes = try? JSONEncoder().encode(reader.agentPanes[agentId]?.messages ?? [])
+      return localBytes == remoteBytes
+        && local.agentPanes[agentId]?.messages.contains {
+          $0.role == .user && $0.text == "hello from phone"
+        } == true
+    }
+    let localTranscript = try JSONEncoder().encode(local.agentPanes[agentId]?.messages ?? [])
+    let remoteTranscript = try JSONEncoder().encode(reader.agentPanes[agentId]?.messages ?? [])
+    #expect(localTranscript == remoteTranscript)
+
+    local.sendPrompt(agentId, text: "permission")
+    try await phoneWait("permission did not reach both Swift clients") {
+      local.agentPanes[agentId]?.permission != nil
+        && reader.agentPanes[agentId]?.permission != nil
+    }
+    let permission = try #require(reader.agentPanes[agentId]?.permission)
+    #expect(local.agentPanes[agentId]?.permission?.requestId == permission.requestId)
+    reader.answerPermission(permission, optionId: "once")
+    try await phoneWait("remote permission answer did not settle") {
+      local.agentPanes[agentId]?.permission == nil
+        && reader.agentPanes[agentId]?.permission == nil
+        && local.panes.first(where: { $0.paneId == agentId })?.state == .idle
+    }
+    reader.setYolo(agentId, on: true)
+    try await phoneWait("yolo enablement did not reach both Swift clients") {
+      [local, reader].allSatisfy {
+        $0.panes.first(where: { $0.paneId == agentId })?.agent?.yolo == true
+      }
+    }
+    reader.setYolo(agentId, on: false)
+    try await phoneWait("yolo disablement did not reach both Swift clients") {
+      [local, reader].allSatisfy {
+        $0.panes.first(where: { $0.paneId == agentId })?.agent?.yolo == false
+      }
+    }
+
     reader.stop()
     #expect(reader.panes.isEmpty)
     #expect(screen.isEmpty)
+    let paneCount = local.panes.count
     local.createPane(directory: data)
-    try await phoneWait { local.panes.count == 2 }
+    try await phoneWait("local client did not receive the added pane") {
+      local.panes.count == paneCount + 1
+    }
     reader.start()
-    try await phoneWait { reader.connected && reader.panes.count == 2 }
+    try await phoneWait(
+      "remote snapshot did not include every pane",
+      details:
+        "connected=\(reader.connected), panes=\(reader.panes.count), expected=\(paneCount + 1), state=\(reader.connectionText)"
+    ) {
+      reader.connected && reader.panes.count == paneCount + 1
+    }
     local.revokeDevice(credential.deviceId)
-    try await phoneWait { reader.credentialRejected && local.devices.isEmpty }
+    try await phoneWait("revocation did not close the remote client") {
+      reader.credentialRejected && local.devices.isEmpty
+    }
     #expect(!reader.connected)
     #expect(reader.panes.isEmpty)
   }
 
-  @MainActor private func phoneWait(_ condition: () -> Bool) async throws {
+  @MainActor private func phoneWait(
+    _ message: String = "condition did not become true", details: @autoclosure () -> String = "",
+    _ condition: () -> Bool
+  ) async throws {
     for _ in 0..<300 {
       if condition() { return }
       try await Task.sleep(for: .milliseconds(100))
     }
-    throw ClientFailure.timeout
+    let detail = details()
+    throw ClientFailure.remote("test_timeout", detail.isEmpty ? message : "\(message): \(detail)")
   }
 
   @Test func pairingLinkRejectsExternalTargetsAndDuplicateFields() throws {

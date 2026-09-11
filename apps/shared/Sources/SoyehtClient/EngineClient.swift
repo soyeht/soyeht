@@ -8,6 +8,9 @@ public final class EngineClient {
   public private(set) var workspaces: [Workspace] = []
   public private(set) var devices: [Device] = []
   public private(set) var pairRequests: [PairPrompt] = []
+  public internal(set) var agentPanes: [String: AgentPaneView] = [:]
+  public internal(set) var harnesses: [HarnessInfo] = []
+  public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public private(set) var connected = false
   public private(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
@@ -79,6 +82,7 @@ public final class EngineClient {
     if readOnly {
       panes = []
       workspaces = []
+      agentPanes = [:]
       terminalOutput?(Data(), true)
     }
     position = nil
@@ -135,15 +139,23 @@ public final class EngineClient {
     connected = true
     connectionText = "Dev profile · connected"
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
-    if let pane = selectedPaneId { try await subscribe(pane) }
+    if let pane = selectedPane {
+      if pane.mode == .terminal {
+        try await subscribe(pane.paneId)
+      } else {
+        try await loadAgentPane(pane.paneId, replacing: true)
+      }
+    }
     await reader.value
   }
-  private func request(_ method: String, _ params: JsonValue) async throws -> JsonValue {
+  func request(
+    _ method: String, _ params: JsonValue, timeoutSeconds: Double = 12
+  ) async throws -> JsonValue {
     guard let wire else { throw ClientFailure.disconnected }
     let id = UUID().uuidString
     return try await withCheckedThrowingContinuation { continuation in
       let timeout = Task { [weak self] in
-        do { try await Task.sleep(for: .seconds(12)) } catch { return }
+        do { try await Task.sleep(for: .seconds(timeoutSeconds)) } catch { return }
         guard let request = self?.pending.removeValue(forKey: id) else { return }
         request.continuation.resume(throwing: ClientFailure.timeout)
         self?.wire?.close()
@@ -167,10 +179,13 @@ public final class EngineClient {
     }
   }
   /// Retry only connection loss, with the same mutation parameters and idempotency key.
-  private func mutation<T: Encodable>(_ method: String, _ params: T) async throws -> JsonValue {
+  func mutation<T: Encodable>(
+    _ method: String, _ params: T, timeoutSeconds: Double = 12
+  ) async throws -> JsonValue {
     let value = try JsonValue.encoded(params)
     for attempt in 0..<3 {
-      do { return try await request(method, value) } catch let error as ClientFailure
+      do { return try await request(method, value, timeoutSeconds: timeoutSeconds) } catch let error
+        as ClientFailure
         where error.canRetry && attempt < 2
       {
         for _ in 0..<120 {
@@ -196,7 +211,8 @@ public final class EngineClient {
         request.continuation.resume(
           throwing: ClientFailure.remote(
             message["error"]["data"]["kind"].string ?? "internal_error",
-            message["error"]["message"].string ?? "Request refused"))
+            "\(request.method): "
+              + (message["error"]["message"].string ?? "Request refused")))
         return
       }
       let result = message["result"]
@@ -235,9 +251,15 @@ public final class EngineClient {
       let pane = try params["pane"].decoded(Pane.self)
       panes.removeAll { $0.paneId == pane.paneId }
       panes.append(pane)
+      if pane.mode == .agent {
+        var view = agentPanes[pane.paneId] ?? AgentPaneView()
+        view.queuePaused = pane.agent?.queuePaused ?? false
+        agentPanes[pane.paneId] = view
+      }
     case "pane.closed":
       let id = params["paneId"].string
       panes.removeAll { $0.paneId == id }
+      if let id { agentPanes.removeValue(forKey: id) }
       if selectedPaneId == id { select(panes.first?.paneId) }
     case "pane.state_changed":
       let event = try params.decoded(PaneStateChangedEvent.self)
@@ -277,7 +299,7 @@ public final class EngineClient {
       devices.removeAll { $0.deviceId == device.deviceId }
       if !device.revoked { devices.append(device) }
     case "device.revoked": devices.removeAll { $0.deviceId == params["deviceId"].string }
-    default: break
+    default: try applyAgentEvent(method, params)
     }
   }
   private func applySnapshot(_ value: JsonValue) throws {
@@ -292,6 +314,7 @@ public final class EngineClient {
     }
     self.panes = panes
     self.workspaces = workspaces
+    try applyAgentSnapshot(sections, panes: panes)
     pairRequests = requests
     cursor = UInt64(result.cursor)!
     if !panes.contains(where: { $0.paneId == selectedPaneId }) {
@@ -307,13 +330,21 @@ public final class EngineClient {
     terminalOutput?(Data(), true)
     guard connected else { return }
     perform {
-      if let old {
+      if let old, self.panes.first(where: { $0.paneId == old })?.mode == .terminal {
         _ = try await self.request("pane.stream.unsubscribe", .object(["paneId": .string(old)]))
       }
       if let paneId, self.selectedPaneId == paneId {
         _ = try await self.mutation(
           "pane.focus", PaneFocusParams(paneId: paneId, idempotencyKey: UUID().uuidString))
-        if self.selectedPaneId == paneId { try await self.subscribe(paneId) }
+        if self.selectedPaneId == paneId,
+          let pane = self.panes.first(where: { $0.paneId == paneId })
+        {
+          if pane.mode == .terminal {
+            try await self.subscribe(paneId)
+          } else {
+            try await self.loadAgentPane(paneId, replacing: true)
+          }
+        }
       }
     }
   }
@@ -322,7 +353,7 @@ public final class EngineClient {
       "pane.stream.subscribe", .object(["paneId": .string(pane), "from": .string("tail")]))
   }
   public func refreshTerminal() {
-    guard let pane = selectedPaneId, connected else { return }
+    guard let pane = selectedPaneId, selectedPane?.mode == .terminal, connected else { return }
     perform { try await self.subscribe(pane) }
   }
   public func createPane(directory: URL) {
@@ -352,7 +383,9 @@ public final class EngineClient {
     }
   }
   public func input(_ data: Data) {
-    guard !readOnly, connected, let pane = selectedPaneId, !data.isEmpty else { return }
+    guard !readOnly, connected, selectedPane?.mode == .terminal,
+      let pane = selectedPaneId, !data.isEmpty
+    else { return }
     guard queuedInputBytes + data.count <= 1_048_576 else {
       problem = "Input is too large. Wait for the keyboard queue to empty."
       return
@@ -390,7 +423,9 @@ public final class EngineClient {
     }
   }
   public func resize(cols: Int, rows: Int) {
-    guard connected, let pane = selectedPaneId, cols > 0, rows > 0 else { return }
+    guard connected, selectedPane?.mode == .terminal,
+      let pane = selectedPaneId, cols > 0, rows > 0
+    else { return }
     resizeTask?.cancel()
     resizeTask = Task {
       do {
@@ -429,7 +464,7 @@ public final class EngineClient {
       if approve { self.pairCode = nil }
     }
   }
-  private func perform(_ action: @escaping @MainActor () async throws -> Void) {
+  func perform(_ action: @escaping @MainActor () async throws -> Void) {
     Task { do { try await action() } catch { self.problem = error.localizedDescription } }
   }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
 import SoyehtClient
+import SoyehtProtocol
 import SwiftUI
 
 private enum Palette {
@@ -22,6 +23,7 @@ private struct Raised: ViewModifier {
 struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
   @State private var paneToClose: String?
+  @State private var showNewPane = false
   @State private var showPairing = false
   @State private var deviceToRevoke: String?
   var body: some View {
@@ -50,8 +52,8 @@ struct WorkspaceWindow: View {
           HStack {
             Text("WORKSPACES").font(.system(size: 10, weight: .bold)).tracking(1.4)
             Spacer()
-            Button(action: createPane) { Image(systemName: "plus").padding(6) }
-              .help("Open a terminal in a directory").disabled(!client.connected)
+            Button(action: presentNewPane) { Image(systemName: "plus").padding(6) }
+              .help("Open a terminal or agent pane").disabled(!client.connected)
           }.foregroundStyle(Palette.secondary)
           ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -66,7 +68,9 @@ struct WorkspaceWindow: View {
                       client.select(pane.paneId)
                     } label: {
                       HStack(spacing: 9) {
-                        Image(systemName: "terminal")
+                        Image(
+                          systemName: pane.mode == .agent
+                            ? "bubble.left.and.bubble.right" : "terminal")
                         VStack(alignment: .leading, spacing: 3) {
                           Text(pane.name).font(.system(size: 13, weight: .semibold))
                           Text(pane.phrase).font(.system(size: 10)).foregroundStyle(
@@ -79,7 +83,7 @@ struct WorkspaceWindow: View {
                             ? Palette.accent.opacity(0.12) : .clear,
                           in: RoundedRectangle(cornerRadius: 12))
                     }.contextMenu {
-                      Button("Close terminal", role: .destructive) { paneToClose = pane.paneId }
+                      Button("Close pane", role: .destructive) { paneToClose = pane.paneId }
                     }
                   }
                 }
@@ -87,8 +91,8 @@ struct WorkspaceWindow: View {
             }
           }
           Spacer(minLength: 0)
-          Button(action: createPane) {
-            Label("New terminal", systemImage: "plus")
+          Button(action: presentNewPane) {
+            Label("New pane", systemImage: "plus")
               .font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
               .padding(.vertical, 13).modifier(Raised(radius: 12))
           }.disabled(!client.connected)
@@ -96,9 +100,13 @@ struct WorkspaceWindow: View {
         VStack(alignment: .leading, spacing: 0) {
           if let pane = client.selectedPane {
             HStack {
-              Image(systemName: "terminal").foregroundStyle(Palette.accent)
+              Image(
+                systemName: pane.mode == .agent ? "bubble.left.and.bubble.right" : "terminal"
+              ).foregroundStyle(Palette.accent)
               Text(pane.name).font(.system(size: 15, weight: .semibold, design: .rounded))
-              if pane.generation > 1 {
+              if pane.mode == .agent, let harness = pane.agent?.harness {
+                Text(harness).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+              } else if pane.generation > 1 {
                 Text("new shell").font(.system(size: 11)).foregroundStyle(Palette.secondary)
               }
               Spacer()
@@ -108,31 +116,35 @@ struct WorkspaceWindow: View {
               } label: {
                 Image(systemName: "xmark").padding(6)
               }
-              .help("Close this terminal").disabled(!client.connected)
+              .help("Close this pane").disabled(!client.connected)
             }.padding(.horizontal, 20).padding(.vertical, 16)
             Text(pane.cwd).font(.system(size: 11, design: .monospaced)).foregroundStyle(
               Palette.secondary
             )
             .lineLimit(1).truncationMode(.middle).padding(.horizontal, 20).padding(.bottom, 12)
             Rectangle().fill(Palette.canvas).frame(height: 1)
-            MacTerminal(client: client).padding(14)
-            if let gap = client.gapText {
-              Label(gap, systemImage: "exclamationmark.triangle")
-                .font(.system(size: 12)).foregroundStyle(.orange).padding(12)
+            if pane.mode == .agent {
+              AgentConversationView(client: client, paneId: pane.paneId)
+            } else {
+              MacTerminal(client: client).padding(14)
+              if let gap = client.gapText {
+                Label(gap, systemImage: "exclamationmark.triangle")
+                  .font(.system(size: 12)).foregroundStyle(.orange).padding(12)
+              }
             }
           } else {
             Spacer()
             VStack(spacing: 18) {
-              Image(systemName: "terminal").font(.system(size: 42, weight: .light)).foregroundStyle(
-                Palette.secondary)
+              Image(systemName: "rectangle.split.2x1").font(.system(size: 42, weight: .light))
+                .foregroundStyle(Palette.secondary)
               Text("Your space to begin").font(
                 .system(size: 23, weight: .semibold, design: .rounded))
               Text(
-                "Open a terminal in a directory. The process continues\neven when you close this window."
+                "Open a terminal or agent in a directory. The process continues\neven when you close this window."
               )
               .font(.system(size: 14)).foregroundStyle(Palette.secondary).multilineTextAlignment(
                 .center)
-              Button("Choose directory", action: createPane)
+              Button("New pane", action: presentNewPane)
                 .padding(.horizontal, 22).padding(.vertical, 12).modifier(Raised(radius: 12))
                 .disabled(!client.connected)
             }.frame(maxWidth: .infinity)
@@ -146,9 +158,12 @@ struct WorkspaceWindow: View {
         Text("Soyeht · Dev").font(.system(size: 11, weight: .medium, design: .rounded))
       }.foregroundStyle(Palette.secondary)
     }.padding(24).background(Palette.canvas).foregroundStyle(Palette.ink).buttonStyle(.plain)
+      .sheet(isPresented: $showNewPane) {
+        NewPaneSheet(client: client, isPresented: $showNewPane)
+      }
       .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
       .alert(
-        "Close terminal?",
+        "Close pane?",
         isPresented: Binding(get: { paneToClose != nil }, set: { if !$0 { paneToClose = nil } })
       ) {
         Button("Cancel", role: .cancel) { paneToClose = nil }
@@ -157,7 +172,7 @@ struct WorkspaceWindow: View {
           paneToClose = nil
         }
       } message: {
-        Text("This pane's shell will be terminated.")
+        Text("The process in this pane will be terminated.")
       }
       .alert(
         "Could not complete",
@@ -185,15 +200,9 @@ struct WorkspaceWindow: View {
         }
       }
   }
-  private func createPane() {
-    let panel = NSOpenPanel()
-    panel.canChooseDirectories = true
-    panel.canChooseFiles = false
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Open terminal"
-    panel.begin { response in
-      if response == .OK, let directory = panel.url { client.createPane(directory: directory) }
-    }
+  private func presentNewPane() {
+    client.refreshHarnesses()
+    showNewPane = true
   }
   private var pairing: some View {
     ScrollView { pairingContent }.frame(width: 520, height: 720).background(Palette.canvas)
@@ -260,5 +269,127 @@ struct WorkspaceWindow: View {
       let cg = CIContext().createCGImage(image, from: image.extent)
     else { return nil }
     return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+  }
+}
+
+private struct NewPaneSheet: View {
+  @Bindable var client: EngineClient
+  @Binding var isPresented: Bool
+  @State private var mode = PaneMode.terminal
+  @State private var directory: URL?
+  @State private var harness = ""
+  @State private var model = ""
+  @State private var effort = ""
+  @State private var permission = PermissionMode.ask
+
+  private var availableHarnesses: [HarnessInfo] { client.harnesses.filter(\.available) }
+  private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
+  private var effortOption: ConfigOption? {
+    catalogue?.options.first { $0.category == "thought_level" || $0.id == "effort" }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 20) {
+      Text("New pane").font(.system(size: 24, weight: .semibold, design: .rounded))
+      Picker("Pane type", selection: $mode) {
+        Text("Terminal").tag(PaneMode.terminal)
+        Text("Agent").tag(PaneMode.agent)
+      }.pickerStyle(.segmented)
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Directory").font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
+        HStack {
+          Text(directory?.path ?? "Choose where this pane will work")
+            .font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+          Spacer()
+          Button("Choose…", action: chooseDirectory).buttonStyle(.bordered)
+        }.padding(12).modifier(Raised(radius: 12))
+      }
+      if mode == .agent {
+        agentOptions
+      }
+      Spacer(minLength: 0)
+      HStack {
+        Button("Cancel", role: .cancel) { isPresented = false }
+        Spacer()
+        Button("Create", action: create).buttonStyle(.borderedProminent)
+          .disabled(directory == nil || (mode == .agent && harness.isEmpty))
+      }
+    }.padding(28).frame(width: 520).frame(minHeight: mode == .agent ? 560 : 330)
+      .background(Palette.canvas).foregroundStyle(Palette.ink)
+      .onAppear {
+        client.refreshHarnesses()
+        selectFirstHarness()
+      }
+      .onChange(of: client.harnesses.map(\.id)) { _, _ in selectFirstHarness() }
+      .onChange(of: harness) { _, value in
+        model = ""
+        effort = ""
+        if !value.isEmpty { client.refreshCatalogue(harness: value) }
+      }
+  }
+
+  private var agentOptions: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      if availableHarnesses.isEmpty {
+        ContentUnavailableView(
+          "No available agents", systemImage: "person.crop.circle.badge.exclamationmark",
+          description: Text("Install or configure an ACP agent, then reopen this sheet."))
+      } else {
+        Picker("Agent", selection: $harness) {
+          ForEach(availableHarnesses, id: \.id) { item in Text(item.name).tag(item.id) }
+        }
+        Picker("Model", selection: $model) {
+          Text("Agent default").tag("")
+          ForEach(catalogue?.models ?? [], id: \.id) { item in Text(item.name).tag(item.id) }
+        }
+        Picker("Effort", selection: $effort) {
+          Text("Agent default").tag("")
+          ForEach(effortOption?.options ?? [], id: \.value) { choice in
+            Text(choice.name).tag(choice.value)
+          }
+        }
+        Picker("Permission", selection: $permission) {
+          Text("Ask every time").tag(PermissionMode.ask)
+          Text("Accept edits in this directory").tag(PermissionMode.accept_edits)
+          Text("Allow all agent actions").tag(PermissionMode.allow_all)
+        }
+        if catalogue?.source == "not_probed",
+          catalogue?.models.isEmpty != false
+        {
+          Text("The agent will use its default and report available models after opening.")
+            .font(.caption).foregroundStyle(Palette.secondary)
+        }
+      }
+    }.pickerStyle(.menu)
+  }
+
+  private func selectFirstHarness() {
+    guard !availableHarnesses.contains(where: { $0.id == harness }),
+      let first = availableHarnesses.first
+    else { return }
+    harness = first.id
+  }
+
+  private func chooseDirectory() {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Choose"
+    panel.begin { response in
+      if response == .OK { directory = panel.url }
+    }
+  }
+
+  private func create() {
+    guard let directory else { return }
+    if mode == .terminal {
+      client.createPane(directory: directory)
+    } else {
+      client.createAgentPane(
+        directory: directory, harness: harness, model: model.isEmpty ? nil : model,
+        effort: effort.isEmpty ? nil : effort, permission: permission)
+    }
+    isPresented = false
   }
 }

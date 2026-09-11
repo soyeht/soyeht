@@ -1,5 +1,6 @@
 import AVFoundation
 import SoyehtClient
+import SoyehtProtocol
 import SwiftUI
 import VisionKit
 
@@ -94,7 +95,7 @@ struct PhoneHome: View {
       VStack(spacing: 26) {
         Image(systemName: "laptopcomputer.and.iphone").font(.system(size: 64, weight: .light))
           .foregroundStyle(PhonePalette.accent).padding(.top, 38)
-        Text("Your terminal, with you").font(.system(size: 28, weight: .bold, design: .rounded))
+        Text("Your work, with you").font(.system(size: 28, weight: .bold, design: .rounded))
           .multilineTextAlignment(.center)
         Text(
           "On your Mac, open Soyeht Dev and choose “Add iPhone”. Then scan the QR and confirm access on the Mac."
@@ -119,7 +120,7 @@ struct PhoneHome: View {
             .disabled(uri.isEmpty)
           }.padding(.top, 10)
         }
-        Text("The screen is read-only. The shell continues on the Mac.")
+        Text("Terminal screens are read-only. You can message agents and answer permissions.")
           .font(.footnote).foregroundStyle(PhonePalette.secondary).multilineTextAlignment(.center)
       }.padding(28)
     }
@@ -128,7 +129,7 @@ struct PhoneHome: View {
     List {
       if client.panes.isEmpty {
         ContentUnavailableView(
-          "No open terminals", systemImage: "terminal",
+          "No open panes", systemImage: "rectangle.split.2x1",
           description: Text("Open a pane on the Mac to continue here.")
         )
         .listRowBackground(Color.clear)
@@ -146,7 +147,10 @@ struct PhoneHome: View {
                   Text(pane.phrase).font(.caption).foregroundStyle(PhonePalette.secondary)
                 }.padding(.vertical, 6)
               } icon: {
-                Image(systemName: "terminal").foregroundStyle(PhonePalette.accent)
+                Image(
+                  systemName: pane.mode == .agent
+                    ? "bubble.left.and.bubble.right" : "terminal"
+                ).foregroundStyle(PhonePalette.accent)
               }
             }.listRowBackground(PhonePalette.face)
           }
@@ -188,17 +192,21 @@ private struct PhonePane: View {
   var body: some View {
     VStack(spacing: 0) {
       if client.connected, let pane = client.panes.first(where: { $0.paneId == paneId }) {
-        HStack {
-          Text(pane.phrase)
-          if pane.generation > 1 { Text("· new shell") }
-          Spacer()
-          Image(systemName: "eye").accessibilityLabel("Read-only")
-        }.font(.caption).padding(12).foregroundStyle(PhonePalette.secondary)
-        PhoneTerminal(client: client)
-        if let gap = client.gapText {
-          Label(gap, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(
-            .orange
-          ).padding(12)
+        if pane.mode == .agent {
+          AgentConversationView(client: client, paneId: paneId, showsConfiguration: false)
+        } else {
+          HStack {
+            Text(pane.phrase)
+            if pane.generation > 1 { Text("· new shell") }
+            Spacer()
+            Image(systemName: "eye").accessibilityLabel("Read-only")
+          }.font(.caption).padding(12).foregroundStyle(PhonePalette.secondary)
+          PhoneTerminal(client: client)
+          if let gap = client.gapText {
+            Label(gap, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(
+              .orange
+            ).padding(12)
+          }
         }
       } else {
         ContentUnavailableView(
@@ -206,7 +214,7 @@ private struct PhonePane: View {
           description: Text(client.connectionText))
       }
     }.background(PhonePalette.face)
-      .navigationTitle(client.panes.first(where: { $0.paneId == paneId })?.name ?? "Terminal")
+      .navigationTitle(client.panes.first(where: { $0.paneId == paneId })?.name ?? "Pane")
       .navigationBarTitleDisplayMode(.inline)
       .onAppear { client.select(paneId) }
   }
