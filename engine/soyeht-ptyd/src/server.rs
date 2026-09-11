@@ -2,7 +2,10 @@ use crate::{
     Error, Result, pending::Pending, process, registry::Registry, retention::Retention, wire::*,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use soyeht_protocol::{frame::Frame, limits};
+use soyeht_protocol::{
+    frame::{read_json, write_json},
+    limits,
+};
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -57,7 +60,7 @@ fn lock<'a, T>(mutex: &'a Mutex<T>, resource: &'static str) -> Result<MutexGuard
 }
 
 fn send(stream: &mut UnixStream, response: &Response) -> Result<()> {
-    Frame::Json(serde_json::to_vec(response)?).write_to(stream)?;
+    write_json(stream, response)?;
     Ok(())
 }
 
@@ -108,13 +111,13 @@ pub fn run(directory: &Path) -> Result<()> {
 fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let Some(Frame::Json(bytes)) = Frame::read_from(&mut stream)? else {
+    let Some(request) = read_json::<Request>(&mut stream)? else {
         return Ok(());
     };
     let Request::Hello {
         version,
         engine_generation,
-    } = serde_json::from_slice(&bytes)?
+    } = request
     else {
         return send(&mut stream, &error("unauthorized", "hello required"));
     };
@@ -163,11 +166,7 @@ fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> Result<()> {
     }
     let result: Result<()> = (|| {
         stream.set_read_timeout(None)?;
-        while let Some(frame) = Frame::read_from(&mut stream)? {
-            let Frame::Json(bytes) = frame else {
-                return Err(Error::JsonRequestRequired);
-            };
-            let request = serde_json::from_slice(&bytes)?;
+        while let Some(request) = read_json(&mut stream)? {
             let mut state = lock(&shared, "state")?;
             if state.active.as_ref().map(|(id, _)| id.as_str()) != Some(connection_id.as_str()) {
                 return Err(Error::ConnectionSuperseded);

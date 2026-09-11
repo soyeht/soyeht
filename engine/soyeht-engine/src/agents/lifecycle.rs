@@ -5,7 +5,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::json;
-use soyeht_protocol::{PaneState, StateSource};
+use soyeht_protocol::{PaneState, StateSource, ndjson::Decoder};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
 use std::collections::BTreeMap;
 
@@ -111,7 +111,7 @@ impl Core {
             self.agents.get_mut(id),
             "Agent runtime disappeared during recovery",
         )?
-        .decoder = soyeht_acp::rpc::Decoder::new(0);
+        .decoder = Decoder::new(0);
         self.spawn_agent(id)
     }
 

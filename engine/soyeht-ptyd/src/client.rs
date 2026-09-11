@@ -2,7 +2,7 @@ use crate::{
     Error, Result,
     wire::{Request, Response, VERSION},
 };
-use soyeht_protocol::frame::Frame;
+use soyeht_protocol::frame::{read_json, write_json};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
@@ -42,10 +42,7 @@ impl Client {
     }
 
     pub fn request(&mut self, request: Request) -> Result<Response> {
-        Frame::Json(serde_json::to_vec(&request)?).write_to(&mut self.stream)?;
-        match Frame::read_from(&mut self.stream)? {
-            Some(Frame::Json(bytes)) => Ok(serde_json::from_slice(&bytes)?),
-            _ => Err(Error::InvalidResponse),
-        }
+        write_json(&mut self.stream, &request)?;
+        read_json(&mut self.stream)?.ok_or(Error::InvalidResponse)
     }
 }

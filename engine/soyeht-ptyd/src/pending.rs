@@ -5,45 +5,11 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
-use soyeht_protocol::limits;
+use soyeht_protocol::{limits, ndjson::Decoder};
 use std::collections::BTreeMap;
 
 const MAX_PENDING: usize = 128;
 const MAX_PENDING_BYTES: usize = 8 * 1024 * 1024;
-
-#[derive(Default)]
-struct Lines {
-    bytes: Vec<u8>,
-    next: u64,
-    start: u64,
-    oversized: bool,
-}
-
-impl Lines {
-    fn feed(&mut self, bytes: &[u8]) -> (Vec<(u64, u64, Vec<u8>)>, bool) {
-        let mut lines = Vec::new();
-        let mut fault = false;
-        for &byte in bytes {
-            self.next += 1;
-            if byte == b'\n' {
-                if !self.oversized && !self.bytes.is_empty() {
-                    lines.push((self.start, self.next, std::mem::take(&mut self.bytes)));
-                }
-                self.oversized = false;
-                self.start = self.next;
-            } else if !self.oversized {
-                if self.bytes.len() == limits::ACP_MESSAGE_BYTES {
-                    self.bytes.clear();
-                    self.oversized = true;
-                    fault = true;
-                } else {
-                    self.bytes.push(byte);
-                }
-            }
-        }
-        (lines, fault)
-    }
-}
 
 struct Stored {
     metadata: PendingRequest,
@@ -53,8 +19,8 @@ struct Stored {
 
 #[derive(Default)]
 pub struct Pending {
-    output: Lines,
-    input: Lines,
+    output: Decoder,
+    input: Decoder,
     requests: BTreeMap<u64, Stored>,
     bytes: usize,
     fault: bool,
@@ -70,9 +36,17 @@ fn id(value: &Value) -> Option<String> {
 
 impl Pending {
     pub fn output(&mut self, bytes: &[u8]) {
-        let (lines, fault) = self.output.feed(bytes);
-        self.fault |= fault;
-        for (start, end, bytes) in lines {
+        let offset = self.output.next_offset();
+        let Ok(batch) = self.output.push(offset, bytes) else {
+            self.fault = true;
+            return;
+        };
+        self.fault |= batch.oversized;
+        for line in batch.lines {
+            let (start, end, bytes) = (line.from_seq, line.to_seq, line.bytes);
+            if bytes.is_empty() {
+                continue;
+            }
             let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
                 self.fault = true;
                 continue;
@@ -117,9 +91,17 @@ impl Pending {
     }
 
     pub fn input(&mut self, bytes: &[u8]) {
-        let (lines, fault) = self.input.feed(bytes);
-        self.fault |= fault;
-        for (_, _, bytes) in lines {
+        let offset = self.input.next_offset();
+        let Ok(batch) = self.input.push(offset, bytes) else {
+            self.fault = true;
+            return;
+        };
+        self.fault |= batch.oversized;
+        for line in batch.lines {
+            let bytes = line.bytes;
+            if bytes.is_empty() {
+                continue;
+            }
             let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
                 self.fault = true;
                 continue;
@@ -220,7 +202,7 @@ mod tests {
     fn oversized_and_duplicate_requests_report_a_sticky_fault_without_growing() {
         let mut pending = Pending::default();
         pending.output(&vec![b'x'; limits::ACP_MESSAGE_BYTES + 1]);
-        assert!(pending.output.bytes.is_empty());
+        assert_eq!(pending.output.buffered_len(), 0);
         pending.output(b"\n");
         let request = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"test\"}\n";
         pending.output(request);

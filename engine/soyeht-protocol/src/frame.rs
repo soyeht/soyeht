@@ -1,5 +1,6 @@
 //! Local framing. Length excludes the five-byte common header.
 use crate::{Error, Result, limits};
+use serde::{Serialize, de::DeserializeOwned};
 use std::io::{ErrorKind, Read, Write};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +35,18 @@ pub fn validate_length(kind: u8, length: usize) -> Result<()> {
         return Err(Error::InvalidFrameLength { kind, length });
     }
     Ok(())
+}
+
+pub fn write_json(writer: impl Write, value: &impl Serialize) -> Result<()> {
+    Frame::Json(serde_json::to_vec(value)?).write_to(writer)
+}
+
+pub fn read_json<T: DeserializeOwned>(reader: impl Read) -> Result<Option<T>> {
+    match Frame::read_from(reader)? {
+        Some(Frame::Json(bytes)) => Ok(Some(serde_json::from_slice(&bytes)?)),
+        Some(_) => Err(Error::JsonFrameRequired),
+        None => Ok(None),
+    }
 }
 
 impl Frame {
@@ -178,6 +191,31 @@ mod tests {
             Some(Frame::Json(b"{}".to_vec()))
         );
         assert_eq!(Frame::read_from(&mut reader).unwrap(), None);
+    }
+
+    #[test]
+    fn json_frame_codec_round_trips_values_and_rejects_binary_frames() {
+        let value = serde_json::json!({"id": 7, "method": "status"});
+        let mut bytes = Vec::new();
+        write_json(&mut bytes, &value).unwrap();
+        assert_eq!(
+            read_json::<serde_json::Value>(&bytes[..]).unwrap(),
+            Some(value)
+        );
+
+        let mut bytes = Vec::new();
+        Frame::Terminal {
+            pane_ref: 1,
+            generation: 2,
+            offset: 3,
+            bytes: b"output".to_vec(),
+        }
+        .write_to(&mut bytes)
+        .unwrap();
+        assert!(matches!(
+            read_json::<serde_json::Value>(&bytes[..]),
+            Err(Error::JsonFrameRequired)
+        ));
     }
 
     #[test]

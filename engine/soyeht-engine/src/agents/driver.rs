@@ -8,9 +8,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
 use soyeht_acp::{
     Message, RpcError, client,
-    rpc::{Decoder, Record as NativeRecord},
+    rpc::{Record as NativeRecord, decode},
 };
-use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, PromptItem};
+use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, PromptItem, ndjson::Decoder};
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::segments::Record;
 use uuid::Uuid;
@@ -239,12 +239,17 @@ impl Core {
                     continue;
                 }
             }
-            let decoded = self
-                .agents
-                .get_mut(pane)
-                .ok_or_else(|| errors::internal("Agent runtime disappeared while decoding output"))?
-                .decoder
-                .push(offset - base, &bytes);
+            let decoded = decode(
+                &mut self
+                    .agents
+                    .get_mut(pane)
+                    .ok_or_else(|| {
+                        errors::internal("Agent runtime disappeared while decoding output")
+                    })?
+                    .decoder,
+                offset - base,
+                &bytes,
+            );
             let decoded = match decoded {
                 Ok(records) => records,
                 Err(error) => {

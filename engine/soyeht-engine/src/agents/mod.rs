@@ -26,8 +26,8 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_acp::{Message, rpc::Decoder};
-use soyeht_protocol::{ProbeCapability, TranscriptMessage};
+use soyeht_acp::Message;
+use soyeht_protocol::{ProbeCapability, TranscriptMessage, ndjson::Decoder};
 use soyeht_store::{
     agents::{self, NativeRequest, Outgoing},
     database::{Change, Mutation},

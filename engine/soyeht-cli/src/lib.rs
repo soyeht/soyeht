@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_protocol::{
     AuthChallengeEvent, SnapshotSection, StateSnapshotPartEvent, StateSnapshotResult, Welcome,
-    frame::Frame,
+    frame::{read_json, write_json},
 };
 use std::{
     collections::BTreeMap,
@@ -49,18 +49,15 @@ impl Client {
         Ok(client)
     }
     fn read(&mut self) -> Result<Value> {
-        match Frame::read_from(&mut self.socket)? {
-            Some(Frame::Json(bytes)) => Ok(serde_json::from_slice(&bytes)?),
-            _ => Err(Error::UnexpectedFrame),
-        }
+        read_json(&mut self.socket)?.ok_or(Error::UnexpectedFrame)
     }
     fn begin(&mut self, method: &str, params: Value) -> Result<u64> {
         soyeht_protocol::validate::parameters(method, &params)?;
         self.next = self.next.checked_add(1).ok_or(Error::RequestIdExhausted)?;
-        Frame::Json(serde_json::to_vec(
+        write_json(
+            &mut self.socket,
             &json!({"jsonrpc":"2.0","id":self.next,"method":method,"params":params}),
-        )?)
-        .write_to(&mut self.socket)?;
+        )?;
         Ok(self.next)
     }
     pub fn request<T: DeserializeOwned>(&mut self, method: &str, params: Value) -> Result<T> {

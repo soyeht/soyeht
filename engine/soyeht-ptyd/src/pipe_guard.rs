@@ -6,7 +6,7 @@ use crate::{
     wire::Spawn,
 };
 use serde::{Deserialize, Serialize};
-use soyeht_protocol::frame::Frame;
+use soyeht_protocol::frame::{read_json, write_json};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
@@ -27,7 +27,7 @@ enum Reply {
 }
 
 fn reply(control: &mut UnixStream, message: Reply) -> Result<()> {
-    Frame::Json(serde_json::to_vec(&message)?).write_to(control)?;
+    write_json(control, &message)?;
     Ok(())
 }
 
@@ -73,11 +73,11 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
     drop(inherited);
     drop(child_socket);
     let setup: Result<(u32, File, File)> = (|| {
-        Frame::Json(serde_json::to_vec(config)?).write_to(&mut parent)?;
-        let Some(Frame::Json(bytes)) = Frame::read_from(&mut parent)? else {
+        write_json(&mut parent, config)?;
+        let Some(reply) = read_json::<Reply>(&mut parent)? else {
             return Err(Error::MissingGuardianResponse);
         };
-        let pid = match serde_json::from_slice(&bytes)? {
+        let pid = match reply {
             Reply::Started(pid) => pid,
             Reply::Failed(message) => return Err(Error::GuardianFailed(message)),
             _ => return Err(Error::InvalidGuardianResponse),
@@ -125,10 +125,9 @@ pub fn run(fd: i32) -> Result<()> {
     if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
         return Err(io::Error::last_os_error().into());
     }
-    let Some(Frame::Json(bytes)) = Frame::read_from(&mut control)? else {
+    let Some(config) = read_json::<Spawn>(&mut control)? else {
         return Ok(());
     };
-    let config: Spawn = serde_json::from_slice(&bytes)?;
     if config.argv.is_empty() {
         return Err(Error::EmptyCommand);
     }
@@ -178,10 +177,7 @@ fn kill_own_group() -> ! {
 }
 
 pub(crate) fn exit_code(control: &mut UnixStream) -> Option<i32> {
-    let Some(Frame::Json(bytes)) = Frame::read_from(control).ok()? else {
-        return None;
-    };
-    match serde_json::from_slice(&bytes).ok()? {
+    match read_json::<Reply>(control).ok()?? {
         Reply::Exited(code) => Some(code),
         _ => None,
     }

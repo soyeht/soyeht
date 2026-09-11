@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use soyeht_protocol::limits;
+use soyeht_protocol::{limits, ndjson};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RpcError {
@@ -13,6 +13,7 @@ pub struct RpcError {
 #[derive(Debug)]
 pub enum Error {
     Json(serde_json::Error),
+    Protocol(soyeht_protocol::Error),
     MessageTooLarge,
     MissingJsonRpcVersion,
     InvalidMethod,
@@ -21,8 +22,6 @@ pub enum Error {
     InvalidRequestId,
     InvalidResponseId,
     AmbiguousResponse,
-    StreamDiscontinuity,
-    OffsetExhausted,
     TooManyPendingCalls,
     RequestIdExhausted,
     ExpectedResponse,
@@ -66,6 +65,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Json(error) => write!(formatter, "JSON: {error}"),
+            Self::Protocol(error) => write!(formatter, "protocol: {error}"),
             Self::MessageTooLarge => formatter.write_str("ACP line exceeds 1 MiB"),
             Self::MissingJsonRpcVersion => formatter.write_str("JSON-RPC 2.0 envelope required"),
             Self::InvalidMethod => formatter.write_str("invalid ACP method"),
@@ -76,10 +76,6 @@ impl std::fmt::Display for Error {
             Self::AmbiguousResponse => {
                 formatter.write_str("response needs exactly one result or error")
             }
-            Self::StreamDiscontinuity => {
-                formatter.write_str("ACP stream has a gap or duplicate bytes")
-            }
-            Self::OffsetExhausted => formatter.write_str("ACP offset overflow"),
             Self::TooManyPendingCalls => formatter.write_str("too many outstanding ACP calls"),
             Self::RequestIdExhausted => formatter.write_str("ACP request ID exhausted"),
             Self::ExpectedResponse => formatter.write_str("expected native response"),
@@ -157,6 +153,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Json(error) => Some(error),
+            Self::Protocol(error) => Some(error),
             _ => None,
         }
     }
@@ -164,6 +161,11 @@ impl std::error::Error for Error {
 impl From<serde_json::Error> for Error {
     fn from(error: serde_json::Error) -> Self {
         Self::Json(error)
+    }
+}
+impl From<soyeht_protocol::Error> for Error {
+    fn from(error: soyeht_protocol::Error) -> Self {
+        Self::Protocol(error)
     }
 }
 
@@ -269,50 +271,28 @@ pub struct Record {
     pub message: Message,
 }
 
-/// The engine acknowledges only complete records. Partial bytes can be reread
-/// from ptyd after a crash instead of being reinterpreted at a new boundary.
-pub struct Decoder {
-    bytes: Vec<u8>,
-    start: u64,
-    next: u64,
-}
-
-impl Decoder {
-    pub fn new(offset: u64) -> Self {
-        Self {
-            bytes: Vec::new(),
-            start: offset,
-            next: offset,
-        }
+/// Parse complete records separated by the protocol crate's sole NDJSON
+/// decoder. Partial bytes remain there until a complete record is available.
+pub fn decode(
+    decoder: &mut ndjson::Decoder,
+    offset: u64,
+    bytes: &[u8],
+) -> Result<Vec<Record>, Error> {
+    let batch = decoder.push(offset, bytes)?;
+    if batch.oversized {
+        return Err(Error::MessageTooLarge);
     }
-    pub fn next_offset(&self) -> u64 {
-        self.next
-    }
-    pub fn push(&mut self, offset: u64, bytes: &[u8]) -> Result<Vec<Record>, Error> {
-        if offset != self.next {
-            return Err(Error::StreamDiscontinuity);
-        }
-        let mut records = Vec::new();
-        for &byte in bytes {
-            self.next = self.next.checked_add(1).ok_or(Error::OffsetExhausted)?;
-            if byte == b'\n' {
-                let message = Message::parse(&self.bytes)?;
-                records.push(Record {
-                    from_seq: self.start,
-                    to_seq: self.next,
-                    message,
-                });
-                self.bytes.clear();
-                self.start = self.next;
-            } else {
-                if self.bytes.len() == limits::ACP_MESSAGE_BYTES {
-                    return Err(Error::MessageTooLarge);
-                }
-                self.bytes.push(byte);
-            }
-        }
-        Ok(records)
-    }
+    batch
+        .lines
+        .into_iter()
+        .map(|line| {
+            Ok(Record {
+                from_seq: line.from_seq,
+                to_seq: line.to_seq,
+                message: Message::parse(&line.bytes)?,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -326,16 +306,17 @@ mod tests {
             params: json!({"text":"Hello 🌍"}),
         };
         let bytes = message.encode().unwrap();
-        let mut decoder = Decoder::new(31);
+        let mut decoder = ndjson::Decoder::new(31);
         let mut records = Vec::new();
         for byte in &bytes {
-            records.extend(decoder.push(decoder.next_offset(), &[*byte]).unwrap());
+            let offset = decoder.next_offset();
+            records.extend(decode(&mut decoder, offset, &[*byte]).unwrap());
         }
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].from_seq, 31);
         assert_eq!(records[0].to_seq, 31 + bytes.len() as u64);
         assert_eq!(records[0].message, message);
-        assert!(decoder.push(31, &bytes).is_err());
+        assert!(decode(&mut decoder, 31, &bytes).is_err());
     }
 
     #[test]
@@ -349,11 +330,7 @@ mod tests {
         ] {
             assert!(Message::parse(&serde_json::to_vec(&value).unwrap()).is_err());
         }
-        let mut decoder = Decoder::new(0);
-        assert!(
-            decoder
-                .push(0, &vec![b'x'; limits::ACP_MESSAGE_BYTES + 1])
-                .is_err()
-        );
+        let mut decoder = ndjson::Decoder::new(0);
+        assert!(decode(&mut decoder, 0, &vec![b'x'; limits::ACP_MESSAGE_BYTES + 1]).is_err());
     }
 }

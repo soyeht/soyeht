@@ -11,6 +11,9 @@ pub enum Error {
     MalformedTerminalHeader,
     MissingAttachmentHeader,
     MalformedAttachmentHeader,
+    JsonFrameRequired,
+    NdjsonStreamDiscontinuity { expected: u64, actual: u64 },
+    NdjsonOffsetExhausted,
     InvalidEmbeddedSchema,
     UnknownMethod,
     InvalidParameters,
@@ -32,6 +35,12 @@ impl fmt::Display for Error {
             Self::MalformedAttachmentHeader => {
                 formatter.write_str("attachment header is malformed")
             }
+            Self::JsonFrameRequired => formatter.write_str("JSON frame required"),
+            Self::NdjsonStreamDiscontinuity { expected, actual } => write!(
+                formatter,
+                "NDJSON stream offset {actual} does not match expected offset {expected}"
+            ),
+            Self::NdjsonOffsetExhausted => formatter.write_str("NDJSON stream offset exhausted"),
             Self::InvalidEmbeddedSchema => formatter.write_str("compiled schema is invalid"),
             Self::UnknownMethod => formatter.write_str("unknown method"),
             Self::InvalidParameters => formatter.write_str("invalid parameters"),

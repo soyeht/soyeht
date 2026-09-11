@@ -7,6 +7,7 @@ pub use generated::*;
 mod error;
 pub use error::{Error, Result};
 pub mod frame;
+pub mod ndjson;
 pub mod validate;
 
 /// The wire schema is embedded for tooling and compatibility diagnostics.

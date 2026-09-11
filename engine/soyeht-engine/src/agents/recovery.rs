@@ -6,11 +6,10 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
-use soyeht_acp::{
-    Message,
-    rpc::{Decoder, Record},
+use soyeht_acp::{Message, rpc::Record};
+use soyeht_protocol::{
+    AttentionItem, PaneState, TranscriptKind, TranscriptRole, limits, ndjson::Decoder,
 };
-use soyeht_protocol::{AttentionItem, PaneState, TranscriptKind, TranscriptRole, limits};
 use soyeht_ptyd::wire::{Request, Response};
 
 fn invalid(message: &str) -> crate::errors::Error {
