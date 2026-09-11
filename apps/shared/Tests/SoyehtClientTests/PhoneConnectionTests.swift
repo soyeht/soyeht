@@ -146,15 +146,15 @@
       }
     }
     try await phoneWait("two Swift clients did not converge on the same transcript") {
-      let localBytes = try? JSONEncoder().encode(local.agentPanes[agentId]?.messages ?? [])
-      let remoteBytes = try? JSONEncoder().encode(reader.agentPanes[agentId]?.messages ?? [])
+      let localBytes = try? canonicalTranscript(local.agentPanes[agentId]?.messages ?? [])
+      let remoteBytes = try? canonicalTranscript(reader.agentPanes[agentId]?.messages ?? [])
       return localBytes == remoteBytes
         && local.agentPanes[agentId]?.messages.contains {
           $0.role == .user && $0.text == "hello from phone"
         } == true
     }
-    let localTranscript = try JSONEncoder().encode(local.agentPanes[agentId]?.messages ?? [])
-    let remoteTranscript = try JSONEncoder().encode(reader.agentPanes[agentId]?.messages ?? [])
+    let localTranscript = try canonicalTranscript(local.agentPanes[agentId]?.messages ?? [])
+    let remoteTranscript = try canonicalTranscript(reader.agentPanes[agentId]?.messages ?? [])
     #expect(localTranscript == remoteTranscript)
 
     local.sendPrompt(agentId, text: "permission")
@@ -217,6 +217,12 @@
     }
     let detail = details()
     throw ClientFailure.remote("test_timeout", detail.isEmpty ? message : "\(message): \(detail)")
+  }
+
+  private func canonicalTranscript(_ messages: [TranscriptMessage]) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return try encoder.encode(messages)
   }
 
   @Test func pairingLinkRejectsExternalTargetsAndDuplicateFields() throws {
