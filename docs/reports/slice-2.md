@@ -57,8 +57,9 @@ arguments is rejected.
 The Mac app creates terminal or agent panes and renders normalized messages,
 thoughts, tool calls, plans, inline terminal output, questions, queue state,
 context usage and confirmed controls. The iPhone renders the same agent state,
-sends prompts, answers permissions and changes yolo. Both clients reconstruct
-agent state from a snapshot and subsequent durable events.
+sends prompts, answers permissions, and changes the model, effort and yolo.
+Agent sign-in remains on the Mac. Both clients reconstruct agent state from a
+snapshot and subsequent durable events.
 
 ## Acceptance evidence
 
@@ -96,6 +97,17 @@ uses harmless file writes, and removes the directory and launchd jobs afterward.
 Hosted GitHub Actions is disabled by project decision. The required merge gate
 is `scripts/check_all.sh`, supplied with the private restricted vocabulary and
 the exact PR base and final payload. The final implementation run passed:
+
+- execution date: `2026-09-11`;
+- clean `main` implementation baseline:
+  `db9283dc324991c0969a65b88705556c8e4a311c`;
+- `.cache/e2e-agents.json`: `passed: true`, 10 of 10 acceptances passed in
+  6.75 seconds; and
+- `.cache/e2e-real-acp.json`: `passed: true`, adapter version `0.76.0`, 4 of 4
+  compatibility checks passed in 25.51 seconds.
+
+The ignored JSON files are execution artifacts. These summary lines preserve
+their review evidence in the repository. The same gate also passed:
 
 - the restricted-vocabulary scan over files, commit messages and PR text;
 - protocol generation without a diff, generator tests and shared vectors;
@@ -207,5 +219,10 @@ refused until a separately reviewed implementation exists.
 11. [Mac and iPhone agent panes](https://github.com/soyeht/soyeht/pull/36).
 12. [Snapshot continuity and native-control boundaries](https://github.com/soyeht/soyeht/pull/38).
 13. [Authenticated adapter and device procedure](https://github.com/soyeht/soyeht/pull/41).
+14. [Contract and queue surface alignment](https://github.com/soyeht/soyeht/pull/44).
+15. [Fail-closed agent boundaries](https://github.com/soyeht/soyeht/pull/45).
+16. [Closed model catalogue source](https://github.com/soyeht/soyeht/pull/46).
+17. [Remote agent controls](https://github.com/soyeht/soyeht/pull/48).
+18. [Canonical ADR headings](https://github.com/soyeht/soyeht/pull/49).
 
 The PR containing this report records the final audit and closes slice 2.
