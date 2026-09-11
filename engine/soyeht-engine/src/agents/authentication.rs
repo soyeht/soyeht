@@ -1,4 +1,4 @@
-use super::{Changes, now_ms, responses, state::Phase};
+use super::{Changes, responses, state::Phase};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -20,6 +20,19 @@ fn auth_pane_created(
         json!({"paneId":agent_id,"terminalPaneId":child_id}),
         vec![("pane.created".into(), json!({"pane":pane}))],
     )
+}
+
+fn embedded_auth(state: &mut super::state::State, method_id: &str, now_ms: i64) -> Result<Changes> {
+    let mut changes = Changes::default();
+    responses::call(
+        state,
+        &mut changes,
+        "authenticate",
+        json!({"methodId":method_id}),
+        "auth",
+        now_ms,
+    )?;
+    Ok(changes)
 }
 
 impl Core {
@@ -74,14 +87,7 @@ impl Core {
                 )
             })?;
         if method.kind == AuthKind::Agent {
-            let mut changes = Changes::default();
-            responses::call(
-                &mut state,
-                &mut changes,
-                "authenticate",
-                json!({"methodId":method.public.id}),
-                "auth",
-            )?;
+            let changes = embedded_auth(&mut state, &method.public.id, self.now_ms())?;
             return Ok(self
                 .commit_agent(
                     self.panes[id].stored.clone(),
@@ -190,7 +196,7 @@ impl Core {
         } else {
             Phase::NeedsLogin
         };
-        state.last_update_ms = now_ms();
+        state.last_update_ms = self.now_ms();
         let mut changes = Changes {
             clear_failed_probes: success,
             ..Changes::default()

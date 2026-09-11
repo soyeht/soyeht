@@ -1,7 +1,8 @@
-use super::{Changes, filesystem, now_ms};
+use super::{Changes, filesystem};
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_acp::{Message, RpcError};
@@ -35,7 +36,10 @@ pub fn failure(message: impl Into<String>) -> RpcError {
 
 impl Core {
     pub fn run_native_files(&mut self, pane: &str) -> Result<()> {
-        let requests = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
+        let requests = self
+            .store
+            .agent_open_requests(pane)
+            .map_err(errors::storage)?;
         for request in requests
             .into_iter()
             .filter(|r| r.method.starts_with("fs/"))
@@ -99,21 +103,22 @@ impl Core {
                                     ))
                                 }
                             } else {
-                                self.store
-                                    .mutate(
-                                        "native-effect",
-                                        &Uuid::new_v4().to_string(),
-                                        "start",
-                                        |tx| {
-                                            agents::start_effect(
-                                                tx,
-                                                &request.request_id,
-                                                &json!({"at":now_ms()}),
-                                            )?;
-                                            Ok((json!({}), vec![]))
-                                        },
-                                    )
-                                    .map_err(errors::storage)?;
+                                let now_ms = self.now_ms();
+                                StorePort::mutate(
+                                    &mut self.store,
+                                    "native-effect",
+                                    &Uuid::new_v4().to_string(),
+                                    "start",
+                                    |tx| {
+                                        agents::start_effect(
+                                            tx,
+                                            &request.request_id,
+                                            &json!({"at":now_ms}),
+                                        )?;
+                                        Ok((json!({}), vec![]))
+                                    },
+                                )
+                                .map_err(errors::storage)?;
                                 filesystem::write_with_key(root, path, content, &request.request_id)
                                     .map(|()| json!({}))
                                     .map_err(|error| failure(error.to_string()))
@@ -157,11 +162,12 @@ pub fn receive(
     id: Value,
     method: String,
     params: Value,
+    now_ms: i64,
 ) -> NativeRequest {
     let expires_ms = if method == "terminal/wait_for_exit" {
         i64::MAX
     } else {
-        now_ms() + 30_000
+        now_ms + 30_000
     };
     NativeRequest {
         request_id: Uuid::new_v4().to_string(),

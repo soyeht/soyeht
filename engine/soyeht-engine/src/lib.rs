@@ -9,6 +9,7 @@ pub mod network;
 pub mod outbox;
 pub mod pairing;
 pub mod panes;
+pub mod ports;
 pub mod screen;
 pub mod server;
 pub mod settings;

@@ -1,6 +1,7 @@
 use crate::{
     errors::{self, Result},
     model::{self, Connected, RunningPane, StoredPane},
+    ports::{Clock, StorePort, SupervisorCallError, SupervisorPort, SystemClock, call_supervisor},
     screen::Screen,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -17,6 +18,7 @@ use soyeht_store::{
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use uuid::Uuid;
 
@@ -24,7 +26,8 @@ pub struct Core {
     pub store: Store,
     pub directory: PathBuf,
     pub generation: u64,
-    pub ptyd: Option<Client>,
+    pub ptyd: Option<Box<dyn SupervisorPort>>,
+    pub clock: Arc<dyn Clock>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
@@ -47,6 +50,7 @@ impl Core {
             directory: directory.into(),
             generation,
             ptyd: None,
+            clock: Arc::new(SystemClock),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
@@ -55,13 +59,16 @@ impl Core {
         };
         for stored in model::panes(&core.store)? {
             if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
-                let mut state: crate::agents::state::State =
-                    soyeht_store::agents::runtime(&core.store, &stored.pane.pane_id)
-                        .map_err(errors::storage)?
-                        .ok_or_else(|| {
-                            errors::error(ErrorKind::InternalError, "Agent pane has no checkpoint")
-                        })?;
-                state.queue = soyeht_store::agents::queue(&core.store, &stored.pane.pane_id)
+                let mut state: crate::agents::state::State = core
+                    .store
+                    .agent_runtime(&stored.pane.pane_id)
+                    .map_err(errors::storage)?
+                    .ok_or_else(|| {
+                        errors::error(ErrorKind::InternalError, "Agent pane has no checkpoint")
+                    })?;
+                state.queue = core
+                    .store
+                    .agent_queue(&stored.pane.pane_id)
                     .map_err(errors::storage)?
                     .into();
                 core.agents.insert(
@@ -85,12 +92,14 @@ impl Core {
     }
 
     fn system_event(&mut self, method: &str, params: Value) -> Result<()> {
-        let mutation = self
-            .store
-            .mutate("engine", &Uuid::new_v4().to_string(), method, |_| {
-                Ok((json!({}), vec![(method.into(), params)]))
-            })
-            .map_err(errors::storage)?;
+        let mutation = StorePort::mutate(
+            &mut self.store,
+            "engine",
+            &Uuid::new_v4().to_string(),
+            method,
+            |_| Ok((json!({}), vec![(method.into(), params)])),
+        )
+        .map_err(errors::storage)?;
         self.publish(&mutation.events);
         Ok(())
     }
@@ -136,22 +145,31 @@ impl Core {
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
             &json!([method, params]).to_string(),
         ));
-        let mutation = self
-            .store
-            .mutate_as(&client.scope, key, &fingerprint, Some(&actor), change)
-            .map_err(errors::storage)?;
+        let mutation = StorePort::mutate_as(
+            &mut self.store,
+            &client.scope,
+            key,
+            &fingerprint,
+            Some(&actor),
+            change,
+        )
+        .map_err(errors::storage)?;
         self.publish(&mutation.events);
         Ok(mutation)
     }
 
     pub fn pty_request(&mut self, request: Request) -> Result<Response> {
-        let result = self
-            .ptyd
-            .as_mut()
-            .ok_or_else(|| errors::error(ErrorKind::PtydUnavailable, "Supervisor disconnected"))?
-            .request(request);
+        let result = call_supervisor(
+            self.ptyd
+                .as_mut()
+                .ok_or_else(|| {
+                    errors::error(ErrorKind::PtydUnavailable, "Supervisor disconnected")
+                })?
+                .as_mut(),
+            request,
+        );
         match result {
-            Ok(Response::Error { kind, message }) => Err(errors::error(
+            Err(SupervisorCallError::Response { kind, message }) => Err(errors::error(
                 if kind == "stale_engine_generation" {
                     ErrorKind::StaleEngineGeneration
                 } else if kind == "spawn_failed" {
@@ -162,7 +180,7 @@ impl Core {
                 &message,
             )),
             Ok(response) => Ok(response),
-            Err(_) => {
+            Err(SupervisorCallError::Transport(_)) => {
                 self.ptyd = None;
                 let _ = self.system_event(
                     "ptyd.lost",
@@ -179,12 +197,12 @@ impl Core {
     pub fn connect_supervisor(&mut self) -> Result<()> {
         let client = Client::connect(&self.directory.join("ptyd.sock"), self.generation)
             .map_err(|_| errors::error(ErrorKind::PtydUnavailable, "Supervisor unavailable"))?;
-        self.ptyd = Some(client);
+        self.ptyd = Some(Box::new(client));
         let result = self.reconcile_registry();
         if result.is_err() {
             self.ptyd = None;
         } else {
-            self.system_event("ptyd.reconnected",json!({"generation":self.ptyd.as_ref().expect("connected supervisor").supervisor_generation}))?;
+            self.system_event("ptyd.reconnected",json!({"generation":self.ptyd.as_ref().expect("connected supervisor").supervisor_generation()}))?;
         }
         result
     }
@@ -197,9 +215,7 @@ impl Core {
             ));
         };
         for operation_key in receipts {
-            let pending = self
-                .store
-                .input_intent_operation_pending(&operation_key)
+            let pending = StorePort::input_intent_operation_pending(&self.store, &operation_key)
                 .map_err(errors::storage)?;
             if !pending
                 && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)
@@ -256,7 +272,8 @@ impl Core {
                     self.recover_missing_agent(&id)?;
                     continue;
                 }
-                let auth_launch = self.store.has_pane_launch(&id).map_err(errors::storage)?;
+                let auth_launch =
+                    StorePort::has_pane_launch(&self.store, &id).map_err(errors::storage)?;
                 if auth_launch && saved.instance_id.is_some() {
                     let mut stopped = saved;
                     stopped.pane.pid = None;
@@ -294,7 +311,8 @@ impl Core {
             return self.spawn_agent(id);
         }
         let pane = &self.panes[id].stored;
-        let launch: Option<Spawn> = self.store.pane_launch(id).map_err(errors::storage)?;
+        let launch: Option<Spawn> =
+            StorePort::pane_launch(&self.store, id).map_err(errors::storage)?;
         let config = Spawn {
             instance_key: pane.instance_key.clone(),
             generation: pane.pane.generation,
@@ -348,9 +366,12 @@ impl Core {
 
     pub fn save_runtime(&mut self, id: &str, saved: StoredPane) -> Result<()> {
         let event = state_event(&saved);
-        let change = self
-            .store
-            .mutate("engine", &Uuid::new_v4().to_string(), "runtime", |tx| {
+        let change = StorePort::mutate(
+            &mut self.store,
+            "engine",
+            &Uuid::new_v4().to_string(),
+            "runtime",
+            |tx| {
                 write_pane(tx, &saved)?;
                 Ok((
                     json!({}),
@@ -359,8 +380,9 @@ impl Core {
                         ("pane.updated".into(), json!({"pane": saved.pane})),
                     ],
                 ))
-            })
-            .map_err(errors::storage)?;
+            },
+        )
+        .map_err(errors::storage)?;
         self.panes.get_mut(id).expect("known pane").stored = saved;
         self.publish(&change.events);
         Ok(())
@@ -445,6 +467,18 @@ impl Core {
             }
         }
         Ok(())
+    }
+
+    pub fn now_ms(&self) -> i64 {
+        self.clock.now_ms()
+    }
+
+    pub fn now_unix(&self) -> i64 {
+        self.clock.now_unix()
+    }
+
+    pub fn timestamp(&self) -> String {
+        self.clock.timestamp()
     }
 }
 

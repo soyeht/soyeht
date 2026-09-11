@@ -3,15 +3,16 @@ use crate::{
     core::Core,
     errors::{self, Result},
     model,
+    ports::{Clock, StorePort},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use chrono::{SecondsFormat, Utc};
+use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{Device, ErrorKind};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct Pending {
     id: String,
     code: String,
@@ -25,11 +26,25 @@ struct Pending {
     expires: i64,
 }
 
+fn active_pending<S: StorePort, C: Clock + ?Sized>(
+    store: &S,
+    clock: &C,
+    id: &str,
+) -> Result<Pending> {
+    store
+        .active_pair_request(id, clock.now_unix())
+        .map_err(errors::storage)?
+        .ok_or_else(|| {
+            errors::error(
+                ErrorKind::Unauthorized,
+                "Pairing request missing or expired",
+            )
+        })
+}
+
 impl Core {
     pub fn pending_pair_view(&self) -> Result<Value> {
-        let rows: Vec<Pending> = self
-            .store
-            .active_pair_requests(Utc::now().timestamp())
+        let rows: Vec<Pending> = StorePort::active_pair_requests(&self.store, self.now_unix())
             .map_err(errors::storage)?;
         let mut requests = vec![];
         for pending in rows {
@@ -43,15 +58,7 @@ impl Core {
     }
 
     fn pending_pair(&self, id: &str) -> Result<Pending> {
-        self.store
-            .active_pair_request(id, Utc::now().timestamp())
-            .map_err(errors::storage)?
-            .ok_or_else(|| {
-                errors::error(
-                    ErrorKind::Unauthorized,
-                    "Pairing request missing or expired",
-                )
-            })
+        active_pending(&self.store, self.clock.as_ref(), id)
     }
 
     pub fn pair_request(
@@ -74,9 +81,7 @@ impl Core {
             let public =
                 auth::public_key(key).map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
             let scope = format!("pair:{}", auth::fingerprint(&public));
-            let receipt = self
-                .store
-                .idempotency_receipt(&scope, idem)
+            let receipt = StorePort::idempotency_receipt(&self.store, &scope, idem)
                 .map_err(errors::storage)?;
             if let Some(receipt) = receipt {
                 if receipt.fingerprint != fingerprint {
@@ -96,9 +101,7 @@ impl Core {
                     .pair_request = Some(id.into());
                 return Ok(result);
             }
-            let expires = self
-                .store
-                .active_pair_window_expiry(code, Utc::now().timestamp())
+            let expires = StorePort::active_pair_window_expiry(&self.store, code, self.now_unix())
                 .map_err(errors::storage)?;
             let expires = expires.ok_or_else(|| {
                 errors::error(ErrorKind::Unauthorized, "Pairing code expired or invalid")
@@ -116,10 +119,15 @@ impl Core {
                 device: None,
                 expires,
             };
-            let mutation=self.store.mutate(&scope,idem,&fingerprint,|tx| {
-                tx.insert_pair_request(&pending.id, &pending, expires, Utc::now().timestamp())?;
-                Ok((json!({"requestId":pending.id,"challenge":STANDARD.encode(pending.challenge)}),vec![]))
-            }).map_err(errors::storage)?;
+            let now = self.now_unix();
+            let mutation = StorePort::mutate(&mut self.store, &scope, idem, &fingerprint, |tx| {
+                tx.insert_pair_request(&pending.id, &pending, expires, now)?;
+                Ok((
+                    json!({"requestId":pending.id,"challenge":STANDARD.encode(pending.challenge)}),
+                    vec![],
+                ))
+            })
+            .map_err(errors::storage)?;
             self.clients
                 .get_mut(connection)
                 .expect("connection")
@@ -151,7 +159,7 @@ impl Core {
         let scope = format!("pair:{}", auth::fingerprint(&public));
         let was_proved = pending.proved;
         pending.proved = true;
-        let mutation=self.store.mutate(&scope,idem,&fingerprint,|tx| {
+        let mutation=StorePort::mutate(&mut self.store,&scope,idem,&fingerprint,|tx| {
             tx.update_pair_request(id, &pending)?;
             let events=if was_proved {vec![]}else{vec![("device.pair_requested".into(),json!({"requestId":id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public)}))]};
             Ok((json!({"status":"pending"}),events))
@@ -187,21 +195,28 @@ impl Core {
     ) -> Result<Value> {
         if method == "device.pair.start" {
             let code = auth::token().map_err(|s| errors::error(ErrorKind::InternalError, s))?;
-            let expires = Utc::now() + chrono::Duration::minutes(10);
+            let now = self.now_unix();
+            let expires = now + chrono::Duration::minutes(10).num_seconds();
+            let expires_at = chrono::DateTime::from_timestamp(expires, 0).ok_or_else(|| {
+                errors::error(
+                    ErrorKind::InternalError,
+                    "Pairing expiration is out of range",
+                )
+            })?;
             let uri = format!(
                 "soyeht-next://pair?engineId={}&address={}&code={}",
-                self.store.db_id, self.pair_address, code
+                self.store.store_id(),
+                self.pair_address,
+                code
             );
             return Ok(self.mutate(connection,method,params,|tx| {
-                tx.open_pair_window(&code, expires.timestamp(), Utc::now().timestamp())?;
-                Ok((json!({"code":code,"expiresAt":expires.to_rfc3339_opts(SecondsFormat::Secs,true),"uri":uri}),vec![]))
+                tx.open_pair_window(&code, expires, now)?;
+                Ok((json!({"code":code,"expiresAt":expires_at.to_rfc3339_opts(SecondsFormat::Secs,true),"uri":uri}),vec![]))
             })?.result);
         }
         if method == "device.revoke" {
             let id = params["deviceId"].as_str().expect("device");
-            let mut device: Device = self
-                .store
-                .device(id)
+            let mut device: Device = StorePort::device(&self.store, id)
                 .map_err(errors::storage)?
                 .ok_or_else(|| errors::error(ErrorKind::NotFound, "Device not found"))?;
             device.revoked = true;
@@ -238,10 +253,9 @@ impl Core {
         let approve = params["approve"].as_bool().expect("approve");
         pending.approved = Some(approve);
         if approve {
-            let available = self
-                .store
-                .pair_window_active(&pending.code, Utc::now().timestamp())
-                .map_err(errors::storage)?;
+            let available =
+                StorePort::pair_window_active(&self.store, &pending.code, self.now_unix())
+                    .map_err(errors::storage)?;
             if !available {
                 return Err(errors::error(
                     ErrorKind::Unauthorized,
@@ -289,5 +303,43 @@ impl Core {
             self.send_pair_result(connection, &pending);
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::testing::{FixedClock, MemoryStore};
+
+    fn pending(expires: i64) -> Pending {
+        Pending {
+            id: "request".into(),
+            code: "123456".into(),
+            name: "Phone".into(),
+            key: "key".into(),
+            challenge: [7; 32],
+            proved: false,
+            approved: None,
+            token: None,
+            device: None,
+            expires,
+        }
+    }
+
+    #[test]
+    fn pairing_rule_uses_the_clock_and_store_ports_for_expiry() {
+        let mut store = MemoryStore::default();
+        store
+            .pair_requests
+            .insert("request".into(), serde_json::to_value(pending(11)).unwrap());
+
+        assert_eq!(
+            active_pending(&store, &FixedClock(10_000), "request")
+                .unwrap()
+                .name,
+            "Phone"
+        );
+        let error = active_pending(&store, &FixedClock(11_000), "request").unwrap_err();
+        assert_eq!(error.data.kind, ErrorKind::Unauthorized);
     }
 }

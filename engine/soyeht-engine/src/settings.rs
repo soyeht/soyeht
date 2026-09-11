@@ -1,6 +1,7 @@
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_protocol::ErrorKind;
@@ -13,13 +14,18 @@ fn default_value(key: &str) -> Result<Value> {
         _ => Err(errors::error(ErrorKind::InvalidParams, "Unknown setting")),
     }
 }
+
+pub(crate) fn read(store: &impl StorePort, key: &str) -> Result<Value> {
+    let default = default_value(key)?;
+    store
+        .setting(key)
+        .map_err(errors::storage)
+        .map(|value| value.unwrap_or(default))
+}
+
 impl Core {
     pub fn setting(&self, key: &str) -> Result<Value> {
-        let default = default_value(key)?;
-        self.store
-            .setting(key)
-            .map_err(errors::storage)
-            .map(|value| value.unwrap_or(default))
+        read(&self.store, key)
     }
     pub fn setting_set(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let key = params["key"].as_str().expect("key");

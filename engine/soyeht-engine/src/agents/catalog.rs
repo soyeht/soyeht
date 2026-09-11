@@ -2,11 +2,11 @@ use super::{registry, responses};
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{ErrorKind, HarnessInfo, ModelInfo, ModelListSource, limits};
-use soyeht_store::agents;
 
 fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
     let digest = format!(
@@ -74,9 +74,10 @@ impl Core {
                 let mut capabilities = Vec::new();
                 if let Some(known) = known {
                     for method in responses::PROBED_METHODS {
-                        if let Some(capability) =
-                            agents::probe(&self.store, &known.state.fingerprint, method)
-                                .map_err(errors::storage)?
+                        if let Some(capability) = self
+                            .store
+                            .agent_probe(&known.state.fingerprint, method)
+                            .map_err(errors::storage)?
                         {
                             capabilities.push(capability);
                         }

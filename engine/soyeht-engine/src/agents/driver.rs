@@ -1,10 +1,8 @@
-use super::{
-    Changes, native_error, now_ms, questions, responses, state::Phase, timestamp, transcript,
-    updates,
-};
+use super::{Changes, native_error, questions, responses, state::Phase, transcript, updates};
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::{Clock, StorePort},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
@@ -12,42 +10,83 @@ use soyeht_acp::{
     Message, RpcError, client,
     rpc::{Decoder, Record as NativeRecord},
 };
-use soyeht_protocol::{ErrorKind, PaneState, ProbeCapability, ProbeResult};
+use soyeht_protocol::{ErrorKind, PaneState, ProbeCapability, ProbeResult, PromptItem};
 use soyeht_ptyd::wire::{Request, Response};
-use soyeht_store::{agents, segments::Record};
+use soyeht_store::segments::Record;
 use uuid::Uuid;
 
+fn next_prompt<S: StorePort, C: Clock + ?Sized>(
+    store: &S,
+    clock: &C,
+    pane: &str,
+    generation: u32,
+    state: &mut super::state::State,
+) -> Result<(Vec<soyeht_store::agents::NativeRequest>, Option<PromptItem>)> {
+    let open = store.agent_open_requests(pane).map_err(errors::storage)?;
+    let next = state.take_next(generation, clock.now_ms(), !open.is_empty())?;
+    Ok((open, next))
+}
+
+struct NativeContext<'a> {
+    pane: &'a str,
+    source_seq: u64,
+    now_ms: i64,
+    timestamp: &'a str,
+}
+
+fn native_error_response(id: serde_json::Value, code: i32, message: String) -> Message {
+    Message::Response {
+        id,
+        result: Err(RpcError {
+            code,
+            message,
+            data: None,
+        }),
+    }
+}
+
 impl Core {
-    pub(crate) fn native_record(
-        &mut self,
-        pane: &str,
-        record: NativeRecord,
-        advances_stream: bool,
-    ) -> Result<()> {
-        let mut state = self.agent_state(pane)?;
-        let mut saved = self.panes[pane].stored.clone();
-        let was_no_signal = saved.pane.state == PaneState::NoSignal;
+    fn apply_native_message(
+        &self,
+        context: NativeContext<'_>,
+        message: Message,
+        state: &mut super::state::State,
+        saved: &mut crate::model::StoredPane,
+    ) -> Result<Changes> {
+        let NativeContext {
+            pane,
+            source_seq,
+            now_ms,
+            timestamp,
+        } = context;
         let mut changes = Changes::default();
-        match record.message {
-            response @ Message::Response { .. } => {
-                responses::response(&self.store, &mut state, &mut saved, response, &mut changes)?;
-            }
+        match message {
+            response @ Message::Response { .. } => responses::response(
+                &self.store,
+                state,
+                saved,
+                response,
+                &mut changes,
+                now_ms,
+                timestamp,
+            )?,
             Message::Notification { method, params } => {
                 if method == "session/update" {
                     updates::update(
                         &self.store,
                         pane,
                         saved.pane.generation,
-                        &mut state,
+                        state,
                         &params,
                         &mut changes,
                     )?;
                 }
             }
             Message::Request { id, method, params } => {
-                if let Some(prior) =
-                    agents::request_at(&self.store, pane, saved.pane.generation, record.from_seq)
-                        .map_err(errors::storage)?
+                if let Some(prior) = self
+                    .store
+                    .agent_request_at(pane, saved.pane.generation, source_seq)
+                    .map_err(errors::storage)?
                 {
                     if prior.native_id != id || prior.method != method || prior.params != params {
                         return Err(errors::error(
@@ -63,22 +102,21 @@ impl Core {
                 ) {
                     let mut question = Changes::default();
                     if let Err(error) = questions::receive(
-                        &mut state,
-                        &mut saved,
-                        record.from_seq,
-                        id.clone(),
-                        &method,
-                        params,
+                        state,
+                        saved,
+                        questions::Incoming {
+                            source_seq,
+                            native_id: id.clone(),
+                            method: &method,
+                            params,
+                            now_ms,
+                            timestamp,
+                        },
                         &mut question,
                     ) {
-                        changes.outgoing.push(Message::Response {
-                            id,
-                            result: Err(RpcError {
-                                code: -32602,
-                                message: error.message,
-                                data: None,
-                            }),
-                        });
+                        changes
+                            .outgoing
+                            .push(native_error_response(id, -32602, error.message));
                     } else {
                         changes = question;
                     }
@@ -92,41 +130,59 @@ impl Core {
                         | "terminal/kill"
                         | "terminal/release"
                 ) {
-                    if let Err(error) = super::effects::require_session(&state, &params) {
-                        changes.outgoing.push(Message::Response {
-                            id,
-                            result: Err(RpcError {
-                                code: -32602,
-                                message: error.message,
-                                data: None,
-                            }),
-                        });
+                    if let Err(error) = super::effects::require_session(state, &params) {
+                        changes
+                            .outgoing
+                            .push(native_error_response(id, -32602, error.message));
                     } else {
                         changes.received.push(super::effects::receive(
                             pane,
                             saved.pane.generation,
-                            record.from_seq,
+                            source_seq,
                             id,
                             method,
                             params,
+                            now_ms,
                         ));
                     }
                 } else {
-                    changes.outgoing.push(Message::Response {
+                    changes.outgoing.push(native_error_response(
                         id,
-                        result: Err(RpcError {
-                            code: -32601,
-                            message: "Client method unavailable".into(),
-                            data: None,
-                        }),
-                    });
+                        -32601,
+                        "Client method unavailable".into(),
+                    ));
                 }
             }
         }
+        Ok(changes)
+    }
+
+    pub(crate) fn native_record(
+        &mut self,
+        pane: &str,
+        record: NativeRecord,
+        advances_stream: bool,
+    ) -> Result<()> {
+        let mut state = self.agent_state(pane)?;
+        let mut saved = self.panes[pane].stored.clone();
+        let was_no_signal = saved.pane.state == PaneState::NoSignal;
+        let now_ms = self.now_ms();
+        let timestamp = self.timestamp();
+        let mut changes = self.apply_native_message(
+            NativeContext {
+                pane,
+                source_seq: record.from_seq,
+                now_ms,
+                timestamp: &timestamp,
+            },
+            record.message,
+            &mut state,
+            &mut saved,
+        )?;
         if advances_stream {
             state.acknowledged_offset = record.to_seq;
         }
-        state.last_update_ms = now_ms();
+        state.last_update_ms = self.now_ms();
         if saved.pane.state == PaneState::NoSignal {
             saved.pane.state = if state.active.is_some() {
                 PaneState::Working
@@ -351,18 +407,20 @@ impl Core {
         }
         if state
             .probe_started_ms
-            .is_some_and(|start| now_ms() - start >= 10_000)
+            .is_some_and(|start| self.now_ms() - start >= 10_000)
         {
             let mut changes = Changes::default();
             for method in responses::PROBED_METHODS {
-                if agents::probe(&self.store, &state.fingerprint, method)
+                if self
+                    .store
+                    .agent_probe(&state.fingerprint, method)
                     .map_err(errors::storage)?
                     .is_none()
                 {
                     changes.probes.push(ProbeCapability {
                         method: method.into(),
                         result: ProbeResult::Inconclusive,
-                        checked_at: timestamp(),
+                        checked_at: self.timestamp(),
                     });
                 }
             }
@@ -376,10 +434,13 @@ impl Core {
             )?;
             return self.restart_after_probe(pane);
         }
-        let mut open = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
+        let mut open = self
+            .store
+            .agent_open_requests(pane)
+            .map_err(errors::storage)?;
         for request in &open {
             let selected = questions::automatic(&state, request, &self.panes[pane].stored.pane.cwd);
-            let expired = request.expires_ms <= now_ms();
+            let expired = request.expires_ms <= self.now_ms();
             if !expired && selected.is_none() {
                 continue;
             }
@@ -387,10 +448,13 @@ impl Core {
             questions::decision(
                 &mut state,
                 request,
-                if expired { None } else { selected.as_deref() },
-                None,
-                if expired { "system" } else { "rule" },
-                expired,
+                questions::Decision {
+                    option: if expired { None } else { selected.as_deref() },
+                    fields: None,
+                    by: if expired { "system" } else { "rule" },
+                    expired,
+                    timestamp: &self.timestamp(),
+                },
                 &mut changes,
             )?;
             self.commit_agent(
@@ -401,8 +465,15 @@ impl Core {
                 json!({}),
             )?;
         }
-        open = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
         let mut saved = self.panes[pane].stored.clone();
+        let (next_open, next) = next_prompt(
+            &self.store,
+            self.clock.as_ref(),
+            pane,
+            saved.pane.generation,
+            &mut state,
+        )?;
+        open = next_open;
         if open.is_empty() && saved.pane.state == PaneState::WaitingForYou && state.active.is_some()
         {
             saved.pane.state = PaneState::Working;
@@ -415,8 +486,7 @@ impl Core {
                 json!({}),
             )?;
         }
-        let Some(prompt) = state.take_next(saved.pane.generation, now_ms(), !open.is_empty())?
-        else {
+        let Some(prompt) = next else {
             return Ok(());
         };
         let session = state
@@ -436,10 +506,47 @@ impl Core {
             "session/prompt",
             client::prompt(&session, &prompt.text),
             &prompt.prompt_id,
+            self.now_ms(),
         )?;
         saved.pane.state = PaneState::Working;
         saved.pane.phrase = "Agent is working".into();
         self.commit_agent(saved, state, changes, None, json!({}))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::testing::{FixedClock, MemoryStore};
+    use soyeht_protocol::{HarnessLaunch, PermissionMode, PromptOrigin};
+
+    #[test]
+    fn agent_session_rule_reads_requests_and_time_through_ports() {
+        let store = MemoryStore::default();
+        let mut state = super::super::state::State::new(
+            HarnessLaunch {
+                id: "test".into(),
+                name: "Test".into(),
+                command: "/test".into(),
+                args: Vec::new(),
+                version: "1".into(),
+            },
+            "digest".into(),
+            PermissionMode::Ask,
+        );
+        state.phase = Phase::Ready;
+        state.session_id = Some("session".into());
+        state.requested_options.clear();
+        state
+            .enqueue("do work".into(), PromptOrigin::Automatic, "fixed".into())
+            .unwrap();
+        state.draft_until_ms = 20_001;
+
+        let (_, held) = next_prompt(&store, &FixedClock(20_000), "pane", 1, &mut state).unwrap();
+        assert!(held.is_none());
+        let (_, released) =
+            next_prompt(&store, &FixedClock(20_001), "pane", 1, &mut state).unwrap();
+        assert_eq!(released.unwrap().text, "do work");
     }
 }

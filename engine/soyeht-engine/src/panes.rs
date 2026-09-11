@@ -2,13 +2,36 @@ use crate::{
     core::{Core, write_pane},
     errors::{self, Result},
     model::{self, RunningPane, StoredPane},
+    ports::StorePort,
     screen::Screen,
+    settings,
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, Pane, PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
+
+#[derive(Debug, PartialEq, Eq)]
+struct PaneDefaults {
+    cols: u32,
+    rows: u32,
+    record: bool,
+}
+
+fn pane_defaults(store: &impl StorePort) -> Result<PaneDefaults> {
+    Ok(PaneDefaults {
+        cols: settings::read(store, "terminal.defaultCols")?
+            .as_u64()
+            .expect("column setting") as u32,
+        rows: settings::read(store, "terminal.defaultRows")?
+            .as_u64()
+            .expect("row setting") as u32,
+        record: settings::read(store, "record.default")?
+            .as_bool()
+            .expect("boolean setting"),
+    })
+}
 
 fn persist_new_pane(
     change: &soyeht_store::database::Change<'_>,
@@ -34,34 +57,37 @@ fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) {
     )
 }
 
+fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::state::State>> {
+    if params["mode"] != "agent" {
+        return Ok(None);
+    }
+    let harness = params["harness"]
+        .as_str()
+        .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Agent panes require a harness"))?;
+    let (launch, digest) = crate::agents::registry::prepare(directory, harness)?;
+    let permission = params
+        .get("permission")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid permission mode"))?
+        .unwrap_or(soyeht_protocol::PermissionMode::Ask);
+    let mut agent = crate::agents::state::State::new(launch, digest, permission);
+    for name in ["model", "effort"] {
+        if let Some(value) = params[name].as_str() {
+            agent
+                .requested_options
+                .insert(name.into(), soyeht_protocol::ConfigValue::V0(value.into()));
+        }
+    }
+    Ok(Some(agent))
+}
+
 impl Core {
     pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
+        let defaults = pane_defaults(&self.store)?;
         let agent_mode = params["mode"] == "agent";
-        let mut agent = if agent_mode {
-            let harness = params["harness"].as_str().ok_or_else(|| {
-                errors::error(ErrorKind::InvalidParams, "Agent panes require a harness")
-            })?;
-            let (launch, digest) = crate::agents::registry::prepare(&self.directory, harness)?;
-            let permission = params
-                .get("permission")
-                .cloned()
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid permission mode"))?
-                .unwrap_or(soyeht_protocol::PermissionMode::Ask);
-            Some(crate::agents::state::State::new(launch, digest, permission))
-        } else {
-            None
-        };
-        if let Some(state) = &mut agent {
-            for name in ["model", "effort"] {
-                if let Some(value) = params[name].as_str() {
-                    state
-                        .requested_options
-                        .insert(name.into(), soyeht_protocol::ConfigValue::V0(value.into()));
-                }
-            }
-        }
+        let agent = new_agent(&self.directory, params)?;
         let workspace = model::workspace(
             &self.store,
             params["workspaceId"].as_str().expect("workspace"),
@@ -83,9 +109,7 @@ impl Core {
             cwd
         };
         let pane = Pane {
-            agent: agent
-                .as_ref()
-                .map(|agent| agent.public(crate::agents::now_ms())),
+            agent: agent.as_ref().map(|agent| agent.public(self.now_ms())),
             pane_id: Uuid::new_v4().to_string(),
             workspace_id: workspace.workspace_id,
             cwd: cwd.into(),
@@ -112,21 +136,13 @@ impl Core {
             }
             .into(),
             generation: 1,
-            cols: params["cols"].as_u64().unwrap_or(
-                self.setting("terminal.defaultCols")?
-                    .as_u64()
-                    .expect("column setting"),
-            ) as u32,
-            rows: params["rows"].as_u64().unwrap_or(
-                self.setting("terminal.defaultRows")?
-                    .as_u64()
-                    .expect("row setting"),
-            ) as u32,
-            record: agent_mode
-                || self
-                    .setting("record.default")?
-                    .as_bool()
-                    .expect("boolean setting"),
+            cols: params["cols"]
+                .as_u64()
+                .map_or(defaults.cols, |value| value as u32),
+            rows: params["rows"]
+                .as_u64()
+                .map_or(defaults.rows, |value| value as u32),
+            record: agent_mode || defaults.record,
             pid: None,
             stream_id: (!agent_mode).then(|| Uuid::new_v4().to_string()),
         };
@@ -280,5 +296,32 @@ impl Core {
         {
             self.ptyd = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::testing::MemoryStore;
+
+    #[test]
+    fn pane_rule_reads_defaults_through_the_store_port() {
+        let mut store = MemoryStore::default();
+        store
+            .settings
+            .insert("terminal.defaultCols".into(), json!(132));
+        store
+            .settings
+            .insert("terminal.defaultRows".into(), json!(44));
+        store.settings.insert("record.default".into(), json!(false));
+
+        assert_eq!(
+            pane_defaults(&store).unwrap(),
+            PaneDefaults {
+                cols: 132,
+                rows: 44,
+                record: false,
+            }
+        );
     }
 }

@@ -1,7 +1,8 @@
-use super::{Changes, native_error, now_ms, state::Phase};
+use super::{Changes, native_error, state::Phase};
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use serde_json::json;
 use soyeht_protocol::{ErrorKind, PaneState, StateSource};
@@ -23,16 +24,21 @@ impl Core {
             clear_replay: true,
             ..Changes::default()
         };
-        for request in
-            soyeht_store::agents::open_requests(&self.store, id).map_err(errors::storage)?
+        for request in self
+            .store
+            .agent_open_requests(id)
+            .map_err(errors::storage)?
         {
             super::questions::decision(
                 &mut state,
                 &request,
-                None,
-                None,
-                "system",
-                false,
+                super::questions::Decision {
+                    option: None,
+                    fields: None,
+                    by: "system",
+                    expired: false,
+                    timestamp: &self.timestamp(),
+                },
                 &mut changes,
             )?;
         }
@@ -80,8 +86,7 @@ impl Core {
         saved.sequence_base = self.panes[id].screen.next_offset();
         state.client = Default::default();
         for terminal in state.terminals.values() {
-            if terminal.supervisor_id.as_deref()
-                == self.ptyd.as_ref().map(|p| p.supervisor_id.as_str())
+            if terminal.supervisor_id.as_deref() == self.ptyd.as_ref().map(|p| p.supervisor_id())
                 && let Some(instance_id) = &terminal.instance_id
             {
                 self.pty_request(Request::Close {
@@ -152,7 +157,7 @@ impl Core {
             changes.outgoing.push(
                 state
                     .client
-                    .initialize(now_ms() as u64)
+                    .initialize(self.now_ms() as u64)
                     .map_err(native_error)?,
             );
             state.phase = Phase::Initializing;

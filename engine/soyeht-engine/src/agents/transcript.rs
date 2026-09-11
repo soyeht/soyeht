@@ -1,12 +1,14 @@
 use super::{Changes, state::State};
-use crate::errors::{self, Result};
+use crate::{
+    errors::{self, Result},
+    ports::StorePort,
+};
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, TranscriptKind, TranscriptMessage, TranscriptRole, limits};
-use soyeht_store::database::Store;
 use uuid::Uuid;
 
-pub fn message(store: &Store, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
-    soyeht_store::agents::message(store, pane, seq).map_err(errors::storage)
+pub fn message(store: &impl StorePort, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
+    store.agent_message(pane, seq).map_err(errors::storage)
 }
 pub fn new_message(
     state: &mut State,
@@ -108,7 +110,7 @@ pub fn put(
 }
 
 pub fn append_text(
-    store: &Store,
+    store: &impl StorePort,
     pane: &str,
     state: &mut State,
     generation: u32,
@@ -128,7 +130,7 @@ pub fn append_text(
 }
 
 pub fn append_text_role(
-    store: &Store,
+    store: &impl StorePort,
     pane: &str,
     state: &mut State,
     generation: u32,
@@ -220,7 +222,12 @@ pub fn append_text_role(
     }
 }
 
-pub fn complete(store: &Store, pane: &str, state: &mut State, changes: &mut Changes) -> Result<()> {
+pub fn complete(
+    store: &impl StorePort,
+    pane: &str,
+    state: &mut State,
+    changes: &mut Changes,
+) -> Result<()> {
     for (key, seq) in std::mem::take(&mut state.open_messages) {
         if let Some(mut item) = message(store, pane, seq)? {
             item.complete = true;

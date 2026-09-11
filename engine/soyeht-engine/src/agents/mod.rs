@@ -23,6 +23,7 @@ use crate::{
     core::{Core, write_pane},
     errors::{self, Result},
     model::StoredPane,
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_acp::{Message, rpc::Decoder};
@@ -66,12 +67,6 @@ pub struct Changes {
     pub events: Vec<(String, Value)>,
 }
 
-pub fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
-}
-pub fn timestamp() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-}
 pub fn native_error(error: soyeht_acp::Error) -> soyeht_protocol::RpcError {
     errors::error(ErrorKind::InvalidParams, error.0)
 }
@@ -98,7 +93,7 @@ impl Core {
         result: Value,
     ) -> Result<Mutation> {
         let id = saved.pane.pane_id.clone();
-        saved.pane.agent = Some(state.public(now_ms()));
+        saved.pane.agent = Some(state.public(self.now_ms()));
         let old_queue = self
             .agents
             .get(&id)
@@ -220,15 +215,14 @@ impl Core {
         let mutation = if let Some((connection, method, params)) = user {
             self.mutate(connection, method, params, change)?
         } else {
-            let mutation = self
-                .store
-                .mutate(
-                    "engine-agent",
-                    &Uuid::new_v4().to_string(),
-                    "transition",
-                    change,
-                )
-                .map_err(errors::storage)?;
+            let mutation = StorePort::mutate(
+                &mut self.store,
+                "engine-agent",
+                &Uuid::new_v4().to_string(),
+                "transition",
+                change,
+            )
+            .map_err(errors::storage)?;
             self.publish(&mutation.events);
             mutation
         };

@@ -3,14 +3,16 @@ use super::{
     state::{Phase, State},
     transcript,
 };
-use crate::errors::{self, Result};
+use crate::{
+    errors::{self, Result},
+    ports::StorePort,
+};
 use serde_json::{Value, json};
 use soyeht_acp::session::{self, Update};
 use soyeht_protocol::{ConfigValue, ErrorKind, TokenUsage, TranscriptKind, TranscriptRole};
-use soyeht_store::database::Store;
 
 fn append_replayed_user(
-    store: &Store,
+    store: &impl StorePort,
     pane: &str,
     state: &mut State,
     generation: u32,
@@ -21,7 +23,7 @@ fn append_replayed_user(
 }
 
 pub fn update(
-    store: &Store,
+    store: &impl StorePort,
     pane: &str,
     generation: u32,
     state: &mut State,

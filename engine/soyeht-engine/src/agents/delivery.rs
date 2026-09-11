@@ -1,16 +1,17 @@
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{ErrorKind, limits};
 use soyeht_ptyd::wire::{Request, Response};
-use soyeht_store::{agents, database::Store};
+use soyeht_store::agents;
 use uuid::Uuid;
 
-pub fn receipt_pending(store: &Store, key: &str) -> soyeht_store::database::Result<bool> {
+pub fn receipt_pending(store: &impl StorePort, key: &str) -> soyeht_store::database::Result<bool> {
     let Some(rest) = key.strip_prefix("acp:") else {
         return Ok(false);
     };
@@ -20,7 +21,9 @@ pub fn receipt_pending(store: &Store, key: &str) -> soyeht_store::database::Resu
     let Ok(attempt) = attempt.parse::<u32>() else {
         return Ok(false);
     };
-    Ok(agents::outgoing(store, operation)?.is_some_and(|row| row.attempt == attempt))
+    Ok(store
+        .agent_outgoing(operation)?
+        .is_some_and(|row| row.attempt == attempt))
 }
 
 impl Core {
@@ -28,7 +31,9 @@ impl Core {
         // A bounded amount of work per tick lets another pane cancel or answer
         // permission while this process accepts a large message in small writes.
         for _ in 0..8 {
-            let Some(prior) = agents::outbox(&self.store, pane)
+            let Some(prior) = self
+                .store
+                .agent_outbox(pane)
                 .map_err(errors::storage)?
                 .into_iter()
                 .next()
@@ -73,20 +78,20 @@ impl Core {
                 }
                 accepted
             };
-            self.store
-                .mutate(
-                    "agent-delivery",
-                    &Uuid::new_v4().to_string(),
-                    "advance",
-                    |tx| {
-                        let next = agents::advance(tx, &prior, accepted)?;
-                        if next.accepted_bytes as usize == next.bytes.len() {
-                            agents::delivered(tx, &next)?;
-                        }
-                        Ok((json!({}), vec![]))
-                    },
-                )
-                .map_err(errors::storage)?;
+            StorePort::mutate(
+                &mut self.store,
+                "agent-delivery",
+                &Uuid::new_v4().to_string(),
+                "advance",
+                |tx| {
+                    let next = agents::advance(tx, &prior, accepted)?;
+                    if next.accepted_bytes as usize == next.bytes.len() {
+                        agents::delivered(tx, &next)?;
+                    }
+                    Ok((json!({}), vec![]))
+                },
+            )
+            .map_err(errors::storage)?;
             // A crash before this confirmation leaves a stale ptyd receipt;
             // reconciliation sees the durable next attempt and can retire it.
             self.pty_request(Request::ConfirmInput { operation_key })?;

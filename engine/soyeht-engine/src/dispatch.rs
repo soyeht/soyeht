@@ -246,7 +246,7 @@ impl Core {
                 json!({})
             }
             "engine.status" => {
-                json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation)},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION}})
+                json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION}})
             }
             "settings.get" => {
                 json!({"key":params["key"],"value":self.setting(params["key"].as_str().expect("key"))?})

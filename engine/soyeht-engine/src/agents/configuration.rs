@@ -1,4 +1,4 @@
-use super::{Changes, native_error, pending::UserOperation, responses, state::State, timestamp};
+use super::{Changes, native_error, pending::UserOperation, responses, state::State};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -16,6 +16,15 @@ pub struct PolicyChange {
     pub yolo: bool,
     pub previous_permission: Option<PermissionMode>,
     pub previous_mode: Option<String>,
+}
+
+pub struct ChangeRequest<'a> {
+    pub config: &'a str,
+    pub value: ConfigValue,
+    pub user: Option<UserOperation>,
+    pub kind: ConfigOperationKind,
+    pub started_at: String,
+    pub now_ms: i64,
 }
 
 pub fn native_policy(value: &str) -> Option<PermissionMode> {
@@ -51,12 +60,17 @@ pub fn observe_mode(state: &mut State, value: &str, explicit_selection: bool) ->
 pub fn begin(
     state: &mut State,
     pane: &str,
-    config: &str,
-    value: ConfigValue,
-    user: Option<UserOperation>,
-    kind: ConfigOperationKind,
+    request: ChangeRequest<'_>,
     changes: &mut Changes,
 ) -> Result<String> {
+    let ChangeRequest {
+        config,
+        value,
+        user,
+        kind,
+        started_at,
+        now_ms,
+    } = request;
     if state.operation.is_some() || state.cancel_at_ms.is_some() {
         return Err(errors::error(
             ErrorKind::PaneBusy,
@@ -77,7 +91,7 @@ pub fn begin(
         kind,
         config_id: config.into(),
         value: value.clone(),
-        started_at: timestamp(),
+        started_at,
     });
     state.operation_user = user;
     state.operation_timed_out = false;
@@ -85,7 +99,7 @@ pub fn begin(
         "pane.config_changing".into(),
         json!({"paneId":pane,"configId":config,"value":value,"operationId":id}),
     ));
-    responses::call(state, changes, method, params, &id)?;
+    responses::call(state, changes, method, params, &id, now_ms)?;
     Ok(id)
 }
 
@@ -142,10 +156,14 @@ impl Core {
                     match begin(
                         &mut state,
                         pane,
-                        &option.id,
-                        value,
-                        None,
-                        ConfigOperationKind::Config,
+                        ChangeRequest {
+                            config: &option.id,
+                            value,
+                            user: None,
+                            kind: ConfigOperationKind::Config,
+                            started_at: self.timestamp(),
+                            now_ms: self.now_ms(),
+                        },
                         &mut changes,
                     ) {
                         Ok(_) => state.initial_option = Some(key.clone()),
@@ -253,10 +271,14 @@ impl Core {
             let operation = begin(
                 &mut state,
                 pane,
-                &option.expect("mode option").id,
-                ConfigValue::V0(selection),
-                Some(user),
-                ConfigOperationKind::Yolo,
+                ChangeRequest {
+                    config: &option.expect("mode option").id,
+                    value: ConfigValue::V0(selection),
+                    user: Some(user),
+                    kind: ConfigOperationKind::Yolo,
+                    started_at: self.timestamp(),
+                    now_ms: self.now_ms(),
+                },
                 &mut changes,
             )?;
             state.pending_policy = Some(policy);

@@ -1,19 +1,51 @@
-use super::{Changes, now_ms, timestamp};
+use super::Changes;
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{ErrorKind, PaneState, PromptOrigin};
-use soyeht_store::agents;
 
-fn queued(pane: &str, state: &super::state::State) -> (String, Value) {
+fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
     (
         "pane.queued".into(),
         json!({"paneId":pane,"n":state.queue.len(),
-        "promptIds":state.queue.iter().map(|p| &p.prompt_id).collect::<Vec<_>>(),"draft":state.draft_until_ms > now_ms()}),
+        "promptIds":state.queue.iter().map(|p| &p.prompt_id).collect::<Vec<_>>(),"draft":state.draft_until_ms > now_ms}),
     )
+}
+
+fn read_agent_state(
+    store: &impl StorePort,
+    method: &str,
+    params: &Value,
+    pane: &str,
+    state: &super::state::State,
+    now_ms: i64,
+) -> Result<Option<Value>> {
+    if method == "pane.queue.list" {
+        return Ok(Some(json!(state.queue_page(
+            params["cursor"].as_str(),
+            params["limit"].as_u64().unwrap_or(64) as usize,
+            now_ms
+        )?)));
+    }
+    if method == "pane.transcript" {
+        let before = params["before"]
+            .as_str()
+            .map(|value| value.parse::<u64>().expect("validated cursor"));
+        return store
+            .agent_transcript(
+                pane,
+                before,
+                params["limit"].as_u64().unwrap_or(100) as usize,
+            )
+            .map(|value| json!(value))
+            .map(Some)
+            .map_err(errors::storage);
+    }
+    Ok(None)
 }
 
 impl Core {
@@ -33,14 +65,21 @@ impl Core {
             clear_replay: true,
             ..Changes::default()
         };
-        for question in agents::open_requests(&self.store, pane).map_err(errors::storage)? {
+        for question in self
+            .store
+            .agent_open_requests(pane)
+            .map_err(errors::storage)?
+        {
             super::questions::decision(
                 &mut state,
                 &question,
-                None,
-                None,
-                "system",
-                false,
+                super::questions::Decision {
+                    option: None,
+                    fields: None,
+                    by: "system",
+                    expired: false,
+                    timestamp: &self.timestamp(),
+                },
                 &mut changes,
             )?;
         }
@@ -104,28 +143,12 @@ impl Core {
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
         let mut changes = Changes::default();
+        let now_ms = self.now_ms();
+        let timestamp = self.timestamp();
+        if let Some(result) = read_agent_state(&self.store, method, params, pane, &state, now_ms)? {
+            return Ok(result);
+        }
         let result = match method {
-            "pane.queue.list" => {
-                return Ok(json!(state.queue_page(
-                    params["cursor"].as_str(),
-                    params["limit"].as_u64().unwrap_or(64) as usize,
-                    now_ms()
-                )?));
-            }
-            "pane.transcript" => {
-                let before = params["before"]
-                    .as_str()
-                    .map(|s| s.parse::<u64>().expect("validated cursor"));
-                return Ok(json!(
-                    agents::transcript(
-                        &self.store,
-                        pane,
-                        before,
-                        params["limit"].as_u64().unwrap_or(100) as usize
-                    )
-                    .map_err(errors::storage)?
-                ));
-            }
             "pane.prompt" => {
                 changes.clear_attention = true;
                 if params["attachments"]
@@ -144,23 +167,23 @@ impl Core {
                 let prompt = state.enqueue(
                     params["text"].as_str().expect("validated text").into(),
                     origin,
-                    timestamp(),
+                    timestamp.clone(),
                 )?;
-                changes.events.push(queued(pane, &state));
+                changes.events.push(queued(pane, &state, now_ms));
                 json!({"promptId":prompt.prompt_id,"queued":true})
             }
             "pane.queue.remove" => {
                 let prompt = params["promptId"].as_str().expect("validated prompt");
                 let removed = state.remove(prompt)?;
                 if removed {
-                    changes.events.push(queued(pane, &state));
+                    changes.events.push(queued(pane, &state, now_ms));
                 }
                 json!({"promptId":prompt,"removed":removed})
             }
             "pane.draft" => {
                 let active = params["active"].as_bool().expect("validated draft");
-                state.draft_until_ms = if active { now_ms() + 10_000 } else { 0 };
-                changes.events.push(queued(pane, &state));
+                state.draft_until_ms = if active { now_ms + 10_000 } else { 0 };
+                changes.events.push(queued(pane, &state, now_ms));
                 json!({"active":active})
             }
             "pane.cancel" => {
@@ -175,22 +198,27 @@ impl Core {
                 if let Some(prompt) = &state.active {
                     result["promptId"] = json!(prompt.prompt_id);
                     if state.cancel_at_ms.is_none() {
-                        state.cancel_at_ms = Some(now_ms());
+                        state.cancel_at_ms = Some(now_ms);
                         saved.pane.state = PaneState::Cancelling;
                         saved.pane.phrase = "Cancelling agent turn".into();
                         changes.outgoing.push(client::cancel(
                             state.session_id.as_deref().expect("active session"),
                         ));
-                        for request in
-                            agents::open_requests(&self.store, pane).map_err(errors::storage)?
+                        for request in self
+                            .store
+                            .agent_open_requests(pane)
+                            .map_err(errors::storage)?
                         {
                             super::questions::decision(
                                 &mut state,
                                 &request,
-                                None,
-                                None,
-                                "system",
-                                false,
+                                super::questions::Decision {
+                                    option: None,
+                                    fields: None,
+                                    by: "system",
+                                    expired: false,
+                                    timestamp: &timestamp,
+                                },
                                 &mut changes,
                             )?;
                         }
@@ -222,10 +250,14 @@ impl Core {
                 let operation_id = super::configuration::begin(
                     &mut state,
                     pane,
-                    config_id,
-                    value,
-                    Some(user),
-                    soyeht_protocol::ConfigOperationKind::Config,
+                    super::configuration::ChangeRequest {
+                        config: config_id,
+                        value,
+                        user: Some(user),
+                        kind: soyeht_protocol::ConfigOperationKind::Config,
+                        started_at: timestamp,
+                        now_ms,
+                    },
                     &mut changes,
                 )?;
                 json!({"_nativePending":operation_id})

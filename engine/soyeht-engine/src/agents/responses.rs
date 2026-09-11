@@ -1,11 +1,12 @@
 use super::{
-    Changes, native_error, now_ms,
+    Changes, native_error,
     state::{Phase, State},
-    timestamp, transcript,
+    transcript,
 };
 use crate::{
     errors::{self, Result},
     model::StoredPane,
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_acp::{
@@ -16,7 +17,6 @@ use soyeht_acp::{
 use soyeht_protocol::{
     ErrorKind, PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole,
 };
-use soyeht_store::{agents, database::Store};
 
 pub const PROBED_METHODS: [&str; 3] = ["session/list", "session/load", "session/set_config_option"];
 
@@ -26,17 +26,18 @@ pub fn call(
     method: &str,
     params: Value,
     context: &str,
+    now_ms: i64,
 ) -> Result<()> {
     changes.outgoing.push(
         state
             .client
-            .request(method, params, context, now_ms() as u64)
+            .request(method, params, context, now_ms as u64)
             .map_err(native_error)?,
     );
     Ok(())
 }
 
-fn open(state: &mut State, saved: &StoredPane, changes: &mut Changes) -> Result<()> {
+fn open(state: &mut State, saved: &StoredPane, changes: &mut Changes, now_ms: i64) -> Result<()> {
     if let Some(id) = state.session_id.clone() {
         state.phase = Phase::Loading;
         changes.clear_replay = true;
@@ -48,6 +49,7 @@ fn open(state: &mut State, saved: &StoredPane, changes: &mut Changes) -> Result<
             "session/load",
             client::load_session(&saved.pane.cwd, &id),
             "load",
+            now_ms,
         )
     } else {
         state.phase = Phase::Opening;
@@ -57,6 +59,7 @@ fn open(state: &mut State, saved: &StoredPane, changes: &mut Changes) -> Result<
             "session/new",
             client::new_session(&saved.pane.cwd),
             "open",
+            now_ms,
         )
     }
 }
@@ -82,12 +85,97 @@ fn needs_login(state: &mut State, saved: &mut StoredPane, changes: &mut Changes)
     ));
 }
 
+fn finish_configuration(
+    state: &mut State,
+    saved: &StoredPane,
+    operation: soyeht_protocol::ConfigOperation,
+    native_result: std::result::Result<Value, soyeht_acp::RpcError>,
+    changes: &mut Changes,
+) -> Result<()> {
+    let confirmation = native_result
+        .map_err(|error| {
+            errors::error(
+                if error.code == -32602 {
+                    ErrorKind::InvalidParams
+                } else {
+                    ErrorKind::HarnessUnavailable
+                },
+                error.message,
+            )
+        })
+        .and_then(|value| {
+            state
+                .options
+                .confirmed(&operation.config_id, &operation.value, &value)
+                .map_err(native_error)
+        });
+    let result = match confirmation {
+        Ok(options) => {
+            state.options = options;
+            if let Some(key) = state.initial_option.take() {
+                state.requested_options.remove(&key);
+            }
+            if let Some(option) = state
+                .options
+                .values
+                .iter()
+                .find(|option| option.id == operation.config_id)
+            {
+                let key = match option.category.as_deref().unwrap_or(&option.id) {
+                    "thought_level" => "effort",
+                    "mode" => "permission",
+                    other => other,
+                };
+                state.requested_options.remove(key);
+            }
+            state.initial_config_failed = false;
+            if let Some(option) = state.options.values.iter().find(|option| {
+                option.id == operation.config_id
+                    && (option.category.as_deref() == Some("mode") || option.id == "mode")
+            }) && let soyeht_protocol::ConfigValue::V0(value) = &option.current_value
+            {
+                let value = value.clone();
+                super::configuration::observe_mode(state, &value, state.pending_policy.is_none())?;
+            }
+            if let Some(policy) = state.pending_policy.take() {
+                state.permission = policy.permission;
+                state.yolo = policy.yolo;
+                state.previous_permission = policy.previous_permission;
+                state.previous_effective_mode = policy.previous_mode;
+            }
+            changes.events.push(("pane.config_changed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"options":state.options.values,"sessionPreserved":true})));
+            Ok(
+                if operation.kind == soyeht_protocol::ConfigOperationKind::Yolo {
+                    json!({"effectiveMode":state.permission,"on":state.yolo})
+                } else {
+                    json!({"applied":true,"effective":operation.value,"sessionPreserved":true})
+                },
+            )
+        }
+        Err(error) => {
+            if state.initial_option.take().is_some() {
+                state.initial_config_failed = true;
+            }
+            state.pending_policy = None;
+            changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.message})));
+            Err(error)
+        }
+    };
+    if let Some(user) = state.operation_user.take() {
+        changes.completed_user = Some(super::pending::Completion { user, result });
+    }
+    state.operation = None;
+    Ok(())
+}
+
 pub fn response(
-    store: &Store,
+    store: &impl StorePort,
     state: &mut State,
     saved: &mut StoredPane,
     message: Message,
     changes: &mut Changes,
+    now_ms: i64,
+    timestamp: &str,
 ) -> Result<()> {
     let (request, result) = state.client.response(message).map_err(native_error)?;
     if request.context == "auth" {
@@ -110,21 +198,23 @@ pub fn response(
         state.initialized = Some(info);
         let mut all_known = true;
         for method in PROBED_METHODS {
-            all_known &= agents::probe(store, &state.fingerprint, method)
+            all_known &= store
+                .agent_probe(&state.fingerprint, method)
                 .map_err(errors::storage)?
                 .is_some();
         }
         if all_known {
-            return open(state, saved, changes);
+            return open(state, saved, changes, now_ms);
         }
         state.phase = Phase::ProbeNew;
-        state.probe_started_ms = Some(now_ms());
+        state.probe_started_ms = Some(now_ms);
         return call(
             state,
             changes,
             "session/new",
             client::new_session(&saved.pane.cwd),
             "probe:new",
+            now_ms,
         );
     }
     if request.context == "probe:new" {
@@ -133,7 +223,14 @@ pub fn response(
                 state.probe_session_id = Some(session::session_id(&value).map_err(native_error)?);
                 state.options = Options::from_response(&value).map_err(native_error)?;
                 state.phase = Phase::ProbeList;
-                return call(state, changes, "session/list", json!({}), "probe:list");
+                return call(
+                    state,
+                    changes,
+                    "session/list",
+                    json!({}),
+                    "probe:list",
+                    now_ms,
+                );
             }
             Err(error) if error.code == -32000 => {
                 needs_login(state, saved, changes);
@@ -163,7 +260,7 @@ pub fn response(
         changes.probes.push(ProbeCapability {
             method: request.method.clone(),
             result: classified,
-            checked_at: timestamp(),
+            checked_at: timestamp.into(),
         });
         let id = state.probe_session_id.clone().ok_or_else(|| {
             errors::error(ErrorKind::InternalError, "Probe has no disposable session")
@@ -177,6 +274,7 @@ pub fn response(
                     "session/load",
                     client::load_session(&saved.pane.cwd, &id),
                     "probe:load",
+                    now_ms,
                 )?;
             }
             "probe:load" => {
@@ -195,14 +293,14 @@ pub fn response(
                         .options
                         .request(&id, &option.id, &option.current_value)
                         .map_err(native_error)?;
-                    call(state, changes, method, params, "probe:config")?;
+                    call(state, changes, method, params, "probe:config", now_ms)?;
                 } else {
                     // No advertised option supplies valid probe parameters.
                     // This is inconclusive, never evidence of a missing method.
                     changes.probes.push(ProbeCapability {
                         method: "session/set_config_option".into(),
                         result: ProbeResult::Inconclusive,
-                        checked_at: timestamp(),
+                        checked_at: timestamp.into(),
                     });
                     state.phase = Phase::RestartAfterProbe;
                 }
@@ -269,7 +367,7 @@ pub fn response(
                 )?);
                 state.session_id = None;
                 state.has_finished_turn = false;
-                open(state, saved, changes)?;
+                open(state, saved, changes, now_ms)?;
             }
             Err(error) => return Err(errors::error(ErrorKind::HarnessUnavailable, error.message)),
         }
@@ -298,8 +396,22 @@ pub fn response(
                 "error".into()
             }
         };
-        for request in agents::open_requests(store, &saved.pane.pane_id).map_err(errors::storage)? {
-            super::questions::decision(state, &request, None, None, "system", false, changes)?;
+        for request in store
+            .agent_open_requests(&saved.pane.pane_id)
+            .map_err(errors::storage)?
+        {
+            super::questions::decision(
+                state,
+                &request,
+                super::questions::Decision {
+                    option: None,
+                    fields: None,
+                    by: "system",
+                    expired: false,
+                    timestamp,
+                },
+                changes,
+            )?;
         }
         transcript::complete(store, &saved.pane.pane_id, state, changes)?;
         state.active = None;
@@ -318,83 +430,7 @@ pub fn response(
         .clone()
         .filter(|operation| operation.operation_id == request.context)
     {
-        let confirmation = result
-            .map_err(|error| {
-                errors::error(
-                    if error.code == -32602 {
-                        ErrorKind::InvalidParams
-                    } else {
-                        ErrorKind::HarnessUnavailable
-                    },
-                    error.message,
-                )
-            })
-            .and_then(|value| {
-                state
-                    .options
-                    .confirmed(&operation.config_id, &operation.value, &value)
-                    .map_err(native_error)
-            });
-        let result = match confirmation {
-            Ok(options) => {
-                state.options = options;
-                if let Some(key) = state.initial_option.take() {
-                    state.requested_options.remove(&key);
-                }
-                if let Some(option) = state
-                    .options
-                    .values
-                    .iter()
-                    .find(|o| o.id == operation.config_id)
-                {
-                    let key = match option.category.as_deref().unwrap_or(&option.id) {
-                        "thought_level" => "effort",
-                        "mode" => "permission",
-                        other => other,
-                    };
-                    state.requested_options.remove(key);
-                }
-                state.initial_config_failed = false;
-                if let Some(option) = state.options.values.iter().find(|o| {
-                    o.id == operation.config_id
-                        && (o.category.as_deref() == Some("mode") || o.id == "mode")
-                }) && let soyeht_protocol::ConfigValue::V0(value) = &option.current_value
-                {
-                    let value = value.clone();
-                    super::configuration::observe_mode(
-                        state,
-                        &value,
-                        state.pending_policy.is_none(),
-                    )?;
-                }
-                if let Some(policy) = state.pending_policy.take() {
-                    state.permission = policy.permission;
-                    state.yolo = policy.yolo;
-                    state.previous_permission = policy.previous_permission;
-                    state.previous_effective_mode = policy.previous_mode;
-                }
-                changes.events.push(("pane.config_changed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"options":state.options.values,"sessionPreserved":true})));
-                Ok(
-                    if operation.kind == soyeht_protocol::ConfigOperationKind::Yolo {
-                        json!({"effectiveMode":state.permission,"on":state.yolo})
-                    } else {
-                        json!({"applied":true,"effective":operation.value,"sessionPreserved":true})
-                    },
-                )
-            }
-            Err(error) => {
-                if state.initial_option.take().is_some() {
-                    state.initial_config_failed = true;
-                }
-                state.pending_policy = None;
-                changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.message})));
-                Err(error)
-            }
-        };
-        if let Some(user) = state.operation_user.take() {
-            changes.completed_user = Some(super::pending::Completion { user, result });
-        }
-        state.operation = None;
+        finish_configuration(state, saved, operation, result, changes)?;
         return Ok(());
     }
     Err(errors::error(

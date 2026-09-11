@@ -2,11 +2,24 @@ use crate::{
     core::Core,
     errors::{self, Result},
     model,
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, Workspace};
 use std::path::Path;
 use uuid::Uuid;
+
+fn workspace_for_action(
+    store: &impl StorePort,
+    id: &str,
+    new_name: Option<&str>,
+) -> Result<Workspace> {
+    let mut workspace = model::workspace(store, id)?;
+    if let Some(name) = new_name {
+        workspace.name = name.into();
+    }
+    Ok(workspace)
+}
 
 impl Core {
     pub fn workspace_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -40,9 +53,12 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         let id = params["workspaceId"].as_str().expect("validated workspace");
-        let mut workspace = model::workspace(&self.store, id)?;
+        let workspace = workspace_for_action(
+            &self.store,
+            id,
+            (method == "workspace.rename").then(|| params["name"].as_str().expect("name")),
+        )?;
         if method == "workspace.rename" {
-            workspace.name = params["name"].as_str().expect("name").into();
             return Ok(self
                 .mutate(connection, method, params, |tx| {
                     tx.update_workspace(&workspace)?;
@@ -93,5 +109,30 @@ impl Core {
             self.finish_close(&pane.pane.pane_id);
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ports::testing::MemoryStore;
+
+    #[test]
+    fn workspace_rule_reads_and_renames_through_the_store_port() {
+        let mut store = MemoryStore::default();
+        store.workspaces.insert(
+            "workspace".into(),
+            Workspace {
+                workspace_id: "workspace".into(),
+                name: "Before".into(),
+                path: "/project".into(),
+                layout: json!({"panes":[]}),
+            },
+        );
+
+        let renamed = workspace_for_action(&store, "workspace", Some("After")).unwrap();
+        assert_eq!(renamed.name, "After");
+        assert_eq!(store.workspaces["workspace"].name, "Before");
+        assert!(workspace_for_action(&store, "missing", None).is_err());
     }
 }

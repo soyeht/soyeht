@@ -1,7 +1,8 @@
-use super::{Changes, state::Phase, timestamp, transcript};
+use super::{Changes, state::Phase, transcript};
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
@@ -13,7 +14,6 @@ use soyeht_protocol::{
     AttentionItem, ErrorKind, PaneState, TranscriptKind, TranscriptRole, limits,
 };
 use soyeht_ptyd::wire::{Request, Response};
-use soyeht_store::agents;
 
 fn invalid(message: &str) -> soyeht_protocol::RpcError {
     errors::error(ErrorKind::HarnessUnavailable, message)
@@ -51,7 +51,9 @@ impl Core {
             }
             // Decisions and their outbox survive together. Existing requests
             // must keep their public ID, original deadline and first answer.
-            if agents::request_at(&self.store, pane, saved.pane.generation, item.from_seq)
+            if self
+                .store
+                .agent_request_at(pane, saved.pane.generation, item.from_seq)
                 .map_err(errors::storage)?
                 .is_some()
             {
@@ -123,7 +125,7 @@ impl Core {
             pane_id: pane.into(),
             request_id: None,
             message: notice.into(),
-            created_at: timestamp(),
+            created_at: self.timestamp(),
         });
         state.discard_until_newline = true;
         state.acknowledged_offset = to;

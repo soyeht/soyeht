@@ -1,11 +1,11 @@
 use crate::{
     errors::{self, Result},
     outbox::Outbox,
+    ports::StorePort,
     screen::Screen,
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{Actor, ErrorKind, Workspace, frame::Frame};
-use soyeht_store::database::Store;
 use std::collections::BTreeMap;
 
 pub use soyeht_store::domain::PaneRecord as StoredPane;
@@ -61,13 +61,13 @@ pub fn failure(id: Value, error: soyeht_protocol::RpcError) -> Frame {
     )
 }
 
-pub fn workspace(store: &Store, id: &str) -> Result<Workspace> {
+pub fn workspace(store: &impl StorePort, id: &str) -> Result<Workspace> {
     store
         .workspace(id)
         .map_err(errors::storage)?
         .ok_or_else(|| errors::error(ErrorKind::NotFound, "Workspace not found"))
 }
 
-pub fn panes(store: &Store) -> Result<Vec<StoredPane>> {
+pub fn panes(store: &impl StorePort) -> Result<Vec<StoredPane>> {
     store.panes().map_err(errors::storage)
 }

@@ -1,18 +1,36 @@
-use super::{Changes, forms, now_ms, state::State};
+use super::{Changes, forms, state::State};
 use crate::{
     core::Core,
     errors::{self, Result},
     model::StoredPane,
+    ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
     ErrorKind, PaneState, PermissionMode, PermissionOption, PermissionOptionKind, Role, limits,
 };
-use soyeht_store::agents::{self, NativeRequest};
+use soyeht_store::agents::NativeRequest;
 use uuid::Uuid;
 
 pub const QUESTION_TIMEOUT_MS: i64 = limits::PERMISSION_TIMEOUT_SEC as i64 * 1_000;
+
+pub struct Incoming<'a> {
+    pub source_seq: u64,
+    pub native_id: Value,
+    pub method: &'a str,
+    pub params: Value,
+    pub now_ms: i64,
+    pub timestamp: &'a str,
+}
+
+pub struct Decision<'a> {
+    pub option: Option<&'a str>,
+    pub fields: Option<Value>,
+    pub by: &'a str,
+    pub expired: bool,
+    pub timestamp: &'a str,
+}
 
 fn invalid(message: &str) -> soyeht_protocol::RpcError {
     errors::error(ErrorKind::InvalidParams, message)
@@ -25,29 +43,11 @@ fn bounded(text: &str, maximum: usize) -> Result<String> {
     Ok(text.into())
 }
 
-pub fn receive(
-    state: &mut State,
-    saved: &mut StoredPane,
-    source_seq: u64,
-    native_id: Value,
+fn public_question(
     method: &str,
-    params: Value,
-    changes: &mut Changes,
-) -> Result<()> {
-    if params["sessionId"].as_str() != state.session_id.as_deref() {
-        return Err(invalid("Question belongs to another session"));
-    }
-    let prompt = state
-        .active
-        .as_ref()
-        .ok_or_else(|| invalid("Question has no active prompt"))?;
-    let expires_ms = now_ms() + QUESTION_TIMEOUT_MS;
-    let request_id = Uuid::new_v4().to_string();
-    let expires_at = chrono::DateTime::from_timestamp_millis(expires_ms)
-        .expect("bounded deadline")
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let mut public = json!({"paneId":saved.pane.pane_id,"requestId":request_id,
-        "generation":saved.pane.generation,"promptId":prompt.prompt_id,"expiresAt":expires_at});
+    params: &Value,
+    mut public: Value,
+) -> Result<(Value, &'static str)> {
     let event = if method == "session/request_permission" {
         let options: Vec<PermissionOption> = serde_json::from_value(params["options"].clone())
             .map_err(|_| invalid("Invalid native permission options"))?;
@@ -75,10 +75,10 @@ pub fn receive(
             .filter(|option| match option.kind {
                 PermissionOptionKind::AllowAlways => options
                     .iter()
-                    .any(|o| o.kind == PermissionOptionKind::AllowOnce),
+                    .any(|other| other.kind == PermissionOptionKind::AllowOnce),
                 PermissionOptionKind::RejectAlways => options
                     .iter()
-                    .any(|o| o.kind == PermissionOptionKind::RejectOnce),
+                    .any(|other| other.kind == PermissionOptionKind::RejectOnce),
                 _ => true,
             })
             .collect();
@@ -113,6 +113,38 @@ pub fn receive(
     if serde_json::to_vec(&public).expect("public question").len() > 512 * 1024 {
         return Err(invalid("Question exceeds snapshot item capacity"));
     }
+    Ok((public, event))
+}
+
+pub fn receive(
+    state: &mut State,
+    saved: &mut StoredPane,
+    incoming: Incoming<'_>,
+    changes: &mut Changes,
+) -> Result<()> {
+    let Incoming {
+        source_seq,
+        native_id,
+        method,
+        params,
+        now_ms,
+        timestamp,
+    } = incoming;
+    if params["sessionId"].as_str() != state.session_id.as_deref() {
+        return Err(invalid("Question belongs to another session"));
+    }
+    let prompt = state
+        .active
+        .as_ref()
+        .ok_or_else(|| invalid("Question has no active prompt"))?;
+    let expires_ms = now_ms + QUESTION_TIMEOUT_MS;
+    let request_id = Uuid::new_v4().to_string();
+    let expires_at = chrono::DateTime::from_timestamp_millis(expires_ms)
+        .expect("bounded deadline")
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let public = json!({"paneId":saved.pane.pane_id,"requestId":request_id,
+        "generation":saved.pane.generation,"promptId":prompt.prompt_id,"expiresAt":expires_at});
+    let (public, event) = public_question(method, &params, public)?;
     changes.received.push(NativeRequest {
         request_id,
         pane_id: saved.pane.pane_id.clone(),
@@ -127,7 +159,18 @@ pub fn receive(
     });
     let request = changes.received.last().expect("received question").clone();
     if let Some(option) = automatic(state, &request, &saved.pane.cwd) {
-        decision(state, &request, Some(&option), None, "rule", false, changes)?;
+        decision(
+            state,
+            &request,
+            Decision {
+                option: Some(&option),
+                fields: None,
+                by: "rule",
+                expired: false,
+                timestamp,
+            },
+            changes,
+        )?;
         if saved.pane.state != PaneState::WaitingForYou {
             saved.pane.state = PaneState::Working;
             saved.pane.phrase = "Agent is working".into();
@@ -198,12 +241,16 @@ pub fn automatic(state: &State, request: &NativeRequest, cwd: &str) -> Option<St
 pub fn decision(
     state: &mut State,
     request: &NativeRequest,
-    option: Option<&str>,
-    fields: Option<Value>,
-    by: &str,
-    expired: bool,
+    decision: Decision<'_>,
     changes: &mut Changes,
 ) -> Result<Value> {
+    let Decision {
+        option,
+        fields,
+        by,
+        expired,
+        timestamp,
+    } = decision;
     if !matches!(
         request.method.as_str(),
         "session/request_permission" | "elicitation/create"
@@ -231,7 +278,7 @@ pub fn decision(
                 "Question expired. Send a new prompt to resume."
             }
             .into(),
-            created_at: super::timestamp(),
+            created_at: timestamp.into(),
         });
     }
     let result_name = if expired {
@@ -320,13 +367,12 @@ impl Core {
         let pane = params["paneId"].as_str().expect("validated pane");
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
-        let request = agents::request(
-            &self.store,
-            params["requestId"].as_str().expect("validated request"),
-        )
-        .map_err(errors::storage)?
-        .filter(|r| r.pane_id == pane)
-        .ok_or_else(|| errors::error(ErrorKind::NotFound, "Question not found"))?;
+        let request = self
+            .store
+            .agent_request(params["requestId"].as_str().expect("validated request"))
+            .map_err(errors::storage)?
+            .filter(|r| r.pane_id == pane)
+            .ok_or_else(|| errors::error(ErrorKind::NotFound, "Question not found"))?;
         let expected = if method == "pane.permission.answer" {
             "session/request_permission"
         } else {
@@ -349,7 +395,7 @@ impl Core {
         if request.generation != saved.pane.generation {
             return Err(invalid("Question belongs to an earlier pane generation"));
         }
-        let expired = request.expires_ms <= now_ms();
+        let expired = request.expires_ms <= self.now_ms();
         let by = if expired {
             "system"
         } else if self.clients[connection]
@@ -382,13 +428,18 @@ impl Core {
         let result = decision(
             &mut state,
             &request,
-            option,
-            fields,
-            by,
-            expired,
+            Decision {
+                option,
+                fields,
+                by,
+                expired,
+                timestamp: &self.timestamp(),
+            },
             &mut changes,
         )?;
-        let other_open = agents::open_requests(&self.store, pane)
+        let other_open = self
+            .store
+            .agent_open_requests(pane)
             .map_err(errors::storage)?
             .iter()
             .any(|r| r.request_id != request.request_id);

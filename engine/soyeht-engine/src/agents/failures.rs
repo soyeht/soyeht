@@ -1,19 +1,19 @@
-use super::{Changes, now_ms, state::Phase, timestamp, transcript};
+use super::{Changes, state::Phase, transcript};
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use serde_json::json;
 use soyeht_protocol::{
     AttentionItem, ErrorKind, PaneState, StateSource, TranscriptKind, TranscriptRole, limits,
 };
 use soyeht_ptyd::wire::Request;
-use soyeht_store::agents;
 
 impl Core {
     pub fn close_agent_processes(&mut self, pane: &str) -> Result<()> {
         let saved = &self.panes[pane].stored;
-        let current = self.ptyd.as_ref().map(|p| p.supervisor_id.as_str());
+        let current = self.ptyd.as_ref().map(|p| p.supervisor_id());
         let mut ids = Vec::new();
         if saved.supervisor_id.as_deref() == current
             && let Some(id) = &saved.instance_id
@@ -49,14 +49,21 @@ impl Core {
             clear_replay: true,
             ..Changes::default()
         };
-        for request in agents::open_requests(&self.store, pane).map_err(errors::storage)? {
+        for request in self
+            .store
+            .agent_open_requests(pane)
+            .map_err(errors::storage)?
+        {
             super::questions::decision(
                 &mut state,
                 &request,
-                None,
-                None,
-                "system",
-                false,
+                super::questions::Decision {
+                    option: None,
+                    fields: None,
+                    by: "system",
+                    expired: false,
+                    timestamp: &self.timestamp(),
+                },
                 &mut changes,
             )?;
         }
@@ -101,7 +108,7 @@ impl Core {
             pane_id: pane.into(),
             request_id: None,
             message: format!("Agent stopped: {reason}"),
-            created_at: timestamp(),
+            created_at: self.timestamp(),
         });
         self.commit_agent(saved, state, changes, None, json!({}))?;
         self.close_agent_processes(pane)
@@ -109,7 +116,7 @@ impl Core {
 
     pub fn check_agent_deadlines(&mut self, pane: &str) -> Result<bool> {
         let mut state = self.agent_state(pane)?;
-        let now = now_ms();
+        let now = self.now_ms();
         if state
             .cancel_at_ms
             .is_some_and(|at| now - at >= limits::CANCEL_TIMEOUT_SEC as i64 * 1000)
@@ -160,7 +167,9 @@ impl Core {
                 .min()
                 .unwrap_or(0),
         );
-        let human_question = agents::open_requests(&self.store, pane)
+        let human_question = self
+            .store
+            .agent_open_requests(pane)
             .map_err(errors::storage)?
             .iter()
             .any(|r| {
@@ -187,7 +196,7 @@ impl Core {
                     request_id: None,
                     message: "No protocol signal for 90 seconds. The current turn remains active."
                         .into(),
-                    created_at: timestamp(),
+                    created_at: self.timestamp(),
                 }],
                 ..Changes::default()
             };

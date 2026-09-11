@@ -2,13 +2,14 @@ use super::{Changes, effects, transcript};
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, TerminalOutput, TranscriptKind, TranscriptRole};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
-use soyeht_store::agents::{self, NativeRequest};
+use soyeht_store::agents::NativeRequest;
 use std::{collections::BTreeMap, path::Path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +24,16 @@ pub struct Terminal {
     pub truncated: bool,
     pub exit_code: Option<i32>,
     pub message_seq: Option<u64>,
+}
+
+fn releasing_terminals(store: &impl StorePort, pane: &str) -> Result<Vec<String>> {
+    Ok(store
+        .agent_open_requests(pane)
+        .map_err(errors::storage)?
+        .into_iter()
+        .filter(|request| request.method == "terminal/release")
+        .filter_map(|request| request.params["terminalId"].as_str().map(str::to_owned))
+        .collect())
 }
 
 impl Terminal {
@@ -134,12 +145,7 @@ impl Terminal {
 
 impl Core {
     pub fn poll_agent_terminals(&mut self, pane: &str) -> Result<()> {
-        let releasing: Vec<_> = agents::open_requests(&self.store, pane)
-            .map_err(errors::storage)?
-            .into_iter()
-            .filter(|r| r.method == "terminal/release")
-            .filter_map(|r| r.params["terminalId"].as_str().map(str::to_owned))
-            .collect();
+        let releasing = releasing_terminals(&self.store, pane)?;
         let ids: Vec<_> = self.agents[pane].state.terminals.keys().cloned().collect();
         for id in ids {
             if releasing.contains(&id) {
@@ -264,7 +270,10 @@ impl Core {
     }
     pub fn run_native_terminals(&mut self, pane: &str) -> Result<()> {
         self.poll_agent_terminals(pane)?;
-        let requests = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
+        let requests = self
+            .store
+            .agent_open_requests(pane)
+            .map_err(errors::storage)?;
         for request in requests
             .into_iter()
             .filter(|r| r.method.starts_with("terminal/"))
