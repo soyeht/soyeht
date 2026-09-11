@@ -1,27 +1,41 @@
 # Soyeht
 
-Soyeht organiza workspaces e panes de terminal. O engine mantém o estado e
-os clientes mostram esse estado no Mac e no iPhone.
+Soyeht runs your coding agents as a team.
 
-A fatia 1 inclui protocolo compartilhado, supervisor de processos, armazenamento
-durável, engine, CLI e aplicativos novos para Mac e iPhone. Ainda não há release.
-Veja [como rodar o perfil Dev novo](docs/dev-local.md), o
-[relatório da fatia](docs/reports/fatia-1.md) e o
-[roteiro manual](docs/roteiro-manual-fatia-1.md).
+Each harness gets its own terminal pane. Agents discover and message each other over MCP. Sessions survive app restarts and reboots. Any conversation can be continued from your phone.
 
-## Organização
+## Why
 
-- `contracts/`: esquema do protocolo, gerador e vetores comuns.
-- `engine/`: workspace Rust.
-- `apps/mac/` e `apps/ios/`: aplicativos nativos no perfil Dev.
-- `apps/desktop/`: reservado para o cliente TypeScript de Linux e Windows.
-- `design/`: desenho das telas.
-- `docs/contracts/`: comportamento contratado e aceites.
-- `docs/adr/`: decisões de implementação.
+One agent is a chat. Five harnesses running side by side are an operations problem: who is working, who is blocked, who should review whose change, and how the work keeps going after you close the laptop. Soyeht is the layer that answers those questions.
 
-## Verificar o código
+## What it does
 
-Instale as versões em [docs/toolchains.md](docs/toolchains.md). Na raiz:
+- **Orchestration over MCP.** Agents use MCP tools such as `list_agents` and `message_agent` to find each other, hand off work, and wait for replies. You set roles, communication policies and races between panes; every agent has an inbox.
+- **Task list and loops.** Every workspace has a task list. Agents pull the next task, or you hand one to them; each task has one owner at a time, and a task goes back to the list if its agent dies. A loop delivers a prompt you wrote to a pane on the schedule you choose, so an agent keeps working through the list on its own.
+- **Any harness, any model.** Soyeht does not replace your agent. Each pane runs the harness you already use (Claude Code, Codex, Gemini CLI, OpenCode, or anything that runs in a terminal) with the model it is configured for. Soyeht observes and coordinates.
+- **Workspaces and panes.** Tabs of workspaces, panes side by side, one harness or shell per pane. Layout is persisted.
+- **A real terminal, plus a view over it.** The raw terminal is always there. On top of it, Soyeht reads each harness's structured output to show threads, tasks and the harness's state: working, blocked, idle.
+- **Continue from your phone.** Pick up any conversation on your iPhone and keep going.
+
+## Status
+
+Early. macOS is the supported platform. The engine builds on Linux, but Linux is not supported yet. Windows comes later. There is no release yet; installation instructions will land with the first one.
+
+## Architecture
+
+- `engine/` (Rust): terminal supervisor, workspace state, orchestrator and identity, behind one HTTP and WebSocket API. The same binary exposes the MCP server and a CLI.
+- `desktop/` (TypeScript): the desktop app for Linux and Windows, a client of the engine API.
+- The macOS and iOS apps are native Swift, live in their own repository, and speak the same API.
+- Connectivity between your devices goes over Tailscale.
+
+## Contributing
+
+Every feature starts in `docs/spec.md`; if it is not in the spec, it is not in scope yet. Open an issue before a large change. CI must be green to merge.
+
+## Developing
+
+Everything in this repository is written in English: code, comments, docs, ADRs and commit messages.
+Install the pinned toolchains from [docs/toolchains.md](docs/toolchains.md), then run from the repository root:
 
 ```sh
 python3 contracts/generate.py --check
@@ -42,23 +56,11 @@ npm --prefix contracts/typescript run check
 npm --prefix contracts/typescript test
 ```
 
-O check `forbidden-terms` usa um segredo do repositório e falha quando ele
-não está disponível. Os testes locais da guarda usam termos sintéticos.
-Não copie o segredo para arquivos nem para logs.
+The engine tests use real processes in their own temporary directories. The six launchd acceptance tests run in CI. Physical reboot, camera pairing and cellular reads follow the manual acceptance script in `docs/`.
 
-Os testes do engine usam processos reais em diretórios temporários próprios.
-Eles cobrem reconexão, adoção do mesmo shell, repetição de criação e entrada,
-fechamento durável, replay com lacuna e pareamento com revogação. Os seis aceites sob launchd rodam na CI. Os clientes Swift também têm testes
-contra processos reais. Reboot físico, câmera e rede móvel seguem o roteiro manual.
+Changes land through pull requests with green checks; there is no direct push to `main`. The `forbidden-terms` check reads a repository secret and fails closed when the secret is unavailable.
 
-Mudanças entram por PR com checks verdes. Não há push direto na main.
-A entrega completa e o roteiro de uso são definidos no
-[objetivo da fatia 1](docs/contracts/00-fatia-1-objetivo.md).
 
-## Licença
+## License
 
-Apache-2.0. Veja [LICENSE](LICENSE).
-
-App Mac no perfil Dev: [build e uso](docs/apps-mac.md).
-
-App iPhone no perfil Dev: [build e pareamento](docs/apps-iphone.md).
+MIT. See `LICENSE`.
