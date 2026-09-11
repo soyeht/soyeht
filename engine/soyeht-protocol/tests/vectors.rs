@@ -101,3 +101,26 @@ fn binary_vectors_match_wire_bytes_in_both_directions() {
         assert_eq!(encoded, wire);
     }
 }
+
+#[test]
+fn agent_updates_require_known_kinds_and_their_payloads() {
+    let common = serde_json::json!({"eventId":"1","at":"now","paneId":"pane","generation":1,"seq":"1","localId":"message"});
+    for kind in [
+        "unknown",
+        "agent_message_chunk",
+        "tool_call",
+        "terminal_output",
+    ] {
+        let mut value = common.clone();
+        value["kind"] = serde_json::json!(kind);
+        assert!(serde_json::from_value::<PaneUpdateEvent>(value).is_err());
+    }
+    assert!(
+        serde_json::from_value::<PermissionOption>(
+            serde_json::json!({"optionId":"a","kind":"allow_everything","name":"Allow"})
+        )
+        .is_err()
+    );
+    assert!(serde_json::from_value::<ConfigValue>(serde_json::json!([])).is_err());
+    assert!(serde_json::from_value::<ConfigValue>(serde_json::json!(true)).is_ok());
+}

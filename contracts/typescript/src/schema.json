@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soyeht.invalid/protocol/v1",
-  "title": "Soyeht slice 1 protocol",
+  "title": "Soyeht terminal and agent protocol",
   "description": "Wire schema. x-methods and x-events associate JSON-RPC names with schemas. See README.md for supported vocabulary.",
   "$defs": {
     "JsonValue": {},
@@ -235,6 +235,9 @@
         },
         "streamId": {
           "$ref": "#/$defs/Id"
+        },
+        "agent": {
+          "$ref": "#/$defs/AgentSession"
         }
       },
       "required": [
@@ -683,6 +686,18 @@
         },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "permission": {
+          "$ref": "#/$defs/PermissionMode"
         }
       },
       "required": [
@@ -1880,6 +1895,2244 @@
       },
       "required": [],
       "additionalProperties": true
+    },
+    "PermissionMode": {
+      "type": "string",
+      "enum": [
+        "ask",
+        "accept_edits",
+        "allow_all"
+      ]
+    },
+    "PromptOrigin": {
+      "type": "string",
+      "enum": [
+        "human",
+        "automatic"
+      ]
+    },
+    "PromptStatus": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "active",
+        "completed",
+        "cancelled"
+      ]
+    },
+    "TranscriptRole": {
+      "type": "string",
+      "enum": [
+        "user",
+        "assistant",
+        "system"
+      ]
+    },
+    "TranscriptKind": {
+      "type": "string",
+      "enum": [
+        "message",
+        "thought",
+        "tool",
+        "terminal",
+        "plan",
+        "usage",
+        "system"
+      ]
+    },
+    "PermissionOptionKind": {
+      "type": "string",
+      "enum": [
+        "allow_once",
+        "allow_always",
+        "reject_once",
+        "reject_always"
+      ]
+    },
+    "PermissionResult": {
+      "type": "string",
+      "enum": [
+        "selected",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "ElicitationResult": {
+      "type": "string",
+      "enum": [
+        "submitted",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "DecisionBy": {
+      "type": "string",
+      "enum": [
+        "mac",
+        "iphone",
+        "rule",
+        "system"
+      ]
+    },
+    "ProbeResult": {
+      "type": "string",
+      "enum": [
+        "funcionou",
+        "não_suportado",
+        "não_autenticado",
+        "inconclusivo"
+      ]
+    },
+    "ConfigType": {
+      "type": "string",
+      "enum": [
+        "select",
+        "boolean"
+      ]
+    },
+    "ToolStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed",
+        "failed"
+      ]
+    },
+    "PlanStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ]
+    },
+    "PlanPriority": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "SessionRecovery": {
+      "type": "string",
+      "enum": [
+        "resumed",
+        "new_session",
+        "needs_login"
+      ]
+    },
+    "ConfigOperationKind": {
+      "type": "string",
+      "enum": [
+        "config",
+        "yolo"
+      ]
+    },
+    "ConfigValue": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "ConfigChoice": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "ConfigOption": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ConfigType"
+        },
+        "currentValue": {
+          "$ref": "#/$defs/ConfigValue"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigChoice"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "currentValue",
+        "options"
+      ],
+      "additionalProperties": true
+    },
+    "ConfigOperation": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConfigOperationKind"
+        },
+        "configId": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "$ref": "#/$defs/ConfigValue"
+        },
+        "startedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "kind",
+        "configId",
+        "value",
+        "startedAt"
+      ],
+      "additionalProperties": true
+    },
+    "PromptItem": {
+      "type": "object",
+      "properties": {
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "origin": {
+          "$ref": "#/$defs/PromptOrigin"
+        },
+        "status": {
+          "$ref": "#/$defs/PromptStatus"
+        },
+        "queuedAt": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "promptId",
+        "text",
+        "origin",
+        "status",
+        "queuedAt"
+      ],
+      "additionalProperties": true
+    },
+    "PermissionOption": {
+      "type": "object",
+      "properties": {
+        "optionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/PermissionOptionKind"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "optionId",
+        "kind",
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "PermissionRequest": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PermissionOption"
+          }
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "paneId",
+        "generation",
+        "promptId",
+        "title",
+        "detail",
+        "options",
+        "expiresAt"
+      ],
+      "additionalProperties": true
+    },
+    "ElicitationRequest": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "schema": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "paneId",
+        "generation",
+        "promptId",
+        "title",
+        "schema",
+        "expiresAt"
+      ],
+      "additionalProperties": true
+    },
+    "AgentSession": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "version": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigOption"
+          }
+        },
+        "permission": {
+          "$ref": "#/$defs/PermissionMode"
+        },
+        "yolo": {
+          "type": "boolean"
+        },
+        "previousPermission": {
+          "$ref": "#/$defs/PermissionMode"
+        },
+        "effectiveMode": {
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/ConfigOperation"
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PromptItem"
+          }
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "activePromptId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "harness",
+        "version",
+        "fingerprint",
+        "options",
+        "permission",
+        "yolo",
+        "queue",
+        "draft"
+      ],
+      "additionalProperties": true
+    },
+    "ProbeCapability": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/ProbeResult"
+        },
+        "checkedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "result",
+        "checkedAt"
+      ],
+      "additionalProperties": true
+    },
+    "AuthMethod": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "terminal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "terminal"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProbeCapability"
+          }
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigOption"
+          }
+        },
+        "authMethods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthMethod"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "available",
+        "capabilities",
+        "options",
+        "authMethods"
+      ],
+      "additionalProperties": true
+    },
+    "ModelInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessLaunch": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "command",
+        "args",
+        "version"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessConfiguration": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HarnessLaunch"
+      }
+    },
+    "ToolLocation": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": true
+    },
+    "ToolCall": {
+      "type": "object",
+      "properties": {
+        "toolCallId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ToolStatus"
+        },
+        "content": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolLocation"
+          }
+        },
+        "rawInput": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "rawOutput": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "toolCallId",
+        "title",
+        "status",
+        "locations"
+      ],
+      "additionalProperties": true
+    },
+    "PlanEntry": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "priority": {
+          "$ref": "#/$defs/PlanPriority"
+        },
+        "status": {
+          "$ref": "#/$defs/PlanStatus"
+        }
+      },
+      "required": [
+        "content",
+        "priority",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "TokenUsage": {
+      "type": "object",
+      "properties": {
+        "inputTokens": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "outputTokens": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "totalTokens": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "contextSize": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "totalTokens"
+      ],
+      "additionalProperties": true
+    },
+    "TerminalOutput": {
+      "type": "object",
+      "properties": {
+        "terminalId": {
+          "$ref": "#/$defs/Id"
+        },
+        "bytes": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "offset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "exitCode": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "terminalId",
+        "bytes",
+        "offset",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "TranscriptMessage": {
+      "type": "object",
+      "properties": {
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "role": {
+          "$ref": "#/$defs/TranscriptRole"
+        },
+        "kind": {
+          "$ref": "#/$defs/TranscriptKind"
+        },
+        "text": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolCall"
+        },
+        "terminal": {
+          "$ref": "#/$defs/TerminalOutput"
+        },
+        "plan": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PlanEntry"
+          }
+        },
+        "usage": {
+          "$ref": "#/$defs/TokenUsage"
+        }
+      },
+      "required": [
+        "localId",
+        "generation",
+        "seq",
+        "role",
+        "kind",
+        "text",
+        "complete"
+      ],
+      "additionalProperties": true
+    },
+    "AttachmentRef": {
+      "type": "object",
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "bytes": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "attachmentId",
+        "mimeType",
+        "name",
+        "bytes"
+      ],
+      "additionalProperties": true
+    },
+    "PanePromptParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "origin": {
+          "$ref": "#/$defs/PromptOrigin"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AttachmentRef"
+          }
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "text",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PanePromptResult": {
+      "type": "object",
+      "properties": {
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "queued": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "promptId",
+        "queued"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueueListParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueueListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PromptItem"
+          }
+        },
+        "draft": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "draft"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueueRemoveParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "promptId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueueRemoveResult": {
+      "type": "object",
+      "properties": {
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "promptId",
+        "removed"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCancelParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCancelResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "cancelling": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId",
+        "cancelling"
+      ],
+      "additionalProperties": true
+    },
+    "PanePermissionAnswerParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "optionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "requestId",
+        "optionId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PanePermissionAnswerResult": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "result": {
+          "$ref": "#/$defs/PermissionResult"
+        },
+        "optionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "by": {
+          "$ref": "#/$defs/DecisionBy"
+        }
+      },
+      "required": [
+        "requestId",
+        "result",
+        "by"
+      ],
+      "additionalProperties": true
+    },
+    "PaneElicitationAnswerParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fields": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "cancel": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "requestId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneElicitationAnswerResult": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "result": {
+          "$ref": "#/$defs/ElicitationResult"
+        },
+        "by": {
+          "$ref": "#/$defs/DecisionBy"
+        }
+      },
+      "required": [
+        "requestId",
+        "result",
+        "by"
+      ],
+      "additionalProperties": true
+    },
+    "PaneConfigSetParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "configId": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "$ref": "#/$defs/ConfigValue"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "configId",
+        "value",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneConfigSetResult": {
+      "type": "object",
+      "properties": {
+        "applied": {
+          "type": "boolean"
+        },
+        "effective": {
+          "$ref": "#/$defs/ConfigValue"
+        },
+        "sessionPreserved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "applied",
+        "effective",
+        "sessionPreserved"
+      ],
+      "additionalProperties": true
+    },
+    "PaneYoloParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "on": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "on",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneYoloResult": {
+      "type": "object",
+      "properties": {
+        "effectiveMode": {
+          "$ref": "#/$defs/PermissionMode"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "effectiveMode",
+        "on"
+      ],
+      "additionalProperties": true
+    },
+    "PaneAuthStartParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "authMethodId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneAuthStartResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "terminalPaneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneTranscriptParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "before": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneTranscriptResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TranscriptMessage"
+          }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "PaneDraftParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "active",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneDraftResult": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "active"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "HarnessListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HarnessInfo"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "ModelListParams": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "harness"
+      ],
+      "additionalProperties": true
+    },
+    "ModelListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelInfo"
+          }
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigOption"
+          }
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "items",
+        "options",
+        "source"
+      ],
+      "additionalProperties": true
+    },
+    "PaneSessionStartedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigOption"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "harness",
+        "version",
+        "sessionId",
+        "generation",
+        "options"
+      ],
+      "additionalProperties": true
+    },
+    "PaneTurnEndedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "stopReason": {
+          "$ref": "#/$defs/TurnStopReason"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "promptId",
+        "stopReason"
+      ],
+      "additionalProperties": true
+    },
+    "PaneQueuedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "promptIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "draft": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "n",
+        "promptIds",
+        "draft"
+      ],
+      "additionalProperties": true
+    },
+    "PanePermissionRequestedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PermissionOption"
+          }
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "requestId",
+        "generation",
+        "promptId",
+        "title",
+        "detail",
+        "options",
+        "expiresAt"
+      ],
+      "additionalProperties": true
+    },
+    "PanePermissionAnsweredEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "result": {
+          "$ref": "#/$defs/PermissionResult"
+        },
+        "optionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "by": {
+          "$ref": "#/$defs/DecisionBy"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "requestId",
+        "result",
+        "by"
+      ],
+      "additionalProperties": true
+    },
+    "PaneElicitationRequestedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "schema": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "requestId",
+        "generation",
+        "promptId",
+        "title",
+        "schema",
+        "expiresAt"
+      ],
+      "additionalProperties": true
+    },
+    "PaneElicitationAnsweredEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "result": {
+          "$ref": "#/$defs/ElicitationResult"
+        },
+        "by": {
+          "$ref": "#/$defs/DecisionBy"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "requestId",
+        "result",
+        "by"
+      ],
+      "additionalProperties": true
+    },
+    "PaneConfigChangingEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "configId": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "$ref": "#/$defs/ConfigValue"
+        },
+        "operationId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "configId",
+        "value",
+        "operationId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneConfigChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "configId": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "$ref": "#/$defs/ConfigValue"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigOption"
+          }
+        },
+        "sessionPreserved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "configId",
+        "value",
+        "options",
+        "sessionPreserved"
+      ],
+      "additionalProperties": true
+    },
+    "PaneConfigFailedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "configId": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "$ref": "#/$defs/ConfigValue"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "configId",
+        "value",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "PaneSessionLostEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "recovery": {
+          "$ref": "#/$defs/SessionRecovery"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "reason",
+        "recovery"
+      ],
+      "additionalProperties": true
+    },
+    "PaneNeedsLoginEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "authMethods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthMethod"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "harness",
+        "authMethods"
+      ],
+      "additionalProperties": true
+    },
+    "PaneAuthFinishedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "ok"
+      ],
+      "additionalProperties": true
+    },
+    "AgentMessageUpdateKind": {
+      "type": "string",
+      "enum": [
+        "agent_message_chunk"
+      ]
+    },
+    "AgentMessageUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/AgentMessageUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "text",
+        "complete"
+      ],
+      "additionalProperties": true
+    },
+    "AgentThoughtUpdateKind": {
+      "type": "string",
+      "enum": [
+        "agent_thought_chunk"
+      ]
+    },
+    "AgentThoughtUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/AgentThoughtUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "text",
+        "complete"
+      ],
+      "additionalProperties": true
+    },
+    "ToolCallUpdateKind": {
+      "type": "string",
+      "enum": [
+        "tool_call"
+      ]
+    },
+    "ToolCallUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/ToolCallUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolCall"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "tool"
+      ],
+      "additionalProperties": true
+    },
+    "ToolProgressUpdateKind": {
+      "type": "string",
+      "enum": [
+        "tool_call_update"
+      ]
+    },
+    "ToolProgressUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/ToolProgressUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolCall"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "tool"
+      ],
+      "additionalProperties": true
+    },
+    "PlanUpdateKind": {
+      "type": "string",
+      "enum": [
+        "plan"
+      ]
+    },
+    "PlanUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/PlanUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PlanEntry"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "UsageUpdateKind": {
+      "type": "string",
+      "enum": [
+        "usage"
+      ]
+    },
+    "UsageUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/UsageUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "usage": {
+          "$ref": "#/$defs/TokenUsage"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "usage"
+      ],
+      "additionalProperties": true
+    },
+    "TerminalOutputUpdateKind": {
+      "type": "string",
+      "enum": [
+        "terminal_output"
+      ]
+    },
+    "TerminalOutputUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/TerminalOutputUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "terminalId": {
+          "$ref": "#/$defs/Id"
+        },
+        "bytes": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "offset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "terminalId",
+        "bytes",
+        "offset",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "ConfigOptionUpdateKind": {
+      "type": "string",
+      "enum": [
+        "config_option_update"
+      ]
+    },
+    "ConfigOptionUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConfigOptionUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigOption"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "options"
+      ],
+      "additionalProperties": true
+    },
+    "PaneUpdateEvent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AgentMessageUpdate"
+        },
+        {
+          "$ref": "#/$defs/AgentThoughtUpdate"
+        },
+        {
+          "$ref": "#/$defs/ToolCallUpdate"
+        },
+        {
+          "$ref": "#/$defs/ToolProgressUpdate"
+        },
+        {
+          "$ref": "#/$defs/PlanUpdate"
+        },
+        {
+          "$ref": "#/$defs/UsageUpdate"
+        },
+        {
+          "$ref": "#/$defs/TerminalOutputUpdate"
+        },
+        {
+          "$ref": "#/$defs/ConfigOptionUpdate"
+        }
+      ]
+    },
+    "AttentionItem": {
+      "type": "object",
+      "properties": {
+        "attentionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "message": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attentionId",
+        "paneId",
+        "message",
+        "createdAt"
+      ],
+      "additionalProperties": true
+    },
+    "AttentionChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AttentionItem"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "count",
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "TurnStopReason": {
+      "type": "string",
+      "enum": [
+        "end_turn",
+        "max_tokens",
+        "max_turn_requests",
+        "refusal",
+        "cancelled",
+        "error"
+      ]
     }
   },
   "x-protocolVersion": 1,
@@ -2117,6 +4370,123 @@
         "$ref": "#/$defs/SettingsSetResult"
       },
       "mutation": true
+    },
+    "pane.prompt": {
+      "params": {
+        "$ref": "#/$defs/PanePromptParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PanePromptResult"
+      },
+      "mutation": true
+    },
+    "pane.queue.list": {
+      "params": {
+        "$ref": "#/$defs/PaneQueueListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneQueueListResult"
+      },
+      "mutation": false
+    },
+    "pane.queue.remove": {
+      "params": {
+        "$ref": "#/$defs/PaneQueueRemoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneQueueRemoveResult"
+      },
+      "mutation": true
+    },
+    "pane.cancel": {
+      "params": {
+        "$ref": "#/$defs/PaneCancelParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneCancelResult"
+      },
+      "mutation": true
+    },
+    "pane.permission.answer": {
+      "params": {
+        "$ref": "#/$defs/PanePermissionAnswerParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PanePermissionAnswerResult"
+      },
+      "mutation": true
+    },
+    "pane.elicitation.answer": {
+      "params": {
+        "$ref": "#/$defs/PaneElicitationAnswerParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneElicitationAnswerResult"
+      },
+      "mutation": true
+    },
+    "pane.config.set": {
+      "params": {
+        "$ref": "#/$defs/PaneConfigSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneConfigSetResult"
+      },
+      "mutation": true
+    },
+    "pane.yolo": {
+      "params": {
+        "$ref": "#/$defs/PaneYoloParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneYoloResult"
+      },
+      "mutation": true
+    },
+    "pane.auth.start": {
+      "params": {
+        "$ref": "#/$defs/PaneAuthStartParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneAuthStartResult"
+      },
+      "mutation": true
+    },
+    "pane.transcript": {
+      "params": {
+        "$ref": "#/$defs/PaneTranscriptParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneTranscriptResult"
+      },
+      "mutation": false
+    },
+    "pane.draft": {
+      "params": {
+        "$ref": "#/$defs/PaneDraftParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneDraftResult"
+      },
+      "mutation": true
+    },
+    "harness.list": {
+      "params": {
+        "$ref": "#/$defs/HarnessListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/HarnessListResult"
+      },
+      "mutation": false
+    },
+    "model.list": {
+      "params": {
+        "$ref": "#/$defs/ModelListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ModelListResult"
+      },
+      "mutation": false
     }
   },
   "x-events": {
@@ -2251,6 +4621,96 @@
         "$ref": "#/$defs/SettingsChangedEvent"
       },
       "durable": true
+    },
+    "pane.session_started": {
+      "params": {
+        "$ref": "#/$defs/PaneSessionStartedEvent"
+      },
+      "durable": true
+    },
+    "pane.turn_ended": {
+      "params": {
+        "$ref": "#/$defs/PaneTurnEndedEvent"
+      },
+      "durable": true
+    },
+    "pane.queued": {
+      "params": {
+        "$ref": "#/$defs/PaneQueuedEvent"
+      },
+      "durable": true
+    },
+    "pane.permission_requested": {
+      "params": {
+        "$ref": "#/$defs/PanePermissionRequestedEvent"
+      },
+      "durable": true
+    },
+    "pane.permission_answered": {
+      "params": {
+        "$ref": "#/$defs/PanePermissionAnsweredEvent"
+      },
+      "durable": true
+    },
+    "pane.elicitation_requested": {
+      "params": {
+        "$ref": "#/$defs/PaneElicitationRequestedEvent"
+      },
+      "durable": true
+    },
+    "pane.elicitation_answered": {
+      "params": {
+        "$ref": "#/$defs/PaneElicitationAnsweredEvent"
+      },
+      "durable": true
+    },
+    "pane.config_changing": {
+      "params": {
+        "$ref": "#/$defs/PaneConfigChangingEvent"
+      },
+      "durable": true
+    },
+    "pane.config_changed": {
+      "params": {
+        "$ref": "#/$defs/PaneConfigChangedEvent"
+      },
+      "durable": true
+    },
+    "pane.config_failed": {
+      "params": {
+        "$ref": "#/$defs/PaneConfigFailedEvent"
+      },
+      "durable": true
+    },
+    "pane.session_lost": {
+      "params": {
+        "$ref": "#/$defs/PaneSessionLostEvent"
+      },
+      "durable": true
+    },
+    "pane.needs_login": {
+      "params": {
+        "$ref": "#/$defs/PaneNeedsLoginEvent"
+      },
+      "durable": true
+    },
+    "pane.auth_finished": {
+      "params": {
+        "$ref": "#/$defs/PaneAuthFinishedEvent"
+      },
+      "durable": true
+    },
+    "pane.update": {
+      "params": {
+        "$ref": "#/$defs/PaneUpdateEvent"
+      },
+      "durable": true
+    },
+    "attention.changed": {
+      "params": {
+        "$ref": "#/$defs/AttentionChangedEvent"
+      },
+      "durable": true
     }
   },
   "x-framing": {
@@ -2298,7 +4758,17 @@
     "tailBytes": 2097152,
     "eventCount": 10000,
     "eventDays": 7,
-    "deviceConnections": 8
+    "deviceConnections": 8,
+    "promptBytes": 65536,
+    "promptQueueCount": 64,
+    "transcriptPageMessages": 200,
+    "transcriptPageBytes": 524288,
+    "transcriptMessageBytes": 262144,
+    "acpMessageBytes": 1048576,
+    "permissionTimeoutSec": 1800,
+    "cancelTimeoutSec": 10,
+    "probeTimeoutSec": 10,
+    "noSignalSec": 90
   },
   "x-settings": {
     "terminal.defaultCols": {

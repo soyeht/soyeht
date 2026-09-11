@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b2528ce7f18d51677445f8aafc989b17a0a00c8002ae0fe860c1807b31fae56d). Do not edit.
+// Generated from contracts/protocol.json (sha256 e7fc8a470dbcdd7f1dba14e02ec4b645f704e8520280ab04c19f187e38f9a984). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -60,6 +60,7 @@ export interface Pane {
   "record": boolean;
   "pid"?: number;
   "streamId"?: Id;
+  "agent"?: AgentSession;
 }
 
 export interface Device {
@@ -192,6 +193,10 @@ export interface PaneCreateParams {
   "cols"?: number;
   "rows"?: number;
   "idempotencyKey": Id;
+  "harness"?: Id;
+  "model"?: string;
+  "effort"?: string;
+  "permission"?: PermissionMode;
 }
 
 export interface PaneCreateResult {
@@ -552,6 +557,615 @@ export interface ClientFocus {
   "paneId"?: Id;
 }
 
+export type PermissionMode = "ask" | "accept_edits" | "allow_all";
+
+export type PromptOrigin = "human" | "automatic";
+
+export type PromptStatus = "queued" | "active" | "completed" | "cancelled";
+
+export type TranscriptRole = "user" | "assistant" | "system";
+
+export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system";
+
+export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always";
+
+export type PermissionResult = "selected" | "cancelled" | "expired";
+
+export type ElicitationResult = "submitted" | "cancelled" | "expired";
+
+export type DecisionBy = "mac" | "iphone" | "rule" | "system";
+
+export type ProbeResult = "funcionou" | "não_suportado" | "não_autenticado" | "inconclusivo";
+
+export type ConfigType = "select" | "boolean";
+
+export type ToolStatus = "pending" | "in_progress" | "completed" | "failed";
+
+export type PlanStatus = "pending" | "in_progress" | "completed";
+
+export type PlanPriority = "high" | "medium" | "low";
+
+export type SessionRecovery = "resumed" | "new_session" | "needs_login";
+
+export type ConfigOperationKind = "config" | "yolo";
+
+export type ConfigValue = string | boolean;
+
+export interface ConfigChoice {
+  "value": Id;
+  "name": string;
+  "description"?: string;
+}
+
+export interface ConfigOption {
+  "id": Id;
+  "name": string;
+  "description"?: string;
+  "category"?: string;
+  "type": ConfigType;
+  "currentValue": ConfigValue;
+  "options": Array<ConfigChoice>;
+}
+
+export interface ConfigOperation {
+  "operationId": Id;
+  "kind": ConfigOperationKind;
+  "configId": Id;
+  "value": ConfigValue;
+  "startedAt": string;
+}
+
+export interface PromptItem {
+  "promptId": Id;
+  "text": string;
+  "origin": PromptOrigin;
+  "status": PromptStatus;
+  "queuedAt": string;
+  "generation"?: number;
+}
+
+export interface PermissionOption {
+  "optionId": Id;
+  "kind": PermissionOptionKind;
+  "name": string;
+}
+
+export interface PermissionRequest {
+  "requestId": Id;
+  "paneId": Id;
+  "generation": number;
+  "promptId": Id;
+  "title": string;
+  "detail": string;
+  "options": Array<PermissionOption>;
+  "expiresAt": string;
+}
+
+export interface ElicitationRequest {
+  "requestId": Id;
+  "paneId": Id;
+  "generation": number;
+  "promptId": Id;
+  "title": string;
+  "schema": JsonValue;
+  "expiresAt": string;
+}
+
+export interface AgentSession {
+  "harness": Id;
+  "version": string;
+  "fingerprint": string;
+  "sessionId"?: Id;
+  "options": Array<ConfigOption>;
+  "permission": PermissionMode;
+  "yolo": boolean;
+  "previousPermission"?: PermissionMode;
+  "effectiveMode"?: string;
+  "operation"?: ConfigOperation;
+  "queue": Array<PromptItem>;
+  "draft": boolean;
+  "activePromptId"?: Id;
+}
+
+export interface ProbeCapability {
+  "method": string;
+  "result": ProbeResult;
+  "checkedAt": string;
+}
+
+export interface AuthMethod {
+  "id": Id;
+  "name": string;
+  "description"?: string;
+  "terminal": boolean;
+}
+
+export interface HarnessInfo {
+  "id": Id;
+  "name": string;
+  "available": boolean;
+  "version"?: string;
+  "fingerprint"?: string;
+  "capabilities": Array<ProbeCapability>;
+  "options": Array<ConfigOption>;
+  "authMethods": Array<AuthMethod>;
+}
+
+export interface ModelInfo {
+  "id": Id;
+  "name": string;
+  "description"?: string;
+}
+
+export interface HarnessLaunch {
+  "id": Id;
+  "name": string;
+  "command": string;
+  "args": Array<string>;
+  "version": string;
+}
+
+export type HarnessConfiguration = Array<HarnessLaunch>;
+
+export interface ToolLocation {
+  "path": string;
+  "line"?: number;
+}
+
+export interface ToolCall {
+  "toolCallId": Id;
+  "title": string;
+  "kind"?: string;
+  "status": ToolStatus;
+  "content"?: JsonValue;
+  "locations": Array<ToolLocation>;
+  "rawInput"?: JsonValue;
+  "rawOutput"?: JsonValue;
+}
+
+export interface PlanEntry {
+  "content": string;
+  "priority": PlanPriority;
+  "status": PlanStatus;
+}
+
+export interface TokenUsage {
+  "inputTokens"?: Decimal;
+  "outputTokens"?: Decimal;
+  "totalTokens": Decimal;
+  "contextSize"?: Decimal;
+}
+
+export interface TerminalOutput {
+  "terminalId": Id;
+  "bytes": ByteString;
+  "offset": Decimal;
+  "truncated": boolean;
+  "exitCode"?: number;
+}
+
+export interface TranscriptMessage {
+  "localId": Id;
+  "generation": number;
+  "seq": Decimal;
+  "role": TranscriptRole;
+  "kind": TranscriptKind;
+  "text": string;
+  "complete": boolean;
+  "promptId"?: Id;
+  "tool"?: ToolCall;
+  "terminal"?: TerminalOutput;
+  "plan"?: Array<PlanEntry>;
+  "usage"?: TokenUsage;
+}
+
+export interface AttachmentRef {
+  "attachmentId": Id;
+  "mimeType": string;
+  "name": string;
+  "bytes": Decimal;
+}
+
+export interface PanePromptParams {
+  "paneId": Id;
+  "text": string;
+  "origin"?: PromptOrigin;
+  "attachments"?: Array<AttachmentRef>;
+  "idempotencyKey": Id;
+}
+
+export interface PanePromptResult {
+  "promptId": Id;
+  "queued": boolean;
+}
+
+export interface PaneQueueListParams {
+  "paneId": Id;
+}
+
+export interface PaneQueueListResult {
+  "items": Array<PromptItem>;
+  "draft": boolean;
+}
+
+export interface PaneQueueRemoveParams {
+  "paneId": Id;
+  "promptId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface PaneQueueRemoveResult {
+  "promptId": Id;
+  "removed": boolean;
+}
+
+export interface PaneCancelParams {
+  "paneId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface PaneCancelResult {
+  "paneId": Id;
+  "promptId"?: Id;
+  "cancelling": boolean;
+}
+
+export interface PanePermissionAnswerParams {
+  "paneId": Id;
+  "requestId": Id;
+  "optionId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface PanePermissionAnswerResult {
+  "requestId": Id;
+  "result": PermissionResult;
+  "optionId"?: Id;
+  "by": DecisionBy;
+}
+
+export interface PaneElicitationAnswerParams {
+  "paneId": Id;
+  "requestId": Id;
+  "fields"?: JsonValue;
+  "cancel"?: boolean;
+  "idempotencyKey": Id;
+}
+
+export interface PaneElicitationAnswerResult {
+  "requestId": Id;
+  "result": ElicitationResult;
+  "by": DecisionBy;
+}
+
+export interface PaneConfigSetParams {
+  "paneId": Id;
+  "configId": Id;
+  "value": ConfigValue;
+  "idempotencyKey": Id;
+}
+
+export interface PaneConfigSetResult {
+  "applied": boolean;
+  "effective": ConfigValue;
+  "sessionPreserved": boolean;
+}
+
+export interface PaneYoloParams {
+  "paneId": Id;
+  "on": boolean;
+  "idempotencyKey": Id;
+}
+
+export interface PaneYoloResult {
+  "effectiveMode": PermissionMode;
+  "on": boolean;
+}
+
+export interface PaneAuthStartParams {
+  "paneId": Id;
+  "authMethodId"?: Id;
+  "idempotencyKey": Id;
+}
+
+export interface PaneAuthStartResult {
+  "paneId": Id;
+  "terminalPaneId"?: Id;
+}
+
+export interface PaneTranscriptParams {
+  "paneId": Id;
+  "before"?: Decimal;
+  "limit"?: number;
+}
+
+export interface PaneTranscriptResult {
+  "items": Array<TranscriptMessage>;
+  "nextCursor"?: Decimal;
+}
+
+export interface PaneDraftParams {
+  "paneId": Id;
+  "active": boolean;
+  "idempotencyKey": Id;
+}
+
+export interface PaneDraftResult {
+  "active": boolean;
+}
+
+export interface HarnessListParams {
+
+}
+
+export interface HarnessListResult {
+  "items": Array<HarnessInfo>;
+}
+
+export interface ModelListParams {
+  "harness": Id;
+  "paneId"?: Id;
+}
+
+export interface ModelListResult {
+  "items": Array<ModelInfo>;
+  "options": Array<ConfigOption>;
+  "source": string;
+}
+
+export interface PaneSessionStartedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "harness": Id;
+  "version": string;
+  "sessionId": Id;
+  "generation": number;
+  "options": Array<ConfigOption>;
+}
+
+export interface PaneTurnEndedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "promptId": Id;
+  "stopReason": TurnStopReason;
+}
+
+export interface PaneQueuedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "n": number;
+  "promptIds": Array<Id>;
+  "draft": boolean;
+}
+
+export interface PanePermissionRequestedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "requestId": Id;
+  "generation": number;
+  "promptId": Id;
+  "title": string;
+  "detail": string;
+  "options": Array<PermissionOption>;
+  "expiresAt": string;
+}
+
+export interface PanePermissionAnsweredEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "requestId": Id;
+  "result": PermissionResult;
+  "optionId"?: Id;
+  "by": DecisionBy;
+}
+
+export interface PaneElicitationRequestedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "requestId": Id;
+  "generation": number;
+  "promptId": Id;
+  "title": string;
+  "schema": JsonValue;
+  "expiresAt": string;
+}
+
+export interface PaneElicitationAnsweredEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "requestId": Id;
+  "result": ElicitationResult;
+  "by": DecisionBy;
+}
+
+export interface PaneConfigChangingEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "configId": Id;
+  "value": ConfigValue;
+  "operationId": Id;
+}
+
+export interface PaneConfigChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "configId": Id;
+  "value": ConfigValue;
+  "options": Array<ConfigOption>;
+  "sessionPreserved": boolean;
+}
+
+export interface PaneConfigFailedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "configId": Id;
+  "value": ConfigValue;
+  "reason": string;
+}
+
+export interface PaneSessionLostEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "reason": string;
+  "recovery": SessionRecovery;
+}
+
+export interface PaneNeedsLoginEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "harness": Id;
+  "authMethods": Array<AuthMethod>;
+}
+
+export interface PaneAuthFinishedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "ok": boolean;
+  "reason"?: string;
+}
+
+export type AgentMessageUpdateKind = "agent_message_chunk";
+
+export interface AgentMessageUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": AgentMessageUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "text": string;
+  "complete": boolean;
+}
+
+export type AgentThoughtUpdateKind = "agent_thought_chunk";
+
+export interface AgentThoughtUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": AgentThoughtUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "text": string;
+  "complete": boolean;
+}
+
+export type ToolCallUpdateKind = "tool_call";
+
+export interface ToolCallUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": ToolCallUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "tool": ToolCall;
+}
+
+export type ToolProgressUpdateKind = "tool_call_update";
+
+export interface ToolProgressUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": ToolProgressUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "tool": ToolCall;
+}
+
+export type PlanUpdateKind = "plan";
+
+export interface PlanUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": PlanUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "entries": Array<PlanEntry>;
+}
+
+export type UsageUpdateKind = "usage";
+
+export interface UsageUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": UsageUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "usage": TokenUsage;
+}
+
+export type TerminalOutputUpdateKind = "terminal_output";
+
+export interface TerminalOutputUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": TerminalOutputUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "terminalId": Id;
+  "bytes": ByteString;
+  "offset": Decimal;
+  "truncated": boolean;
+}
+
+export type ConfigOptionUpdateKind = "config_option_update";
+
+export interface ConfigOptionUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": ConfigOptionUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "options": Array<ConfigOption>;
+}
+
+export type PaneUpdateEvent = AgentMessageUpdate | AgentThoughtUpdate | ToolCallUpdate | ToolProgressUpdate | PlanUpdate | UsageUpdate | TerminalOutputUpdate | ConfigOptionUpdate;
+
+export interface AttentionItem {
+  "attentionId": Id;
+  "paneId": Id;
+  "requestId"?: Id;
+  "message": string;
+  "createdAt": string;
+}
+
+export interface AttentionChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "count": number;
+  "items": Array<AttentionItem>;
+}
+
+export type TurnStopReason = "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled" | "error";
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -579,4 +1193,17 @@ export interface Methods {
   "engine.status": { params: EngineStatusParams; result: EngineStatusResult };
   "settings.get": { params: SettingsGetParams; result: SettingsGetResult };
   "settings.set": { params: SettingsSetParams; result: SettingsSetResult };
+  "pane.prompt": { params: PanePromptParams; result: PanePromptResult };
+  "pane.queue.list": { params: PaneQueueListParams; result: PaneQueueListResult };
+  "pane.queue.remove": { params: PaneQueueRemoveParams; result: PaneQueueRemoveResult };
+  "pane.cancel": { params: PaneCancelParams; result: PaneCancelResult };
+  "pane.permission.answer": { params: PanePermissionAnswerParams; result: PanePermissionAnswerResult };
+  "pane.elicitation.answer": { params: PaneElicitationAnswerParams; result: PaneElicitationAnswerResult };
+  "pane.config.set": { params: PaneConfigSetParams; result: PaneConfigSetResult };
+  "pane.yolo": { params: PaneYoloParams; result: PaneYoloResult };
+  "pane.auth.start": { params: PaneAuthStartParams; result: PaneAuthStartResult };
+  "pane.transcript": { params: PaneTranscriptParams; result: PaneTranscriptResult };
+  "pane.draft": { params: PaneDraftParams; result: PaneDraftResult };
+  "harness.list": { params: HarnessListParams; result: HarnessListResult };
+  "model.list": { params: ModelListParams; result: ModelListResult };
 }

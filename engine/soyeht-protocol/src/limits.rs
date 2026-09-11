@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b2528ce7f18d51677445f8aafc989b17a0a00c8002ae0fe860c1807b31fae56d). Do not edit.
+// Generated from contracts/protocol.json (sha256 e7fc8a470dbcdd7f1dba14e02ec4b645f704e8520280ab04c19f187e38f9a984). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -13,3 +13,13 @@ pub const TAIL_BYTES: usize = 2097152;
 pub const EVENT_COUNT: usize = 10000;
 pub const EVENT_DAYS: usize = 7;
 pub const DEVICE_CONNECTIONS: usize = 8;
+pub const PROMPT_BYTES: usize = 65536;
+pub const PROMPT_QUEUE_COUNT: usize = 64;
+pub const TRANSCRIPT_PAGE_MESSAGES: usize = 200;
+pub const TRANSCRIPT_PAGE_BYTES: usize = 524288;
+pub const TRANSCRIPT_MESSAGE_BYTES: usize = 262144;
+pub const ACP_MESSAGE_BYTES: usize = 1048576;
+pub const PERMISSION_TIMEOUT_SEC: usize = 1800;
+pub const CANCEL_TIMEOUT_SEC: usize = 10;
+pub const PROBE_TIMEOUT_SEC: usize = 10;
+pub const NO_SIGNAL_SEC: usize = 90;

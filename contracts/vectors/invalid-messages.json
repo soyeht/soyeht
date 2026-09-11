@@ -28,5 +28,37 @@
       "nonce": 23,
       "engineId": "engine-1"
     }
+  },
+  {
+    "type": "PaneUpdateEvent",
+    "value": {
+      "eventId": "1",
+      "at": "now",
+      "paneId": "pane",
+      "kind": "unknown",
+      "generation": 1,
+      "seq": "1",
+      "localId": "message"
+    }
+  },
+  {
+    "type": "PermissionOption",
+    "value": {
+      "optionId": "option",
+      "kind": "allow_everything",
+      "name": "Allow"
+    }
+  },
+  {
+    "type": "PanePermissionAnswerParams",
+    "value": {
+      "paneId": "pane",
+      "requestId": "request",
+      "optionId": "allow"
+    }
+  },
+  {
+    "type": "ConfigValue",
+    "value": []
   }
 ]

@@ -31,6 +31,7 @@ impl Core {
             ));
         }
         let pane = Pane {
+            agent: None,
             pane_id: Uuid::new_v4().to_string(),
             workspace_id: workspace.workspace_id,
             cwd: cwd.into(),

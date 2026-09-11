@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b2528ce7f18d51677445f8aafc989b17a0a00c8002ae0fe860c1807b31fae56d). Do not edit.
+// Generated from contracts/protocol.json (sha256 e7fc8a470dbcdd7f1dba14e02ec4b645f704e8520280ab04c19f187e38f9a984). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,
@@ -12,5 +12,15 @@ export const limits = {
   "tailBytes": 2097152,
   "eventCount": 10000,
   "eventDays": 7,
-  "deviceConnections": 8
+  "deviceConnections": 8,
+  "promptBytes": 65536,
+  "promptQueueCount": 64,
+  "transcriptPageMessages": 200,
+  "transcriptPageBytes": 524288,
+  "transcriptMessageBytes": 262144,
+  "acpMessageBytes": 1048576,
+  "permissionTimeoutSec": 1800,
+  "cancelTimeoutSec": 10,
+  "probeTimeoutSec": 10,
+  "noSignalSec": 90
 } as const;
