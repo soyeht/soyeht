@@ -119,7 +119,8 @@ screenshot ≤ 2 MiB; `web_evaluate` result ≤ 64 KiB; console ring 500,
 network ring 300; `web_wait` timeout ≤ 60 s; local-server list ≤ 50 entries.
 
 ## 9. Out of v1
-Public preview URLs or tunnels, cookie import, extensions, recording,
+Driving the user's everyday browser (Chrome or Safari) in human mode,
+public preview URLs or tunnels, cookie import, extensions, recording,
 PDF export, per-request interception, rendering web panes on the iPhone,
 a certificate-trust UI for local HTTPS (the system trust store is used).
 
@@ -136,7 +137,10 @@ The tool mode of §5 is for the user's own pages: fast, structured, and
 detectable by third-party sites, which does not matter there. Human mode is
 for sites that must see a person: job boards, feeds, forms on someone
 else's site. It is chosen per task (`web_open {mode: "human"}`) and shown
-in the pane as a "human mode" badge.
+in the pane as a "human mode" badge. Decision (2026-09-11): human mode
+runs **only in the Soyeht web pane**, with the pane's own persistent
+profile (§6); the user signs in there once. Driving the user's everyday
+browser is out of v1 (§9) and may become its own slice later if needed.
 
 What the agent gets and does:
 - Only screenshots of the pane (`web_screenshot`) and the actions
