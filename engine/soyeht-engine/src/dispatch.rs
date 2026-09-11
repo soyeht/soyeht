@@ -297,10 +297,19 @@ impl Core {
         sections.push(("tasks".into(), json!([])));
         let pairing = self.pending_pair_view()?;
         if let Some((_, requests)) = sections.iter_mut().find(|(name, _)| name == "requests") {
-            requests
-                .as_array_mut()
-                .expect("request array")
-                .extend(pairing.as_array().expect("pairing array").iter().cloned());
+            let requests = requests.as_array_mut().ok_or_else(|| {
+                errors::error(
+                    ErrorKind::InternalError,
+                    "Snapshot requests section is not an array",
+                )
+            })?;
+            let pairing = pairing.as_array().ok_or_else(|| {
+                errors::error(
+                    ErrorKind::InternalError,
+                    "Pending pairing snapshot is not an array",
+                )
+            })?;
+            requests.extend(pairing.iter().cloned());
         } else {
             sections.push(("requests".into(), pairing));
         }
@@ -312,8 +321,22 @@ impl Core {
         for (name, section) in sections {
             let mut page = vec![];
             let mut size = 0;
-            for item in section.as_array().expect("snapshot array") {
-                let bytes = serde_json::to_vec(item).expect("item").len() + 1;
+            let items = section.as_array().ok_or_else(|| {
+                errors::error(
+                    ErrorKind::InternalError,
+                    format!("Snapshot section {name} is not an array"),
+                )
+            })?;
+            for item in items {
+                let bytes = serde_json::to_vec(item)
+                    .map_err(|_| {
+                        errors::error(
+                            ErrorKind::InternalError,
+                            format!("Snapshot section {name} cannot be encoded"),
+                        )
+                    })?
+                    .len()
+                    + 1;
                 if bytes > soyeht_protocol::limits::JSON_BYTES - 512 {
                     return Err(errors::error(
                         ErrorKind::SnapshotTooLarge,

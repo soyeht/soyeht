@@ -191,8 +191,9 @@ pub fn update(
                     _ => None,
                 });
             if let Some(mode) = mode {
+                super::configuration::require_native_policy(&mode)?;
                 if state.pending_policy.is_none() && state.requested_options.is_empty() {
-                    super::configuration::observe_mode(state, &mode, false);
+                    super::configuration::observe_mode(state, &mode, false)?;
                 } else {
                     state.effective_mode = Some(mode);
                 }
@@ -211,6 +212,7 @@ pub fn update(
             }
         }
         Update::Mode(mode) => {
+            super::configuration::require_native_policy(&mode)?;
             if let Some(option) = state
                 .options
                 .values
@@ -220,7 +222,7 @@ pub fn update(
                 option.current_value = ConfigValue::V0(mode.clone());
             }
             if state.pending_policy.is_none() && state.requested_options.is_empty() {
-                super::configuration::observe_mode(state, &mode, false);
+                super::configuration::observe_mode(state, &mode, false)?;
             } else {
                 state.effective_mode = Some(mode);
             }

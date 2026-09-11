@@ -365,7 +365,7 @@ pub fn response(
                         state,
                         &value,
                         state.pending_policy.is_none(),
-                    );
+                    )?;
                 }
                 if let Some(policy) = state.pending_policy.take() {
                     state.permission = policy.permission;

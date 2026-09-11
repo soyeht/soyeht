@@ -27,14 +27,25 @@ pub fn native_policy(value: &str) -> Option<PermissionMode> {
     }
 }
 
-pub fn observe_mode(state: &mut State, value: &str, explicit_selection: bool) {
+pub(super) fn require_native_policy(value: &str) -> Result<PermissionMode> {
+    native_policy(value).ok_or_else(|| {
+        errors::error(
+            ErrorKind::InvalidParams,
+            "Agent reported an unsupported permission mode",
+        )
+    })
+}
+
+pub fn observe_mode(state: &mut State, value: &str, explicit_selection: bool) -> Result<()> {
+    let permission = require_native_policy(value)?;
     state.effective_mode = Some(value.into());
-    state.permission = native_policy(value).unwrap_or(PermissionMode::Ask);
+    state.permission = permission;
     if explicit_selection || state.permission != PermissionMode::AllowAll {
         state.yolo = false;
         state.previous_permission = None;
         state.previous_effective_mode = None;
     }
+    Ok(())
 }
 
 pub fn begin(
@@ -124,7 +135,7 @@ impl Core {
                     if key == "permission"
                         && let ConfigValue::V0(mode) = &value
                     {
-                        observe_mode(&mut state, mode, false);
+                        observe_mode(&mut state, mode, false)?;
                     }
                     state.requested_options.remove(&key);
                 } else {
@@ -272,5 +283,39 @@ impl Core {
                 result,
             )?
             .result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soyeht_protocol::HarnessLaunch;
+
+    #[test]
+    fn unsupported_native_mode_is_rejected_without_changing_policy() {
+        let mut state = State::new(
+            HarnessLaunch {
+                id: "test".into(),
+                name: "Test".into(),
+                command: "/bin/false".into(),
+                args: vec![],
+                version: "test".into(),
+            },
+            "digest".into(),
+            PermissionMode::AllowAll,
+        );
+        state.effective_mode = Some("bypassPermissions".into());
+        state.yolo = true;
+        state.previous_permission = Some(PermissionMode::Ask);
+        state.previous_effective_mode = Some("default".into());
+
+        let error = observe_mode(&mut state, "unexpected", false).unwrap_err();
+
+        assert_eq!(error.data.kind, ErrorKind::InvalidParams);
+        assert_eq!(state.permission, PermissionMode::AllowAll);
+        assert_eq!(state.effective_mode.as_deref(), Some("bypassPermissions"));
+        assert!(state.yolo);
+        assert_eq!(state.previous_permission, Some(PermissionMode::Ask));
+        assert_eq!(state.previous_effective_mode.as_deref(), Some("default"));
     }
 }

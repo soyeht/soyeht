@@ -7,12 +7,12 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
-    ErrorKind, PaneState, PermissionMode, PermissionOption, PermissionOptionKind, Role,
+    ErrorKind, PaneState, PermissionMode, PermissionOption, PermissionOptionKind, Role, limits,
 };
 use soyeht_store::agents::{self, NativeRequest};
 use uuid::Uuid;
 
-pub const QUESTION_TIMEOUT_MS: i64 = 30 * 60 * 1000;
+pub const QUESTION_TIMEOUT_MS: i64 = limits::PERMISSION_TIMEOUT_SEC as i64 * 1_000;
 
 fn invalid(message: &str) -> soyeht_protocol::RpcError {
     errors::error(ErrorKind::InvalidParams, message)
