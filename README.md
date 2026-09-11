@@ -54,3 +54,5 @@ A entrega completa e o roteiro de uso são definidos no
 ## Licença
 
 Apache-2.0. Veja [LICENSE](LICENSE).
+
+App Mac no perfil Dev: [build e uso](docs/apps-mac.md).

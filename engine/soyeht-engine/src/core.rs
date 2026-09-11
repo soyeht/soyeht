@@ -290,7 +290,13 @@ impl Core {
             .store
             .mutate("engine", &Uuid::new_v4().to_string(), "runtime", |tx| {
                 write_pane(tx, &saved)?;
-                Ok((json!({}), vec![("pane.state_changed".into(), event)]))
+                Ok((
+                    json!({}),
+                    vec![
+                        ("pane.state_changed".into(), event),
+                        ("pane.updated".into(), json!({"pane": saved.pane})),
+                    ],
+                ))
             })
             .map_err(errors::storage)?;
         self.panes.get_mut(id).expect("known pane").stored = saved;

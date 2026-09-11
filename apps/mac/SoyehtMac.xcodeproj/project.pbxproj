@@ -1,0 +1,208 @@
+// !$*UTF8*$!
+{
+	"classes" = {
+	};
+	"objectVersion" = "60";
+	"archiveVersion" = "1";
+	"objects" = {
+		"175AB01246347EE3CB3AD67C" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = ( "4C9A8D7A2C3C670C889D63E4", "C046A0DA18BED3407C966DDF", );
+		};
+		"C991EF065A43B2B3133FE858" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00209EE3DCE335806B2F38A";
+		};
+		"559CB21771B824D09CDDDFC8" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "12F90E2E9B6DDF5BCAF4119F";
+		};
+		"C046A0DA18BED3407C966DDF" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"INFOPLIST_KEY_NSPrincipalClass" = "NSApplication";
+				"MARKETING_VERSION" = "0.1.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.developer-tools";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.soyeht.next.dev.mac";
+				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "Soyeht Dev";
+				"MACOSX_DEPLOYMENT_TARGET" = "14.0";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SDKROOT" = "macosx";
+				"LD_RUNPATH_SEARCH_PATHS" = ( "$(inherited)", "@executable_path/../Frameworks", );
+				"SWIFT_VERSION" = "6.0";
+				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"PRODUCT_NAME" = "Soyeht Dev";
+				"INFOPLIST_KEY_SoyehtLicense" = "Apache-2.0";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+			};
+			"name" = "Release";
+		};
+		"CC1D3B0234846714B0AEDA6C" = {
+			"inputPaths" = ();
+			"buildActionMask" = "2147483647";
+			"shellPath" = "/bin/sh";
+			"isa" = "PBXShellScriptBuildPhase";
+			"runOnlyForDeploymentPostprocessing" = "0";
+			"outputPaths" = ( "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/SwiftTerm-LICENSE.txt", );
+			"shellScript" = "set -eu\nlicense=\"${SOYEHT_PACKAGES:-$BUILD_DIR/../../SourcePackages}/checkouts/SwiftTerm/LICENSE\"\ntest -f \"$license\"\nmkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\n/usr/bin/install -m 644 \"$license\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/SwiftTerm-LICENSE.txt\"\n";
+			"files" = ();
+			"name" = "Dependency license";
+		};
+		"244210E48437B6556980A702" = {
+			"buildConfigurationList" = "76F8DEC3DFE0BDB465198890";
+			"packageReferences" = ( "BC4A71180870F7945155FBB0", );
+			"targets" = ( "34A04005BCAF206EEC990BD9", );
+			"developmentRegion" = "pt-BR";
+			"knownRegions" = ( "pt-BR", "en", "Base", );
+			"isa" = "PBXProject";
+			"compatibilityVersion" = "Xcode 14.0";
+			"productRefGroup" = "0A3E27B8CA818264D75C8D81";
+			"projectDirPath" = "";
+			"attributes" = {
+				"LastUpgradeCheck" = "2660";
+				"BuildIndependentTargetsInParallel" = "YES";
+			};
+			"hasScannedForEncodings" = "0";
+			"projectRoot" = "";
+			"mainGroup" = "AD936FCBED631FA67E05C3EA";
+		};
+		"E2AA269EB967A8853A258BFA" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "06A61DF042AD775E8BDD2766", );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"2D49EBE4C1EF4247FC7BA12F" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_VERSION" = "6.0";
+			};
+			"name" = "Release";
+		};
+		"AD936FCBED631FA67E05C3EA" = {
+			"isa" = "PBXGroup";
+			"sourceTree" = "<group>";
+			"children" = ( "41CF6794BA4200B839C53531", "0A3E27B8CA818264D75C8D81", );
+		};
+		"4C9A8D7A2C3C670C889D63E4" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"INFOPLIST_KEY_NSPrincipalClass" = "NSApplication";
+				"MARKETING_VERSION" = "0.1.0";
+				"CURRENT_PROJECT_VERSION" = "1";
+				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.developer-tools";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.soyeht.next.dev.mac";
+				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "Soyeht Dev";
+				"MACOSX_DEPLOYMENT_TARGET" = "14.0";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SDKROOT" = "macosx";
+				"LD_RUNPATH_SEARCH_PATHS" = ( "$(inherited)", "@executable_path/../Frameworks", );
+				"SWIFT_VERSION" = "6.0";
+				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"PRODUCT_NAME" = "Soyeht Dev";
+				"INFOPLIST_KEY_SoyehtLicense" = "Apache-2.0";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+			};
+			"name" = "Debug";
+		};
+		"A8792157CB4F27FB949C035F" = {
+			"path" = "Soyeht Dev.app";
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"41D311A605520FC7B8B9A980" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"BC4A71180870F7945155FBB0" = {
+			"isa" = "XCLocalSwiftPackageReference";
+			"relativePath" = "../shared";
+		};
+		"12F90E2E9B6DDF5BCAF4119F" = {
+			"path" = "SoyehtMacApp.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"41CF6794BA4200B839C53531" = {
+			"path" = "Sources";
+			"isa" = "PBXGroup";
+			"children" = ( "12F90E2E9B6DDF5BCAF4119F", "E00209EE3DCE335806B2F38A", );
+			"sourceTree" = "<group>";
+		};
+		"878A52FC5FF6A57D50B7B870" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "559CB21771B824D09CDDDFC8", "C991EF065A43B2B3133FE858", );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"F26350DAFE3F19AABFD69AC4" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "SoyehtClient";
+		};
+		"E00209EE3DCE335806B2F38A" = {
+			"path" = "WorkspaceWindow.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"76F8DEC3DFE0BDB465198890" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = ( "CBE79372575C6BD5A9131E8F", "2D49EBE4C1EF4247FC7BA12F", );
+		};
+		"06A61DF042AD775E8BDD2766" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "F26350DAFE3F19AABFD69AC4";
+		};
+		"34A04005BCAF206EEC990BD9" = {
+			"buildConfigurationList" = "175AB01246347EE3CB3AD67C";
+			"productReference" = "A8792157CB4F27FB949C035F";
+			"productType" = "com.apple.product-type.application";
+			"packageProductDependencies" = ( "F26350DAFE3F19AABFD69AC4", );
+			"productName" = "Soyeht Dev";
+			"isa" = "PBXNativeTarget";
+			"buildPhases" = ( "878A52FC5FF6A57D50B7B870", "E2AA269EB967A8853A258BFA", "41D311A605520FC7B8B9A980", "CC1D3B0234846714B0AEDA6C", );
+			"dependencies" = ();
+			"name" = "SoyehtMac";
+			"buildRules" = ();
+		};
+		"0A3E27B8CA818264D75C8D81" = {
+			"isa" = "PBXGroup";
+			"name" = "Products";
+			"children" = ( "A8792157CB4F27FB949C035F", );
+			"sourceTree" = "<group>";
+		};
+		"CBE79372575C6BD5A9131E8F" = {
+			"isa" = "XCBuildConfiguration";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"SWIFT_VERSION" = "6.0";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+			};
+			"name" = "Debug";
+		};
+	};
+	"rootObject" = "244210E48437B6556980A702";
+}

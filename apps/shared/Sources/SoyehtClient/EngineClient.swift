@@ -1,0 +1,383 @@
+import Foundation
+import Observation
+import SoyehtProtocol
+
+@MainActor @Observable
+public final class EngineClient {
+  public private(set) var panes: [Pane] = []
+  public private(set) var workspaces: [Workspace] = []
+  public private(set) var pairRequests: [PairPrompt] = []
+  public private(set) var connected = false
+  public private(set) var connectionText = "Conectando ao perfil Dev…"
+  public var problem: String?
+  public private(set) var selectedPaneId: String?
+  public private(set) var gapText: String?
+  public private(set) var pairCode: DevicePairStartResult?
+  @ObservationIgnored public var terminalOutput: ((Data, Bool) -> Void)?
+  @ObservationIgnored private var wire: Wire?
+  @ObservationIgnored private var lifecycle: Task<Void, Never>?
+  @ObservationIgnored private var pending: [String: Pending] = [:]
+  @ObservationIgnored private var snapshot = SnapshotAssembly()
+  @ObservationIgnored private var position: StreamPosition?
+  @ObservationIgnored private var cursor: UInt64 = 0
+  @ObservationIgnored private var inputTask: Task<Void, Never>?
+  @ObservationIgnored private var inputQueue: [(String, Data)] = []
+  @ObservationIgnored private var queuedInputBytes = 0
+  @ObservationIgnored private var resizeTask: Task<Void, Never>?
+  @ObservationIgnored private let socket: String
+
+  private struct Pending {
+    var method: String
+    var params: JsonValue
+    var continuation: CheckedContinuation<JsonValue, Error>
+    var timeout: Task<Void, Never>
+  }
+
+  public init(socket: String = DevProfile.socketPath) { self.socket = socket }
+  public var selectedPane: Pane? { panes.first { $0.paneId == selectedPaneId } }
+
+  public func start() {
+    guard lifecycle == nil else { return }
+    lifecycle = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        do { try await self.session() } catch { self.connectionText = error.localizedDescription }
+        if Task.isCancelled { break }
+        self.disconnect()
+        do { try await Task.sleep(for: .seconds(1)) } catch { break }
+      }
+    }
+  }
+  public func stop() {
+    lifecycle?.cancel()
+    lifecycle = nil
+    disconnect()
+  }
+  private func disconnect() {
+    connected = false
+    position = nil
+    wire?.close()
+    wire = nil
+    let requests = pending
+    pending.removeAll()
+    for request in requests.values {
+      request.timeout.cancel()
+      request.continuation.resume(throwing: ClientFailure.disconnected)
+    }
+    snapshot = SnapshotAssembly()
+  }
+  private func session() async throws {
+    let wire = Wire(socket: socket)
+    self.wire = wire
+    try await wire.open()
+    let challenge = try await wire.next()
+    guard challenge.kind == 1 else { throw ClientFailure.invalidFrame }
+    let first = try JSONDecoder().decode(JsonValue.self, from: challenge.payload)
+    guard first["method"].string == "auth.challenge" else { throw ClientFailure.invalidFrame }
+    let reader = Task { [weak self] in
+      do {
+        while !Task.isCancelled {
+          let frame = try await wire.next()
+          guard let self, self.wire === wire else { break }
+          try self.receive(frame)
+        }
+      } catch {
+        if let self, self.wire === wire {
+          self.connectionText = error.localizedDescription
+          self.disconnect()
+        }
+      }
+    }
+    defer {
+      reader.cancel()
+      wire.close()
+    }
+    let hello = HelloParams(client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1)
+    let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
+    guard welcome.role == .human_local, welcome.protocolVersion == 1 else {
+      throw ClientFailure.invalidFrame
+    }
+    _ = try await request("state.snapshot", .object([:]))
+    _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
+    connected = true
+    connectionText = "Perfil Dev · conectado"
+    if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
+    if let pane = selectedPaneId { try await subscribe(pane) }
+    await reader.value
+  }
+  private func request(_ method: String, _ params: JsonValue) async throws -> JsonValue {
+    guard let wire else { throw ClientFailure.disconnected }
+    let id = UUID().uuidString
+    return try await withCheckedThrowingContinuation { continuation in
+      let timeout = Task { [weak self] in
+        do { try await Task.sleep(for: .seconds(12)) } catch { return }
+        guard let request = self?.pending.removeValue(forKey: id) else { return }
+        request.continuation.resume(throwing: ClientFailure.timeout)
+        self?.wire?.close()
+      }
+      pending[id] = Pending(
+        method: method, params: params, continuation: continuation, timeout: timeout)
+      Task {
+        do {
+          try await wire.send(
+            .object([
+              "jsonrpc": .string("2.0"), "id": .string(id),
+              "method": .string(method), "params": params,
+            ]))
+        } catch {
+          if let request = self.pending.removeValue(forKey: id) {
+            request.timeout.cancel()
+            request.continuation.resume(throwing: error)
+          }
+        }
+      }
+    }
+  }
+  /// Retry only connection loss, with the same mutation parameters and idempotency key.
+  private func mutation<T: Encodable>(_ method: String, _ params: T) async throws -> JsonValue {
+    let value = try JsonValue.encoded(params)
+    for attempt in 0..<3 {
+      do { return try await request(method, value) } catch let error as ClientFailure
+        where error.canRetry && attempt < 2
+      {
+        for _ in 0..<120 {
+          if connected { break }
+          try await Task.sleep(for: .milliseconds(100))
+        }
+      }
+    }
+    throw ClientFailure.disconnected
+  }
+  private func receive(_ frame: Frame) throws {
+    if frame.kind == 2 {
+      guard position != nil else { return }
+      if let bytes = try position?.accept(frame) { terminalOutput?(bytes, false) }
+      return
+    }
+    guard frame.kind == 1 else { return }
+    let message = try JSONDecoder().decode(JsonValue.self, from: frame.payload)
+    guard message["jsonrpc"].string == "2.0" else { throw ClientFailure.invalidFrame }
+    if let id = message["id"].string, let request = pending.removeValue(forKey: id) {
+      request.timeout.cancel()
+      if message["error"] != .null {
+        request.continuation.resume(
+          throwing: ClientFailure.remote(
+            message["error"]["data"]["kind"].string ?? "internal_error",
+            message["error"]["message"].string ?? "Pedido recusado"))
+        return
+      }
+      let result = message["result"]
+      do {
+        if request.method == "state.snapshot" { try applySnapshot(result) }
+        if request.method == "pane.stream.subscribe",
+          request.params["paneId"].string == selectedPaneId
+        {
+          let info = try result.decoded(StreamInfo.self)
+          position = StreamPosition(
+            streamId: info.streamId, reference: info.binaryPaneRef,
+            generation: info.generation, next: nil)
+        }
+        request.continuation.resume(returning: result)
+      } catch {
+        request.continuation.resume(throwing: error)
+        throw error
+      }
+      return
+    }
+    guard let method = message["method"].string else { return }
+    let params = message["params"]
+    if let text = params["eventId"].string {
+      guard let next = UInt64(text) else { throw ClientFailure.invalidFrame }
+      if next <= cursor { return }
+      cursor = next
+    }
+    switch method {
+    case "state.snapshot_part": try snapshot.append(params.decoded(StateSnapshotPartEvent.self))
+    case "pane.created", "pane.updated", "pane.renamed":
+      let pane = try params["pane"].decoded(Pane.self)
+      panes.removeAll { $0.paneId == pane.paneId }
+      panes.append(pane)
+    case "pane.closed":
+      let id = params["paneId"].string
+      panes.removeAll { $0.paneId == id }
+      if selectedPaneId == id { select(panes.first?.paneId) }
+    case "pane.state_changed":
+      let event = try params.decoded(PaneStateChangedEvent.self)
+      if let index = panes.firstIndex(where: { $0.paneId == event.paneId }) {
+        panes[index].state = event.state
+        panes[index].source = event.source
+        panes[index].confidence = event.confidence
+        panes[index].phrase = event.phrase
+      }
+    case "workspace.created", "workspace.renamed":
+      let workspace = try params["workspace"].decoded(Workspace.self)
+      workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
+      workspaces.append(workspace)
+    case "workspace.closed": workspaces.removeAll { $0.workspaceId == params["workspaceId"].string }
+    case "stream.replay_start":
+      guard params["streamId"].string == position?.streamId else { return }
+      if try position?.start(params.decoded(StreamReplayStartEvent.self)) == true {
+        gapText = nil
+        terminalOutput?(Data(), true)
+      }
+    case "stream.gap":
+      guard params["streamId"].string == position?.streamId else { return }
+      try position?.gap(params.decoded(StreamGapEvent.self))
+      gapText = "Parte da saída não foi gravada. A tela contém uma lacuna."
+    case "stream.replay_done":
+      guard params["streamId"].string == position?.streamId else { return }
+      guard params["nextOffset"].string == position?.next.map(String.init) else {
+        throw ClientFailure.invalidStream
+      }
+    case "device.pair_requested":
+      let event = try params.decoded(DevicePairRequestedEvent.self)
+      pairRequests.removeAll { $0.requestId == event.requestId }
+      pairRequests.append(PairPrompt(event))
+    case "device.paired": pairRequests.removeAll { $0.requestId == params["requestId"].string }
+    default: break
+    }
+  }
+  private func applySnapshot(_ value: JsonValue) throws {
+    let result = try value.decoded(StateSnapshotResult.self)
+    let sections = try snapshot.finish(result)
+    let panes = try (sections["panes"] ?? []).map { try $0.decoded(Pane.self) }
+    let workspaces = try (sections["workspaces"] ?? []).map { try $0.decoded(Workspace.self) }
+    let requests = try (sections["requests"] ?? []).filter { $0["kind"].string == "device_pair" }
+      .map { try PairPrompt($0.decoded(DevicePairPending.self)) }
+    self.panes = panes
+    self.workspaces = workspaces
+    pairRequests = requests
+    cursor = UInt64(result.cursor)!
+    if !panes.contains(where: { $0.paneId == selectedPaneId }) {
+      selectedPaneId = result.focus?.paneId ?? panes.first?.paneId
+    }
+    snapshot = SnapshotAssembly()
+  }
+  public func select(_ paneId: String?) {
+    let old = selectedPaneId
+    selectedPaneId = paneId
+    position = nil
+    gapText = nil
+    terminalOutput?(Data(), true)
+    guard connected else { return }
+    perform {
+      if let old {
+        _ = try await self.request("pane.stream.unsubscribe", .object(["paneId": .string(old)]))
+      }
+      if let paneId, self.selectedPaneId == paneId {
+        _ = try await self.mutation(
+          "pane.focus", PaneFocusParams(paneId: paneId, idempotencyKey: UUID().uuidString))
+        if self.selectedPaneId == paneId { try await self.subscribe(paneId) }
+      }
+    }
+  }
+  private func subscribe(_ pane: String) async throws {
+    _ = try await request(
+      "pane.stream.subscribe", .object(["paneId": .string(pane), "from": .string("tail")]))
+  }
+  public func refreshTerminal() {
+    guard let pane = selectedPaneId, connected else { return }
+    perform { try await self.subscribe(pane) }
+  }
+  public func createPane(directory: URL) {
+    perform {
+      let path = directory.standardizedFileURL.path
+      var workspaceId = self.workspaces.first { $0.path == path }?.workspaceId
+      if workspaceId == nil {
+        let result = try await self.mutation(
+          "workspace.create",
+          WorkspaceCreateParams(
+            name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
+        workspaceId = try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
+      }
+      guard let workspaceId else { throw ClientFailure.invalidFrame }
+      let result = try await self.mutation(
+        "pane.create",
+        PaneCreateParams(
+          workspaceId: workspaceId,
+          mode: .terminal, cwd: path, name: "Terminal", idempotencyKey: UUID().uuidString))
+      self.select(try result.decoded(PaneCreateResult.self).paneId)
+    }
+  }
+  public func closePane(_ id: String) {
+    perform {
+      _ = try await self.mutation(
+        "pane.close", PaneCloseParams(paneId: id, idempotencyKey: UUID().uuidString))
+    }
+  }
+  public func input(_ data: Data) {
+    guard connected, let pane = selectedPaneId, !data.isEmpty else { return }
+    guard queuedInputBytes + data.count <= 1_048_576 else {
+      problem = "Entrada grande demais. Aguarde a fila de teclado esvaziar."
+      return
+    }
+    inputQueue.append((pane, data))
+    queuedInputBytes += data.count
+    guard inputTask == nil else { return }
+    inputTask = Task {
+      defer { inputTask = nil }
+      while !inputQueue.isEmpty {
+        let (pane, data) = inputQueue.removeFirst()
+        queuedInputBytes -= data.count
+        do {
+          var offset = 0
+          while offset < data.count {
+            let chunk = data.subdata(in: offset..<min(offset + 16_384, data.count))
+            let result = try await mutation(
+              "pane.input",
+              PaneInputParams(
+                paneId: pane,
+                bytes: chunk.base64EncodedString(), idempotencyKey: UUID().uuidString))
+            guard let accepted = result["acceptedBytes"].int, accepted > 0, accepted <= chunk.count
+            else {
+              throw ClientFailure.invalidFrame
+            }
+            offset += accepted
+          }
+        } catch {
+          problem = error.localizedDescription
+          inputQueue.removeAll()
+          queuedInputBytes = 0
+          break
+        }
+      }
+    }
+  }
+  public func resize(cols: Int, rows: Int) {
+    guard connected, let pane = selectedPaneId, cols > 0, rows > 0 else { return }
+    resizeTask?.cancel()
+    resizeTask = Task {
+      do {
+        try await Task.sleep(for: .milliseconds(100))
+        _ = try await mutation(
+          "pane.resize",
+          PaneResizeParams(
+            paneId: pane,
+            cols: UInt32(min(cols, 1000)), rows: UInt32(min(rows, 1000)),
+            idempotencyKey: UUID().uuidString))
+      } catch is CancellationError {} catch { problem = error.localizedDescription }
+    }
+  }
+  public func beginPairing() {
+    perform {
+      self.pairCode = try await self.mutation(
+        "device.pair.start",
+        DevicePairStartParams(idempotencyKey: UUID().uuidString)
+      ).decoded(DevicePairStartResult.self)
+    }
+  }
+  public func clearPairCode() { pairCode = nil }
+  public func decidePairing(_ request: PairPrompt, approve: Bool) {
+    perform {
+      _ = try await self.mutation(
+        "device.pair.decide",
+        DevicePairDecideParams(
+          requestId: request.requestId, approve: approve, idempotencyKey: UUID().uuidString))
+      self.pairRequests.removeAll { $0.requestId == request.requestId }
+      if approve { self.pairCode = nil }
+    }
+  }
+  private func perform(_ action: @escaping @MainActor () async throws -> Void) {
+    Task { do { try await action() } catch { self.problem = error.localizedDescription } }
+  }
+}
