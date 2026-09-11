@@ -7,7 +7,8 @@ public struct AgentPaneView: Sendable {
   public var elicitation: ElicitationRequest?
   public var queue: [PromptItem] = []
   public var queuePaused = false
-  public var hasOlderMessages = false
+  public internal(set) var nextTranscriptCursor: String?
+  public var hasOlderMessages: Bool { nextTranscriptCursor != nil }
   public var notice: String?
   public var authMethods: [AuthMethod] = []
 
@@ -26,6 +27,12 @@ public struct AgentPaneView: Sendable {
 
   mutating func merge(_ page: [TranscriptMessage]) {
     for message in page { merge(message) }
+  }
+
+  mutating func mergeTranscriptPage(_ page: PaneTranscriptResult, replacing: Bool) {
+    if replacing { messages = [] }
+    merge(page.items)
+    nextTranscriptCursor = page.nextCursor
   }
 }
 
@@ -203,24 +210,26 @@ extension EngineClient {
     )
     .decoded(PaneTranscriptResult.self)
     var view = agentPanes[paneId] ?? AgentPaneView()
-    if replacing { view.messages = [] }
-    view.merge(result.items)
-    view.hasOlderMessages = result.nextCursor != nil
+    view.mergeTranscriptPage(result, replacing: replacing)
     agentPanes[paneId] = view
     try await loadAgentQueue(paneId)
   }
 
+  func olderTranscriptParams(_ paneId: String) -> PaneTranscriptParams? {
+    guard let before = agentPanes[paneId]?.nextTranscriptCursor else { return nil }
+    return PaneTranscriptParams(paneId: paneId, before: before, limit: 100)
+  }
+
   public func loadOlderAgentMessages(_ paneId: String) {
-    guard let before = agentPanes[paneId]?.messages.first?.seq else { return }
+    guard let params = olderTranscriptParams(paneId) else { return }
     perform {
       let result = try await self.request(
         "pane.transcript",
-        .encoded(PaneTranscriptParams(paneId: paneId, before: before, limit: 100))
+        .encoded(params)
       )
       .decoded(PaneTranscriptResult.self)
       var view = self.agentPanes[paneId] ?? AgentPaneView()
-      view.merge(result.items)
-      view.hasOlderMessages = result.nextCursor != nil
+      view.mergeTranscriptPage(result, replacing: false)
       self.agentPanes[paneId] = view
     }
   }
@@ -401,6 +410,10 @@ extension EngineClient {
   }
 
   public func startAgentAuthentication(_ paneId: String, methodId: String?) {
+    guard !readOnly else {
+      problem = "Finish agent sign-in on the Mac."
+      return
+    }
     perform {
       let result = try await self.mutation(
         "pane.auth.start",

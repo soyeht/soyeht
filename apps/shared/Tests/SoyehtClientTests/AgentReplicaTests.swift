@@ -58,3 +58,38 @@ import Testing
   #expect(client.agentPanes[paneId]?.authMethods.first?.id == "login")
   #expect(client.agentPanes[paneId]?.authMethods.first?.terminal == true)
 }
+
+@MainActor @Test func agentTranscriptPagingUsesTheServerCursor() throws {
+  let client = EngineClient(socket: "/tmp/sn-agent-paging/engine.sock")
+  let paneId = "pane-agent"
+  let newest = TranscriptMessage(
+    localId: "message-100", generation: 1, seq: "100", role: .assistant, kind: .message,
+    text: "Newest", complete: true)
+  var view = AgentPaneView()
+  view.mergeTranscriptPage(
+    PaneTranscriptResult(items: [newest], nextCursor: "37"), replacing: true)
+  client.agentPanes[paneId] = view
+
+  #expect(client.agentPanes[paneId]?.hasOlderMessages == true)
+  #expect(client.olderTranscriptParams(paneId)?.before == "37")
+  #expect(client.olderTranscriptParams(paneId)?.before != newest.seq)
+
+  let oldest = TranscriptMessage(
+    localId: "message-1", generation: 1, seq: "1", role: .user, kind: .message,
+    text: "Oldest", complete: true)
+  view.mergeTranscriptPage(PaneTranscriptResult(items: [oldest]), replacing: false)
+  #expect(view.messages.map(\.seq) == ["1", "100"])
+  #expect(view.hasOlderMessages == false)
+}
+
+@MainActor @Test func remoteClientCannotStartAgentAuthentication() throws {
+  let credential = DeviceCredential(
+    engineId: "engine", deviceId: "device",
+    address: try #require(URL(string: "ws://100.64.0.1:8291")),
+    token: "token", key: Data(repeating: 0, count: 32))
+  let client = EngineClient(credential: credential)
+
+  client.startAgentAuthentication("pane-agent", methodId: "login")
+
+  #expect(client.problem == "Finish agent sign-in on the Mac.")
+}

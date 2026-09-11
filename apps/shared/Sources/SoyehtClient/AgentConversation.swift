@@ -148,22 +148,27 @@ private struct AgentRaised: ViewModifier {
     VStack(alignment: .leading, spacing: 10) {
       Label("Sign in to continue", systemImage: "person.badge.key")
         .font(.headline).foregroundStyle(.orange)
-      ForEach(view.authMethods, id: \.id) { method in
-        Button {
-          client.startAgentAuthentication(paneId, methodId: method.id)
-        } label: {
-          HStack {
-            VStack(alignment: .leading, spacing: 3) {
-              Text(method.name).fontWeight(.semibold)
-              if let detail = method.description {
-                Text(detail).font(.caption).foregroundStyle(AgentColors.secondary)
+      #if os(macOS)
+        ForEach(view.authMethods, id: \.id) { method in
+          Button {
+            client.startAgentAuthentication(paneId, methodId: method.id)
+          } label: {
+            HStack {
+              VStack(alignment: .leading, spacing: 3) {
+                Text(method.name).fontWeight(.semibold)
+                if let detail = method.description {
+                  Text(detail).font(.caption).foregroundStyle(AgentColors.secondary)
+                }
               }
+              Spacer()
+              Image(systemName: method.terminal ? "terminal" : "arrow.right.circle")
             }
-            Spacer()
-            Image(systemName: method.terminal ? "terminal" : "arrow.right.circle")
-          }
-        }.buttonStyle(.bordered)
-      }
+          }.buttonStyle(.bordered)
+        }
+      #else
+        Text("Finish sign-in on the Mac, then return here.")
+          .font(.caption).foregroundStyle(AgentColors.secondary)
+      #endif
     }.padding(14).modifier(AgentRaised(radius: 14)).padding(.horizontal, 16).padding(.bottom, 10)
   }
 

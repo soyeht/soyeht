@@ -121,6 +121,22 @@
       reader.panes.contains { $0.paneId == agentId }
     }
     reader.select(agentId)
+    func selectedValue(_ client: EngineClient, _ id: String) -> String? {
+      guard
+        let value = client.panes.first(where: { $0.paneId == agentId })?.agent?.options
+          .first(where: { $0.id == id })?.currentValue,
+        case .v0(let selected) = value
+      else { return nil }
+      return selected
+    }
+    reader.setAgentConfig(agentId, configId: "model", value: .v0("model-b"))
+    try await phoneWait("remote model selection did not converge") {
+      [local, reader].allSatisfy { selectedValue($0, "model") == "model-b" }
+    }
+    reader.setAgentConfig(agentId, configId: "effort", value: .v0("high"))
+    try await phoneWait("remote effort selection did not converge") {
+      [local, reader].allSatisfy { selectedValue($0, "effort") == "high" }
+    }
     reader.sendPrompt(agentId, text: "hello from phone")
     try await phoneWait("two Swift clients did not receive the completed reply") {
       [local, reader].allSatisfy { replica in

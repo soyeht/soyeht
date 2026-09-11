@@ -193,7 +193,7 @@ private struct PhonePane: View {
     VStack(spacing: 0) {
       if client.connected, let pane = client.panes.first(where: { $0.paneId == paneId }) {
         if pane.mode == .agent {
-          AgentConversationView(client: client, paneId: paneId, showsConfiguration: false)
+          AgentConversationView(client: client, paneId: paneId)
         } else {
           HStack {
             Text(pane.phrase)
