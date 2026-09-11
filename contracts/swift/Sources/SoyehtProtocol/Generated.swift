@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e7fc8a470dbcdd7f1dba14e02ec4b645f704e8520280ab04c19f187e38f9a984). Do not edit.
+// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
 import Foundation
 
 
@@ -22,15 +22,15 @@ public enum PaneMode: String, Codable, Sendable {
 }
 
 public enum PaneState: String, Codable, Sendable {
-    case `iniciando` = "iniciando"
-    case `trabalhando` = "trabalhando"
-    case `ociosa` = "ociosa"
-    case `esperando_você` = "esperando_você"
-    case `cancelando` = "cancelando"
-    case `sem_sinal` = "sem_sinal"
-    case `recuperando` = "recuperando"
-    case `morta` = "morta"
-    case `não_sei` = "não_sei"
+    case `starting` = "starting"
+    case `working` = "working"
+    case `idle` = "idle"
+    case `waiting_for_you` = "waiting_for_you"
+    case `cancelling` = "cancelling"
+    case `no_signal` = "no_signal"
+    case `recovering` = "recovering"
+    case `dead` = "dead"
+    case `unknown` = "unknown"
 }
 
 public enum StateSource: String, Codable, Sendable {
@@ -1148,10 +1148,10 @@ public enum DecisionBy: String, Codable, Sendable {
 }
 
 public enum ProbeResult: String, Codable, Sendable {
-    case `funcionou` = "funcionou"
-    case `não_suportado` = "não_suportado"
-    case `não_autenticado` = "não_autenticado"
-    case `inconclusivo` = "inconclusivo"
+    case `worked` = "worked"
+    case `unsupported` = "unsupported"
+    case `unauthenticated` = "unauthenticated"
+    case `inconclusive` = "inconclusive"
 }
 
 public enum ConfigType: String, Codable, Sendable {

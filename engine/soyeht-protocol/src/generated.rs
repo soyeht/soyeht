@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e7fc8a470dbcdd7f1dba14e02ec4b645f704e8520280ab04c19f187e38f9a984). Do not edit.
+// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -23,24 +23,24 @@ pub enum PaneMode {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PaneState {
-    #[serde(rename = "iniciando")]
-    Iniciando,
-    #[serde(rename = "trabalhando")]
-    Trabalhando,
-    #[serde(rename = "ociosa")]
-    Ociosa,
-    #[serde(rename = "esperando_você")]
-    EsperandoVocê,
-    #[serde(rename = "cancelando")]
-    Cancelando,
-    #[serde(rename = "sem_sinal")]
-    SemSinal,
-    #[serde(rename = "recuperando")]
-    Recuperando,
-    #[serde(rename = "morta")]
-    Morta,
-    #[serde(rename = "não_sei")]
-    NãoSei,
+    #[serde(rename = "starting")]
+    Starting,
+    #[serde(rename = "working")]
+    Working,
+    #[serde(rename = "idle")]
+    Idle,
+    #[serde(rename = "waiting_for_you")]
+    WaitingForYou,
+    #[serde(rename = "cancelling")]
+    Cancelling,
+    #[serde(rename = "no_signal")]
+    NoSignal,
+    #[serde(rename = "recovering")]
+    Recovering,
+    #[serde(rename = "dead")]
+    Dead,
+    #[serde(rename = "unknown")]
+    Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum StateSource {
@@ -1004,14 +1004,14 @@ pub enum DecisionBy {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ProbeResult {
-    #[serde(rename = "funcionou")]
-    Funcionou,
-    #[serde(rename = "não_suportado")]
-    NãoSuportado,
-    #[serde(rename = "não_autenticado")]
-    NãoAutenticado,
-    #[serde(rename = "inconclusivo")]
-    Inconclusivo,
+    #[serde(rename = "worked")]
+    Worked,
+    #[serde(rename = "unsupported")]
+    Unsupported,
+    #[serde(rename = "unauthenticated")]
+    Unauthenticated,
+    #[serde(rename = "inconclusive")]
+    Inconclusive,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ConfigType {

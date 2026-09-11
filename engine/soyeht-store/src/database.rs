@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug)]
 pub enum Error {
@@ -111,6 +111,9 @@ impl Store {
             }
             if version < 2 {
                 tx.execute_batch(include_str!("../migrations/002-client-state.sql"))?;
+            }
+            if version < 3 {
+                crate::english_values::migrate(&tx)?;
             }
             tx.commit()?;
         }

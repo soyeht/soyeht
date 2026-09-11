@@ -1,7 +1,7 @@
 [
   {
     "type": "PaneState",
-    "value": "unknown"
+    "value": "future_state"
   },
   {
     "type": "PaneCloseParams",
@@ -60,5 +60,57 @@
   {
     "type": "ConfigValue",
     "value": []
+  },
+  {
+    "type": "PaneState",
+    "value": "iniciando"
+  },
+  {
+    "type": "PaneState",
+    "value": "trabalhando"
+  },
+  {
+    "type": "PaneState",
+    "value": "ociosa"
+  },
+  {
+    "type": "PaneState",
+    "value": "esperando_você"
+  },
+  {
+    "type": "PaneState",
+    "value": "cancelando"
+  },
+  {
+    "type": "PaneState",
+    "value": "sem_sinal"
+  },
+  {
+    "type": "PaneState",
+    "value": "recuperando"
+  },
+  {
+    "type": "PaneState",
+    "value": "morta"
+  },
+  {
+    "type": "PaneState",
+    "value": "não_sei"
+  },
+  {
+    "type": "ProbeResult",
+    "value": "funcionou"
+  },
+  {
+    "type": "ProbeResult",
+    "value": "não_suportado"
+  },
+  {
+    "type": "ProbeResult",
+    "value": "não_autenticado"
+  },
+  {
+    "type": "ProbeResult",
+    "value": "inconclusivo"
   }
 ]

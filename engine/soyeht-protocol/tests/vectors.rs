@@ -11,7 +11,7 @@ include!("support/dispatch.rs");
 
 #[test]
 fn rejects_invalid_types_and_preserves_forward_compatibility() {
-    assert!(serde_json::from_value::<PaneState>(serde_json::json!("unknown")).is_err());
+    assert!(serde_json::from_value::<PaneState>(serde_json::json!("future_state")).is_err());
     assert!(
         serde_json::from_value::<PaneCloseParams>(serde_json::json!({"paneId":"pane-1"})).is_err()
     );
@@ -123,4 +123,23 @@ fn agent_updates_require_known_kinds_and_their_payloads() {
     );
     assert!(serde_json::from_value::<ConfigValue>(serde_json::json!([])).is_err());
     assert!(serde_json::from_value::<ConfigValue>(serde_json::json!(true)).is_ok());
+}
+
+#[test]
+fn legacy_state_and_probe_values_are_not_wire_aliases() {
+    let vectors: Vec<Value> = serde_json::from_str(include_str!(
+        "../../../contracts/vectors/invalid-messages.json"
+    ))
+    .unwrap();
+    for vector in vectors {
+        match vector["type"].as_str() {
+            Some("PaneState") => {
+                assert!(serde_json::from_value::<PaneState>(vector["value"].clone()).is_err())
+            }
+            Some("ProbeResult") => {
+                assert!(serde_json::from_value::<ProbeResult>(vector["value"].clone()).is_err())
+            }
+            _ => (),
+        }
+    }
 }

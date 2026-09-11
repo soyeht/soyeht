@@ -37,7 +37,7 @@ impl Core {
             cwd: cwd.into(),
             name: params["name"].as_str().unwrap_or("Shell").into(),
             mode: PaneMode::Terminal,
-            state: PaneState::Iniciando,
+            state: PaneState::Starting,
             source: StateSource::None,
             confidence: 0.0,
             phrase: "Starting shell".into(),

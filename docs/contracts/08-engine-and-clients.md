@@ -92,7 +92,7 @@ removes that device's push tokens.
 "live_activity", activityId?}` and `push.unregister`. The engine stores them
 per device; renewal = register again. Push-triggering events:
 `pane.permission_requested`, `task.moved` to “your turn”,
-`pane.state_changed` to `sem_sinal`, `pane.session_lost`.
+`pane.state_changed` to `no_signal`, `pane.session_lost`.
 
 **2.4 Role matrix** (who may do what):
 | Operation | human_local | human_device (iPhone) | agent (pane MCP) | chief |

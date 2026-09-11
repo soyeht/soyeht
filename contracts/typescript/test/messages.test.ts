@@ -18,7 +18,7 @@ test('rejects missing key, wrong scalar, enum and bounds', () => {
     assert.throws(() => decodeParams('pane.resize', JSON.stringify({ ...valid, ...patch })));
   }
   assert.throws(() => decodeParams('pane.resize', '{}'));
-  assert.throws(() => decodeNamed('PaneState', '"unknown"'));
+  assert.throws(() => decodeNamed('PaneState', '"future_state"'));
 });
 
 test('unknown fields remain compatible with the next protocol version', () => {

@@ -6,16 +6,16 @@ this contract defines what the engine must prepare for that experiment.
 Source: (internal analysis, outside the repository) (internal analysis).
 
 ## 1. States clients receive (both pane types)
-`trabalhando`, `ociosa`, “waiting for you” (permission or question), “no
-signal”, `morta`, and **“unknown”** (only in the raw terminal pane when
+`working`, `idle`, “waiting for you” (permission or question), “no
+signal”, `dead`, and **“unknown”** (only in the raw terminal pane when
 confidence is low; no other app has this, and it prevents guessing).
 The card phrase (contract 03 §6) is calculated from this.
 
 ## 2. Agent pane (ACP) — SETTLED
-Comes from the protocol (contract 04 §8): accepted prompt → `trabalhando`;
-open `session/request_permission` → “waiting for you”; `idle` → `ociosa`;
+Comes from the protocol (contract 04 §8): accepted prompt → `working`;
+open `session/request_permission` → “waiting for you”; `idle` → `idle`;
 no notification for 90 s with an open turn → “no signal”; process exited →
-`morta`. Exact; no screen reading.
+`dead`. Exact; no screen reading.
 
 ## 3. Raw terminal pane — DECISION DEFERRED TO AN EXPERIMENT
 Caio's decision: do not choose between a hook, marker or regex now. Decide
@@ -25,10 +25,10 @@ than handwritten rules (“like email: rules did not work, a classifier did”).
 Simple starting signal: changing screen = working; static screen = stopped.
 
 Rules already in effect, drawn from others' mistakes (issues):
-- never declare `ociosa` before the first sign of life; `task_next` and the
-  loop send prompts only after the first real `ociosa`;
+- never declare `idle` before the first sign of life; `task_next` and the
+  loop send prompts only after the first real `idle`;
 - “waiting for you” only with a real request; any new signal clears it;
-- partial coverage appears as “unknown”, never as `ociosa`;
+- partial coverage appears as “unknown”, never as `idle`;
 - if hooks are introduced, they follow the harness contract (JSON stdout,
   short duration) and are not written into the user's shared configuration.
 
@@ -57,4 +57,4 @@ the labels; decide per harness. Learn from issues: “notification with two mean
 “sticky state”, “background shell”, “permission prompt that looks idle”.
 
 ## Review applied (2026-09-10, finding R12)
-One enum for both pane types: `iniciando`, `trabalhando`, `ociosa`, `esperando_você`, `cancelando`, `sem_sinal`, `recuperando` (engine reconnecting to ptyd), `morta`, `não_sei`. Each state carries `source` (`protocol | hook | osc | screen | none`) and `confidence` (0–1). `esperando_você` requires an open request; `sem_sinal` neither clears a request nor releases the loop/`task_next`; `iniciando` never becomes `ociosa` without a real signal.
+One enum for both pane types: `starting`, `working`, `idle`, `waiting_for_you`, `cancelling`, `no_signal`, `recovering` (engine reconnecting to ptyd), `dead`, `unknown`. Each state carries `source` (`protocol | hook | osc | screen | none`) and `confidence` (0–1). `waiting_for_you` requires an open request; `no_signal` neither clears a request nor releases the loop/`task_next`; `starting` never becomes `idle` without a real signal.

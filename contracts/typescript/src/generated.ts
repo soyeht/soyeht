@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e7fc8a470dbcdd7f1dba14e02ec4b645f704e8520280ab04c19f187e38f9a984). Do not edit.
+// Generated from contracts/protocol.json (sha256 152ad52fe4b3c0b8fb0cfafaaad88dc1dcd804440536b6a0cb95ff8734017d90). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -11,7 +11,7 @@ export type Role = "human_local" | "human_device" | "agent" | "chief";
 
 export type PaneMode = "terminal" | "agent";
 
-export type PaneState = "iniciando" | "trabalhando" | "ociosa" | "esperando_você" | "cancelando" | "sem_sinal" | "recuperando" | "morta" | "não_sei";
+export type PaneState = "starting" | "working" | "idle" | "waiting_for_you" | "cancelling" | "no_signal" | "recovering" | "dead" | "unknown";
 
 export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
@@ -575,7 +575,7 @@ export type ElicitationResult = "submitted" | "cancelled" | "expired";
 
 export type DecisionBy = "mac" | "iphone" | "rule" | "system";
 
-export type ProbeResult = "funcionou" | "não_suportado" | "não_autenticado" | "inconclusivo";
+export type ProbeResult = "worked" | "unsupported" | "unauthenticated" | "inconclusive";
 
 export type ConfigType = "select" | "boolean";
 

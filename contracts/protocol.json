@@ -38,15 +38,15 @@
     "PaneState": {
       "type": "string",
       "enum": [
-        "iniciando",
-        "trabalhando",
-        "ociosa",
-        "esperando_você",
-        "cancelando",
-        "sem_sinal",
-        "recuperando",
-        "morta",
-        "não_sei"
+        "starting",
+        "working",
+        "idle",
+        "waiting_for_you",
+        "cancelling",
+        "no_signal",
+        "recovering",
+        "dead",
+        "unknown"
       ]
     },
     "StateSource": {
@@ -1977,10 +1977,10 @@
     "ProbeResult": {
       "type": "string",
       "enum": [
-        "funcionou",
-        "não_suportado",
-        "não_autenticado",
-        "inconclusivo"
+        "worked",
+        "unsupported",
+        "unauthenticated",
+        "inconclusive"
       ]
     },
     "ConfigType": {

@@ -40,7 +40,7 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
    the worktree; `terminal` = YES, running in a ptyd PTY and displaying output
    in the conversation; accept 2 only if the harness responds 2, otherwise
    v1 adapter); disposable-session probing by fingerprint (binary + version
-   + configuration), results `funcionou|não_suportado|não_autenticado|inconclusivo`
+   + configuration), results `worked|unsupported|unauthenticated|inconclusive`
    stored in the database; `session/new` with `cwd` and empty `mcpServers`
    in this slice; read and apply configuration options; `session/prompt`
    with turn end determined by the RESPONSE (v1); `session/update` → normalized
@@ -53,8 +53,8 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
    (v1) on recovery after ptyd death, otherwise a new session + `pane.session_lost`
    notice (continuation package is slice 4); `pane.needs_login` + `pane.auth.start`
    opening login in a raw ptyd terminal pane; pane state only from the protocol
-   (`iniciando|trabalhando|ociosa|esperando_você|cancelando|sem_sinal|recuperando|morta`),
-   `sem_sinal` with a 90 s grace period and no effect on open requests.
+   (`starting|working|idle|waiting_for_you|cancelling|no_signal|recovering|dead`),
+   `no_signal` with a 90 s grace period and no effect on open requests.
 4. **Test harness**: a deterministic fake ACP v1 agent in Rust inside the repo
    (`engine/soyeht-acp/tests/fake-agent`) that answers prompts, requests
    permission, accepts `set_config_option`, supports `session/load` when
@@ -81,7 +81,7 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
 2. [CI] Permission: the request appears on both clients; the first response wins;
    the other receives `permission_answered {by}`; no answer within 30 min
    (accelerated in the test) → `expired` and attention inbox.
-3. [CI] Cancel mid-turn: prompt response with `cancelled` and pane `ociosa` within
+3. [CI] Cancel mid-turn: prompt response with `cancelled` and pane `idle` within
    10 s; without killing a healthy process.
 4. [CI] `kill -9` the engine mid-turn: harness continues under ptyd (same PID),
    engine adopts it, subsequent chunks arrive, and a permission request made
@@ -92,12 +92,12 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
    while yolo is on is approved without appearing to the user; elicitation is
    NEVER answered by yolo.
 7. [CI] A prompt sent during a turn stays in the queue (`pane.queued`) and is sent
-   after `ociosa`; with `pane.draft` active, an automatic prompt does not enter.
+   after `idle`; with `pane.draft` active, an automatic prompt does not enter.
 8. [CI] Force-restart ptyd: harness dies; engine attempts `session/load`; fake
    agent configured with support → transcript continues; without support → new
    session + `session_lost` notice; never silently.
 9. [CI] Probing: a fake agent that “advertises” resume but returns `method_not_found`
-   is recorded as `não_suportado` and not probed again until its version changes.
+   is recorded as `unsupported` and not probed again until its version changes.
 10. [CI] Login: fake agent returns `auth_required` → `pane.needs_login`;
     `pane.auth.start` opens the terminal pane; then `pane.auth_finished`
     and the session opens.

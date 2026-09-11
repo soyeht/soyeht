@@ -73,7 +73,7 @@ recorded in `docs/toolchains.md`, committed `Cargo.lock`.
    QR pairing (08 §2.2) with Ed25519/HMAC-SHA-256 and consent; multipart
    snapshot + cursor-based events in the same transaction; mandatory,
    persisted `idempotencyKey`; 8 MiB output queue with `slow_consumer`;
-   pane states `iniciando|trabalhando|ociosa|morta|recuperando` derived only
+   pane states `starting|working|idle|dead|recovering` derived only
    from process facts (no hooks or regex in this slice); structured logs
    without secrets, with operation IDs.
 4. **`soyeht-cli`**: `soyeht --profile dev status | pane create --shell |

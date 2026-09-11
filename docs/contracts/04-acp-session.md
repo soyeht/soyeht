@@ -111,9 +111,9 @@ Until logged in, the pane shows “login required” with a button.
 
 ## 8. Derived pane state (input to contract 05)
 
-`trabalhando` = between prompt acceptance and `idle`; “waiting for permission”
-= open request; `ociosa` = `idle`; “cancelling”; “no signal” = live process,
-open turn, no notification for N s (N = 90, configurable); `morta` = process exited.
+`working` = between prompt acceptance and `idle`; “waiting for permission”
+= open request; `idle` = `idle`; “cancelling”; “no signal” = live process,
+open turn, no notification for N s (N = 90, configurable); `dead` = process exited.
 `stopReason` and the last message feed the card's state phrase.
 
 ## 9. Client events
@@ -152,7 +152,7 @@ Rule: the engine has ONE internal lifecycle (prompt accepted → working → end
 
 **R04 · reconnecting to a live harness is not resuming a session.** After engine restart (contract 07), the engine↔ptyd channel delivers: harness instance ID, generation and unanswered harness requests (permission, `fs/*`, `terminal/*`) with sequence numbers. The engine answers those pending requests from persisted state; a request with an ambiguous effect (e.g. write completed, response not sent) is marked for reconciliation and never blindly repeated. On this path the engine does NOT call `session/new` or `session/resume`. `session/resume` is only for a dead process (ptyd or machine restarted).
 
-**R12 · states.** Single enum (contract 05 §1): `iniciando`, `trabalhando`, `ociosa`, `esperando_você`, `cancelando`, `sem_sinal`, `recuperando`, `morta`, `não_sei`. `esperando_você` exists only while a permission or elicitation request is open; never derived from silence. `sem_sinal` is a suspicion with source and confidence; it neither releases work nor clears an open request. A pane starts in `iniciando` and becomes `ociosa` only after the first real `idle` (or first prompt response in v1).
+**R12 · states.** Single enum (contract 05 §1): `starting`, `working`, `idle`, `waiting_for_you`, `cancelling`, `no_signal`, `recovering`, `dead`, `unknown`. `waiting_for_you` exists only while a permission or elicitation request is open; never derived from silence. `no_signal` is a suspicion with source and confidence; it neither releases work nor clears an open request. A pane starts in `starting` and becomes `idle` only after the first real `idle` (or first prompt response in v1).
 
 **R14 · permission requests have identity and deadline.** Engine `requestId` (not the native ID), bound to generation and turn. The first valid response wins. On expiry (30 min), cancellation or session switch: the engine closes the request, responds `cancelled` to the harness and publishes `pane.permission_answered {result: expired|cancelled}`; the attention inbox shows “permission expired” with a “resume” action, never the old question.
 
@@ -162,4 +162,4 @@ Rule: the engine has ONE internal lifecycle (prompt accepted → working → end
 
 **R17 · transcript = normalized messages, not raw notifications.** The engine records every accepted prompt (`user` role, `promptId`) and agent messages assembled from chunks (`assistant` role, `localId`, `generation`, `seq`, `complete`). `session/load`/`resume` replay reconciles by identity (same generation and seq) or replaces the bounded section, never duplicates. `prompts/harness-switch.en.md` is rendered only from the body after `---`; single literal substitution of each `{{field}}`; if metadata alone exceeds 16,000 characters, error (never a package without a message).
 
-**R25 · probing in a disposable session.** The §2.3 probe runs in its own session with valid parameters, a 10 s deadline and cleanup; results are classified as `funcionou | não_suportado | não_autenticado | inconclusivo`. Only proven `não_suportado` or proven session loss triggers the fallback (new session + package); timeout or a parameter error does NOT restart a conversation.
+**R25 · probing in a disposable session.** The §2.3 probe runs in its own session with valid parameters, a 10 s deadline and cleanup; results are classified as `worked | unsupported | unauthenticated | inconclusive`. Only proven `unsupported` or proven session loss triggers the fallback (new session + package); timeout or a parameter error does NOT restart a conversation.

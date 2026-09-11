@@ -51,22 +51,22 @@ attempt are separate things: the task survives the pane.
 
 ## 3. States and who moves tasks
 
-States: `a_fazer`, `em_andamento`, `em_revisão`, `concluída`, `cancelada`.
+States: `todo`, `in_progress`, `in_review`, `completed`, `cancelled`.
 The “Cancelled” column appears only when it contains something.
 
 | From | To | How | Who |
 |---|---|---|---|
-| (creation) | a_fazer | create in list | you, agent, lead |
-| (creation) | em_andamento | create and dispatch | you, lead |
-| a_fazer | em_andamento | dispatch, or `task_next` | you, lead, idle pane |
-| em_andamento | a_fazer | pane died / returned / you dragged back (kills the pane) | engine, agent, you |
-| em_andamento | em_revisão | agent requested review, or PR opened with green CI | agent, engine |
-| em_revisão | em_andamento | review requested changes, CI failed | engine (delivers feedback to the owning pane) |
-| em_revisão | concluída | agent or you marked it; PR merged; PR contract satisfied | agent, you, engine |
-| any | cancelada | you | you |
-| cancelada | a_fazer | you | you |
+| (creation) | todo | create in list | you, agent, lead |
+| (creation) | in_progress | create and dispatch | you, lead |
+| todo | in_progress | dispatch, or `task_next` | you, lead, idle pane |
+| in_progress | todo | pane died / returned / you dragged back (kills the pane) | engine, agent, you |
+| in_progress | in_review | agent requested review, or PR opened with green CI | agent, engine |
+| in_review | in_progress | review requested changes, CI failed | engine (delivers feedback to the owning pane) |
+| in_review | completed | agent or you marked it; PR merged; PR contract satisfied | agent, you, engine |
+| any | cancelled | you | you |
+| cancelled | todo | you | you |
 
-Dragging: allowed between columns except TO `em_andamento` (only dispatch
+Dragging: allowed between columns except TO `in_progress` (only dispatch
 or `task_next` places it there). Every move records `{actor, from, to, reason}`
 in history. The engine may refuse a move with a reason, for example
 “has an open subitem” or “depends on WS-9, still open”.
@@ -89,17 +89,17 @@ the first prompt (title, description, how to verify, existing subitems,
 comments, worktree).
 
 **`task_next`** (idle pane, usually through the loop): the pane asks “give
-me the next one”. The engine selects the first `a_fazer` task that has no
+me the next one”. The engine selects the first `todo` task that has no
 open dependency and does not request a harness different from the pane's
 (or requests “default”), ordered by priority and then creation. Reservation
-is atomic within the engine (one transaction: “mark em_andamento and owner =
-this pane only if still a_fazer and ownerless”). If no row was affected,
+is atomic within the engine (one transaction: “mark in_progress and owner =
+this pane only if still todo and ownerless”). If no row was affected,
 try the next. If nothing is available, return “empty” and the pane remains idle.
 
 **No agent heartbeat.** The engine owns panes; it knows when a pane dies,
 closes or its process exits. This replaces the expiring lease used by other
-boards. Return rule: pane died or closed with a task in `em_andamento` →
-task returns to `a_fazer`, attempt closes as “returned”, system comment
+boards. Return rule: pane died or closed with a task in `in_progress` →
+task returns to `todo`, attempt closes as “returned”, system comment
 “returned: the pane closed”. If the pane has “no signal” for more than N
 minutes (N = 10, configurable), the task does NOT return automatically;
 the card shows “no signal” and enters the attention inbox; you decide.
@@ -116,10 +116,10 @@ an already owned task is refused with a reason.
 - Agent comments = report. The first prompt requests: “create subitems
   before starting; comment at each milestone; request review when done;
   if blocked, state the type”.
-- Typed blocking: `dependência` (waiting for another task; returns to
-  `a_fazer` automatically when the other closes), `falta_informação`
-  (waiting for you; enters the attention inbox), `erro_externo` (network,
-  quota; the engine retries twice with a delay, then becomes `falta_informação`).
+- Typed blocking: `dependency` (waiting for another task; returns to
+  `todo` automatically when the other closes), `missing_information`
+  (waiting for you; enters the attention inbox), `external_error` (network,
+  quota; the engine retries twice with a delay, then becomes `missing_information`).
 - CI and review feedback: when the task PR has red CI, a change request or a
   conflict, the engine delivers a message to the owning pane with a summary
   and log tail, once per fingerprint (the same error does not repeat),
@@ -128,12 +128,12 @@ an already owned task is refused with a reason.
 
 ## 7. Review and complete
 
-- `em_revisão` shows one of two calculated badges: **SYSTEM'S TURN**
+- `in_review` shows one of two calculated badges: **SYSTEM'S TURN**
   when CI is red or review requested changes and the owning pane is alive
   fixing them; **YOUR TURN** when CI is green and the PR awaits a person,
   or when no PR exists and the agent requested review.
 - Agent review (PENDING Q3, assumed “after v1”): when enabled, entering
-  `em_revisão` opens a second reviewer pane, which approves or returns
+  `in_review` opens a second reviewer pane, which approves or returns
   the task with a reason.
 - Complete: the agent calls `task_complete` with a summary, or you drag.
   With the PR contract enabled (PENDING Q4), completion requires a merged
@@ -144,7 +144,7 @@ an already owned task is refused with a reason.
 
 ## 8. Attention inbox (per workspace)
 
-List containing: `falta_informação` tasks, “no signal” panes, pending
+List containing: `missing_information` tasks, “no signal” panes, pending
 permissions, failed CI without a live pane, refused moves. Each item has
 “go to pane”. The board header shows “N need you”.
 
@@ -163,7 +163,7 @@ A pane with the “lead” role receives the full task toolset (create, dispatch
 list, comment, unblock) and a role prompt: “coordinate, do not implement;
 create small, self-contained tasks with how to verify; never depend on another
 task's memory; dispatch only when no free pane is available to claim”.
-It does not move tasks to `concluída`; that belongs to the executor or you.
+It does not move tasks to `completed`; that belongs to the executor or you.
 
 ## 11. MCP tools (final names)
 
@@ -194,16 +194,16 @@ sub-subitems; PR contract (if Q4 = later); agent review (if Q3 = later).
 
 ## Review applied (2026-09-10, findings R07, R08, R09, R13, R21, R22, R23)
 
-**R07 · `task_next` is called INSIDE the loop turn.** Idleness only authorizes triggering the loop (the engine sends the loop prompt only with the pane `ociosa`). The `task_next` tool, called by an agent already in a turn, is accepted if: the call comes from the pane's `binding`; the pane has no other active task (at most one task per pane); the pane is neither closing nor switching harnesses. The response returns the task; the engine does not inject another prompt.
+**R07 · `task_next` is called INSIDE the loop turn.** Idleness only authorizes triggering the loop (the engine sends the loop prompt only with the pane `idle`). The `task_next` tool, called by an agent already in a turn, is accepted if: the call comes from the pane's `binding`; the pane has no other active task (at most one task per pane); the pane is neither closing nor switching harnesses. The response returns the task; the engine does not inject another prompt.
 
 **R08 · how a claimed task reaches the correct worktree.** The session where the agent was waiting (the loop session) has the old cwd and no context worth preserving. Rule: `task_next` reserves the task, prepares the worktree through worktrunk and applies the task preset (harness, model, effort, permission); the MCP call responds `{task, willRestartSession: true}`; the current turn ends; the engine closes the waiting session and opens a new session IN THE SAME PANE, in the worktree cwd, with the task as its first prompt. Only then does the task publish “in progress · attempt n”. If the preset requests a different harness, this is a harness switch (contract 01) without a continuation package (there is no conversation to preserve). Never two executors.
 
 **R09 · safe retries and current attempt.** Every executor mutation (`comment`, `subitem`, `block`, `request_review`, `complete`, `release`) carries `{paneId, sessionGeneration, attempt}` and is refused with `stale_attempt` unless it is the active attempt. Dispatch records its steps (reserved, worktree created, pane opened, prompt accepted) and, after a crash, resumes from the last step or undoes it (compensation) instead of duplicating. Returning a task because “the pane died” happens only after the engine reconciles with ptyd (contract 07): a pane alive in ptyd = no return.
 
-**R13 · one table, per operation.** Correction to §3: red CI or a change request does NOT move the task out of `em_revisão`; it remains in `em_revisão` with the SYSTEM'S TURN badge, and feedback goes to the owning pane (§6). It returns to `em_andamento` only through `task_release`, your dragging, or death of the owning pane. Blocking is a FIELD (`blocking {kind, reason}`), not a state: a blocked task remains in `a_fazer` (or its current state), cannot be claimed, and the card shows “blocked: …” ahead of “available to claim”. Dragging is allowed only along the rows of the §3 table; dragging `a_fazer → concluída` is refused (`transition_refused`). Cancelling an `em_andamento` task cancels the pane's turn and closes the attempt before moving it.
+**R13 · one table, per operation.** Correction to §3: red CI or a change request does NOT move the task out of `in_review`; it remains in `in_review` with the SYSTEM'S TURN badge, and feedback goes to the owning pane (§6). It returns to `in_progress` only through `task_release`, your dragging, or death of the owning pane. Blocking is a FIELD (`blocking {kind, reason}`), not a state: a blocked task remains in `todo` (or its current state), cannot be claimed, and the card shows “blocked: …” ahead of “available to claim”. Dragging is allowed only along the rows of the §3 table; dragging `todo → completed` is refused (`transition_refused`). Cancelling an `in_progress` task cancels the pane's turn and closes the attempt before moving it.
 
 **R21 · durable prompt queue and human draft.** Every prompt source (you, loop, CI feedback, lead, continuation package) enters a durable per-pane queue with origin, priority (human > feedback > loop) and `promptId`. The client sends `pane.draft {active: true|false}` with a 10 s validity while you type; the engine injects no automatic prompt while a draft is active or a permission dialog is open. Loop ticks do not accumulate while busy or while the engine is stopped; rounds count on actual dispatch; feedback counters and fingerprints are persisted; the “3 empty results” counter resets when a task is claimed.
 
-**R22 · attempt end and worktree.** Every attempt closes with a result (`concluída | devolvida | falhou | cancelada`) and unbinds the pane. An `em_revisão` task whose pane died keeps its card, marks “no executor”, and accepts new dispatch or correction by another pane (attempt n+1). Worktree cleanup in v1 is MANUAL (“clean worktree” button), with checks: no process using it, clean tree, and HEAD reachable from a branch outside the worktree; otherwise refuse with a reason. Branches are never deleted automatically.
+**R22 · attempt end and worktree.** Every attempt closes with a result (`completed | returned | failed | cancelled`) and unbinds the pane. An `in_review` task whose pane died keeps its card, marks “no executor”, and accepts new dispatch or correction by another pane (attempt n+1). Worktree cleanup in v1 is MANUAL (“clean worktree” button), with checks: no process using it, clean tree, and HEAD reachable from a branch outside the worktree; otherwise refuse with a reason. Branches are never deleted automatically.
 
-**R23 · dependencies and concurrent editing.** Dependencies only within the same workspace; no self-reference or cycles (creation refused). Only `concluída` satisfies a dependency; a `cancelada` dependency leaves the dependent task “blocked: dependency cancelled”, requiring a decision. Changing dependencies of an `em_andamento` task blocks it until you confirm. `task_update` requires the current `version` (conflict = `stale_version`). “Planned owner” (who you want to do it) is separate from “active executor” (who reserved it): the planned owner does not prevent another pane with the same harness from claiming, only orders preference.
+**R23 · dependencies and concurrent editing.** Dependencies only within the same workspace; no self-reference or cycles (creation refused). Only `completed` satisfies a dependency; a `cancelled` dependency leaves the dependent task “blocked: dependency cancelled”, requiring a decision. Changing dependencies of an `in_progress` task blocks it until you confirm. `task_update` requires the current `version` (conflict = `stale_version`). “Planned owner” (who you want to do it) is separate from “active executor” (who reserved it): the planned owner does not prevent another pane with the same harness from claiming, only orders preference.

@@ -34,7 +34,7 @@
   {
     "name": "PaneState",
     "type": "PaneState",
-    "value": "iniciando"
+    "value": "starting"
   },
   {
     "name": "StateSource",
@@ -98,7 +98,7 @@
       "name": "example",
       "cwd": "/tmp/soyeht-test",
       "mode": "terminal",
-      "state": "iniciando",
+      "state": "starting",
       "source": "protocol",
       "confidence": 0.5,
       "phrase": "example",
@@ -379,7 +379,7 @@
         "name": "example",
         "cwd": "/tmp/soyeht-test",
         "mode": "terminal",
-        "state": "iniciando",
+        "state": "starting",
         "source": "protocol",
         "confidence": 0.5,
         "phrase": "example",
@@ -690,7 +690,7 @@
         "name": "example",
         "cwd": "/tmp/soyeht-test",
         "mode": "terminal",
-        "state": "iniciando",
+        "state": "starting",
         "source": "protocol",
         "confidence": 0.5,
         "phrase": "example",
@@ -713,7 +713,7 @@
         "name": "example",
         "cwd": "/tmp/soyeht-test",
         "mode": "terminal",
-        "state": "iniciando",
+        "state": "starting",
         "source": "protocol",
         "confidence": 0.5,
         "phrase": "example",
@@ -741,7 +741,7 @@
       "eventId": "18446744073709551615",
       "at": "2026-09-10T23:00:00Z",
       "paneId": "00000000-0000-4000-8000-000000000001",
-      "state": "iniciando",
+      "state": "starting",
       "confidence": 0.5,
       "phrase": "example",
       "source": "protocol"
@@ -1285,7 +1285,7 @@
           "name": "example",
           "cwd": "/tmp/soyeht-test",
           "mode": "terminal",
-          "state": "iniciando",
+          "state": "starting",
           "source": "protocol",
           "confidence": 0.5,
           "phrase": "example",
@@ -1763,7 +1763,7 @@
           "name": "example",
           "cwd": "/tmp/soyeht-test",
           "mode": "terminal",
-          "state": "iniciando",
+          "state": "starting",
           "source": "protocol",
           "confidence": 0.5,
           "phrase": "example",
@@ -1790,7 +1790,7 @@
           "name": "example",
           "cwd": "/tmp/soyeht-test",
           "mode": "terminal",
-          "state": "iniciando",
+          "state": "starting",
           "source": "protocol",
           "confidence": 0.5,
           "phrase": "example",
@@ -1826,7 +1826,7 @@
         "eventId": "18446744073709551615",
         "at": "2026-09-10T23:00:00Z",
         "paneId": "00000000-0000-4000-8000-000000000001",
-        "state": "iniciando",
+        "state": "starting",
         "confidence": 0.5,
         "phrase": "example",
         "source": "protocol"
@@ -1995,7 +1995,7 @@
         "name": "example",
         "cwd": "/tmp/soyeht-test",
         "mode": "terminal",
-        "state": "iniciando",
+        "state": "starting",
         "source": "protocol",
         "confidence": 0.5,
         "phrase": "example",
@@ -2050,7 +2050,7 @@
           "name": "example",
           "cwd": "/tmp/soyeht-test",
           "mode": "terminal",
-          "state": "iniciando",
+          "state": "starting",
           "source": "protocol",
           "confidence": 0.5,
           "phrase": "example",
@@ -2124,7 +2124,7 @@
   {
     "name": "ProbeResult",
     "type": "ProbeResult",
-    "value": "funcionou"
+    "value": "worked"
   },
   {
     "name": "ConfigType",
@@ -2298,7 +2298,7 @@
     "type": "ProbeCapability",
     "value": {
       "method": "example",
-      "result": "funcionou",
+      "result": "worked",
       "checkedAt": "example"
     }
   },
@@ -2321,7 +2321,7 @@
       "capabilities": [
         {
           "method": "example",
-          "result": "funcionou",
+          "result": "worked",
           "checkedAt": "example"
         }
       ],
@@ -2672,7 +2672,7 @@
           "capabilities": [
             {
               "method": "example",
-              "result": "funcionou",
+              "result": "worked",
               "checkedAt": "example"
             }
           ],
@@ -3481,7 +3481,7 @@
             "capabilities": [
               {
                 "method": "example",
-                "result": "funcionou",
+                "result": "worked",
                 "checkedAt": "example"
               }
             ],
@@ -4053,5 +4053,60 @@
     "name": "TurnStopReason",
     "type": "TurnStopReason",
     "value": "end_turn"
+  },
+  {
+    "name": "PaneState:working",
+    "type": "PaneState",
+    "value": "working"
+  },
+  {
+    "name": "PaneState:idle",
+    "type": "PaneState",
+    "value": "idle"
+  },
+  {
+    "name": "PaneState:waiting_for_you",
+    "type": "PaneState",
+    "value": "waiting_for_you"
+  },
+  {
+    "name": "PaneState:cancelling",
+    "type": "PaneState",
+    "value": "cancelling"
+  },
+  {
+    "name": "PaneState:no_signal",
+    "type": "PaneState",
+    "value": "no_signal"
+  },
+  {
+    "name": "PaneState:recovering",
+    "type": "PaneState",
+    "value": "recovering"
+  },
+  {
+    "name": "PaneState:dead",
+    "type": "PaneState",
+    "value": "dead"
+  },
+  {
+    "name": "PaneState:unknown",
+    "type": "PaneState",
+    "value": "unknown"
+  },
+  {
+    "name": "ProbeResult:unsupported",
+    "type": "ProbeResult",
+    "value": "unsupported"
+  },
+  {
+    "name": "ProbeResult:unauthenticated",
+    "type": "ProbeResult",
+    "value": "unauthenticated"
+  },
+  {
+    "name": "ProbeResult:inconclusive",
+    "type": "ProbeResult",
+    "value": "inconclusive"
   }
 ]

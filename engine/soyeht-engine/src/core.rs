@@ -223,7 +223,7 @@ impl Core {
                         })?;
                     next.pane.stream_id = Some(Uuid::new_v4().to_string());
                     next.pane.pid = None;
-                    next.pane.state = PaneState::Recuperando;
+                    next.pane.state = PaneState::Recovering;
                     next.pane.phrase = "Restoring shell after process loss".into();
                     next.instance_key = Uuid::new_v4().to_string();
                     next.instance_id = None;
@@ -264,9 +264,9 @@ impl Core {
         saved.supervisor_id = Some(instance.supervisor_id.clone());
         saved.pane.pid = Some(instance.pid);
         saved.pane.state = if instance.exit_code.is_some() {
-            PaneState::Morta
+            PaneState::Dead
         } else {
-            PaneState::NãoSei
+            PaneState::Unknown
         };
         saved.pane.source = StateSource::None;
         saved.pane.confidence = 0.0;
@@ -362,9 +362,9 @@ impl Core {
                 instance_id,
                 seq: output.next_seq,
             })?;
-            if output.exited && saved.pane.state != PaneState::Morta {
+            if output.exited && saved.pane.state != PaneState::Dead {
                 let mut dead = saved;
-                dead.pane.state = PaneState::Morta;
+                dead.pane.state = PaneState::Dead;
                 dead.pane.phrase = "Shell exited".into();
                 self.save_runtime(&id, dead)?;
             }
