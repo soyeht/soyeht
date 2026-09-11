@@ -133,9 +133,9 @@ an already owned task is refused with a reason.
   when CI is red or review requested changes and the owning pane is alive
   fixing them; **YOUR TURN** when CI is green and the PR awaits a person,
   or when no PR exists and the agent requested review.
-- Agent review (PENDING Q3, assumed “after v1”): when enabled, entering
-  `in_review` opens a second reviewer pane, which approves or returns
-  the task with a reason.
+- Agent review (DECIDED by Caio, 2026-09-11: in v1): entering `in_review`
+  opens a second reviewer pane, which runs the contract-drift step (2026-09-11
+  addendum) first and then approves or returns the task with a reason.
 - Complete: the agent calls `task_complete` with a summary, or you drag.
   With the PR contract enabled (PENDING Q4), completion requires a merged
   PR or green required checks on the current commit.
