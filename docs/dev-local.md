@@ -1,5 +1,13 @@
 # Run the new Dev profile
 
+GitHub Actions is disabled until the product is ready. Before every merge, run
+`bash scripts/check_all.sh` with `FORBIDDEN_TERMS` supplied through the environment.
+This local merge gate runs the workflow checks in sequence and stops at the first
+failure. Record the results in the PR description. To also scan PR history and
+the final title/body, pass `--base FULL_BASE_OID --event-file PATH_TO_EVENT_JSON`.
+Keep the vocabulary outside the repository. The workflows remain available for
+when hosted CI resumes.
+
 Install the tools listed in `docs/toolchains.md`. Build from the repository root:
 
 ```sh

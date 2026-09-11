@@ -1,0 +1,38 @@
+#!/bin/bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$repo_root"
+: "${FORBIDDEN_TERMS:?Provide the restricted vocabulary through the environment}"
+
+# Optional scanner arguments cover the exact PR base and final title/body.
+python3 -m unittest discover -s scripts -p 'test_forbidden_terms.py'
+python3 scripts/forbidden_terms.py "$@"
+unset FORBIDDEN_TERMS
+
+python3 contracts/generate.py --check
+python3 -m unittest discover -s contracts -p 'test_*.py'
+python3 -m unittest discover -s scripts -p 'test_install_dev.py'
+
+(
+    cd engine
+    cargo fmt --all --check
+    cargo clippy --locked --workspace --all-targets -- -D warnings
+    cargo build --locked --workspace
+    cargo test --locked --workspace
+)
+python3 scripts/e2e.py --report .cache/e2e.json
+
+bash scripts/check_swift.sh
+swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources
+swift test --package-path apps/shared
+bash scripts/check_mac.sh
+bash scripts/check_ios.sh
+
+(
+    cd contracts/typescript
+    npm ci --ignore-scripts
+    npm run check
+    npm test
+)
+echo 'check_all: passed'
