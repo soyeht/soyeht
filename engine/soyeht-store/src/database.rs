@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug)]
 pub enum Error {
@@ -114,6 +114,9 @@ impl Store {
             }
             if version < 3 {
                 crate::english_values::migrate(&tx)?;
+            }
+            if version < 4 {
+                tx.execute_batch(include_str!("../migrations/004-agent-sessions.sql"))?;
             }
             tx.commit()?;
         }
@@ -247,10 +250,15 @@ impl Store {
             &tx,
             "SELECT payload FROM devices WHERE revoked=0 ORDER BY id",
         )?;
+        let requests = rows_json(
+            &tx,
+            "SELECT json_object('kind',CASE method WHEN 'session/request_permission' THEN 'permission' ELSE 'elicitation' END,'request',json(public)) FROM agent_requests WHERE result IS NULL AND method IN ('session/request_permission','elicitation/create') AND pane_id IN (SELECT id FROM panes WHERE closed=0) ORDER BY request_id",
+        )?;
         let sections = vec![
             ("workspaces".into(), json!(workspaces)),
             ("panes".into(), json!(panes)),
             ("devices".into(), json!(devices)),
+            ("requests".into(), json!(requests)),
         ];
         tx.commit()?;
         Ok(Snapshot { cursor, sections })

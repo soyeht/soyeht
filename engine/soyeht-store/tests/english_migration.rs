@@ -119,13 +119,12 @@ fn populated_v2_preserves_identity_history_and_retries_while_converting_states()
     drop(old);
 
     let mut store = Store::open(&profile.0).unwrap();
-    assert_eq!(SCHEMA_VERSION, 3);
     assert_eq!(
         store
             .connection()
             .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
             .unwrap(),
-        3
+        SCHEMA_VERSION
     );
     assert_eq!(store.db_id, "stable-db");
     assert_eq!(store.next_engine_generation().unwrap(), 42);

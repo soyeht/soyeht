@@ -343,6 +343,9 @@ fn reconnect_replays_screen_and_duplicate_input_is_not_typed_twice() {
             .filter(|s| *s == b"UNIQUE_OUTPUT_42")
             .count()
             >= 2
+            // A shell redraw can echo the marker twice before executing it.
+            // Wait for the actual effect as well as its terminal output.
+            && fs::read(rig.path.join("once")).ok().as_deref() == Some(b"x")
         {
             break replay;
         }
