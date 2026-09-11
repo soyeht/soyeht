@@ -95,7 +95,9 @@ impl Core {
                 };
                 let subscription = client.streams.get_mut(&id).expect("subscribed");
                 if pane.stored.pane.stream_id.as_ref() != Some(&subscription.stream_id) {
-                    client.outbox.close();
+                    client
+                        .outbox
+                        .close(crate::outbox::CloseReason::StreamChanged);
                     break; // Reconnect snapshot discovers the new stream generation.
                 }
                 let through = if subscription.replaying {

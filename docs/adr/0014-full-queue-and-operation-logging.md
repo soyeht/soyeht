@@ -8,10 +8,11 @@ It then closes the transport. The error does not wait for space in the already
 full queue. Snapshot writers are released when pending parts are discarded.
 
 If the transport has stopped accepting bytes, delivery of the reason to the
-client cannot be guaranteed. The write attempt uses the same five-second deadline
-as other writes. Closing remains mandatory. The client treats both the error and
-the disconnect as reasons to fetch a snapshot and subscribe to events again.
-No continuity is promised for bytes left in the discarded queue.
+client cannot be guaranteed. The final error attempt has a five-second deadline.
+Ordinary writes remain governed by the 8 MiB queue budget instead of a separate
+time deadline. Closing remains mandatory. The client treats both the error and
+the disconnect as reasons to fetch a snapshot and subscribe to events again. No
+continuity is promised for bytes left in the discarded queue.
 
 Each request receives an operation identifier created by the engine. The JSON
 log contains that identifier, connection, schema-known method, result, error kind
@@ -19,6 +20,7 @@ and duration. It contains no parameters, client-supplied IDs, free-form error te
 keystrokes, challenges, codes, tokens or keys. A method outside the schema appears
 as `unknown`, without copying the received text.
 
-The queue control checks the memory limit, numeric error before end of stream
-and release of bytes. The logging control checks that arbitrary text in a method
-name does not enter the log.
+The queue control checks the memory limit, numeric error before end of stream,
+release of bytes and retention of the first close reason. The logging control
+checks that arbitrary text in a method name does not enter the log. Every accepted
+connection emits one `engine.connection_closed` record with a bounded reason.

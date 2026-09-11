@@ -264,7 +264,9 @@ impl Core {
                 .values()
                 .filter(|c| c.actor.as_ref().and_then(|a| a.device_id.as_deref()) == Some(id))
             {
-                client.outbox.close();
+                client
+                    .outbox
+                    .close(crate::outbox::CloseReason::DeviceRevoked);
             }
             return Ok(result);
         }

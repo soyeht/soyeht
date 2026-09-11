@@ -42,11 +42,20 @@ extension JsonValue {
 /// Owns one connection. All reads and writes are asynchronous; no UI thread waits on a descriptor.
 @MainActor
 final class Wire {
+  private struct ReadWaiter {
+    let id: UInt64
+    let continuation: CheckedContinuation<Data, Error>
+  }
+
   private let connection: NWConnection?
   private var webSocket: URLSessionWebSocketTask?
   private var session: URLSession?
   private var greetingDeadline: Task<Void, Never>?
   private var openWaiter: CheckedContinuation<Void, Error>?
+  private var readWaiter: ReadWaiter?
+  private var nextReadId: UInt64 = 0
+  private var terminalFailure: Error?
+  private var opened = false
   private var closed = false
 
   init(socket: String) {
@@ -79,14 +88,13 @@ final class Wire {
           guard let self else { return }
           switch state {
           case .ready:
+            self.opened = true
             self.openWaiter?.resume()
             self.openWaiter = nil
           case .failed(let error), .waiting(let error):
-            self.openWaiter?.resume(throwing: error)
-            self.openWaiter = nil
+            self.fail(self.opened ? ClientFailure.disconnected : error)
           case .cancelled:
-            self.openWaiter?.resume(throwing: ClientFailure.disconnected)
-            self.openWaiter = nil
+            self.fail(ClientFailure.disconnected)
           default: break
           }
         }
@@ -102,12 +110,11 @@ final class Wire {
     session?.invalidateAndCancel()
     greetingDeadline?.cancel()
     greetingDeadline = nil
-    openWaiter?.resume(throwing: ClientFailure.disconnected)
-    openWaiter = nil
+    fail(ClientFailure.disconnected)
   }
 
   func send(_ value: JsonValue) async throws {
-    guard !closed else { throw ClientFailure.disconnected }
+    guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
     let json = try JSONEncoder().encode(value)
     guard json.count <= 1_048_576 else { throw ClientFailure.invalidFrame }
     if let webSocket {
@@ -133,21 +140,44 @@ final class Wire {
     guard let connection else { throw ClientFailure.disconnected }
     var result = Data()
     while result.count < count {
-      guard !closed else { throw ClientFailure.disconnected }
+      guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
       let remaining = count - result.count
+      nextReadId &+= 1
+      let readId = nextReadId
       let chunk: Data = try await withCheckedThrowingContinuation { continuation in
+        readWaiter = ReadWaiter(id: readId, continuation: continuation)
         connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) {
           data, _, _, error in
-          guard error == nil, let data, !data.isEmpty else {
-            continuation.resume(throwing: ClientFailure.disconnected)
-            return
+          Task { @MainActor [weak self] in
+            self?.finishRead(readId, data: data, error: error)
           }
-          continuation.resume(returning: data)
         }
       }
       result.append(chunk)
     }
     return result
+  }
+
+  private func finishRead(_ id: UInt64, data: Data?, error: Error?) {
+    guard readWaiter?.id == id, let waiter = readWaiter else { return }
+    readWaiter = nil
+    guard error == nil, let data, !data.isEmpty else {
+      waiter.continuation.resume(throwing: ClientFailure.disconnected)
+      return
+    }
+    waiter.continuation.resume(returning: data)
+  }
+
+  private func fail(_ error: Error) {
+    if terminalFailure == nil { terminalFailure = error }
+    if let waiter = openWaiter {
+      openWaiter = nil
+      waiter.resume(throwing: error)
+    }
+    if let waiter = readWaiter {
+      readWaiter = nil
+      waiter.continuation.resume(throwing: ClientFailure.disconnected)
+    }
   }
 
   func next() async throws -> Frame {

@@ -1,4 +1,10 @@
-use crate::{core::Core, dispatch::Outcome, model, outbox, transport};
+use crate::{
+    core::Core,
+    dispatch::Outcome,
+    model,
+    outbox::{self, CloseReason, Outbox},
+    transport,
+};
 use serde_json::Value;
 use soyeht_protocol::frame::Frame;
 use std::{
@@ -169,7 +175,7 @@ pub async fn run(config: Config) -> io::Result<()> {
     }
     tasks.abort_all();
     for client in core.lock().expect("core").clients.values() {
-        client.outbox.close();
+        client.outbox.close(CloseReason::ServerShutdown);
     }
     fs::remove_file(socket)?;
     Ok(())
@@ -179,117 +185,19 @@ async fn connection(
     core: Shared,
     local: bool,
     mut reader: transport::Reader,
-    mut writer: transport::Writer,
+    writer: transport::Writer,
 ) {
-    let (outbox, mut receiver) = outbox::channel();
+    let (outbox, receiver) = outbox::channel();
     let id = match core.lock().expect("core").connect(local, outbox.clone()) {
         Ok(id) => id,
         Err(_) => return,
     };
-    let mut write_task = tokio::spawn(async move {
-        let mut flush = tokio::time::interval(Duration::from_secs(1));
-        loop {
-            tokio::select! {
-                packet=receiver.next()=>{
-                    let Some(mut packet)=packet else {break};
-                    if !packet.is_current() {continue;}
-                    match tokio::time::timeout(Duration::from_secs(5),writer.write(&packet.frame)).await {Ok(Ok(()))=>packet.written(),_=>break}
-                },
-                _=flush.tick()=>{if !matches!(tokio::time::timeout(Duration::from_secs(5),writer.flush()).await,Ok(Ok(()))) {break;}}
-            }
-        }
-        let _ = tokio::time::timeout(Duration::from_secs(1), writer.close()).await;
-    });
-    let read_loop = async {
-        loop {
-            let wait = {
-                let core = core.lock().expect("core");
-                let client = &core.clients[&id];
-                if client.actor.is_some() {
-                    None
-                } else if client.pair_request.is_some() {
-                    Some(Duration::from_secs(600))
-                } else {
-                    Some(Duration::from_secs(5))
-                }
-            };
-            let frame = if let Some(wait) = wait {
-                match tokio::time::timeout(wait, reader.next()).await {
-                    Ok(result) => result,
-                    Err(_) => break,
-                }
-            } else {
-                reader.next().await
-            };
-            let Ok(Some(Frame::Json(bytes))) = frame else {
-                break;
-            };
-            let Ok(request) = serde_json::from_slice::<Value>(&bytes) else {
-                break;
-            };
-            let started = Instant::now();
-            let operation_id = uuid::Uuid::new_v4().to_string();
-            let method = request["method"]
-                .as_str()
-                .and_then(|name| {
-                    soyeht_protocol::METHODS
-                        .iter()
-                        .find(|entry| entry.0 == name)
-                        .map(|entry| entry.0)
-                })
-                .unwrap_or("unknown");
-            let request_id = request["id"].clone();
-            let failed_handshake = request["method"] == "hello";
-            let shared = Arc::clone(&core);
-            let connection = id.clone();
-            let outcome = tokio::task::spawn_blocking(move || {
-                shared.lock().expect("core").dispatch(&connection, request)
-            })
-            .await;
-            let (status, kind) = match &outcome {
-                Ok(Ok(Outcome::Reply(_))) => ("reply", None),
-                Ok(Ok(Outcome::Queued)) => ("queued", None),
-                Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
-                Ok(Err(error)) => ("error", Some(&error.data.kind)),
-                Err(_) => ("worker_failed", None),
-            };
-            eprintln!(
-                "{}",
-                operation_record(
-                    &operation_id,
-                    &id,
-                    method,
-                    status,
-                    kind,
-                    started.elapsed().as_millis()
-                )
-            );
-            match outcome {
-                Ok(Ok(Outcome::Reply(result))) => {
-                    outbox.send(model::response(request_id, result));
-                }
-                Ok(Ok(Outcome::Queued)) => (),
-                Ok(Ok(Outcome::Snapshot { parts, result })) => {
-                    for part in parts {
-                        if outbox.write_page(part).await.is_err() {
-                            return;
-                        }
-                    }
-                    outbox.send(model::response(request_id, result));
-                }
-                Ok(Err(error)) => {
-                    if failed_handshake {
-                        let _ = outbox.write_page(model::failure(request_id, error)).await;
-                        break;
-                    }
-                    outbox.send(model::failure(request_id, error));
-                }
-                Err(_) => break,
-            }
-        }
+    let mut write_task = tokio::spawn(write_frames(receiver, writer));
+    let reason = tokio::select! {
+        reason=read_requests(Arc::clone(&core),&id,&outbox,&mut reader)=>reason,
+        result=&mut write_task=>result.unwrap_or(CloseReason::WorkerFailed),
     };
-    tokio::select! {_=read_loop=>(),_=&mut write_task=>()}
-    outbox.close();
+    outbox.close(reason);
     write_task.abort();
     let mut core = core.lock().expect("core");
     core.clients.remove(&id);
@@ -297,6 +205,179 @@ async fn connection(
         waiters.retain(|(connection, _)| connection != &id);
         !waiters.is_empty()
     });
+    drop(core);
+    eprintln!("{}", connection_close_record(&id, local, reason));
+}
+
+async fn write_frames(
+    mut receiver: outbox::Receiver,
+    mut writer: transport::Writer,
+) -> CloseReason {
+    let reason = loop {
+        let Some(mut packet) = receiver.next().await else {
+            break receiver
+                .close_reason()
+                .unwrap_or(CloseReason::WriterStopped);
+        };
+        if !packet.is_current() {
+            continue;
+        }
+        if packet.closes_connection() {
+            let reason = receiver.close_reason().unwrap_or(CloseReason::SlowConsumer);
+            if matches!(
+                tokio::time::timeout(Duration::from_secs(5), writer.write(&packet.frame)).await,
+                Ok(Ok(()))
+            ) {
+                packet.written();
+            }
+            break reason;
+        }
+        let result = tokio::select! {
+            result=writer.write(&packet.frame)=>result,
+            reason=receiver.closed()=>{
+                break reason;
+            }
+        };
+        match result {
+            Ok(()) => packet.written(),
+            Err(_) => break CloseReason::WriteError,
+        }
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(1), writer.close()).await;
+    reason
+}
+
+async fn next_frame(
+    core: &Shared,
+    id: &str,
+    reader: &mut transport::Reader,
+) -> Result<Frame, CloseReason> {
+    let wait = {
+        let core = core.lock().expect("core");
+        let client = &core.clients[id];
+        if client.actor.is_some() {
+            None
+        } else if client.pair_request.is_some() {
+            Some(Duration::from_secs(600))
+        } else {
+            Some(Duration::from_secs(5))
+        }
+    };
+    let result = if let Some(wait) = wait {
+        tokio::time::timeout(wait, reader.next())
+            .await
+            .map_err(|_| CloseReason::HandshakeTimeout)?
+    } else {
+        reader.next().await
+    };
+    match result {
+        Ok(Some(frame)) => Ok(frame),
+        Ok(None) => Err(CloseReason::PeerClosed),
+        Err(_) => Err(CloseReason::ReadError),
+    }
+}
+
+async fn read_requests(
+    core: Shared,
+    id: &str,
+    outbox: &Outbox,
+    reader: &mut transport::Reader,
+) -> CloseReason {
+    loop {
+        let frame = match next_frame(&core, id, reader).await {
+            Ok(Frame::Json(bytes)) => bytes,
+            Ok(_) => return CloseReason::InvalidFrame,
+            Err(reason) => return reason,
+        };
+        let Ok(request) = serde_json::from_slice::<Value>(&frame) else {
+            return CloseReason::InvalidJson;
+        };
+        let started = Instant::now();
+        let operation_id = uuid::Uuid::new_v4().to_string();
+        let method = request["method"]
+            .as_str()
+            .and_then(|name| {
+                soyeht_protocol::METHODS
+                    .iter()
+                    .find(|entry| entry.0 == name)
+                    .map(|entry| entry.0)
+            })
+            .unwrap_or("unknown");
+        let request_id = request["id"].clone();
+        let failed_handshake = request["method"] == "hello";
+        let shared = Arc::clone(&core);
+        let connection = id.to_owned();
+        let outcome = tokio::task::spawn_blocking(move || {
+            shared.lock().expect("core").dispatch(&connection, request)
+        })
+        .await;
+        log_operation(
+            &operation_id,
+            id,
+            method,
+            &outcome,
+            started.elapsed().as_millis(),
+        );
+        match outcome {
+            Ok(Ok(Outcome::Reply(result))) => {
+                if !outbox.send(model::response(request_id, result)) {
+                    return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
+                }
+            }
+            Ok(Ok(Outcome::Queued)) => (),
+            Ok(Ok(Outcome::Snapshot { parts, result })) => {
+                for part in parts {
+                    if outbox.write_page(part).await.is_err() {
+                        return outbox
+                            .close_reason()
+                            .unwrap_or(CloseReason::SnapshotWriteFailed);
+                    }
+                }
+                if !outbox.send(model::response(request_id, result)) {
+                    return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
+                }
+            }
+            Ok(Err(error)) if failed_handshake => {
+                let _ = outbox.write_page(model::failure(request_id, error)).await;
+                return CloseReason::HandshakeRejected;
+            }
+            Ok(Err(error)) => {
+                if !outbox.send(model::failure(request_id, error)) {
+                    return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
+                }
+            }
+            Err(_) => return CloseReason::WorkerFailed,
+        }
+    }
+}
+
+fn log_operation(
+    operation: &str,
+    connection: &str,
+    method: &str,
+    outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+    duration_ms: u128,
+) {
+    let (status, kind) = match outcome {
+        Ok(Ok(Outcome::Reply(_))) => ("reply", None),
+        Ok(Ok(Outcome::Queued)) => ("queued", None),
+        Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
+        Ok(Err(error)) => ("error", Some(&error.data.kind)),
+        Err(_) => ("worker_failed", None),
+    };
+    eprintln!(
+        "{}",
+        operation_record(operation, connection, method, status, kind, duration_ms)
+    );
+}
+
+fn connection_close_record(connection: &str, local: bool, reason: CloseReason) -> Value {
+    serde_json::json!({
+        "event": "engine.connection_closed",
+        "connectionId": connection,
+        "transport": if local { "local" } else { "websocket" },
+        "reason": reason.as_str(),
+    })
 }
 
 fn operation_record(
@@ -363,5 +444,16 @@ mod tests {
         ] {
             assert!(permitted_address(ip.parse().unwrap()));
         }
+    }
+
+    #[test]
+    fn connection_close_log_has_a_bounded_reason_and_no_transport_error_text() {
+        let connection = uuid::Uuid::new_v4().to_string();
+        let record = connection_close_record(&connection, true, CloseReason::WriteError);
+        assert_eq!(record["event"], "engine.connection_closed");
+        assert_eq!(record["connectionId"], connection);
+        assert_eq!(record["transport"], "local");
+        assert_eq!(record["reason"], "write_error");
+        assert_eq!(record.as_object().unwrap().len(), 4);
     }
 }

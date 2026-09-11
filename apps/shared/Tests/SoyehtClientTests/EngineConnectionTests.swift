@@ -85,11 +85,14 @@
     try await until { String(decoding: screen, as: UTF8.self).contains("SWIFT_READY>") }
     client.input(Data("printf 'SWIFT_CLIENT_%s\\n' READY\r".utf8))
     try await until { String(decoding: screen, as: UTF8.self).contains("SWIFT_CLIENT_READY") }
+    let revisionBeforeClose = client.connectionRevision
     engine?.terminate()
     if let engine { engine.waitUntilExit() }
     try await until { !client.connected }
+    #expect(client.connectionText == ClientFailure.disconnected.localizedDescription)
     engine = try launch("soyeht-engine")
     try await until { client.connected && client.selectedPane?.pid == pid }
+    #expect(client.connectionRevision > revisionBeforeClose)
     try await until { String(decoding: screen, as: UTF8.self).contains("SWIFT_CLIENT_READY") }
     client.stop()
     client.start()

@@ -1243,6 +1243,78 @@ fn snapshot_cursor_replays_changes_exactly_once_before_live_events() {
 }
 
 #[test]
+fn backpressured_subscriber_survives_an_answer_from_a_second_subscriber() {
+    let rig = Rig::new();
+    let (mut answerer, pane) = rig.agent();
+    let workspace = answerer.pane(&pane)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut observer = rig.client();
+    let (observer_snapshot, _) = observer.snapshot();
+    observer.call(
+        "events.subscribe",
+        json!({"since":observer_snapshot["cursor"]}),
+    );
+    let (answerer_snapshot, _) = answerer.snapshot();
+    answerer.call(
+        "events.subscribe",
+        json!({"since":answerer_snapshot["cursor"]}),
+    );
+
+    answerer.call(
+        "workspace.rename",
+        json!({
+            "workspaceId":workspace,
+            "name":"x".repeat(256 * 1024),
+            "idempotencyKey":"backpressure-event",
+        }),
+    );
+    answerer.call(
+        "pane.prompt",
+        json!({
+            "paneId":pane,
+            "text":"permission",
+            "idempotencyKey":"backpressure-prompt",
+        }),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let request = loop {
+        if let Some(entry) = answerer
+            .section("requests")
+            .into_iter()
+            .find(|entry| entry["kind"] == "permission")
+        {
+            break entry["request"]["requestId"].clone();
+        }
+        assert!(Instant::now() < deadline, "permission request did not open");
+        thread::sleep(Duration::from_millis(20));
+    };
+    answerer.call(
+        "pane.permission.answer",
+        json!({
+            "paneId":pane,
+            "requestId":request,
+            "optionId":"once",
+            "idempotencyKey":"backpressure-answer",
+        }),
+    );
+    answerer.wait_state(&pane, "idle");
+
+    // This exceeds the former per-write deadline while remaining far below
+    // the contractual 8 MiB connection budget.
+    thread::sleep(Duration::from_secs(6));
+    observer.call("engine.status", json!({}));
+    assert!(observer.messages.iter().any(|frame| {
+        let Frame::Json(bytes) = frame else {
+            return false;
+        };
+        serde_json::from_slice::<Value>(bytes)
+            .is_ok_and(|value| value["method"] == "pane.permission_answered")
+    }));
+}
+
+#[test]
 fn reconnect_replays_screen_and_duplicate_input_is_not_typed_twice() {
     let rig = Rig::new();
     let mut client = rig.client();

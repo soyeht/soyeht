@@ -1,15 +1,74 @@
 use soyeht_protocol::{frame::Frame, limits};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
 };
 use tokio::sync::{Notify, mpsc, oneshot};
 
 struct Budget {
     used: AtomicUsize,
-    closed: AtomicBool,
-    slow: AtomicBool,
+    close_reason: AtomicU8,
     wake: Notify,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum CloseReason {
+    ServerShutdown = 1,
+    PeerClosed = 2,
+    ReadError = 3,
+    InvalidFrame = 4,
+    InvalidJson = 5,
+    HandshakeTimeout = 6,
+    HandshakeRejected = 7,
+    WorkerFailed = 8,
+    SnapshotWriteFailed = 9,
+    WriteError = 10,
+    SlowConsumer = 11,
+    DeviceRevoked = 12,
+    StreamChanged = 13,
+    WriterStopped = 14,
+}
+
+impl CloseReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ServerShutdown => "server_shutdown",
+            Self::PeerClosed => "peer_closed",
+            Self::ReadError => "read_error",
+            Self::InvalidFrame => "invalid_frame",
+            Self::InvalidJson => "invalid_json",
+            Self::HandshakeTimeout => "handshake_timeout",
+            Self::HandshakeRejected => "handshake_rejected",
+            Self::WorkerFailed => "worker_failed",
+            Self::SnapshotWriteFailed => "snapshot_write_failed",
+            Self::WriteError => "write_error",
+            Self::SlowConsumer => "slow_consumer",
+            Self::DeviceRevoked => "device_revoked",
+            Self::StreamChanged => "stream_changed",
+            Self::WriterStopped => "writer_stopped",
+        }
+    }
+
+    fn from_byte(value: u8) -> Option<Self> {
+        Some(match value {
+            1 => Self::ServerShutdown,
+            2 => Self::PeerClosed,
+            3 => Self::ReadError,
+            4 => Self::InvalidFrame,
+            5 => Self::InvalidJson,
+            6 => Self::HandshakeTimeout,
+            7 => Self::HandshakeRejected,
+            8 => Self::WorkerFailed,
+            9 => Self::SnapshotWriteFailed,
+            10 => Self::WriteError,
+            11 => Self::SlowConsumer,
+            12 => Self::DeviceRevoked,
+            13 => Self::StreamChanged,
+            14 => Self::WriterStopped,
+            _ => return None,
+        })
+    }
 }
 struct Permit {
     budget: Arc<Budget>,
@@ -26,6 +85,7 @@ pub struct Packet {
     _permit: Option<Permit>,
     sent: Option<oneshot::Sender<()>>,
     current: Option<Arc<AtomicBool>>,
+    close_after_write: bool,
 }
 impl Packet {
     pub fn is_current(&self) -> bool {
@@ -37,6 +97,9 @@ impl Packet {
         if let Some(sent) = self.sent.take() {
             let _ = sent.send(());
         }
+    }
+    pub fn closes_connection(&self) -> bool {
+        self.close_after_write
     }
 }
 
@@ -57,8 +120,7 @@ pub struct Receiver {
 pub fn channel() -> (Outbox, Receiver) {
     let budget = Arc::new(Budget {
         used: AtomicUsize::new(0),
-        closed: AtomicBool::new(false),
-        slow: AtomicBool::new(false),
+        close_reason: AtomicU8::new(0),
         wake: Notify::new(),
     });
     let (control, control_rx) = mpsc::unbounded_channel();
@@ -80,12 +142,20 @@ pub fn channel() -> (Outbox, Receiver) {
 }
 
 impl Outbox {
-    pub fn close(&self) {
-        self.budget.closed.store(true, Ordering::Release);
+    pub fn close(&self, reason: CloseReason) {
+        let _ = self.budget.close_reason.compare_exchange(
+            0,
+            reason as u8,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
         self.budget.wake.notify_one();
     }
     pub fn is_closed(&self) -> bool {
-        self.budget.closed.load(Ordering::Acquire)
+        self.close_reason().is_some()
+    }
+    pub fn close_reason(&self) -> Option<CloseReason> {
+        CloseReason::from_byte(self.budget.close_reason.load(Ordering::Acquire))
     }
 
     pub fn send(&self, frame: Frame) -> bool {
@@ -128,8 +198,7 @@ impl Outbox {
             })
             .is_err()
         {
-            self.budget.slow.store(true, Ordering::Release);
-            self.close();
+            self.close(CloseReason::SlowConsumer);
             return false;
         }
         let packet = Packet {
@@ -140,6 +209,7 @@ impl Outbox {
                 size,
             }),
             sent: None,
+            close_after_write: false,
         };
         let sender = if control {
             &self.control
@@ -147,7 +217,7 @@ impl Outbox {
             &self.terminal
         };
         if sender.send(packet).is_err() {
-            self.close();
+            self.close(CloseReason::WriterStopped);
             return false;
         }
         true
@@ -167,6 +237,7 @@ impl Outbox {
                 frame,
                 _permit: None,
                 sent: Some(sent),
+                close_after_write: false,
             })
             .map_err(|_| "connection closed")?;
         written.await.map_err(|_| "connection closed")
@@ -174,13 +245,27 @@ impl Outbox {
 }
 
 impl Receiver {
+    pub fn close_reason(&self) -> Option<CloseReason> {
+        CloseReason::from_byte(self.budget.close_reason.load(Ordering::Acquire))
+    }
+
+    pub async fn closed(&self) -> CloseReason {
+        loop {
+            let notified = self.budget.wake.notified();
+            if let Some(reason) = self.close_reason() {
+                return reason;
+            }
+            notified.await;
+        }
+    }
+
     fn closing_packet(&mut self) -> Option<Packet> {
         // Free queued bytes and wake blocked snapshot writers before the final error.
         self.control.close();
         self.terminal.close();
         while self.control.try_recv().is_ok() {}
         while self.terminal.try_recv().is_ok() {}
-        if self.reported_close || !self.budget.slow.load(Ordering::Acquire) {
+        if self.reported_close || self.close_reason() != Some(CloseReason::SlowConsumer) {
             return None;
         }
         self.reported_close = true;
@@ -195,11 +280,12 @@ impl Receiver {
             _permit: None,
             sent: None,
             current: None,
+            close_after_write: true,
         })
     }
 
     pub async fn next(&mut self) -> Option<Packet> {
-        if self.budget.closed.load(Ordering::Acquire) {
+        if self.close_reason().is_some() {
             return self.closing_packet();
         }
         tokio::select! {
@@ -260,6 +346,7 @@ mod tests {
             bytes: vec![1; 65536],
         }) {}
         assert!(outbox.is_closed());
+        assert_eq!(outbox.close_reason(), Some(CloseReason::SlowConsumer));
         assert!(outbox.budget.used.load(Ordering::Acquire) <= limits::CONNECTION_QUEUE_BYTES);
         let Frame::Json(bytes) = receiver.next().await.unwrap().frame else {
             panic!("missing close reason")
@@ -274,6 +361,15 @@ mod tests {
         assert!(receiver.next().await.is_none());
         drop(receiver);
         assert_eq!(outbox.budget.used.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    async fn first_close_reason_wins_and_wakes_the_writer() {
+        let (outbox, receiver) = channel();
+        outbox.close(CloseReason::StreamChanged);
+        outbox.close(CloseReason::ServerShutdown);
+        assert_eq!(receiver.closed().await, CloseReason::StreamChanged);
+        assert_eq!(outbox.close_reason(), Some(CloseReason::StreamChanged));
     }
 
     #[tokio::test]
