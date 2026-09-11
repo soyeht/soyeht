@@ -159,3 +159,125 @@ fn client_reconnects_after_engine_restart() {
     assert!(after.generation > before.generation);
     assert_eq!(after.db.id, before.db.id);
 }
+
+#[test]
+fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
+    let rig = Rig::start();
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht")).with_file_name("soyeht-fake-acp");
+    fs::write(
+        rig.path.join("harnesses.json"),
+        serde_json::to_vec(&serde_json::json!([{
+            "id":"test-agent","name":"Test agent","command":binary,
+            "args":["--state-dir",rig.path.join("native")],"version":"1"
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        rig.command(&["harness", "list"])["items"][0]["id"],
+        "test-agent"
+    );
+    let created = rig.command(&[
+        "pane",
+        "create",
+        "--agent",
+        "test-agent",
+        "--model",
+        "model-b",
+        "--effort",
+        "high",
+        "--permission",
+        "ask",
+        "--idempotency-key",
+        "agent-create",
+    ]);
+    let pane = created["paneId"].as_str().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let before = loop {
+        let list = rig.command(&["pane", "list"]);
+        let current = &list["items"][0];
+        let ready = current["agent"]["options"]
+            .as_array()
+            .is_some_and(|options| {
+                options
+                    .iter()
+                    .any(|o| o["id"] == "model" && o["currentValue"] == "model-b")
+                    && options
+                        .iter()
+                        .any(|o| o["id"] == "effort" && o["currentValue"] == "high")
+            });
+        if ready {
+            break current.clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "initial CLI selectors not applied"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(
+        rig.command(&["model", "list", "test-agent", "--pane", pane])["source"],
+        "native_session"
+    );
+    assert_eq!(
+        rig.command(&["pane", "config", pane, "effort", "low"])["effective"],
+        "low"
+    );
+    assert_eq!(
+        rig.command(&["pane", "config", pane, "fast", "true"])["effective"],
+        true
+    );
+    let prompt = rig.command(&[
+        "pane",
+        "prompt",
+        pane,
+        "permission",
+        "--idempotency-key",
+        "ask",
+    ]);
+    assert_eq!(
+        prompt,
+        rig.command(&[
+            "pane",
+            "prompt",
+            pane,
+            "permission",
+            "--idempotency-key",
+            "ask"
+        ])
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rig.command(&["pane", "list"])["items"][0]["state"] != "waiting_for_you" {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        rig.command(&["pane", "permission", pane, "allow"])["optionId"],
+        "once"
+    );
+    while rig.command(&["pane", "list"])["items"][0]["state"] != "idle" {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(rig.command(&["pane", "yolo", pane, "on"])["on"], true);
+    assert_eq!(rig.command(&["pane", "yolo", pane, "off"])["on"], false);
+    let transcript = rig.command(&["pane", "transcript", pane, "--limit", "1"]);
+    assert_eq!(transcript["items"].as_array().unwrap().len(), 1);
+    let cursor = transcript["nextCursor"]
+        .as_str()
+        .expect("older transcript page");
+    let older = rig.command(&[
+        "pane",
+        "transcript",
+        pane,
+        "--before",
+        cursor,
+        "--limit",
+        "1",
+    ]);
+    assert_ne!(older["items"][0]["seq"], transcript["items"][0]["seq"]);
+    let after = rig.command(&["pane", "list"])["items"][0].clone();
+    assert_eq!(after["pid"], before["pid"]);
+    assert_eq!(after["agent"]["sessionId"], before["agent"]["sessionId"]);
+    rig.command(&["pane", "close", pane]);
+}
