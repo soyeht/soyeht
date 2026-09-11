@@ -4,12 +4,35 @@ use crate::{
     model::{self, RunningPane, StoredPane},
     screen::Screen,
 };
-use rusqlite::params;
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, Pane, PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
+
+fn persist_new_pane(
+    change: &soyeht_store::database::Change<'_>,
+    saved: &StoredPane,
+    agent: Option<&crate::agents::state::State>,
+) -> soyeht_store::database::Result<()> {
+    change.insert_pane(saved)?;
+    if let Some(agent) = agent {
+        soyeht_store::agents::save_runtime(
+            change,
+            &saved.pane.pane_id,
+            saved.pane.generation,
+            agent,
+        )?;
+    }
+    Ok(())
+}
+
+fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) {
+    (
+        json!({"paneId":saved.pane.pane_id}),
+        vec![("pane.created".into(), json!({"pane":saved.pane}))],
+    )
+}
 
 impl Core {
     pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -121,10 +144,9 @@ impl Core {
             saved.pane.record,
         )
         .map_err(errors::io)?;
-        let mutation=self.mutate(connection,"pane.create",params,|tx| {
-            tx.execute("INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base) VALUES (?1,?2,?3,?4,'0')",params![saved.pane.pane_id,saved.pane.workspace_id,serde_json::to_string(&saved.pane)?,saved.instance_key])?;
-            if let Some(agent)=&agent {soyeht_store::agents::save_runtime(tx,&saved.pane.pane_id,saved.pane.generation,agent)?;}
-            Ok((json!({"paneId":saved.pane.pane_id}),vec![("pane.created".into(),json!({"pane":saved.pane}))]))
+        let mutation = self.mutate(connection, "pane.create", params, |tx| {
+            persist_new_pane(tx, &saved, agent.as_ref())?;
+            Ok(pane_created(&saved))
         })?;
         if !mutation.repeated {
             let id = saved.pane.pane_id.clone();
@@ -192,10 +214,12 @@ impl Core {
             }
             "pane.focus" => {
                 let scope = self.clients[connection].scope.clone();
-                return Ok(self.mutate(connection,method,params,|tx| {
-                    tx.execute("INSERT INTO client_focus(scope,workspace_id,pane_id) VALUES (?1,?2,?3) ON CONFLICT(scope) DO UPDATE SET workspace_id=excluded.workspace_id,pane_id=excluded.pane_id",params![scope,saved.pane.workspace_id,id])?;
-                    Ok((json!({"paneId":id}),vec![]))
-                })?.result);
+                return Ok(self
+                    .mutate(connection, method, params, |tx| {
+                        tx.focus_pane(&scope, &saved.pane.workspace_id, id)?;
+                        Ok((json!({"paneId":id}), vec![]))
+                    })?
+                    .result);
             }
             _ => {
                 return Err(errors::error(
@@ -210,10 +234,7 @@ impl Core {
         let mutation = self.mutate(connection, method, params, |tx| {
             write_pane(tx, &saved)?;
             if saved.closed {
-                tx.execute(
-                    "UPDATE client_focus SET pane_id=NULL WHERE pane_id=?1",
-                    [id],
-                )?;
+                tx.close_pane(id)?;
             }
             Ok((result, events))
         })?;

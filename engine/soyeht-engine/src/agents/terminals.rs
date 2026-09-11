@@ -134,7 +134,7 @@ impl Terminal {
 
 impl Core {
     pub fn poll_agent_terminals(&mut self, pane: &str) -> Result<()> {
-        let releasing: Vec<_> = agents::open_requests(self.store.connection(), pane)
+        let releasing: Vec<_> = agents::open_requests(&self.store, pane)
             .map_err(errors::storage)?
             .into_iter()
             .filter(|r| r.method == "terminal/release")
@@ -229,7 +229,7 @@ impl Core {
             };
             let prior = terminal
                 .message_seq
-                .map(|seq| transcript::message(self.store.connection(), pane, seq))
+                .map(|seq| transcript::message(&self.store, pane, seq))
                 .transpose()?
                 .flatten();
             let mut item = match prior {
@@ -264,8 +264,7 @@ impl Core {
     }
     pub fn run_native_terminals(&mut self, pane: &str) -> Result<()> {
         self.poll_agent_terminals(pane)?;
-        let requests =
-            agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?;
+        let requests = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
         for request in requests
             .into_iter()
             .filter(|r| r.method.starts_with("terminal/"))

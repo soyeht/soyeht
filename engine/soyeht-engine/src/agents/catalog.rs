@@ -75,7 +75,7 @@ impl Core {
                 if let Some(known) = known {
                     for method in responses::PROBED_METHODS {
                         if let Some(capability) =
-                            agents::probe(self.store.connection(), &known.state.fingerprint, method)
+                            agents::probe(&self.store, &known.state.fingerprint, method)
                                 .map_err(errors::storage)?
                         {
                             capabilities.push(capability);

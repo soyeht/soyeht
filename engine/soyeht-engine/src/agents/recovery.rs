@@ -51,14 +51,9 @@ impl Core {
             }
             // Decisions and their outbox survive together. Existing requests
             // must keep their public ID, original deadline and first answer.
-            if agents::request_at(
-                self.store.connection(),
-                pane,
-                saved.pane.generation,
-                item.from_seq,
-            )
-            .map_err(errors::storage)?
-            .is_some()
+            if agents::request_at(&self.store, pane, saved.pane.generation, item.from_seq)
+                .map_err(errors::storage)?
+                .is_some()
             {
                 continue;
             }
@@ -113,7 +108,7 @@ impl Core {
             replay_messages: state.phase == Phase::Loading,
             ..Changes::default()
         };
-        transcript::complete(self.store.connection(), pane, &mut state, &mut changes)?;
+        transcript::complete(&self.store, pane, &mut state, &mut changes)?;
         let notice = "Agent output contains a missing section. Pending requests were recovered; the interrupted protocol record is skipped.";
         changes.messages.push(transcript::new_message(
             &mut state,

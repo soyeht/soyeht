@@ -35,8 +35,7 @@ pub fn failure(message: impl Into<String>) -> RpcError {
 
 impl Core {
     pub fn run_native_files(&mut self, pane: &str) -> Result<()> {
-        let requests =
-            agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?;
+        let requests = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
         for request in requests
             .into_iter()
             .filter(|r| r.method.starts_with("fs/"))

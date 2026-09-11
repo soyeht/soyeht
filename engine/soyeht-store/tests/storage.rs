@@ -1,5 +1,5 @@
-use rusqlite::params;
 use serde_json::json;
+use soyeht_protocol::Workspace;
 use soyeht_store::{
     database::{Error, Store},
     segments::{Log, Record},
@@ -18,6 +18,15 @@ impl Directory {
 impl Drop for Directory {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn workspace(id: &str, name: String) -> Workspace {
+    Workspace {
+        workspace_id: id.into(),
+        name,
+        path: "/tmp".into(),
+        layout: json!({}),
     }
 }
 
@@ -42,11 +51,8 @@ fn state_event_and_idempotent_result_commit_together_and_survive_reopen() {
     );
     assert_eq!(store.next_engine_generation().unwrap(), 1);
     let first = store
-        .mutate("local:test", "key-1", "request-1", |tx| {
-            tx.execute(
-                "INSERT INTO workspaces(id,payload) VALUES (?1,?2)",
-                params!["w1", json!({"workspaceId":"w1"}).to_string()],
-            )?;
+        .mutate("local:test", "key-1", "request-1", |change| {
+            change.insert_workspace(&workspace("w1", "Workspace".into()))?;
             Ok((
                 json!({"workspaceId":"w1"}),
                 vec![(
@@ -85,8 +91,8 @@ fn state_event_and_idempotent_result_commit_together_and_survive_reopen() {
 fn failed_mutation_leaves_no_state_event_or_idempotency_receipt() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();
-    let failed = store.mutate("local:test", "key-1", "request", |tx| {
-        tx.execute("INSERT INTO workspaces(id,payload) VALUES ('w1','{}')", [])?;
+    let failed = store.mutate("local:test", "key-1", "request", |change| {
+        change.insert_workspace(&workspace("w1", "Workspace".into()))?;
         Err(Error::Invalid("injected failure"))
     });
     assert!(failed.is_err());
@@ -174,16 +180,11 @@ fn full_database_does_not_confirm_a_partial_mutation() {
         .connection()
         .pragma_update(None, "max_page_count", pages)
         .unwrap();
-    let result = store.mutate("local:test", "large", "large-request", |tx| {
-        tx.execute(
-            "INSERT INTO workspaces(id,payload) VALUES ('large',?1)",
-            ["x".repeat(2 * 1024 * 1024)],
-        )?;
+    let result = store.mutate("local:test", "large", "large-request", |change| {
+        change.insert_workspace(&workspace("large", "x".repeat(2 * 1024 * 1024)))?;
         Ok((json!({}), vec![("workspace.created".into(), json!({}))]))
     });
-    assert!(
-        matches!(result,Err(Error::Sql(rusqlite::Error::SqliteFailure(error,_))) if error.code == rusqlite::ErrorCode::DiskFull)
-    );
+    assert!(matches!(result, Err(Error::DiskFull)));
     let snapshot = store.snapshot().unwrap();
     assert_eq!(snapshot.cursor, 0);
     assert!(snapshot.sections[0].1.as_array().unwrap().is_empty());
@@ -211,11 +212,9 @@ fn version_one_migration_preserves_identity_and_records_the_actor() {
     assert_eq!(store.next_engine_generation().unwrap(), 8);
     let actor = json!({"role":"human_local","client":"test"});
     let changed = store
-        .mutate_as("local:test", "key", "request", Some(&actor), |tx| {
-            tx.execute(
-                "INSERT INTO workspaces(id,payload,closed) VALUES ('w1','{}',1)",
-                [],
-            )?;
+        .mutate_as("local:test", "key", "request", Some(&actor), |change| {
+            change.insert_workspace(&workspace("w1", "Workspace".into()))?;
+            change.close_workspace("w1")?;
             Ok((
                 json!({}),
                 vec![("workspace.closed".into(), json!({"workspaceId":"w1"}))],

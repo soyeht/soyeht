@@ -16,7 +16,7 @@ use soyeht_acp::{
 use soyeht_protocol::{
     ErrorKind, PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole,
 };
-use soyeht_store::agents;
+use soyeht_store::{agents, database::Store};
 
 pub const PROBED_METHODS: [&str; 3] = ["session/list", "session/load", "session/set_config_option"];
 
@@ -83,7 +83,7 @@ fn needs_login(state: &mut State, saved: &mut StoredPane, changes: &mut Changes)
 }
 
 pub fn response(
-    db: &rusqlite::Connection,
+    store: &Store,
     state: &mut State,
     saved: &mut StoredPane,
     message: Message,
@@ -110,7 +110,7 @@ pub fn response(
         state.initialized = Some(info);
         let mut all_known = true;
         for method in PROBED_METHODS {
-            all_known &= agents::probe(db, &state.fingerprint, method)
+            all_known &= agents::probe(store, &state.fingerprint, method)
                 .map_err(errors::storage)?
                 .is_some();
         }
@@ -232,7 +232,7 @@ pub fn response(
                 }
                 if request.context == "load" {
                     changes.replay_messages = true;
-                    transcript::complete(db, &saved.pane.pane_id, state, changes)?;
+                    transcript::complete(store, &saved.pane.pane_id, state, changes)?;
                     changes.publish_replay = true;
                     state.replay_role = None;
                 }
@@ -298,10 +298,10 @@ pub fn response(
                 "error".into()
             }
         };
-        for request in agents::open_requests(db, &saved.pane.pane_id).map_err(errors::storage)? {
+        for request in agents::open_requests(store, &saved.pane.pane_id).map_err(errors::storage)? {
             super::questions::decision(state, &request, None, None, "system", false, changes)?;
         }
-        transcript::complete(db, &saved.pane.pane_id, state, changes)?;
+        transcript::complete(store, &saved.pane.pane_id, state, changes)?;
         state.active = None;
         state.cancel_at_ms = None;
         state.has_finished_turn = true;

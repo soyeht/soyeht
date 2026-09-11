@@ -33,9 +33,7 @@ impl Core {
             clear_replay: true,
             ..Changes::default()
         };
-        for question in
-            agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?
-        {
+        for question in agents::open_requests(&self.store, pane).map_err(errors::storage)? {
             super::questions::decision(
                 &mut state,
                 &question,
@@ -48,7 +46,7 @@ impl Core {
         }
         changes.outgoing.clear();
         if state.phase != super::state::Phase::Loading {
-            super::transcript::complete(self.store.connection(), pane, &mut state, &mut changes)?;
+            super::transcript::complete(&self.store, pane, &mut state, &mut changes)?;
         }
         state.open_messages.clear();
         if let Some(user) = state.operation_user.take() {
@@ -120,7 +118,7 @@ impl Core {
                     .map(|s| s.parse::<u64>().expect("validated cursor"));
                 return Ok(json!(
                     agents::transcript(
-                        self.store.connection(),
+                        &self.store,
                         pane,
                         before,
                         params["limit"].as_u64().unwrap_or(100) as usize
@@ -183,8 +181,8 @@ impl Core {
                         changes.outgoing.push(client::cancel(
                             state.session_id.as_deref().expect("active session"),
                         ));
-                        for request in agents::open_requests(self.store.connection(), pane)
-                            .map_err(errors::storage)?
+                        for request in
+                            agents::open_requests(&self.store, pane).map_err(errors::storage)?
                         {
                             super::questions::decision(
                                 &mut state,

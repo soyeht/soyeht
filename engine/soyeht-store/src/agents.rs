@@ -1,7 +1,7 @@
 //! Agent persistence uses the caller's transaction so public events, native
 //! replies and runtime checkpoints commit together before any pipe write.
-use crate::database::{Error, Result};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use crate::database::{Change, Error, Result, Store};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::{PaneTranscriptResult, ProbeCapability, TranscriptMessage, limits};
@@ -9,14 +9,16 @@ use soyeht_protocol::{PromptItem, PromptStatus};
 
 /// Prompt bodies are separate rows, not part of the frequently written ACP
 /// checkpoint. A full waiting queue is never rewritten for each output chunk.
-pub fn queue(db: &Connection, pane: &str) -> Result<Vec<PromptItem>> {
+pub fn queue(store: &Store, pane: &str) -> Result<Vec<PromptItem>> {
+    let db = store.connection();
     let mut statement =
         db.prepare("SELECT payload FROM agent_prompt_queue WHERE pane_id=?1 ORDER BY ordinal")?;
     let rows = statement.query_map([pane], |r| r.get::<_, String>(0))?;
     rows.map(|raw| Ok(serde_json::from_str(&raw?)?)).collect()
 }
 
-pub fn enqueue_prompt(tx: &Transaction<'_>, pane: &str, item: &PromptItem) -> Result<()> {
+pub fn enqueue_prompt(change: &Change<'_>, pane: &str, item: &PromptItem) -> Result<()> {
+    let tx = change.connection();
     if item.text.is_empty()
         || item.text.len() > limits::PROMPT_BYTES
         || item.status != PromptStatus::Queued
@@ -53,14 +55,16 @@ pub fn enqueue_prompt(tx: &Transaction<'_>, pane: &str, item: &PromptItem) -> Re
     Ok(())
 }
 
-pub fn remove_prompt(tx: &Transaction<'_>, pane: &str, prompt: &str) -> Result<bool> {
+pub fn remove_prompt(change: &Change<'_>, pane: &str, prompt: &str) -> Result<bool> {
+    let tx = change.connection();
     Ok(tx.execute(
         "DELETE FROM agent_prompt_queue WHERE pane_id=?1 AND prompt_id=?2",
         params![pane, prompt],
     )? == 1)
 }
 
-pub fn runtime<T: DeserializeOwned>(db: &Connection, pane: &str) -> Result<Option<T>> {
+pub fn runtime<T: DeserializeOwned>(store: &Store, pane: &str) -> Result<Option<T>> {
+    let db = store.connection();
     let raw: Option<String> = db
         .query_row(
             "SELECT payload FROM agent_runtime WHERE pane_id=?1",
@@ -71,17 +75,29 @@ pub fn runtime<T: DeserializeOwned>(db: &Connection, pane: &str) -> Result<Optio
     raw.map(|raw| Ok(serde_json::from_str(&raw)?)).transpose()
 }
 
-pub fn attention(db: &Connection, workspace: &str) -> Result<Vec<soyeht_protocol::AttentionItem>> {
+fn attention_from(db: &Connection, workspace: &str) -> Result<Vec<soyeht_protocol::AttentionItem>> {
     let mut statement = db.prepare("SELECT a.payload FROM agent_attention a JOIN panes p ON p.id=a.pane_id WHERE a.workspace_id=?1 AND p.closed=0 ORDER BY a.ordinal")?;
     let rows = statement.query_map([workspace], |row| row.get::<_, String>(0))?;
     rows.map(|raw| Ok(serde_json::from_str(&raw?)?)).collect()
 }
 
+pub fn attention(store: &Store, workspace: &str) -> Result<Vec<soyeht_protocol::AttentionItem>> {
+    attention_from(store.connection(), workspace)
+}
+
+pub fn attention_in_change(
+    change: &Change<'_>,
+    workspace: &str,
+) -> Result<Vec<soyeht_protocol::AttentionItem>> {
+    attention_from(change.connection(), workspace)
+}
+
 pub fn save_attention(
-    tx: &Transaction<'_>,
+    change: &Change<'_>,
     workspace: &str,
     item: &soyeht_protocol::AttentionItem,
 ) -> Result<()> {
+    let tx = change.connection();
     let raw = serde_json::to_string(item)?;
     if raw.len() > 4096 || item.message.len() > 1024 {
         return Err(Error::Invalid("attention item exceeds its limit"));
@@ -102,11 +118,12 @@ pub fn save_attention(
 }
 
 pub fn save_runtime<T: Serialize>(
-    tx: &Transaction<'_>,
+    change: &Change<'_>,
     pane: &str,
     generation: u32,
     value: &T,
 ) -> Result<()> {
+    let tx = change.connection();
     let raw = serde_json::to_string(value)?;
     if raw.len() > 16 * limits::JSON_BYTES || generation == 0 {
         return Err(Error::Invalid("agent runtime exceeds its limit"));
@@ -142,7 +159,8 @@ pub struct Outgoing {
     pub attempt: u32,
 }
 
-pub fn enqueue(tx: &Transaction<'_>, value: &Outgoing) -> Result<()> {
+pub fn enqueue(change: &Change<'_>, value: &Outgoing) -> Result<()> {
+    let tx = change.connection();
     generation_matches(tx, &value.pane_id, value.generation)?;
     if value.accepted_bytes != 0 || value.attempt != 0 {
         return Err(Error::Invalid("new outbox operation has delivery progress"));
@@ -157,7 +175,7 @@ pub fn enqueue(tx: &Transaction<'_>, value: &Outgoing) -> Result<()> {
     if !message.is_object() || message["jsonrpc"] != "2.0" {
         return Err(Error::Invalid("outbox needs a JSON-RPC envelope"));
     }
-    if let Some(mut prior) = outgoing(tx, &value.operation_key)? {
+    if let Some(mut prior) = outgoing_from(tx, &value.operation_key)? {
         prior.accepted_bytes = 0;
         prior.attempt = 0;
         return if prior == *value {
@@ -190,10 +208,14 @@ fn outgoing_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Outgoing> {
         attempt: row.get(7)?,
     })
 }
-pub fn outgoing(db: &Connection, key: &str) -> Result<Option<Outgoing>> {
+fn outgoing_from(db: &Connection, key: &str) -> Result<Option<Outgoing>> {
     Ok(db.query_row("SELECT operation_key,pane_id,generation,instance_id,supervisor_id,bytes,accepted_bytes,attempt FROM agent_outbox WHERE operation_key=?1",[key],outgoing_row).optional()?)
 }
-pub fn outbox(db: &Connection, pane: &str) -> Result<Vec<Outgoing>> {
+pub fn outgoing(store: &Store, key: &str) -> Result<Option<Outgoing>> {
+    outgoing_from(store.connection(), key)
+}
+pub fn outbox(store: &Store, pane: &str) -> Result<Vec<Outgoing>> {
+    let db = store.connection();
     let mut statement = db.prepare("SELECT operation_key,pane_id,generation,instance_id,supervisor_id,bytes,accepted_bytes,attempt FROM agent_outbox WHERE pane_id=?1 ORDER BY ordinal")?;
     Ok(statement
         .query_map([pane], outgoing_row)?
@@ -203,9 +225,10 @@ pub fn outbox(db: &Connection, pane: &str) -> Result<Vec<Outgoing>> {
 /// Persist each partial write before confirming its ptyd receipt. A zero-byte
 /// write still advances the attempt, so its deduplicated receipt cannot stall
 /// the next try forever. The byte offset advances only by the accepted count.
-pub fn advance(tx: &Transaction<'_>, prior: &Outgoing, accepted: usize) -> Result<Outgoing> {
+pub fn advance(change: &Change<'_>, prior: &Outgoing, accepted: usize) -> Result<Outgoing> {
+    let tx = change.connection();
     generation_matches(tx, &prior.pane_id, prior.generation)?;
-    if outgoing(tx, &prior.operation_key)?.as_ref() != Some(prior) {
+    if outgoing_from(tx, &prior.operation_key)?.as_ref() != Some(prior) {
         return Err(Error::IdempotencyConflict);
     }
     if accepted > limits::TERMINAL_PAYLOAD_BYTES
@@ -228,11 +251,12 @@ pub fn advance(tx: &Transaction<'_>, prior: &Outgoing, accepted: usize) -> Resul
 
 /// Call only after ptyd accepted these exact bytes for the bound process.
 /// The caller confirms ptyd's input receipt only AFTER this commit.
-pub fn delivered(tx: &Transaction<'_>, value: &Outgoing) -> Result<()> {
+pub fn delivered(change: &Change<'_>, value: &Outgoing) -> Result<()> {
+    let tx = change.connection();
     if value.accepted_bytes as usize != value.bytes.len() {
         return Err(Error::Invalid("native message is not fully delivered"));
     }
-    if let Some(prior) = outgoing(tx, &value.operation_key)? {
+    if let Some(prior) = outgoing_from(tx, &value.operation_key)? {
         if prior != *value {
             return Err(Error::IdempotencyConflict);
         }
@@ -292,7 +316,7 @@ fn request_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NativeRequest> {
 }
 const REQUEST_COLUMNS: &str =
     "request_id,pane_id,generation,source_seq,native_id,method,params,public,expires_ms,result";
-pub fn request(db: &Connection, id: &str) -> Result<Option<NativeRequest>> {
+fn request_from(db: &Connection, id: &str) -> Result<Option<NativeRequest>> {
     Ok(db
         .query_row(
             &format!("SELECT {REQUEST_COLUMNS} FROM agent_requests WHERE request_id=?1"),
@@ -301,7 +325,7 @@ pub fn request(db: &Connection, id: &str) -> Result<Option<NativeRequest>> {
         )
         .optional()?)
 }
-pub fn request_at(
+fn request_at_from(
     db: &Connection,
     pane: &str,
     generation: u32,
@@ -309,7 +333,19 @@ pub fn request_at(
 ) -> Result<Option<NativeRequest>> {
     Ok(db.query_row(&format!("SELECT {REQUEST_COLUMNS} FROM agent_requests WHERE pane_id=?1 AND generation=?2 AND source_seq=?3"),params![pane,generation,seq.to_be_bytes().as_slice()],request_row).optional()?)
 }
-pub fn open_requests(db: &Connection, pane: &str) -> Result<Vec<NativeRequest>> {
+pub fn request(store: &Store, id: &str) -> Result<Option<NativeRequest>> {
+    request_from(store.connection(), id)
+}
+pub fn request_at(
+    store: &Store,
+    pane: &str,
+    generation: u32,
+    seq: u64,
+) -> Result<Option<NativeRequest>> {
+    request_at_from(store.connection(), pane, generation, seq)
+}
+pub fn open_requests(store: &Store, pane: &str) -> Result<Vec<NativeRequest>> {
+    let db = store.connection();
     let mut statement = db.prepare(&format!("SELECT {REQUEST_COLUMNS} FROM agent_requests WHERE pane_id=?1 AND result IS NULL ORDER BY source_seq"))?;
     Ok(statement
         .query_map([pane], request_row)?
@@ -318,9 +354,10 @@ pub fn open_requests(db: &Connection, pane: &str) -> Result<Vec<NativeRequest>> 
 
 /// Returns the previously persisted identity when an already-seen native
 /// request is replayed. Its deadline and engine request ID never change.
-pub fn receive(tx: &Transaction<'_>, value: &NativeRequest) -> Result<NativeRequest> {
+pub fn receive(change: &Change<'_>, value: &NativeRequest) -> Result<NativeRequest> {
+    let tx = change.connection();
     generation_matches(tx, &value.pane_id, value.generation)?;
-    if let Some(prior) = request_at(tx, &value.pane_id, value.generation, value.source_seq)? {
+    if let Some(prior) = request_at_from(tx, &value.pane_id, value.generation, value.source_seq)? {
         if prior.native_id != value.native_id
             || prior.method != value.method
             || prior.params != value.params
@@ -358,8 +395,9 @@ pub struct Decision {
 }
 /// First answer wins inside the same transaction as its native response and
 /// public event. A rollback restores the open request, including its deadline.
-pub fn answer(tx: &Transaction<'_>, id: &str, result: &Value) -> Result<Decision> {
-    let prior = request(tx, id)?.ok_or(Error::Invalid("native request not found"))?;
+pub fn answer(change: &Change<'_>, id: &str, result: &Value) -> Result<Decision> {
+    let tx = change.connection();
+    let prior = request_from(tx, id)?.ok_or(Error::Invalid("native request not found"))?;
     if let Some(result) = prior.result {
         return Ok(Decision {
             first: false,
@@ -377,8 +415,9 @@ pub fn answer(tx: &Transaction<'_>, id: &str, result: &Value) -> Result<Decision
     })
 }
 
-pub fn start_effect(tx: &Transaction<'_>, id: &str, metadata: &Value) -> Result<()> {
-    let request = request(tx, id)?.ok_or(Error::Invalid("native effect not found"))?;
+pub fn start_effect(change: &Change<'_>, id: &str, metadata: &Value) -> Result<()> {
+    let tx = change.connection();
+    let request = request_from(tx, id)?.ok_or(Error::Invalid("native effect not found"))?;
     generation_matches(tx, &request.pane_id, request.generation)?;
     if request.result.is_some()
         || !request.method.starts_with("fs/") && !request.method.starts_with("terminal/")
@@ -397,16 +436,21 @@ pub fn start_effect(tx: &Transaction<'_>, id: &str, metadata: &Value) -> Result<
     Ok(())
 }
 
-pub fn save_message(tx: &Transaction<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
-    save_message_in(tx, pane, message, "agent_transcript")
+pub fn save_message(change: &Change<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
+    save_message_in(change.connection(), pane, message, "agent_transcript")
 }
 
-pub fn stage_message(tx: &Transaction<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
-    save_message_in(tx, pane, message, "agent_replay_transcript")
+pub fn stage_message(change: &Change<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
+    save_message_in(
+        change.connection(),
+        pane,
+        message,
+        "agent_replay_transcript",
+    )
 }
 
 fn save_message_in(
-    tx: &Transaction<'_>,
+    tx: &Connection,
     pane: &str,
     message: &TranscriptMessage,
     table: &str,
@@ -469,7 +513,8 @@ fn save_message_in(
     Ok(())
 }
 
-pub fn discard_replay(tx: &Transaction<'_>, pane: &str) -> Result<()> {
+pub fn discard_replay(change: &Change<'_>, pane: &str) -> Result<()> {
+    let tx = change.connection();
     tx.execute(
         "DELETE FROM agent_replay_transcript WHERE pane_id=?1",
         [pane],
@@ -477,7 +522,8 @@ pub fn discard_replay(tx: &Transaction<'_>, pane: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn publish_replay(tx: &Transaction<'_>, pane: &str, generation: u32) -> Result<()> {
+pub fn publish_replay(change: &Change<'_>, pane: &str, generation: u32) -> Result<()> {
+    let tx = change.connection();
     generation_matches(tx, pane, generation)?;
     let stale: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM agent_replay_transcript WHERE pane_id=?1 AND generation<>?2)",
@@ -492,17 +538,22 @@ pub fn publish_replay(tx: &Transaction<'_>, pane: &str, generation: u32) -> Resu
         "INSERT INTO agent_transcript SELECT * FROM agent_replay_transcript WHERE pane_id=?1",
         [pane],
     )?;
-    discard_replay(tx, pane)
+    tx.execute(
+        "DELETE FROM agent_replay_transcript WHERE pane_id=?1",
+        [pane],
+    )?;
+    Ok(())
 }
 
 /// Newest page, returned in display order; `before` is exclusive. Eight-byte
 /// big-endian keys preserve all u64 sequences without signed SQLite overflow.
 pub fn transcript(
-    db: &Connection,
+    store: &Store,
     pane: &str,
     before: Option<u64>,
     limit: usize,
 ) -> Result<PaneTranscriptResult> {
+    let db = store.connection();
     if limit == 0 || limit > limits::TRANSCRIPT_PAGE_MESSAGES {
         return Err(Error::Invalid("invalid transcript page limit"));
     }
@@ -538,7 +589,20 @@ pub fn transcript(
     Ok(PaneTranscriptResult { items, next_cursor })
 }
 
-pub fn probe(db: &Connection, fingerprint: &str, method: &str) -> Result<Option<ProbeCapability>> {
+pub fn message(store: &Store, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
+    let raw: Option<String> = store
+        .connection()
+        .query_row(
+            "SELECT payload FROM (SELECT payload,0 AS priority FROM agent_replay_transcript WHERE pane_id=?1 AND seq=?2 UNION ALL SELECT payload,1 AS priority FROM agent_transcript WHERE pane_id=?1 AND seq=?2) ORDER BY priority LIMIT 1",
+            params![pane, seq.to_be_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    raw.map(|raw| Ok(serde_json::from_str(&raw)?)).transpose()
+}
+
+pub fn probe(store: &Store, fingerprint: &str, method: &str) -> Result<Option<ProbeCapability>> {
+    let db = store.connection();
     let raw: Option<String> = db
         .query_row(
             "SELECT payload FROM agent_probes WHERE fingerprint=?1 AND method=?2",
@@ -548,7 +612,8 @@ pub fn probe(db: &Connection, fingerprint: &str, method: &str) -> Result<Option<
         .optional()?;
     raw.map(|raw| Ok(serde_json::from_str(&raw)?)).transpose()
 }
-pub fn save_probe(tx: &Transaction<'_>, fingerprint: &str, value: &ProbeCapability) -> Result<()> {
+pub fn save_probe(change: &Change<'_>, fingerprint: &str, value: &ProbeCapability) -> Result<()> {
+    let tx = change.connection();
     tx.execute("INSERT INTO agent_probes(fingerprint,method,payload) VALUES (?1,?2,?3) ON CONFLICT(fingerprint,method) DO UPDATE SET payload=excluded.payload",params![fingerprint,value.method,serde_json::to_string(value)?])?;
     Ok(())
 }

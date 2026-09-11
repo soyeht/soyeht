@@ -1,28 +1,12 @@
 use super::{Changes, state::State};
 use crate::errors::{self, Result};
-use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, TranscriptKind, TranscriptMessage, TranscriptRole, limits};
+use soyeht_store::database::Store;
 use uuid::Uuid;
 
-pub fn message(
-    db: &rusqlite::Connection,
-    pane: &str,
-    seq: u64,
-) -> Result<Option<TranscriptMessage>> {
-    let raw: Option<String> = db
-        .query_row(
-            "SELECT payload FROM (SELECT payload,0 AS priority FROM agent_replay_transcript WHERE pane_id=?1 AND seq=?2 UNION ALL SELECT payload,1 AS priority FROM agent_transcript WHERE pane_id=?1 AND seq=?2) ORDER BY priority LIMIT 1",
-            params![pane, seq.to_be_bytes().as_slice()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| errors::storage(e.into()))?;
-    raw.map(|raw| {
-        serde_json::from_str(&raw)
-            .map_err(|_| errors::error(ErrorKind::InternalError, "Invalid transcript record"))
-    })
-    .transpose()
+pub fn message(store: &Store, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
+    soyeht_store::agents::message(store, pane, seq).map_err(errors::storage)
 }
 pub fn new_message(
     state: &mut State,
@@ -124,7 +108,7 @@ pub fn put(
 }
 
 pub fn append_text(
-    db: &rusqlite::Connection,
+    store: &Store,
     pane: &str,
     state: &mut State,
     generation: u32,
@@ -133,7 +117,7 @@ pub fn append_text(
     changes: &mut Changes,
 ) -> Result<()> {
     append_text_role(
-        db,
+        store,
         pane,
         state,
         generation,
@@ -144,7 +128,7 @@ pub fn append_text(
 }
 
 pub fn append_text_role(
-    db: &rusqlite::Connection,
+    store: &Store,
     pane: &str,
     state: &mut State,
     generation: u32,
@@ -169,7 +153,7 @@ pub fn append_text_role(
         TranscriptKind::Message
     };
     let mut current = if let Some(seq) = state.open_messages.get(key) {
-        message(db, pane, *seq)?
+        message(store, pane, *seq)?
     } else {
         None
     };
@@ -236,14 +220,9 @@ pub fn append_text_role(
     }
 }
 
-pub fn complete(
-    db: &rusqlite::Connection,
-    pane: &str,
-    state: &mut State,
-    changes: &mut Changes,
-) -> Result<()> {
+pub fn complete(store: &Store, pane: &str, state: &mut State, changes: &mut Changes) -> Result<()> {
     for (key, seq) in std::mem::take(&mut state.open_messages) {
-        if let Some(mut item) = message(db, pane, seq)? {
+        if let Some(mut item) = message(store, pane, seq)? {
             item.complete = true;
             let kind = if key == "thought" {
                 "agent_thought_chunk"

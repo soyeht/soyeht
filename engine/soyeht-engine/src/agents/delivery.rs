@@ -7,13 +7,10 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{ErrorKind, limits};
 use soyeht_ptyd::wire::{Request, Response};
-use soyeht_store::agents;
+use soyeht_store::{agents, database::Store};
 use uuid::Uuid;
 
-pub fn receipt_pending(
-    db: &rusqlite::Connection,
-    key: &str,
-) -> soyeht_store::database::Result<bool> {
+pub fn receipt_pending(store: &Store, key: &str) -> soyeht_store::database::Result<bool> {
     let Some(rest) = key.strip_prefix("acp:") else {
         return Ok(false);
     };
@@ -23,7 +20,7 @@ pub fn receipt_pending(
     let Ok(attempt) = attempt.parse::<u32>() else {
         return Ok(false);
     };
-    Ok(agents::outgoing(db, operation)?.is_some_and(|row| row.attempt == attempt))
+    Ok(agents::outgoing(store, operation)?.is_some_and(|row| row.attempt == attempt))
 }
 
 impl Core {
@@ -31,7 +28,7 @@ impl Core {
         // A bounded amount of work per tick lets another pane cancel or answer
         // permission while this process accepts a large message in small writes.
         for _ in 0..8 {
-            let Some(prior) = agents::outbox(self.store.connection(), pane)
+            let Some(prior) = agents::outbox(&self.store, pane)
                 .map_err(errors::storage)?
                 .into_iter()
                 .next()

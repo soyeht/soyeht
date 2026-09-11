@@ -5,6 +5,7 @@ use soyeht_ptyd::{
     client::Client as PtyClient,
     wire::{Request, Response},
 };
+use soyeht_store::test_support::DatabaseProbe;
 use std::{
     fs,
     os::unix::net::UnixStream,
@@ -88,41 +89,14 @@ impl Rig {
         }
         (client, pane)
     }
-    fn db(&self) -> rusqlite::Connection {
-        let db = rusqlite::Connection::open(self.path.join("soyeht.db")).unwrap();
-        db.busy_timeout(Duration::from_secs(5)).unwrap();
-        db
+    fn database_probe(&self) -> DatabaseProbe {
+        DatabaseProbe::open(&self.path).unwrap()
     }
     // Shift only a stopped test engine's persisted timestamps. There is no
     // runtime clock override or shortened deadline in the shipped executable.
     fn age_agent(&self, pane: &str, cancel: bool) {
         assert!(self.engine.is_none());
-        let db = self.db();
-        let raw: String = db
-            .query_row(
-                "SELECT payload FROM agent_runtime WHERE pane_id=?1",
-                [pane],
-                |r| r.get(0),
-            )
-            .unwrap();
-        let mut state: Value = serde_json::from_str(&raw).unwrap();
-        state["last_update_ms"] = json!(0);
-        for pending in state["client"]["pending"]
-            .as_object_mut()
-            .unwrap()
-            .values_mut()
-        {
-            pending["sent_at_ms"] = json!(0);
-        }
-        if cancel {
-            assert!(state["cancel_at_ms"].is_i64());
-            state["cancel_at_ms"] = json!(0);
-        }
-        db.execute(
-            "UPDATE agent_runtime SET payload=?1 WHERE pane_id=?2",
-            rusqlite::params![state.to_string(), pane],
-        )
-        .unwrap();
+        self.database_probe().age_agent(pane, cancel).unwrap();
     }
     fn kill_engine(&mut self) {
         if let Some(mut child) = self.engine.take() {
@@ -256,7 +230,14 @@ fn cancellation_pauses_the_durable_queue_until_explicit_resume() {
     );
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let ended: i64 = rig.db().query_row("SELECT count(*) FROM events WHERE method='pane.turn_ended' AND json_extract(params,'$.promptId')=?1", [waiting["promptId"].as_str().unwrap()], |r| r.get(0)).unwrap();
+        let ended = rig
+            .database_probe()
+            .event_count_by_field(
+                "pane.turn_ended",
+                "promptId",
+                waiting["promptId"].as_str().unwrap(),
+            )
+            .unwrap();
         if ended == 1 {
             break;
         }
@@ -264,13 +245,9 @@ fn cancellation_pauses_the_durable_queue_until_explicit_resume() {
         thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(client.pane(&pane)["agent"]["queuePaused"], false);
-    let events: i64 = rig
-        .db()
-        .query_row(
-            "SELECT count(*) FROM events WHERE method='pane.queue.resumed'",
-            [],
-            |r| r.get(0),
-        )
+    let events = rig
+        .database_probe()
+        .event_count("pane.queue.resumed")
         .unwrap();
     assert_eq!(events, 1);
 }
@@ -286,7 +263,14 @@ fn terminal_spawn_refusal_finishes_the_native_request_without_restarting_the_age
     );
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let ended: i64 = rig.db().query_row("SELECT count(*) FROM events WHERE method='pane.turn_ended' AND json_extract(params,'$.promptId')=?1", [prompt["promptId"].as_str().unwrap()], |r| r.get(0)).unwrap();
+        let ended = rig
+            .database_probe()
+            .event_count_by_field(
+                "pane.turn_ended",
+                "promptId",
+                prompt["promptId"].as_str().unwrap(),
+            )
+            .unwrap();
         if ended == 1 {
             break;
         }
@@ -302,24 +286,13 @@ fn terminal_spawn_refusal_finishes_the_native_request_without_restarting_the_age
         client.pane(&pane)["agent"]["sessionId"],
         before["agent"]["sessionId"]
     );
-    let response: String = rig
-        .db()
-        .query_row(
-            "SELECT result FROM agent_requests WHERE method='terminal/create' AND pane_id=?1",
-            [&pane],
-            |r| r.get(0),
-        )
+    let response = rig
+        .database_probe()
+        .request_result("terminal/create", &pane)
+        .unwrap()
         .unwrap();
-    let response: Value = serde_json::from_str(&response).unwrap();
     assert_eq!(response["native"]["error"]["code"], -32603);
-    let pending: i64 = rig
-        .db()
-        .query_row(
-            "SELECT count(*) FROM agent_requests WHERE result IS NULL AND pane_id=?1",
-            [&pane],
-            |r| r.get(0),
-        )
-        .unwrap();
+    let pending = rig.database_probe().open_request_count(&pane).unwrap();
     assert_eq!(pending, 0);
 }
 
@@ -342,16 +315,8 @@ fn a_lost_output_page_preserves_pending_permission_and_declares_the_gap() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    let generation: String = rig
-        .db()
-        .query_row(
-            "SELECT value FROM metadata WHERE key='engine_generation'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    let mut supervisor =
-        PtyClient::connect(&rig.path.join("ptyd.sock"), generation.parse().unwrap()).unwrap();
+    let generation = rig.database_probe().engine_generation().unwrap();
+    let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), generation).unwrap();
     let Response::Instances(instances) = supervisor.request(Request::List).unwrap() else {
         panic!("process registry");
     };
@@ -409,7 +374,14 @@ fn a_lost_output_page_preserves_pending_permission_and_declares_the_gap() {
     client.call("pane.permission.answer", json!({"paneId":pane,"requestId":request,"optionId":"once","idempotencyKey":"answer-overflow"}));
     client.wait_state(&pane, "idle");
     assert!(client.section("requests").is_empty());
-    let count: i64 = rig.db().query_row("SELECT count(*) FROM events WHERE method='pane.permission_requested' AND json_extract(params,'$.requestId')=?1", [request.as_str().unwrap()], |r| r.get(0)).unwrap();
+    let count = rig
+        .database_probe()
+        .event_count_by_field(
+            "pane.permission_requested",
+            "requestId",
+            request.as_str().unwrap(),
+        )
+        .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -425,16 +397,8 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
     client.wait_state(&pane, "working");
     assert!(client.section("requests").is_empty());
     rig.kill_engine();
-    let generation: String = rig
-        .db()
-        .query_row(
-            "SELECT value FROM metadata WHERE key='engine_generation'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    let mut supervisor =
-        PtyClient::connect(&rig.path.join("ptyd.sock"), generation.parse().unwrap()).unwrap();
+    let generation = rig.database_probe().engine_generation().unwrap();
+    let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), generation).unwrap();
     let Response::Instances(instances) = supervisor.request(Request::List).unwrap() else {
         panic!("process registry");
     };
@@ -468,13 +432,9 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    let persisted: i64 = rig
-        .db()
-        .query_row(
-            "SELECT count(*) FROM agent_requests WHERE method='session/request_permission'",
-            [],
-            |r| r.get(0),
-        )
+    let persisted = rig
+        .database_probe()
+        .request_count("session/request_permission")
         .unwrap();
     assert_eq!(persisted, 0, "request predates engine outage");
     drop(supervisor);
@@ -501,7 +461,14 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
     );
     assert_eq!(result, late);
     first.wait_state(&pane, "idle");
-    let answered: i64 = rig.db().query_row("SELECT count(*) FROM events WHERE method='pane.permission_answered' AND json_extract(params,'$.requestId')=?1", [id.as_str().unwrap()], |r| r.get(0)).unwrap();
+    let answered = rig
+        .database_probe()
+        .event_count_by_field(
+            "pane.permission_answered",
+            "requestId",
+            id.as_str().unwrap(),
+        )
+        .unwrap();
     assert_eq!(answered, 1);
 }
 
@@ -523,8 +490,14 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
             client.section("requests").is_empty(),
             "automatic permission became visible"
         );
-        let db = rig.db();
-        let done: i64 = db.query_row("SELECT count(*) FROM events WHERE method='pane.turn_ended' AND json_extract(params,'$.promptId')=?1", [prompt["promptId"].as_str().unwrap()], |r| r.get(0)).unwrap();
+        let done = rig
+            .database_probe()
+            .event_count_by_field(
+                "pane.turn_ended",
+                "promptId",
+                prompt["promptId"].as_str().unwrap(),
+            )
+            .unwrap();
         if done == 1 {
             break;
         }
@@ -534,19 +507,18 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    let requested: i64 = rig
-        .db()
-        .query_row(
-            "SELECT count(*) FROM events WHERE method='pane.permission_requested'",
-            [],
-            |r| r.get(0),
-        )
+    let requested = rig
+        .database_probe()
+        .event_count("pane.permission_requested")
         .unwrap();
     assert_eq!(
         requested, 0,
         "automatic permission was published to connected clients"
     );
-    let by_rule: i64 = rig.db().query_row("SELECT count(*) FROM events WHERE method='pane.permission_answered' AND json_extract(params,'$.by')='rule'", [], |r| r.get(0)).unwrap();
+    let by_rule = rig
+        .database_probe()
+        .event_count_by_field("pane.permission_answered", "by", "rule")
+        .unwrap();
     assert_eq!(by_rule, 1);
     client.call(
         "pane.yolo",
@@ -560,11 +532,8 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
     let question = client.section("requests")[0]["request"].clone();
     rig.kill_engine();
     // Preserve the request and process; advance only this test deadline.
-    rig.db()
-        .execute(
-            "UPDATE agent_requests SET expires_ms=0 WHERE request_id=?1",
-            [question["requestId"].as_str().unwrap()],
-        )
+    rig.database_probe()
+        .expire_request(question["requestId"].as_str().unwrap())
         .unwrap();
     rig.start();
     let mut client = rig.client();

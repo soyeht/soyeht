@@ -3,10 +3,10 @@ use crate::{
     errors::{self, Result},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 use soyeht_protocol::ErrorKind;
 use soyeht_ptyd::wire::{Request, Response};
+use soyeht_store::domain::InputIntent;
 use uuid::Uuid;
 
 impl Core {
@@ -34,26 +34,40 @@ impl Core {
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
             &json!(["pane.input", params]).to_string(),
         ));
-        let prior:Option<(String,String,String,String)>=self.store.connection().query_row("SELECT fingerprint,operation_key,supervisor_id,instance_id FROM input_intents WHERE scope=?1 AND key=?2",params![scope,key],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional().map_err(|e|errors::storage(e.into()))?;
-        let operation_key = if let Some((prior, key, old_supervisor, old_instance)) = prior {
-            if prior != fingerprint {
+        let prior = self
+            .store
+            .input_intent(&scope, key)
+            .map_err(errors::storage)?;
+        let operation_key = if let Some(prior) = prior {
+            if prior.fingerprint != fingerprint {
                 return Err(errors::error(
                     ErrorKind::IdempotencyConflict,
                     "Input key reused with different content",
                 ));
             }
-            if old_supervisor != supervisor || old_instance != instance {
+            if prior.supervisor_id != supervisor || prior.instance_id != instance {
                 return Err(errors::error(
                     ErrorKind::ResyncRequired,
                     "Previous input outcome is unknown; it will not be repeated in a replacement shell",
                 ));
             }
-            key
+            prior.operation_key
         } else {
             let operation = Uuid::new_v4().to_string();
             // SQLite FULL commits this intent before any irreversible PTY write.
             // Only a digest is retained; input bytes may contain credentials.
-            self.store.connection().execute("INSERT INTO input_intents(scope,key,fingerprint,operation_key,supervisor_id,instance_id) VALUES (?1,?2,?3,?4,?5,?6)",params![scope,key,fingerprint,operation,supervisor,instance]).map_err(|e|errors::storage(e.into()))?;
+            self.store
+                .record_input_intent(
+                    &scope,
+                    key,
+                    &InputIntent {
+                        fingerprint: fingerprint.clone(),
+                        operation_key: operation.clone(),
+                        supervisor_id: supervisor.clone(),
+                        instance_id: instance.clone(),
+                    },
+                )
+                .map_err(errors::storage)?;
             operation
         };
         let Response::Accepted { bytes } = self.pty_request(Request::Input {
@@ -70,10 +84,7 @@ impl Core {
         };
         let result = self
             .mutate(connection, "pane.input", params, |tx| {
-                tx.execute(
-                    "DELETE FROM input_intents WHERE scope=?1 AND key=?2",
-                    params![scope, key],
-                )?;
+                tx.remove_input_intent(&scope, key)?;
                 Ok((json!({"acceptedBytes":bytes}), vec![]))
             })?
             .result;

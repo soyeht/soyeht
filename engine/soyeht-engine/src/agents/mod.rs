@@ -29,7 +29,7 @@ use soyeht_acp::{Message, rpc::Decoder};
 use soyeht_protocol::{ErrorKind, ProbeCapability, TranscriptMessage};
 use soyeht_store::{
     agents::{self, NativeRequest, Outgoing},
-    database::Mutation,
+    database::{Change, Mutation},
 };
 use state::State;
 use uuid::Uuid;
@@ -143,24 +143,21 @@ impl Core {
         {
             events.push(("pane.updated".into(), json!({"pane":saved.pane})));
         }
-        let change = |tx: &rusqlite::Transaction<'_>| {
+        let change = |tx: &Change<'_>| {
             if let Some(completion) = &changes.completed_user {
-                let changed = tx.execute(
-                    "UPDATE idempotency SET result=?1 WHERE scope=?2 AND key=?3",
-                    rusqlite::params![
-                        completion.stored().to_string(),
-                        completion.user.scope,
-                        completion.user.key
-                    ],
+                let changed = tx.update_idempotency_result(
+                    &completion.user.scope,
+                    &completion.user.key,
+                    &completion.stored(),
                 )?;
-                if changed != 1 {
+                if !changed {
                     return Err(soyeht_store::database::Error::Invalid(
                         "Native operation has no durable caller",
                     ));
                 }
             }
             if let Some((instance, supervisor)) = changes.retire_instance {
-                tx.execute("DELETE FROM agent_outbox WHERE pane_id=?1 AND instance_id=?2 AND supervisor_id=?3", rusqlite::params![id, instance, supervisor])?;
+                tx.retire_agent_outbox_process(&id, &instance, &supervisor)?;
             }
             write_pane(tx, &saved)?;
             agents::save_runtime(tx, &id, saved.pane.generation, &state)?;
@@ -168,23 +165,20 @@ impl Core {
                 || !changes.attention.is_empty()
                 || !changes.remove_attention.is_empty();
             if changes.clear_attention {
-                tx.execute("DELETE FROM agent_attention WHERE pane_id=?1", [&id])?;
+                tx.clear_attention(&id)?;
             }
             for attention in changes.remove_attention {
-                tx.execute(
-                    "DELETE FROM agent_attention WHERE pane_id=?1 AND attention_id=?2",
-                    rusqlite::params![id, attention],
-                )?;
+                tx.remove_attention(&id, &attention)?;
             }
             for attention in changes.attention {
                 agents::save_attention(tx, &saved.pane.workspace_id, &attention)?;
             }
             if attention_changed {
-                let items = agents::attention(tx, &saved.pane.workspace_id)?;
+                let items = agents::attention_in_change(tx, &saved.pane.workspace_id)?;
                 events.push(("attention.changed".into(),json!({"workspaceId":saved.pane.workspace_id,"count":items.len(),"items":items})));
             }
             if changes.clear_failed_probes {
-                tx.execute("DELETE FROM agent_probes WHERE fingerprint=?1 AND json_extract(payload,'$.result') IN ('unauthenticated','inconclusive')",[&state.fingerprint])?;
+                tx.clear_failed_probes(&state.fingerprint)?;
             }
             if changes.clear_replay {
                 agents::discard_replay(tx, &id)?;

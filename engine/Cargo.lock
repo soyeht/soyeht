@@ -792,7 +792,6 @@ dependencies = [
  "getrandom 0.4.3",
  "hmac",
  "libc",
- "rusqlite",
  "serde",
  "serde_json",
  "sha2",

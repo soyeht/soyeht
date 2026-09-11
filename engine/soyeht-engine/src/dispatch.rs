@@ -6,7 +6,6 @@ use crate::{
     outbox::Outbox,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{Actor, ErrorKind, HelloParams, Role, Welcome, frame::Frame};
 use std::collections::BTreeMap;
@@ -77,20 +76,15 @@ impl Core {
                 .device_token
                 .as_deref()
                 .ok_or_else(|| errors::error(ErrorKind::Unauthorized, "Device token required"))?;
-            let record: Option<(String, Vec<u8>)> = self
+            let record = self
                 .store
-                .connection()
-                .query_row(
-                    "SELECT id,public_key FROM devices WHERE token_hash=?1 AND revoked=0",
-                    [auth::token_hash(token)],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-                .map_err(|e| errors::storage(e.into()))?;
-            let (id, key) = record.ok_or_else(|| {
+                .device_identity(&auth::token_hash(token))
+                .map_err(errors::storage)?;
+            let record = record.ok_or_else(|| {
                 errors::error(ErrorKind::Unauthorized, "Unknown or revoked device")
             })?;
-            let key = auth::public_key(&STANDARD.encode(key))
+            let id = record.device_id;
+            let key = auth::public_key(&STANDARD.encode(record.public_key))
                 .map_err(|s| errors::error(ErrorKind::Unauthorized, s))?;
             if !hello.proof.as_ref().is_some_and(|proof| {
                 auth::hello_proof(&key, &client.nonce, &self.store.db_id, token, proof)
@@ -177,28 +171,20 @@ impl Core {
         // Look up before state-dependent validation: a repeated close still
         // succeeds after its pane has disappeared, without rerunning effects.
         if let Some(key) = params["idempotencyKey"].as_str() {
-            let previous: Option<(String, String)> = self
+            let previous = self
                 .store
-                .connection()
-                .query_row(
-                    "SELECT fingerprint,result FROM idempotency WHERE scope=?1 AND key=?2",
-                    params![client.scope, key],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-                .map_err(|e| errors::storage(e.into()))?;
-            if let Some((fingerprint, result)) = previous {
+                .idempotency_receipt(&client.scope, key)
+                .map_err(errors::storage)?;
+            if let Some(previous) = previous {
                 let incoming =
                     STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
-                if incoming != fingerprint {
+                if incoming != previous.fingerprint {
                     return Err(errors::error(
                         ErrorKind::IdempotencyConflict,
                         "Idempotency key reused with different content",
                     ));
                 }
-                let value = serde_json::from_str(&result).map_err(|_| {
-                    errors::error(ErrorKind::InternalError, "Invalid cached receipt")
-                })?;
+                let value = previous.result;
                 if matches!(method, "pane.config.set" | "pane.yolo") {
                     return self.native_rpc_result(connection, request["id"].clone(), key, value);
                 }
@@ -353,22 +339,16 @@ impl Core {
             pages.push((name, page));
         }
         let count = pages.len();
-        let focus: Option<(Option<String>, Option<String>)> = self
+        let focus = self
             .store
-            .connection()
-            .query_row(
-                "SELECT workspace_id,pane_id FROM client_focus WHERE scope=?1",
-                [&self.clients[connection].scope],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .map_err(|e| errors::storage(e.into()))?;
+            .client_focus(&self.clients[connection].scope)
+            .map_err(errors::storage)?;
         let mut focus_value = json!({});
-        if let Some((workspace, pane)) = focus {
-            if let Some(workspace) = workspace {
+        if let Some(focus) = focus {
+            if let Some(workspace) = focus.workspace_id {
                 focus_value["workspaceId"] = json!(workspace);
             }
-            if let Some(pane) = pane {
+            if let Some(pane) = focus.pane_id {
                 focus_value["paneId"] = json!(pane);
             }
         }

@@ -321,7 +321,7 @@ impl Core {
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
         let request = agents::request(
-            self.store.connection(),
+            &self.store,
             params["requestId"].as_str().expect("validated request"),
         )
         .map_err(errors::storage)?
@@ -388,7 +388,7 @@ impl Core {
             expired,
             &mut changes,
         )?;
-        let other_open = agents::open_requests(self.store.connection(), pane)
+        let other_open = agents::open_requests(&self.store, pane)
             .map_err(errors::storage)?
             .iter()
             .any(|r| r.request_id != request.request_id);

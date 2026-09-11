@@ -3,7 +3,6 @@ use crate::{
     errors::{self, Result},
     model,
 };
-use rusqlite::params;
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, Workspace};
 use std::path::Path;
@@ -25,10 +24,7 @@ impl Core {
             layout: json!({"panes":[]}),
         };
         let mutation = self.mutate(connection, "workspace.create", params, |tx| {
-            tx.execute(
-                "INSERT INTO workspaces(id,payload) VALUES (?1,?2)",
-                params![workspace.workspace_id, serde_json::to_string(&workspace)?],
-            )?;
+            tx.insert_workspace(&workspace)?;
             Ok((
                 json!({"workspace":workspace}),
                 vec![("workspace.created".into(), json!({"workspace":workspace}))],
@@ -49,10 +45,7 @@ impl Core {
             workspace.name = params["name"].as_str().expect("name").into();
             return Ok(self
                 .mutate(connection, method, params, |tx| {
-                    tx.execute(
-                        "UPDATE workspaces SET payload=?1 WHERE id=?2",
-                        params![serde_json::to_string(&workspace)?, id],
-                    )?;
+                    tx.update_workspace(&workspace)?;
                     Ok((
                         json!({"workspace":workspace}),
                         vec![("workspace.renamed".into(), json!({"workspace":workspace}))],
@@ -62,10 +55,12 @@ impl Core {
         }
         if method == "workspace.focus" {
             let scope = self.clients[connection].scope.clone();
-            return Ok(self.mutate(connection,method,params,|tx| {
-                tx.execute("INSERT INTO client_focus(scope,workspace_id,pane_id) VALUES (?1,?2,NULL) ON CONFLICT(scope) DO UPDATE SET workspace_id=excluded.workspace_id,pane_id=NULL",params![scope,id])?;
-                Ok((json!({"workspaceId":id}),vec![]))
-            })?.result);
+            return Ok(self
+                .mutate(connection, method, params, |tx| {
+                    tx.focus_workspace(&scope, id)?;
+                    Ok((json!({"workspaceId":id}), vec![]))
+                })?
+                .result);
         }
         let closed: Vec<_> = self
             .panes
@@ -75,12 +70,7 @@ impl Core {
             .collect();
         let result = self
             .mutate(connection, method, params, |tx| {
-                tx.execute("UPDATE workspaces SET closed=1 WHERE id=?1", [id])?;
-                tx.execute("UPDATE panes SET closed=1 WHERE workspace_id=?1", [id])?;
-                tx.execute(
-                    "UPDATE client_focus SET workspace_id=NULL,pane_id=NULL WHERE workspace_id=?1",
-                    [id],
-                )?;
+                tx.close_workspace(id)?;
                 let mut events: Vec<_> = closed
                     .iter()
                     .map(|p| {

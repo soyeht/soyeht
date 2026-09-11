@@ -30,18 +30,12 @@ impl Core {
         let mut changes = Changes::default();
         match record.message {
             response @ Message::Response { .. } => {
-                responses::response(
-                    self.store.connection(),
-                    &mut state,
-                    &mut saved,
-                    response,
-                    &mut changes,
-                )?;
+                responses::response(&self.store, &mut state, &mut saved, response, &mut changes)?;
             }
             Message::Notification { method, params } => {
                 if method == "session/update" {
                     updates::update(
-                        self.store.connection(),
+                        &self.store,
                         pane,
                         saved.pane.generation,
                         &mut state,
@@ -51,13 +45,9 @@ impl Core {
                 }
             }
             Message::Request { id, method, params } => {
-                if let Some(prior) = agents::request_at(
-                    self.store.connection(),
-                    pane,
-                    saved.pane.generation,
-                    record.from_seq,
-                )
-                .map_err(errors::storage)?
+                if let Some(prior) =
+                    agents::request_at(&self.store, pane, saved.pane.generation, record.from_seq)
+                        .map_err(errors::storage)?
                 {
                     if prior.native_id != id || prior.method != method || prior.params != params {
                         return Err(errors::error(
@@ -365,7 +355,7 @@ impl Core {
         {
             let mut changes = Changes::default();
             for method in responses::PROBED_METHODS {
-                if agents::probe(self.store.connection(), &state.fingerprint, method)
+                if agents::probe(&self.store, &state.fingerprint, method)
                     .map_err(errors::storage)?
                     .is_none()
                 {
@@ -386,8 +376,7 @@ impl Core {
             )?;
             return self.restart_after_probe(pane);
         }
-        let mut open =
-            agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?;
+        let mut open = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
         for request in &open {
             let selected = questions::automatic(&state, request, &self.panes[pane].stored.pane.cwd);
             let expired = request.expires_ms <= now_ms();
@@ -412,7 +401,7 @@ impl Core {
                 json!({}),
             )?;
         }
-        open = agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?;
+        open = agents::open_requests(&self.store, pane).map_err(errors::storage)?;
         let mut saved = self.panes[pane].stored.clone();
         if open.is_empty() && saved.pane.state == PaneState::WaitingForYou && state.active.is_some()
         {

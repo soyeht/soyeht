@@ -15,7 +15,6 @@ serde_json = "1.0"
 libc = "0.2"
 uuid = { version = "1", features = ["v4", "serde"] }
 base64 = "0.22"
-rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 crc32fast = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "signal"] }

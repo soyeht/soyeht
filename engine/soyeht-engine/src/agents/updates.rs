@@ -7,9 +7,21 @@ use crate::errors::{self, Result};
 use serde_json::{Value, json};
 use soyeht_acp::session::{self, Update};
 use soyeht_protocol::{ConfigValue, ErrorKind, TokenUsage, TranscriptKind, TranscriptRole};
+use soyeht_store::database::Store;
+
+fn append_replayed_user(
+    store: &Store,
+    pane: &str,
+    state: &mut State,
+    generation: u32,
+    text: &str,
+    changes: &mut Changes,
+) -> Result<()> {
+    transcript::append_text_role(store, pane, state, generation, "user", text, changes)
+}
 
 pub fn update(
-    db: &rusqlite::Connection,
+    store: &Store,
     pane: &str,
     generation: u32,
     state: &mut State,
@@ -47,7 +59,7 @@ pub fn update(
             _ => "other",
         };
         if state.replay_role.as_deref() != Some(role) {
-            transcript::complete(db, pane, state, changes)?;
+            transcript::complete(store, pane, state, changes)?;
             state.replay_role = Some(role.into());
         }
     }
@@ -65,7 +77,7 @@ pub fn update(
                 let text = content["text"]
                     .as_str()
                     .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Replay has no text"))?;
-                transcript::append_text_role(db, pane, state, generation, "user", text, changes)?;
+                append_replayed_user(store, pane, state, generation, text, changes)?;
             }
         }
         Update::Message { thought, content } => {
@@ -78,7 +90,7 @@ pub fn update(
             let text = content["text"].as_str().ok_or_else(|| {
                 errors::error(ErrorKind::InvalidParams, "Text response has no text")
             })?;
-            transcript::append_text(db, pane, state, generation, thought, text, changes)?;
+            transcript::append_text(store, pane, state, generation, thought, text, changes)?;
         }
         Update::Tool { update, fields } => {
             let id = fields["toolCallId"].as_str().expect("checked tool ID");
@@ -92,7 +104,7 @@ pub fn update(
             let prior = state
                 .open_messages
                 .get(&key)
-                .map(|seq| transcript::message(db, pane, *seq))
+                .map(|seq| transcript::message(store, pane, *seq))
                 .transpose()?
                 .flatten();
             let mut item = match prior {

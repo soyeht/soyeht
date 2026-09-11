@@ -11,6 +11,7 @@ pub const SCHEMA_VERSION: u32 = 6;
 #[derive(Debug)]
 pub enum Error {
     Sql(rusqlite::Error),
+    DiskFull,
     Json(serde_json::Error),
     Io(io::Error),
     FutureVersion(u32),
@@ -22,6 +23,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sql(e) => write!(f, "database: {e}"),
+            Self::DiskFull => f.write_str("storage is full"),
             Self::Json(e) => write!(f, "JSON: {e}"),
             Self::Io(e) => write!(f, "storage: {e}"),
             Self::FutureVersion(v) => write!(f, "database schema {v} is newer than this engine"),
@@ -34,7 +36,15 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
-        Self::Sql(e)
+        if matches!(
+            e,
+            rusqlite::Error::SqliteFailure(code, _)
+                if code.code == rusqlite::ErrorCode::DiskFull
+        ) {
+            Self::DiskFull
+        } else {
+            Self::Sql(e)
+        }
     }
 }
 impl From<serde_json::Error> for Error {
@@ -68,8 +78,22 @@ pub struct Snapshot {
 }
 
 pub struct Store {
-    connection: Connection,
+    pub(crate) connection: Connection,
     pub db_id: String,
+}
+
+/// The only database write capability exposed to engine mutations.
+///
+/// Its driver transaction stays private to this crate. Domain modules add
+/// named operations to this type so callers cannot execute arbitrary SQL.
+pub struct Change<'connection> {
+    pub(crate) transaction: Transaction<'connection>,
+}
+
+impl Change<'_> {
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.transaction
+    }
 }
 
 impl Store {
@@ -165,12 +189,12 @@ impl Store {
         scope: &str,
         key: &str,
         fingerprint: &str,
-        change: F,
+        apply: F,
     ) -> Result<Mutation>
     where
-        F: FnOnce(&Transaction<'_>) -> Result<(Value, Vec<(String, Value)>)>,
+        F: FnOnce(&Change<'_>) -> Result<(Value, Vec<(String, Value)>)>,
     {
-        self.mutate_as(scope, key, fingerprint, None, change)
+        self.mutate_as(scope, key, fingerprint, None, apply)
     }
 
     pub fn mutate_as<F>(
@@ -179,18 +203,20 @@ impl Store {
         key: &str,
         fingerprint: &str,
         actor: Option<&Value>,
-        change: F,
+        apply: F,
     ) -> Result<Mutation>
     where
-        F: FnOnce(&Transaction<'_>) -> Result<(Value, Vec<(String, Value)>)>,
+        F: FnOnce(&Change<'_>) -> Result<(Value, Vec<(String, Value)>)>,
     {
         if scope.is_empty() || key.is_empty() || key.len() > 128 {
             return Err(Error::Invalid("invalid idempotency scope or key"));
         }
-        let tx = self
+        let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let previous: Option<(String, String)> = tx
+        let change = Change { transaction };
+        let previous: Option<(String, String)> = change
+            .transaction
             .query_row(
                 "SELECT fingerprint,result FROM idempotency WHERE scope=?1 AND key=?2",
                 params![scope, key],
@@ -207,7 +233,7 @@ impl Store {
                 repeated: true,
             });
         }
-        let (result, pending) = change(&tx)?;
+        let (result, pending) = apply(&change)?;
         let mut events = Vec::new();
         let at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let now = Utc::now().timestamp();
@@ -215,17 +241,17 @@ impl Store {
             let object = payload
                 .as_object_mut()
                 .ok_or(Error::Invalid("event parameters must be an object"))?;
-            tx.execute(
+            change.transaction.execute(
                 "INSERT INTO events(method,params,created_unix) VALUES (?1,'{}',?2)",
                 params![method, now],
             )?;
-            let id = tx.last_insert_rowid() as u64;
+            let id = change.transaction.last_insert_rowid() as u64;
             object.insert("eventId".into(), json!(id.to_string()));
             object.insert("at".into(), json!(at));
             if let Some(actor) = actor {
                 object.insert("actor".into(), actor.clone());
             }
-            tx.execute(
+            change.transaction.execute(
                 "UPDATE events SET params=?1 WHERE id=?2",
                 params![serde_json::to_string(&payload)?, id as i64],
             )?;
@@ -235,8 +261,8 @@ impl Store {
                 params: payload,
             });
         }
-        tx.execute("INSERT INTO idempotency(scope,key,fingerprint,result,created_unix,actor) VALUES (?1,?2,?3,?4,?5,?6)", params![scope,key,fingerprint,serde_json::to_string(&result)?,now,actor.map(serde_json::to_string).transpose()?])?;
-        tx.commit()?;
+        change.transaction.execute("INSERT INTO idempotency(scope,key,fingerprint,result,created_unix,actor) VALUES (?1,?2,?3,?4,?5,?6)", params![scope,key,fingerprint,serde_json::to_string(&result)?,now,actor.map(serde_json::to_string).transpose()?])?;
+        change.transaction.commit()?;
         Ok(Mutation {
             result,
             events,

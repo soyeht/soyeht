@@ -49,9 +49,7 @@ impl Core {
             clear_replay: true,
             ..Changes::default()
         };
-        for request in
-            agents::open_requests(self.store.connection(), pane).map_err(errors::storage)?
-        {
+        for request in agents::open_requests(&self.store, pane).map_err(errors::storage)? {
             super::questions::decision(
                 &mut state,
                 &request,
@@ -64,7 +62,7 @@ impl Core {
         }
         changes.outgoing.clear();
         if state.phase != Phase::Loading {
-            transcript::complete(self.store.connection(), pane, &mut state, &mut changes)?;
+            transcript::complete(&self.store, pane, &mut state, &mut changes)?;
         }
         state.open_messages.clear();
         changes.messages.push(transcript::new_message(
@@ -162,7 +160,7 @@ impl Core {
                 .min()
                 .unwrap_or(0),
         );
-        let human_question = agents::open_requests(self.store.connection(), pane)
+        let human_question = agents::open_requests(&self.store, pane)
             .map_err(errors::storage)?
             .iter()
             .any(|r| {

@@ -4,7 +4,6 @@ use crate::{
     screen::Screen,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rusqlite::{OptionalExtension, Transaction, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, PaneState, StateSource};
 use soyeht_ptyd::{
@@ -12,7 +11,7 @@ use soyeht_ptyd::{
     wire::{Instance, ProcessKind, Request, Response, Spawn},
 };
 use soyeht_store::{
-    database::{Event, Mutation, Store},
+    database::{Change, Event, Mutation, Store},
     segments::Record,
 };
 use std::{
@@ -57,15 +56,14 @@ impl Core {
         for stored in model::panes(&core.store)? {
             if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
                 let mut state: crate::agents::state::State =
-                    soyeht_store::agents::runtime(core.store.connection(), &stored.pane.pane_id)
+                    soyeht_store::agents::runtime(&core.store, &stored.pane.pane_id)
                         .map_err(errors::storage)?
                         .ok_or_else(|| {
                             errors::error(ErrorKind::InternalError, "Agent pane has no checkpoint")
                         })?;
-                state.queue =
-                    soyeht_store::agents::queue(core.store.connection(), &stored.pane.pane_id)
-                        .map_err(errors::storage)?
-                        .into();
+                state.queue = soyeht_store::agents::queue(&core.store, &stored.pane.pane_id)
+                    .map_err(errors::storage)?
+                    .into();
                 core.agents.insert(
                     stored.pane.pane_id.clone(),
                     crate::agents::Running::new(state),
@@ -119,9 +117,7 @@ impl Core {
         change: F,
     ) -> Result<Mutation>
     where
-        F: FnOnce(
-            &Transaction<'_>,
-        ) -> soyeht_store::database::Result<(Value, Vec<(String, Value)>)>,
+        F: FnOnce(&Change<'_>) -> soyeht_store::database::Result<(Value, Vec<(String, Value)>)>,
     {
         let client = self
             .clients
@@ -201,21 +197,13 @@ impl Core {
             ));
         };
         for operation_key in receipts {
-            let pending: bool = self
+            let pending = self
                 .store
-                .connection()
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM input_intents WHERE operation_key=?1)",
-                    [&operation_key],
-                    |r| r.get(0),
-                )
-                .map_err(|e| errors::storage(e.into()))?;
+                .input_intent_operation_pending(&operation_key)
+                .map_err(errors::storage)?;
             if !pending
-                && !crate::agents::delivery::receipt_pending(
-                    self.store.connection(),
-                    &operation_key,
-                )
-                .map_err(errors::storage)?
+                && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)
+                    .map_err(errors::storage)?
             {
                 self.pty_request(Request::ConfirmInput { operation_key })?;
             }
@@ -268,15 +256,7 @@ impl Core {
                     self.recover_missing_agent(&id)?;
                     continue;
                 }
-                let auth_launch: bool = self
-                    .store
-                    .connection()
-                    .query_row(
-                        "SELECT EXISTS(SELECT 1 FROM pane_launches WHERE pane_id=?1)",
-                        [&id],
-                        |r| r.get(0),
-                    )
-                    .map_err(|e| errors::storage(e.into()))?;
+                let auth_launch = self.store.has_pane_launch(&id).map_err(errors::storage)?;
                 if auth_launch && saved.instance_id.is_some() {
                     let mut stopped = saved;
                     stopped.pane.pid = None;
@@ -314,23 +294,7 @@ impl Core {
             return self.spawn_agent(id);
         }
         let pane = &self.panes[id].stored;
-        let launch: Option<String> = self
-            .store
-            .connection()
-            .query_row(
-                "SELECT payload FROM pane_launches WHERE pane_id=?1",
-                [id],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|e| errors::storage(e.into()))?;
-        let launch: Option<Spawn> = launch
-            .map(|raw| {
-                serde_json::from_str(&raw).map_err(|_| {
-                    errors::error(ErrorKind::InternalError, "Invalid private pane launch")
-                })
-            })
-            .transpose()?;
+        let launch: Option<Spawn> = self.store.pane_launch(id).map_err(errors::storage)?;
         let config = Spawn {
             instance_key: pane.instance_key.clone(),
             generation: pane.pane.generation,
@@ -484,9 +448,8 @@ impl Core {
     }
 }
 
-pub fn write_pane(tx: &Transaction<'_>, saved: &StoredPane) -> soyeht_store::database::Result<()> {
-    tx.execute("UPDATE panes SET payload=?1,closed=?2,instance_key=?3,instance_id=?4,supervisor_id=?5,sequence_base=?6 WHERE id=?7",params![serde_json::to_string(&saved.pane)?,saved.closed,saved.instance_key,saved.instance_id,saved.supervisor_id,saved.sequence_base.to_string(),saved.pane.pane_id])?;
-    Ok(())
+pub fn write_pane(tx: &Change<'_>, saved: &StoredPane) -> soyeht_store::database::Result<()> {
+    tx.update_pane(saved)
 }
 pub fn state_event(saved: &StoredPane) -> Value {
     json!({"paneId":saved.pane.pane_id,"state":saved.pane.state,"source":saved.pane.source,"confidence":saved.pane.confidence,"phrase":saved.pane.phrase,"generation":saved.pane.generation})

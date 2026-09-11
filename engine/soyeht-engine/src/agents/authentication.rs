@@ -5,12 +5,22 @@ use crate::{
     model::{RunningPane, StoredPane},
     screen::Screen,
 };
-use rusqlite::params;
 use serde_json::{Value, json};
 use soyeht_acp::session::AuthKind;
 use soyeht_protocol::{ErrorKind, PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
 use uuid::Uuid;
+
+fn auth_pane_created(
+    agent_id: &str,
+    child_id: &str,
+    pane: &soyeht_protocol::Pane,
+) -> (Value, Vec<(String, Value)>) {
+    (
+        json!({"paneId":agent_id,"terminalPaneId":child_id}),
+        vec![("pane.created".into(), json!({"pane":pane}))],
+    )
+}
 
 impl Core {
     pub fn agent_auth_start(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -127,11 +137,11 @@ impl Core {
             .map_err(errors::io)?;
         state.login_pane_id = Some(child_id.clone());
         let generation = self.panes[id].stored.pane.generation;
-        let mutation = self.mutate(connection,"pane.auth.start",params,|tx| {
-            tx.execute("INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base) VALUES (?1,?2,?3,?4,'0')",params![child_id,child.pane.workspace_id,serde_json::to_string(&child.pane)?,child.instance_key])?;
-            tx.execute("INSERT INTO pane_launches(pane_id,payload) VALUES (?1,?2)",params![child_id,serde_json::to_string(&launch)?])?;
-            soyeht_store::agents::save_runtime(tx,id,generation,&state)?;
-            Ok((json!({"paneId":id,"terminalPaneId":child_id}),vec![("pane.created".into(),json!({"pane":child.pane}))]))
+        let mutation = self.mutate(connection, "pane.auth.start", params, |tx| {
+            tx.insert_pane(&child)?;
+            tx.insert_pane_launch(&child_id, &launch)?;
+            soyeht_store::agents::save_runtime(tx, id, generation, &state)?;
+            Ok(auth_pane_created(id, &child_id, &child.pane))
         })?;
         if !mutation.repeated {
             self.agents.get_mut(id).expect("agent").state = state;

@@ -23,8 +23,8 @@ impl Core {
             clear_replay: true,
             ..Changes::default()
         };
-        for request in soyeht_store::agents::open_requests(self.store.connection(), id)
-            .map_err(errors::storage)?
+        for request in
+            soyeht_store::agents::open_requests(&self.store, id).map_err(errors::storage)?
         {
             super::questions::decision(
                 &mut state,
@@ -42,7 +42,7 @@ impl Core {
         if state.phase == Phase::Loading {
             state.open_messages.clear();
         } else {
-            super::transcript::complete(self.store.connection(), id, &mut state, &mut changes)?;
+            super::transcript::complete(&self.store, id, &mut state, &mut changes)?;
         }
         if let Some(prompt) = state.active.take() {
             changes.events.push((

@@ -6,7 +6,6 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{SecondsFormat, Utc};
-use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{Device, ErrorKind};
@@ -28,20 +27,12 @@ struct Pending {
 
 impl Core {
     pub fn pending_pair_view(&self) -> Result<Value> {
-        let mut statement = self
+        let rows: Vec<Pending> = self
             .store
-            .connection()
-            .prepare("SELECT payload FROM pair_requests WHERE expires_unix>?1 ORDER BY id")
-            .map_err(|e| errors::storage(e.into()))?;
-        let rows = statement
-            .query_map([Utc::now().timestamp()], |r| r.get::<_, String>(0))
-            .map_err(|e| errors::storage(e.into()))?;
+            .active_pair_requests(Utc::now().timestamp())
+            .map_err(errors::storage)?;
         let mut requests = vec![];
-        for row in rows {
-            let pending: Pending = serde_json::from_str(
-                &row.map_err(|e| errors::storage(e.into()))?,
-            )
-            .map_err(|_| errors::error(ErrorKind::InternalError, "Invalid pairing record"))?;
+        for pending in rows {
             if pending.proved && pending.approved.is_none() {
                 let public = auth::public_key(&pending.key)
                     .map_err(|s| errors::error(ErrorKind::InternalError, s))?;
@@ -52,23 +43,15 @@ impl Core {
     }
 
     fn pending_pair(&self, id: &str) -> Result<Pending> {
-        let raw: Option<String> = self
-            .store
-            .connection()
-            .query_row(
-                "SELECT payload FROM pair_requests WHERE id=?1 AND expires_unix>?2",
-                params![id, Utc::now().timestamp()],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|e| errors::storage(e.into()))?;
-        serde_json::from_str(&raw.ok_or_else(|| {
-            errors::error(
-                ErrorKind::Unauthorized,
-                "Pairing request missing or expired",
-            )
-        })?)
-        .map_err(|_| errors::error(ErrorKind::InternalError, "Invalid pairing record"))
+        self.store
+            .active_pair_request(id, Utc::now().timestamp())
+            .map_err(errors::storage)?
+            .ok_or_else(|| {
+                errors::error(
+                    ErrorKind::Unauthorized,
+                    "Pairing request missing or expired",
+                )
+            })
     }
 
     pub fn pair_request(
@@ -91,26 +74,18 @@ impl Core {
             let public =
                 auth::public_key(key).map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
             let scope = format!("pair:{}", auth::fingerprint(&public));
-            let receipt: Option<(String, String)> = self
+            let receipt = self
                 .store
-                .connection()
-                .query_row(
-                    "SELECT fingerprint,result FROM idempotency WHERE scope=?1 AND key=?2",
-                    params![scope, idem],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-                .map_err(|e| errors::storage(e.into()))?;
-            if let Some((previous, result)) = receipt {
-                if previous != fingerprint {
+                .idempotency_receipt(&scope, idem)
+                .map_err(errors::storage)?;
+            if let Some(receipt) = receipt {
+                if receipt.fingerprint != fingerprint {
                     return Err(errors::error(
                         ErrorKind::IdempotencyConflict,
                         "Pairing key reused with different content",
                     ));
                 }
-                let result: Value = serde_json::from_str(&result).map_err(|_| {
-                    errors::error(ErrorKind::InternalError, "Invalid pairing receipt")
-                })?;
+                let result = receipt.result;
                 let id = result["requestId"].as_str().ok_or_else(|| {
                     errors::error(ErrorKind::InternalError, "Missing pairing request")
                 })?;
@@ -121,16 +96,10 @@ impl Core {
                     .pair_request = Some(id.into());
                 return Ok(result);
             }
-            let expires: Option<i64> = self
+            let expires = self
                 .store
-                .connection()
-                .query_row(
-                    "SELECT expires_unix FROM pair_windows WHERE code=?1 AND expires_unix>?2",
-                    params![code, Utc::now().timestamp()],
-                    |r| r.get(0),
-                )
-                .optional()
-                .map_err(|e| errors::storage(e.into()))?;
+                .active_pair_window_expiry(code, Utc::now().timestamp())
+                .map_err(errors::storage)?;
             let expires = expires.ok_or_else(|| {
                 errors::error(ErrorKind::Unauthorized, "Pairing code expired or invalid")
             })?;
@@ -148,9 +117,7 @@ impl Core {
                 expires,
             };
             let mutation=self.store.mutate(&scope,idem,&fingerprint,|tx| {
-                let count:i64=tx.query_row("SELECT COUNT(*) FROM pair_requests WHERE expires_unix>?1",[Utc::now().timestamp()],|r|r.get(0))?;
-                if count>=64 {return Err(soyeht_store::database::Error::Invalid("pairing request limit reached"));}
-                tx.execute("INSERT INTO pair_requests(id,payload,expires_unix) VALUES (?1,?2,?3)",params![pending.id,serde_json::to_string(&pending)?,expires])?;
+                tx.insert_pair_request(&pending.id, &pending, expires, Utc::now().timestamp())?;
                 Ok((json!({"requestId":pending.id,"challenge":STANDARD.encode(pending.challenge)}),vec![]))
             }).map_err(errors::storage)?;
             self.clients
@@ -185,7 +152,7 @@ impl Core {
         let was_proved = pending.proved;
         pending.proved = true;
         let mutation=self.store.mutate(&scope,idem,&fingerprint,|tx| {
-            tx.execute("UPDATE pair_requests SET payload=?1 WHERE id=?2",params![serde_json::to_string(&pending)?,id])?;
+            tx.update_pair_request(id, &pending)?;
             let events=if was_proved {vec![]}else{vec![("device.pair_requested".into(),json!({"requestId":id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public)}))]};
             Ok((json!({"status":"pending"}),events))
         }).map_err(errors::storage)?;
@@ -226,33 +193,21 @@ impl Core {
                 self.store.db_id, self.pair_address, code
             );
             return Ok(self.mutate(connection,method,params,|tx| {
-                tx.execute("DELETE FROM pair_windows WHERE expires_unix<=?1",[Utc::now().timestamp()])?;
-                tx.execute("DELETE FROM pair_requests WHERE expires_unix<=?1",[Utc::now().timestamp()])?;
-                tx.execute("INSERT INTO pair_windows(code,expires_unix) VALUES (?1,?2)",params![code,expires.timestamp()])?;
+                tx.open_pair_window(&code, expires.timestamp(), Utc::now().timestamp())?;
                 Ok((json!({"code":code,"expiresAt":expires.to_rfc3339_opts(SecondsFormat::Secs,true),"uri":uri}),vec![]))
             })?.result);
         }
         if method == "device.revoke" {
             let id = params["deviceId"].as_str().expect("device");
-            let raw: Option<String> = self
+            let mut device: Device = self
                 .store
-                .connection()
-                .query_row("SELECT payload FROM devices WHERE id=?1", [id], |r| {
-                    r.get(0)
-                })
-                .optional()
-                .map_err(|e| errors::storage(e.into()))?;
-            let mut device: Device = serde_json::from_str(
-                &raw.ok_or_else(|| errors::error(ErrorKind::NotFound, "Device not found"))?,
-            )
-            .map_err(|_| errors::error(ErrorKind::InternalError, "Invalid device record"))?;
+                .device(id)
+                .map_err(errors::storage)?
+                .ok_or_else(|| errors::error(ErrorKind::NotFound, "Device not found"))?;
             device.revoked = true;
             let result = self
                 .mutate(connection, method, params, |tx| {
-                    tx.execute(
-                        "UPDATE devices SET payload=?1,revoked=1 WHERE id=?2",
-                        params![serde_json::to_string(&device)?, id],
-                    )?;
+                    tx.revoke_device(id, &device)?;
                     Ok((
                         json!({"deviceId":id}),
                         vec![("device.revoked".into(), json!({"deviceId":id}))],
@@ -283,15 +238,10 @@ impl Core {
         let approve = params["approve"].as_bool().expect("approve");
         pending.approved = Some(approve);
         if approve {
-            let available: bool = self
+            let available = self
                 .store
-                .connection()
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM pair_windows WHERE code=?1 AND expires_unix>?2)",
-                    params![pending.code, Utc::now().timestamp()],
-                    |row| row.get(0),
-                )
-                .map_err(|e| errors::storage(e.into()))?;
+                .pair_window_active(&pending.code, Utc::now().timestamp())
+                .map_err(errors::storage)?;
             if !available {
                 return Err(errors::error(
                     ErrorKind::Unauthorized,
@@ -307,16 +257,30 @@ impl Core {
                 revoked: false,
             });
         }
-        let result=self.mutate(connection,method,params,|tx| {
-            let mut events=vec![];
-            if let Some(device)=&pending.device {
-                tx.execute("DELETE FROM pair_windows WHERE code=?1", [&pending.code])?;
-                tx.execute("INSERT INTO devices(id,payload,public_key,token_hash) VALUES (?1,?2,?3,?4)",params![device.device_id,serde_json::to_string(device)?,public.as_bytes().as_slice(),auth::token_hash(pending.token.as_ref().expect("token"))])?;
-                events.push(("device.paired".into(),json!({"device":device})));
-            }
-            tx.execute("UPDATE pair_requests SET payload=?1 WHERE id=?2",params![serde_json::to_string(&pending)?,id])?;
-            Ok((json!({"requestId":id,"approved":approve}),events))
-        })?.result;
+        let result = self
+            .mutate(connection, method, params, |tx| {
+                let mut events = vec![];
+                if let Some(device) = &pending.device {
+                    let token =
+                        pending
+                            .token
+                            .as_deref()
+                            .ok_or(soyeht_store::database::Error::Invalid(
+                                "approved pair request has no token",
+                            ))?;
+                    tx.consume_pair_window_and_insert_device(
+                        &pending.code,
+                        &device.device_id,
+                        device,
+                        public.as_bytes(),
+                        &auth::token_hash(token),
+                    )?;
+                    events.push(("device.paired".into(), json!({"device":device})));
+                }
+                tx.update_pair_request(id, &pending)?;
+                Ok((json!({"requestId":id,"approved":approve}), events))
+            })?
+            .result;
         for (connection, _) in self
             .clients
             .iter()

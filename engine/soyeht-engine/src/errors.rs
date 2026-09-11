@@ -19,11 +19,7 @@ pub fn storage(error_value: soyeht_store::database::Error) -> RpcError {
         ),
         Error::CursorTooOld => error(ErrorKind::CursorTooOld, "Request a new snapshot"),
         Error::Invalid(message) => error(ErrorKind::InvalidParams, message),
-        Error::Sql(rusqlite::Error::SqliteFailure(code, _))
-            if code.code == rusqlite::ErrorCode::DiskFull =>
-        {
-            error(ErrorKind::DiskFull, "Storage is full")
-        }
+        Error::DiskFull => error(ErrorKind::DiskFull, "Storage is full"),
         _ => error(ErrorKind::InternalError, "Storage operation failed"),
     }
 }

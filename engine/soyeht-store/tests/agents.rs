@@ -1,9 +1,13 @@
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
-use soyeht_protocol::{ProbeCapability, ProbeResult, TranscriptMessage, limits};
+use soyeht_protocol::{
+    Pane, PaneMode, PaneState, ProbeCapability, ProbeResult, StateSource, TranscriptMessage,
+    Workspace, limits,
+};
 use soyeht_store::{
     agents::{self, NativeRequest, Outgoing},
     database::{Error, Store},
+    domain::PaneRecord,
 };
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
@@ -25,12 +29,43 @@ impl Drop for Profile {
     }
 }
 fn seed(store: &mut Store) {
-    store.mutate("test","seed","seed",|tx| {
-        tx.execute("INSERT INTO workspaces(id,payload) VALUES ('w','{}')",[])?;
-        tx.execute("INSERT INTO panes(id,workspace_id,payload,instance_key) VALUES ('p','w','{}','process')",[])?;
-        agents::save_runtime(tx,"p",1,&json!({"nextOffset":0,"queue":[]}))?;
-        Ok((json!({}),vec![]))
-    }).unwrap();
+    store
+        .mutate("test", "seed", "seed", |change| {
+            change.insert_workspace(&Workspace {
+                workspace_id: "w".into(),
+                name: "Workspace".into(),
+                path: "/tmp".into(),
+                layout: json!({}),
+            })?;
+            change.insert_pane(&PaneRecord {
+                pane: Pane {
+                    pane_id: "p".into(),
+                    workspace_id: "w".into(),
+                    name: "Agent".into(),
+                    cwd: "/tmp".into(),
+                    mode: PaneMode::Agent,
+                    state: PaneState::Idle,
+                    source: StateSource::Protocol,
+                    confidence: 1.0,
+                    phrase: String::new(),
+                    generation: 1,
+                    cols: 80,
+                    rows: 24,
+                    record: true,
+                    pid: None,
+                    stream_id: None,
+                    agent: None,
+                },
+                closed: false,
+                instance_key: "process".into(),
+                instance_id: None,
+                supervisor_id: None,
+                sequence_base: 0,
+            })?;
+            agents::save_runtime(change, "p", 1, &json!({"nextOffset":0,"queue":[]}))?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
 }
 fn incoming() -> NativeRequest {
     NativeRequest {
@@ -80,10 +115,7 @@ fn native_replay_is_private_until_atomic_publication_and_survives_restart() {
     drop(store);
     let mut store = profile.store();
     assert_eq!(
-        agents::transcript(store.connection(), "p", None, 100)
-            .unwrap()
-            .items[0]
-            .text,
+        agents::transcript(&store, "p", None, 100).unwrap().items[0].text,
         "Original"
     );
     let failed = store.mutate("test", "publish", "publish", |tx| {
@@ -92,10 +124,7 @@ fn native_replay_is_private_until_atomic_publication_and_survives_restart() {
     });
     assert!(failed.is_err());
     assert_eq!(
-        agents::transcript(store.connection(), "p", None, 100)
-            .unwrap()
-            .items[0]
-            .text,
+        agents::transcript(&store, "p", None, 100).unwrap().items[0].text,
         "Original"
     );
     store
@@ -110,7 +139,7 @@ fn native_replay_is_private_until_atomic_publication_and_survives_restart() {
             ))
         })
         .unwrap();
-    let page = agents::transcript(store.connection(), "p", None, 100).unwrap();
+    let page = agents::transcript(&store, "p", None, 100).unwrap();
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].text, "Restored");
     assert_eq!(page.items[0].generation, 2);
@@ -145,7 +174,7 @@ fn request_identity_deadline_answer_and_native_outbox_survive_crash_boundaries()
         .unwrap();
     drop(store);
     let mut store = profile.store();
-    let runtime: Value = agents::runtime(store.connection(), "p").unwrap().unwrap();
+    let runtime: Value = agents::runtime(&store, "p").unwrap().unwrap();
     assert_eq!(runtime["pendingCall"], "s-7");
     let mut replay = incoming();
     replay.request_id = "new-id-must-not-win".into();
@@ -174,13 +203,13 @@ fn request_identity_deadline_answer_and_native_outbox_survive_crash_boundaries()
     });
     assert!(failed.is_err());
     assert!(
-        agents::request(store.connection(), "request-1")
+        agents::request(&store, "request-1")
             .unwrap()
             .unwrap()
             .result
             .is_none()
     );
-    assert!(agents::outbox(store.connection(), "p").unwrap().is_empty());
+    assert!(agents::outbox(&store, "p").unwrap().is_empty());
     let winning = json!({"by":"iphone","result":"selected"});
     store
         .mutate("phone", "answer", "answer", |tx| {
@@ -194,10 +223,7 @@ fn request_identity_deadline_answer_and_native_outbox_survive_crash_boundaries()
         .unwrap();
     drop(store);
     let mut store = profile.store();
-    assert_eq!(
-        agents::outbox(store.connection(), "p").unwrap(),
-        vec![outgoing()]
-    );
+    assert_eq!(agents::outbox(&store, "p").unwrap(), vec![outgoing()]);
     store
         .mutate("mac", "late", "answer", |tx| {
             let decision =
@@ -207,11 +233,7 @@ fn request_identity_deadline_answer_and_native_outbox_survive_crash_boundaries()
             Ok((decision.result, vec![]))
         })
         .unwrap();
-    assert!(
-        agents::open_requests(store.connection(), "p")
-            .unwrap()
-            .is_empty()
-    );
+    assert!(agents::open_requests(&store, "p").unwrap().is_empty());
     store
         .mutate("native", "delivered", "receipt", |tx| {
             let sent = agents::advance(tx, &outgoing(), outgoing().bytes.len())?;
@@ -221,9 +243,9 @@ fn request_identity_deadline_answer_and_native_outbox_survive_crash_boundaries()
         .unwrap();
     drop(store);
     let store = profile.store();
-    assert!(agents::outbox(store.connection(), "p").unwrap().is_empty());
+    assert!(agents::outbox(&store, "p").unwrap().is_empty());
     assert_eq!(
-        agents::request(store.connection(), "request-1")
+        agents::request(&store, "request-1")
             .unwrap()
             .unwrap()
             .result,
@@ -246,7 +268,7 @@ fn full_prompt_queue_retains_escaped_text_and_changes_atomically_with_the_checkp
     }).unwrap();
     drop(store);
     let mut store = profile.store();
-    let items = agents::queue(store.connection(), "p").unwrap();
+    let items = agents::queue(&store, "p").unwrap();
     assert_eq!(items.len(), 64);
     for (n, item) in items.iter().enumerate() {
         assert_eq!(item.prompt_id, format!("prompt-{n}"));
@@ -271,11 +293,9 @@ fn full_prompt_queue_retains_escaped_text_and_changes_atomically_with_the_checkp
             })
             .is_err()
     );
-    assert_eq!(agents::queue(store.connection(), "p").unwrap().len(), 64);
+    assert_eq!(agents::queue(&store, "p").unwrap().len(), 64);
     assert_eq!(
-        agents::runtime::<Value>(store.connection(), "p")
-            .unwrap()
-            .unwrap()["queueRevision"],
+        agents::runtime::<Value>(&store, "p").unwrap().unwrap()["queueRevision"],
         64
     );
 }
@@ -301,7 +321,7 @@ fn partial_and_zero_byte_receipts_keep_progress_without_repeating_prior_bytes() 
         .unwrap();
     drop(store);
     let mut store = profile.store();
-    let prior = agents::outbox(store.connection(), "p").unwrap().remove(0);
+    let prior = agents::outbox(&store, "p").unwrap().remove(0);
     assert_eq!(prior.accepted_bytes, 11);
     assert!(
         store
@@ -325,10 +345,12 @@ fn partial_and_zero_byte_receipts_keep_progress_without_repeating_prior_bytes() 
             assert_eq!(next.accepted_bytes, 11);
             assert_eq!(next.attempt, 2);
             agents::enqueue(tx, &outgoing())?;
-            assert_eq!(agents::outgoing(tx, "reply-1")?, Some(next));
             Ok((json!({}), vec![]))
         })
         .unwrap();
+    let stored = agents::outgoing(&store, "reply-1").unwrap().unwrap();
+    assert_eq!(stored.accepted_bytes, 11);
+    assert_eq!(stored.attempt, 2);
 }
 
 #[test]
@@ -394,7 +416,7 @@ fn process_identity_stale_generation_and_different_native_replays_are_refused() 
         );
     }
     assert_eq!(
-        agents::outbox(store.connection(), "p").unwrap()[0].instance_id,
+        agents::outbox(&store, "p").unwrap()[0].instance_id,
         "process-1"
     );
 }
@@ -413,12 +435,12 @@ fn transcript_pages_are_bounded_ordered_and_updates_cannot_change_identity() {
             })
             .unwrap();
     }
-    let page = agents::transcript(store.connection(), "p", None, 200).unwrap();
+    let page = agents::transcript(&store, "p", None, 200).unwrap();
     assert_eq!(page.items.len(), 3);
     assert!(serde_json::to_vec(&page).unwrap().len() <= limits::TRANSCRIPT_PAGE_BYTES);
     assert_eq!(page.items[0].seq, (start + 2).to_string());
     let earlier = agents::transcript(
-        store.connection(),
+        &store,
         "p",
         Some(page.next_cursor.unwrap().parse().unwrap()),
         200,
@@ -505,14 +527,14 @@ fn transcript_retention_discards_whole_old_messages_and_probe_cache_tracks_finge
     assert!(u64::from_be_bytes(first.try_into().unwrap()) > 0);
     assert!(total <= limits::PANE_RETENTION_BYTES as i64);
     assert_eq!(
-        agents::probe(store.connection(), "fingerprint-1", "session/load")
+        agents::probe(&store, "fingerprint-1", "session/load")
             .unwrap()
             .unwrap()
             .result,
         ProbeResult::Unsupported
     );
     assert!(
-        agents::probe(store.connection(), "fingerprint-2", "session/load")
+        agents::probe(&store, "fingerprint-2", "session/load")
             .unwrap()
             .is_none()
     );
@@ -557,9 +579,7 @@ fn migration_from_v3_preserves_live_panes_and_takes_a_backup() {
     );
 }
 
-#[test]
-fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
-    let profile = Profile::new();
+fn populate_v4(profile: &Profile) -> (Value, Outgoing) {
     let mut old = Connection::open(profile.0.join("soyeht.db")).unwrap();
     for sql in [
         include_str!("../migrations/001-initial.sql"),
@@ -579,45 +599,84 @@ fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
     old.execute("INSERT INTO panes(id,workspace_id,payload,instance_key) VALUES ('p','w','{}','same-process')", []).unwrap();
     let checkpoint =
         json!({"phase":"Ready","acknowledged_offset":101,"session_id":"native-session"});
-    let tx = old.transaction().unwrap();
-    agents::save_runtime(&tx, "p", 1, &checkpoint).unwrap();
-    agents::receive(&tx, &incoming()).unwrap();
+    let request = incoming();
     let output = outgoing();
-    agents::enqueue(&tx, &output).unwrap();
-    let progress = agents::advance(&tx, &output, 3).unwrap();
-    agents::advance(&tx, &progress, 4).unwrap();
-    agents::save_message(&tx, "p", &message(1, "Durable history", true)).unwrap();
+    let transcript = message(1, "Durable history", true);
+    let transcript_json = serde_json::to_string(&transcript).unwrap();
+    let tx = old.transaction().unwrap();
+    tx.execute(
+        "INSERT INTO agent_runtime(pane_id,generation,payload) VALUES (?1,?2,?3)",
+        params!["p", 1, checkpoint.to_string()],
+    )
+    .unwrap();
+    tx.execute(
+        "INSERT INTO agent_requests(request_id,pane_id,generation,source_seq,native_id,method,params,public,expires_ms,result) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,NULL)",
+        params![
+            request.request_id,
+            request.pane_id,
+            request.generation,
+            request.source_seq.to_be_bytes().as_slice(),
+            request.native_id.to_string(),
+            request.method,
+            request.params.to_string(),
+            request.public.to_string(),
+            request.expires_ms,
+        ],
+    )
+    .unwrap();
+    tx.execute(
+        "INSERT INTO agent_outbox(operation_key,pane_id,generation,instance_id,supervisor_id,bytes,accepted_bytes,attempt) VALUES (?1,?2,?3,?4,?5,?6,7,2)",
+        params![
+            output.operation_key,
+            output.pane_id,
+            output.generation,
+            output.instance_id,
+            output.supervisor_id,
+            output.bytes,
+        ],
+    )
+    .unwrap();
+    tx.execute(
+        "INSERT INTO agent_transcript(pane_id,seq,local_id,generation,payload,bytes) VALUES (?1,?2,?3,?4,?5,?6)",
+        params![
+            "p",
+            1_u64.to_be_bytes().as_slice(),
+            transcript.local_id,
+            transcript.generation,
+            transcript_json,
+            transcript_json.len() as i64,
+        ],
+    )
+    .unwrap();
     tx.commit().unwrap();
     drop(old);
+    (checkpoint, output)
+}
+
+#[test]
+fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
+    let profile = Profile::new();
+    let (checkpoint, output) = populate_v4(&profile);
     let mut store = profile.store();
     assert_eq!(store.db_id, "v4-live");
     assert_eq!(store.next_engine_generation().unwrap(), 9);
     assert_eq!(
-        agents::runtime::<Value>(store.connection(), "p")
-            .unwrap()
-            .unwrap(),
+        agents::runtime::<Value>(&store, "p").unwrap().unwrap(),
         checkpoint
     );
     assert_eq!(
-        agents::open_requests(store.connection(), "p").unwrap()[0].source_seq,
+        agents::open_requests(&store, "p").unwrap()[0].source_seq,
         incoming().source_seq
     );
-    let resumed = agents::outbox(store.connection(), "p").unwrap();
+    let resumed = agents::outbox(&store, "p").unwrap();
     assert_eq!(resumed[0].bytes, output.bytes);
     assert_eq!(resumed[0].accepted_bytes, 7);
     assert_eq!(resumed[0].attempt, 2);
     assert_eq!(
-        agents::transcript(store.connection(), "p", None, 100)
-            .unwrap()
-            .items[0]
-            .text,
+        agents::transcript(&store, "p", None, 100).unwrap().items[0].text,
         "Durable history"
     );
-    assert!(
-        agents::attention(store.connection(), "w")
-            .unwrap()
-            .is_empty()
-    );
+    assert!(agents::attention(&store, "w").unwrap().is_empty());
     assert_eq!(
         store
             .connection()
@@ -637,7 +696,16 @@ fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
             .unwrap(),
         4
     );
-    assert_eq!(agents::outbox(&backup, "p").unwrap()[0].accepted_bytes, 7);
+    assert_eq!(
+        backup
+            .query_row(
+                "SELECT accepted_bytes FROM agent_outbox WHERE pane_id='p'",
+                [],
+                |row| row.get::<_, u32>(0),
+            )
+            .unwrap(),
+        7
+    );
 }
 
 #[test]
