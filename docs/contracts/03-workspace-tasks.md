@@ -21,6 +21,7 @@ from facts, accepts dragging, and never stays stuck when its executing pane dies
 | id | `WS-n` per workspace | yes | engine |
 | title, description | text | title yes | creator |
 | how to verify | text | no (PENDING Q2, assumed “optional in v1”) | creator |
+| must not change | text, one line per item | **yes** (decided by Caio, 2026-09-11; see addendum) | creator |
 | state | see §3 | yes | engine |
 | priority | urgent / high / medium / low | no (medium) | creator |
 | owner | pane/agent ID or empty | no | creator, dispatch or `task_next` |
@@ -74,8 +75,8 @@ in history. The engine may refuse a move with a reason, for example
 ## 4. Create
 
 Two paths, the same contract:
-- “New task” dialog: title, description, executor, priority, worktree,
-  permission, dependencies. Buttons “Create in list” (⌘Enter) and
+- “New task” dialog: title, description, **must not change** (required),
+  executor, priority, worktree, permission, dependencies. Buttons “Create in list” (⌘Enter) and
   “Create and dispatch” (⌘⇧Enter).
 - MCP tool `task_create` with the same fields. History says
   “created by aria”.
@@ -85,7 +86,7 @@ Two paths, the same contract:
 **Dispatch** (you or the lead): choose the task and a preset (harness,
 model, effort, permission, worktree). The engine opens the pane, creates
 the worktree through worktrunk, binds pane and task, and sends the task as
-the first prompt (title, description, how to verify, existing subitems,
+the first prompt (title, description, must not change, how to verify, existing subitems,
 comments, worktree).
 
 **`task_next`** (idle pane, usually through the loop): the pane asks “give
@@ -219,3 +220,21 @@ instructions. For Soyeht this would be: "New task from issue #N" in the
 task list, the task carrying the link and the issue text as description,
 and the same fixed instruction injected when the task is dispatched.
 Caio: "interesting, do not know yet how it would work"; kept open.
+
+## Addendum (2026-09-11, decided by Caio): “must not change” is a required field
+Every task carries a third text field next to “what to do” and “how to
+verify”: **must not change**, one line per item (for example “pairing by
+QR keeps working as today”, “the engine never asks for a password”, “no
+new protocol message besides `pane.permission_requested`”). The dialog
+(screen 10) refuses to create a task with it empty; `task_create` returns
+`INVALID_PARAMS` without it. The dispatcher puts it in the first prompt
+right after the description, under the heading “Must not change”, and the
+reviewer (§7) checks the diff against it before anything else.
+
+Why: in a controlled study of agents upgrading real packages, giving the
+agent the problem plus the expected behaviour plus explicit preservation
+constraints raised the precision of its changes from 8–10 % to 88–92 %,
+with almost no change in how much of the feature it delivered; the
+constraints are what stopped it from breaking the surroundings
+(SWE-Chain, arXiv 2605.14415, Table 4, p. 8; Python only).
+
