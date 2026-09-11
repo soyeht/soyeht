@@ -35,16 +35,19 @@ jobs:
           cargo test --locked --workspace
       - name: Slice one acceptances under launchd
         run: python3 scripts/e2e.py --report .cache/e2e.json
+      - name: Slice two acceptances under launchd
+        run: python3 scripts/e2e_agents.py --report .cache/e2e-agents.json
       - name: Acceptance report
         if: always()
         run: |
           python3 - <<'PYTHON'
           import os
           from pathlib import Path
-          report = Path('.cache/e2e.json')
-          if report.exists():
-              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-                  summary.write('## Slice one acceptances\n\n```json\n' + report.read_text() + '\n```\n')
+          for label, filename in [('Slice one', '.cache/e2e.json'), ('Slice two', '.cache/e2e-agents.json')]:
+              report = Path(filename)
+              if report.exists():
+                  with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                      summary.write('## ' + label + ' acceptances\n\n```json\n' + report.read_text() + '\n```\n')
           PYTHON
       - name: Swift on Mac and iOS Simulator
         run: bash scripts/check_swift.sh

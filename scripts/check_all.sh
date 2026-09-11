@@ -22,6 +22,7 @@ python3 -m unittest discover -s scripts -p 'test_install_dev.py'
     cargo test --locked --workspace
 )
 python3 scripts/e2e.py --report .cache/e2e.json
+python3 scripts/e2e_agents.py --report .cache/e2e-agents.json
 
 bash scripts/check_swift.sh
 swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources

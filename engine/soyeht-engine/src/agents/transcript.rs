@@ -152,6 +152,11 @@ pub fn append_text_role(
     mut text: &str,
     changes: &mut Changes,
 ) -> Result<()> {
+    // Native replay may include an empty response for a cancelled turn.
+    // It is a role boundary, not an additional visible conversation message.
+    if text.is_empty() {
+        return Ok(());
+    }
     let thought = key == "thought";
     let event_kind = if thought {
         "agent_thought_chunk"
