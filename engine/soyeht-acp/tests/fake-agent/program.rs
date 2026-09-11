@@ -1,8 +1,10 @@
 //! Deterministic ACP v1 peer. It only operates in an explicitly selected test directory.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod error;
 mod state;
 mod turns;
 
+use error::Result;
 use serde_json::{Value, json};
 use soyeht_acp::{Message, RpcError};
 use state::{Session, Settings};
@@ -203,8 +205,8 @@ impl Runtime {
         }
     }
 }
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let settings = Settings::parse().map_err(io::Error::other)?;
+fn main() -> Result<()> {
+    let settings = Settings::parse()?;
     if settings.login {
         std::fs::create_dir_all(&settings.directory)?;
         std::fs::write(settings.directory.join("login.ok"), b"signed in\n")?;

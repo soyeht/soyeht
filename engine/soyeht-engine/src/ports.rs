@@ -19,7 +19,6 @@ use soyeht_store::{
     database::{Change, Mutation, Result as StoreResult, Store},
     domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
-use std::io;
 
 pub trait Clock: Send + Sync {
     fn now_ms(&self) -> i64;
@@ -45,13 +44,13 @@ impl Clock for SystemClock {
 }
 
 pub trait SupervisorPort: Send {
-    fn request(&mut self, request: Request) -> io::Result<Response>;
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response>;
     fn supervisor_id(&self) -> &str;
     fn supervisor_generation(&self) -> u32;
 }
 
 impl SupervisorPort for SupervisorClient {
-    fn request(&mut self, request: Request) -> io::Result<Response> {
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
         SupervisorClient::request(self, request)
     }
 
@@ -64,22 +63,16 @@ impl SupervisorPort for SupervisorClient {
     }
 }
 
-#[derive(Debug)]
-pub enum SupervisorCallError {
-    Transport(io::Error),
-    Response { kind: String, message: String },
-}
-
 pub fn call_supervisor(
     supervisor: &mut (impl SupervisorPort + ?Sized),
     request: Request,
-) -> std::result::Result<Response, SupervisorCallError> {
+) -> crate::errors::Result<Response> {
     match supervisor.request(request) {
-        Ok(Response::Error { kind, message }) => {
-            Err(SupervisorCallError::Response { kind, message })
-        }
+        Ok(Response::Error { kind, message }) => Err(crate::errors::Error::Supervisor(
+            soyeht_ptyd::Error::Remote { kind, message },
+        )),
         Ok(response) => Ok(response),
-        Err(error) => Err(SupervisorCallError::Transport(error)),
+        Err(error) => Err(crate::errors::Error::Supervisor(error)),
     }
 }
 
@@ -340,17 +333,17 @@ pub(crate) mod testing {
     #[derive(Default)]
     pub struct FakeSupervisor {
         pub requests: Vec<Value>,
-        pub responses: VecDeque<io::Result<Response>>,
+        pub responses: VecDeque<soyeht_ptyd::Result<Response>>,
         pub id: String,
         pub generation: u32,
     }
 
     impl SupervisorPort for FakeSupervisor {
-        fn request(&mut self, request: Request) -> io::Result<Response> {
+        fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
             self.requests.push(serde_json::to_value(request)?);
             self.responses
                 .pop_front()
-                .unwrap_or_else(|| Err(io::Error::other("missing fake response")))
+                .unwrap_or(Err(soyeht_ptyd::Error::InvalidResponse))
         }
 
         fn supervisor_id(&self) -> &str {
@@ -388,7 +381,7 @@ pub(crate) mod testing {
         where
             F: FnOnce(&Change<'_>) -> StoreResult<(Value, Vec<(String, Value)>)>,
         {
-            Err(StoreError::Invalid("fake transaction not configured"))
+            Err(StoreError::TestFixture("fake transaction not configured"))
         }
 
         fn mutate_as<F>(
@@ -402,7 +395,7 @@ pub(crate) mod testing {
         where
             F: FnOnce(&Change<'_>) -> StoreResult<(Value, Vec<(String, Value)>)>,
         {
-            Err(StoreError::Invalid("fake transaction not configured"))
+            Err(StoreError::TestFixture("fake transaction not configured"))
         }
 
         fn workspace(&self, id: &str) -> StoreResult<Option<Workspace>> {

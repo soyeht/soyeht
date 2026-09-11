@@ -10,7 +10,7 @@ use soyeht_acp::{
     Message, RpcError, client,
     rpc::{Decoder, Record as NativeRecord},
 };
-use soyeht_protocol::{ErrorKind, PaneState, ProbeCapability, ProbeResult, PromptItem};
+use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, PromptItem};
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::segments::Record;
 use uuid::Uuid;
@@ -89,8 +89,7 @@ impl Core {
                     .map_err(errors::storage)?
                 {
                     if prior.native_id != id || prior.method != method || prior.params != params {
-                        return Err(errors::error(
-                            ErrorKind::ResyncRequired,
+                        return Err(errors::resync_required(
                             "Native request replay changed identity",
                         ));
                     }
@@ -116,7 +115,7 @@ impl Core {
                     ) {
                         changes
                             .outgoing
-                            .push(native_error_response(id, -32602, error.message));
+                            .push(native_error_response(id, -32602, error.to_string()));
                     } else {
                         changes = question;
                     }
@@ -133,7 +132,7 @@ impl Core {
                     if let Err(error) = super::effects::require_session(state, &params) {
                         changes
                             .outgoing
-                            .push(native_error_response(id, -32602, error.message));
+                            .push(native_error_response(id, -32602, error.to_string()));
                     } else {
                         changes.received.push(super::effects::receive(
                             pane,
@@ -208,7 +207,7 @@ impl Core {
         let end = self.panes[pane].screen.next_offset();
         let mut from = base
             .checked_add(offset)
-            .ok_or_else(|| errors::error(ErrorKind::InternalError, "Agent offset exhausted"))?;
+            .ok_or_else(|| errors::internal("Agent offset exhausted"))?;
         let first = self.panes[pane].screen.first_offset();
         if from < first {
             self.agent_output_gap(pane, first - base)?;
@@ -217,10 +216,7 @@ impl Core {
         if from == end {
             return Ok(());
         }
-        let records = self.panes[pane]
-            .screen
-            .read(from, end, 64 * 1024)
-            .map_err(errors::io)?;
+        let records = self.panes[pane].screen.read(from, end, 64 * 1024)?;
         for record in records {
             let (mut offset, mut bytes) = match record {
                 Record::Gap { to, .. } => {
@@ -290,10 +286,7 @@ impl Core {
             from_seq: seq,
         })?
         else {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
-                "Invalid native output response",
-            ));
+            return Err(errors::ptyd_unavailable("Invalid native output response"));
         };
         if output.from_seq != seq {
             if output.from_seq < seq
@@ -302,10 +295,7 @@ impl Core {
                     .as_ref()
                     .is_none_or(|gap| gap.from_seq != seq || gap.to_seq != output.from_seq)
             {
-                return Err(errors::error(
-                    ErrorKind::PtydUnavailable,
-                    "Invalid native output gap",
-                ));
+                return Err(errors::ptyd_unavailable("Invalid native output gap"));
             }
             self.panes
                 .get_mut(pane)
@@ -314,15 +304,13 @@ impl Core {
                 .append(Record::Gap {
                     from: saved.sequence_base + seq,
                     to: saved.sequence_base + output.from_seq,
-                })
-                .map_err(errors::io)?;
+                })?;
         }
-        let bytes = STANDARD.decode(output.bytes).map_err(|_| {
-            errors::error(ErrorKind::PtydUnavailable, "Invalid native output encoding")
-        })?;
+        let bytes = STANDARD
+            .decode(output.bytes)
+            .map_err(|_| errors::ptyd_unavailable("Invalid native output encoding"))?;
         if output.next_seq != output.from_seq + bytes.len() as u64 {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
+            return Err(errors::ptyd_unavailable(
                 "Native output offsets disagree with bytes",
             ));
         }
@@ -334,8 +322,7 @@ impl Core {
                 .append(Record::Data {
                     offset: saved.sequence_base + output.from_seq,
                     bytes,
-                })
-                .map_err(errors::io)?;
+                })?;
         }
         self.decode_agent_log(pane)?;
         self.pty_request(Request::Ack {
@@ -370,10 +357,11 @@ impl Core {
         let mut saved = self.panes[pane].stored.clone();
         let mut state = self.agent_state(pane)?;
         saved.instance_key = Uuid::new_v4().to_string();
-        saved.pane.generation =
-            saved.pane.generation.checked_add(1).ok_or_else(|| {
-                errors::error(ErrorKind::InternalError, "Pane generation exhausted")
-            })?;
+        saved.pane.generation = saved
+            .pane
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("Pane generation exhausted"))?;
         saved.instance_id = None;
         saved.supervisor_id = None;
         saved.pane.pid = None;
@@ -506,7 +494,7 @@ impl Core {
         let session = state
             .session_id
             .clone()
-            .ok_or_else(|| errors::error(ErrorKind::InternalError, "Ready agent has no session"))?;
+            .ok_or_else(|| errors::internal("Ready agent has no session"))?;
         let mut changes = Changes::default();
         transcript::user_prompt(
             &mut state,

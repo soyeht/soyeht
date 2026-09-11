@@ -1,4 +1,7 @@
-use crate::wire::{Gap, Output};
+use crate::{
+    Error, Result,
+    wire::{Gap, Output},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::VecDeque;
 
@@ -12,9 +15,9 @@ pub struct Retention {
 }
 
 impl Retention {
-    pub fn new(limit: usize) -> Result<Self, &'static str> {
+    pub fn new(limit: usize) -> Result<Self> {
         if limit == 0 {
-            return Err("zero_retention_limit");
+            return Err(Error::ZeroRetentionLimit);
         }
         Ok(Self {
             bytes: VecDeque::new(),
@@ -25,11 +28,11 @@ impl Retention {
         })
     }
 
-    pub fn append(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
+    pub fn append(&mut self, bytes: &[u8]) -> Result<()> {
         self.next = self
             .next
             .checked_add(bytes.len() as u64)
-            .ok_or("output_offset_overflow")?;
+            .ok_or(Error::OutputOffsetExhausted)?;
         for byte in bytes {
             if self.bytes.len() == self.limit {
                 self.bytes.pop_front();
@@ -40,9 +43,9 @@ impl Retention {
         Ok(())
     }
 
-    pub fn acknowledge(&mut self, seq: u64) -> Result<(), &'static str> {
+    pub fn acknowledge(&mut self, seq: u64) -> Result<()> {
         if seq > self.next {
-            return Err("ack_ahead");
+            return Err(Error::AckAhead);
         }
         if seq <= self.ack {
             return Ok(());
@@ -54,14 +57,9 @@ impl Retention {
         Ok(())
     }
 
-    pub fn read(
-        &self,
-        requested: u64,
-        maximum: usize,
-        exited: bool,
-    ) -> Result<Output, &'static str> {
+    pub fn read(&self, requested: u64, maximum: usize, exited: bool) -> Result<Output> {
         if requested > self.next {
-            return Err("cursor_ahead");
+            return Err(Error::CursorAhead);
         }
         let from_seq = requested.max(self.first);
         let start = (from_seq - self.first) as usize;
@@ -87,11 +85,14 @@ mod tests {
 
     #[test]
     fn invalid_capacity_and_offset_exhaustion_return_errors() {
-        assert!(matches!(Retention::new(0), Err("zero_retention_limit")));
+        assert!(matches!(Retention::new(0), Err(Error::ZeroRetentionLimit)));
 
         let mut buffer = Retention::new(8).unwrap();
         buffer.next = u64::MAX;
-        assert_eq!(buffer.append(b"x"), Err("output_offset_overflow"));
+        assert!(matches!(
+            buffer.append(b"x"),
+            Err(Error::OutputOffsetExhausted)
+        ));
         assert!(buffer.bytes.is_empty());
     }
 

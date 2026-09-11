@@ -1,8 +1,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+use soyeht_ptyd::{Error, Result};
 use std::{env, path::PathBuf};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.as_slice() == ["--protocol-version"] {
         println!("{}", soyeht_ptyd::wire::VERSION);
@@ -11,13 +12,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let [flag, fd] = args.as_slice()
         && flag == "--pipe-guard"
     {
-        soyeht_ptyd::pipe_guard::run(fd.parse()?)?;
+        let fd = fd.parse().map_err(|_| Error::InvalidGuardianFd)?;
+        soyeht_ptyd::pipe_guard::run(fd)?;
         return Ok(());
     }
     let directory = match args.as_slice() {
-        [] => PathBuf::from(env::var("HOME")?).join("Library/Application Support/Soyeht.next/dev"),
+        [] => PathBuf::from(env::var("HOME").map_err(|_| Error::HomeMissing)?)
+            .join("Library/Application Support/Soyeht.next/dev"),
         [flag, path] if flag == "--data-dir" => PathBuf::from(path),
-        _ => return Err("usage: soyeht-ptyd [--data-dir <isolated-directory>]".into()),
+        _ => return Err(Error::InvalidArguments),
     };
     soyeht_ptyd::server::run(&directory)?;
     Ok(())

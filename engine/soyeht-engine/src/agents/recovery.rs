@@ -10,13 +10,11 @@ use soyeht_acp::{
     Message,
     rpc::{Decoder, Record},
 };
-use soyeht_protocol::{
-    AttentionItem, ErrorKind, PaneState, TranscriptKind, TranscriptRole, limits,
-};
+use soyeht_protocol::{AttentionItem, PaneState, TranscriptKind, TranscriptRole, limits};
 use soyeht_ptyd::wire::{Request, Response};
 
-fn invalid(message: &str) -> soyeht_protocol::RpcError {
-    errors::error(ErrorKind::HarnessUnavailable, message)
+fn invalid(message: &str) -> crate::errors::Error {
+    errors::harness_unavailable(message)
 }
 
 impl Core {

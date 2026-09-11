@@ -7,7 +7,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::AuthKind;
-use soyeht_protocol::{ErrorKind, PaneMode, PaneState, StateSource};
+use soyeht_protocol::{PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
 use uuid::Uuid;
 
@@ -40,10 +40,7 @@ impl Core {
         let id = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(id)?;
         if state.phase != Phase::NeedsLogin {
-            return Err(errors::error(
-                ErrorKind::PaneBusy,
-                "This pane is not waiting for sign-in",
-            ));
+            return Err(errors::pane_busy("This pane is not waiting for sign-in"));
         }
         if let Some(pane) = state.login_pane_id.as_ref().filter(|pane| {
             self.panes
@@ -62,15 +59,12 @@ impl Core {
                 .result);
         }
         if state.client.pending.values().any(|c| c.context == "auth") {
-            return Err(errors::error(
-                ErrorKind::PaneBusy,
-                "Sign-in is already pending",
-            ));
+            return Err(errors::pane_busy("Sign-in is already pending"));
         }
         let methods = &state
             .initialized
             .as_ref()
-            .ok_or_else(|| errors::error(ErrorKind::PaneBusy, "Agent has not initialized"))?
+            .ok_or_else(|| errors::pane_busy("Agent has not initialized"))?
             .auth_methods;
         let method = methods
             .iter()
@@ -80,12 +74,7 @@ impl Core {
                     .is_none_or(|id| m.public.id == id)
             })
             .cloned()
-            .ok_or_else(|| {
-                errors::error(
-                    ErrorKind::InvalidParams,
-                    "Authentication method is not offered",
-                )
-            })?;
+            .ok_or_else(|| errors::invalid("Authentication method is not offered"))?;
         if method.kind == AuthKind::Agent {
             let changes = embedded_auth(&mut state, &method.public.id, self.now_ms())?;
             return Ok(self
@@ -99,10 +88,7 @@ impl Core {
                 .result);
         }
         if method.kind != AuthKind::Terminal {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Unsupported authentication method",
-            ));
+            return Err(errors::invalid("Unsupported authentication method"));
         }
         let child_id = Uuid::new_v4().to_string();
         let mut pane = self.panes[id].stored.pane.clone();
@@ -139,8 +125,7 @@ impl Core {
             cols: child.pane.cols as u16,
             rows: child.pane.rows as u16,
         };
-        let screen = Screen::open(&self.directory.join("sessions").join(&child_id), false)
-            .map_err(errors::io)?;
+        let screen = Screen::open(&self.directory.join("sessions").join(&child_id), false)?;
         state.login_pane_id = Some(child_id.clone());
         let generation = self.panes[id].stored.pane.generation;
         let mutation = self.mutate(connection, "pane.auth.start", params, |tx| {
@@ -171,19 +156,13 @@ impl Core {
             return Ok(());
         };
         let Some(child) = self.panes.get(&child_id).map(|p| p.stored.clone()) else {
-            return Err(errors::error(
-                ErrorKind::InternalError,
-                "Sign-in pane is missing",
-            ));
+            return Err(errors::internal("Sign-in pane is missing"));
         };
         if !child.closed && child.pane.state != PaneState::Dead {
             return Ok(());
         }
         let Response::Instances(instances) = self.pty_request(Request::List)? else {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
-                "Invalid sign-in process registry",
-            ));
+            return Err(errors::ptyd_unavailable("Invalid sign-in process registry"));
         };
         let success = !child.closed
             && instances

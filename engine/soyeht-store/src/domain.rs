@@ -422,7 +422,7 @@ impl Change<'_> {
             |row| row.get(0),
         )?;
         if count >= 64 {
-            return Err(Error::Invalid("pairing request limit reached"));
+            return Err(Error::PairingRequestLimit);
         }
         self.transaction.execute(
             "INSERT INTO pair_requests(id,payload,expires_unix) VALUES (?1,?2,?3)",

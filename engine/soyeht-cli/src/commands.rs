@@ -1,8 +1,8 @@
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use soyeht_cli::Client;
+use soyeht_cli::{Client, Error, Result};
 use soyeht_protocol::*;
-use std::{io, path::PathBuf};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 pub const USAGE: &str = "soyeht --profile dev [--data-dir PATH] COMMAND\n\
@@ -17,17 +17,17 @@ harness list [--cursor CURSOR] | model list HARNESS [--pane ID] [--cursor CURSOR
 device pair-start | device list\n\
 Mutating commands accept --idempotency-key KEY for safe retries.";
 
-fn invalid(message: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message.into())
+fn invalid(message: impl Into<String>) -> Error {
+    Error::InvalidArguments(message.into())
 }
 fn rpc<T: DeserializeOwned + Serialize>(
     client: &mut Client,
     method: &str,
     params: Value,
-) -> io::Result<Value> {
+) -> Result<Value> {
     Ok(serde_json::to_value(client.request::<T>(method, params)?)?)
 }
-fn options(rest: &[&str], allowed: &[(&str, &str)]) -> io::Result<Value> {
+fn options(rest: &[&str], allowed: &[(&str, &str)]) -> Result<Value> {
     let mut value = json!({});
     let mut args = rest.iter();
     while let Some(flag) = args.next() {
@@ -54,7 +54,7 @@ fn options(rest: &[&str], allowed: &[(&str, &str)]) -> io::Result<Value> {
     Ok(value)
 }
 
-pub fn execute(client: &mut Client, args: &[String]) -> io::Result<Value> {
+pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
     let mut args: Vec<_> = args.iter().map(String::as_str).collect();
     let mut key = Uuid::new_v4().to_string();
     // Read the optional suffix without treating literal prompt text or a
@@ -171,7 +171,7 @@ pub fn execute(client: &mut Client, args: &[String]) -> io::Result<Value> {
     }
 }
 
-fn create(client: &mut Client, args: &[&str], key: &str) -> io::Result<Value> {
+fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
     let (mode, harness, rest) = match args {
         ["--shell", rest @ ..] => ("terminal", None, rest),
         ["--agent", harness, rest @ ..] => ("agent", Some(*harness), rest),
@@ -225,7 +225,7 @@ fn permission(
     choice: &str,
     rest: &[&str],
     key: &str,
-) -> io::Result<Value> {
+) -> Result<Value> {
     let options = options(rest, &[("--request", "requestId")])?;
     let snapshot = client.snapshot()?;
     let requests: Vec<_> = snapshot

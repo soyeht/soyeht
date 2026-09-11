@@ -28,12 +28,12 @@ impl Client {
         now_ms: u64,
     ) -> Result<Message, Error> {
         if self.pending.len() >= 128 {
-            return Err(Error("too many outstanding ACP calls".into()));
+            return Err(Error::TooManyPendingCalls);
         }
         self.next_id = self
             .next_id
             .checked_add(1)
-            .ok_or_else(|| Error("ACP request ID exhausted".into()))?;
+            .ok_or(Error::RequestIdExhausted)?;
         let id = format!("s-{}", self.next_id);
         let message = Message::Request {
             id: json!(id),
@@ -55,12 +55,12 @@ impl Client {
 
     pub fn response(&mut self, message: Message) -> Result<(Call, Result<Value, RpcError>), Error> {
         let Message::Response { id, result } = message else {
-            return Err(Error("expected native response".into()));
+            return Err(Error::ExpectedResponse);
         };
         let call = id
             .as_str()
             .and_then(|id| self.pending.remove(id))
-            .ok_or_else(|| Error("unmatched ACP response".into()))?;
+            .ok_or(Error::UnmatchedResponse)?;
         Ok((call, result))
     }
 

@@ -1,4 +1,7 @@
-use crate::wire::{ProcessKind, Spawn};
+use crate::{
+    Error, Result,
+    wire::{ProcessKind, Spawn},
+};
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -15,17 +18,14 @@ pub struct Spawned {
     pub guard: Option<UnixStream>,
 }
 
-pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> io::Result<Spawned> {
+pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> Result<Spawned> {
     if config.argv.is_empty()
         || config.cols == 0
         || config.rows == 0
         || config.cols > 1000
         || config.rows > 1000
     {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid spawn parameters",
-        ));
+        return Err(Error::InvalidSpawnParameters);
     }
     if config.kind == ProcessKind::PipesAcp {
         return crate::pipe_guard::spawn(config, directory, instance_id);
@@ -50,7 +50,7 @@ pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> io::Result<
         )
     } == -1
     {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
     // SAFETY: openpty succeeded and returned two distinct, owned descriptors.
     let master = unsafe { File::from_raw_fd(master) };
@@ -59,7 +59,7 @@ pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> io::Result<
     for fd in [master.as_raw_fd(), slave.as_raw_fd()] {
         // SAFETY: both file descriptors are valid and F_SETFD takes integer flags.
         if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-            return Err(io::Error::last_os_error());
+            return Err(io::Error::last_os_error().into());
         }
     }
     let mut command = command(config)?;
@@ -80,7 +80,7 @@ pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> io::Result<
         });
     }
     let mut child = command.spawn()?;
-    let setup = nonblocking(&master).and_then(|()| master.try_clone());
+    let setup = nonblocking(&master).and_then(|()| master.try_clone().map_err(Error::from));
     let output = match setup {
         Ok(output) => output,
         Err(error) => {
@@ -98,7 +98,7 @@ pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> io::Result<
     })
 }
 
-pub fn command(config: &Spawn) -> io::Result<Command> {
+pub fn command(config: &Spawn) -> Result<Command> {
     let mut command = Command::new(&config.argv[0]);
     command
         .args(&config.argv[1..])
@@ -125,34 +125,28 @@ pub fn command(config: &Spawn) -> io::Result<Command> {
         ]
         .contains(&name.as_str())
         {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "environment variable is not allowed",
-            ));
+            return Err(Error::EnvironmentVariableNotAllowed);
         }
         command.env(name, value);
     }
     Ok(command)
 }
 
-pub fn nonblocking(file: &File) -> io::Result<()> {
+pub fn nonblocking(file: &File) -> Result<()> {
     // SAFETY: file owns the valid descriptor; fcntl only changes its flags.
     let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
     if flags == -1
         // SAFETY: same owned descriptor, with the original flags preserved.
         || unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1
     {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
     Ok(())
 }
 
-pub fn resize(master: &File, cols: u16, rows: u16) -> io::Result<()> {
+pub fn resize(master: &File, cols: u16, rows: u16) -> Result<()> {
     if cols == 0 || rows == 0 || cols > 1000 || rows > 1000 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid terminal size",
-        ));
+        return Err(Error::InvalidTerminalSize);
     }
     let size = libc::winsize {
         ws_row: rows,
@@ -162,7 +156,7 @@ pub fn resize(master: &File, cols: u16, rows: u16) -> io::Result<()> {
     };
     // SAFETY: the borrowed FD and immutable winsize remain valid during ioctl.
     if unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ, &size) } == -1 {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
     Ok(())
 }

@@ -1,6 +1,7 @@
 use crate::{
     core::Core,
     dispatch::Outcome,
+    errors::{self, Error},
     model,
     outbox::{self, CloseReason, Outbox},
     transport,
@@ -26,13 +27,11 @@ use tokio::{
 
 type Shared = Arc<Mutex<Core>>;
 
-fn lock_core(shared: &Shared) -> io::Result<std::sync::MutexGuard<'_, Core>> {
-    shared
-        .lock()
-        .map_err(|_| io::Error::other("engine state lock poisoned"))
+fn lock_core(shared: &Shared) -> crate::errors::Result<std::sync::MutexGuard<'_, Core>> {
+    shared.lock().map_err(|_| Error::EngineStatePoisoned)
 }
 
-fn update_pair_address(shared: &Shared, address: SocketAddr) -> io::Result<()> {
+fn update_pair_address(shared: &Shared, address: SocketAddr) -> crate::errors::Result<()> {
     let mut state = lock_core(shared)?;
     if !address.ip().is_loopback() || state.pair_address.starts_with("127.") {
         state.pair_address = address.to_string();
@@ -54,7 +53,7 @@ pub fn permitted_address(address: IpAddr) -> bool {
     }
 }
 
-fn singleton(directory: &Path) -> io::Result<File> {
+fn singleton(directory: &Path) -> crate::errors::Result<File> {
     fs::create_dir_all(directory)?;
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
     let lock = OpenOptions::new()
@@ -67,27 +66,23 @@ fn singleton(directory: &Path) -> io::Result<File> {
         .open(directory.join("engine.lock"))?;
     // SAFETY: lock owns a live descriptor retained throughout run().
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::other("engine already running"));
+        return Err(Error::AlreadyRunning);
     }
     Ok(lock)
 }
 
-pub async fn run(config: Config) -> io::Result<()> {
+pub async fn run(config: Config) -> crate::errors::Result<()> {
     if config.listen.iter().any(|a| !permitted_address(a.ip())) {
-        return Err(io::Error::other(
-            "engine accepts only loopback or tailnet listener addresses",
-        ));
+        return Err(Error::ListenerAddressNotPermitted);
     }
     let _lock = singleton(&config.directory)?;
-    let core = Arc::new(Mutex::new(
-        Core::open(&config.directory).map_err(|e| io::Error::other(e.message))?,
-    ));
+    let core = Arc::new(Mutex::new(Core::open(&config.directory)?));
     let socket = config.directory.join("engine.sock");
     match fs::symlink_metadata(&socket) {
         Ok(m) if m.file_type().is_socket() => fs::remove_file(&socket)?,
-        Ok(_) => return Err(io::Error::other("engine socket path is not a socket")),
+        Ok(_) => return Err(Error::SocketPathNotSocket),
         Err(e) if e.kind() == io::ErrorKind::NotFound => (),
-        Err(e) => return Err(e),
+        Err(e) => return Err(e.into()),
     }
     let unix = UnixListener::bind(&socket)?;
     fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
@@ -117,7 +112,7 @@ pub async fn run(config: Config) -> io::Result<()> {
                 });
             }
             #[allow(unreachable_code)]
-            Ok::<(), io::Error>(())
+            Ok::<(), Error>(())
         });
     }
     {
@@ -145,7 +140,7 @@ pub async fn run(config: Config) -> io::Result<()> {
                 });
             }
             #[allow(unreachable_code)]
-            Ok::<(), io::Error>(())
+            Ok::<(), Error>(())
         });
     }
     {
@@ -162,15 +157,15 @@ pub async fn run(config: Config) -> io::Result<()> {
                     let output=core.poll_output();let streams=core.pump_streams();
                     if prune==0 {core.store.prune().map_err(crate::errors::storage)?;}
                     output.and(streams)
-                }).await.map_err(io::Error::other)?;
+                }).await?;
                 prune=(prune+1)%6000;
-                let error=result.err().map(|e|e.data.kind);
+                let error=result.err().map(|error| errors::kind(&error));
                 if error!=previous_error {
                     if let Some(kind)=&error {eprintln!("{}",serde_json::json!({"event":"engine.storage_or_supervisor_error","kind":kind}));}
                     previous_error=error;
                 }
             }
-            #[allow(unreachable_code)] Ok::<(),io::Error>(())
+            #[allow(unreachable_code)] Ok::<(),Error>(())
         });
     }
     println!(
@@ -181,7 +176,7 @@ pub async fn run(config: Config) -> io::Result<()> {
     tokio::select! {
         _=tokio::signal::ctrl_c()=>(),
         _=terminate.recv()=>(),
-        result=tasks.join_next()=>{if let Some(result)=result {result.map_err(io::Error::other)??;}},
+        result=tasks.join_next()=>{if let Some(result)=result {result??;}},
     }
     tasks.abort_all();
     for client in lock_core(&core)?.clients.values() {
@@ -200,7 +195,7 @@ async fn connection(
     let (outbox, receiver) = outbox::channel();
     let id = match core
         .lock()
-        .map_err(|_| crate::errors::internal("Engine state lock poisoned"))
+        .map_err(|_| Error::EngineStatePoisoned)
         .and_then(|mut state| state.connect(local, outbox.clone()))
     {
         Ok(id) => id,
@@ -328,7 +323,7 @@ async fn read_requests(
         let outcome = tokio::task::spawn_blocking(move || {
             shared
                 .lock()
-                .map_err(|_| crate::errors::internal("Engine state lock poisoned"))?
+                .map_err(|_| Error::EngineStatePoisoned)?
                 .dispatch(&connection, request)
         })
         .await;
@@ -365,14 +360,14 @@ async fn read_requests(
                 }
             }
             Ok(Err(error)) if failed_handshake => {
-                let Ok(frame) = model::failure(request_id, error) else {
+                let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
                     return CloseReason::WorkerFailed;
                 };
                 let _ = outbox.write_page(frame).await;
                 return CloseReason::HandshakeRejected;
             }
             Ok(Err(error)) => {
-                let Ok(frame) = model::failure(request_id, error) else {
+                let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
                     return CloseReason::WorkerFailed;
                 };
                 if !outbox.send(frame) {
@@ -395,12 +390,19 @@ fn log_operation(
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
         Ok(Ok(Outcome::Queued)) => ("queued", None),
         Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
-        Ok(Err(error)) => ("error", Some(&error.data.kind)),
+        Ok(Err(error)) => ("error", Some(errors::kind(error))),
         Err(_) => ("worker_failed", None),
     };
     eprintln!(
         "{}",
-        operation_record(operation, connection, method, status, kind, duration_ms)
+        operation_record(
+            operation,
+            connection,
+            method,
+            status,
+            kind.as_ref(),
+            duration_ms,
+        )
     );
 }
 

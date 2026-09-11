@@ -1,24 +1,86 @@
 use serde::Serialize;
 use serde_json::Value;
 use soyeht_protocol::{ErrorData, ErrorKind, RpcError, error_code};
+use std::{fmt, io};
 
-pub type Result<T> = std::result::Result<T, RpcError>;
-
-pub fn error(kind: ErrorKind, message: impl Into<String>) -> RpcError {
-    RpcError {
-        code: error_code(&kind),
-        message: message.into(),
-        data: ErrorData { kind, detail: None },
-    }
+#[derive(Debug)]
+pub enum Error {
+    NotFound(String),
+    InvalidParams(String),
+    Unauthorized(String),
+    ForbiddenRole(String),
+    PaneBusy(String),
+    TaskHasOwner(String),
+    TransitionRefused(String),
+    StaleVersion(String),
+    IdempotencyConflict(String),
+    HarnessUnavailable(String),
+    NeedsLogin(String),
+    CursorTooOld(String),
+    ResyncRequired(String),
+    SlowConsumer(String),
+    ProtocolVersionUnsupported(String),
+    DiskFull(String),
+    PtydUnavailable(String),
+    StaleEngineGeneration(String),
+    Internal(String),
+    SnapshotTooLarge(String),
+    Storage(soyeht_store::Error),
+    Io(io::Error),
+    Acp(soyeht_acp::Error),
+    Supervisor(soyeht_ptyd::Error),
+    Protocol(soyeht_protocol::Error),
+    WebSocket(tokio_tungstenite::tungstenite::Error),
+    Utf8(std::string::FromUtf8Error),
+    Address(std::net::AddrParseError),
+    Join(tokio::task::JoinError),
+    EngineStatePoisoned,
+    AlreadyRunning,
+    ListenerAddressNotPermitted,
+    SocketPathNotSocket,
+    HomeMissing,
+    MissingDataDirectoryArgument,
+    MissingListenAddressArgument,
+    InvalidArguments,
+    InvalidBinaryWebSocketFrame,
+    RandomUnavailable,
+    InvalidPublicKey,
+    InvalidPublicKeyLength,
+    WeakPublicKey,
+    ConnectionClosed,
+    RecordedRpc(RpcError),
 }
 
-pub fn invalid(message: impl Into<String>) -> RpcError {
-    error(ErrorKind::InvalidParams, message)
+pub type Result<T> = std::result::Result<T, Error>;
+
+macro_rules! constructor {
+    ($name:ident, $variant:ident) => {
+        pub fn $name(message: impl Into<String>) -> Error {
+            Error::$variant(message.into())
+        }
+    };
 }
 
-pub fn internal(message: impl Into<String>) -> RpcError {
-    error(ErrorKind::InternalError, message)
-}
+constructor!(not_found, NotFound);
+constructor!(invalid, InvalidParams);
+constructor!(unauthorized, Unauthorized);
+constructor!(forbidden_role, ForbiddenRole);
+constructor!(pane_busy, PaneBusy);
+constructor!(task_has_owner, TaskHasOwner);
+constructor!(transition_refused, TransitionRefused);
+constructor!(stale_version, StaleVersion);
+constructor!(idempotency_conflict, IdempotencyConflict);
+constructor!(harness_unavailable, HarnessUnavailable);
+constructor!(needs_login, NeedsLogin);
+constructor!(cursor_too_old, CursorTooOld);
+constructor!(resync_required, ResyncRequired);
+constructor!(slow_consumer, SlowConsumer);
+constructor!(protocol_version_unsupported, ProtocolVersionUnsupported);
+constructor!(disk_full, DiskFull);
+constructor!(ptyd_unavailable, PtydUnavailable);
+constructor!(stale_engine_generation, StaleEngineGeneration);
+constructor!(internal, Internal);
+constructor!(snapshot_too_large, SnapshotTooLarge);
 
 pub fn required<T>(value: Option<T>, message: &'static str) -> Result<T> {
     value.ok_or_else(|| invalid(message))
@@ -50,24 +112,284 @@ pub fn json_bytes(value: &impl Serialize) -> Result<Vec<u8>> {
     serde_json::to_vec(value).map_err(|_| internal("JSON serialization failed"))
 }
 
-pub fn storage(error_value: soyeht_store::database::Error) -> RpcError {
-    use soyeht_store::database::Error;
-    match error_value {
-        Error::IdempotencyConflict => error(
-            ErrorKind::IdempotencyConflict,
-            "The idempotency key has different parameters",
-        ),
-        Error::CursorTooOld => error(ErrorKind::CursorTooOld, "Request a new snapshot"),
-        Error::Invalid(message) => error(ErrorKind::InvalidParams, message),
-        Error::DiskFull => error(ErrorKind::DiskFull, "Storage is full"),
-        _ => error(ErrorKind::InternalError, "Storage operation failed"),
+pub fn storage(error: soyeht_store::Error) -> Error {
+    Error::Storage(error)
+}
+
+pub fn io(error: io::Error) -> Error {
+    Error::Io(error)
+}
+
+fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
+    use soyeht_store::Error;
+    match error {
+        Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
+        Error::CursorTooOld => ErrorKind::CursorTooOld,
+        Error::DiskFull => ErrorKind::DiskFull,
+        Error::InvalidEngineGeneration
+        | Error::InvalidIdempotencyKey
+        | Error::EventParametersNotObject
+        | Error::CursorAhead
+        | Error::NegativeEventId
+        | Error::NegativeEventCursor
+        | Error::PairingRequestLimit
+        | Error::InvalidQueuedPrompt
+        | Error::PromptQueueFull
+        | Error::AttentionItemTooLarge
+        | Error::AttentionPaneMismatch
+        | Error::AgentRuntimeTooLarge
+        | Error::StaleAgentGeneration
+        | Error::NewOutboxHasProgress
+        | Error::IncompleteOutboxRecord
+        | Error::InvalidOutboxEnvelope
+        | Error::AgentOutboxFull
+        | Error::InvalidPartialWriteReceipt
+        | Error::NativeWriteAttemptsExhausted
+        | Error::NativeMessageIncomplete
+        | Error::InvalidNativeRequestIdentity
+        | Error::PublicRequestTooLarge
+        | Error::PendingRequestsTooLarge
+        | Error::NativeRequestNotFound
+        | Error::NativeEffectNotFound
+        | Error::NativeEffectNotPending
+        | Error::NativeEffectAlreadyStarted
+        | Error::InvalidTranscriptSequence
+        | Error::TranscriptMessageTooLarge
+        | Error::TranscriptMutation
+        | Error::StaleTranscriptReplay
+        | Error::InvalidTranscriptPageLimit
+        | Error::TranscriptPageTooLarge
+        | Error::ApprovedPairTokenMissing => ErrorKind::InvalidParams,
+        _ => ErrorKind::InternalError,
     }
 }
 
-pub fn io(error_value: std::io::Error) -> RpcError {
-    if error_value.raw_os_error() == Some(libc::ENOSPC) {
-        error(ErrorKind::DiskFull, "Storage is full")
-    } else {
-        error(ErrorKind::InternalError, "I/O operation failed")
+fn supervisor_kind(error: &soyeht_ptyd::Error) -> ErrorKind {
+    match error {
+        soyeht_ptyd::Error::Remote { kind, .. } if kind == "stale_engine_generation" => {
+            ErrorKind::StaleEngineGeneration
+        }
+        soyeht_ptyd::Error::Remote { kind, .. } if kind == "spawn_failed" => {
+            ErrorKind::HarnessUnavailable
+        }
+        _ => ErrorKind::PtydUnavailable,
+    }
+}
+
+/// The single translation from engine failures to the public protocol.
+pub fn kind(error: &Error) -> ErrorKind {
+    match error {
+        Error::RecordedRpc(error) => error.data.kind.clone(),
+        Error::NotFound(_) => ErrorKind::NotFound,
+        Error::InvalidParams(_) => ErrorKind::InvalidParams,
+        Error::Unauthorized(_) => ErrorKind::Unauthorized,
+        Error::ForbiddenRole(_) => ErrorKind::ForbiddenRole,
+        Error::PaneBusy(_) => ErrorKind::PaneBusy,
+        Error::TaskHasOwner(_) => ErrorKind::TaskHasOwner,
+        Error::TransitionRefused(_) => ErrorKind::TransitionRefused,
+        Error::StaleVersion(_) => ErrorKind::StaleVersion,
+        Error::IdempotencyConflict(_) => ErrorKind::IdempotencyConflict,
+        Error::HarnessUnavailable(_) | Error::Acp(_) => ErrorKind::HarnessUnavailable,
+        Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
+        Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
+        Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
+        Error::SlowConsumer(_) => ErrorKind::SlowConsumer,
+        Error::ProtocolVersionUnsupported(_) => ErrorKind::ProtocolVersionUnsupported,
+        Error::DiskFull(_) => ErrorKind::DiskFull,
+        Error::PtydUnavailable(_) => ErrorKind::PtydUnavailable,
+        Error::StaleEngineGeneration(_) => ErrorKind::StaleEngineGeneration,
+        Error::Internal(_)
+        | Error::Protocol(_)
+        | Error::WebSocket(_)
+        | Error::Utf8(_)
+        | Error::Address(_)
+        | Error::Join(_)
+        | Error::EngineStatePoisoned
+        | Error::AlreadyRunning
+        | Error::SocketPathNotSocket
+        | Error::HomeMissing
+        | Error::RandomUnavailable
+        | Error::ConnectionClosed => ErrorKind::InternalError,
+        Error::ListenerAddressNotPermitted
+        | Error::MissingDataDirectoryArgument
+        | Error::MissingListenAddressArgument
+        | Error::InvalidArguments
+        | Error::InvalidBinaryWebSocketFrame
+        | Error::InvalidPublicKey
+        | Error::InvalidPublicKeyLength
+        | Error::WeakPublicKey => ErrorKind::InvalidParams,
+        Error::SnapshotTooLarge(_) => ErrorKind::SnapshotTooLarge,
+        Error::Storage(error) => store_kind(error),
+        Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => ErrorKind::DiskFull,
+        Error::Io(_) => ErrorKind::InternalError,
+        Error::Supervisor(error) => supervisor_kind(error),
+    }
+}
+
+fn message(error: &Error) -> String {
+    match error {
+        Error::NotFound(message)
+        | Error::InvalidParams(message)
+        | Error::Unauthorized(message)
+        | Error::ForbiddenRole(message)
+        | Error::PaneBusy(message)
+        | Error::TaskHasOwner(message)
+        | Error::TransitionRefused(message)
+        | Error::StaleVersion(message)
+        | Error::IdempotencyConflict(message)
+        | Error::HarnessUnavailable(message)
+        | Error::NeedsLogin(message)
+        | Error::CursorTooOld(message)
+        | Error::ResyncRequired(message)
+        | Error::SlowConsumer(message)
+        | Error::ProtocolVersionUnsupported(message)
+        | Error::DiskFull(message)
+        | Error::PtydUnavailable(message)
+        | Error::StaleEngineGeneration(message)
+        | Error::Internal(message)
+        | Error::SnapshotTooLarge(message) => message.clone(),
+        Error::Storage(soyeht_store::Error::IdempotencyConflict) => {
+            "The idempotency key has different parameters".into()
+        }
+        Error::Storage(soyeht_store::Error::CursorTooOld) => "Request a new snapshot".into(),
+        Error::Storage(soyeht_store::Error::DiskFull) => "Storage is full".into(),
+        Error::Storage(error) if store_kind(error) == ErrorKind::InvalidParams => error.to_string(),
+        Error::Storage(_) => "Storage operation failed".into(),
+        Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => "Storage is full".into(),
+        Error::Io(_) => "I/O operation failed".into(),
+        Error::Acp(error) => error.to_string(),
+        Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
+        Error::Supervisor(_) => "Supervisor unavailable".into(),
+        Error::Protocol(_) => "Protocol operation failed".into(),
+        Error::WebSocket(_) => "WebSocket operation failed".into(),
+        Error::Utf8(_) => "Invalid UTF-8".into(),
+        Error::Address(_) => "Invalid listener address".into(),
+        Error::Join(_) => "Engine worker failed".into(),
+        Error::EngineStatePoisoned => "Engine state lock poisoned".into(),
+        Error::AlreadyRunning => "Engine already running".into(),
+        Error::ListenerAddressNotPermitted => {
+            "Engine accepts only loopback or tailnet listener addresses".into()
+        }
+        Error::SocketPathNotSocket => "Engine socket path is not a socket".into(),
+        Error::HomeMissing => "HOME is required".into(),
+        Error::MissingDataDirectoryArgument => "--data-dir requires a path".into(),
+        Error::MissingListenAddressArgument => "--listen requires an address".into(),
+        Error::InvalidArguments => "Expected --data-dir or --listen".into(),
+        Error::InvalidBinaryWebSocketFrame => "Invalid binary WebSocket frame".into(),
+        Error::RandomUnavailable => "Random source unavailable".into(),
+        Error::InvalidPublicKey => "Invalid public key".into(),
+        Error::InvalidPublicKeyLength => "Invalid public key length".into(),
+        Error::WeakPublicKey => "Weak public key".into(),
+        Error::ConnectionClosed => "Connection closed".into(),
+        Error::RecordedRpc(error) => error.message.clone(),
+    }
+}
+
+pub fn wire(error: Error) -> RpcError {
+    if let Error::RecordedRpc(error) = error {
+        return error;
+    }
+    let kind = kind(&error);
+    RpcError {
+        code: error_code(&kind),
+        message: message(&error),
+        data: ErrorData { kind, detail: None },
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&message(self))
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Storage(error) => Some(error),
+            Self::Io(error) => Some(error),
+            Self::Acp(error) => Some(error),
+            Self::Supervisor(error) => Some(error),
+            Self::Protocol(error) => Some(error),
+            Self::WebSocket(error) => Some(error),
+            Self::Utf8(error) => Some(error),
+            Self::Address(error) => Some(error),
+            Self::Join(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<soyeht_store::Error> for Error {
+    fn from(error: soyeht_store::Error) -> Self {
+        Self::Storage(error)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl From<soyeht_acp::Error> for Error {
+    fn from(error: soyeht_acp::Error) -> Self {
+        Self::Acp(error)
+    }
+}
+
+impl From<soyeht_ptyd::Error> for Error {
+    fn from(error: soyeht_ptyd::Error) -> Self {
+        Self::Supervisor(error)
+    }
+}
+
+impl From<soyeht_protocol::Error> for Error {
+    fn from(error: soyeht_protocol::Error) -> Self {
+        Self::Protocol(error)
+    }
+}
+
+impl From<tokio_tungstenite::tungstenite::Error> for Error {
+    fn from(error: tokio_tungstenite::tungstenite::Error) -> Self {
+        Self::WebSocket(error)
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(error: std::string::FromUtf8Error) -> Self {
+        Self::Utf8(error)
+    }
+}
+
+impl From<std::net::AddrParseError> for Error {
+    fn from(error: std::net::AddrParseError) -> Self {
+        Self::Address(error)
+    }
+}
+
+impl From<tokio::task::JoinError> for Error {
+    fn from(error: tokio::task::JoinError) -> Self {
+        Self::Join(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_public_kind_is_assigned_at_the_single_wire_boundary() {
+        let error = wire(Error::Supervisor(soyeht_ptyd::Error::Remote {
+            kind: "stale_engine_generation".into(),
+            message: "stale".into(),
+        }));
+        assert_eq!(error.data.kind, ErrorKind::StaleEngineGeneration);
+
+        let error = wire(Error::Storage(soyeht_store::Error::IdempotencyConflict));
+        assert_eq!(error.data.kind, ErrorKind::IdempotencyConflict);
+
+        let error = wire(Error::Acp(soyeht_acp::Error::MissingSessionId));
+        assert_eq!(error.data.kind, ErrorKind::HarnessUnavailable);
     }
 }

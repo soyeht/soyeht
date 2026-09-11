@@ -1,12 +1,12 @@
 use crate::{
-    errors::{self, Result},
+    errors::{self, Error, Result},
     model::{self, Connected, RunningPane, StoredPane},
-    ports::{Clock, StorePort, SupervisorCallError, SupervisorPort, SystemClock, call_supervisor},
+    ports::{Clock, StorePort, SupervisorPort, SystemClock, call_supervisor},
     screen::Screen,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::{ErrorKind, PaneState, StateSource};
+use soyeht_protocol::{PaneState, StateSource};
 use soyeht_ptyd::{
     client::Client,
     wire::{Instance, ProcessKind, Request, Response, Spawn},
@@ -40,10 +40,7 @@ impl Core {
         let mut store = Store::open(directory).map_err(errors::storage)?;
         let generation = store.next_engine_generation().map_err(errors::storage)?;
         if generation > u32::MAX as u64 {
-            return Err(errors::error(
-                ErrorKind::InternalError,
-                "Engine generation exhausted",
-            ));
+            return Err(errors::internal("Engine generation exhausted"));
         }
         let mut core = Self {
             store,
@@ -63,9 +60,7 @@ impl Core {
                     .store
                     .agent_runtime(&stored.pane.pane_id)
                     .map_err(errors::storage)?
-                    .ok_or_else(|| {
-                        errors::error(ErrorKind::InternalError, "Agent pane has no checkpoint")
-                    })?;
+                    .ok_or_else(|| errors::internal("Agent pane has no checkpoint"))?;
                 state.queue = core
                     .store
                     .agent_queue(&stored.pane.pane_id)
@@ -79,8 +74,7 @@ impl Core {
             let screen = Screen::open(
                 &directory.join("sessions").join(&stored.pane.pane_id),
                 stored.pane.record,
-            )
-            .map_err(errors::io)?;
+            )?;
             core.panes
                 .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
         }
@@ -131,17 +125,17 @@ impl Core {
         let client = self
             .clients
             .get(connection)
-            .ok_or_else(|| errors::error(ErrorKind::Unauthorized, "Connection not found"))?;
+            .ok_or_else(|| errors::unauthorized("Connection not found"))?;
         let actor = serde_json::to_value(
             client
                 .actor
                 .as_ref()
-                .ok_or_else(|| errors::error(ErrorKind::Unauthorized, "Handshake required"))?,
+                .ok_or_else(|| errors::unauthorized("Handshake required"))?,
         )
         .map_err(|_| errors::internal("Connection actor serialization failed"))?;
         let key = params["idempotencyKey"]
             .as_str()
-            .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Missing idempotency key"))?;
+            .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
             &json!([method, params]).to_string(),
         ));
@@ -162,41 +156,28 @@ impl Core {
         let result = call_supervisor(
             self.ptyd
                 .as_mut()
-                .ok_or_else(|| {
-                    errors::error(ErrorKind::PtydUnavailable, "Supervisor disconnected")
-                })?
+                .ok_or_else(|| errors::ptyd_unavailable("Supervisor disconnected"))?
                 .as_mut(),
             request,
         );
         match result {
-            Err(SupervisorCallError::Response { kind, message }) => Err(errors::error(
-                if kind == "stale_engine_generation" {
-                    ErrorKind::StaleEngineGeneration
-                } else if kind == "spawn_failed" {
-                    ErrorKind::HarnessUnavailable
-                } else {
-                    ErrorKind::PtydUnavailable
-                },
-                &message,
-            )),
+            Err(error @ Error::Supervisor(soyeht_ptyd::Error::Remote { .. })) => Err(error),
             Ok(response) => Ok(response),
-            Err(SupervisorCallError::Transport(_)) => {
+            Err(Error::Supervisor(_)) => {
                 self.ptyd = None;
                 let _ = self.system_event(
                     "ptyd.lost",
                     json!({"reason":"Supervisor connection closed"}),
                 );
-                Err(errors::error(
-                    ErrorKind::PtydUnavailable,
-                    "Supervisor disconnected",
-                ))
+                Err(errors::ptyd_unavailable("Supervisor disconnected"))
             }
+            Err(error) => Err(error),
         }
     }
 
     pub fn connect_supervisor(&mut self) -> Result<()> {
         let client = Client::connect(&self.directory.join("ptyd.sock"), self.generation)
-            .map_err(|_| errors::error(ErrorKind::PtydUnavailable, "Supervisor unavailable"))?;
+            .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))?;
         self.ptyd = Some(Box::new(client));
         let result = self.reconcile_registry();
         if result.is_err() {
@@ -214,26 +195,17 @@ impl Core {
 
     fn reconcile_registry(&mut self) -> Result<()> {
         let Response::InputReceipts(receipts) = self.pty_request(Request::PendingInputs)? else {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
-                "Invalid input registry",
-            ));
+            return Err(errors::ptyd_unavailable("Invalid input registry"));
         };
         for operation_key in receipts {
             let pending = StorePort::input_intent_operation_pending(&self.store, &operation_key)
                 .map_err(errors::storage)?;
-            if !pending
-                && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)
-                    .map_err(errors::storage)?
-            {
+            if !pending && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)? {
                 self.pty_request(Request::ConfirmInput { operation_key })?;
             }
         }
         let Response::Instances(instances) = self.pty_request(Request::List)? else {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
-                "Invalid registry response",
-            ));
+            return Err(errors::ptyd_unavailable("Invalid registry response"));
         };
         let ids: Vec<_> = self.panes.keys().cloned().collect();
         for id in ids {
@@ -291,10 +263,11 @@ impl Core {
                     // A new supervisor cannot adopt an old process identifier.
                     // Reserve the replacement identity durably before spawning.
                     let mut next = saved;
-                    next.pane.generation =
-                        next.pane.generation.checked_add(1).ok_or_else(|| {
-                            errors::error(ErrorKind::InternalError, "Pane generation exhausted")
-                        })?;
+                    next.pane.generation = next
+                        .pane
+                        .generation
+                        .checked_add(1)
+                        .ok_or_else(|| errors::internal("Pane generation exhausted"))?;
                     next.pane.stream_id = Some(Uuid::new_v4().to_string());
                     next.pane.pid = None;
                     next.pane.state = PaneState::Recovering;
@@ -332,10 +305,7 @@ impl Core {
             rows: pane.pane.rows as u16,
         };
         let Response::Instance(instance) = self.pty_request(Request::Spawn(config))? else {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
-                "Invalid spawn response",
-            ));
+            return Err(errors::ptyd_unavailable("Invalid spawn response"));
         };
         self.adopt(id, &instance)
     }
@@ -410,10 +380,11 @@ impl Core {
             if self.agents.contains_key(&id) {
                 if let Err(error) = self.poll_agent(&id) {
                     if matches!(
-                        error.data.kind,
-                        ErrorKind::InvalidParams | ErrorKind::HarnessUnavailable
+                        errors::kind(&error),
+                        soyeht_protocol::ErrorKind::InvalidParams
+                            | soyeht_protocol::ErrorKind::HarnessUnavailable
                     ) {
-                        self.fail_agent(&id, &error.message)?;
+                        self.fail_agent(&id, &error.to_string())?;
                     } else {
                         return Err(error);
                     }
@@ -432,10 +403,7 @@ impl Core {
                 from_seq: seq,
             })?
             else {
-                return Err(errors::error(
-                    ErrorKind::PtydUnavailable,
-                    "Invalid output response",
-                ));
+                return Err(errors::ptyd_unavailable("Invalid output response"));
             };
             let running = errors::invariant(
                 self.panes.get_mut(&id),
@@ -444,29 +412,21 @@ impl Core {
             let from = saved
                 .sequence_base
                 .checked_add(output.from_seq)
-                .ok_or_else(|| {
-                    errors::error(ErrorKind::InternalError, "Output offset exhausted")
-                })?;
+                .ok_or_else(|| errors::internal("Output offset exhausted"))?;
             if from > running.screen.next_offset() {
-                running
-                    .screen
-                    .append(Record::Gap {
-                        from: running.screen.next_offset(),
-                        to: from,
-                    })
-                    .map_err(errors::io)?;
+                running.screen.append(Record::Gap {
+                    from: running.screen.next_offset(),
+                    to: from,
+                })?;
             }
-            let bytes = STANDARD.decode(output.bytes).map_err(|_| {
-                errors::error(ErrorKind::PtydUnavailable, "Invalid output encoding")
-            })?;
+            let bytes = STANDARD
+                .decode(output.bytes)
+                .map_err(|_| errors::ptyd_unavailable("Invalid output encoding"))?;
             if !bytes.is_empty() {
-                running
-                    .screen
-                    .append(Record::Data {
-                        offset: from,
-                        bytes,
-                    })
-                    .map_err(errors::io)?;
+                running.screen.append(Record::Data {
+                    offset: from,
+                    bytes,
+                })?;
             }
             // Segment sync completed before returning ownership to the supervisor.
             self.pty_request(Request::Ack {

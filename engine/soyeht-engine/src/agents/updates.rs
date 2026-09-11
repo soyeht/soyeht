@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::{self, Update};
-use soyeht_protocol::{ConfigValue, ErrorKind, TokenUsage, TranscriptKind, TranscriptRole};
+use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptRole};
 
 fn append_replayed_user(
     store: &impl StorePort,
@@ -39,10 +39,7 @@ pub fn update(
         state.session_id.as_deref()
     };
     let Some(expected) = expected else {
-        return Err(errors::error(
-            ErrorKind::InvalidParams,
-            "Update arrived before a session identity",
-        ));
+        return Err(errors::invalid("Update arrived before a session identity"));
     };
     let update = session::update(expected, params).map_err(native_error)?;
     if matches!(
@@ -71,36 +68,27 @@ pub fn update(
             // journal. Only native load reconstructs it from replayed chunks.
             if state.phase == Phase::Loading {
                 if content["type"] != "text" {
-                    return Err(errors::error(
-                        ErrorKind::InvalidParams,
-                        "Unsupported replay content",
-                    ));
+                    return Err(errors::invalid("Unsupported replay content"));
                 }
                 let text = content["text"]
                     .as_str()
-                    .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Replay has no text"))?;
+                    .ok_or_else(|| errors::invalid("Replay has no text"))?;
                 append_replayed_user(store, pane, state, generation, text, changes)?;
             }
         }
         Update::Message { thought, content } => {
             if content["type"] != "text" {
-                return Err(errors::error(
-                    ErrorKind::InvalidParams,
-                    "This pane accepts text response blocks",
-                ));
+                return Err(errors::invalid("This pane accepts text response blocks"));
             }
-            let text = content["text"].as_str().ok_or_else(|| {
-                errors::error(ErrorKind::InvalidParams, "Text response has no text")
-            })?;
+            let text = content["text"]
+                .as_str()
+                .ok_or_else(|| errors::invalid("Text response has no text"))?;
             transcript::append_text(store, pane, state, generation, thought, text, changes)?;
         }
         Update::Tool { update, fields } => {
             let id = errors::param_str(&fields, "toolCallId")?;
             if id.is_empty() || id.chars().count() > 128 {
-                return Err(errors::error(
-                    ErrorKind::InvalidParams,
-                    "Tool ID exceeds public protocol bounds",
-                ));
+                return Err(errors::invalid("Tool ID exceeds public protocol bounds"));
             }
             let key = format!("tool:{id}");
             let prior = state
@@ -138,8 +126,7 @@ pub fn update(
             }
             item.complete = matches!(tool["status"].as_str(), Some("completed" | "failed"));
             item.tool = Some(
-                serde_json::from_value(tool)
-                    .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid tool update"))?,
+                serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))?,
             );
             state
                 .open_messages
@@ -164,19 +151,19 @@ pub fn update(
                 String::new(),
                 true,
             )?;
-            item.plan =
-                Some(serde_json::from_value(entries).map_err(|_| {
-                    errors::error(ErrorKind::InvalidParams, "Invalid plan entries")
-                })?);
+            item.plan = Some(
+                serde_json::from_value(entries)
+                    .map_err(|_| errors::invalid("Invalid plan entries"))?,
+            );
             transcript::put(changes, pane, item, "plan")?;
         }
         Update::Usage(value) => {
             let used = value["used"]
                 .as_u64()
-                .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Invalid token usage"))?;
+                .ok_or_else(|| errors::invalid("Invalid token usage"))?;
             let size = value["size"]
                 .as_u64()
-                .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Invalid context size"))?;
+                .ok_or_else(|| errors::invalid("Invalid context size"))?;
             let mut item = transcript::new_message(
                 state,
                 generation,

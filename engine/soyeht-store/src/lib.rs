@@ -2,6 +2,7 @@
 
 pub mod agents;
 pub mod database;
+pub use database::{Error, Result};
 pub mod domain;
 mod english_values;
 pub mod segments;

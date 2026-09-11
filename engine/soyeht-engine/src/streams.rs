@@ -4,7 +4,7 @@ use crate::{
     model::{self, Subscription},
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{ErrorKind, frame::Frame, limits};
+use soyeht_protocol::{frame::Frame, limits};
 use soyeht_store::segments::Record;
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -15,12 +15,9 @@ impl Core {
             .panes
             .get(pane_id)
             .filter(|p| !p.stored.closed)
-            .ok_or_else(|| errors::error(ErrorKind::NotFound, "Pane not found"))?;
+            .ok_or_else(|| errors::not_found("Pane not found"))?;
         if running.stored.pane.mode != soyeht_protocol::PaneMode::Terminal {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Binary streams require a terminal pane",
-            ));
+            return Err(errors::invalid("Binary streams require a terminal pane"));
         }
         let stream_id = running
             .stored
@@ -35,18 +32,14 @@ impl Core {
             running.screen.tail_start()
         } else {
             if params["from"]["streamId"] != stream_id {
-                return Err(errors::error(
-                    ErrorKind::ResyncRequired,
-                    "Stream identity changed",
-                ));
+                return Err(errors::resync_required("Stream identity changed"));
             }
             let offset = params["from"]["offset"]
                 .as_str()
                 .and_then(|s| s.parse::<u64>().ok())
-                .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Invalid stream offset"))?;
+                .ok_or_else(|| errors::invalid("Invalid stream offset"))?;
             if offset < running.screen.first_offset() || offset > high {
-                return Err(errors::error(
-                    ErrorKind::ResyncRequired,
+                return Err(errors::resync_required(
                     "Stream offset outside retained range",
                 ));
             }
@@ -58,12 +51,9 @@ impl Core {
             "Stream connection disappeared",
         )?;
         let binary_ref = client.next_binary_ref;
-        client.next_binary_ref = binary_ref.checked_add(1).ok_or_else(|| {
-            errors::error(
-                ErrorKind::ResyncRequired,
-                "Connection stream references exhausted",
-            )
-        })?;
+        client.next_binary_ref = binary_ref
+            .checked_add(1)
+            .ok_or_else(|| errors::resync_required("Connection stream references exhausted"))?;
         // Mapping precedes every binary frame. All tail boundaries were captured
         // while holding the same engine lock used by output ingestion.
         client.streams.remove(pane_id);
@@ -117,11 +107,11 @@ impl Core {
                     subscription.next = to;
                 }
                 if subscription.next < through {
-                    for record in pane
-                        .screen
-                        .read(subscription.next, through, limits::TERMINAL_PAYLOAD_BYTES)
-                        .map_err(errors::io)?
-                    {
+                    for record in pane.screen.read(
+                        subscription.next,
+                        through,
+                        limits::TERMINAL_PAYLOAD_BYTES,
+                    )? {
                         let end = record.end();
                         let frame = match record {
                             Record::Data { offset, bytes } => Frame::Terminal {

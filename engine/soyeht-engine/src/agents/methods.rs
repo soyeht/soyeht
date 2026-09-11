@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::client;
-use soyeht_protocol::{ErrorKind, PaneState, PromptOrigin};
+use soyeht_protocol::{PaneState, PromptOrigin};
 
 fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
     (
@@ -104,10 +104,9 @@ impl Core {
         if let Some(user) = state.operation_user.take() {
             changes.completed_user = Some(super::pending::Completion {
                 user,
-                result: Err(errors::error(
-                    ErrorKind::HarnessUnavailable,
+                result: Err(errors::wire(errors::harness_unavailable(
                     "Agent pane was closed before confirmation",
-                )),
+                ))),
             });
         }
         state.operation = None;
@@ -168,8 +167,7 @@ impl Core {
                     .as_array()
                     .is_some_and(|items| !items.is_empty())
                 {
-                    return Err(errors::error(
-                        ErrorKind::InvalidParams,
+                    return Err(errors::invalid(
                         "Attachment upload is not available in this slice",
                     ));
                 }
@@ -271,10 +269,7 @@ impl Core {
                 json!({"_nativePending":operation_id})
             }
             _ => {
-                return Err(errors::error(
-                    ErrorKind::InvalidParams,
-                    "Agent method unavailable",
-                ));
+                return Err(errors::invalid("Agent method unavailable"));
             }
         };
         Ok(self

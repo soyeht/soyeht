@@ -21,15 +21,13 @@ fn text(value: &Value, field: &str) -> Result<String, Error> {
         .get(field)
         .and_then(Value::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| Error(format!("missing config field: {field}")))
+        .ok_or_else(|| Error::MissingConfigField(field.to_owned()))
 }
 
 fn identifier(value: &Value, field: &str) -> Result<String, Error> {
     let id = text(value, field)?;
     if id.is_empty() || id.chars().count() > 128 {
-        return Err(Error(
-            "native configuration identifier exceeds the public protocol limit".into(),
-        ));
+        return Err(Error::ConfigurationIdentifierTooLong);
     }
     Ok(id)
 }
@@ -54,9 +52,7 @@ fn push_choice(
 ) -> Result<(), Error> {
     *bytes += serde_json::to_vec(&choice)?.len();
     if choices.len() == 256 || *bytes > soyeht_protocol::limits::JSON_BYTES / 2 {
-        return Err(Error(
-            "configuration choices exceed the metadata limit".into(),
-        ));
+        return Err(Error::ConfigurationChoicesTooLarge);
     }
     choices.push(choice);
     Ok(())
@@ -70,13 +66,13 @@ fn option(value: &Value) -> Result<ConfigOption, Error> {
         Some("select") => {
             let items = value["options"]
                 .as_array()
-                .ok_or_else(|| Error("missing select choices".into()))?;
+                .ok_or(Error::MissingSelectChoices)?;
             for item in items {
                 if item.get("group").is_some() {
                     let group = text(item, "name")?;
                     for member in item["options"]
                         .as_array()
-                        .ok_or_else(|| Error("missing grouped choices".into()))?
+                        .ok_or(Error::MissingGroupedChoices)?
                     {
                         push_choice(
                             &mut choices,
@@ -90,21 +86,19 @@ fn option(value: &Value) -> Result<ConfigOption, Error> {
             }
             let mut seen = BTreeSet::new();
             if choices.len() > 256 || choices.iter().any(|c| !seen.insert(c.value.clone())) {
-                return Err(Error("too many or duplicate configuration choices".into()));
+                return Err(Error::DuplicateConfigurationChoices);
             }
             ConfigType::Select
         }
-        _ => return Err(Error("unsupported configuration option type".into())),
+        _ => return Err(Error::UnsupportedConfigurationType),
     };
     let current = value
         .get("currentValue")
-        .ok_or_else(|| Error("missing current config value".into()))?;
+        .ok_or(Error::MissingCurrentConfigValue)?;
     if (kind == ConfigType::Boolean && !current.is_boolean())
         || (kind == ConfigType::Select && !current.is_string())
     {
-        return Err(Error(
-            "configuration current value has the wrong type".into(),
-        ));
+        return Err(Error::ConfigurationValueType);
     }
     Ok(ConfigOption {
         id: identifier(value, "id")?,
@@ -123,7 +117,7 @@ impl Options {
         if let Some(options) = response.get("configOptions").filter(|v| !v.is_null()) {
             for value in options
                 .as_array()
-                .ok_or_else(|| Error("configOptions must be an array".into()))?
+                .ok_or(Error::ConfigurationOptionsNotArray)?
             {
                 let option = option(value)?;
                 if result.values.len() == 64
@@ -132,7 +126,7 @@ impl Options {
                         .insert(option.id.clone(), Route::ConfigOption)
                         .is_some()
                 {
-                    return Err(Error("too many or duplicate configuration options".into()));
+                    return Err(Error::DuplicateConfigurationOptions);
                 }
                 result.values.push(option);
                 result.check_size()?;
@@ -146,7 +140,7 @@ impl Options {
         {
             let available = modes["availableModes"]
                 .as_array()
-                .ok_or_else(|| Error("missing session modes".into()))?;
+                .ok_or(Error::MissingSessionModes)?;
             let choices: Result<Vec<_>,Error> = available.iter().map(|mode| Ok(json!({"value":text(mode,"id")?,"name":text(mode,"name")?,"description":mode.get("description")}))).collect();
             result.values.push(option(&json!({"id":"mode","name":"Mode","category":"mode","type":"select","currentValue":text(modes,"currentModeId")?,"options":choices?}))?);
             result.routes.insert("mode".into(), Route::SessionMode);
@@ -159,7 +153,7 @@ impl Options {
         if self.values.len() > 64
             || serde_json::to_vec(&self.values)?.len() > soyeht_protocol::limits::JSON_BYTES / 2
         {
-            return Err(Error("configuration metadata exceeds its limit".into()));
+            return Err(Error::ConfigurationMetadataTooLarge);
         }
         Ok(())
     }
@@ -174,7 +168,7 @@ impl Options {
             .values
             .iter()
             .find(|option| option.id == id)
-            .ok_or_else(|| Error("unknown configuration option".into()))?;
+            .ok_or(Error::UnknownConfigurationOption)?;
         let value = serde_json::to_value(value)?;
         match option.r#type {
             ConfigType::Boolean if value.is_boolean() => (),
@@ -184,9 +178,7 @@ impl Options {
                     .iter()
                     .any(|choice| Some(choice.value.as_str()) == value.as_str()) => {}
             _ => {
-                return Err(Error(
-                    "configuration value is not an available choice".into(),
-                ));
+                return Err(Error::UnavailableConfigurationChoice);
             }
         }
         if self.routes.get(id) == Some(&Route::SessionMode) {
@@ -215,14 +207,12 @@ impl Options {
                 .values
                 .iter_mut()
                 .find(|option| option.id == id)
-                .ok_or_else(|| Error("missing mode option".into()))?;
+                .ok_or(Error::MissingModeOption)?;
             option.current_value = value.clone();
             return Ok(next);
         }
         if !response["configOptions"].is_array() {
-            return Err(Error(
-                "configuration response omitted confirmed options".into(),
-            ));
+            return Err(Error::MissingConfirmedOptions);
         }
         let mut next = Self::from_response(response)?;
         for option in &self.values {
@@ -242,9 +232,7 @@ impl Options {
             .iter()
             .any(|option| option.id == id && option.current_value == *value)
         {
-            return Err(Error(
-                "native response did not confirm the requested value".into(),
-            ));
+            return Err(Error::UnconfirmedConfigurationValue);
         }
         Ok(next)
     }

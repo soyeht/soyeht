@@ -27,7 +27,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::{Message, rpc::Decoder};
-use soyeht_protocol::{ErrorKind, ProbeCapability, TranscriptMessage};
+use soyeht_protocol::{ProbeCapability, TranscriptMessage};
 use soyeht_store::{
     agents::{self, NativeRequest, Outgoing},
     database::{Change, Mutation},
@@ -67,19 +67,19 @@ pub struct Changes {
     pub events: Vec<(String, Value)>,
 }
 
-pub fn native_error(error: soyeht_acp::Error) -> soyeht_protocol::RpcError {
-    errors::error(ErrorKind::InvalidParams, error.0)
+pub fn native_error(error: soyeht_acp::Error) -> errors::Error {
+    errors::invalid(error.to_string())
 }
 
 impl Core {
     pub fn agent_state(&self, id: &str) -> Result<State> {
         if self.panes.get(id).is_none_or(|p| p.stored.closed) {
-            return Err(errors::error(ErrorKind::NotFound, "Pane not found"));
+            return Err(errors::not_found("Pane not found"));
         }
         self.agents
             .get(id)
             .map(|agent| agent.state.clone())
-            .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Agent pane required"))
+            .ok_or_else(|| errors::invalid("Agent pane required"))
     }
 
     fn replace_agent_state(&mut self, id: &str, state: State) -> Result<()> {
@@ -124,15 +124,14 @@ impl Core {
                 operation_key: Uuid::new_v4().to_string(),
                 pane_id: id.clone(),
                 generation: saved.pane.generation,
-                instance_id: saved.instance_id.clone().ok_or_else(|| {
-                    errors::error(ErrorKind::PtydUnavailable, "Agent process is not adopted")
-                })?,
-                supervisor_id: saved.supervisor_id.clone().ok_or_else(|| {
-                    errors::error(
-                        ErrorKind::PtydUnavailable,
-                        "Agent supervisor is not adopted",
-                    )
-                })?,
+                instance_id: saved
+                    .instance_id
+                    .clone()
+                    .ok_or_else(|| errors::ptyd_unavailable("Agent process is not adopted"))?,
+                supervisor_id: saved
+                    .supervisor_id
+                    .clone()
+                    .ok_or_else(|| errors::ptyd_unavailable("Agent supervisor is not adopted"))?,
                 bytes: message.encode().map_err(native_error)?,
                 accepted_bytes: 0,
                 attempt: 0,
@@ -165,9 +164,7 @@ impl Core {
                     &completion.stored(),
                 )?;
                 if !changed {
-                    return Err(soyeht_store::database::Error::Invalid(
-                        "Native operation has no durable caller",
-                    ));
+                    return Err(soyeht_store::database::Error::NativeEffectNotFound);
                 }
             }
             if let Some((instance, supervisor)) = changes.retire_instance {

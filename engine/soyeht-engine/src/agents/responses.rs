@@ -14,9 +14,7 @@ use soyeht_acp::{
     config::Options,
     session::{self, Initialization},
 };
-use soyeht_protocol::{
-    ErrorKind, PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole,
-};
+use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole};
 
 pub const PROBED_METHODS: [&str; 3] = ["session/list", "session/load", "session/set_config_option"];
 
@@ -94,14 +92,11 @@ fn finish_configuration(
 ) -> Result<()> {
     let confirmation = native_result
         .map_err(|error| {
-            errors::error(
-                if error.code == -32602 {
-                    ErrorKind::InvalidParams
-                } else {
-                    ErrorKind::HarnessUnavailable
-                },
-                error.message,
-            )
+            if error.code == -32602 {
+                errors::invalid(error.message)
+            } else {
+                errors::harness_unavailable(error.message)
+            }
         })
         .and_then(|value| {
             state
@@ -157,12 +152,15 @@ fn finish_configuration(
                 state.initial_config_failed = true;
             }
             state.pending_policy = None;
-            changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.message})));
+            changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.to_string()})));
             Err(error)
         }
     };
     if let Some(user) = state.operation_user.take() {
-        changes.completed_user = Some(super::pending::Completion { user, result });
+        changes.completed_user = Some(super::pending::Completion {
+            user,
+            result: result.map_err(errors::wire),
+        });
     }
     state.operation = None;
     Ok(())
@@ -203,7 +201,7 @@ pub fn response(
         return Ok(());
     }
     if request.context == "initialize" {
-        let value = result.map_err(|e| errors::error(ErrorKind::HarnessUnavailable, e.message))?;
+        let value = result.map_err(|e| errors::harness_unavailable(e.message))?;
         let info = Initialization::parse(&value).map_err(native_error)?;
         state.fingerprint = fingerprint(state, &info.version)?;
         state.initialized = Some(info);
@@ -247,7 +245,7 @@ pub fn response(
                 needs_login(state, saved, changes);
                 return Ok(());
             }
-            Err(error) => return Err(errors::error(ErrorKind::HarnessUnavailable, error.message)),
+            Err(error) => return Err(errors::harness_unavailable(error.message)),
         }
     }
     if request.context.starts_with("probe:") {
@@ -273,9 +271,10 @@ pub fn response(
             result: classified,
             checked_at: timestamp.into(),
         });
-        let id = state.probe_session_id.clone().ok_or_else(|| {
-            errors::error(ErrorKind::InternalError, "Probe has no disposable session")
-        })?;
+        let id = state
+            .probe_session_id
+            .clone()
+            .ok_or_else(|| errors::internal("Probe has no disposable session"))?;
         match request.context.as_str() {
             "probe:list" => {
                 state.phase = Phase::ProbeLoad;
@@ -318,10 +317,7 @@ pub fn response(
             }
             "probe:config" => state.phase = Phase::RestartAfterProbe,
             _ => {
-                return Err(errors::error(
-                    ErrorKind::InternalError,
-                    "Unknown probe response",
-                ));
+                return Err(errors::internal("Unknown probe response"));
             }
         }
         return Ok(());
@@ -332,8 +328,7 @@ pub fn response(
                 if request.context == "open" {
                     let id = session::session_id(&value).map_err(native_error)?;
                     if id.chars().count() > 128 {
-                        return Err(errors::error(
-                            ErrorKind::InvalidParams,
+                        return Err(errors::invalid(
                             "Native session ID exceeds the public protocol bound",
                         ));
                     }
@@ -380,16 +375,13 @@ pub fn response(
                 state.has_finished_turn = false;
                 open(state, saved, changes, now_ms)?;
             }
-            Err(error) => return Err(errors::error(ErrorKind::HarnessUnavailable, error.message)),
+            Err(error) => return Err(errors::harness_unavailable(error.message)),
         }
         return Ok(());
     }
     if request.method == "session/prompt" {
         if state.active.as_ref().map(|p| p.prompt_id.as_str()) != Some(request.context.as_str()) {
-            return Err(errors::error(
-                ErrorKind::InternalError,
-                "Prompt response belongs to another turn",
-            ));
+            return Err(errors::internal("Prompt response belongs to another turn"));
         }
         let reason = match result {
             Ok(value) => session::stop_reason(&value)
@@ -444,8 +436,5 @@ pub fn response(
         finish_configuration(state, saved, operation, result, changes)?;
         return Ok(());
     }
-    Err(errors::error(
-        ErrorKind::InvalidParams,
-        "Unexpected ACP response context",
-    ))
+    Err(errors::invalid("Unexpected ACP response context"))
 }

@@ -4,14 +4,13 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::ErrorKind;
 
 fn default_value(key: &str) -> Result<Value> {
     match key {
         "record.default" => Ok(json!(true)),
         "terminal.defaultCols" => Ok(json!(80)),
         "terminal.defaultRows" => Ok(json!(24)),
-        _ => Err(errors::error(ErrorKind::InvalidParams, "Unknown setting")),
+        _ => Err(errors::invalid("Unknown setting")),
     }
 }
 
@@ -34,10 +33,7 @@ impl Core {
         if (default.is_boolean() && !value.is_boolean())
             || (default.is_number() && !value.as_u64().is_some_and(|n| (1..=1000).contains(&n)))
         {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Invalid setting value",
-            ));
+            return Err(errors::invalid("Invalid setting value"));
         }
         Ok(self
             .mutate(connection, "settings.set", params, |tx| {

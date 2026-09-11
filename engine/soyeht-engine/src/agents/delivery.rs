@@ -6,12 +6,12 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use soyeht_protocol::{ErrorKind, limits};
+use soyeht_protocol::limits;
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::agents;
 use uuid::Uuid;
 
-pub fn receipt_pending(store: &impl StorePort, key: &str) -> soyeht_store::database::Result<bool> {
+pub fn receipt_pending(store: &impl StorePort, key: &str) -> Result<bool> {
     let Some(rest) = key.strip_prefix("acp:") else {
         return Ok(false);
     };
@@ -22,7 +22,8 @@ pub fn receipt_pending(store: &impl StorePort, key: &str) -> soyeht_store::datab
         return Ok(false);
     };
     Ok(store
-        .agent_outgoing(operation)?
+        .agent_outgoing(operation)
+        .map_err(errors::storage)?
         .is_some_and(|row| row.attempt == attempt))
 }
 
@@ -46,8 +47,7 @@ impl Core {
                 || saved.instance_id.as_deref() != Some(&prior.instance_id)
                 || saved.supervisor_id.as_deref() != Some(&prior.supervisor_id)
             {
-                return Err(errors::error(
-                    ErrorKind::ResyncRequired,
+                return Err(errors::resync_required(
                     "Native delivery belongs to a lost process; reconciliation is required",
                 ));
             }
@@ -65,14 +65,10 @@ impl Core {
                     fingerprint: format!("{:x}", Sha256::digest(bytes)),
                 })?
                 else {
-                    return Err(errors::error(
-                        ErrorKind::PtydUnavailable,
-                        "Invalid native input receipt",
-                    ));
+                    return Err(errors::ptyd_unavailable("Invalid native input receipt"));
                 };
                 if accepted > bytes.len() {
-                    return Err(errors::error(
-                        ErrorKind::PtydUnavailable,
+                    return Err(errors::ptyd_unavailable(
                         "Native input receipt exceeds the attempted bytes",
                     ));
                 }

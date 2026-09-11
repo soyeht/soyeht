@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_protocol::{ErrorKind, HarnessInfo, ModelInfo, ModelListSource, limits};
+use soyeht_protocol::{HarnessInfo, ModelInfo, ModelListSource, limits};
 
 fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
     let digest = format!(
@@ -16,10 +16,9 @@ fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
     let start = if let Some(cursor) = params["cursor"].as_str() {
         let (prior, index) = cursor
             .split_once('.')
-            .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Invalid catalogue cursor"))?;
+            .ok_or_else(|| errors::invalid("Invalid catalogue cursor"))?;
         if prior != digest {
-            return Err(errors::error(
-                ErrorKind::ResyncRequired,
+            return Err(errors::resync_required(
                 "Catalogue changed; reload the first page",
             ));
         }
@@ -27,7 +26,7 @@ fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
             .parse::<usize>()
             .ok()
             .filter(|index| *index < items.len())
-            .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Invalid catalogue position"))?
+            .ok_or_else(|| errors::invalid("Invalid catalogue position"))?
     } else {
         0
     };
@@ -38,10 +37,7 @@ fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
         let size = errors::json_bytes(item)?.len() + 1;
         if bytes + size > limits::JSON_BYTES {
             if accepted.is_empty() {
-                return Err(errors::error(
-                    ErrorKind::InvalidParams,
-                    "Catalogue entry exceeds frame capacity",
-                ));
+                return Err(errors::invalid("Catalogue entry exceeds frame capacity"));
             }
             break;
         }
@@ -100,10 +96,7 @@ impl Core {
         }
         let harness = errors::required(params["harness"].as_str(), "Harness ID is required")?;
         if !entries.iter().any(|entry| entry.id == harness) {
-            return Err(errors::error(
-                ErrorKind::HarnessUnavailable,
-                "Harness is not configured",
-            ));
+            return Err(errors::harness_unavailable("Harness is not configured"));
         }
         let known = if let Some(pane) = params["paneId"].as_str() {
             let state = self
@@ -113,9 +106,7 @@ impl Core {
                     a.state.launch.id == harness
                         && self.panes.get(pane).is_some_and(|p| !p.stored.closed)
                 })
-                .ok_or_else(|| {
-                    errors::error(ErrorKind::NotFound, "Agent pane not found for this harness")
-                })?;
+                .ok_or_else(|| errors::not_found("Agent pane not found for this harness"))?;
             Some(state)
         } else {
             let (launch, digest) = registry::prepare(&self.directory, harness)?;
@@ -155,6 +146,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soyeht_protocol::ErrorKind;
     #[test]
     fn catalogue_pages_preserve_large_entries_and_reject_changed_cursors() {
         let items = (0..5)
@@ -173,10 +165,9 @@ mod tests {
         let mut changed = items;
         changed[0]["text"] = json!("changed");
         assert_eq!(
-            page(changed, json!({}), &json!({"cursor":first["nextCursor"]}))
-                .unwrap_err()
-                .data
-                .kind,
+            errors::kind(
+                &page(changed, json!({}), &json!({"cursor":first["nextCursor"]})).unwrap_err(),
+            ),
             ErrorKind::ResyncRequired
         );
     }

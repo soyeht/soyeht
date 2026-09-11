@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use soyeht_protocol::{ErrorKind, RpcError};
+use soyeht_protocol::RpcError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserOperation {
@@ -37,9 +37,9 @@ impl Core {
         value: Value,
     ) -> Result<Outcome> {
         if let Some(error) = value.get("_nativeError") {
-            return Err(serde_json::from_value(error.clone()).map_err(|_| {
-                errors::error(ErrorKind::InternalError, "Invalid stored native response")
-            })?);
+            let error = serde_json::from_value::<RpcError>(error.clone())
+                .map_err(|_| errors::internal("Invalid stored native response"))?;
+            return Err(errors::Error::RecordedRpc(error));
         }
         if value.get("_nativePending").is_none() {
             return Ok(Outcome::Reply(value));
@@ -51,10 +51,7 @@ impl Core {
             .any(|(owner, request)| owner == connection && *request == id)
         {
             if waiters.len() >= 128 {
-                return Err(errors::error(
-                    ErrorKind::PaneBusy,
-                    "Native operation waiter limit reached",
-                ));
+                return Err(errors::pane_busy("Native operation waiter limit reached"));
             }
             waiters.push((connection.into(), id));
         }

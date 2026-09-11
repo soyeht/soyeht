@@ -7,7 +7,7 @@ use crate::{
     settings,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{ErrorKind, Pane, PaneMode, PaneState, StateSource};
+use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
@@ -64,14 +64,14 @@ fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::s
     }
     let harness = params["harness"]
         .as_str()
-        .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Agent panes require a harness"))?;
+        .ok_or_else(|| errors::invalid("Agent panes require a harness"))?;
     let (launch, digest) = crate::agents::registry::prepare(directory, harness)?;
     let permission = params
         .get("permission")
         .cloned()
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid permission mode"))?
+        .map_err(|_| errors::invalid("Invalid permission mode"))?
         .unwrap_or(soyeht_protocol::PermissionMode::Ask);
     let mut agent = crate::agents::state::State::new(launch, digest, permission);
     for name in ["model", "effort"] {
@@ -92,17 +92,14 @@ impl Core {
         let workspace = model::workspace(&self.store, errors::param_str(params, "workspaceId")?)?;
         let cwd = params["cwd"].as_str().unwrap_or(&workspace.path);
         if !Path::new(cwd).is_absolute() || !Path::new(cwd).is_dir() {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Pane directory must exist and be absolute",
-            ));
+            return Err(errors::invalid("Pane directory must exist and be absolute"));
         }
         let canonical;
         let cwd = if agent_mode {
             canonical = Path::new(cwd).canonicalize().map_err(errors::io)?;
-            canonical.to_str().ok_or_else(|| {
-                errors::error(ErrorKind::InvalidParams, "Working directory must be UTF-8")
-            })?
+            canonical
+                .to_str()
+                .ok_or_else(|| errors::invalid("Working directory must be UTF-8"))?
         } else {
             cwd
         };
@@ -156,8 +153,7 @@ impl Core {
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             saved.pane.record,
-        )
-        .map_err(errors::io)?;
+        )?;
         let mutation = self.mutate(connection, "pane.create", params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
             Ok(pane_created(&saved))
@@ -193,7 +189,7 @@ impl Core {
             .panes
             .get(id)
             .filter(|p| !p.stored.closed)
-            .ok_or_else(|| errors::error(ErrorKind::NotFound, "Pane not found"))?
+            .ok_or_else(|| errors::not_found("Pane not found"))?
             .stored
             .clone();
         let mut events = vec![];
@@ -220,10 +216,7 @@ impl Core {
             }
             "pane.record.set" => {
                 if saved.pane.mode == soyeht_protocol::PaneMode::Agent {
-                    return Err(errors::error(
-                        ErrorKind::InvalidParams,
-                        "Agent protocol history is always durable",
-                    ));
+                    return Err(errors::invalid("Agent protocol history is always durable"));
                 }
                 saved.pane.record = errors::param_bool(params, "on")?;
                 json!({"on":saved.pane.record})
@@ -241,10 +234,7 @@ impl Core {
                     .result);
             }
             _ => {
-                return Err(errors::error(
-                    ErrorKind::InvalidParams,
-                    "Unknown pane mutation",
-                ));
+                return Err(errors::invalid("Unknown pane mutation"));
             }
         };
         if matches!(method, "pane.resize" | "pane.record.set") {

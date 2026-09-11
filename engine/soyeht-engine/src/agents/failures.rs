@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::json;
 use soyeht_protocol::{
-    AttentionItem, ErrorKind, PaneState, StateSource, TranscriptKind, TranscriptRole, limits,
+    AttentionItem, PaneState, StateSource, TranscriptKind, TranscriptRole, limits,
 };
 use soyeht_ptyd::wire::Request;
 
@@ -92,7 +92,7 @@ impl Core {
         if let Some(user) = state.operation_user.take() {
             changes.completed_user = Some(super::pending::Completion {
                 user,
-                result: Err(errors::error(ErrorKind::HarnessUnavailable, reason)),
+                result: Err(errors::wire(errors::harness_unavailable(reason))),
             });
         }
         state.pending_policy = None;
@@ -140,7 +140,7 @@ impl Core {
             if let Some(user) = state.operation_user.take() {
                 changes.completed_user = Some(super::pending::Completion {
                     user,
-                    result: Err(errors::error(ErrorKind::HarnessUnavailable, reason)),
+                    result: Err(errors::wire(errors::harness_unavailable(reason))),
                 });
             }
             self.commit_agent(

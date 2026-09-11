@@ -5,7 +5,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{ErrorKind, Workspace};
+use soyeht_protocol::Workspace;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -25,8 +25,7 @@ impl Core {
     pub fn workspace_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let path = errors::param_str(params, "path")?;
         if !Path::new(path).is_absolute() || !Path::new(path).is_dir() {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
+            return Err(errors::invalid(
                 "Workspace path must be an existing absolute directory",
             ));
         }

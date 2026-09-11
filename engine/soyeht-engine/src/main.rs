@@ -1,31 +1,29 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-use soyeht_engine::server::{self, Config};
-use std::{io, net::SocketAddr, path::PathBuf};
+use soyeht_engine::{
+    errors::{Error, Result},
+    server::{self, Config},
+};
+use std::{net::SocketAddr, path::PathBuf};
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
-    let mut directory = PathBuf::from(
-        std::env::var_os("HOME").ok_or_else(|| io::Error::other("HOME is required"))?,
-    )
-    .join("Library/Application Support/Soyeht.next/dev");
+async fn main() -> Result<()> {
+    let mut directory = PathBuf::from(std::env::var_os("HOME").ok_or(Error::HomeMissing)?)
+        .join("Library/Application Support/Soyeht.next/dev");
     let mut listen = vec![];
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--data-dir" => {
-                directory = PathBuf::from(
-                    args.next()
-                        .ok_or_else(|| io::Error::other("--data-dir requires a path"))?,
-                )
+                directory = PathBuf::from(args.next().ok_or(Error::MissingDataDirectoryArgument)?)
             }
             "--listen" => listen.push(
                 args.next()
-                    .ok_or_else(|| io::Error::other("--listen requires an address"))?
+                    .ok_or(Error::MissingListenAddressArgument)?
                     .parse::<SocketAddr>()
-                    .map_err(io::Error::other)?,
+                    .map_err(Error::Address)?,
             ),
-            _ => return Err(io::Error::other("expected --data-dir or --listen")),
+            _ => return Err(Error::InvalidArguments),
         }
     }
     if !listen.is_empty() {

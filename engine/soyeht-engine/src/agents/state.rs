@@ -2,8 +2,8 @@ use crate::errors::{self, Result};
 use serde::{Deserialize, Serialize};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
-    AgentSession, ConfigOperation, ConfigValue, ErrorKind, HarnessLaunch, PaneQueueListResult,
-    PermissionMode, PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, limits,
+    AgentSession, ConfigOperation, ConfigValue, HarnessLaunch, PaneQueueListResult, PermissionMode,
+    PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
@@ -167,7 +167,7 @@ impl State {
         self.queue_revision = self
             .queue_revision
             .checked_add(1)
-            .ok_or_else(|| errors::error(ErrorKind::InternalError, "Queue revision exhausted"))?;
+            .ok_or_else(|| errors::internal("Queue revision exhausted"))?;
         Ok(())
     }
 
@@ -178,13 +178,12 @@ impl State {
         at: String,
     ) -> Result<PromptItem> {
         if text.is_empty() || text.len() > limits::PROMPT_BYTES {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
+            return Err(errors::invalid(
                 "Prompt must contain 1 to 65536 UTF-8 bytes",
             ));
         }
         if self.queue.len() >= limits::PROMPT_QUEUE_COUNT {
-            return Err(errors::error(ErrorKind::PaneBusy, "Prompt queue is full"));
+            return Err(errors::pane_busy("Prompt queue is full"));
         }
         self.changed_queue()?;
         let prompt = PromptItem {
@@ -251,35 +250,28 @@ impl State {
         now_ms: i64,
     ) -> Result<PaneQueueListResult> {
         if limit == 0 || limit > limits::PROMPT_QUEUE_COUNT {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Invalid queue page limit",
-            ));
+            return Err(errors::invalid("Invalid queue page limit"));
         }
         let start = if let Some(cursor) = cursor {
             let (revision, index) = cursor
                 .split_once('.')
-                .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Invalid queue cursor"))?;
+                .ok_or_else(|| errors::invalid("Invalid queue cursor"))?;
             let revision = revision
                 .parse::<u64>()
-                .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid queue revision"))?;
+                .map_err(|_| errors::invalid("Invalid queue revision"))?;
             if revision != self.queue_revision {
-                return Err(errors::error(
-                    ErrorKind::ResyncRequired,
+                return Err(errors::resync_required(
                     "Queue changed; request the first page",
                 ));
             }
             index
                 .parse::<usize>()
-                .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid queue position"))?
+                .map_err(|_| errors::invalid("Invalid queue position"))?
         } else {
             0
         };
         if start > self.queue.len() {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Queue cursor is out of range",
-            ));
+            return Err(errors::invalid("Queue cursor is out of range"));
         }
         let mut items = Vec::new();
         let mut bytes = 0;
@@ -303,9 +295,9 @@ impl State {
 
     pub fn message_sequence(&mut self) -> Result<u64> {
         let next = self.next_message_seq;
-        self.next_message_seq = next.checked_add(1).ok_or_else(|| {
-            errors::error(ErrorKind::InternalError, "Transcript sequence exhausted")
-        })?;
+        self.next_message_seq = next
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("Transcript sequence exhausted"))?;
         Ok(next)
     }
 }
@@ -313,6 +305,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soyeht_protocol::ErrorKind;
     fn state() -> State {
         State::new(
             HarnessLaunch {
@@ -364,7 +357,7 @@ mod tests {
         let first = state.queue[0].prompt_id.clone();
         state.remove(&first).unwrap();
         assert_eq!(
-            state.queue_page(Some(&cursor), 1, 0).unwrap_err().data.kind,
+            errors::kind(&state.queue_page(Some(&cursor), 1, 0).unwrap_err()),
             ErrorKind::ResyncRequired
         );
         assert!(

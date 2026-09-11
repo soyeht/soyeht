@@ -1,25 +1,25 @@
-use crate::{Request, SCHEMA};
+use crate::{Error, Request, Result, SCHEMA};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use std::sync::OnceLock;
 
-fn schema() -> Result<&'static Value, &'static str> {
-    static PARSED: OnceLock<Result<Value, String>> = OnceLock::new();
+fn schema() -> Result<&'static Value> {
+    static PARSED: OnceLock<Option<Value>> = OnceLock::new();
     PARSED
-        .get_or_init(|| serde_json::from_str(SCHEMA).map_err(|error| error.to_string()))
+        .get_or_init(|| serde_json::from_str(SCHEMA).ok())
         .as_ref()
-        .map_err(|_| "compiled schema is invalid")
+        .ok_or(Error::InvalidEmbeddedSchema)
 }
 
-pub fn parameters(method: &str, value: &Value) -> Result<Request, &'static str> {
+pub fn parameters(method: &str, value: &Value) -> Result<Request> {
     let schema = schema()?;
     let registry = &schema["x-methods"];
-    let definition = registry.get(method).ok_or("unknown method")?;
+    let definition = registry.get(method).ok_or(Error::UnknownMethod)?;
     if !valid(schema, &definition["params"], value) {
-        return Err("invalid parameters");
+        return Err(Error::InvalidParameters);
     }
     serde_json::from_value(serde_json::json!({"method":method,"params":value}))
-        .map_err(|_| "invalid parameters")
+        .map_err(|_| Error::InvalidParameters)
 }
 
 fn valid(schema: &Value, rule: &Value, value: &Value) -> bool {

@@ -1,6 +1,7 @@
+use crate::errors::{self, Result};
 use soyeht_protocol::limits;
 use soyeht_store::segments::{Log, Record};
-use std::{collections::VecDeque, io, path::Path};
+use std::{collections::VecDeque, path::Path};
 
 pub struct Screen {
     disk: Log,
@@ -11,7 +12,7 @@ pub struct Screen {
 }
 
 impl Screen {
-    pub fn open(directory: &Path, recording: bool) -> io::Result<Self> {
+    pub fn open(directory: &Path, recording: bool) -> Result<Self> {
         let disk = Log::open(directory)?;
         Ok(Self {
             next: disk.next_offset(),
@@ -30,9 +31,9 @@ impl Screen {
             .min(self.live.front().map(Record::from).unwrap_or(self.next))
     }
 
-    pub fn append(&mut self, record: Record) -> io::Result<()> {
+    pub fn append(&mut self, record: Record) -> Result<()> {
         if record.from() != self.next {
-            return Err(io::Error::other("noncontiguous screen record"));
+            return Err(errors::internal("Noncontiguous screen record"));
         }
         if self.recording {
             if self.disk.next_offset() < record.from() {
@@ -73,9 +74,9 @@ impl Screen {
         }
     }
 
-    pub fn read(&self, from: u64, to: u64, maximum: usize) -> io::Result<Vec<Record>> {
+    pub fn read(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {
         if from < self.first_offset() || from > to || to > self.next {
-            return Err(io::Error::other("screen cursor outside retained range"));
+            return Err(errors::internal("Screen cursor outside retained range"));
         }
         let mut result = Vec::new();
         let mut position = from;

@@ -5,7 +5,7 @@ use crate::{
     screen::Screen,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{Actor, ErrorKind, Workspace, frame::Frame};
+use soyeht_protocol::{Actor, Workspace, frame::Frame};
 use std::collections::BTreeMap;
 
 pub use soyeht_store::domain::PaneRecord as StoredPane;
@@ -63,7 +63,7 @@ pub fn workspace(store: &impl StorePort, id: &str) -> Result<Workspace> {
     store
         .workspace(id)
         .map_err(errors::storage)?
-        .ok_or_else(|| errors::error(ErrorKind::NotFound, "Workspace not found"))
+        .ok_or_else(|| errors::not_found("Workspace not found"))
 }
 
 pub fn panes(store: &impl StorePort) -> Result<Vec<StoredPane>> {

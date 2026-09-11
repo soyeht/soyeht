@@ -29,13 +29,13 @@ impl DatabaseProbe {
         state["last_update_ms"] = Value::from(0);
         let pending = state["client"]["pending"]
             .as_object_mut()
-            .ok_or(Error::Invalid("test runtime has no pending calls"))?;
+            .ok_or(Error::TestFixture("test runtime has no pending calls"))?;
         for call in pending.values_mut() {
             call["sent_at_ms"] = Value::from(0);
         }
         if cancel {
             if !state["cancel_at_ms"].is_i64() {
-                return Err(Error::Invalid("test runtime has no cancellation"));
+                return Err(Error::TestFixture("test runtime has no cancellation"));
             }
             state["cancel_at_ms"] = Value::from(0);
         }
@@ -52,7 +52,7 @@ impl DatabaseProbe {
             [method],
             |row| row.get(0),
         )?;
-        u64::try_from(count).map_err(|_| Error::Invalid("negative test event count"))
+        u64::try_from(count).map_err(|_| Error::TestFixture("negative test event count"))
     }
 
     pub fn event_count_by_field(&self, method: &str, field: &str, value: &str) -> Result<u64> {
@@ -62,7 +62,7 @@ impl DatabaseProbe {
             params![method, path, value],
             |row| row.get(0),
         )?;
-        u64::try_from(count).map_err(|_| Error::Invalid("negative test event count"))
+        u64::try_from(count).map_err(|_| Error::TestFixture("negative test event count"))
     }
 
     pub fn request_result(&self, method: &str, pane_id: &str) -> Result<Option<Value>> {
@@ -84,7 +84,7 @@ impl DatabaseProbe {
             [pane_id],
             |row| row.get(0),
         )?;
-        u64::try_from(count).map_err(|_| Error::Invalid("negative test request count"))
+        u64::try_from(count).map_err(|_| Error::TestFixture("negative test request count"))
     }
 
     pub fn request_count(&self, method: &str) -> Result<u64> {
@@ -93,7 +93,7 @@ impl DatabaseProbe {
             [method],
             |row| row.get(0),
         )?;
-        u64::try_from(count).map_err(|_| Error::Invalid("negative test request count"))
+        u64::try_from(count).map_err(|_| Error::TestFixture("negative test request count"))
     }
 
     pub fn engine_generation(&self) -> Result<u64> {
@@ -104,7 +104,7 @@ impl DatabaseProbe {
         )?;
         value
             .parse()
-            .map_err(|_| Error::Invalid("invalid test engine generation"))
+            .map_err(|_| Error::TestFixture("invalid test engine generation"))
     }
 
     pub fn expire_request(&self, request_id: &str) -> Result<()> {
@@ -113,7 +113,7 @@ impl DatabaseProbe {
             [request_id],
         )?;
         if changed != 1 {
-            return Err(Error::Invalid("test request not found"));
+            return Err(Error::TestFixture("test request not found"));
         }
         Ok(())
     }

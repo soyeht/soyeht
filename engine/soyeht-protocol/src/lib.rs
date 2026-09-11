@@ -4,6 +4,8 @@
 mod generated;
 pub mod limits;
 pub use generated::*;
+mod error;
+pub use error::{Error, Result};
 pub mod frame;
 pub mod validate;
 

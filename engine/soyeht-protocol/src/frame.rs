@@ -1,6 +1,6 @@
 //! Local framing. Length excludes the five-byte common header.
-use crate::limits;
-use std::io::{self, Read, Write};
+use crate::{Error, Result, limits};
+use std::io::{ErrorKind, Read, Write};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Frame {
@@ -17,11 +17,7 @@ pub enum Frame {
     },
 }
 
-fn invalid(message: &'static str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
-}
-
-pub fn validate_length(kind: u8, length: usize) -> io::Result<()> {
+pub fn validate_length(kind: u8, length: usize) -> Result<()> {
     let (minimum, maximum) = match kind {
         1 => (1, limits::JSON_BYTES),
         2 => (
@@ -32,16 +28,16 @@ pub fn validate_length(kind: u8, length: usize) -> io::Result<()> {
             limits::ATTACHMENT_HEADER_BYTES,
             limits::ATTACHMENT_HEADER_BYTES + limits::ATTACHMENT_PAYLOAD_BYTES,
         ),
-        _ => return Err(invalid("unknown frame type")),
+        _ => return Err(Error::UnknownFrameType(kind)),
     };
     if !(minimum..=maximum).contains(&length) {
-        return Err(invalid("invalid frame length"));
+        return Err(Error::InvalidFrameLength { kind, length });
     }
     Ok(())
 }
 
 impl Frame {
-    pub fn write_to(&self, mut writer: impl Write) -> io::Result<()> {
+    pub fn write_to(&self, mut writer: impl Write) -> Result<()> {
         let (kind, header, bytes) = match self {
             Self::Json(bytes) => (1, Vec::new(), bytes),
             Self::Terminal {
@@ -61,24 +57,25 @@ impl Frame {
         let length = header
             .len()
             .checked_add(bytes.len())
-            .ok_or_else(|| invalid("length overflow"))?;
+            .ok_or(Error::FrameLengthOverflow)?;
         validate_length(kind, length)?;
         writer.write_all(&[kind])?;
         writer.write_all(&(length as u32).to_be_bytes())?;
         writer.write_all(&header)?;
-        writer.write_all(bytes)
+        writer.write_all(bytes)?;
+        Ok(())
     }
 
     /// A clean EOF is None; a truncated header or body is an error.
     /// Validate the announced length before allocating any payload memory.
-    pub fn read_from(mut reader: impl Read) -> io::Result<Option<Self>> {
+    pub fn read_from(mut reader: impl Read) -> Result<Option<Self>> {
         let mut kind = [0];
         loop {
             match reader.read(&mut kind) {
                 Ok(0) => return Ok(None),
                 Ok(_) => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => return Err(error),
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error.into()),
             }
         }
         let mut length = [0; 4];
@@ -92,23 +89,23 @@ impl Frame {
             2 => {
                 let header: [u8; limits::TERMINAL_HEADER_BYTES] = bytes
                     .get(..limits::TERMINAL_HEADER_BYTES)
-                    .ok_or_else(|| invalid("terminal header is missing"))?
+                    .ok_or(Error::MissingTerminalHeader)?
                     .try_into()
-                    .map_err(|_| invalid("terminal header has the wrong size"))?;
+                    .map_err(|_| Error::MalformedTerminalHeader)?;
                 let pane_ref = u32::from_be_bytes(
                     header[..4]
                         .try_into()
-                        .map_err(|_| invalid("terminal pane reference is malformed"))?,
+                        .map_err(|_| Error::MalformedTerminalHeader)?,
                 );
                 let generation = u32::from_be_bytes(
                     header[4..8]
                         .try_into()
-                        .map_err(|_| invalid("terminal generation is malformed"))?,
+                        .map_err(|_| Error::MalformedTerminalHeader)?,
                 );
                 let offset = u64::from_be_bytes(
                     header[8..]
                         .try_into()
-                        .map_err(|_| invalid("terminal offset is malformed"))?,
+                        .map_err(|_| Error::MalformedTerminalHeader)?,
                 );
                 Self::Terminal {
                     pane_ref,
@@ -120,15 +117,15 @@ impl Frame {
             3 => {
                 let header = bytes
                     .get(..limits::ATTACHMENT_HEADER_BYTES)
-                    .ok_or_else(|| invalid("attachment header is missing"))?
+                    .ok_or(Error::MissingAttachmentHeader)?
                     .try_into()
-                    .map_err(|_| invalid("attachment header has the wrong size"))?;
+                    .map_err(|_| Error::MalformedAttachmentHeader)?;
                 Self::Attachment {
                     header,
                     bytes: bytes[limits::ATTACHMENT_HEADER_BYTES..].to_vec(),
                 }
             }
-            _ => return Err(invalid("unknown frame type")),
+            _ => return Err(Error::UnknownFrameType(kind[0])),
         };
         Ok(Some(frame))
     }
@@ -147,20 +144,20 @@ mod tests {
             [0, 0, 0, 0, 1],
             [1, 0, 0, 0, 0],
         ] {
-            assert_eq!(
-                Frame::read_from(&header[..]).unwrap_err().kind(),
-                io::ErrorKind::InvalidData
-            );
+            assert!(matches!(
+                Frame::read_from(&header[..]).unwrap_err(),
+                Error::InvalidFrameLength { .. } | Error::UnknownFrameType(_)
+            ));
         }
     }
 
     #[test]
     fn empty_stream_is_not_a_truncated_frame() {
         assert_eq!(Frame::read_from(&[][..]).unwrap(), None);
-        assert_eq!(
-            Frame::read_from(&[1, 0][..]).unwrap_err().kind(),
-            io::ErrorKind::UnexpectedEof
-        );
+        assert!(matches!(
+            Frame::read_from(&[1, 0][..]).unwrap_err(),
+            Error::Io(error) if error.kind() == ErrorKind::UnexpectedEof
+        ));
     }
 
     #[test]

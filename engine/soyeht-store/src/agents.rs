@@ -23,7 +23,7 @@ pub fn enqueue_prompt(change: &Change<'_>, pane: &str, item: &PromptItem) -> Res
         || item.text.len() > limits::PROMPT_BYTES
         || item.status != PromptStatus::Queued
     {
-        return Err(Error::Invalid("invalid queued prompt"));
+        return Err(Error::InvalidQueuedPrompt);
     }
     let raw = serde_json::to_string(item)?;
     let prior: Option<(String, String)> = tx
@@ -46,7 +46,7 @@ pub fn enqueue_prompt(change: &Change<'_>, pane: &str, item: &PromptItem) -> Res
         |r| r.get(0),
     )?;
     if count >= limits::PROMPT_QUEUE_COUNT as i64 {
-        return Err(Error::Invalid("prompt queue is full"));
+        return Err(Error::PromptQueueFull);
     }
     tx.execute(
         "INSERT INTO agent_prompt_queue(prompt_id,pane_id,payload) VALUES (?1,?2,?3)",
@@ -100,7 +100,7 @@ pub fn save_attention(
     let tx = change.connection();
     let raw = serde_json::to_string(item)?;
     if raw.len() > 4096 || item.message.len() > 1024 {
-        return Err(Error::Invalid("attention item exceeds its limit"));
+        return Err(Error::AttentionItemTooLarge);
     }
     let belongs: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM panes WHERE id=?1 AND workspace_id=?2)",
@@ -108,9 +108,7 @@ pub fn save_attention(
         |r| r.get(0),
     )?;
     if !belongs {
-        return Err(Error::Invalid(
-            "attention pane belongs to another workspace",
-        ));
+        return Err(Error::AttentionPaneMismatch);
     }
     tx.execute("INSERT INTO agent_attention(attention_id,pane_id,workspace_id,payload) VALUES (?1,?2,?3,?4) ON CONFLICT(attention_id) DO UPDATE SET payload=excluded.payload WHERE agent_attention.pane_id=excluded.pane_id AND agent_attention.workspace_id=excluded.workspace_id",params![item.attention_id,item.pane_id,workspace,raw])?;
     tx.execute("DELETE FROM agent_attention WHERE workspace_id=?1 AND ordinal NOT IN (SELECT ordinal FROM agent_attention WHERE workspace_id=?1 ORDER BY ordinal DESC LIMIT 128)",[workspace])?;
@@ -126,11 +124,11 @@ pub fn save_runtime<T: Serialize>(
     let tx = change.connection();
     let raw = serde_json::to_string(value)?;
     if raw.len() > 16 * limits::JSON_BYTES || generation == 0 {
-        return Err(Error::Invalid("agent runtime exceeds its limit"));
+        return Err(Error::AgentRuntimeTooLarge);
     }
     let changed = tx.execute("INSERT INTO agent_runtime(pane_id,generation,payload) VALUES (?1,?2,?3) ON CONFLICT(pane_id) DO UPDATE SET generation=excluded.generation,payload=excluded.payload WHERE agent_runtime.generation<=excluded.generation", params![pane,generation,raw])?;
     if changed != 1 {
-        return Err(Error::Invalid("stale agent generation"));
+        return Err(Error::StaleAgentGeneration);
     }
     Ok(())
 }
@@ -142,7 +140,7 @@ fn generation_matches(db: &Connection, pane: &str, generation: u32) -> Result<()
         |r| r.get(0),
     )?;
     if !matches {
-        return Err(Error::Invalid("stale agent generation"));
+        return Err(Error::StaleAgentGeneration);
     }
     Ok(())
 }
@@ -163,17 +161,17 @@ pub fn enqueue(change: &Change<'_>, value: &Outgoing) -> Result<()> {
     let tx = change.connection();
     generation_matches(tx, &value.pane_id, value.generation)?;
     if value.accepted_bytes != 0 || value.attempt != 0 {
-        return Err(Error::Invalid("new outbox operation has delivery progress"));
+        return Err(Error::NewOutboxHasProgress);
     }
     if value.bytes.last() != Some(&b'\n')
         || value.bytes.len() > limits::ACP_MESSAGE_BYTES + 1
         || value.bytes[..value.bytes.len() - 1].contains(&b'\n')
     {
-        return Err(Error::Invalid("outbox needs one complete ACP line"));
+        return Err(Error::IncompleteOutboxRecord);
     }
     let message: Value = serde_json::from_slice(&value.bytes[..value.bytes.len() - 1])?;
     if !message.is_object() || message["jsonrpc"] != "2.0" {
-        return Err(Error::Invalid("outbox needs a JSON-RPC envelope"));
+        return Err(Error::InvalidOutboxEnvelope);
     }
     if let Some(mut prior) = outgoing_from(tx, &value.operation_key)? {
         prior.accepted_bytes = 0;
@@ -190,7 +188,7 @@ pub fn enqueue(change: &Change<'_>, value: &Outgoing) -> Result<()> {
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     if count >= 128 || bytes + value.bytes.len() as i64 > limits::CONNECTION_QUEUE_BYTES as i64 {
-        return Err(Error::Invalid("agent outbox is full"));
+        return Err(Error::AgentOutboxFull);
     }
     tx.execute("INSERT INTO agent_outbox(operation_key,pane_id,generation,instance_id,supervisor_id,bytes) VALUES (?1,?2,?3,?4,?5,?6)",params![value.operation_key,value.pane_id,value.generation,value.instance_id,value.supervisor_id,value.bytes])?;
     Ok(())
@@ -234,14 +232,14 @@ pub fn advance(change: &Change<'_>, prior: &Outgoing, accepted: usize) -> Result
     if accepted > limits::TERMINAL_PAYLOAD_BYTES
         || accepted > prior.bytes.len() - prior.accepted_bytes as usize
     {
-        return Err(Error::Invalid("invalid native partial-write receipt"));
+        return Err(Error::InvalidPartialWriteReceipt);
     }
     let mut next = prior.clone();
     next.accepted_bytes += accepted as u32;
     next.attempt = next
         .attempt
         .checked_add(1)
-        .ok_or(Error::Invalid("native write attempts exhausted"))?;
+        .ok_or(Error::NativeWriteAttemptsExhausted)?;
     tx.execute(
         "UPDATE agent_outbox SET accepted_bytes=?1,attempt=?2 WHERE operation_key=?3",
         params![next.accepted_bytes, next.attempt, next.operation_key],
@@ -254,7 +252,7 @@ pub fn advance(change: &Change<'_>, prior: &Outgoing, accepted: usize) -> Result
 pub fn delivered(change: &Change<'_>, value: &Outgoing) -> Result<()> {
     let tx = change.connection();
     if value.accepted_bytes as usize != value.bytes.len() {
-        return Err(Error::Invalid("native message is not fully delivered"));
+        return Err(Error::NativeMessageIncomplete);
     }
     if let Some(prior) = outgoing_from(tx, &value.operation_key)? {
         if prior != *value {
@@ -369,20 +367,18 @@ pub fn receive(change: &Change<'_>, value: &NativeRequest) -> Result<NativeReque
     if value.result.is_some()
         || !(value.native_id.is_null() || value.native_id.is_string() || value.native_id.is_i64())
     {
-        return Err(Error::Invalid("invalid native request identity"));
+        return Err(Error::InvalidNativeRequestIdentity);
     }
     let size = serde_json::to_vec(value)?.len();
     if serde_json::to_vec(&value.public)?.len() > limits::JSON_BYTES / 2 {
-        return Err(Error::Invalid(
-            "public request exceeds the snapshot item limit",
-        ));
+        return Err(Error::PublicRequestTooLarge);
     }
     let (count, bytes): (i64, i64) = tx.query_row("SELECT COUNT(*),COALESCE(SUM(length(CAST(params AS BLOB))+length(CAST(public AS BLOB))),0) FROM agent_requests WHERE pane_id=?1 AND result IS NULL",[&value.pane_id],|r|Ok((r.get(0)?,r.get(1)?)))?;
     if count >= 128
         || bytes + size as i64 > 16 * limits::JSON_BYTES as i64
         || size > 2 * limits::JSON_BYTES
     {
-        return Err(Error::Invalid("pending native requests exceed their limit"));
+        return Err(Error::PendingRequestsTooLarge);
     }
     tx.execute("INSERT INTO agent_requests(request_id,pane_id,generation,source_seq,native_id,method,params,public,expires_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![value.request_id,value.pane_id,value.generation,value.source_seq.to_be_bytes().as_slice(),serde_json::to_string(&value.native_id)?,value.method,serde_json::to_string(&value.params)?,serde_json::to_string(&value.public)?,value.expires_ms])?;
     Ok(value.clone())
@@ -397,7 +393,7 @@ pub struct Decision {
 /// public event. A rollback restores the open request, including its deadline.
 pub fn answer(change: &Change<'_>, id: &str, result: &Value) -> Result<Decision> {
     let tx = change.connection();
-    let prior = request_from(tx, id)?.ok_or(Error::Invalid("native request not found"))?;
+    let prior = request_from(tx, id)?.ok_or(Error::NativeRequestNotFound)?;
     if let Some(result) = prior.result {
         return Ok(Decision {
             first: false,
@@ -417,15 +413,15 @@ pub fn answer(change: &Change<'_>, id: &str, result: &Value) -> Result<Decision>
 
 pub fn start_effect(change: &Change<'_>, id: &str, metadata: &Value) -> Result<()> {
     let tx = change.connection();
-    let request = request_from(tx, id)?.ok_or(Error::Invalid("native effect not found"))?;
+    let request = request_from(tx, id)?.ok_or(Error::NativeEffectNotFound)?;
     generation_matches(tx, &request.pane_id, request.generation)?;
     if request.result.is_some()
         || !request.method.starts_with("fs/") && !request.method.starts_with("terminal/")
     {
-        return Err(Error::Invalid("request is not a pending native effect"));
+        return Err(Error::NativeEffectNotPending);
     }
     if request.public.get("started").is_some() {
-        return Err(Error::Invalid("native effect already started"));
+        return Err(Error::NativeEffectAlreadyStarted);
     }
     let mut public = request.public;
     public["started"] = metadata.clone();
@@ -459,10 +455,10 @@ fn save_message_in(
     let seq = message
         .seq
         .parse::<u64>()
-        .map_err(|_| Error::Invalid("invalid transcript sequence"))?;
+        .map_err(|_| Error::InvalidTranscriptSequence)?;
     let raw = serde_json::to_string(message)?;
     if raw.len() > limits::TRANSCRIPT_MESSAGE_BYTES {
-        return Err(Error::Invalid("transcript message exceeds its byte limit"));
+        return Err(Error::TranscriptMessageTooLarge);
     }
     let prior: Option<String> = tx
         .query_row(
@@ -487,9 +483,7 @@ fn save_message_in(
                 )
                 && prior != *message)
         {
-            return Err(Error::Invalid(
-                "transcript identity or completed content changed",
-            ));
+            return Err(Error::TranscriptMutation);
         }
     }
     tx.execute(&format!("INSERT INTO {table}(pane_id,seq,local_id,generation,payload,bytes) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(pane_id,seq) DO UPDATE SET payload=excluded.payload,bytes=excluded.bytes"),params![pane,seq.to_be_bytes().as_slice(),message.local_id,message.generation,raw,raw.len() as i64])?;
@@ -531,7 +525,7 @@ pub fn publish_replay(change: &Change<'_>, pane: &str, generation: u32) -> Resul
         |r| r.get(0),
     )?;
     if stale {
-        return Err(Error::Invalid("replay belongs to a previous generation"));
+        return Err(Error::StaleTranscriptReplay);
     }
     tx.execute("DELETE FROM agent_transcript WHERE pane_id=?1", [pane])?;
     tx.execute(
@@ -555,7 +549,7 @@ pub fn transcript(
 ) -> Result<PaneTranscriptResult> {
     let db = store.connection();
     if limit == 0 || limit > limits::TRANSCRIPT_PAGE_MESSAGES {
-        return Err(Error::Invalid("invalid transcript page limit"));
+        return Err(Error::InvalidTranscriptPageLimit);
     }
     let mut statement=db.prepare("SELECT payload FROM agent_transcript WHERE pane_id=?1 AND (?2 IS NULL OR seq<?2) ORDER BY seq DESC LIMIT ?3")?;
     let rows = statement.query_map(
@@ -583,7 +577,7 @@ pub fn transcript(
         Some(
             items
                 .first()
-                .ok_or(Error::Invalid("transcript message exceeds page bounds"))?
+                .ok_or(Error::TranscriptPageTooLarge)?
                 .seq
                 .clone(),
         )

@@ -1,4 +1,6 @@
-use crate::{pending::Pending, process, registry::Registry, retention::Retention, wire::*};
+use crate::{
+    Error, Result, pending::Pending, process, registry::Registry, retention::Retention, wire::*,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{frame::Frame, limits};
 use std::collections::BTreeMap;
@@ -50,17 +52,16 @@ fn error(kind: &str, message: &str) -> Response {
     }
 }
 
-fn lock<'a, T>(mutex: &'a Mutex<T>, resource: &'static str) -> io::Result<MutexGuard<'a, T>> {
-    mutex
-        .lock()
-        .map_err(|_| io::Error::other(format!("{resource} lock is poisoned")))
+fn lock<'a, T>(mutex: &'a Mutex<T>, resource: &'static str) -> Result<MutexGuard<'a, T>> {
+    mutex.lock().map_err(|_| Error::PoisonedLock(resource))
 }
 
-fn send(stream: &mut UnixStream, response: &Response) -> io::Result<()> {
-    Frame::Json(serde_json::to_vec(response)?).write_to(stream)
+fn send(stream: &mut UnixStream, response: &Response) -> Result<()> {
+    Frame::Json(serde_json::to_vec(response)?).write_to(stream)?;
+    Ok(())
 }
 
-pub fn run(directory: &Path) -> io::Result<()> {
+pub fn run(directory: &Path) -> Result<()> {
     fs::create_dir_all(directory)?;
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
     let lock = OpenOptions::new()
@@ -73,14 +74,14 @@ pub fn run(directory: &Path) -> io::Result<()> {
         .open(directory.join("ptyd.lock"))?;
     // SAFETY: lock is a live owned file, kept open for the server's lifetime.
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::other("ptyd already running"));
+        return Err(Error::AlreadyRunning);
     }
     let socket = directory.join("ptyd.sock");
     match fs::symlink_metadata(&socket) {
         Ok(metadata) if metadata.file_type().is_socket() => fs::remove_file(&socket)?,
-        Ok(_) => return Err(io::Error::other("socket path is not a socket")),
+        Ok(_) => return Err(Error::SocketPathNotSocket),
         Err(e) if e.kind() == io::ErrorKind::NotFound => (),
-        Err(e) => return Err(e),
+        Err(e) => return Err(e.into()),
     }
     let registry = Registry::load(directory)?;
     let listener = UnixListener::bind(&socket)?;
@@ -104,7 +105,7 @@ pub fn run(directory: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> io::Result<()> {
+fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     let Some(Frame::Json(bytes)) = Frame::read_from(&mut stream)? else {
@@ -160,16 +161,16 @@ fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> io::Result<(
             return Err(error);
         }
     }
-    let result = (|| {
+    let result: Result<()> = (|| {
         stream.set_read_timeout(None)?;
         while let Some(frame) = Frame::read_from(&mut stream)? {
             let Frame::Json(bytes) = frame else {
-                return Err(io::Error::other("JSON request required"));
+                return Err(Error::JsonRequestRequired);
             };
             let request = serde_json::from_slice(&bytes)?;
             let mut state = lock(&shared, "state")?;
             if state.active.as_ref().map(|(id, _)| id.as_str()) != Some(connection_id.as_str()) {
-                return Err(io::Error::other("connection superseded"));
+                return Err(Error::ConnectionSuperseded);
             }
             let response = execute(&mut state, &shared, request)
                 .unwrap_or_else(|e| error("operation_failed", &e.to_string()));
@@ -185,11 +186,7 @@ fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> io::Result<(
     result
 }
 
-fn execute(
-    state: &mut State,
-    shared: &Arc<Mutex<State>>,
-    request: Request,
-) -> io::Result<Response> {
+fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> Result<Response> {
     match request {
         Request::Hello { .. } => Ok(error("already_authenticated", "hello was already accepted")),
         Request::List => Ok(Response::Instances(
@@ -232,8 +229,7 @@ fn execute(
                 master: Mutex::new(input),
                 child: Mutex::new(child),
                 output: Mutex::new(OutputState {
-                    retention: Retention::new(limits::PTY_RETENTION_BYTES)
-                        .map_err(io::Error::other)?,
+                    retention: Retention::new(limits::PTY_RETENTION_BYTES)?,
                     pending: pipes.then(Pending::default),
                 }),
                 guard: guard.map(Mutex::new),
@@ -293,7 +289,7 @@ fn execute(
                         .registry
                         .instances
                         .get_mut(&key)
-                        .ok_or_else(|| io::Error::other("registry instance disappeared"))?;
+                        .ok_or(Error::RegistryInstanceMissing)?;
                     restored.closed = false;
                     return Err(error);
                 }
@@ -339,7 +335,7 @@ fn execute(
             };
             Ok(match pending.chunk(request_key, offset) {
                 Ok(chunk) => Response::PendingRequestChunk(chunk),
-                Err(kind) => error(kind, "pending request could not be read"),
+                Err(failure) => error(failure.wire_kind(), "pending request could not be read"),
             })
         }
         Request::ConfirmInput { operation_key } => {
@@ -380,7 +376,7 @@ fn execute(
             }
             let bytes = STANDARD
                 .decode(bytes)
-                .map_err(|_| io::Error::other("invalid base64 input"))?;
+                .map_err(|_| Error::InvalidBase64Input)?;
             if bytes.len() > limits::TERMINAL_PAYLOAD_BYTES {
                 return Ok(error("input_too_large", "input exceeds 64 KiB"));
             }
@@ -388,7 +384,7 @@ fn execute(
             let count = match lock(&live.master, "master")?.write(&bytes) {
                 Ok(count) => count,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => 0,
-                Err(e) => return Err(e),
+                Err(e) => return Err(e.into()),
             };
             if let Some(pending) = &mut output.pending {
                 pending.input(&bytes[..count]);
@@ -427,7 +423,7 @@ fn execute(
             );
             Ok(match output {
                 Ok(output) => Response::Output(output),
-                Err(kind) => error(kind, "invalid output cursor"),
+                Err(failure) => error(failure.wire_kind(), "invalid output cursor"),
             })
         }
         Request::Ack { instance_id, seq } => {
@@ -437,7 +433,7 @@ fn execute(
             Ok(
                 match lock(&live.output, "output")?.retention.acknowledge(seq) {
                     Ok(()) => Response::Ok,
-                    Err(kind) => error(kind, "invalid acknowledgement"),
+                    Err(failure) => error(failure.wire_kind(), "invalid acknowledgement"),
                 },
             )
         }

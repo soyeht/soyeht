@@ -1,5 +1,8 @@
 //! Request recovery is independent of acknowledgement of the raw byte stream.
-use crate::wire::{PendingRequest, PendingRequestChunk};
+use crate::{
+    Error, Result,
+    wire::{PendingRequest, PendingRequestChunk},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use soyeht_protocol::limits;
@@ -158,10 +161,13 @@ impl Pending {
         )
     }
 
-    pub fn chunk(&self, key: u64, offset: usize) -> Result<PendingRequestChunk, &'static str> {
-        let request = self.requests.get(&key).ok_or("not_found")?;
+    pub fn chunk(&self, key: u64, offset: usize) -> Result<PendingRequestChunk> {
+        let request = self
+            .requests
+            .get(&key)
+            .ok_or(Error::PendingRequestNotFound)?;
         if offset > request.bytes.len() {
-            return Err("invalid_offset");
+            return Err(Error::InvalidPendingOffset);
         }
         let end = request
             .bytes

@@ -104,7 +104,7 @@ mod tests {
             wait_for_change(vec![], std::time::Duration::from_millis(1), || {
                 reads += 1;
                 match reads {
-                    1 => Err(io::Error::other("temporary enumeration failure")),
+                    1 => Err(io::Error::from(io::ErrorKind::Interrupted)),
                     2 => Ok(vec![]),
                     _ => Ok(vec![first]),
                 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, fs, io, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::PathBuf};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -12,7 +12,7 @@ pub struct Settings {
     pub login: bool,
 }
 impl Settings {
-    pub fn parse() -> Result<Self, String> {
+    pub fn parse() -> Result<Self> {
         let mut directory = None;
         let mut load = "supported".to_owned();
         let mut version = "1".to_owned();
@@ -22,21 +22,21 @@ impl Settings {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--state-dir" => directory = args.next().map(PathBuf::from),
-                "--load" => load = args.next().ok_or("missing load policy")?,
-                "--version-label" => version = args.next().ok_or("missing version label")?,
+                "--load" => load = args.next().ok_or(Error::MissingLoadPolicy)?,
+                "--version-label" => version = args.next().ok_or(Error::MissingVersionLabel)?,
                 "--require-login" => require_login = true,
                 "--login" => login = true,
-                _ => return Err(format!("unknown fake-agent option: {arg}")),
+                _ => return Err(Error::UnknownOption(arg)),
             }
         }
         let directory = directory
             .filter(|p| p.is_absolute())
-            .ok_or("--state-dir needs an absolute disposable directory")?;
+            .ok_or(Error::InvalidStateDirectory)?;
         if !matches!(
             load.as_str(),
             "supported" | "unsupported" | "advertised-only" | "missing" | "timeout"
         ) {
-            return Err("unknown load policy".into());
+            return Err(Error::UnknownLoadPolicy);
         }
         Ok(Self {
             directory,
@@ -84,7 +84,7 @@ impl Session {
     pub fn response(&self) -> Value {
         json!({"sessionId":self.id,"configOptions":self.options()})
     }
-    pub fn save(&self, settings: &Settings) -> io::Result<()> {
+    pub fn save(&self, settings: &Settings) -> Result<()> {
         fs::create_dir_all(&settings.directory)?;
         fs::set_permissions(&settings.directory, fs::Permissions::from_mode(0o700))?;
         let temporary = settings.directory.join(format!("{}.tmp", self.id));
@@ -95,12 +95,14 @@ impl Session {
             temporary,
             settings.directory.join(format!("{}.json", self.id)),
         )?;
-        fs::File::open(&settings.directory)?.sync_all()
+        fs::File::open(&settings.directory)?.sync_all()?;
+        Ok(())
     }
-    pub fn load(settings: &Settings, id: &str) -> io::Result<Self> {
-        Uuid::parse_str(id).map_err(|_| io::Error::other("invalid session ID"))?;
+    pub fn load(settings: &Settings, id: &str) -> Result<Self> {
+        Uuid::parse_str(id).map_err(|_| Error::InvalidSessionId)?;
         Ok(serde_json::from_slice(&fs::read(
             settings.directory.join(format!("{id}.json")),
         )?)?)
     }
 }
+use crate::{error::Error, error::Result};

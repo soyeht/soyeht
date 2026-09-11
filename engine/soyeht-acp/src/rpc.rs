@@ -10,18 +10,160 @@ pub struct RpcError {
     pub data: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Error(pub String);
+#[derive(Debug)]
+pub enum Error {
+    Json(serde_json::Error),
+    MessageTooLarge,
+    MissingJsonRpcVersion,
+    InvalidMethod,
+    RequestContainsResponse,
+    ParametersNotObject,
+    InvalidRequestId,
+    InvalidResponseId,
+    AmbiguousResponse,
+    StreamDiscontinuity,
+    OffsetExhausted,
+    TooManyPendingCalls,
+    RequestIdExhausted,
+    ExpectedResponse,
+    UnmatchedResponse,
+    MissingConfigField(String),
+    ConfigurationIdentifierTooLong,
+    ConfigurationChoicesTooLarge,
+    MissingSelectChoices,
+    MissingGroupedChoices,
+    DuplicateConfigurationChoices,
+    UnsupportedConfigurationType,
+    MissingCurrentConfigValue,
+    ConfigurationValueType,
+    ConfigurationOptionsNotArray,
+    DuplicateConfigurationOptions,
+    MissingSessionModes,
+    ConfigurationMetadataTooLarge,
+    UnknownConfigurationOption,
+    UnavailableConfigurationChoice,
+    MissingModeOption,
+    MissingConfirmedOptions,
+    UnconfirmedConfigurationValue,
+    UnsupportedVersion,
+    AuthenticationMethodsNotArray,
+    AuthenticationMethodMissingId,
+    AuthenticationMethodMissingName,
+    AuthenticationMetadataTooLarge,
+    AgentVersionTooLong,
+    MissingSessionId,
+    MissingStopReason,
+    WrongSession,
+    MissingUpdateKind,
+    MissingUserContent,
+    MissingMessageContent,
+    MissingToolCallId,
+    MissingPlanEntries,
+    MissingModeId,
+}
 
 impl std::fmt::Display for Error {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(formatter)
+        match self {
+            Self::Json(error) => write!(formatter, "JSON: {error}"),
+            Self::MessageTooLarge => formatter.write_str("ACP line exceeds 1 MiB"),
+            Self::MissingJsonRpcVersion => formatter.write_str("JSON-RPC 2.0 envelope required"),
+            Self::InvalidMethod => formatter.write_str("invalid ACP method"),
+            Self::RequestContainsResponse => formatter.write_str("request contains a response"),
+            Self::ParametersNotObject => formatter.write_str("ACP parameters must be an object"),
+            Self::InvalidRequestId => formatter.write_str("invalid ACP request ID"),
+            Self::InvalidResponseId => formatter.write_str("invalid ACP response ID"),
+            Self::AmbiguousResponse => {
+                formatter.write_str("response needs exactly one result or error")
+            }
+            Self::StreamDiscontinuity => {
+                formatter.write_str("ACP stream has a gap or duplicate bytes")
+            }
+            Self::OffsetExhausted => formatter.write_str("ACP offset overflow"),
+            Self::TooManyPendingCalls => formatter.write_str("too many outstanding ACP calls"),
+            Self::RequestIdExhausted => formatter.write_str("ACP request ID exhausted"),
+            Self::ExpectedResponse => formatter.write_str("expected native response"),
+            Self::UnmatchedResponse => formatter.write_str("unmatched ACP response"),
+            Self::MissingConfigField(field) => write!(formatter, "missing config field: {field}"),
+            Self::ConfigurationIdentifierTooLong => formatter
+                .write_str("native configuration identifier exceeds the public protocol limit"),
+            Self::ConfigurationChoicesTooLarge => {
+                formatter.write_str("configuration choices exceed the metadata limit")
+            }
+            Self::MissingSelectChoices => formatter.write_str("missing select choices"),
+            Self::MissingGroupedChoices => formatter.write_str("missing grouped choices"),
+            Self::DuplicateConfigurationChoices => {
+                formatter.write_str("too many or duplicate configuration choices")
+            }
+            Self::UnsupportedConfigurationType => {
+                formatter.write_str("unsupported configuration option type")
+            }
+            Self::MissingCurrentConfigValue => formatter.write_str("missing current config value"),
+            Self::ConfigurationValueType => {
+                formatter.write_str("configuration current value has the wrong type")
+            }
+            Self::ConfigurationOptionsNotArray => {
+                formatter.write_str("configOptions must be an array")
+            }
+            Self::DuplicateConfigurationOptions => {
+                formatter.write_str("too many or duplicate configuration options")
+            }
+            Self::MissingSessionModes => formatter.write_str("missing session modes"),
+            Self::ConfigurationMetadataTooLarge => {
+                formatter.write_str("configuration metadata exceeds its limit")
+            }
+            Self::UnknownConfigurationOption => formatter.write_str("unknown configuration option"),
+            Self::UnavailableConfigurationChoice => {
+                formatter.write_str("configuration value is not an available choice")
+            }
+            Self::MissingModeOption => formatter.write_str("missing mode option"),
+            Self::MissingConfirmedOptions => {
+                formatter.write_str("configuration response omitted confirmed options")
+            }
+            Self::UnconfirmedConfigurationValue => {
+                formatter.write_str("native response did not confirm the requested value")
+            }
+            Self::UnsupportedVersion => formatter.write_str("unsupported ACP version; expected v1"),
+            Self::AuthenticationMethodsNotArray => {
+                formatter.write_str("authMethods must be an array")
+            }
+            Self::AuthenticationMethodMissingId => {
+                formatter.write_str("authentication method has no ID")
+            }
+            Self::AuthenticationMethodMissingName => {
+                formatter.write_str("authentication method has no name")
+            }
+            Self::AuthenticationMetadataTooLarge => {
+                formatter.write_str("authentication metadata exceeds identity or launch bounds")
+            }
+            Self::AgentVersionTooLong => {
+                formatter.write_str("agent version exceeds metadata bounds")
+            }
+            Self::MissingSessionId => formatter.write_str("session/new response has no session ID"),
+            Self::MissingStopReason => {
+                formatter.write_str("v1 prompt response has no recognized stop reason")
+            }
+            Self::WrongSession => formatter.write_str("update belongs to another ACP session"),
+            Self::MissingUpdateKind => formatter.write_str("session update has no discriminator"),
+            Self::MissingUserContent => formatter.write_str("user update has no content"),
+            Self::MissingMessageContent => formatter.write_str("message update has no content"),
+            Self::MissingToolCallId => formatter.write_str("tool update has no call ID"),
+            Self::MissingPlanEntries => formatter.write_str("plan has no entries"),
+            Self::MissingModeId => formatter.write_str("mode update has no mode ID"),
+        }
     }
 }
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Json(error) => Some(error),
+            _ => None,
+        }
+    }
+}
 impl From<serde_json::Error> for Error {
     fn from(error: serde_json::Error) -> Self {
-        Self(error.to_string())
+        Self::Json(error)
     }
 }
 
@@ -49,24 +191,24 @@ fn valid_id(id: &Value) -> bool {
 impl Message {
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
         if bytes.len() > limits::ACP_MESSAGE_BYTES {
-            return Err(Error("ACP line exceeds 1 MiB".into()));
+            return Err(Error::MessageTooLarge);
         }
         let value: Value = serde_json::from_slice(bytes)?;
         if value.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-            return Err(Error("JSON-RPC 2.0 envelope required".into()));
+            return Err(Error::MissingJsonRpcVersion);
         }
         if let Some(method) = value.get("method") {
             let method = method
                 .as_str()
                 .filter(|method| !method.is_empty() && method.len() <= 256)
-                .ok_or_else(|| Error("invalid ACP method".into()))?
+                .ok_or(Error::InvalidMethod)?
                 .to_owned();
             if value.get("result").is_some() || value.get("error").is_some() {
-                return Err(Error("request contains a response".into()));
+                return Err(Error::RequestContainsResponse);
             }
             let params = value.get("params").cloned().unwrap_or_else(|| json!({}));
             if !params.is_object() {
-                return Err(Error("ACP parameters must be an object".into()));
+                return Err(Error::ParametersNotObject);
             }
             return match value.get("id") {
                 Some(id) if valid_id(id) => Ok(Self::Request {
@@ -74,19 +216,19 @@ impl Message {
                     method,
                     params,
                 }),
-                Some(_) => Err(Error("invalid ACP request ID".into())),
+                Some(_) => Err(Error::InvalidRequestId),
                 None => Ok(Self::Notification { method, params }),
             };
         }
         let id = value
             .get("id")
             .filter(|id| id.is_null() || valid_id(id))
-            .ok_or_else(|| Error("invalid ACP response ID".into()))?
+            .ok_or(Error::InvalidResponseId)?
             .clone();
         let result = match (value.get("result"), value.get("error")) {
             (Some(result), None) => Ok(result.clone()),
             (None, Some(error)) => Err(serde_json::from_value(error.clone())?),
-            _ => return Err(Error("response needs exactly one result or error".into())),
+            _ => return Err(Error::AmbiguousResponse),
         };
         Ok(Self::Response { id, result })
     }
@@ -113,7 +255,7 @@ impl Message {
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         let mut bytes = serde_json::to_vec(&self.value())?;
         if bytes.len() > limits::ACP_MESSAGE_BYTES {
-            return Err(Error("ACP line exceeds 1 MiB".into()));
+            return Err(Error::MessageTooLarge);
         }
         bytes.push(b'\n');
         Ok(bytes)
@@ -148,14 +290,11 @@ impl Decoder {
     }
     pub fn push(&mut self, offset: u64, bytes: &[u8]) -> Result<Vec<Record>, Error> {
         if offset != self.next {
-            return Err(Error("ACP stream has a gap or duplicate bytes".into()));
+            return Err(Error::StreamDiscontinuity);
         }
         let mut records = Vec::new();
         for &byte in bytes {
-            self.next = self
-                .next
-                .checked_add(1)
-                .ok_or_else(|| Error("ACP offset overflow".into()))?;
+            self.next = self.next.checked_add(1).ok_or(Error::OffsetExhausted)?;
             if byte == b'\n' {
                 let message = Message::parse(&self.bytes)?;
                 records.push(Record {
@@ -167,7 +306,7 @@ impl Decoder {
                 self.start = self.next;
             } else {
                 if self.bytes.len() == limits::ACP_MESSAGE_BYTES {
-                    return Err(Error("ACP line exceeds 1 MiB".into()));
+                    return Err(Error::MessageTooLarge);
                 }
                 self.bytes.push(byte);
             }

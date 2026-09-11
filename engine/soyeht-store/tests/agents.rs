@@ -122,7 +122,7 @@ fn native_replay_is_private_until_atomic_publication_and_survives_restart() {
     );
     let failed = store.mutate("test", "publish", "publish", |tx| {
         agents::publish_replay(tx, "p", 2)?;
-        Err(Error::Invalid("crash before publication commit"))
+        Err(Error::TestFixture("crash before publication commit"))
     });
     assert!(failed.is_err());
     assert_eq!(
@@ -201,7 +201,7 @@ fn request_identity_deadline_answer_and_native_outbox_survive_crash_boundaries()
     let failed = store.mutate("local", "answer", "answer", |tx| {
         agents::answer(tx, "request-1", &json!({"by":"mac","result":"selected"}))?;
         agents::enqueue(tx, &outgoing())?;
-        Err(Error::Invalid("crash before commit"))
+        Err(Error::TestFixture("crash before commit"))
     });
     assert!(failed.is_err());
     assert!(
@@ -291,7 +291,7 @@ fn full_prompt_queue_retains_escaped_text_and_changes_atomically_with_the_checkp
             .mutate("test", "failed-take", "failed-take", |tx| {
                 agents::remove_prompt(tx, "p", "prompt-0")?;
                 agents::save_runtime(tx, "p", 1, &json!({"queueRevision":65,"active":"prompt-0"}))?;
-                Err(Error::Invalid("injected crash before queue commit"))
+                Err(Error::TestFixture("injected crash before queue commit"))
             })
             .is_err()
     );

@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
-    ErrorKind, PaneState, PermissionMode, PermissionOption, PermissionOptionKind, Role, limits,
+    PaneState, PermissionMode, PermissionOption, PermissionOptionKind, Role, limits,
 };
 use soyeht_store::agents::NativeRequest;
 use uuid::Uuid;
@@ -32,8 +32,8 @@ pub struct Decision<'a> {
     pub timestamp: &'a str,
 }
 
-fn invalid(message: &str) -> soyeht_protocol::RpcError {
-    errors::error(ErrorKind::InvalidParams, message)
+fn invalid(message: &str) -> crate::errors::Error {
+    errors::invalid(message)
 }
 
 fn bounded(text: &str, maximum: usize) -> Result<String> {
@@ -370,7 +370,7 @@ impl Core {
             .agent_request(errors::param_str(params, "requestId")?)
             .map_err(errors::storage)?
             .filter(|r| r.pane_id == pane)
-            .ok_or_else(|| errors::error(ErrorKind::NotFound, "Question not found"))?;
+            .ok_or_else(|| errors::not_found("Question not found"))?;
         let expected = if method == "pane.permission.answer" {
             "session/request_permission"
         } else {

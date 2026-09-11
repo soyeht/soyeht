@@ -1,6 +1,6 @@
 use crate::errors::{self, Result};
 use sha2::{Digest, Sha256};
-use soyeht_protocol::{ErrorKind, HarnessLaunch, limits};
+use soyeht_protocol::{HarnessLaunch, limits};
 use std::{
     collections::BTreeSet,
     fs::File,
@@ -22,13 +22,10 @@ pub fn entries(directory: &Path) -> Result<Vec<HarnessLaunch>> {
         .read_to_end(&mut bytes)
         .map_err(errors::io)?;
     if bytes.len() > limits::JSON_BYTES {
-        return Err(errors::error(
-            ErrorKind::InvalidParams,
-            "Harness registry exceeds 1 MiB",
-        ));
+        return Err(errors::invalid("Harness registry exceeds 1 MiB"));
     }
-    let entries: Vec<HarnessLaunch> = serde_json::from_slice(&bytes)
-        .map_err(|_| errors::error(ErrorKind::InvalidParams, "Invalid harness registry"))?;
+    let entries: Vec<HarnessLaunch> =
+        serde_json::from_slice(&bytes).map_err(|_| errors::invalid("Invalid harness registry"))?;
     let mut seen = BTreeSet::new();
     if entries.len() > 64
         || entries.iter().any(|entry| {
@@ -40,10 +37,7 @@ pub fn entries(directory: &Path) -> Result<Vec<HarnessLaunch>> {
                 || entry.args.iter().any(|arg| arg.contains('\0'))
         })
     {
-        return Err(errors::error(
-            ErrorKind::InvalidParams,
-            "Invalid or duplicate harness launch entry",
-        ));
+        return Err(errors::invalid("Invalid or duplicate harness launch entry"));
     }
     Ok(entries)
 }
@@ -76,18 +70,9 @@ pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
     let mut entry = entries(directory)?
         .into_iter()
         .find(|entry| entry.id == id)
-        .ok_or_else(|| {
-            errors::error(
-                ErrorKind::HarnessUnavailable,
-                "Harness is not configured in this profile",
-            )
-        })?;
-    let path = executable(&entry.command).ok_or_else(|| {
-        errors::error(
-            ErrorKind::HarnessUnavailable,
-            "Harness executable is unavailable",
-        )
-    })?;
+        .ok_or_else(|| errors::harness_unavailable("Harness is not configured in this profile"))?;
+    let path = executable(&entry.command)
+        .ok_or_else(|| errors::harness_unavailable("Harness executable is unavailable"))?;
     let mut file = File::open(&path).map_err(errors::io)?;
     let mut digest = Sha256::new();
     let mut buffer = [0; 65536];
@@ -100,7 +85,7 @@ pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
     }
     entry.command = path
         .to_str()
-        .ok_or_else(|| errors::error(ErrorKind::HarnessUnavailable, "Harness path is not UTF-8"))?
+        .ok_or_else(|| errors::harness_unavailable("Harness path is not UTF-8"))?
         .into();
     Ok((entry, format!("{:x}", digest.finalize())))
 }

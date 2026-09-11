@@ -30,20 +30,20 @@ pub struct Initialization {
 impl Initialization {
     pub fn parse(value: &Value) -> Result<Self, Error> {
         if value["protocolVersion"] != 1 {
-            return Err(Error("unsupported ACP version; expected v1".into()));
+            return Err(Error::UnsupportedVersion);
         }
         let mut auth_methods = Vec::new();
         if let Some(methods) = value.get("authMethods").filter(|v| !v.is_null()) {
             for method in methods
                 .as_array()
-                .ok_or_else(|| Error("authMethods must be an array".into()))?
+                .ok_or(Error::AuthenticationMethodsNotArray)?
             {
                 let id = method["id"]
                     .as_str()
-                    .ok_or_else(|| Error("authentication method has no ID".into()))?;
+                    .ok_or(Error::AuthenticationMethodMissingId)?;
                 let name = method["name"]
                     .as_str()
-                    .ok_or_else(|| Error("authentication method has no name".into()))?;
+                    .ok_or(Error::AuthenticationMethodMissingName)?;
                 let kind = match method["type"].as_str() {
                     None | Some("agent") => AuthKind::Agent,
                     Some("terminal") => AuthKind::Terminal,
@@ -110,15 +110,13 @@ impl Initialization {
                         > 64 * 1024
             })
         {
-            return Err(Error(
-                "authentication metadata exceeds identity or launch bounds".into(),
-            ));
+            return Err(Error::AuthenticationMetadataTooLarge);
         }
         let version = value["agentInfo"]["version"]
             .as_str()
             .unwrap_or("unreported");
         if version.chars().count() > 256 {
-            return Err(Error("agent version exceeds metadata bounds".into()));
+            return Err(Error::AgentVersionTooLong);
         }
         Ok(Self {
             version: version.into(),
@@ -156,7 +154,7 @@ pub fn session_id(response: &Value) -> Result<String, Error> {
         .as_str()
         .filter(|id| !id.is_empty() && id.chars().count() <= 128 && !id.contains('\0'))
         .map(str::to_owned)
-        .ok_or_else(|| Error("session/new response has no session ID".into()))
+        .ok_or(Error::MissingSessionId)
 }
 
 pub fn stop_reason(response: &Value) -> Result<&str, Error> {
@@ -164,9 +162,7 @@ pub fn stop_reason(response: &Value) -> Result<&str, Error> {
         Some(
             reason @ ("end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled"),
         ) => Ok(reason),
-        _ => Err(Error(
-            "v1 prompt response has no recognized stop reason".into(),
-        )),
+        _ => Err(Error::MissingStopReason),
     }
 }
 
@@ -184,25 +180,25 @@ pub enum Update {
 /// Session identity is checked before any update can change the owning pane.
 pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, Error> {
     if params["sessionId"].as_str() != Some(expected_session) {
-        return Err(Error("update belongs to another ACP session".into()));
+        return Err(Error::WrongSession);
     }
     let value = &params["update"];
     let kind = value["sessionUpdate"]
         .as_str()
-        .ok_or_else(|| Error("session update has no discriminator".into()))?;
+        .ok_or(Error::MissingUpdateKind)?;
     Ok(Some(match kind {
         "user_message_chunk" => Update::UserMessage(
             value
                 .get("content")
                 .filter(|v| v.is_object())
-                .ok_or_else(|| Error("user update has no content".into()))?
+                .ok_or(Error::MissingUserContent)?
                 .clone(),
         ),
         "agent_message_chunk" | "agent_thought_chunk" => {
             let content = value
                 .get("content")
                 .filter(|v| v.is_object())
-                .ok_or_else(|| Error("message update has no content".into()))?;
+                .ok_or(Error::MissingMessageContent)?;
             Update::Message {
                 thought: kind == "agent_thought_chunk",
                 content: content.clone(),
@@ -210,7 +206,7 @@ pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, 
         }
         "tool_call" | "tool_call_update" => {
             if !value["toolCallId"].is_string() {
-                return Err(Error("tool update has no call ID".into()));
+                return Err(Error::MissingToolCallId);
             }
             Update::Tool {
                 update: kind == "tool_call_update",
@@ -221,14 +217,14 @@ pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, 
             value["entries"]
                 .as_array()
                 .map(|v| json!(v))
-                .ok_or_else(|| Error("plan has no entries".into()))?,
+                .ok_or(Error::MissingPlanEntries)?,
         ),
         "usage_update" => Update::Usage(value.clone()),
         "config_option_update" => Update::Configuration(Options::from_response(value)?),
         "current_mode_update" => Update::Mode(
             value["currentModeId"]
                 .as_str()
-                .ok_or_else(|| Error("mode update has no mode ID".into()))?
+                .ok_or(Error::MissingModeId)?
                 .into(),
         ),
         _ => return Ok(None),

@@ -5,9 +5,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use soyeht_protocol::{
-    ConfigOperation, ConfigOperationKind, ConfigValue, ErrorKind, PermissionMode,
-};
+use soyeht_protocol::{ConfigOperation, ConfigOperationKind, ConfigValue, PermissionMode};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,12 +35,8 @@ pub fn native_policy(value: &str) -> Option<PermissionMode> {
 }
 
 pub(super) fn require_native_policy(value: &str) -> Result<PermissionMode> {
-    native_policy(value).ok_or_else(|| {
-        errors::error(
-            ErrorKind::InvalidParams,
-            "Agent reported an unsupported permission mode",
-        )
-    })
+    native_policy(value)
+        .ok_or_else(|| errors::invalid("Agent reported an unsupported permission mode"))
 }
 
 pub fn observe_mode(state: &mut State, value: &str, explicit_selection: bool) -> Result<()> {
@@ -72,15 +66,12 @@ pub fn begin(
         now_ms,
     } = request;
     if state.operation.is_some() || state.cancel_at_ms.is_some() {
-        return Err(errors::error(
-            ErrorKind::PaneBusy,
-            "Another pane operation is pending",
-        ));
+        return Err(errors::pane_busy("Another pane operation is pending"));
     }
     let session = state
         .session_id
         .as_deref()
-        .ok_or_else(|| errors::error(ErrorKind::PaneBusy, "Agent session is not ready"))?;
+        .ok_or_else(|| errors::pane_busy("Agent session is not ready"))?;
     let (method, params) = state
         .options
         .request(session, config, &value)
@@ -169,7 +160,7 @@ impl Core {
                         Ok(_) => state.initial_option = Some(key.clone()),
                         Err(error) => {
                             state.initial_config_failed = true;
-                            changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":option.id,"value":desired,"reason":error.message})));
+                            changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":option.id,"value":desired,"reason":error.to_string()})));
                         }
                     }
                 }
@@ -196,10 +187,7 @@ impl Core {
         let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
         if state.operation.is_some() || state.cancel_at_ms.is_some() {
-            return Err(errors::error(
-                ErrorKind::PaneBusy,
-                "Another pane operation is pending",
-            ));
+            return Err(errors::pane_busy("Another pane operation is pending"));
         }
         let on = errors::param_bool(params, "on")?;
         if on == state.yolo {
@@ -286,8 +274,7 @@ impl Core {
             json!({"_nativePending":operation})
         } else {
             if !on && state.previous_effective_mode.is_some() {
-                return Err(errors::error(
-                    ErrorKind::InvalidParams,
+                return Err(errors::invalid(
                     "The previous native mode is no longer offered",
                 ));
             }
@@ -312,6 +299,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soyeht_protocol::ErrorKind;
     use soyeht_protocol::HarnessLaunch;
 
     #[test]
@@ -334,7 +322,7 @@ mod tests {
 
         let error = observe_mode(&mut state, "unexpected", false).unwrap_err();
 
-        assert_eq!(error.data.kind, ErrorKind::InvalidParams);
+        assert_eq!(errors::kind(&error), ErrorKind::InvalidParams);
         assert_eq!(state.permission, PermissionMode::AllowAll);
         assert_eq!(state.effective_mode.as_deref(), Some("bypassPermissions"));
         assert!(state.yolo);

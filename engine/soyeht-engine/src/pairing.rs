@@ -9,7 +9,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use soyeht_protocol::{Device, ErrorKind};
+use soyeht_protocol::Device;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -34,12 +34,7 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
     store
         .active_pair_request(id, clock.now_unix())
         .map_err(errors::storage)?
-        .ok_or_else(|| {
-            errors::error(
-                ErrorKind::Unauthorized,
-                "Pairing request missing or expired",
-            )
-        })
+        .ok_or_else(|| errors::unauthorized("Pairing request missing or expired"))
 }
 
 impl Core {
@@ -64,7 +59,7 @@ impl Core {
         for pending in rows {
             if pending.proved && pending.approved.is_none() {
                 let public = auth::public_key(&pending.key)
-                    .map_err(|s| errors::error(ErrorKind::InternalError, s))?;
+                    .map_err(|error| errors::internal(error.to_string()))?;
                 let expires_at = chrono::DateTime::from_timestamp(pending.expires, 0)
                     .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?
                     .to_rfc3339();
@@ -85,10 +80,7 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         if self.pairing_client(connection)?.actor.is_some() {
-            return Err(errors::error(
-                ErrorKind::Unauthorized,
-                "Pairing requires a fresh connection",
-            ));
+            return Err(errors::unauthorized("Pairing requires a fresh connection"));
         }
         let fingerprint = STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
         let idem = errors::param_str(params, "idempotencyKey")?;
@@ -97,37 +89,35 @@ impl Core {
             let key = errors::param_str(params, "devicePublicKey")?;
             let name = errors::param_str(params, "deviceName")?;
             let public =
-                auth::public_key(key).map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
+                auth::public_key(key).map_err(|error| errors::invalid(error.to_string()))?;
             let scope = format!("pair:{}", auth::fingerprint(&public));
             let receipt = StorePort::idempotency_receipt(&self.store, &scope, idem)
                 .map_err(errors::storage)?;
             if let Some(receipt) = receipt {
                 if receipt.fingerprint != fingerprint {
-                    return Err(errors::error(
-                        ErrorKind::IdempotencyConflict,
+                    return Err(errors::idempotency_conflict(
                         "Pairing key reused with different content",
                     ));
                 }
                 let result = receipt.result;
-                let id = result["requestId"].as_str().ok_or_else(|| {
-                    errors::error(ErrorKind::InternalError, "Missing pairing request")
-                })?;
+                let id = result["requestId"]
+                    .as_str()
+                    .ok_or_else(|| errors::internal("Missing pairing request"))?;
                 self.pending_pair(id)?;
                 self.pairing_client_mut(connection)?.pair_request = Some(id.into());
                 return Ok(result);
             }
             let expires = StorePort::active_pair_window_expiry(&self.store, code, self.now_unix())
                 .map_err(errors::storage)?;
-            let expires = expires.ok_or_else(|| {
-                errors::error(ErrorKind::Unauthorized, "Pairing code expired or invalid")
-            })?;
+            let expires =
+                expires.ok_or_else(|| errors::unauthorized("Pairing code expired or invalid"))?;
             let pending = Pending {
                 id: Uuid::new_v4().to_string(),
                 code: code.into(),
                 name: name.into(),
                 key: key.into(),
                 challenge: auth::random_bytes()
-                    .map_err(|s| errors::error(ErrorKind::InternalError, s))?,
+                    .map_err(|error| errors::internal(error.to_string()))?,
                 proved: false,
                 approved: None,
                 token: None,
@@ -149,14 +139,13 @@ impl Core {
         }
         let id = errors::param_str(params, "requestId")?;
         if self.pairing_client(connection)?.pair_request.as_deref() != Some(id) {
-            return Err(errors::error(
-                ErrorKind::Unauthorized,
+            return Err(errors::unauthorized(
                 "Begin pairing on this connection first",
             ));
         }
         let mut pending = self.pending_pair(id)?;
         let public = auth::public_key(&pending.key)
-            .map_err(|s| errors::error(ErrorKind::Unauthorized, s))?;
+            .map_err(|error| errors::unauthorized(error.to_string()))?;
         if !auth::pair_proof(
             &pending.code,
             &public,
@@ -164,10 +153,7 @@ impl Core {
             &pending.name,
             errors::param_str(params, "proof")?,
         ) {
-            return Err(errors::error(
-                ErrorKind::Unauthorized,
-                "Invalid pairing proof",
-            ));
+            return Err(errors::unauthorized("Invalid pairing proof"));
         }
         let scope = format!("pair:{}", auth::fingerprint(&public));
         let was_proved = pending.proved;
@@ -208,15 +194,11 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         if method == "device.pair.start" {
-            let code = auth::token().map_err(|s| errors::error(ErrorKind::InternalError, s))?;
+            let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
             let now = self.now_unix();
             let expires = now + chrono::Duration::minutes(10).num_seconds();
-            let expires_at = chrono::DateTime::from_timestamp(expires, 0).ok_or_else(|| {
-                errors::error(
-                    ErrorKind::InternalError,
-                    "Pairing expiration is out of range",
-                )
-            })?;
+            let expires_at = chrono::DateTime::from_timestamp(expires, 0)
+                .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
             let uri = format!(
                 "soyeht-next://pair?engineId={}&address={}&code={}",
                 self.store.store_id(),
@@ -232,7 +214,7 @@ impl Core {
             let id = errors::param_str(params, "deviceId")?;
             let mut device: Device = StorePort::device(&self.store, id)
                 .map_err(errors::storage)?
-                .ok_or_else(|| errors::error(ErrorKind::NotFound, "Device not found"))?;
+                .ok_or_else(|| errors::not_found("Device not found"))?;
             device.revoked = true;
             let result = self
                 .mutate(connection, method, params, |tx| {
@@ -257,13 +239,12 @@ impl Core {
         let id = errors::param_str(params, "requestId")?;
         let mut pending = self.pending_pair(id)?;
         if !pending.proved || pending.approved.is_some() {
-            return Err(errors::error(
-                ErrorKind::TransitionRefused,
+            return Err(errors::transition_refused(
                 "Pairing request is not awaiting consent",
             ));
         }
-        let public = auth::public_key(&pending.key)
-            .map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
+        let public =
+            auth::public_key(&pending.key).map_err(|error| errors::invalid(error.to_string()))?;
         let approve = errors::param_bool(params, "approve")?;
         pending.approved = Some(approve);
         if approve {
@@ -271,13 +252,10 @@ impl Core {
                 StorePort::pair_window_active(&self.store, &pending.code, self.now_unix())
                     .map_err(errors::storage)?;
             if !available {
-                return Err(errors::error(
-                    ErrorKind::Unauthorized,
-                    "Pairing code expired or already used",
-                ));
+                return Err(errors::unauthorized("Pairing code expired or already used"));
             }
             pending.token =
-                Some(auth::token().map_err(|s| errors::error(ErrorKind::InternalError, s))?);
+                Some(auth::token().map_err(|error| errors::internal(error.to_string()))?);
             pending.device = Some(Device {
                 device_id: Uuid::new_v4().to_string(),
                 name: pending.name.clone(),
@@ -289,13 +267,10 @@ impl Core {
             .mutate(connection, method, params, |tx| {
                 let mut events = vec![];
                 if let Some(device) = &pending.device {
-                    let token =
-                        pending
-                            .token
-                            .as_deref()
-                            .ok_or(soyeht_store::database::Error::Invalid(
-                                "approved pair request has no token",
-                            ))?;
+                    let token = pending
+                        .token
+                        .as_deref()
+                        .ok_or(soyeht_store::database::Error::ApprovedPairTokenMissing)?;
                     tx.consume_pair_window_and_insert_device(
                         &pending.code,
                         &device.device_id,
@@ -324,6 +299,7 @@ impl Core {
 mod tests {
     use super::*;
     use crate::ports::testing::{FixedClock, MemoryStore};
+    use soyeht_protocol::ErrorKind;
 
     fn pending(expires: i64) -> Pending {
         Pending {
@@ -354,6 +330,6 @@ mod tests {
             "Phone"
         );
         let error = active_pending(&store, &FixedClock(11_000), "request").unwrap_err();
-        assert_eq!(error.data.kind, ErrorKind::Unauthorized);
+        assert_eq!(errors::kind(&error), ErrorKind::Unauthorized);
     }
 }

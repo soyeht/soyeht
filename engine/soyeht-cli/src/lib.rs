@@ -1,5 +1,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod error;
+pub use error::{Error, Result};
+
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_protocol::{
@@ -25,7 +28,7 @@ pub struct Snapshot {
 }
 
 impl Client {
-    pub fn connect(directory: &Path) -> io::Result<Self> {
+    pub fn connect(directory: &Path) -> Result<Self> {
         let socket = UnixStream::connect(directory.join("engine.sock"))?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
@@ -36,39 +39,31 @@ impl Client {
         };
         let challenge = client.read()?;
         if challenge["method"] != "auth.challenge" {
-            return Err(io::Error::other(
-                "engine did not send an authentication challenge",
-            ));
+            return Err(Error::EngineChallengeExpected);
         }
         let _: AuthChallengeEvent = serde_json::from_value(challenge["params"].clone())?;
         let welcome:Welcome=client.request("hello",json!({"client":"soyeht-cli","clientVersion":env!("CARGO_PKG_VERSION"),"protocolVersion":1}))?;
         if welcome.protocol_version != 1 || welcome.role != soyeht_protocol::Role::HumanLocal {
-            return Err(io::Error::other("unexpected engine handshake"));
+            return Err(Error::UnexpectedHandshake);
         }
         Ok(client)
     }
-    fn read(&mut self) -> io::Result<Value> {
+    fn read(&mut self) -> Result<Value> {
         match Frame::read_from(&mut self.socket)? {
             Some(Frame::Json(bytes)) => Ok(serde_json::from_slice(&bytes)?),
-            _ => Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "engine closed or sent an unexpected binary frame",
-            )),
+            _ => Err(Error::UnexpectedFrame),
         }
     }
-    fn begin(&mut self, method: &str, params: Value) -> io::Result<u64> {
-        soyeht_protocol::validate::parameters(method, &params).map_err(io::Error::other)?;
-        self.next = self
-            .next
-            .checked_add(1)
-            .ok_or_else(|| io::Error::other("request identifiers exhausted"))?;
+    fn begin(&mut self, method: &str, params: Value) -> Result<u64> {
+        soyeht_protocol::validate::parameters(method, &params)?;
+        self.next = self.next.checked_add(1).ok_or(Error::RequestIdExhausted)?;
         Frame::Json(serde_json::to_vec(
             &json!({"jsonrpc":"2.0","id":self.next,"method":method,"params":params}),
         )?)
         .write_to(&mut self.socket)?;
         Ok(self.next)
     }
-    pub fn request<T: DeserializeOwned>(&mut self, method: &str, params: Value) -> io::Result<T> {
+    pub fn request<T: DeserializeOwned>(&mut self, method: &str, params: Value) -> Result<T> {
         let mut reconnect = false;
         for attempt in 0..4 {
             if reconnect {
@@ -87,10 +82,10 @@ impl Client {
                 result => return result,
             }
         }
-        Err(io::Error::other("request attempts exhausted"))
+        Err(Error::AttemptsExhausted)
     }
 
-    fn request_once<T: DeserializeOwned>(&mut self, method: &str, params: Value) -> io::Result<T> {
+    fn request_once<T: DeserializeOwned>(&mut self, method: &str, params: Value) -> Result<T> {
         let id = self.begin(method, params)?;
         loop {
             let response = self.read()?;
@@ -99,7 +94,7 @@ impl Client {
             }
         }
     }
-    pub fn snapshot(&mut self) -> io::Result<Snapshot> {
+    pub fn snapshot(&mut self) -> Result<Snapshot> {
         let id = self.begin("state.snapshot", json!({}))?;
         let mut sections: BTreeMap<String, Vec<Value>> = BTreeMap::new();
         let mut identity = None;
@@ -113,7 +108,7 @@ impl Client {
                     || metadata.parts != count
                     || Some(count) != total
                 {
-                    return Err(io::Error::other("incomplete snapshot"));
+                    return Err(Error::IncompleteSnapshot);
                 }
                 return Ok(Snapshot { metadata, sections });
             }
@@ -128,16 +123,13 @@ impl Client {
                 || part.index != count
                 || part.index >= part.of
             {
-                return Err(io::Error::other("snapshot pages are inconsistent"));
+                return Err(Error::InconsistentSnapshotPages);
             }
             identity = Some(part.snapshot_id);
             total = Some(part.of);
             count += 1;
             let name = snapshot_section_name(&part.section).to_owned();
-            let items = part
-                .data
-                .as_array()
-                .ok_or_else(|| io::Error::other("snapshot section must be an array"))?;
+            let items = part.data.as_array().ok_or(Error::SnapshotSectionNotArray)?;
             sections
                 .entry(name)
                 .or_default()
@@ -159,29 +151,31 @@ fn snapshot_section_name(section: &SnapshotSection) -> &'static str {
     }
 }
 
-fn retryable(error: &io::Error) -> bool {
+fn retryable(error: &Error) -> bool {
     matches!(
-        error.kind(),
-        io::ErrorKind::UnexpectedEof
-            | io::ErrorKind::BrokenPipe
-            | io::ErrorKind::ConnectionAborted
-            | io::ErrorKind::ConnectionReset
-            | io::ErrorKind::ConnectionRefused
-            | io::ErrorKind::NotConnected
-            | io::ErrorKind::NotFound
-            | io::ErrorKind::TimedOut
-            | io::ErrorKind::WouldBlock
+        error.io_kind(),
+        Some(
+            io::ErrorKind::UnexpectedEof
+                | io::ErrorKind::BrokenPipe
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionRefused
+                | io::ErrorKind::NotConnected
+                | io::ErrorKind::NotFound
+                | io::ErrorKind::TimedOut
+                | io::ErrorKind::WouldBlock
+        )
     )
 }
 
-fn result<T: DeserializeOwned>(response: Value) -> io::Result<T> {
+fn result<T: DeserializeOwned>(response: Value) -> Result<T> {
     if let Some(error) = response.get("error") {
-        return Err(io::Error::other(error.to_string()));
+        return Err(Error::Remote(serde_json::from_value(error.clone())?));
     }
     Ok(serde_json::from_value(
         response
             .get("result")
-            .ok_or_else(|| io::Error::other("response has no result"))?
+            .ok_or(Error::ResponseMissingResult)?
             .clone(),
     )?)
 }

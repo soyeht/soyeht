@@ -4,7 +4,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{ErrorKind, TranscriptKind, TranscriptMessage, TranscriptRole, limits};
+use soyeht_protocol::{TranscriptKind, TranscriptMessage, TranscriptRole, limits};
 use uuid::Uuid;
 
 pub fn message(store: &impl StorePort, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
@@ -97,8 +97,7 @@ pub fn put(
     kind: &str,
 ) -> Result<()> {
     if errors::json_bytes(&message)?.len() > limits::TRANSCRIPT_MESSAGE_BYTES {
-        return Err(errors::error(
-            ErrorKind::InvalidParams,
+        return Err(errors::invalid(
             "Normalized message exceeds its 256 KiB limit",
         ));
     }
@@ -207,10 +206,7 @@ pub fn append_text_role(
         item.text.push_str(&text[..count]);
         item.complete = true;
         if item.text.is_empty() {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Message metadata exceeds its limit",
-            ));
+            return Err(errors::invalid("Message metadata exceeds its limit"));
         }
         put(changes, pane, item, event_kind)?;
         state.open_messages.remove(key);

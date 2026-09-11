@@ -1,6 +1,7 @@
 //! A private child whose control socket binds a pipe process group to ptyd.
 //! EOF is not a sufficient lifetime contract for a native process's stdin.
 use crate::{
+    Error, Result,
     process::{self, Spawned},
     wire::Spawn,
 };
@@ -25,11 +26,12 @@ enum Reply {
     Failed(String),
 }
 
-fn reply(control: &mut UnixStream, message: Reply) -> io::Result<()> {
-    Frame::Json(serde_json::to_vec(&message)?).write_to(control)
+fn reply(control: &mut UnixStream, message: Reply) -> Result<()> {
+    Frame::Json(serde_json::to_vec(&message)?).write_to(control)?;
+    Ok(())
 }
 
-pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> io::Result<Spawned> {
+pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawned> {
     // Validate before starting any child; this is also used by the native child.
     let _ = process::command(config)?;
     let logs = directory.join("harness-logs");
@@ -48,7 +50,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> io::Result<Sp
     // owned duplicate is CLOEXEC except in the specific guardian child.
     let fd = unsafe { libc::fcntl(child_socket.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 64) };
     if fd == -1 {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
     // SAFETY: fcntl returned a new descriptor owned exclusively here.
     let inherited = unsafe { File::from_raw_fd(fd) };
@@ -70,27 +72,21 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> io::Result<Sp
     let mut child = command.spawn()?;
     drop(inherited);
     drop(child_socket);
-    let setup = (|| {
+    let setup: Result<(u32, File, File)> = (|| {
         Frame::Json(serde_json::to_vec(config)?).write_to(&mut parent)?;
         let Some(Frame::Json(bytes)) = Frame::read_from(&mut parent)? else {
-            return Err(io::Error::other("missing pipe guardian response"));
+            return Err(Error::MissingGuardianResponse);
         };
         let pid = match serde_json::from_slice(&bytes)? {
             Reply::Started(pid) => pid,
-            Reply::Failed(message) => return Err(io::Error::other(message)),
-            _ => return Err(io::Error::other("invalid pipe guardian response")),
+            Reply::Failed(message) => return Err(Error::GuardianFailed(message)),
+            _ => return Err(Error::InvalidGuardianResponse),
         };
         // SAFETY: ownership moves from ChildStdin/ChildStdout into File once.
-        let child_input = child
-            .stdin
-            .take()
-            .ok_or_else(|| io::Error::other("pipe guardian stdin was not created"))?;
+        let child_input = child.stdin.take().ok_or(Error::GuardianStdinMissing)?;
         // SAFETY: ownership moves from ChildStdin into File once.
         let input = unsafe { File::from_raw_fd(child_input.into_raw_fd()) };
-        let child_output = child
-            .stdout
-            .take()
-            .ok_or_else(|| io::Error::other("pipe guardian stdout was not created"))?;
+        let child_output = child.stdout.take().ok_or(Error::GuardianStdoutMissing)?;
         // SAFETY: stdout is a distinct owned descriptor moved into File once.
         let output = unsafe { File::from_raw_fd(child_output.into_raw_fd()) };
         process::nonblocking(&input)?;
@@ -114,27 +110,27 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> io::Result<Sp
 }
 
 /// Only the private executable mode uses this inherited descriptor.
-pub fn run(fd: i32) -> io::Result<()> {
+pub fn run(fd: i32) -> Result<()> {
     if fd < 64 {
-        return Err(io::Error::other("invalid pipe guardian descriptor"));
+        return Err(Error::InvalidGuardianDescriptor);
     }
     // SAFETY: identity-only system calls. The private mode must never address
     // a terminal's or a caller's process group when invoked outside spawn.
     if unsafe { libc::getpgrp() != libc::getpid() || libc::getsid(0) != libc::getpid() } {
-        return Err(io::Error::other("pipe guardian must own its session"));
+        return Err(Error::GuardianNotSessionLeader);
     }
     // SAFETY: the parent gives this process ownership of the inherited socket.
     let mut control = unsafe { UnixStream::from_raw_fd(fd) };
     // SAFETY: prevent the harness or descendants from holding ptyd's liveness FD.
     if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
     let Some(Frame::Json(bytes)) = Frame::read_from(&mut control)? else {
         return Ok(());
     };
     let config: Spawn = serde_json::from_slice(&bytes)?;
     if config.argv.is_empty() {
-        return Err(io::Error::other("empty command"));
+        return Err(Error::EmptyCommand);
     }
     control.set_read_timeout(Some(Duration::from_millis(20)))?;
     control.set_write_timeout(Some(Duration::from_secs(1)))?;

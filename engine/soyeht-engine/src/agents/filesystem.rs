@@ -1,5 +1,6 @@
 //! Descriptor-relative text access. No component of an agent-supplied path
 //! follows a symlink. Atomic replacement never truncates another hard link.
+use crate::errors::{self, Error, Result};
 use soyeht_protocol::limits;
 use std::{
     ffi::CString,
@@ -10,14 +11,14 @@ use std::{
 };
 use uuid::Uuid;
 
-fn invalid(message: &'static str) -> io::Error {
-    io::Error::new(io::ErrorKind::PermissionDenied, message)
+fn invalid(message: &'static str) -> Error {
+    errors::invalid(message)
 }
-fn name(text: &std::ffi::OsStr) -> io::Result<CString> {
+fn name(text: &std::ffi::OsStr) -> Result<CString> {
     use std::os::unix::ffi::OsStrExt;
     CString::new(text.as_bytes()).map_err(|_| invalid("invalid path component"))
 }
-fn child(parent: &File, name: &CString, flags: i32, mode: libc::mode_t) -> io::Result<File> {
+fn child(parent: &File, name: &CString, flags: i32, mode: libc::mode_t) -> Result<File> {
     // SAFETY: parent owns a live directory descriptor and name is terminated.
     let fd = unsafe {
         libc::openat(
@@ -28,12 +29,12 @@ fn child(parent: &File, name: &CString, flags: i32, mode: libc::mode_t) -> io::R
         )
     };
     if fd < 0 {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
     // SAFETY: openat returned a new owned descriptor.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
-fn parent(root: &Path, path: &Path) -> io::Result<(File, CString)> {
+fn parent(root: &Path, path: &Path) -> Result<(File, CString)> {
     if !root.is_absolute() || !path.is_absolute() {
         return Err(invalid("absolute paths are required"));
     }
@@ -68,7 +69,7 @@ fn parent(root: &Path, path: &Path) -> io::Result<(File, CString)> {
     Ok((directory, name(leaf)?))
 }
 
-pub fn read(root: &Path, path: &Path) -> io::Result<String> {
+pub fn read(root: &Path, path: &Path) -> Result<String> {
     let (directory, leaf) = parent(root, path)?;
     let file = child(&directory, &leaf, libc::O_RDONLY | libc::O_NONBLOCK, 0)?;
     if !file.metadata()?.is_file() {
@@ -78,9 +79,9 @@ pub fn read(root: &Path, path: &Path) -> io::Result<String> {
     file.take(limits::ACP_MESSAGE_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() > limits::ACP_MESSAGE_BYTES {
-        return Err(io::Error::other("text file exceeds 1 MiB"));
+        return Err(invalid("text file exceeds 1 MiB"));
     }
-    String::from_utf8(bytes).map_err(|_| io::Error::other("text file is not UTF-8"))
+    String::from_utf8(bytes).map_err(|_| invalid("text file is not UTF-8"))
 }
 
 pub fn permits_edit(root: &Path, path: &Path) -> bool {
@@ -89,19 +90,20 @@ pub fn permits_edit(root: &Path, path: &Path) -> bool {
     };
     match child(&directory, &leaf, libc::O_RDONLY | libc::O_NONBLOCK, 0) {
         Ok(file) => file.metadata().is_ok_and(|m| m.is_file()),
-        Err(error) => error.kind() == io::ErrorKind::NotFound,
+        Err(Error::Io(error)) => error.kind() == io::ErrorKind::NotFound,
+        Err(_) => false,
     }
 }
 
-pub fn write(root: &Path, path: &Path, content: &str) -> io::Result<()> {
+pub fn write(root: &Path, path: &Path, content: &str) -> Result<()> {
     write_with_key(root, path, content, &Uuid::new_v4().to_string())
 }
 
-pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) -> io::Result<()> {
+pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) -> Result<()> {
     let operation =
         Uuid::parse_str(operation).map_err(|_| invalid("invalid write operation identity"))?;
     if content.len() > limits::ACP_MESSAGE_BYTES {
-        return Err(io::Error::other("text content exceeds 1 MiB"));
+        return Err(invalid("text content exceeds 1 MiB"));
     }
     let (directory, leaf) = parent(root, path)?;
     let mode = match child(&directory, &leaf, libc::O_RDONLY | libc::O_NONBLOCK, 0) {
@@ -113,7 +115,7 @@ pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) 
             }
             metadata.permissions().mode() & 0o777
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => 0o600,
+        Err(Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => 0o600,
         Err(error) => return Err(error),
     };
     let temporary = CString::new(format!(".soyeht-write-{operation}"))
@@ -149,7 +151,7 @@ pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) 
         // SAFETY: cleanup names only this invocation's exclusive temporary file.
         let _ = unsafe { libc::unlinkat(directory.as_raw_fd(), temporary.as_ptr(), 0) };
     }
-    result
+    Ok(result?)
 }
 
 #[cfg(test)]

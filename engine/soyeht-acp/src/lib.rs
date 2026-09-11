@@ -7,3 +7,4 @@ pub mod session;
 
 pub use client::Client;
 pub use rpc::{Error, Message, RpcError};
+pub type Result<T> = std::result::Result<T, Error>;

@@ -6,7 +6,6 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::{Message, RpcError};
-use soyeht_protocol::ErrorKind;
 use soyeht_store::agents::{self, NativeRequest};
 use std::path::Path;
 use uuid::Uuid;
@@ -185,10 +184,7 @@ pub fn receive(
 
 pub fn require_session(state: &super::state::State, params: &Value) -> Result<()> {
     if state.session_id.is_none() || params["sessionId"].as_str() != state.session_id.as_deref() {
-        return Err(errors::error(
-            ErrorKind::InvalidParams,
-            "Native effect belongs to another session",
-        ));
+        return Err(errors::invalid("Native effect belongs to another session"));
     }
     Ok(())
 }

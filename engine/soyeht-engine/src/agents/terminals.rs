@@ -171,26 +171,17 @@ impl Core {
                 from_seq: terminal.next,
             })?
             else {
-                return Err(errors::error(
-                    ErrorKind::PtydUnavailable,
-                    "Invalid inline terminal output",
-                ));
+                return Err(errors::ptyd_unavailable("Invalid inline terminal output"));
             };
-            let incoming = STANDARD.decode(&output.bytes).map_err(|_| {
-                errors::error(
-                    ErrorKind::PtydUnavailable,
-                    "Invalid terminal output encoding",
-                )
-            })?;
+            let incoming = STANDARD
+                .decode(&output.bytes)
+                .map_err(|_| errors::ptyd_unavailable("Invalid terminal output encoding"))?;
             if output.next_seq != output.from_seq + incoming.len() as u64 {
-                return Err(errors::error(
-                    ErrorKind::PtydUnavailable,
-                    "Invalid terminal output offsets",
-                ));
+                return Err(errors::ptyd_unavailable("Invalid terminal output offsets"));
             }
-            let mut bytes = STANDARD.decode(&terminal.bytes).map_err(|_| {
-                errors::error(ErrorKind::InternalError, "Invalid stored terminal output")
-            })?;
+            let mut bytes = STANDARD
+                .decode(&terminal.bytes)
+                .map_err(|_| errors::internal("Invalid stored terminal output"))?;
             let changed = !incoming.is_empty() || output.exited || output.from_seq != terminal.next;
             if output.from_seq != terminal.next {
                 bytes.clear();
@@ -211,10 +202,7 @@ impl Core {
             terminal.bytes = STANDARD.encode(&bytes);
             if output.exited && output.next_seq == output.end_seq {
                 let Response::Instances(instances) = self.pty_request(Request::List)? else {
-                    return Err(errors::error(
-                        ErrorKind::PtydUnavailable,
-                        "Invalid process registry",
-                    ));
+                    return Err(errors::ptyd_unavailable("Invalid process registry"));
                 };
                 terminal.exit_code = Some(
                     instances
@@ -312,14 +300,14 @@ impl Core {
                     .ok_or_else(|| errors::internal("Reserved inline terminal disappeared"))?;
                 let instance = match self.pty_request(Request::Spawn(terminal.spawn.clone())) {
                     Ok(Response::Instance(instance)) => instance,
-                    Err(error) if error.data.kind == ErrorKind::HarnessUnavailable => {
+                    Err(error) if errors::kind(&error) == ErrorKind::HarnessUnavailable => {
                         // This explicit supervisor result proves that no process
                         // survived. Ambiguous transport/storage failures still
                         // retain the spawn key for reconciliation.
                         state.terminals.remove(&id);
                         effects::finish(
                             &request,
-                            Err(effects::failure(error.message)),
+                            Err(effects::failure(error.to_string())),
                             &mut changes,
                         );
                         self.commit_agent(saved, state, changes, None, json!({}))?;
@@ -327,10 +315,7 @@ impl Core {
                     }
                     Err(error) => return Err(error),
                     Ok(_) => {
-                        return Err(errors::error(
-                            ErrorKind::PtydUnavailable,
-                            "Invalid terminal spawn response",
-                        ));
+                        return Err(errors::ptyd_unavailable("Invalid terminal spawn response"));
                     }
                 };
                 terminal.instance_id = Some(instance.instance_id);
@@ -350,9 +335,10 @@ impl Core {
                         Ok(terminal.status())
                     }
                     "terminal/kill" | "terminal/release" => {
-                        let instance_id = terminal.instance_id.clone().ok_or_else(|| {
-                            errors::error(ErrorKind::PaneBusy, "Terminal is still starting")
-                        })?;
+                        let instance_id = terminal
+                            .instance_id
+                            .clone()
+                            .ok_or_else(|| errors::pane_busy("Terminal is still starting"))?;
                         self.pty_request(if request.method == "terminal/kill" {
                             Request::Kill { instance_id }
                         } else {

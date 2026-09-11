@@ -1,3 +1,4 @@
+use crate::errors::{Error, Result};
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -6,28 +7,28 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
-pub fn random_bytes() -> Result<[u8; 32], &'static str> {
+pub fn random_bytes() -> Result<[u8; 32]> {
     let mut bytes = [0; 32];
-    getrandom::fill(&mut bytes).map_err(|_| "random source unavailable")?;
+    getrandom::fill(&mut bytes).map_err(|_| Error::RandomUnavailable)?;
     Ok(bytes)
 }
 
-pub fn token() -> Result<String, &'static str> {
+pub fn token() -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(random_bytes()?))
 }
 pub fn token_hash(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 
-pub fn public_key(text: &str) -> Result<VerifyingKey, &'static str> {
+pub fn public_key(text: &str) -> Result<VerifyingKey> {
     let raw: [u8; 32] = STANDARD
         .decode(text)
-        .map_err(|_| "invalid public key")?
+        .map_err(|_| Error::InvalidPublicKey)?
         .try_into()
-        .map_err(|_| "invalid public key length")?;
-    let key = VerifyingKey::from_bytes(&raw).map_err(|_| "invalid public key")?;
+        .map_err(|_| Error::InvalidPublicKeyLength)?;
+    let key = VerifyingKey::from_bytes(&raw).map_err(|_| Error::InvalidPublicKey)?;
     if key.is_weak() {
-        return Err("weak public key");
+        return Err(Error::WeakPublicKey);
     }
     Ok(key)
 }

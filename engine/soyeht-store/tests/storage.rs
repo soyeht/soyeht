@@ -95,7 +95,7 @@ fn failed_mutation_leaves_no_state_event_or_idempotency_receipt() {
     let mut store = Store::open(&directory.0).unwrap();
     let failed = store.mutate("local:test", "key-1", "request", |change| {
         change.insert_workspace(&workspace("w1", "Workspace".into()))?;
-        Err(Error::Invalid("injected failure"))
+        Err(Error::TestFixture("injected failure"))
     });
     assert!(failed.is_err());
     let snapshot = store.snapshot().unwrap();

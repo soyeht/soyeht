@@ -1,8 +1,8 @@
-use crate::wire::Instance;
+use crate::{Error, Result, wire::Instance};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{ErrorKind, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
@@ -16,25 +16,25 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn load(directory: &Path) -> io::Result<Self> {
+    pub fn load(directory: &Path) -> Result<Self> {
         let path = directory.join("ptyd-registry.json");
         let mut registry = match fs::read(path) {
             Ok(bytes) => serde_json::from_slice::<Self>(&bytes)?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Self {
+            Err(error) if error.kind() == ErrorKind::NotFound => Self {
                 version: 1,
                 engine_generation: 0,
                 supervisor_generation: 0,
                 instances: BTreeMap::new(),
             },
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         };
         if registry.version != 1 {
-            return Err(io::Error::other("incompatible registry version"));
+            return Err(Error::IncompatibleRegistryVersion);
         }
         registry.supervisor_generation = registry
             .supervisor_generation
             .checked_add(1)
-            .ok_or_else(|| io::Error::other("supervisor generation exhausted"))?;
+            .ok_or(Error::SupervisorGenerationExhausted)?;
         // Never signal or adopt a process by a PID from a prior supervisor.
         for instance in registry.instances.values_mut() {
             instance.closed = true;
@@ -43,7 +43,7 @@ impl Registry {
         Ok(registry)
     }
 
-    pub fn save(&self, directory: &Path) -> io::Result<()> {
+    pub fn save(&self, directory: &Path) -> Result<()> {
         let temporary = directory.join("ptyd-registry.new");
         let mut file = OpenOptions::new()
             .write(true)
@@ -55,6 +55,7 @@ impl Registry {
         file.write_all(&serde_json::to_vec(self)?)?;
         file.sync_all()?;
         fs::rename(temporary, directory.join("ptyd-registry.json"))?;
-        File::open(directory)?.sync_all()
+        File::open(directory)?.sync_all()?;
+        Ok(())
     }
 }

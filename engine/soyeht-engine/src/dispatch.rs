@@ -7,7 +7,7 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::{Actor, ErrorKind, HelloParams, Role, Welcome, frame::Frame};
+use soyeht_protocol::{Actor, HelloParams, Role, Welcome, frame::Frame};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -20,7 +20,7 @@ pub enum Outcome {
 impl Core {
     pub fn connect(&mut self, local: bool, outbox: Outbox) -> Result<String> {
         let id = Uuid::new_v4().to_string();
-        let nonce = auth::random_bytes().map_err(|s| errors::error(ErrorKind::InternalError, s))?;
+        let nonce = auth::random_bytes().map_err(|error| errors::internal(error.to_string()))?;
         outbox.send(model::notification(
             "auth.challenge",
             json!({"nonce":STANDARD.encode(nonce),"engineId":self.store.db_id}),
@@ -49,20 +49,15 @@ impl Core {
             "Handshake connection disappeared",
         )?;
         if client.actor.is_some() || client.pair_request.is_some() {
-            return Err(errors::error(
-                ErrorKind::Unauthorized,
-                "Handshake already completed",
-            ));
+            return Err(errors::unauthorized("Handshake already completed"));
         }
         if hello.protocol_version != 1 {
-            return Err(errors::error(
-                ErrorKind::ProtocolVersionUnsupported,
+            return Err(errors::protocol_version_unsupported(
                 "Unsupported protocol version",
             ));
         }
         if hello.binding.is_some() {
-            return Err(errors::error(
-                ErrorKind::Unauthorized,
+            return Err(errors::unauthorized(
                 "This engine has not issued an agent binding",
             ));
         }
@@ -79,24 +74,19 @@ impl Core {
             let token = hello
                 .device_token
                 .as_deref()
-                .ok_or_else(|| errors::error(ErrorKind::Unauthorized, "Device token required"))?;
+                .ok_or_else(|| errors::unauthorized("Device token required"))?;
             let record = self
                 .store
                 .device_identity(&auth::token_hash(token))
                 .map_err(errors::storage)?;
-            let record = record.ok_or_else(|| {
-                errors::error(ErrorKind::Unauthorized, "Unknown or revoked device")
-            })?;
+            let record = record.ok_or_else(|| errors::unauthorized("Unknown or revoked device"))?;
             let id = record.device_id;
             let key = auth::public_key(&STANDARD.encode(record.public_key))
-                .map_err(|s| errors::error(ErrorKind::Unauthorized, s))?;
+                .map_err(|error| errors::unauthorized(error.to_string()))?;
             if !hello.proof.as_ref().is_some_and(|proof| {
                 auth::hello_proof(&key, &client.nonce, &self.store.db_id, token, proof)
             }) {
-                return Err(errors::error(
-                    ErrorKind::Unauthorized,
-                    "Invalid connection signature",
-                ));
+                return Err(errors::unauthorized("Invalid connection signature"));
             }
             if self
                 .clients
@@ -105,10 +95,7 @@ impl Core {
                 .count()
                 >= 8
             {
-                return Err(errors::error(
-                    ErrorKind::Unauthorized,
-                    "Device connection limit reached",
-                ));
+                return Err(errors::unauthorized("Device connection limit reached"));
             }
             (Role::HumanDevice, Some(id.clone()), format!("device:{id}"))
         };
@@ -158,17 +145,14 @@ impl Core {
 
     pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
         if request["jsonrpc"] != "2.0" || !request["id"].is_string() && !request["id"].is_u64() {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Expected JSON-RPC 2.0 request with id",
-            ));
+            return Err(errors::invalid("Expected JSON-RPC 2.0 request with id"));
         }
         let method = request["method"]
             .as_str()
-            .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Missing method"))?;
+            .ok_or_else(|| errors::invalid("Missing method"))?;
         let params = request.get("params").cloned().unwrap_or(json!({}));
         soyeht_protocol::validate::parameters(method, &params)
-            .map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
+            .map_err(|error| errors::invalid(error.to_string()))?;
         if method == "hello" {
             return self.hello(connection, &params).map(Outcome::Reply);
         }
@@ -181,18 +165,17 @@ impl Core {
             .clients
             .get(connection)
             .filter(|c| !c.outbox.is_closed())
-            .ok_or_else(|| errors::error(ErrorKind::Unauthorized, "Connection closed"))?;
+            .ok_or_else(|| errors::unauthorized("Connection closed"))?;
         let actor = client
             .actor
             .as_ref()
-            .ok_or_else(|| errors::error(ErrorKind::Unauthorized, "Handshake required"))?;
+            .ok_or_else(|| errors::unauthorized("Handshake required"))?;
         if actor.role == Role::HumanDevice
             && (method == "pane.input"
                 || method == "settings.set"
                 || method.starts_with("device.") && method != "device.list")
         {
-            return Err(errors::error(
-                ErrorKind::ForbiddenRole,
+            return Err(errors::forbidden_role(
                 "Operation requires the local human client",
             ));
         }
@@ -207,8 +190,7 @@ impl Core {
                 let incoming =
                     STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
                 if incoming != previous.fingerprint {
-                    return Err(errors::error(
-                        ErrorKind::IdempotencyConflict,
+                    return Err(errors::idempotency_conflict(
                         "Idempotency key reused with different content",
                     ));
                 }
@@ -285,10 +267,7 @@ impl Core {
                 self.device_request(connection, method, &params)?
             }
             _ => {
-                return Err(errors::error(
-                    ErrorKind::InvalidParams,
-                    "Method unavailable",
-                ));
+                return Err(errors::invalid("Method unavailable"));
             }
         };
         if matches!(method, "pane.config.set" | "pane.yolo") {
@@ -308,18 +287,12 @@ impl Core {
         sections.push(("tasks".into(), json!([])));
         let pairing = self.pending_pair_view()?;
         if let Some((_, requests)) = sections.iter_mut().find(|(name, _)| name == "requests") {
-            let requests = requests.as_array_mut().ok_or_else(|| {
-                errors::error(
-                    ErrorKind::InternalError,
-                    "Snapshot requests section is not an array",
-                )
-            })?;
-            let pairing = pairing.as_array().ok_or_else(|| {
-                errors::error(
-                    ErrorKind::InternalError,
-                    "Pending pairing snapshot is not an array",
-                )
-            })?;
+            let requests = requests
+                .as_array_mut()
+                .ok_or_else(|| errors::internal("Snapshot requests section is not an array"))?;
+            let pairing = pairing
+                .as_array()
+                .ok_or_else(|| errors::internal("Pending pairing snapshot is not an array"))?;
             requests.extend(pairing.iter().cloned());
         } else {
             sections.push(("requests".into(), pairing));
@@ -333,24 +306,17 @@ impl Core {
             let mut page = vec![];
             let mut size = 0;
             let items = section.as_array().ok_or_else(|| {
-                errors::error(
-                    ErrorKind::InternalError,
-                    format!("Snapshot section {name} is not an array"),
-                )
+                errors::internal(format!("Snapshot section {name} is not an array"))
             })?;
             for item in items {
                 let bytes = serde_json::to_vec(item)
                     .map_err(|_| {
-                        errors::error(
-                            ErrorKind::InternalError,
-                            format!("Snapshot section {name} cannot be encoded"),
-                        )
+                        errors::internal(format!("Snapshot section {name} cannot be encoded"))
                     })?
                     .len()
                     + 1;
                 if bytes > soyeht_protocol::limits::JSON_BYTES - 512 {
-                    return Err(errors::error(
-                        ErrorKind::SnapshotTooLarge,
+                    return Err(errors::snapshot_too_large(
                         "Snapshot item exceeds frame capacity",
                     ));
                 }

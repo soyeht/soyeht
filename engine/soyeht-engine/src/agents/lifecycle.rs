@@ -5,7 +5,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::json;
-use soyeht_protocol::{ErrorKind, PaneState, StateSource};
+use soyeht_protocol::{PaneState, StateSource};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
 use std::collections::BTreeMap;
 
@@ -62,10 +62,9 @@ impl Core {
         if let Some(user) = state.operation_user.take() {
             changes.completed_user = Some(super::pending::Completion {
                 user,
-                result: Err(errors::error(
-                    ErrorKind::HarnessUnavailable,
+                result: Err(errors::wire(errors::harness_unavailable(
                     "Agent process was lost before confirmation",
-                )),
+                ))),
             });
         }
         saved.pane.state = PaneState::Recovering;
@@ -74,10 +73,11 @@ impl Core {
         // Finish records under their original generation before incrementing it.
         // A crash between these transactions repeats no completed decision.
         self.commit_agent(saved.clone(), state.clone(), changes, None, json!({}))?;
-        saved.pane.generation =
-            saved.pane.generation.checked_add(1).ok_or_else(|| {
-                errors::error(ErrorKind::InternalError, "Pane generation exhausted")
-            })?;
+        saved.pane.generation = saved
+            .pane
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("Pane generation exhausted"))?;
         saved.pane.stream_id = None;
         saved.pane.pid = None;
         saved.instance_id = None;
@@ -131,18 +131,14 @@ impl Core {
             rows: saved.pane.rows as u16,
         };
         let Response::Instance(instance) = self.pty_request(Request::Spawn(config))? else {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
-                "Invalid agent spawn response",
-            ));
+            return Err(errors::ptyd_unavailable("Invalid agent spawn response"));
         };
         self.adopt_agent(id, &instance)
     }
 
     pub fn adopt_agent(&mut self, id: &str, instance: &Instance) -> Result<()> {
         if instance.spawn.kind != ProcessKind::PipesAcp {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
+            return Err(errors::ptyd_unavailable(
                 "Agent adoption requires ACP pipes",
             ));
         }

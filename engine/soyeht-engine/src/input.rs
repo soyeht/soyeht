@@ -5,7 +5,6 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::ErrorKind;
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::domain::InputIntent;
 use uuid::Uuid;
@@ -22,14 +21,12 @@ fn resolve_intent(
     let prior = store.input_intent(scope, key).map_err(errors::storage)?;
     if let Some(prior) = prior {
         if prior.fingerprint != fingerprint {
-            return Err(errors::error(
-                ErrorKind::IdempotencyConflict,
+            return Err(errors::idempotency_conflict(
                 "Input key reused with different content",
             ));
         }
         if prior.supervisor_id != supervisor_id || prior.instance_id != instance_id {
-            return Err(errors::error(
-                ErrorKind::ResyncRequired,
+            return Err(errors::resync_required(
                 "Previous input outcome is unknown; it will not be repeated in a replacement shell",
             ));
         }
@@ -57,18 +54,15 @@ impl Core {
             .panes
             .get(id)
             .filter(|p| !p.stored.closed)
-            .ok_or_else(|| errors::error(ErrorKind::NotFound, "Pane not found"))?
+            .ok_or_else(|| errors::not_found("Pane not found"))?
             .stored
             .clone();
         if saved.pane.mode != soyeht_protocol::PaneMode::Terminal {
-            return Err(errors::error(
-                ErrorKind::InvalidParams,
-                "Raw input requires a terminal pane",
-            ));
+            return Err(errors::invalid("Raw input requires a terminal pane"));
         }
         let instance = saved
             .instance_id
-            .ok_or_else(|| errors::error(ErrorKind::PaneBusy, "Pane is recovering"))?;
+            .ok_or_else(|| errors::pane_busy("Pane is recovering"))?;
         let supervisor = errors::invariant(
             saved.supervisor_id,
             "Terminal process has no adopted supervisor",
@@ -96,10 +90,7 @@ impl Core {
             fingerprint,
         })?
         else {
-            return Err(errors::error(
-                ErrorKind::PtydUnavailable,
-                "Invalid input receipt",
-            ));
+            return Err(errors::ptyd_unavailable("Invalid input receipt"));
         };
         let result = self
             .mutate(connection, "pane.input", params, |tx| {
@@ -120,6 +111,7 @@ mod tests {
         call_supervisor,
         testing::{FakeSupervisor, MemoryStore},
     };
+    use soyeht_protocol::ErrorKind;
     use std::collections::VecDeque;
 
     #[test]
@@ -158,7 +150,7 @@ mod tests {
             "unused".into(),
         )
         .unwrap_err();
-        assert_eq!(error.data.kind, ErrorKind::ResyncRequired);
+        assert_eq!(errors::kind(&error), ErrorKind::ResyncRequired);
 
         let mut supervisor = FakeSupervisor {
             responses: VecDeque::from([Ok(Response::Accepted { bytes: 4 })]),

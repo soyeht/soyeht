@@ -225,10 +225,10 @@ impl Outbox {
 
     /// Snapshot pages bypass the live queue budget, one page at a time. Return
     /// only after the writer confirms that the page reached the transport.
-    pub async fn write_page(&self, frame: Frame) -> Result<(), &'static str> {
+    pub async fn write_page(&self, frame: Frame) -> crate::errors::Result<()> {
         let _serial = self.page_lock.lock().await;
         if self.is_closed() {
-            return Err("connection closed");
+            return Err(crate::errors::Error::ConnectionClosed);
         }
         let (sent, written) = oneshot::channel();
         self.control
@@ -239,8 +239,10 @@ impl Outbox {
                 sent: Some(sent),
                 close_after_write: false,
             })
-            .map_err(|_| "connection closed")?;
-        written.await.map_err(|_| "connection closed")
+            .map_err(|_| crate::errors::Error::ConnectionClosed)?;
+        written
+            .await
+            .map_err(|_| crate::errors::Error::ConnectionClosed)
     }
 }
 
@@ -272,10 +274,9 @@ impl Receiver {
         Ok(Some(Packet {
             frame: crate::model::failure(
                 serde_json::Value::Null,
-                crate::errors::error(
-                    soyeht_protocol::ErrorKind::SlowConsumer,
+                crate::errors::wire(crate::errors::slow_consumer(
                     "Output queue exceeded; request a new snapshot",
-                ),
+                )),
             )?,
             _permit: None,
             sent: None,

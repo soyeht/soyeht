@@ -1,7 +1,8 @@
+use crate::{Error, Result};
 use soyeht_protocol::limits;
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -48,15 +49,12 @@ pub struct Log {
     pub recovered_truncated_tail: bool,
 }
 
-fn invalid(message: &'static str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
-}
 fn filename(number: u64) -> String {
     format!("{number:016x}.pty")
 }
 
 impl Log {
-    pub fn open(directory: &Path) -> io::Result<Self> {
+    pub fn open(directory: &Path) -> Result<Self> {
         fs::create_dir_all(directory)?;
         let mut numbers = Vec::new();
         for entry in fs::read_dir(directory)? {
@@ -64,12 +62,9 @@ impl Log {
             let name = entry.file_name().to_string_lossy().into_owned();
             if let Some(stem) = name.strip_suffix(".pty") {
                 if stem.len() != 16 || !entry.file_type()?.is_file() {
-                    return Err(invalid("invalid segment filename or type"));
+                    return Err(Error::InvalidSegmentEntry);
                 }
-                numbers.push(
-                    u64::from_str_radix(stem, 16)
-                        .map_err(|_| invalid("invalid segment filename"))?,
-                );
+                numbers.push(u64::from_str_radix(stem, 16).map_err(|_| Error::InvalidSegmentName)?);
             }
         }
         numbers.sort_unstable();
@@ -98,14 +93,14 @@ impl Log {
             let mut magic = [0; 8];
             file.read_exact(&mut magic)?;
             if &magic != MAGIC || length > limits::SEGMENT_BYTES as u64 {
-                return Err(invalid("invalid segment header or size"));
+                return Err(Error::InvalidSegmentHeader);
             }
             let mut position = MAGIC.len() as u64;
             while position < length {
                 let record = match read_record(&mut file) {
                     Ok(record) => record,
-                    Err(error)
-                        if error.kind() == io::ErrorKind::UnexpectedEof
+                    Err(Error::Io(error))
+                        if error.kind() == ErrorKind::UnexpectedEof
                             && index + 1 == numbers.len() =>
                     {
                         file.set_len(position)?;
@@ -116,7 +111,7 @@ impl Log {
                     Err(error) => return Err(error),
                 };
                 if !log.index.is_empty() && record.from() != log.next {
-                    return Err(invalid("unmarked hole in terminal segments"));
+                    return Err(Error::SegmentHole);
                 }
                 log.next = record.end();
                 log.index.push_back(Entry {
@@ -154,9 +149,9 @@ impl Log {
             .unwrap_or(self.next)
     }
 
-    pub fn append(&mut self, record: Record) -> io::Result<()> {
+    pub fn append(&mut self, record: Record) -> Result<()> {
         if record.from() != self.next || record.end() <= record.from() {
-            return Err(invalid("noncontiguous or empty terminal record"));
+            return Err(Error::InvalidTerminalRecord);
         }
         let encoded = encode(&record)?;
         let need_new = self.segments.back().is_none_or(|segment| {
@@ -178,10 +173,7 @@ impl Log {
                 size: MAGIC.len() as u64,
             });
         }
-        let segment = self
-            .segments
-            .back_mut()
-            .ok_or_else(|| invalid("terminal segment was not created"))?;
+        let segment = self.segments.back_mut().ok_or(Error::SegmentIndexMissing)?;
         let mut file = OpenOptions::new()
             .write(true)
             .custom_flags(libc::O_NOFOLLOW)
@@ -203,14 +195,14 @@ impl Log {
             let oldest_number = self
                 .segments
                 .front()
-                .ok_or_else(|| invalid("terminal segment index is empty"))?
+                .ok_or(Error::SegmentIndexMissing)?
                 .number;
             fs::remove_file(self.directory.join(filename(oldest_number)))?;
             File::open(&self.directory)?.sync_all()?;
             let oldest = self
                 .segments
                 .pop_front()
-                .ok_or_else(|| invalid("terminal segment disappeared during retention"))?;
+                .ok_or(Error::SegmentRetentionLost)?;
             total -= oldest.size;
             while self
                 .index
@@ -223,9 +215,9 @@ impl Log {
         Ok(())
     }
 
-    pub fn read(&self, from: u64, to: u64, maximum: usize) -> io::Result<Vec<Record>> {
+    pub fn read(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {
         if from < self.first_offset() || from > to || to > self.next {
-            return Err(invalid("terminal cursor outside retained range"));
+            return Err(Error::CursorOutOfRange);
         }
         let mut output = Vec::new();
         let mut remaining = maximum;
@@ -261,7 +253,7 @@ impl Log {
     }
 }
 
-fn encode(record: &Record) -> io::Result<Vec<u8>> {
+fn encode(record: &Record) -> Result<Vec<u8>> {
     let (kind, payload) = match record {
         Record::Data { offset, bytes }
             if bytes.len() <= limits::TERMINAL_PAYLOAD_BYTES
@@ -270,7 +262,7 @@ fn encode(record: &Record) -> io::Result<Vec<u8>> {
             (0, bytes.clone())
         }
         Record::Gap { to, .. } => (1, to.to_be_bytes().to_vec()),
-        _ => return Err(invalid("terminal record too large")),
+        _ => return Err(Error::TerminalRecordTooLarge),
     };
     let mut bytes = Vec::with_capacity(HEADER + payload.len() + CHECKSUM);
     bytes.push(kind);
@@ -281,24 +273,24 @@ fn encode(record: &Record) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn read_record(reader: &mut File) -> io::Result<Record> {
+fn read_record(reader: &mut File) -> Result<Record> {
     let mut header = [0; HEADER];
     reader.read_exact(&mut header)?;
     let offset = u64::from_be_bytes(
         header[1..9]
             .try_into()
-            .map_err(|_| invalid("terminal record offset is malformed"))?,
+            .map_err(|_| Error::MalformedRecordOffset)?,
     );
     let length = u32::from_be_bytes(
         header[9..13]
             .try_into()
-            .map_err(|_| invalid("terminal record length is malformed"))?,
+            .map_err(|_| Error::MalformedRecordLength)?,
     ) as usize;
     if length > limits::TERMINAL_PAYLOAD_BYTES || (header[0] == 1 && length != 8) || header[0] > 1 {
-        return Err(invalid("invalid terminal record length or type"));
+        return Err(Error::InvalidRecordLayout);
     }
     if header[0] == 0 && offset.checked_add(length as u64).is_none() {
-        return Err(invalid("terminal offset overflow"));
+        return Err(Error::TerminalOffsetOverflow);
     }
     let mut payload = vec![0; length];
     reader.read_exact(&mut payload)?;
@@ -308,7 +300,7 @@ fn read_record(reader: &mut File) -> io::Result<Record> {
     digest.update(&header);
     digest.update(&payload);
     if digest.finalize() != u32::from_be_bytes(checksum) {
-        return Err(invalid("terminal record checksum mismatch"));
+        return Err(Error::SegmentChecksumMismatch);
     }
     let record = if header[0] == 0 {
         Record::Data {
@@ -318,15 +310,11 @@ fn read_record(reader: &mut File) -> io::Result<Record> {
     } else {
         Record::Gap {
             from: offset,
-            to: u64::from_be_bytes(
-                payload
-                    .try_into()
-                    .map_err(|_| invalid("terminal gap length is malformed"))?,
-            ),
+            to: u64::from_be_bytes(payload.try_into().map_err(|_| Error::MalformedGap)?),
         }
     };
     if record.end() <= record.from() {
-        return Err(invalid("invalid terminal record interval"));
+        return Err(Error::InvalidRecordInterval);
     }
     Ok(record)
 }
