@@ -1,0 +1,1986 @@
+[
+  {
+    "name": "JsonValue",
+    "type": "JsonValue",
+    "value": {
+      "example": true
+    }
+  },
+  {
+    "name": "Id",
+    "type": "Id",
+    "value": "00000000-0000-4000-8000-000000000001"
+  },
+  {
+    "name": "Decimal",
+    "type": "Decimal",
+    "value": "18446744073709551615"
+  },
+  {
+    "name": "ByteString",
+    "type": "ByteString",
+    "value": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+  },
+  {
+    "name": "Role",
+    "type": "Role",
+    "value": "human_local"
+  },
+  {
+    "name": "PaneMode",
+    "type": "PaneMode",
+    "value": "terminal"
+  },
+  {
+    "name": "PaneState",
+    "type": "PaneState",
+    "value": "iniciando"
+  },
+  {
+    "name": "StateSource",
+    "type": "StateSource",
+    "value": "protocol"
+  },
+  {
+    "name": "SnapshotSection",
+    "type": "SnapshotSection",
+    "value": "workspaces"
+  },
+  {
+    "name": "ErrorKind",
+    "type": "ErrorKind",
+    "value": "not_found"
+  },
+  {
+    "name": "RpcError",
+    "type": "RpcError",
+    "value": {
+      "code": 1,
+      "message": "example",
+      "data": {
+        "kind": "not_found"
+      }
+    }
+  },
+  {
+    "name": "ErrorData",
+    "type": "ErrorData",
+    "value": {
+      "kind": "not_found"
+    }
+  },
+  {
+    "name": "Actor",
+    "type": "Actor",
+    "value": {
+      "role": "human_local",
+      "client": "example"
+    }
+  },
+  {
+    "name": "Workspace",
+    "type": "Workspace",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "name": "example",
+      "path": "/tmp/soyeht-test",
+      "layout": {
+        "example": true
+      }
+    }
+  },
+  {
+    "name": "Pane",
+    "type": "Pane",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "name": "example",
+      "cwd": "/tmp/soyeht-test",
+      "mode": "terminal",
+      "state": "iniciando",
+      "source": "protocol",
+      "confidence": 0.5,
+      "phrase": "example",
+      "generation": 1,
+      "cols": 1,
+      "rows": 1,
+      "record": true
+    }
+  },
+  {
+    "name": "Device",
+    "type": "Device",
+    "value": {
+      "deviceId": "00000000-0000-4000-8000-000000000001",
+      "name": "example",
+      "fingerprint": "example",
+      "revoked": true
+    }
+  },
+  {
+    "name": "StreamInfo",
+    "type": "StreamInfo",
+    "value": {
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "generation": 1,
+      "firstRetainedOffset": "18446744073709551615",
+      "nextOffset": "18446744073709551615",
+      "binaryPaneRef": 1
+    }
+  },
+  {
+    "name": "PtydStatus",
+    "type": "PtydStatus",
+    "value": {
+      "connected": true,
+      "version": 1,
+      "generation": 1
+    }
+  },
+  {
+    "name": "DbStatus",
+    "type": "DbStatus",
+    "value": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "schemaVersion": 1
+    }
+  },
+  {
+    "name": "StreamCursor",
+    "type": "StreamCursor",
+    "value": {
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "offset": "18446744073709551615"
+    }
+  },
+  {
+    "name": "ReplayFrom",
+    "type": "ReplayFrom",
+    "value": "tail"
+  },
+  {
+    "name": "Welcome",
+    "type": "Welcome",
+    "value": {
+      "engineVersion": "example",
+      "protocolVersion": 1,
+      "connectionId": "00000000-0000-4000-8000-000000000001",
+      "role": "human_local",
+      "capabilities": [
+        "example"
+      ],
+      "dbId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "Empty",
+    "type": "Empty",
+    "value": {}
+  },
+  {
+    "name": "HelloParams",
+    "type": "HelloParams",
+    "value": {
+      "client": "example",
+      "clientVersion": "example",
+      "protocolVersion": 1
+    }
+  },
+  {
+    "name": "StateSnapshotParams",
+    "type": "StateSnapshotParams",
+    "value": {}
+  },
+  {
+    "name": "StateSnapshotResult",
+    "type": "StateSnapshotResult",
+    "value": {
+      "snapshotId": "00000000-0000-4000-8000-000000000001",
+      "cursor": "18446744073709551615",
+      "parts": 1
+    }
+  },
+  {
+    "name": "EventsSubscribeParams",
+    "type": "EventsSubscribeParams",
+    "value": {
+      "since": "18446744073709551615"
+    }
+  },
+  {
+    "name": "EventsSubscribeResult",
+    "type": "EventsSubscribeResult",
+    "value": {
+      "subscriptionId": "00000000-0000-4000-8000-000000000001",
+      "through": "18446744073709551615"
+    }
+  },
+  {
+    "name": "WorkspaceListParams",
+    "type": "WorkspaceListParams",
+    "value": {}
+  },
+  {
+    "name": "WorkspaceListResult",
+    "type": "WorkspaceListResult",
+    "value": {
+      "items": [
+        {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "example": true
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "WorkspaceCreateParams",
+    "type": "WorkspaceCreateParams",
+    "value": {
+      "name": "example",
+      "path": "/tmp/soyeht-test",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "WorkspaceCreateResult",
+    "type": "WorkspaceCreateResult",
+    "value": {
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "WorkspaceRenameParams",
+    "type": "WorkspaceRenameParams",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "name": "example",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "WorkspaceRenameResult",
+    "type": "WorkspaceRenameResult",
+    "value": {
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "WorkspaceCloseParams",
+    "type": "WorkspaceCloseParams",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "WorkspaceCloseResult",
+    "type": "WorkspaceCloseResult",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "WorkspaceFocusParams",
+    "type": "WorkspaceFocusParams",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "WorkspaceFocusResult",
+    "type": "WorkspaceFocusResult",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneCreateParams",
+    "type": "PaneCreateParams",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "mode": "terminal",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneCreateResult",
+    "type": "PaneCreateResult",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneCloseParams",
+    "type": "PaneCloseParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneCloseResult",
+    "type": "PaneCloseResult",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneFocusParams",
+    "type": "PaneFocusParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneFocusResult",
+    "type": "PaneFocusResult",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneRenameParams",
+    "type": "PaneRenameParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "name": "example",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneRenameResult",
+    "type": "PaneRenameResult",
+    "value": {
+      "pane": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "cwd": "/tmp/soyeht-test",
+        "mode": "terminal",
+        "state": "iniciando",
+        "source": "protocol",
+        "confidence": 0.5,
+        "phrase": "example",
+        "generation": 1,
+        "cols": 1,
+        "rows": 1,
+        "record": true
+      }
+    }
+  },
+  {
+    "name": "PaneResizeParams",
+    "type": "PaneResizeParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "cols": 1,
+      "rows": 1,
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneResizeResult",
+    "type": "PaneResizeResult",
+    "value": {
+      "cols": 1,
+      "rows": 1
+    }
+  },
+  {
+    "name": "PaneInputParams",
+    "type": "PaneInputParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "bytes": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneInputResult",
+    "type": "PaneInputResult",
+    "value": {
+      "acceptedBytes": 1
+    }
+  },
+  {
+    "name": "PaneStreamSubscribeParams",
+    "type": "PaneStreamSubscribeParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "from": "tail"
+    }
+  },
+  {
+    "name": "PaneStreamUnsubscribeParams",
+    "type": "PaneStreamUnsubscribeParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneRecordSetParams",
+    "type": "PaneRecordSetParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "on": true,
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneRecordSetResult",
+    "type": "PaneRecordSetResult",
+    "value": {
+      "on": true
+    }
+  },
+  {
+    "name": "DevicePairStartParams",
+    "type": "DevicePairStartParams",
+    "value": {
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "DevicePairStartResult",
+    "type": "DevicePairStartResult",
+    "value": {
+      "code": "example",
+      "expiresAt": "2026-09-10T23:00:00Z",
+      "uri": "example"
+    }
+  },
+  {
+    "name": "DevicePairDecideParams",
+    "type": "DevicePairDecideParams",
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000001",
+      "approve": true,
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "DevicePairDecideResult",
+    "type": "DevicePairDecideResult",
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000001",
+      "approved": true
+    }
+  },
+  {
+    "name": "DeviceListParams",
+    "type": "DeviceListParams",
+    "value": {}
+  },
+  {
+    "name": "DeviceListResult",
+    "type": "DeviceListResult",
+    "value": {
+      "items": [
+        {
+          "deviceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "fingerprint": "example",
+          "revoked": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "DeviceRevokeParams",
+    "type": "DeviceRevokeParams",
+    "value": {
+      "deviceId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "DeviceRevokeResult",
+    "type": "DeviceRevokeResult",
+    "value": {
+      "deviceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PairBeginParams",
+    "type": "PairBeginParams",
+    "value": {
+      "code": "example",
+      "deviceName": "example",
+      "devicePublicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PairBeginResult",
+    "type": "PairBeginResult",
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000001",
+      "challenge": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    }
+  },
+  {
+    "name": "PairProveParams",
+    "type": "PairProveParams",
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000001",
+      "proof": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PairProveResult",
+    "type": "PairProveResult",
+    "value": {
+      "status": "example"
+    }
+  },
+  {
+    "name": "EngineStatusParams",
+    "type": "EngineStatusParams",
+    "value": {}
+  },
+  {
+    "name": "EngineStatusResult",
+    "type": "EngineStatusResult",
+    "value": {
+      "version": "example",
+      "generation": 1,
+      "ptyd": {
+        "connected": true,
+        "version": 1,
+        "generation": 1
+      },
+      "db": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "schemaVersion": 1
+      }
+    }
+  },
+  {
+    "name": "SettingsGetParams",
+    "type": "SettingsGetParams",
+    "value": {
+      "key": "example"
+    }
+  },
+  {
+    "name": "SettingsGetResult",
+    "type": "SettingsGetResult",
+    "value": {
+      "key": "example",
+      "value": {
+        "example": true
+      }
+    }
+  },
+  {
+    "name": "SettingsSetParams",
+    "type": "SettingsSetParams",
+    "value": {
+      "key": "example",
+      "value": {
+        "example": true
+      },
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "SettingsSetResult",
+    "type": "SettingsSetResult",
+    "value": {
+      "key": "example",
+      "value": {
+        "example": true
+      }
+    }
+  },
+  {
+    "name": "AuthChallengeEvent",
+    "type": "AuthChallengeEvent",
+    "value": {
+      "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+      "engineId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "StateSnapshotPartEvent",
+    "type": "StateSnapshotPartEvent",
+    "value": {
+      "snapshotId": "00000000-0000-4000-8000-000000000001",
+      "index": 1,
+      "of": 1,
+      "section": "workspaces",
+      "data": {
+        "example": true
+      }
+    }
+  },
+  {
+    "name": "WorkspaceCreatedEvent",
+    "type": "WorkspaceCreatedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "WorkspaceRenamedEvent",
+    "type": "WorkspaceRenamedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "WorkspaceClosedEvent",
+    "type": "WorkspaceClosedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "workspaceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneCreatedEvent",
+    "type": "PaneCreatedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "pane": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "cwd": "/tmp/soyeht-test",
+        "mode": "terminal",
+        "state": "iniciando",
+        "source": "protocol",
+        "confidence": 0.5,
+        "phrase": "example",
+        "generation": 1,
+        "cols": 1,
+        "rows": 1,
+        "record": true
+      }
+    }
+  },
+  {
+    "name": "PaneRenamedEvent",
+    "type": "PaneRenamedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "pane": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "cwd": "/tmp/soyeht-test",
+        "mode": "terminal",
+        "state": "iniciando",
+        "source": "protocol",
+        "confidence": 0.5,
+        "phrase": "example",
+        "generation": 1,
+        "cols": 1,
+        "rows": 1,
+        "record": true
+      }
+    }
+  },
+  {
+    "name": "PaneClosedEvent",
+    "type": "PaneClosedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "workspaceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneStateChangedEvent",
+    "type": "PaneStateChangedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "state": "iniciando",
+      "confidence": 0.5,
+      "phrase": "example",
+      "source": "protocol"
+    }
+  },
+  {
+    "name": "StreamReplayStartEvent",
+    "type": "StreamReplayStartEvent",
+    "value": {
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "generation": 1,
+      "fromOffset": "18446744073709551615",
+      "toOffset": "18446744073709551615",
+      "reset": true
+    }
+  },
+  {
+    "name": "StreamReplayDoneEvent",
+    "type": "StreamReplayDoneEvent",
+    "value": {
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "nextOffset": "18446744073709551615"
+    }
+  },
+  {
+    "name": "StreamGapEvent",
+    "type": "StreamGapEvent",
+    "value": {
+      "streamId": "00000000-0000-4000-8000-000000000001",
+      "fromOffset": "18446744073709551615",
+      "toOffset": "18446744073709551615"
+    }
+  },
+  {
+    "name": "DevicePairRequestedEvent",
+    "type": "DevicePairRequestedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "requestId": "00000000-0000-4000-8000-000000000001",
+      "deviceName": "example",
+      "fingerprint": "example"
+    }
+  },
+  {
+    "name": "DevicePairedEvent",
+    "type": "DevicePairedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "device": {
+        "deviceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "fingerprint": "example",
+        "revoked": true
+      }
+    }
+  },
+  {
+    "name": "DeviceRevokedEvent",
+    "type": "DeviceRevokedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "deviceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PairResultEvent",
+    "type": "PairResultEvent",
+    "value": {
+      "requestId": "00000000-0000-4000-8000-000000000001",
+      "approved": true
+    }
+  },
+  {
+    "name": "EngineUpdatingEvent",
+    "type": "EngineUpdatingEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "generation": 1
+    }
+  },
+  {
+    "name": "EngineRestartedEvent",
+    "type": "EngineRestartedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "generation": 1
+    }
+  },
+  {
+    "name": "PtydReconnectedEvent",
+    "type": "PtydReconnectedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "generation": 1
+    }
+  },
+  {
+    "name": "PtydLostEvent",
+    "type": "PtydLostEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "reason": "example"
+    }
+  },
+  {
+    "name": "TailSelector",
+    "type": "TailSelector",
+    "value": "tail"
+  },
+  {
+    "name": "RpcVersion",
+    "type": "RpcVersion",
+    "value": "2.0"
+  },
+  {
+    "name": "RpcStringId",
+    "type": "RpcStringId",
+    "value": "example"
+  },
+  {
+    "name": "RpcNumericId",
+    "type": "RpcNumericId",
+    "value": 1
+  },
+  {
+    "name": "RpcNullId",
+    "type": "RpcNullId",
+    "value": null
+  },
+  {
+    "name": "RpcId",
+    "type": "RpcId",
+    "value": "example"
+  },
+  {
+    "name": "RequestEnvelope",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "example",
+      "method": "example",
+      "params": {
+        "example": true
+      }
+    }
+  },
+  {
+    "name": "NotificationEnvelope",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "example",
+      "params": {
+        "example": true
+      }
+    }
+  },
+  {
+    "name": "SuccessEnvelope",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "example",
+      "result": {
+        "example": true
+      }
+    }
+  },
+  {
+    "name": "ErrorEnvelope",
+    "type": "ErrorEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "example",
+      "error": {
+        "code": 1,
+        "message": "example",
+        "data": {
+          "kind": "not_found"
+        }
+      }
+    }
+  },
+  {
+    "name": "replay-delta-high-offset",
+    "type": "ReplayFrom",
+    "value": {
+      "streamId": "stream-1",
+      "offset": "18446744073709551615"
+    }
+  },
+  {
+    "name": "rpc-id-null",
+    "type": "RpcId",
+    "value": null
+  },
+  {
+    "name": "rpc-id-integer",
+    "type": "RpcId",
+    "value": 42
+  },
+  {
+    "name": "json-unicode-and-null",
+    "type": "JsonValue",
+    "value": {
+      "text": "ação 🚀",
+      "null": null,
+      "list": [
+        false,
+        0,
+        -12,
+        0.5
+      ]
+    }
+  },
+  {
+    "name": "request:hello",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "hello",
+      "params": {
+        "client": "example",
+        "clientVersion": "example",
+        "protocolVersion": 1
+      }
+    }
+  },
+  {
+    "name": "response:hello",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "engineVersion": "example",
+        "protocolVersion": 1,
+        "connectionId": "00000000-0000-4000-8000-000000000001",
+        "role": "human_local",
+        "capabilities": [
+          "example"
+        ],
+        "dbId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:state.snapshot",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "state.snapshot",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:state.snapshot",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "snapshotId": "00000000-0000-4000-8000-000000000001",
+        "cursor": "18446744073709551615",
+        "parts": 1
+      }
+    }
+  },
+  {
+    "name": "request:events.subscribe",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "events.subscribe",
+      "params": {
+        "since": "18446744073709551615"
+      }
+    }
+  },
+  {
+    "name": "response:events.subscribe",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "subscriptionId": "00000000-0000-4000-8000-000000000001",
+        "through": "18446744073709551615"
+      }
+    }
+  },
+  {
+    "name": "request:workspace.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "workspace.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:workspace.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "name": "example",
+            "path": "/tmp/soyeht-test",
+            "layout": {
+              "example": true
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:workspace.create",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "workspace.create",
+      "params": {
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:workspace.create",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "example": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "request:workspace.rename",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "workspace.rename",
+      "params": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:workspace.rename",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "example": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "request:workspace.close",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "workspace.close",
+      "params": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:workspace.close",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:workspace.focus",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "workspace.focus",
+      "params": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:workspace.focus",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pane.create",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.create",
+      "params": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "mode": "terminal",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.create",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "paneId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pane.close",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.close",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.close",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "paneId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pane.focus",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.focus",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.focus",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "paneId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pane.rename",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.rename",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.rename",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "pane": {
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "cwd": "/tmp/soyeht-test",
+          "mode": "terminal",
+          "state": "iniciando",
+          "source": "protocol",
+          "confidence": 0.5,
+          "phrase": "example",
+          "generation": 1,
+          "cols": 1,
+          "rows": 1,
+          "record": true
+        }
+      }
+    }
+  },
+  {
+    "name": "request:pane.resize",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.resize",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "cols": 1,
+        "rows": 1,
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.resize",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "cols": 1,
+        "rows": 1
+      }
+    }
+  },
+  {
+    "name": "request:pane.input",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.input",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "bytes": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.input",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "acceptedBytes": 1
+      }
+    }
+  },
+  {
+    "name": "request:pane.stream.subscribe",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.stream.subscribe",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "from": "tail"
+      }
+    }
+  },
+  {
+    "name": "response:pane.stream.subscribe",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "streamId": "00000000-0000-4000-8000-000000000001",
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "generation": 1,
+        "firstRetainedOffset": "18446744073709551615",
+        "nextOffset": "18446744073709551615",
+        "binaryPaneRef": 1
+      }
+    }
+  },
+  {
+    "name": "request:pane.stream.unsubscribe",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.stream.unsubscribe",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.stream.unsubscribe",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {}
+    }
+  },
+  {
+    "name": "request:pane.record.set",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.record.set",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "on": true,
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.record.set",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "on": true
+      }
+    }
+  },
+  {
+    "name": "request:device.pair.start",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "device.pair.start",
+      "params": {
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:device.pair.start",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "code": "example",
+        "expiresAt": "2026-09-10T23:00:00Z",
+        "uri": "example"
+      }
+    }
+  },
+  {
+    "name": "request:device.pair.decide",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "device.pair.decide",
+      "params": {
+        "requestId": "00000000-0000-4000-8000-000000000001",
+        "approve": true,
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:device.pair.decide",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "requestId": "00000000-0000-4000-8000-000000000001",
+        "approved": true
+      }
+    }
+  },
+  {
+    "name": "request:device.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "device.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:device.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "deviceId": "00000000-0000-4000-8000-000000000001",
+            "name": "example",
+            "fingerprint": "example",
+            "revoked": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:device.revoke",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "device.revoke",
+      "params": {
+        "deviceId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:device.revoke",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "deviceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pair.begin",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pair.begin",
+      "params": {
+        "code": "example",
+        "deviceName": "example",
+        "devicePublicKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pair.begin",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "requestId": "00000000-0000-4000-8000-000000000001",
+        "challenge": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+      }
+    }
+  },
+  {
+    "name": "request:pair.prove",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pair.prove",
+      "params": {
+        "requestId": "00000000-0000-4000-8000-000000000001",
+        "proof": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pair.prove",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "status": "example"
+      }
+    }
+  },
+  {
+    "name": "request:engine.status",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "engine.status",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:engine.status",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "version": "example",
+        "generation": 1,
+        "ptyd": {
+          "connected": true,
+          "version": 1,
+          "generation": 1
+        },
+        "db": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "schemaVersion": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "request:settings.get",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "settings.get",
+      "params": {
+        "key": "example"
+      }
+    }
+  },
+  {
+    "name": "response:settings.get",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "key": "example",
+        "value": {
+          "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "request:settings.set",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "settings.set",
+      "params": {
+        "key": "example",
+        "value": {
+          "example": true
+        },
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:settings.set",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "key": "example",
+        "value": {
+          "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "event:auth.challenge",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "auth.challenge",
+      "params": {
+        "nonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+        "engineId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "event:state.snapshot_part",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "state.snapshot_part",
+      "params": {
+        "snapshotId": "00000000-0000-4000-8000-000000000001",
+        "index": 1,
+        "of": 1,
+        "section": "workspaces",
+        "data": {
+          "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "event:workspace.created",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "workspace.created",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "example": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "event:workspace.renamed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "workspace.renamed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "example": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "event:workspace.closed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "workspace.closed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "workspaceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "event:pane.created",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.created",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "pane": {
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "cwd": "/tmp/soyeht-test",
+          "mode": "terminal",
+          "state": "iniciando",
+          "source": "protocol",
+          "confidence": 0.5,
+          "phrase": "example",
+          "generation": 1,
+          "cols": 1,
+          "rows": 1,
+          "record": true
+        }
+      }
+    }
+  },
+  {
+    "name": "event:pane.renamed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.renamed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "pane": {
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "cwd": "/tmp/soyeht-test",
+          "mode": "terminal",
+          "state": "iniciando",
+          "source": "protocol",
+          "confidence": 0.5,
+          "phrase": "example",
+          "generation": 1,
+          "cols": 1,
+          "rows": 1,
+          "record": true
+        }
+      }
+    }
+  },
+  {
+    "name": "event:pane.closed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.closed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "event:pane.state_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.state_changed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "state": "iniciando",
+        "confidence": 0.5,
+        "phrase": "example",
+        "source": "protocol"
+      }
+    }
+  },
+  {
+    "name": "event:stream.replay_start",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "stream.replay_start",
+      "params": {
+        "streamId": "00000000-0000-4000-8000-000000000001",
+        "generation": 1,
+        "fromOffset": "18446744073709551615",
+        "toOffset": "18446744073709551615",
+        "reset": true
+      }
+    }
+  },
+  {
+    "name": "event:stream.replay_done",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "stream.replay_done",
+      "params": {
+        "streamId": "00000000-0000-4000-8000-000000000001",
+        "nextOffset": "18446744073709551615"
+      }
+    }
+  },
+  {
+    "name": "event:stream.gap",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "stream.gap",
+      "params": {
+        "streamId": "00000000-0000-4000-8000-000000000001",
+        "fromOffset": "18446744073709551615",
+        "toOffset": "18446744073709551615"
+      }
+    }
+  },
+  {
+    "name": "event:device.pair_requested",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "device.pair_requested",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "requestId": "00000000-0000-4000-8000-000000000001",
+        "deviceName": "example",
+        "fingerprint": "example"
+      }
+    }
+  },
+  {
+    "name": "event:device.paired",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "device.paired",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "device": {
+          "deviceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "fingerprint": "example",
+          "revoked": true
+        }
+      }
+    }
+  },
+  {
+    "name": "event:device.revoked",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "device.revoked",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "deviceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "event:pair.result",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pair.result",
+      "params": {
+        "requestId": "00000000-0000-4000-8000-000000000001",
+        "approved": true
+      }
+    }
+  },
+  {
+    "name": "event:engine.updating",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "engine.updating",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "generation": 1
+      }
+    }
+  },
+  {
+    "name": "event:engine.restarted",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "engine.restarted",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "generation": 1
+      }
+    }
+  },
+  {
+    "name": "event:ptyd.reconnected",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "ptyd.reconnected",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "generation": 1
+      }
+    }
+  },
+  {
+    "name": "event:ptyd.lost",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "ptyd.lost",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "reason": "example"
+      }
+    }
+  }
+]

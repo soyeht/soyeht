@@ -1,0 +1,2232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://soyeht.invalid/protocol/v1",
+  "title": "Soyeht slice 1 protocol",
+  "description": "Wire schema. x-methods and x-events associate JSON-RPC names with schemas. See README.md for supported vocabulary.",
+  "$defs": {
+    "JsonValue": {},
+    "Id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "Decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$",
+      "maxLength": 20
+    },
+    "ByteString": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "Role": {
+      "type": "string",
+      "enum": [
+        "human_local",
+        "human_device",
+        "agent",
+        "chief"
+      ]
+    },
+    "PaneMode": {
+      "type": "string",
+      "enum": [
+        "terminal",
+        "agent"
+      ]
+    },
+    "PaneState": {
+      "type": "string",
+      "enum": [
+        "iniciando",
+        "trabalhando",
+        "ociosa",
+        "esperando_você",
+        "cancelando",
+        "sem_sinal",
+        "recuperando",
+        "morta",
+        "não_sei"
+      ]
+    },
+    "StateSource": {
+      "type": "string",
+      "enum": [
+        "protocol",
+        "hook",
+        "osc",
+        "screen",
+        "none"
+      ]
+    },
+    "SnapshotSection": {
+      "type": "string",
+      "enum": [
+        "workspaces",
+        "panes",
+        "tasks",
+        "requests",
+        "attention",
+        "devices",
+        "capabilities",
+        "streams"
+      ]
+    },
+    "ErrorKind": {
+      "type": "string",
+      "enum": [
+        "not_found",
+        "invalid_params",
+        "unauthorized",
+        "forbidden_role",
+        "pane_busy",
+        "task_has_owner",
+        "transition_refused",
+        "stale_version",
+        "idempotency_conflict",
+        "harness_unavailable",
+        "needs_login",
+        "cursor_too_old",
+        "resync_required",
+        "slow_consumer",
+        "protocol_version_unsupported",
+        "disk_full",
+        "ptyd_unavailable",
+        "stale_engine_generation",
+        "internal_error",
+        "snapshot_too_large"
+      ]
+    },
+    "RpcError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/ErrorData"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "ErrorData": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ErrorKind"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": true
+    },
+    "Actor": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/Role"
+        },
+        "client": {
+          "type": "string"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "role",
+        "client"
+      ],
+      "additionalProperties": true
+    },
+    "Workspace": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "layout": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "name",
+        "path",
+        "layout"
+      ],
+      "additionalProperties": true
+    },
+    "Pane": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/PaneMode"
+        },
+        "state": {
+          "$ref": "#/$defs/PaneState"
+        },
+        "source": {
+          "$ref": "#/$defs/StateSource"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "phrase": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "record": {
+          "type": "boolean"
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "streamId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "workspaceId",
+        "name",
+        "cwd",
+        "mode",
+        "state",
+        "source",
+        "confidence",
+        "phrase",
+        "generation",
+        "cols",
+        "rows",
+        "record"
+      ],
+      "additionalProperties": true
+    },
+    "Device": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "revoked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deviceId",
+        "name",
+        "fingerprint",
+        "revoked"
+      ],
+      "additionalProperties": true
+    },
+    "StreamInfo": {
+      "type": "object",
+      "properties": {
+        "streamId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "firstRetainedOffset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "nextOffset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "binaryPaneRef": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "streamId",
+        "paneId",
+        "generation",
+        "firstRetainedOffset",
+        "nextOffset",
+        "binaryPaneRef"
+      ],
+      "additionalProperties": true
+    },
+    "PtydStatus": {
+      "type": "object",
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "connected",
+        "version",
+        "generation"
+      ],
+      "additionalProperties": true
+    },
+    "DbStatus": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion"
+      ],
+      "additionalProperties": true
+    },
+    "StreamCursor": {
+      "type": "object",
+      "properties": {
+        "streamId": {
+          "$ref": "#/$defs/Id"
+        },
+        "offset": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "streamId",
+        "offset"
+      ],
+      "additionalProperties": true
+    },
+    "ReplayFrom": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TailSelector"
+        },
+        {
+          "$ref": "#/$defs/StreamCursor"
+        }
+      ]
+    },
+    "Welcome": {
+      "type": "object",
+      "properties": {
+        "engineVersion": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "connectionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dbId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "engineVersion",
+        "protocolVersion",
+        "connectionId",
+        "role",
+        "capabilities",
+        "dbId"
+      ],
+      "additionalProperties": true
+    },
+    "Empty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "HelloParams": {
+      "type": "object",
+      "properties": {
+        "client": {
+          "type": "string"
+        },
+        "clientVersion": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "deviceToken": {
+          "type": "string"
+        },
+        "proof": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "binding": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "client",
+        "clientVersion",
+        "protocolVersion"
+      ],
+      "additionalProperties": true
+    },
+    "StateSnapshotParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "StateSnapshotResult": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/Id"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "parts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "snapshotId",
+        "cursor",
+        "parts"
+      ],
+      "additionalProperties": true
+    },
+    "EventsSubscribeParams": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "since"
+      ],
+      "additionalProperties": true
+    },
+    "EventsSubscribeResult": {
+      "type": "object",
+      "properties": {
+        "subscriptionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "through": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "subscriptionId",
+        "through"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "WorkspaceListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Workspace"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceCreateParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceCreateResult": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceRenameParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "name",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceRenameResult": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceCloseParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceCloseResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceFocusParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceFocusResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCreateParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "mode": {
+          "$ref": "#/$defs/PaneMode"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "mode",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCreateResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCloseParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCloseResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneFocusParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneFocusResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneRenameParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "name",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneRenameResult": {
+      "type": "object",
+      "properties": {
+        "pane": {
+          "$ref": "#/$defs/Pane"
+        }
+      },
+      "required": [
+        "pane"
+      ],
+      "additionalProperties": true
+    },
+    "PaneResizeParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "cols",
+        "rows",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneResizeResult": {
+      "type": "object",
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "additionalProperties": true
+    },
+    "PaneInputParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "bytes": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "bytes",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneInputResult": {
+      "type": "object",
+      "properties": {
+        "acceptedBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "acceptedBytes"
+      ],
+      "additionalProperties": true
+    },
+    "PaneStreamSubscribeParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "from": {
+          "$ref": "#/$defs/ReplayFrom"
+        }
+      },
+      "required": [
+        "paneId",
+        "from"
+      ],
+      "additionalProperties": true
+    },
+    "PaneStreamUnsubscribeParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneRecordSetParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "on": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "on",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneRecordSetResult": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairStartParams": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairStartResult": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "expiresAt",
+        "uri"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairDecideParams": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "approve": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "requestId",
+        "approve",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairDecideResult": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "approved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestId",
+        "approved"
+      ],
+      "additionalProperties": true
+    },
+    "DeviceListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "DeviceListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Device"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "DeviceRevokeParams": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "deviceId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "DeviceRevokeResult": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "deviceId"
+      ],
+      "additionalProperties": true
+    },
+    "PairBeginParams": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "deviceName": {
+          "type": "string"
+        },
+        "devicePublicKey": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "code",
+        "deviceName",
+        "devicePublicKey",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PairBeginResult": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "challenge": {
+          "$ref": "#/$defs/ByteString"
+        }
+      },
+      "required": [
+        "requestId",
+        "challenge"
+      ],
+      "additionalProperties": true
+    },
+    "PairProveParams": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "proof": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "requestId",
+        "proof",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PairProveResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "EngineStatusParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "EngineStatusResult": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "ptyd": {
+          "$ref": "#/$defs/PtydStatus"
+        },
+        "db": {
+          "$ref": "#/$defs/DbStatus"
+        }
+      },
+      "required": [
+        "version",
+        "generation",
+        "ptyd",
+        "db"
+      ],
+      "additionalProperties": true
+    },
+    "SettingsGetParams": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": true
+    },
+    "SettingsGetResult": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "additionalProperties": true
+    },
+    "SettingsSetParams": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "SettingsSetResult": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "additionalProperties": true
+    },
+    "AuthChallengeEvent": {
+      "type": "object",
+      "properties": {
+        "nonce": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "engineId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "nonce",
+        "engineId"
+      ],
+      "additionalProperties": true
+    },
+    "StateSnapshotPartEvent": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/Id"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "of": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "section": {
+          "$ref": "#/$defs/SnapshotSection"
+        },
+        "data": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "index",
+        "of",
+        "section",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceCreatedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspace"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceRenamedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspace"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceClosedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCreatedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "pane": {
+          "$ref": "#/$defs/Pane"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "pane"
+      ],
+      "additionalProperties": true
+    },
+    "PaneRenamedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "pane": {
+          "$ref": "#/$defs/Pane"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "pane"
+      ],
+      "additionalProperties": true
+    },
+    "PaneClosedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "workspaceId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneStateChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "state": {
+          "$ref": "#/$defs/PaneState"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "phrase": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/StateSource"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "state",
+        "confidence",
+        "phrase",
+        "source"
+      ],
+      "additionalProperties": true
+    },
+    "StreamReplayStartEvent": {
+      "type": "object",
+      "properties": {
+        "streamId": {
+          "$ref": "#/$defs/Id"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "fromOffset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "toOffset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "reset": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "streamId",
+        "generation",
+        "fromOffset",
+        "toOffset",
+        "reset"
+      ],
+      "additionalProperties": true
+    },
+    "StreamReplayDoneEvent": {
+      "type": "object",
+      "properties": {
+        "streamId": {
+          "$ref": "#/$defs/Id"
+        },
+        "nextOffset": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "streamId",
+        "nextOffset"
+      ],
+      "additionalProperties": true
+    },
+    "StreamGapEvent": {
+      "type": "object",
+      "properties": {
+        "streamId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fromOffset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "toOffset": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "streamId",
+        "fromOffset",
+        "toOffset"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairRequestedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "deviceName": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "requestId",
+        "deviceName",
+        "fingerprint"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "device": {
+          "$ref": "#/$defs/Device"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "device"
+      ],
+      "additionalProperties": true
+    },
+    "DeviceRevokedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "deviceId"
+      ],
+      "additionalProperties": true
+    },
+    "PairResultEvent": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "approved": {
+          "type": "boolean"
+        },
+        "deviceToken": {
+          "type": "string"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "approved"
+      ],
+      "additionalProperties": true
+    },
+    "EngineUpdatingEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "generation"
+      ],
+      "additionalProperties": true
+    },
+    "EngineRestartedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "generation"
+      ],
+      "additionalProperties": true
+    },
+    "PtydReconnectedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "generation"
+      ],
+      "additionalProperties": true
+    },
+    "PtydLostEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "TailSelector": {
+      "type": "string",
+      "enum": [
+        "tail"
+      ]
+    },
+    "RpcVersion": {
+      "type": "string",
+      "enum": [
+        "2.0"
+      ]
+    },
+    "RpcStringId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "RpcNumericId": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "RpcNullId": {
+      "type": "null"
+    },
+    "RpcId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RpcStringId"
+        },
+        {
+          "$ref": "#/$defs/RpcNumericId"
+        },
+        {
+          "$ref": "#/$defs/RpcNullId"
+        }
+      ]
+    },
+    "RequestEnvelope": {
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/RpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RpcId"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": true
+    },
+    "NotificationEnvelope": {
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/RpcVersion"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "method",
+        "params"
+      ],
+      "additionalProperties": true
+    },
+    "SuccessEnvelope": {
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/RpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RpcId"
+        },
+        "result": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "result"
+      ],
+      "additionalProperties": true
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "properties": {
+        "jsonrpc": {
+          "$ref": "#/$defs/RpcVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/RpcId"
+        },
+        "error": {
+          "$ref": "#/$defs/RpcError"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "error"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "x-protocolVersion": 1,
+  "x-methods": {
+    "hello": {
+      "params": {
+        "$ref": "#/$defs/HelloParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Welcome"
+      },
+      "mutation": false
+    },
+    "state.snapshot": {
+      "params": {
+        "$ref": "#/$defs/StateSnapshotParams"
+      },
+      "result": {
+        "$ref": "#/$defs/StateSnapshotResult"
+      },
+      "mutation": false
+    },
+    "events.subscribe": {
+      "params": {
+        "$ref": "#/$defs/EventsSubscribeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EventsSubscribeResult"
+      },
+      "mutation": false
+    },
+    "workspace.list": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceListResult"
+      },
+      "mutation": false
+    },
+    "workspace.create": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceCreateResult"
+      },
+      "mutation": true
+    },
+    "workspace.rename": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceRenameResult"
+      },
+      "mutation": true
+    },
+    "workspace.close": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceCloseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceCloseResult"
+      },
+      "mutation": true
+    },
+    "workspace.focus": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceFocusParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceFocusResult"
+      },
+      "mutation": true
+    },
+    "pane.create": {
+      "params": {
+        "$ref": "#/$defs/PaneCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneCreateResult"
+      },
+      "mutation": true
+    },
+    "pane.close": {
+      "params": {
+        "$ref": "#/$defs/PaneCloseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneCloseResult"
+      },
+      "mutation": true
+    },
+    "pane.focus": {
+      "params": {
+        "$ref": "#/$defs/PaneFocusParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneFocusResult"
+      },
+      "mutation": true
+    },
+    "pane.rename": {
+      "params": {
+        "$ref": "#/$defs/PaneRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneRenameResult"
+      },
+      "mutation": true
+    },
+    "pane.resize": {
+      "params": {
+        "$ref": "#/$defs/PaneResizeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneResizeResult"
+      },
+      "mutation": true
+    },
+    "pane.input": {
+      "params": {
+        "$ref": "#/$defs/PaneInputParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneInputResult"
+      },
+      "mutation": true
+    },
+    "pane.stream.subscribe": {
+      "params": {
+        "$ref": "#/$defs/PaneStreamSubscribeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/StreamInfo"
+      },
+      "mutation": false
+    },
+    "pane.stream.unsubscribe": {
+      "params": {
+        "$ref": "#/$defs/PaneStreamUnsubscribeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/Empty"
+      },
+      "mutation": false
+    },
+    "pane.record.set": {
+      "params": {
+        "$ref": "#/$defs/PaneRecordSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneRecordSetResult"
+      },
+      "mutation": true
+    },
+    "device.pair.start": {
+      "params": {
+        "$ref": "#/$defs/DevicePairStartParams"
+      },
+      "result": {
+        "$ref": "#/$defs/DevicePairStartResult"
+      },
+      "mutation": true
+    },
+    "device.pair.decide": {
+      "params": {
+        "$ref": "#/$defs/DevicePairDecideParams"
+      },
+      "result": {
+        "$ref": "#/$defs/DevicePairDecideResult"
+      },
+      "mutation": true
+    },
+    "device.list": {
+      "params": {
+        "$ref": "#/$defs/DeviceListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/DeviceListResult"
+      },
+      "mutation": false
+    },
+    "device.revoke": {
+      "params": {
+        "$ref": "#/$defs/DeviceRevokeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/DeviceRevokeResult"
+      },
+      "mutation": true
+    },
+    "pair.begin": {
+      "params": {
+        "$ref": "#/$defs/PairBeginParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PairBeginResult"
+      },
+      "mutation": true
+    },
+    "pair.prove": {
+      "params": {
+        "$ref": "#/$defs/PairProveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PairProveResult"
+      },
+      "mutation": true
+    },
+    "engine.status": {
+      "params": {
+        "$ref": "#/$defs/EngineStatusParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EngineStatusResult"
+      },
+      "mutation": false
+    },
+    "settings.get": {
+      "params": {
+        "$ref": "#/$defs/SettingsGetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SettingsGetResult"
+      },
+      "mutation": false
+    },
+    "settings.set": {
+      "params": {
+        "$ref": "#/$defs/SettingsSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SettingsSetResult"
+      },
+      "mutation": true
+    }
+  },
+  "x-events": {
+    "auth.challenge": {
+      "params": {
+        "$ref": "#/$defs/AuthChallengeEvent"
+      },
+      "durable": false
+    },
+    "state.snapshot_part": {
+      "params": {
+        "$ref": "#/$defs/StateSnapshotPartEvent"
+      },
+      "durable": false
+    },
+    "workspace.created": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceCreatedEvent"
+      },
+      "durable": true
+    },
+    "workspace.renamed": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceRenamedEvent"
+      },
+      "durable": true
+    },
+    "workspace.closed": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceClosedEvent"
+      },
+      "durable": true
+    },
+    "pane.created": {
+      "params": {
+        "$ref": "#/$defs/PaneCreatedEvent"
+      },
+      "durable": true
+    },
+    "pane.renamed": {
+      "params": {
+        "$ref": "#/$defs/PaneRenamedEvent"
+      },
+      "durable": true
+    },
+    "pane.closed": {
+      "params": {
+        "$ref": "#/$defs/PaneClosedEvent"
+      },
+      "durable": true
+    },
+    "pane.state_changed": {
+      "params": {
+        "$ref": "#/$defs/PaneStateChangedEvent"
+      },
+      "durable": true
+    },
+    "stream.replay_start": {
+      "params": {
+        "$ref": "#/$defs/StreamReplayStartEvent"
+      },
+      "durable": false
+    },
+    "stream.replay_done": {
+      "params": {
+        "$ref": "#/$defs/StreamReplayDoneEvent"
+      },
+      "durable": false
+    },
+    "stream.gap": {
+      "params": {
+        "$ref": "#/$defs/StreamGapEvent"
+      },
+      "durable": false
+    },
+    "device.pair_requested": {
+      "params": {
+        "$ref": "#/$defs/DevicePairRequestedEvent"
+      },
+      "durable": true
+    },
+    "device.paired": {
+      "params": {
+        "$ref": "#/$defs/DevicePairedEvent"
+      },
+      "durable": true
+    },
+    "device.revoked": {
+      "params": {
+        "$ref": "#/$defs/DeviceRevokedEvent"
+      },
+      "durable": true
+    },
+    "pair.result": {
+      "params": {
+        "$ref": "#/$defs/PairResultEvent"
+      },
+      "durable": false
+    },
+    "engine.updating": {
+      "params": {
+        "$ref": "#/$defs/EngineUpdatingEvent"
+      },
+      "durable": true
+    },
+    "engine.restarted": {
+      "params": {
+        "$ref": "#/$defs/EngineRestartedEvent"
+      },
+      "durable": true
+    },
+    "ptyd.reconnected": {
+      "params": {
+        "$ref": "#/$defs/PtydReconnectedEvent"
+      },
+      "durable": true
+    },
+    "ptyd.lost": {
+      "params": {
+        "$ref": "#/$defs/PtydLostEvent"
+      },
+      "durable": true
+    }
+  },
+  "x-framing": {
+    "endianness": "big",
+    "header": [
+      {
+        "name": "type",
+        "bytes": 1
+      },
+      {
+        "name": "length",
+        "bytes": 4
+      }
+    ],
+    "terminalHeader": [
+      {
+        "name": "binaryPaneRef",
+        "bytes": 4
+      },
+      {
+        "name": "generation",
+        "bytes": 4
+      },
+      {
+        "name": "offset",
+        "bytes": 8
+      }
+    ],
+    "types": {
+      "json": 1,
+      "terminal": 2,
+      "attachment": 3
+    }
+  },
+  "x-limits": {
+    "jsonBytes": 1048576,
+    "terminalPayloadBytes": 65536,
+    "attachmentPayloadBytes": 262144,
+    "terminalHeaderBytes": 16,
+    "attachmentHeaderBytes": 16,
+    "connectionQueueBytes": 8388608,
+    "ptyRetentionBytes": 8388608,
+    "segmentBytes": 524288,
+    "paneRetentionBytes": 33554432,
+    "tailBytes": 2097152,
+    "eventCount": 10000,
+    "eventDays": 7,
+    "deviceConnections": 8
+  },
+  "x-settings": {
+    "terminal.defaultCols": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 80
+    },
+    "terminal.defaultRows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 24
+    },
+    "record.default": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/RequestEnvelope"
+    },
+    {
+      "$ref": "#/$defs/NotificationEnvelope"
+    },
+    {
+      "$ref": "#/$defs/SuccessEnvelope"
+    },
+    {
+      "$ref": "#/$defs/ErrorEnvelope"
+    }
+  ]
+}

@@ -29,7 +29,7 @@ bagulho zoado". Data: 2026-09-10.
    proprietários; MIT/Apache com atribuição, se copiar algo.
 
 ## 1. Entrega
-Repositório GitHub `soyeht/soyeht` (criar; privado; licença MIT), monorepo:
+Repositório GitHub `soyeht/soyeht` (criado; privado; licença Apache-2.0), monorepo:
 ```
 contracts/            protocol.json (fonte única) + vetores de teste + gerador
 engine/               Cargo workspace: soyeht-engine, soyeht-ptyd, soyeht-cli, soyeht-protocol (tipos gerados), soyeht-store

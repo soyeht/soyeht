@@ -1,5 +1,3 @@
-# clones de referência do benchmark (repos de terceiros, nunca versionar)
-benchmark/.reference/
 # macOS
 .DS_Store
 # build
@@ -7,6 +5,12 @@ target/
 node_modules/
 DerivedData/
 *.xcuserstate
+.build/
+.cache/
+.worktrees/
+__pycache__/
+*.pyc
+*.xcresult/
 
 # análise interna de outros produtos: NUNCA versionar
 benchmark/

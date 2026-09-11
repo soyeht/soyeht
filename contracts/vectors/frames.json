@@ -1,0 +1,24 @@
+[
+  {
+    "name": "json",
+    "hex": "01000000027b7d",
+    "kind": 1,
+    "payloadHex": "7b7d"
+  },
+  {
+    "name": "terminal",
+    "hex": "0200000013000000090000000401020304050607081b5b6d",
+    "kind": 2,
+    "paneRef": 9,
+    "generation": 4,
+    "offset": "72623859790382856",
+    "payloadHex": "1b5b6d"
+  },
+  {
+    "name": "attachment",
+    "hex": "0300000012000102030405060708090a0b0c0d0e0fff00",
+    "kind": 3,
+    "headerHex": "000102030405060708090a0b0c0d0e0f",
+    "payloadHex": "ff00"
+  }
+]

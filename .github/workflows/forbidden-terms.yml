@@ -1,0 +1,28 @@
+name: forbidden-terms
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  forbidden-terms:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Test rejection controls
+        run: python3 -m unittest discover -s scripts -p 'test_forbidden_terms.py'
+      - name: Check tree, PR history and PR text
+        env:
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+          BASE_OID: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_OID" ]; then
+            python3 scripts/forbidden_terms.py --base "$BASE_OID" --event-file "$GITHUB_EVENT_PATH"
+          else
+            python3 scripts/forbidden_terms.py
+          fi

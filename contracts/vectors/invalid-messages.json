@@ -1,0 +1,32 @@
+[
+  {
+    "type": "PaneState",
+    "value": "unknown"
+  },
+  {
+    "type": "PaneCloseParams",
+    "value": {
+      "paneId": "pane-1"
+    }
+  },
+  {
+    "type": "PaneResizeParams",
+    "value": {
+      "paneId": "pane-1",
+      "idempotencyKey": "key-1",
+      "cols": "80",
+      "rows": 24
+    }
+  },
+  {
+    "type": "RpcVersion",
+    "value": "1.0"
+  },
+  {
+    "type": "AuthChallengeEvent",
+    "value": {
+      "nonce": 23,
+      "engineId": "engine-1"
+    }
+  }
+]
