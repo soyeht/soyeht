@@ -1,6 +1,6 @@
 # Contract 11 · Browser (web pane)
 
-Status: CLOSED on 2026-09-11. Design: screens 13, 13b and 13c in
+Status: CLOSED on 2026-09-11; §11 (human mode) added the same day, gated by its spike. Design: screens 13, 13b and 13c in
 `design/soyeht-desktop.pen`. Decisions taken without an explicit answer are
 marked "(assumed)"; they follow the recommendation given at the time.
 
@@ -131,8 +131,59 @@ a certificate-trust UI for local HTTPS (the system trust store is used).
 - 07: web pane record persisted; console and network never persisted.
 - 04 and 02: new permission kind `web_session`, excluded from yolo.
 
-## 11. Place in the slice plan
+## 11. Human mode (computer use)
+The tool mode of §5 is for the user's own pages: fast, structured, and
+detectable by third-party sites, which does not matter there. Human mode is
+for sites that must see a person: job boards, feeds, forms on someone
+else's site. It is chosen per task (`web_open {mode: "human"}`) and shown
+in the pane as a "human mode" badge.
+
+What the agent gets and does:
+- Only screenshots of the pane (`web_screenshot`) and the actions
+  `web_move {x, y}`, `web_click {x, y}`, `web_type {text}`, `web_press`,
+  `web_scroll {dx, dy}`, `web_wait`. No snapshot, no `web_evaluate`, no
+  script injected into the page, no console or network reading.
+- The pane delivers every action to the web view through the same system
+  event path a real click or keystroke takes, so the page receives trusted
+  events with user activation. The visible cursor does not move and the
+  user keeps the mouse and keyboard; the pane may sit on another Space,
+  but it should stay visible (an occluded page is told it is in the
+  background, like a background tab).
+- The pane, not the agent, decides the rhythm: the pointer travels to the
+  target along a curved path with varying speed, clicks have press and
+  release delays, typing has per-character variation and occasional
+  pauses, scrolling comes in steps. The agent asks for "click here"; it
+  never controls timing.
+- The web view identifies itself as the Safari of the same macOS version
+  (a plain user-agent configuration; the engine is the same). It uses the
+  persistent profile of §6, so logins, history and cookies look like a
+  person's.
+
+What we do not do: solve CAPTCHAs, forge fingerprints, hide the pane from
+the user, or bypass two-factor prompts. When the page shows a CAPTCHA, a
+login, a two-factor step or anything the agent cannot pass, the pane
+pauses with "your turn", the user completes it, and the agent continues
+from the next screenshot. A click by the user inside the pane also pauses
+the agent. Some sites forbid automation in their terms; the choice to use
+human mode on a given site is the user's, and the pane shows the domain
+in the badge so the choice is visible.
+
+**Confirmed by the spike (first item of slice 5).** Before any other work
+in the slice: a web pane with fabricated system events and a local test
+page that checks, in one run: the event arrives as trusted (`isTrusted`),
+a pointer move precedes the click, user activation is granted (a popup
+opens and a muted video plays on click), the user-agent equals the Safari
+string of the running macOS, no automation flag is present, and typing
+timing varies between characters. Then one real site, signed in, read-only
+(scroll a feed for two minutes) without a challenge. Both green: human
+mode stays as written. Any red: the failing check is recorded in
+`docs/reports/` and the fallback for that point is decided before the
+slice continues (system events posted to the process, or a macOS virtual
+machine with its own browser).
+
+## 12. Place in the slice plan
 New slice 5, "Browser", right after the editor. Order inside the slice:
-pane, controls and local servers → link routing → pick element to composer
-→ MCP tools with snapshot and actions → console and network → session
-permission and incognito.
+**human-mode spike (§11)** → pane, controls and local servers → link
+routing → pick element to composer → MCP tools with snapshot and actions
+→ console and network → session permission and incognito → human mode
+(cadence, badge, hand-back).
