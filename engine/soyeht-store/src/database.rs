@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug)]
 pub enum Error {
@@ -102,11 +102,16 @@ impl Store {
                 fs::File::open(backups)?.sync_all()?;
             }
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            tx.execute_batch(include_str!("../migrations/001-initial.sql"))?;
-            tx.execute(
-                "INSERT INTO metadata(key,value) VALUES ('db_id',?1),('engine_generation','0')",
-                [Uuid::new_v4().to_string()],
-            )?;
+            if version < 1 {
+                tx.execute_batch(include_str!("../migrations/001-initial.sql"))?;
+                tx.execute(
+                    "INSERT INTO metadata(key,value) VALUES ('db_id',?1),('engine_generation','0')",
+                    [Uuid::new_v4().to_string()],
+                )?;
+            }
+            if version < 2 {
+                tx.execute_batch(include_str!("../migrations/002-client-state.sql"))?;
+            }
             tx.commit()?;
         }
         let db_id =
@@ -153,6 +158,20 @@ impl Store {
     where
         F: FnOnce(&Transaction<'_>) -> Result<(Value, Vec<(String, Value)>)>,
     {
+        self.mutate_as(scope, key, fingerprint, None, change)
+    }
+
+    pub fn mutate_as<F>(
+        &mut self,
+        scope: &str,
+        key: &str,
+        fingerprint: &str,
+        actor: Option<&Value>,
+        change: F,
+    ) -> Result<Mutation>
+    where
+        F: FnOnce(&Transaction<'_>) -> Result<(Value, Vec<(String, Value)>)>,
+    {
         if scope.is_empty() || key.is_empty() || key.len() > 128 {
             return Err(Error::Invalid("invalid idempotency scope or key"));
         }
@@ -191,6 +210,9 @@ impl Store {
             let id = tx.last_insert_rowid() as u64;
             object.insert("eventId".into(), json!(id.to_string()));
             object.insert("at".into(), json!(at));
+            if let Some(actor) = actor {
+                object.insert("actor".into(), actor.clone());
+            }
             tx.execute(
                 "UPDATE events SET params=?1 WHERE id=?2",
                 params![serde_json::to_string(&payload)?, id as i64],
@@ -201,7 +223,7 @@ impl Store {
                 params: payload,
             });
         }
-        tx.execute("INSERT INTO idempotency(scope,key,fingerprint,result,created_unix) VALUES (?1,?2,?3,?4,?5)", params![scope,key,fingerprint,serde_json::to_string(&result)?,now])?;
+        tx.execute("INSERT INTO idempotency(scope,key,fingerprint,result,created_unix,actor) VALUES (?1,?2,?3,?4,?5,?6)", params![scope,key,fingerprint,serde_json::to_string(&result)?,now,actor.map(serde_json::to_string).transpose()?])?;
         tx.commit()?;
         Ok(Mutation {
             result,
@@ -213,7 +235,10 @@ impl Store {
     pub fn snapshot(&mut self) -> Result<Snapshot> {
         let tx = self.connection.transaction()?;
         let cursor = cursor(&tx)?;
-        let workspaces = rows_json(&tx, "SELECT payload FROM workspaces ORDER BY id")?;
+        let workspaces = rows_json(
+            &tx,
+            "SELECT payload FROM workspaces WHERE closed=0 ORDER BY id",
+        )?;
         let panes = rows_json(&tx, "SELECT payload FROM panes WHERE closed=0 ORDER BY id")?;
         let devices = rows_json(
             &tx,
@@ -282,6 +307,14 @@ impl Store {
         tx.execute(
             "DELETE FROM idempotency WHERE created_unix<?1",
             [Utc::now().timestamp() - 86400],
+        )?;
+        tx.execute(
+            "DELETE FROM pair_requests WHERE expires_unix<=?1",
+            [Utc::now().timestamp()],
+        )?;
+        tx.execute(
+            "DELETE FROM pair_windows WHERE expires_unix<=?1",
+            [Utc::now().timestamp()],
         )?;
         tx.commit()?;
         self.connection

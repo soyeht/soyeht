@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 3f6aaefb6d35b20b749b5da4bbd0c3fe8b0a28145d875f5bb05e90f470198ae2). Do not edit.
+// Generated from contracts/protocol.json (sha256 b2528ce7f18d51677445f8aafc989b17a0a00c8002ae0fe860c1807b31fae56d). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -126,6 +126,7 @@ export interface StateSnapshotResult {
   "snapshotId": Id;
   "cursor": Decimal;
   "parts": number;
+  "focus"?: ClientFocus;
 }
 
 export interface EventsSubscribeParams {
@@ -523,6 +524,32 @@ export interface ErrorEnvelope {
   "jsonrpc": RpcVersion;
   "id": RpcId;
   "error": RpcError;
+}
+
+export interface PaneUpdatedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "pane": Pane;
+}
+
+export interface SettingsChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "key": string;
+  "value": JsonValue;
+}
+
+export interface DevicePairPending {
+  "kind": string;
+  "requestId": Id;
+  "deviceName": string;
+  "fingerprint": string;
+  "expiresAt": string;
+}
+
+export interface ClientFocus {
+  "workspaceId"?: Id;
+  "paneId"?: Id;
 }
 
 export interface Methods {

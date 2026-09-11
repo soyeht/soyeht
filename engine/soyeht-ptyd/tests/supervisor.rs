@@ -78,7 +78,7 @@ fn spawn(client: &mut Client, config: Spawn) -> Instance {
 
 fn input(client: &mut Client, id: &str, text: &str) {
     assert!(
-        matches!(client.request(Request::Input { instance_id: id.into(), bytes: STANDARD.encode(text) }).unwrap(), Response::Accepted { bytes } if bytes == text.len())
+        matches!(client.request(Request::Input { instance_id: id.into(), bytes: STANDARD.encode(text), operation_key:Uuid::new_v4().to_string(), fingerprint:"test".into() }).unwrap(), Response::Accepted { bytes } if bytes == text.len())
     );
 }
 

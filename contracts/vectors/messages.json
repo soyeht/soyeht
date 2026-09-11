@@ -1982,5 +1982,98 @@
         "reason": "example"
       }
     }
+  },
+  {
+    "name": "PaneUpdatedEvent",
+    "type": "PaneUpdatedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "pane": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "cwd": "/tmp/soyeht-test",
+        "mode": "terminal",
+        "state": "iniciando",
+        "source": "protocol",
+        "confidence": 0.5,
+        "phrase": "example",
+        "generation": 1,
+        "cols": 1,
+        "rows": 1,
+        "record": true
+      }
+    }
+  },
+  {
+    "name": "SettingsChangedEvent",
+    "type": "SettingsChangedEvent",
+    "value": {
+      "eventId": "1",
+      "at": "2026-09-11T00:00:00Z",
+      "key": "record.default",
+      "value": false
+    }
+  },
+  {
+    "name": "DevicePairPending",
+    "type": "DevicePairPending",
+    "value": {
+      "kind": "device_pair",
+      "requestId": "request-1",
+      "deviceName": "Telefone",
+      "fingerprint": "test-fingerprint",
+      "expiresAt": "2026-09-11T00:10:00Z"
+    }
+  },
+  {
+    "name": "ClientFocus",
+    "type": "ClientFocus",
+    "value": {
+      "workspaceId": "workspace-1",
+      "paneId": "pane-1"
+    }
+  },
+  {
+    "name": "event:pane.updated",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.updated",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "pane": {
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "cwd": "/tmp/soyeht-test",
+          "mode": "terminal",
+          "state": "iniciando",
+          "source": "protocol",
+          "confidence": 0.5,
+          "phrase": "example",
+          "generation": 1,
+          "cols": 1,
+          "rows": 1,
+          "record": true
+        }
+      }
+    }
+  },
+  {
+    "name": "event:settings.changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "settings.changed",
+      "params": {
+        "eventId": "1",
+        "at": "2026-09-11T00:00:00Z",
+        "key": "record.default",
+        "value": false
+      }
+    }
   }
 ]

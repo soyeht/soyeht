@@ -21,7 +21,7 @@ fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-fn validate_length(kind: u8, length: usize) -> io::Result<()> {
+pub fn validate_length(kind: u8, length: usize) -> io::Result<()> {
     let (minimum, maximum) = match kind {
         1 => (1, limits::JSON_BYTES),
         2 => (

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 3f6aaefb6d35b20b749b5da4bbd0c3fe8b0a28145d875f5bb05e90f470198ae2). Do not edit.
+// Generated from contracts/protocol.json (sha256 b2528ce7f18d51677445f8aafc989b17a0a00c8002ae0fe860c1807b31fae56d). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -285,6 +285,8 @@ pub struct StateSnapshotResult {
     pub cursor: Decimal,
     #[serde(rename = "parts")]
     pub parts: u32,
+    #[serde(rename = "focus", skip_serializing_if = "Option::is_none")]
+    pub focus: Option<ClientFocus>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EventsSubscribeParams {
@@ -857,6 +859,46 @@ pub struct ErrorEnvelope {
     #[serde(rename = "error")]
     pub error: RpcError,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneUpdatedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "pane")]
+    pub pane: Pane,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SettingsChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "key")]
+    pub key: String,
+    #[serde(rename = "value")]
+    pub value: JsonValue,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePairPending {
+    #[serde(rename = "kind")]
+    pub kind: String,
+    #[serde(rename = "requestId")]
+    pub request_id: Id,
+    #[serde(rename = "deviceName")]
+    pub device_name: String,
+    #[serde(rename = "fingerprint")]
+    pub fingerprint: String,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ClientFocus {
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -1021,3 +1063,28 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
 ];
+
+pub fn error_code(kind: &ErrorKind) -> i64 {
+    match kind {
+        ErrorKind::NotFound => -32000,
+        ErrorKind::InvalidParams => -32001,
+        ErrorKind::Unauthorized => -32002,
+        ErrorKind::ForbiddenRole => -32003,
+        ErrorKind::PaneBusy => -32004,
+        ErrorKind::TaskHasOwner => -32005,
+        ErrorKind::TransitionRefused => -32006,
+        ErrorKind::StaleVersion => -32007,
+        ErrorKind::IdempotencyConflict => -32008,
+        ErrorKind::HarnessUnavailable => -32009,
+        ErrorKind::NeedsLogin => -32010,
+        ErrorKind::CursorTooOld => -32011,
+        ErrorKind::ResyncRequired => -32012,
+        ErrorKind::SlowConsumer => -32013,
+        ErrorKind::ProtocolVersionUnsupported => -32014,
+        ErrorKind::DiskFull => -32015,
+        ErrorKind::PtydUnavailable => -32016,
+        ErrorKind::StaleEngineGeneration => -32017,
+        ErrorKind::InternalError => -32018,
+        ErrorKind::SnapshotTooLarge => -32019,
+    }
+}

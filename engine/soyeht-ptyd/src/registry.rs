@@ -1,4 +1,4 @@
-use crate::wire::{Instance, VERSION};
+use crate::wire::Instance;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
@@ -10,6 +10,8 @@ use std::path::Path;
 pub struct Registry {
     pub version: u32,
     pub engine_generation: u64,
+    #[serde(default)]
+    pub supervisor_generation: u32,
     pub instances: BTreeMap<String, Instance>,
 }
 
@@ -19,15 +21,20 @@ impl Registry {
         let mut registry = match fs::read(path) {
             Ok(bytes) => serde_json::from_slice::<Self>(&bytes)?,
             Err(error) if error.kind() == io::ErrorKind::NotFound => Self {
-                version: VERSION,
+                version: 1,
                 engine_generation: 0,
+                supervisor_generation: 0,
                 instances: BTreeMap::new(),
             },
             Err(error) => return Err(error),
         };
-        if registry.version != VERSION {
+        if registry.version != 1 {
             return Err(io::Error::other("incompatible registry version"));
         }
+        registry.supervisor_generation = registry
+            .supervisor_generation
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("supervisor generation exhausted"))?;
         // Never signal or adopt a process by a PID from a prior supervisor.
         for instance in registry.instances.values_mut() {
             instance.closed = true;

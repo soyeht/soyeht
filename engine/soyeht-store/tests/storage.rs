@@ -149,7 +149,7 @@ fn migration_backs_up_an_existing_database_before_changing_version() {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
-        1
+        soyeht_store::database::SCHEMA_VERSION
     );
     let backups: Vec<_> = fs::read_dir(directory.0.join("backups")).unwrap().collect();
     assert_eq!(backups.len(), 1);
@@ -192,6 +192,54 @@ fn full_database_does_not_confirm_a_partial_mutation() {
         .query_row("SELECT COUNT(*) FROM idempotency", [], |row| row.get(0))
         .unwrap();
     assert_eq!(receipts, 0);
+}
+
+#[test]
+fn version_one_migration_preserves_identity_and_records_the_actor() {
+    let directory = Directory::new();
+    let old = rusqlite::Connection::open(directory.0.join("soyeht.db")).unwrap();
+    old.execute_batch(include_str!("../migrations/001-initial.sql"))
+        .unwrap();
+    old.execute(
+        "INSERT INTO metadata(key,value) VALUES ('db_id','stable-id'),('engine_generation','7')",
+        [],
+    )
+    .unwrap();
+    drop(old);
+    let mut store = Store::open(&directory.0).unwrap();
+    assert_eq!(store.db_id, "stable-id");
+    assert_eq!(store.next_engine_generation().unwrap(), 8);
+    let actor = json!({"role":"human_local","client":"test"});
+    let changed = store
+        .mutate_as("local:test", "key", "request", Some(&actor), |tx| {
+            tx.execute(
+                "INSERT INTO workspaces(id,payload,closed) VALUES ('w1','{}',1)",
+                [],
+            )?;
+            Ok((
+                json!({}),
+                vec![("workspace.closed".into(), json!({"workspaceId":"w1"}))],
+            ))
+        })
+        .unwrap();
+    assert_eq!(changed.events[0].params["actor"], actor);
+    let recorded: String = store
+        .connection()
+        .query_row("SELECT actor FROM idempotency WHERE key='key'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&recorded).unwrap(),
+        actor
+    );
+    assert!(
+        store.snapshot().unwrap().sections[0]
+            .1
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

@@ -8,6 +8,7 @@ use std::time::Duration;
 pub struct Client {
     stream: UnixStream,
     pub supervisor_id: String,
+    pub supervisor_generation: u32,
 }
 
 impl Client {
@@ -18,6 +19,7 @@ impl Client {
         let mut client = Self {
             stream,
             supervisor_id: String::new(),
+            supervisor_generation: 0,
         };
         match client.request(Request::Hello {
             version: VERSION,
@@ -26,8 +28,10 @@ impl Client {
             Response::Welcome {
                 version: VERSION,
                 supervisor_id,
+                supervisor_generation,
             } => {
                 client.supervisor_id = supervisor_id;
+                client.supervisor_generation = supervisor_generation;
                 Ok(client)
             }
             Response::Error { kind, .. } => Err(io::Error::other(kind)),

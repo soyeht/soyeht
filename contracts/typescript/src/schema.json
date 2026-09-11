@@ -475,6 +475,9 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "focus": {
+          "$ref": "#/$defs/ClientFocus"
         }
       },
       "required": [
@@ -1789,6 +1792,94 @@
         "error"
       ],
       "additionalProperties": true
+    },
+    "PaneUpdatedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "pane": {
+          "$ref": "#/$defs/Pane"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "pane"
+      ],
+      "additionalProperties": true
+    },
+    "SettingsChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "key",
+        "value"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairPending": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "device_pair"
+          ]
+        },
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "deviceName": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "requestId",
+        "deviceName",
+        "fingerprint",
+        "expiresAt"
+      ],
+      "additionalProperties": true
+    },
+    "ClientFocus": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -2148,6 +2239,18 @@
         "$ref": "#/$defs/PtydLostEvent"
       },
       "durable": true
+    },
+    "pane.updated": {
+      "params": {
+        "$ref": "#/$defs/PaneUpdatedEvent"
+      },
+      "durable": true
+    },
+    "settings.changed": {
+      "params": {
+        "$ref": "#/$defs/SettingsChangedEvent"
+      },
+      "durable": true
     }
   },
   "x-framing": {
@@ -2228,5 +2331,27 @@
     {
       "$ref": "#/$defs/ErrorEnvelope"
     }
-  ]
+  ],
+  "x-errorCodes": {
+    "not_found": -32000,
+    "invalid_params": -32001,
+    "unauthorized": -32002,
+    "forbidden_role": -32003,
+    "pane_busy": -32004,
+    "task_has_owner": -32005,
+    "transition_refused": -32006,
+    "stale_version": -32007,
+    "idempotency_conflict": -32008,
+    "harness_unavailable": -32009,
+    "needs_login": -32010,
+    "cursor_too_old": -32011,
+    "resync_required": -32012,
+    "slow_consumer": -32013,
+    "protocol_version_unsupported": -32014,
+    "disk_full": -32015,
+    "ptyd_unavailable": -32016,
+    "stale_engine_generation": -32017,
+    "internal_error": -32018,
+    "snapshot_too_large": -32019
+  }
 }

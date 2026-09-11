@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -47,7 +47,13 @@ pub enum Request {
     Input {
         instance_id: String,
         bytes: String,
+        operation_key: String,
+        fingerprint: String,
     },
+    ConfirmInput {
+        operation_key: String,
+    },
+    PendingInputs,
     Resize {
         instance_id: String,
         cols: u16,
@@ -66,13 +72,23 @@ pub enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "status", content = "value", rename_all = "snake_case")]
 pub enum Response {
-    Welcome { version: u32, supervisor_id: String },
+    Welcome {
+        version: u32,
+        supervisor_id: String,
+        supervisor_generation: u32,
+    },
     Instances(Vec<Instance>),
     Instance(Instance),
     Output(Output),
-    Accepted { bytes: usize },
+    Accepted {
+        bytes: usize,
+    },
+    InputReceipts(Vec<String>),
     Ok,
-    Error { kind: String, message: String },
+    Error {
+        kind: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

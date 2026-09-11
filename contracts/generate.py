@@ -166,6 +166,7 @@ def render(schema, digest):
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
     header = f"// Generated from contracts/protocol.json (sha256 {digest}). Do not edit.\n"
     rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items()) + "\n" + registry_rust(schema) + "\n"
+    rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items()) + "\n    }\n}\n"
     # Formatting in memory keeps --check read-only and identical across invocations.
     rust = subprocess.run(["rustfmt", "--edition", "2024"], input=rust, text=True, capture_output=True, check=True).stdout
     outputs["engine/soyeht-protocol/src/generated.rs"] = rust

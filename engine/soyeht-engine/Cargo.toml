@@ -1,0 +1,29 @@
+[package]
+name = "soyeht-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+soyeht-protocol = { path = "../soyeht-protocol" }
+soyeht-ptyd = { path = "../soyeht-ptyd" }
+soyeht-store = { path = "../soyeht-store" }
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+uuid.workspace = true
+base64.workspace = true
+rusqlite.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+ed25519-dalek.workspace = true
+
+[lints]
+workspace = true

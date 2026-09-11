@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 3f6aaefb6d35b20b749b5da4bbd0c3fe8b0a28145d875f5bb05e90f470198ae2). Do not edit.
+// Generated from contracts/protocol.json (sha256 b2528ce7f18d51677445f8aafc989b17a0a00c8002ae0fe860c1807b31fae56d). Do not edit.
 import Foundation
 
 
@@ -285,10 +285,12 @@ public struct StateSnapshotResult: Codable, Sendable {
     public var `snapshotId`: Id
     public var `cursor`: Decimal
     public var `parts`: UInt32
-    public init(`snapshotId`: Id, `cursor`: Decimal, `parts`: UInt32) {
+    public var `focus`: ClientFocus?
+    public init(`snapshotId`: Id, `cursor`: Decimal, `parts`: UInt32, `focus`: ClientFocus? = nil) {
         self.`snapshotId` = `snapshotId`
         self.`cursor` = `cursor`
         self.`parts` = `parts`
+        self.`focus` = `focus`
     }
 }
 
@@ -1024,5 +1026,53 @@ public struct ErrorEnvelope: Codable, Sendable {
         self.`jsonrpc` = `jsonrpc`
         self.`id` = `id`
         self.`error` = `error`
+    }
+}
+
+public struct PaneUpdatedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `pane`: Pane
+    public init(`eventId`: Decimal, `at`: String, `pane`: Pane) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`pane` = `pane`
+    }
+}
+
+public struct SettingsChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `key`: String
+    public var `value`: JsonValue
+    public init(`eventId`: Decimal, `at`: String, `key`: String, `value`: JsonValue) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`key` = `key`
+        self.`value` = `value`
+    }
+}
+
+public struct DevicePairPending: Codable, Sendable {
+    public var `kind`: String
+    public var `requestId`: Id
+    public var `deviceName`: String
+    public var `fingerprint`: String
+    public var `expiresAt`: String
+    public init(`kind`: String, `requestId`: Id, `deviceName`: String, `fingerprint`: String, `expiresAt`: String) {
+        self.`kind` = `kind`
+        self.`requestId` = `requestId`
+        self.`deviceName` = `deviceName`
+        self.`fingerprint` = `fingerprint`
+        self.`expiresAt` = `expiresAt`
+    }
+}
+
+public struct ClientFocus: Codable, Sendable {
+    public var `workspaceId`: Id?
+    public var `paneId`: Id?
+    public init(`workspaceId`: Id? = nil, `paneId`: Id? = nil) {
+        self.`workspaceId` = `workspaceId`
+        self.`paneId` = `paneId`
     }
 }

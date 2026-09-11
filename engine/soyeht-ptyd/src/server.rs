@@ -34,6 +34,7 @@ struct State {
     registry: Registry,
     live: BTreeMap<String, Arc<Live>>,
     active: Option<(String, UnixStream)>,
+    inputs: BTreeMap<String, (String, String, usize)>,
 }
 
 fn error(kind: &str, message: &str) -> Response {
@@ -78,6 +79,7 @@ pub fn run(directory: &Path) -> io::Result<()> {
         registry,
         live: BTreeMap::new(),
         active: None,
+        inputs: BTreeMap::new(),
     }));
     println!("{{\"event\":\"ptyd.ready\",\"version\":{VERSION}}}");
     for incoming in listener.incoming() {
@@ -139,6 +141,7 @@ fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> io::Result<(
             &Response::Welcome {
                 version: VERSION,
                 supervisor_id: state.supervisor_id.clone(),
+                supervisor_generation: state.registry.supervisor_generation,
             },
         ) {
             state.active = None;
@@ -266,7 +269,39 @@ fn execute(
             }
             Ok(Response::Ok)
         }
-        Request::Input { instance_id, bytes } => {
+        Request::PendingInputs => Ok(Response::InputReceipts(
+            state.inputs.keys().cloned().collect(),
+        )),
+        Request::ConfirmInput { operation_key } => {
+            state.inputs.remove(&operation_key);
+            Ok(Response::Ok)
+        }
+        Request::Input {
+            instance_id,
+            bytes,
+            operation_key,
+            fingerprint,
+        } => {
+            if operation_key.is_empty() || operation_key.len() > 128 || fingerprint.len() > 128 {
+                return Ok(error("invalid_params", "invalid input identity"));
+            }
+            if let Some((prior_instance, prior_fingerprint, accepted)) =
+                state.inputs.get(&operation_key)
+            {
+                return Ok(
+                    if prior_instance == &instance_id && prior_fingerprint == &fingerprint {
+                        Response::Accepted { bytes: *accepted }
+                    } else {
+                        error("idempotency_conflict", "input identity reused")
+                    },
+                );
+            }
+            if state.inputs.len() >= 1024 {
+                return Ok(error(
+                    "input_pending_limit",
+                    "confirm previous input receipts before submitting more",
+                ));
+            }
             let Some(live) = state.live.get(&instance_id) else {
                 return Ok(error("not_found", "process not found"));
             };
@@ -284,6 +319,9 @@ fn execute(
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => 0,
                 Err(e) => return Err(e),
             };
+            state
+                .inputs
+                .insert(operation_key, (instance_id, fingerprint, count));
             Ok(Response::Accepted { bytes: count })
         }
         Request::Resize {
