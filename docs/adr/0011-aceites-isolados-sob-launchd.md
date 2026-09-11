@@ -24,7 +24,7 @@ terminar de produzir mais de 8 MiB e volta a carregar o engine. O mesmo
 supervisor permanece vivo. O replay por offset precisa declarar a lacuna.
 
 O relatório registra cada aceite separadamente e também as falhas. A CI
-guarda esse arquivo por sete dias. A conexão real do iPhone com Wi-Fi
+publica o conteúdo nos logs e no resumo da execução. A conexão real do iPhone com Wi-Fi
 desligado e o reboot do Mac continuam no roteiro manual.
 
 O runner executou os seis aceites em 6 segundos. A conta atingiu a cota

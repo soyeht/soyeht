@@ -11,7 +11,7 @@ use std::{
     },
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     net::{TcpListener, UnixListener},
@@ -227,6 +227,17 @@ async fn connection(
             let Ok(request) = serde_json::from_slice::<Value>(&bytes) else {
                 break;
             };
+            let started = Instant::now();
+            let operation_id = uuid::Uuid::new_v4().to_string();
+            let method = request["method"]
+                .as_str()
+                .and_then(|name| {
+                    soyeht_protocol::METHODS
+                        .iter()
+                        .find(|entry| entry.0 == name)
+                        .map(|entry| entry.0)
+                })
+                .unwrap_or("unknown");
             let request_id = request["id"].clone();
             let failed_handshake = request["method"] == "hello";
             let shared = Arc::clone(&core);
@@ -235,6 +246,24 @@ async fn connection(
                 shared.lock().expect("core").dispatch(&connection, request)
             })
             .await;
+            let (status, kind) = match &outcome {
+                Ok(Ok(Outcome::Reply(_))) => ("reply", None),
+                Ok(Ok(Outcome::Queued)) => ("queued", None),
+                Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
+                Ok(Err(error)) => ("error", Some(&error.data.kind)),
+                Err(_) => ("worker_failed", None),
+            };
+            eprintln!(
+                "{}",
+                operation_record(
+                    &operation_id,
+                    &id,
+                    method,
+                    status,
+                    kind,
+                    started.elapsed().as_millis()
+                )
+            );
             match outcome {
                 Ok(Ok(Outcome::Reply(result))) => {
                     outbox.send(model::response(request_id, result));
@@ -265,9 +294,56 @@ async fn connection(
     core.lock().expect("core").clients.remove(&id);
 }
 
+fn operation_record(
+    operation: &str,
+    connection: &str,
+    method: &str,
+    outcome: &str,
+    kind: Option<&soyeht_protocol::ErrorKind>,
+    duration_ms: u128,
+) -> Value {
+    // Only an allowlisted method name is retained. Request IDs and parameters
+    // may contain credentials or terminal bytes and never enter this record.
+    let method = soyeht_protocol::METHODS
+        .iter()
+        .find(|entry| entry.0 == method)
+        .map(|entry| entry.0)
+        .unwrap_or("unknown");
+    serde_json::json!({
+        "event": "engine.operation",
+        "operationId": operation,
+        "connectionId": connection,
+        "method": method,
+        "outcome": outcome,
+        "kind": kind,
+        "durationMs": duration_ms,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn operation_log_keeps_identity_but_never_unknown_method_text() {
+        let operation = uuid::Uuid::new_v4().to_string();
+        let connection = uuid::Uuid::new_v4().to_string();
+        let record = operation_record(
+            &operation,
+            &connection,
+            "untrusted-private-text",
+            "error",
+            Some(&soyeht_protocol::ErrorKind::InvalidParams),
+            12,
+        );
+        assert_eq!(record["operationId"], operation);
+        assert_eq!(record["connectionId"], connection);
+        assert_eq!(record["method"], "unknown");
+        assert_eq!(record["kind"], "invalid_params");
+        assert!(!record.to_string().contains("untrusted-private-text"));
+        let success = operation_record(&operation, &connection, "pane.create", "reply", None, 1);
+        assert_eq!(success["method"], "pane.create");
+        assert!(success["kind"].is_null());
+    }
     #[test]
     fn listener_refuses_public_lan_and_wildcard_addresses() {
         for ip in ["0.0.0.0", "::", "192.168.1.10", "8.8.8.8", "100.128.0.1"] {

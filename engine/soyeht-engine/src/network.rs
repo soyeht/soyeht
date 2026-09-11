@@ -63,9 +63,76 @@ pub fn tailnet_addresses() -> io::Result<Vec<IpAddr>> {
     Ok(addresses.into_iter().collect())
 }
 
+pub async fn wait_for_address_change(initial: Vec<IpAddr>) {
+    wait_for_change(
+        initial,
+        std::time::Duration::from_secs(2),
+        tailnet_addresses,
+    )
+    .await;
+}
+
+async fn wait_for_change(
+    initial: Vec<IpAddr>,
+    period: std::time::Duration,
+    mut read: impl FnMut() -> io::Result<Vec<IpAddr>>,
+) {
+    let initial: BTreeSet<_> = initial.into_iter().collect();
+    let mut interval = tokio::time::interval(period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        interval.tick().await;
+        // A transient enumeration failure is not evidence that the network changed.
+        if let Ok(current) = read()
+            && current.into_iter().collect::<BTreeSet<_>>() != initial
+        {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn late_network_and_removal_trigger_restart_but_order_and_errors_do_not() {
+        let first: IpAddr = "100.64.0.1".parse().unwrap();
+        let second: IpAddr = "fd7a:115c:a1e0::1".parse().unwrap();
+        let mut reads = 0;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            wait_for_change(vec![], std::time::Duration::from_millis(1), || {
+                reads += 1;
+                match reads {
+                    1 => Err(io::Error::other("temporary enumeration failure")),
+                    2 => Ok(vec![]),
+                    _ => Ok(vec![first]),
+                }
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reads, 3);
+        let mut reads = 0;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            wait_for_change(
+                vec![first, second],
+                std::time::Duration::from_millis(1),
+                || {
+                    reads += 1;
+                    if reads == 1 {
+                        Ok(vec![second, first])
+                    } else {
+                        Ok(vec![])
+                    }
+                },
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reads, 2);
+    }
     #[test]
     fn physical_interfaces_and_unrelated_tunnels_are_excluded() {
         assert!(!is_tailnet_interface("en0", "100.80.1.2".parse().unwrap()));

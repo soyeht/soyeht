@@ -8,6 +8,7 @@ use tokio::sync::{Notify, mpsc, oneshot};
 struct Budget {
     used: AtomicUsize,
     closed: AtomicBool,
+    slow: AtomicBool,
     wake: Notify,
 }
 struct Permit {
@@ -47,6 +48,7 @@ pub struct Outbox {
     terminal: mpsc::UnboundedSender<Packet>,
 }
 pub struct Receiver {
+    reported_close: bool,
     budget: Arc<Budget>,
     control: mpsc::UnboundedReceiver<Packet>,
     terminal: mpsc::UnboundedReceiver<Packet>,
@@ -56,6 +58,7 @@ pub fn channel() -> (Outbox, Receiver) {
     let budget = Arc::new(Budget {
         used: AtomicUsize::new(0),
         closed: AtomicBool::new(false),
+        slow: AtomicBool::new(false),
         wake: Notify::new(),
     });
     let (control, control_rx) = mpsc::unbounded_channel();
@@ -68,6 +71,7 @@ pub fn channel() -> (Outbox, Receiver) {
             terminal,
         },
         Receiver {
+            reported_close: false,
             budget,
             control: control_rx,
             terminal: terminal_rx,
@@ -124,6 +128,7 @@ impl Outbox {
             })
             .is_err()
         {
+            self.budget.slow.store(true, Ordering::Release);
             self.close();
             return false;
         }
@@ -169,13 +174,37 @@ impl Outbox {
 }
 
 impl Receiver {
+    fn closing_packet(&mut self) -> Option<Packet> {
+        // Free queued bytes and wake blocked snapshot writers before the final error.
+        self.control.close();
+        self.terminal.close();
+        while self.control.try_recv().is_ok() {}
+        while self.terminal.try_recv().is_ok() {}
+        if self.reported_close || !self.budget.slow.load(Ordering::Acquire) {
+            return None;
+        }
+        self.reported_close = true;
+        Some(Packet {
+            frame: crate::model::failure(
+                serde_json::Value::Null,
+                crate::errors::error(
+                    soyeht_protocol::ErrorKind::SlowConsumer,
+                    "Output queue exceeded; request a new snapshot",
+                ),
+            ),
+            _permit: None,
+            sent: None,
+            current: None,
+        })
+    }
+
     pub async fn next(&mut self) -> Option<Packet> {
         if self.budget.closed.load(Ordering::Acquire) {
-            return None;
+            return self.closing_packet();
         }
         tokio::select! {
             biased;
-            _ = self.budget.wake.notified() => None,
+            _ = self.budget.wake.notified() => self.closing_packet(),
             Some(packet) = self.control.recv() => Some(packet),
             Some(packet) = self.terminal.recv() => Some(packet),
             else => None,
@@ -232,6 +261,16 @@ mod tests {
         }) {}
         assert!(outbox.is_closed());
         assert!(outbox.budget.used.load(Ordering::Acquire) <= limits::CONNECTION_QUEUE_BYTES);
+        let Frame::Json(bytes) = receiver.next().await.unwrap().frame else {
+            panic!("missing close reason")
+        };
+        let error: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(error["id"], serde_json::Value::Null);
+        assert_eq!(error["error"]["data"]["kind"], "slow_consumer");
+        assert_eq!(
+            error["error"]["code"],
+            soyeht_protocol::error_code(&soyeht_protocol::ErrorKind::SlowConsumer)
+        );
         assert!(receiver.next().await.is_none());
         drop(receiver);
         assert_eq!(outbox.budget.used.load(Ordering::Acquire), 0);

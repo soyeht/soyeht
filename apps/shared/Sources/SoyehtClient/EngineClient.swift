@@ -217,6 +217,11 @@ public final class EngineClient {
       }
       return
     }
+    if message["id"] == .null, message["error"] != .null {
+      throw ClientFailure.remote(
+        message["error"]["data"]["kind"].string ?? "internal_error",
+        message["error"]["message"].string ?? "Conexão encerrada")
+    }
     guard let method = message["method"].string else { return }
     let params = message["params"]
     if let text = params["eventId"].string {

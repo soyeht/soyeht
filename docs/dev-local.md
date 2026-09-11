@@ -14,7 +14,10 @@ O instalador cria somente os serviços `com.soyeht.next.dev.ptyd` e
 `com.soyeht.next.dev.engine`. Os executáveis, o banco e os logs ficam em
 `~/Library/Application Support/Soyeht.next/dev/`. Os arquivos dos serviços
 ficam em `~/Library/LaunchAgents/`. O engine escuta no loopback e no endereço
-da tailnet (IPv4 e IPv6), na porta 8291. Inicie a tailnet antes da instalação.
+da tailnet (IPv4 e IPv6), na porta 8291. Se a tailnet subir depois ou mudar de endereço, o engine detecta a mudança
+e sai; o launchd o reinicia com os endereços atuais. O supervisor permanece
+vivo, os shells são adotados e os clientes reconectam. A consulta usa apenas
+as interfaces locais do sistema, sem chamar outro programa.
 
 `pane create --shell --cwd CAMINHO` abre o shell nessa pasta e cria o
 workspace correspondente quando necessário. O diretório atual é o padrão.
