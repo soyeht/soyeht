@@ -6,8 +6,8 @@ os clientes mostram esse estado no Mac e no iPhone.
 A implementação está começando pela fatia 1: protocolo, supervisor de
 processos, engine, CLI e aplicativos novos. Ainda não há release.
 O código disponível inclui o protocolo compartilhado, armazenamento durável,
-supervisor de processos e servidor do engine. CLI e aplicativos entram nos
-próximos passos.
+supervisor de processos, servidor do engine e CLI. Os aplicativos entram nos
+próximos passos. Veja [como rodar o perfil Dev novo](docs/dev-local.md).
 
 ## Organização
 

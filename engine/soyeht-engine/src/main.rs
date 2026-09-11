@@ -1,5 +1,5 @@
 use soyeht_engine::server::{self, Config};
-use std::{io, net::SocketAddr, path::PathBuf, process::Command};
+use std::{io, net::SocketAddr, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -28,22 +28,8 @@ async fn main() -> io::Result<()> {
     }
     if listen.is_empty() {
         listen.push("127.0.0.1:8291".parse().expect("loopback"));
-        for cli in [
-            "/opt/homebrew/bin/tailscale",
-            "/usr/local/bin/tailscale",
-            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-        ] {
-            if !std::path::Path::new(cli).is_file() {
-                continue;
-            }
-            if let Ok(output) = Command::new(cli).args(["ip", "--4"]).output()
-                && output.status.success()
-                && let Ok(ip) = String::from_utf8_lossy(&output.stdout).trim().parse()
-                && server::permitted_address(ip)
-            {
-                listen.push(SocketAddr::new(ip, 8291));
-            }
-            break;
+        for ip in soyeht_engine::network::tailnet_addresses()? {
+            listen.push(SocketAddr::new(ip, 8291));
         }
     }
     server::run(Config { directory, listen }).await

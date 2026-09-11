@@ -4,6 +4,7 @@ pub mod dispatch;
 pub mod errors;
 pub mod input;
 pub mod model;
+pub mod network;
 pub mod outbox;
 pub mod pairing;
 pub mod panes;

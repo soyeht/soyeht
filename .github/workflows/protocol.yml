@@ -25,6 +25,7 @@ jobs:
         run: |
           python3 contracts/generate.py --check
           python3 -m unittest discover -s contracts -p 'test_*.py'
+          python3 -m unittest discover -s scripts -p 'test_install_dev.py'
       - name: Rust
         working-directory: engine
         run: |

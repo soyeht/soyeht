@@ -760,6 +760,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "soyeht-cli"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "soyeht-protocol",
+ "soyeht-ptyd",
+ "uuid",
+]
+
+[[package]]
 name = "soyeht-engine"
 version = "0.1.0"
 dependencies = [
