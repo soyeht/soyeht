@@ -115,3 +115,19 @@ versão registrada em `docs/toolchains.md`, `Cargo.lock` commitado.
   num Mac limpo, e a lista de riscos conhecidos. Mandar o resumo por
   mensagem para a victoria (que revisa contra os contratos) com os links
   dos PRs.
+
+## 5. Guarda adicional (Caio, 2026-09-10): nomes de concorrentes NUNCA no repositório
+É proibido escrever, em qualquer arquivo versionado (código, docs, ADR,
+comentário, mensagem de commit, PR), o nome de qualquer outro produto ou
+empresa concorrente. Integrações que o produto usa (Claude Code, Codex,
+Gemini, Cursor CLI, Tailscale, GitHub, ACP, worktrunk) podem ser citadas.
+Implementar na CI, no primeiro PR, um check bloqueante `forbidden-terms`:
+a lista de termos NÃO existe no repositório de forma nenhuma (nem em
+hash: palavra curta é adivinhável). Ela vive num segredo do repositório
+(`FORBIDDEN_TERMS`, um termo por linha, mantido pela victoria); o script
+lê o segredo do ambiente, tokeniza todo arquivo de texto (minúsculas;
+tokens e pares consecutivos) e as mensagens de commit do PR, e falha se
+bater. A mensagem de falha mostra só arquivo e linha, nunca o termo, para
+o log da CI também não vazar. Se o segredo não estiver disponível (PR de
+fork), o check falha fechado. Para citar origem de ideia, escreva "análise
+interna".
