@@ -111,3 +111,17 @@ the new agent may read if desired.
 
 ## Review applied (2026-09-10, findings R16, R17)
 See contract 04, sections R16 (frozen queue, acknowledgement point, restoration) and R17 (package built from normalized messages; render only the file body after `---`; error if metadata alone exceeds 16,000 characters). Returning to the original harness remains a new switch with a package (Caio's decision).
+
+## Open proposal (2026-09-11, from the benchmark; not a rule yet)
+Recap written by the outgoing model. One app in the benchmark asks the
+agent that is leaving for a recap under 120 words and, when that fails,
+builds a fixed recap with three sections: what was done, files edited in
+this session, plan. Caio's observation: people often switch **because the
+credit ran out**, and then the outgoing model cannot write anything. So
+the rule, if adopted, would be: if the outgoing harness still has credit
+(contract 10 knows), ask it for the recap and put it at the top of the
+package, above the six whole messages; if it has no credit, or does not
+answer within the timeout, send the package exactly as this contract
+already defines. The three fixed sections can be produced by the engine
+without a model and may become the package header in either case. Decision
+deferred by Caio ("keep it as a study").

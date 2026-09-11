@@ -163,3 +163,24 @@ Rule: the engine has ONE internal lifecycle (prompt accepted → working → end
 **R17 · transcript = normalized messages, not raw notifications.** The engine records every accepted prompt (`user` role, `promptId`) and agent messages assembled from chunks (`assistant` role, `localId`, `generation`, `seq`, `complete`). `session/load`/`resume` replay reconciles by identity (same generation and seq) or replaces the bounded section, never duplicates. `prompts/harness-switch.en.md` is rendered only from the body after `---`; single literal substitution of each `{{field}}`; if metadata alone exceeds 16,000 characters, error (never a package without a message).
 
 **R25 · probing in a disposable session.** The §2.3 probe runs in its own session with valid parameters, a 10 s deadline and cleanup; results are classified as `worked | unsupported | unauthenticated | inconclusive`. Only proven `unsupported` or proven session loss triggers the fallback (new session + package); timeout or a parameter error does NOT restart a conversation.
+
+## Addendum (2026-09-11, decided by Caio after the benchmark)
+**Steer.** A message queued while the agent is busy (§3) can be promoted
+by the user with the "Send now" action on the queued item. On harnesses
+whose ACP session accepts a prompt mid-turn, the engine sends it
+immediately as a steering prompt and the item leaves the queue; on
+harnesses that do not, the action is disabled with the tooltip "this agent
+only reads new messages between turns". The queue pauses by itself when
+the user cancels the current turn (⌘.) and shows "queue paused because you
+interrupted" with a "Resume" button; nothing is sent until the user
+resumes. Events: `pane.queue.steered {promptId}`, `pane.queue.paused`,
+`pane.queue.resumed`. Which harnesses accept steering is part of the
+capability probe of contract 02.
+
+**Context meter.** The agent pane header shows a small ring with the
+fraction of the model's context window in use, only when the harness
+reports both the used and the total (`usage` update with both fields).
+When either is missing, nothing is drawn: no ring, no placeholder. The
+ring turns to the `warning` token above 75 % and `danger` above 90 %.
+Clicking it offers "Compact context" when the harness supports it
+(contract 02 capability) and otherwise shows the numbers only.

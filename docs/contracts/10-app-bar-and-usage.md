@@ -18,36 +18,54 @@ separator; the **usage rings** (§2); a spacer; **Settings** at the bottom.
 `Cmd+1` … `Cmd+5` switch views. Switching views is a client-side change:
 it never creates, closes or focuses panes in the engine.
 
+
 ## 2. Usage rings
-One ring per subscription the user has signed in to on this Mac, in this
-order: Claude, Codex, Cursor. Each ring shows the used fraction of the
+One ring per **provider the user is signed in to on this Mac and for
+which a reader exists** (§3), in the order the providers appear in the
+harness catalog of contract 02. Screen 12 shows three as an example; the
+rail grows with the readers. Each ring shows the used fraction of the
 provider's **primary window** (the window the provider itself calls the
-current one: the 5-hour session for Claude and Codex, the billing month for
-Cursor). The provider glyph sits inside the ring; the percentage sits below
-it. Band colors use the existing tokens: below 50 % `success`, 50–80 %
-`warning`, above 80 % `danger`. A provider with no reading yet, or a reading
-older than 15 minutes, draws a dimmed ring with "—".
+current one; for example the 5-hour session for Claude and Codex). The
+provider glyph sits inside the ring; the percentage sits below it. Band
+colors use the existing tokens: below 50 % `success`, 50–80 % `warning`,
+above 80 % `danger`. A provider with no reading yet, or a reading older
+than 15 minutes, draws a dimmed ring with "—". A provider that is signed in
+but has no reader draws nothing: no ring, no placeholder.
 
 Hover opens the detail balloon (screen 12b): provider name, primary window
-used and when it resets, secondary window (the week for Claude and Codex)
-used and when it resets, where the reading came from and when. Click opens
-the same detail in Settings. A provider that needs login shows "sign in in
-your terminal" instead of numbers; Soyeht never asks for a password.
+used and when it resets, secondary window (for example the week) used and
+when it resets, where the reading came from and when. Click opens the same
+detail in Settings. A provider that needs login shows "sign in in your
+terminal" instead of numbers; Soyeht never asks for a password.
 
 ## 3. Where the numbers come from (engine, read-only)
-The engine reads what the provider's own tools already keep on this Mac. It
-never stores provider credentials, never refreshes or rotates a token, and
-never sends a token anywhere except to that provider's own usage endpoint.
-- **Claude**: run the Claude Code CLI's usage command in a non-persistent,
-  no-MCP session and parse its output. Fallback when the CLI prints no
-  windows: the usage entry in the Claude Desktop HTTP cache, when present.
-- **Codex**: the access token in the Codex login file under the Codex home
-  directory, sent to the account's usage endpoint. An expired token means
-  "sign in", never a refresh.
-- **Cursor**: the session token the Cursor app keeps in the login keychain,
-  sent to the account's usage endpoint. Reading the keychain item triggers
-  one macOS consent dialog per Soyeht build; if the user declines, the ring
-  shows "no access" and is never asked again until Settings re-enables it.
+Readers are per provider and live in one registry in the engine; adding a
+provider means adding one reader. Every reader follows the same rules: it
+reads only what the provider's own tools already keep on this Mac, never
+stores provider credentials, never refreshes or rotates a token, and never
+sends a token anywhere except to that provider's own usage endpoint. Each
+reader has a **preferred source** and **fallbacks**, tried in order; the
+balloon shows which one answered. None of the sources below has been
+verified by us yet; the first task of the slice is to run each reader
+against a real login and record the result in `docs/reports/`.
+- **Claude**: (1) the Claude Code CLI's usage command in a non-persistent,
+  no-MCP session, parsed; (2) the OAuth token the CLI keeps in the login
+  keychain, sent to Anthropic's usage endpoint (one macOS consent dialog);
+  (3) the usage entry in the Claude Desktop HTTP cache, when present.
+- **Codex**: (1) a disposable `codex app-server` asked for
+  `account/rateLimits/read` (the same channel the harness already uses in
+  contract 04); (2) the access token in the Codex login file sent to the
+  account's usage endpoint.
+- **Cursor**: (1) the session token the Cursor app keeps in the login
+  keychain, sent to the account's usage endpoint (one macOS consent dialog;
+  if declined, "no access" until Settings re-enables it). The Cursor ACP
+  session reports no usage at all.
+- **Every other harness in the catalog** (Gemini CLI, Grok, OpenCode, Pi,
+  omp, fx, Copilot and the rest): the slice investigates whether the CLI or
+  its local files expose a subscription window. Where they do, a reader is
+  added under the same rules; where they do not, no ring is drawn. The
+  result of that investigation, provider by provider, goes to
+  `docs/reports/` before the rings ship.
 - Refresh every 5 minutes while the rail is open; on hover when the reading
   is older than 60 s; exponential backoff (up to 30 min) after a 429 or a
   network error. The last reading is stored (contract 07) so rings show a
