@@ -1,4 +1,4 @@
-use crate::{process, registry::Registry, retention::Retention, wire::*};
+use crate::{pending::Pending, process, registry::Registry, retention::Retention, wire::*};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{frame::Frame, limits};
 use std::collections::BTreeMap;
@@ -23,9 +23,15 @@ use uuid::Uuid;
 struct Live {
     master: Mutex<File>,
     child: Mutex<Child>,
-    retention: Mutex<Retention>,
+    output: Mutex<OutputState>,
+    guard: Option<Mutex<UnixStream>>,
     exited: AtomicBool,
     read_done: AtomicBool,
+}
+
+struct OutputState {
+    retention: Retention,
+    pending: Option<Pending>,
 }
 
 struct State {
@@ -191,27 +197,31 @@ fn execute(
                     error("idempotency_conflict", "spawn key has different parameters")
                 });
             }
-            let (mut child, master) = process::spawn(&config)?;
+            let instance_id = Uuid::new_v4().to_string();
+            let process::Spawned {
+                child,
+                input,
+                output: reader,
+                pid,
+                guard,
+            } = process::spawn(&config, &state.directory, &instance_id)?;
+            let pipes = config.kind == ProcessKind::PipesAcp;
             let instance = Instance {
-                instance_id: Uuid::new_v4().to_string(),
+                instance_id,
                 supervisor_id: state.supervisor_id.clone(),
-                pid: child.id(),
+                pid,
                 spawn: config,
                 closed: false,
                 exit_code: None,
             };
-            let reader = match master.try_clone() {
-                Ok(reader) => reader,
-                Err(error) => {
-                    process::terminate_group(child.id());
-                    let _ = child.wait();
-                    return Err(error);
-                }
-            };
             let live = Arc::new(Live {
-                master: Mutex::new(master),
+                master: Mutex::new(input),
                 child: Mutex::new(child),
-                retention: Mutex::new(Retention::new(limits::PTY_RETENTION_BYTES)),
+                output: Mutex::new(OutputState {
+                    retention: Retention::new(limits::PTY_RETENTION_BYTES),
+                    pending: pipes.then(Pending::default),
+                }),
+                guard: guard.map(Mutex::new),
                 exited: AtomicBool::new(false),
                 read_done: AtomicBool::new(false),
             });
@@ -224,8 +234,9 @@ fn execute(
                     .registry
                     .instances
                     .remove(&instance.spawn.instance_key);
-                process::terminate_group(instance.pid);
-                let _ = live.child.lock().expect("child lock").wait();
+                let mut child = live.child.lock().expect("child lock");
+                process::terminate_group(child.id());
+                let _ = child.wait();
                 return Err(error);
             }
             state
@@ -272,6 +283,37 @@ fn execute(
         Request::PendingInputs => Ok(Response::InputReceipts(
             state.inputs.keys().cloned().collect(),
         )),
+        Request::PendingRequests { instance_id } => {
+            let Some(live) = state.live.get(&instance_id) else {
+                return Ok(error("not_found", "process not found"));
+            };
+            let output = live.output.lock().expect("output lock");
+            let Some(pending) = &output.pending else {
+                return Ok(error("wrong_process_kind", "ACP pipes required"));
+            };
+            let (items, recovery_gap) = pending.list();
+            Ok(Response::PendingRequests {
+                items,
+                recovery_gap,
+            })
+        }
+        Request::PendingRequestChunk {
+            instance_id,
+            request_key,
+            offset,
+        } => {
+            let Some(live) = state.live.get(&instance_id) else {
+                return Ok(error("not_found", "process not found"));
+            };
+            let output = live.output.lock().expect("output lock");
+            let Some(pending) = &output.pending else {
+                return Ok(error("wrong_process_kind", "ACP pipes required"));
+            };
+            Ok(match pending.chunk(request_key, offset) {
+                Ok(chunk) => Response::PendingRequestChunk(chunk),
+                Err(kind) => error(kind, "pending request could not be read"),
+            })
+        }
         Request::ConfirmInput { operation_key } => {
             state.inputs.remove(&operation_key);
             Ok(Response::Ok)
@@ -314,11 +356,15 @@ fn execute(
             if bytes.len() > limits::TERMINAL_PAYLOAD_BYTES {
                 return Ok(error("input_too_large", "input exceeds 64 KiB"));
             }
+            let mut output = live.output.lock().expect("output lock");
             let count = match live.master.lock().expect("master lock").write(&bytes) {
                 Ok(count) => count,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => 0,
                 Err(e) => return Err(e),
             };
+            if let Some(pending) = &mut output.pending {
+                pending.input(&bytes[..count]);
+            }
             state
                 .inputs
                 .insert(operation_key, (instance_id, fingerprint, count));
@@ -332,6 +378,9 @@ fn execute(
             let Some(live) = state.live.get(&instance_id) else {
                 return Ok(error("not_found", "process not found"));
             };
+            if live.guard.is_some() {
+                return Ok(error("wrong_process_kind", "terminal PTY required"));
+            }
             process::resize(&live.master.lock().expect("master lock"), cols, rows)?;
             Ok(Response::Ok)
         }
@@ -342,7 +391,7 @@ fn execute(
             let Some(live) = state.live.get(&instance_id) else {
                 return Ok(error("not_found", "process not found"));
             };
-            let output = live.retention.lock().expect("retention lock").read(
+            let output = live.output.lock().expect("output lock").retention.read(
                 from_seq,
                 limits::TERMINAL_PAYLOAD_BYTES,
                 live.exited.load(Ordering::Acquire) && live.read_done.load(Ordering::Acquire),
@@ -358,9 +407,10 @@ fn execute(
             };
             Ok(
                 match live
-                    .retention
+                    .output
                     .lock()
-                    .expect("retention lock")
+                    .expect("output lock")
+                    .retention
                     .acknowledge(seq)
                 {
                     Ok(()) => Response::Ok,
@@ -378,11 +428,13 @@ fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, k
         loop {
             match reader.read(&mut bytes) {
                 Ok(0) => break,
-                Ok(count) => reading
-                    .retention
-                    .lock()
-                    .expect("retention lock")
-                    .append(&bytes[..count]),
+                Ok(count) => {
+                    let mut output = reading.output.lock().expect("output lock");
+                    if let Some(pending) = &mut output.pending {
+                        pending.output(&bytes[..count]);
+                    }
+                    output.retention.append(&bytes[..count]);
+                }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     let mut descriptor = libc::pollfd {
@@ -409,9 +461,16 @@ fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, k
             match exit {
                 Ok(Some(status)) => {
                     live.exited.store(true, Ordering::Release);
+                    let code = live
+                        .guard
+                        .as_ref()
+                        .and_then(|control| {
+                            crate::pipe_guard::exit_code(&mut control.lock().expect("guard lock"))
+                        })
+                        .unwrap_or_else(|| status.code().unwrap_or(-1));
                     let mut state = shared.lock().expect("state lock");
                     if let Some(instance) = state.registry.instances.get_mut(&key) {
-                        instance.exit_code = Some(status.code().unwrap_or(-1));
+                        instance.exit_code = Some(code);
                     }
                     if state.registry.save(&state.directory).is_err() {
                         eprintln!("{{\"event\":\"ptyd.registry_write_failed\"}}");

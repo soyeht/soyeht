@@ -2,16 +2,20 @@ use crate::wire::{ProcessKind, Spawn};
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-pub fn spawn(config: &Spawn) -> io::Result<(Child, File)> {
-    if config.kind != ProcessKind::Pty {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "pipes ACP is outside slice 1",
-        ));
-    }
+pub struct Spawned {
+    pub child: Child,
+    pub input: File,
+    pub output: File,
+    pub pid: u32,
+    pub guard: Option<UnixStream>,
+}
+
+pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> io::Result<Spawned> {
     if config.argv.is_empty()
         || config.cols == 0
         || config.rows == 0
@@ -22,6 +26,9 @@ pub fn spawn(config: &Spawn) -> io::Result<(Child, File)> {
             io::ErrorKind::InvalidInput,
             "invalid spawn parameters",
         ));
+    }
+    if config.kind == ProcessKind::PipesAcp {
+        return crate::pipe_guard::spawn(config, directory, instance_id);
     }
     let mut master = -1;
     let mut slave = -1;
@@ -55,6 +62,43 @@ pub fn spawn(config: &Spawn) -> io::Result<(Child, File)> {
             return Err(io::Error::last_os_error());
         }
     }
+    let mut command = command(config)?;
+    command.stdin(Stdio::from(slave.try_clone()?));
+    command.stdout(Stdio::from(slave.try_clone()?));
+    command.stderr(Stdio::from(slave));
+    // SAFETY: the closure uses only async-signal-safe syscalls between fork and
+    // exec. Stdio has been attached by Command before this closure executes.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::ioctl(0, libc::TIOCSCTTY.into(), 0) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn()?;
+    let setup = nonblocking(&master).and_then(|()| master.try_clone());
+    let output = match setup {
+        Ok(output) => output,
+        Err(error) => {
+            terminate_group(child.id());
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
+    Ok(Spawned {
+        pid: child.id(),
+        child,
+        input: master,
+        output,
+        guard: None,
+    })
+}
+
+pub fn command(config: &Spawn) -> io::Result<Command> {
     let mut command = Command::new(&config.argv[0]);
     command
         .args(&config.argv[1..])
@@ -88,32 +132,19 @@ pub fn spawn(config: &Spawn) -> io::Result<(Child, File)> {
         }
         command.env(name, value);
     }
-    command.stdin(Stdio::from(slave.try_clone()?));
-    command.stdout(Stdio::from(slave.try_clone()?));
-    command.stderr(Stdio::from(slave));
-    // SAFETY: the closure uses only async-signal-safe syscalls between fork and
-    // exec. Stdio has been attached by Command before this closure executes.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            if libc::ioctl(0, libc::TIOCSCTTY.into(), 0) == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
+    Ok(command)
+}
+
+pub fn nonblocking(file: &File) -> io::Result<()> {
+    // SAFETY: file owns the valid descriptor; fcntl only changes its flags.
+    let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+    if flags == -1
+        // SAFETY: same owned descriptor, with the original flags preserved.
+        || unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1
+    {
+        return Err(io::Error::last_os_error());
     }
-    let mut child = command.spawn()?;
-    // SAFETY: master is owned and valid. Nonblocking I/O keeps a child's
-    // stalled stdin from blocking engine reconnection or closing another pane.
-    if unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } == -1 {
-        terminate_group(child.id());
-        let error = io::Error::last_os_error();
-        let _ = child.wait();
-        return Err(error);
-    }
-    Ok((child, master))
+    Ok(())
 }
 
 pub fn resize(master: &File, cols: u16, rows: u16) -> io::Result<()> {

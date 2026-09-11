@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -54,6 +54,14 @@ pub enum Request {
         operation_key: String,
     },
     PendingInputs,
+    PendingRequests {
+        instance_id: String,
+    },
+    PendingRequestChunk {
+        instance_id: String,
+        request_key: u64,
+        offset: usize,
+    },
     Resize {
         instance_id: String,
         cols: u16,
@@ -84,6 +92,11 @@ pub enum Response {
         bytes: usize,
     },
     InputReceipts(Vec<String>),
+    PendingRequests {
+        items: Vec<PendingRequest>,
+        recovery_gap: bool,
+    },
+    PendingRequestChunk(PendingRequestChunk),
     Ok,
     Error {
         kind: String,
@@ -95,6 +108,24 @@ pub enum Response {
 pub struct Gap {
     pub from_seq: u64,
     pub to_seq: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingRequest {
+    pub request_key: u64,
+    pub from_seq: u64,
+    pub to_seq: u64,
+    pub bytes: usize,
+    pub method: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PendingRequestChunk {
+    pub request_key: u64,
+    pub offset: usize,
+    pub next_offset: usize,
+    pub total_bytes: usize,
+    pub bytes: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

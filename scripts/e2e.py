@@ -149,6 +149,8 @@ class Services:
         for name in ("soyeht","soyeht-engine","soyeht-ptyd"):
             shutil.copy2(binaries/name,self.binaries/name)
             (self.binaries/name).chmod(0o700)
+        self.ptyd_version = int(subprocess.check_output(
+            [str(self.binaries / "soyeht-ptyd"), "--protocol-version"], text=True))
         self.prefix = f"com.soyeht.next.dev.e2e.{identity}"
         self.attempted = set()
         self.clients = []
@@ -225,7 +227,7 @@ class Services:
             with socket.socket(socket.AF_UNIX) as stream:
                 stream.settimeout(5)
                 stream.connect(str(self.data / "ptyd.sock"))
-                send(stream, {"method": "hello", "params": {"version": 2, "engine_generation": 18446744073709551615}})
+                send(stream, {"method": "hello", "params": {"version": self.ptyd_version, "engine_generation": 18446744073709551615}})
                 require(receive(stream)["status"] == "welcome", "cleanup supervisor handshake")
                 send(stream, {"method": "list"})
                 for instance in receive(stream)["value"]:

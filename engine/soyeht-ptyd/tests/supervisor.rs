@@ -334,3 +334,208 @@ fn registry_write_failure_does_not_close_a_live_process_or_advance_authority() {
         Response::Ok
     ));
 }
+
+#[test]
+fn pipes_recover_native_requests_after_ack_and_reconnect_without_echoing_stdin() {
+    let (daemon, mut client) = Daemon::start();
+    let mut config = daemon.shell();
+    config.kind = ProcessKind::PipesAcp;
+    config.argv = vec!["/bin/sh".into(), "-c".into(), r#"
+        [ ! -t 0 ] && [ ! -t 1 ] || exit 2
+        printf '%s\n' '{"jsonrpc":"2.0","id":"native-1","method":"session/request_permission","params":{"options":[]}}'
+        IFS= read -r response
+        printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"received":true}}'
+        printf 'private diagnostic\n' >&2
+        sleep 30
+    "#.into()];
+    let instance = spawn(&mut client, config.clone());
+    let mut cursor = 0;
+    let output = wait_text(
+        &mut client,
+        &instance.instance_id,
+        &mut cursor,
+        "request_permission",
+    );
+    assert!(!output.contains('\r'));
+    assert!(matches!(
+        client
+            .request(Request::Ack {
+                instance_id: instance.instance_id.clone(),
+                seq: cursor
+            })
+            .unwrap(),
+        Response::Ok
+    ));
+    drop(client);
+    let mut client = daemon.connect(2);
+    assert_eq!(spawn(&mut client, config).pid, instance.pid);
+    let Response::PendingRequests {
+        items,
+        recovery_gap,
+    } = client
+        .request(Request::PendingRequests {
+            instance_id: instance.instance_id.clone(),
+        })
+        .unwrap()
+    else {
+        panic!("expected pending requests");
+    };
+    assert!(!recovery_gap);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].to_seq, cursor);
+    let Response::PendingRequestChunk(chunk) = client
+        .request(Request::PendingRequestChunk {
+            instance_id: instance.instance_id.clone(),
+            request_key: items[0].request_key,
+            offset: 0,
+        })
+        .unwrap()
+    else {
+        panic!("expected chunk");
+    };
+    let native: serde_json::Value =
+        serde_json::from_slice(&STANDARD.decode(chunk.bytes).unwrap()).unwrap();
+    assert_eq!(native["id"], "native-1");
+    let response = "{\"jsonrpc\":\"2.0\",\"id\":\"native-1\",\"result\":{}}";
+    input(&mut client, &instance.instance_id, response);
+    let Response::PendingRequests { items, .. } = client
+        .request(Request::PendingRequests {
+            instance_id: instance.instance_id.clone(),
+        })
+        .unwrap()
+    else {
+        panic!("expected requests");
+    };
+    assert_eq!(items.len(), 1, "partial input cannot answer the request");
+    input(&mut client, &instance.instance_id, "\n");
+    let output = wait_text(&mut client, &instance.instance_id, &mut cursor, "received");
+    assert!(
+        !output.contains("native-1"),
+        "pipes do not echo engine responses"
+    );
+    assert!(
+        !output.contains("private diagnostic"),
+        "stderr cannot corrupt ACP"
+    );
+    let Response::PendingRequests {
+        items,
+        recovery_gap,
+    } = client
+        .request(Request::PendingRequests {
+            instance_id: instance.instance_id.clone(),
+        })
+        .unwrap()
+    else {
+        panic!("expected requests");
+    };
+    assert!(items.is_empty());
+    assert!(!recovery_gap);
+    assert!(
+        matches!(client.request(Request::Resize { instance_id: instance.instance_id.clone(), cols: 80, rows: 24 }).unwrap(), Response::Error { kind, .. } if kind == "wrong_process_kind")
+    );
+    let log = daemon
+        .directory
+        .join("harness-logs")
+        .join(format!("{}.stderr.log", instance.instance_id));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !fs::read_to_string(&log)
+        .unwrap()
+        .contains("private diagnostic")
+    {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        fs::metadata(log).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(matches!(
+        client
+            .request(Request::Close {
+                instance_id: instance.instance_id
+            })
+            .unwrap(),
+        Response::Ok
+    ));
+}
+
+#[test]
+fn killing_ptyd_kills_a_pipe_harness_that_ignores_stdin_eof() {
+    let (mut daemon, mut client) = Daemon::start();
+    let mut config = daemon.shell();
+    config.kind = ProcessKind::PipesAcp;
+    config.argv = vec![
+        "/bin/sh".into(),
+        "-c".into(),
+        "trap '' HUP; while :; do sleep 1; done".into(),
+    ];
+    let instance = spawn(&mut client, config);
+    let group = Command::new("ps")
+        .args(["-o", "pgid=", "-p", &instance.pid.to_string()])
+        .output()
+        .unwrap();
+    let guardian: u32 = String::from_utf8(group.stdout)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_ne!(guardian, instance.pid);
+    daemon.child.kill().unwrap();
+    daemon.child.wait().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    for pid in [instance.pid, guardian] {
+        loop {
+            let status = Command::new("ps")
+                .args(["-o", "stat=", "-p", &pid.to_string()])
+                .output()
+                .unwrap();
+            let state = String::from_utf8(status.stdout).unwrap();
+            if state.trim().is_empty() || state.trim().starts_with('Z') {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "pipe process {pid} survived ptyd: {state}"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+#[test]
+fn pipe_guard_preserves_native_exit_code_and_reports_spawn_failure() {
+    let (daemon, mut client) = Daemon::start();
+    let mut config = daemon.shell();
+    config.kind = ProcessKind::PipesAcp;
+    config.argv = vec!["/bin/sh".into(), "-c".into(), "exit 7".into()];
+    let instance = spawn(&mut client, config.clone());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let Response::Instances(instances) = client.request(Request::List).unwrap() else {
+            panic!("expected list");
+        };
+        if let Some(code) = instances
+            .iter()
+            .find(|item| item.instance_id == instance.instance_id)
+            .unwrap()
+            .exit_code
+        {
+            assert_eq!(code, 7);
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    config.instance_key = Uuid::new_v4().to_string();
+    config.argv = vec![
+        daemon
+            .directory
+            .join("missing-program")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    assert!(matches!(
+        client.request(Request::Spawn(config)).unwrap(),
+        Response::Error { .. }
+    ));
+}
