@@ -1,4 +1,4 @@
-# 0024 — Interruption pauses the durable agent queue
+# ADR 0024 · Interruption pauses the durable agent queue
 
 Status: accepted for slice 2.
 

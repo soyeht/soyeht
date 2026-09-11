@@ -1,4 +1,4 @@
-# 0025 — Bound native controls and preserve uncertain operations
+# ADR 0025 · Bound native controls and preserve uncertain operations
 
 Status: accepted for slice 2.
 

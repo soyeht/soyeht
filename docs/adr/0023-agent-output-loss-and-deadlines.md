@@ -1,4 +1,4 @@
-# 0023 — Recover pending requests before acknowledging output loss
+# ADR 0023 · Recover pending requests before acknowledging output loss
 
 Status: accepted for slice 2.
 

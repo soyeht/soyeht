@@ -1,4 +1,4 @@
-# 0022 — Publish recovered native history atomically
+# ADR 0022 · Publish recovered native history atomically
 
 Status: accepted for slice 2.
 
