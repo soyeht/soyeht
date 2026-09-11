@@ -100,11 +100,10 @@ impl Core {
             |_| Ok((json!({}), vec![(method.into(), params)])),
         )
         .map_err(errors::storage)?;
-        self.publish(&mutation.events);
-        Ok(())
+        self.publish(&mutation.events)
     }
 
-    pub fn publish(&self, events: &[Event]) {
+    pub fn publish(&self, events: &[Event]) -> Result<()> {
         for client in self
             .clients
             .values()
@@ -113,9 +112,10 @@ impl Core {
             for event in events {
                 client
                     .outbox
-                    .send(model::notification(&event.method, event.params.clone()));
+                    .send(model::notification(&event.method, event.params.clone())?);
             }
         }
+        Ok(())
     }
 
     pub fn mutate<F>(
@@ -138,7 +138,7 @@ impl Core {
                 .as_ref()
                 .ok_or_else(|| errors::error(ErrorKind::Unauthorized, "Handshake required"))?,
         )
-        .expect("actor");
+        .map_err(|_| errors::internal("Connection actor serialization failed"))?;
         let key = params["idempotencyKey"]
             .as_str()
             .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Missing idempotency key"))?;
@@ -154,7 +154,7 @@ impl Core {
             change,
         )
         .map_err(errors::storage)?;
-        self.publish(&mutation.events);
+        self.publish(&mutation.events)?;
         Ok(mutation)
     }
 
@@ -202,7 +202,12 @@ impl Core {
         if result.is_err() {
             self.ptyd = None;
         } else {
-            self.system_event("ptyd.reconnected",json!({"generation":self.ptyd.as_ref().expect("connected supervisor").supervisor_generation()}))?;
+            let generation = errors::invariant(
+                self.ptyd.as_ref(),
+                "Supervisor disappeared after registry reconciliation",
+            )?
+            .supervisor_generation();
+            self.system_event("ptyd.reconnected", json!({"generation":generation}))?;
         }
         result
     }
@@ -383,9 +388,12 @@ impl Core {
             },
         )
         .map_err(errors::storage)?;
-        self.panes.get_mut(id).expect("known pane").stored = saved;
-        self.publish(&change.events);
-        Ok(())
+        errors::invariant(
+            self.panes.get_mut(id),
+            "Pane disappeared before runtime publication",
+        )?
+        .stored = saved;
+        self.publish(&change.events)
     }
 
     pub fn poll_output(&mut self) -> Result<()> {
@@ -413,7 +421,10 @@ impl Core {
                 continue;
             }
             let saved = self.panes[&id].stored.clone();
-            let instance_id = saved.instance_id.clone().expect("adopted");
+            let instance_id = errors::invariant(
+                saved.instance_id.clone(),
+                "Running pane has no adopted process",
+            )?;
             let next = self.panes[&id].screen.next_offset();
             let seq = next.saturating_sub(saved.sequence_base);
             let Response::Output(output) = self.pty_request(Request::Drain {
@@ -426,7 +437,10 @@ impl Core {
                     "Invalid output response",
                 ));
             };
-            let running = self.panes.get_mut(&id).expect("known pane");
+            let running = errors::invariant(
+                self.panes.get_mut(&id),
+                "Pane disappeared while polling output",
+            )?;
             let from = saved
                 .sequence_base
                 .checked_add(output.from_seq)

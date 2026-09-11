@@ -20,17 +20,18 @@ struct PaneDefaults {
 }
 
 fn pane_defaults(store: &impl StorePort) -> Result<PaneDefaults> {
-    Ok(PaneDefaults {
-        cols: settings::read(store, "terminal.defaultCols")?
-            .as_u64()
-            .expect("column setting") as u32,
-        rows: settings::read(store, "terminal.defaultRows")?
-            .as_u64()
-            .expect("row setting") as u32,
-        record: settings::read(store, "record.default")?
-            .as_bool()
-            .expect("boolean setting"),
-    })
+    let cols = settings::read(store, "terminal.defaultCols")?
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| errors::internal("Stored terminal column setting is invalid"))?;
+    let rows = settings::read(store, "terminal.defaultRows")?
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| errors::internal("Stored terminal row setting is invalid"))?;
+    let record = settings::read(store, "record.default")?
+        .as_bool()
+        .ok_or_else(|| errors::internal("Stored recording setting is invalid"))?;
+    Ok(PaneDefaults { cols, rows, record })
 }
 
 fn persist_new_pane(
@@ -88,10 +89,7 @@ impl Core {
         let defaults = pane_defaults(&self.store)?;
         let agent_mode = params["mode"] == "agent";
         let agent = new_agent(&self.directory, params)?;
-        let workspace = model::workspace(
-            &self.store,
-            params["workspaceId"].as_str().expect("workspace"),
-        )?;
+        let workspace = model::workspace(&self.store, errors::param_str(params, "workspaceId")?)?;
         let cwd = params["cwd"].as_str().unwrap_or(&workspace.path);
         if !Path::new(cwd).is_absolute() || !Path::new(cwd).is_dir() {
             return Err(errors::error(
@@ -187,7 +185,7 @@ impl Core {
     }
 
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
-        let id = params["paneId"].as_str().expect("pane");
+        let id = errors::param_str(params, "paneId")?;
         if method == "pane.close" && self.agents.contains_key(id) {
             return self.close_agent(connection, params);
         }
@@ -209,13 +207,15 @@ impl Core {
                 json!({"paneId":id})
             }
             "pane.rename" => {
-                saved.pane.name = params["name"].as_str().expect("name").into();
+                saved.pane.name = errors::param_str(params, "name")?.into();
                 events.push(("pane.renamed".into(), json!({"pane":saved.pane})));
                 json!({"pane":saved.pane})
             }
             "pane.resize" => {
-                saved.pane.cols = params["cols"].as_u64().expect("cols") as u32;
-                saved.pane.rows = params["rows"].as_u64().expect("rows") as u32;
+                saved.pane.cols = u32::try_from(errors::param_u64(params, "cols")?)
+                    .map_err(|_| errors::invalid("Pane columns exceed the supported range"))?;
+                saved.pane.rows = u32::try_from(errors::param_u64(params, "rows")?)
+                    .map_err(|_| errors::invalid("Pane rows exceed the supported range"))?;
                 json!({"cols":saved.pane.cols,"rows":saved.pane.rows})
             }
             "pane.record.set" => {
@@ -225,11 +225,14 @@ impl Core {
                         "Agent protocol history is always durable",
                     ));
                 }
-                saved.pane.record = params["on"].as_bool().expect("record");
+                saved.pane.record = errors::param_bool(params, "on")?;
                 json!({"on":saved.pane.record})
             }
             "pane.focus" => {
-                let scope = self.clients[connection].scope.clone();
+                let scope =
+                    errors::invariant(self.clients.get(connection), "Pane connection disappeared")?
+                        .scope
+                        .clone();
                 return Ok(self
                     .mutate(connection, method, params, |tx| {
                         tx.focus_pane(&scope, &saved.pane.workspace_id, id)?;
@@ -255,11 +258,14 @@ impl Core {
             Ok((result, events))
         })?;
         if !mutation.repeated {
-            let running = self.panes.get_mut(id).expect("pane");
+            let running = errors::invariant(
+                self.panes.get_mut(id),
+                "Pane disappeared after its mutation committed",
+            )?;
             running.screen.recording = saved.pane.record;
             running.stored = saved.clone();
             if saved.closed {
-                self.finish_close(id);
+                self.finish_close(id)?;
             }
             if method == "pane.resize"
                 && saved.pane.mode == PaneMode::Terminal
@@ -275,11 +281,11 @@ impl Core {
         Ok(mutation.result)
     }
 
-    pub fn finish_close(&mut self, id: &str) {
+    pub fn finish_close(&mut self, id: &str) -> Result<()> {
         for client in self.clients.values_mut() {
             client.streams.remove(id);
         }
-        let saved = &self.panes[id].stored;
+        let saved = &errors::invariant(self.panes.get(id), "Closing pane disappeared")?.stored;
         let mut instance_id = saved.instance_id.clone();
         let key = saved.instance_key.clone();
         if instance_id.is_none()
@@ -296,6 +302,7 @@ impl Core {
         {
             self.ptyd = None;
         }
+        Ok(())
     }
 }
 

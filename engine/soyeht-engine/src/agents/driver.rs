@@ -246,20 +246,26 @@ impl Core {
             let decoded = self
                 .agents
                 .get_mut(pane)
-                .expect("agent")
+                .ok_or_else(|| errors::internal("Agent runtime disappeared while decoding output"))?
                 .decoder
                 .push(offset - base, &bytes);
             let decoded = match decoded {
                 Ok(records) => records,
                 Err(error) => {
-                    let running = self.agents.get_mut(pane).expect("agent");
+                    let running = errors::invariant(
+                        self.agents.get_mut(pane),
+                        "Agent runtime disappeared after a decoder failure",
+                    )?;
                     running.decoder = Decoder::new(running.state.acknowledged_offset);
                     return Err(native_error(error));
                 }
             };
             for record in decoded {
                 if let Err(error) = self.native_record(pane, record, true) {
-                    let running = self.agents.get_mut(pane).expect("agent");
+                    let running = errors::invariant(
+                        self.agents.get_mut(pane),
+                        "Agent runtime disappeared after a native record failure",
+                    )?;
                     running.decoder = Decoder::new(running.state.acknowledged_offset);
                     return Err(error);
                 }
@@ -274,7 +280,10 @@ impl Core {
         }
         self.decode_agent_log(pane)?;
         let saved = self.panes[pane].stored.clone();
-        let instance_id = saved.instance_id.clone().expect("adopted agent");
+        let instance_id = errors::invariant(
+            saved.instance_id.clone(),
+            "Agent process has no adopted instance",
+        )?;
         let seq = self.panes[pane].screen.next_offset() - saved.sequence_base;
         let Response::Output(output) = self.pty_request(Request::Drain {
             instance_id: instance_id.clone(),
@@ -300,7 +309,7 @@ impl Core {
             }
             self.panes
                 .get_mut(pane)
-                .expect("pane")
+                .ok_or_else(|| errors::internal("Agent pane disappeared during output gap"))?
                 .screen
                 .append(Record::Gap {
                     from: saved.sequence_base + seq,
@@ -320,7 +329,7 @@ impl Core {
         if !bytes.is_empty() {
             self.panes
                 .get_mut(pane)
-                .expect("pane")
+                .ok_or_else(|| errors::internal("Agent pane disappeared during output append"))?
                 .screen
                 .append(Record::Data {
                     offset: saved.sequence_base + output.from_seq,
@@ -390,7 +399,11 @@ impl Core {
             None,
             json!({}),
         )?;
-        self.agents.get_mut(pane).expect("agent").decoder = Decoder::new(0);
+        errors::invariant(
+            self.agents.get_mut(pane),
+            "Agent runtime disappeared during restart",
+        )?
+        .decoder = Decoder::new(0);
         self.spawn_agent(pane)
     }
 
@@ -439,7 +452,8 @@ impl Core {
             .agent_open_requests(pane)
             .map_err(errors::storage)?;
         for request in &open {
-            let selected = questions::automatic(&state, request, &self.panes[pane].stored.pane.cwd);
+            let selected =
+                questions::automatic(&state, request, &self.panes[pane].stored.pane.cwd)?;
             let expired = request.expires_ms <= self.now_ms();
             if !expired && selected.is_none() {
                 continue;

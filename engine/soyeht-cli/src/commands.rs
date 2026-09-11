@@ -60,7 +60,10 @@ pub fn execute(client: &mut Client, args: &[String]) -> io::Result<Value> {
     // Read the optional suffix without treating literal prompt text or a
     // configuration value as a command-line flag.
     if args.len() >= 2 && args[args.len() - 2] == "--idempotency-key" {
-        key = args.last().expect("key value").to_string();
+        key = args
+            .last()
+            .ok_or_else(|| invalid("Missing idempotency key"))?
+            .to_string();
         args.truncate(args.len() - 2);
     }
     match args.as_slice() {

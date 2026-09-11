@@ -37,7 +37,7 @@ fn embedded_auth(state: &mut super::state::State, method_id: &str, now_ms: i64) 
 
 impl Core {
     pub fn agent_auth_start(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let id = params["paneId"].as_str().expect("validated pane");
+        let id = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(id)?;
         if state.phase != Phase::NeedsLogin {
             return Err(errors::error(
@@ -150,7 +150,7 @@ impl Core {
             Ok(auth_pane_created(id, &child_id, &child.pane))
         })?;
         if !mutation.repeated {
-            self.agents.get_mut(id).expect("agent").state = state;
+            self.replace_agent_state(id, state)?;
             self.panes.insert(
                 child_id.clone(),
                 RunningPane {

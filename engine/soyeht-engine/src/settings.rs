@@ -28,7 +28,7 @@ impl Core {
         read(&self.store, key)
     }
     pub fn setting_set(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let key = params["key"].as_str().expect("key");
+        let key = errors::param_str(params, "key")?;
         let value = &params["value"];
         let default = default_value(key)?;
         if (default.is_boolean() && !value.is_boolean())

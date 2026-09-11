@@ -43,6 +43,20 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
 }
 
 impl Core {
+    fn pairing_client(&self, connection: &str) -> Result<&model::Connected> {
+        errors::invariant(
+            self.clients.get(connection),
+            "Pairing connection disappeared",
+        )
+    }
+
+    fn pairing_client_mut(&mut self, connection: &str) -> Result<&mut model::Connected> {
+        errors::invariant(
+            self.clients.get_mut(connection),
+            "Pairing connection disappeared",
+        )
+    }
+
     pub fn pending_pair_view(&self) -> Result<Value> {
         let rows: Vec<Pending> = StorePort::active_pair_requests(&self.store, self.now_unix())
             .map_err(errors::storage)?;
@@ -51,7 +65,10 @@ impl Core {
             if pending.proved && pending.approved.is_none() {
                 let public = auth::public_key(&pending.key)
                     .map_err(|s| errors::error(ErrorKind::InternalError, s))?;
-                requests.push(json!({"kind":"device_pair","requestId":pending.id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public),"expiresAt":chrono::DateTime::from_timestamp(pending.expires,0).expect("timestamp").to_rfc3339()}));
+                let expires_at = chrono::DateTime::from_timestamp(pending.expires, 0)
+                    .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?
+                    .to_rfc3339();
+                requests.push(json!({"kind":"device_pair","requestId":pending.id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public),"expiresAt":expires_at}));
             }
         }
         Ok(json!(requests))
@@ -67,17 +84,18 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
-        if self.clients[connection].actor.is_some() {
+        if self.pairing_client(connection)?.actor.is_some() {
             return Err(errors::error(
                 ErrorKind::Unauthorized,
                 "Pairing requires a fresh connection",
             ));
         }
         let fingerprint = STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
-        let idem = params["idempotencyKey"].as_str().expect("key");
+        let idem = errors::param_str(params, "idempotencyKey")?;
         if method == "pair.begin" {
-            let code = params["code"].as_str().expect("code");
-            let key = params["devicePublicKey"].as_str().expect("key");
+            let code = errors::param_str(params, "code")?;
+            let key = errors::param_str(params, "devicePublicKey")?;
+            let name = errors::param_str(params, "deviceName")?;
             let public =
                 auth::public_key(key).map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
             let scope = format!("pair:{}", auth::fingerprint(&public));
@@ -95,10 +113,7 @@ impl Core {
                     errors::error(ErrorKind::InternalError, "Missing pairing request")
                 })?;
                 self.pending_pair(id)?;
-                self.clients
-                    .get_mut(connection)
-                    .expect("connection")
-                    .pair_request = Some(id.into());
+                self.pairing_client_mut(connection)?.pair_request = Some(id.into());
                 return Ok(result);
             }
             let expires = StorePort::active_pair_window_expiry(&self.store, code, self.now_unix())
@@ -109,7 +124,7 @@ impl Core {
             let pending = Pending {
                 id: Uuid::new_v4().to_string(),
                 code: code.into(),
-                name: params["deviceName"].as_str().expect("name").into(),
+                name: name.into(),
                 key: key.into(),
                 challenge: auth::random_bytes()
                     .map_err(|s| errors::error(ErrorKind::InternalError, s))?,
@@ -128,14 +143,12 @@ impl Core {
                 ))
             })
             .map_err(errors::storage)?;
-            self.clients
-                .get_mut(connection)
-                .expect("connection")
-                .pair_request = mutation.result["requestId"].as_str().map(str::to_owned);
+            self.pairing_client_mut(connection)?.pair_request =
+                mutation.result["requestId"].as_str().map(str::to_owned);
             return Ok(mutation.result);
         }
-        let id = params["requestId"].as_str().expect("request");
-        if self.clients[connection].pair_request.as_deref() != Some(id) {
+        let id = errors::param_str(params, "requestId")?;
+        if self.pairing_client(connection)?.pair_request.as_deref() != Some(id) {
             return Err(errors::error(
                 ErrorKind::Unauthorized,
                 "Begin pairing on this connection first",
@@ -149,7 +162,7 @@ impl Core {
             &public,
             &pending.challenge,
             &pending.name,
-            params["proof"].as_str().expect("proof"),
+            errors::param_str(params, "proof")?,
         ) {
             return Err(errors::error(
                 ErrorKind::Unauthorized,
@@ -164,14 +177,14 @@ impl Core {
             let events=if was_proved {vec![]}else{vec![("device.pair_requested".into(),json!({"requestId":id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public)}))]};
             Ok((json!({"status":"pending"}),events))
         }).map_err(errors::storage)?;
-        self.publish(&mutation.events);
+        self.publish(&mutation.events)?;
         if pending.approved.is_some() {
-            self.send_pair_result(connection, &pending);
+            self.send_pair_result(connection, &pending)?;
         }
         Ok(mutation.result)
     }
 
-    fn send_pair_result(&self, connection: &str, pending: &Pending) {
+    fn send_pair_result(&self, connection: &str, pending: &Pending) -> Result<()> {
         let approved = pending.approved == Some(true);
         let mut result = json!({"requestId":pending.id,"approved":approved});
         if approved {
@@ -183,8 +196,9 @@ impl Core {
         if let Some(client) = self.clients.get(connection) {
             client
                 .outbox
-                .send(model::notification("pair.result", result));
+                .send(model::notification("pair.result", result)?);
         }
+        Ok(())
     }
 
     pub fn device_request(
@@ -215,7 +229,7 @@ impl Core {
             })?.result);
         }
         if method == "device.revoke" {
-            let id = params["deviceId"].as_str().expect("device");
+            let id = errors::param_str(params, "deviceId")?;
             let mut device: Device = StorePort::device(&self.store, id)
                 .map_err(errors::storage)?
                 .ok_or_else(|| errors::error(ErrorKind::NotFound, "Device not found"))?;
@@ -240,7 +254,7 @@ impl Core {
             }
             return Ok(result);
         }
-        let id = params["requestId"].as_str().expect("request");
+        let id = errors::param_str(params, "requestId")?;
         let mut pending = self.pending_pair(id)?;
         if !pending.proved || pending.approved.is_some() {
             return Err(errors::error(
@@ -250,7 +264,7 @@ impl Core {
         }
         let public = auth::public_key(&pending.key)
             .map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
-        let approve = params["approve"].as_bool().expect("approve");
+        let approve = errors::param_bool(params, "approve")?;
         pending.approved = Some(approve);
         if approve {
             let available =
@@ -300,7 +314,7 @@ impl Core {
             .iter()
             .filter(|(_, c)| c.pair_request.as_deref() == Some(id))
         {
-            self.send_pair_result(connection, &pending);
+            self.send_pair_result(connection, &pending)?;
         }
         Ok(result)
     }

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_ptyd::{client::Client, wire::*};
 use std::collections::BTreeMap;

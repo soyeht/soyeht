@@ -12,22 +12,24 @@ pub struct Retention {
 }
 
 impl Retention {
-    pub fn new(limit: usize) -> Self {
-        assert!(limit > 0);
-        Self {
+    pub fn new(limit: usize) -> Result<Self, &'static str> {
+        if limit == 0 {
+            return Err("zero_retention_limit");
+        }
+        Ok(Self {
             bytes: VecDeque::new(),
             first: 0,
             next: 0,
             ack: 0,
             limit,
-        }
+        })
     }
 
-    pub fn append(&mut self, bytes: &[u8]) {
+    pub fn append(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
         self.next = self
             .next
             .checked_add(bytes.len() as u64)
-            .expect("process output offset overflow");
+            .ok_or("output_offset_overflow")?;
         for byte in bytes {
             if self.bytes.len() == self.limit {
                 self.bytes.pop_front();
@@ -35,6 +37,7 @@ impl Retention {
             }
             self.bytes.push_back(*byte);
         }
+        Ok(())
     }
 
     pub fn acknowledge(&mut self, seq: u64) -> Result<(), &'static str> {
@@ -83,9 +86,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn invalid_capacity_and_offset_exhaustion_return_errors() {
+        assert!(matches!(Retention::new(0), Err("zero_retention_limit")));
+
+        let mut buffer = Retention::new(8).unwrap();
+        buffer.next = u64::MAX;
+        assert_eq!(buffer.append(b"x"), Err("output_offset_overflow"));
+        assert!(buffer.bytes.is_empty());
+    }
+
+    #[test]
     fn overflow_reports_the_exact_lost_range_and_keeps_new_output() {
-        let mut buffer = Retention::new(8);
-        buffer.append(b"0123456789ABC");
+        let mut buffer = Retention::new(8).unwrap();
+        buffer.append(b"0123456789ABC").unwrap();
         let output = buffer.read(0, 4, false).unwrap();
         assert_eq!(
             output.gap,
@@ -103,8 +116,8 @@ mod tests {
 
     #[test]
     fn acknowledgement_is_monotonic_and_cannot_discard_unseen_future() {
-        let mut buffer = Retention::new(8);
-        buffer.append(b"01234567");
+        let mut buffer = Retention::new(8).unwrap();
+        buffer.append(b"01234567").unwrap();
         buffer.acknowledge(4).unwrap();
         buffer.acknowledge(2).unwrap();
         assert!(buffer.acknowledge(9).is_err());
@@ -112,7 +125,7 @@ mod tests {
         assert!(output.gap.is_none());
         assert_eq!(STANDARD.decode(output.bytes).unwrap(), b"4567");
         buffer.acknowledge(8).unwrap();
-        buffer.append(b"89");
+        buffer.append(b"89").unwrap();
         assert_eq!(buffer.read(8, 8, false).unwrap().next_seq, 10);
     }
 }

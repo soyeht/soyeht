@@ -132,10 +132,14 @@ impl Initialization {
 
 /// The binary digest is supplied by the launcher after hashing the executable.
 /// Canonical JSON makes configuration key order irrelevant; no input is logged.
-pub fn fingerprint(binary_digest: &str, reported_version: &str, configuration: &Value) -> String {
+pub fn fingerprint(
+    binary_digest: &str,
+    reported_version: &str,
+    configuration: &Value,
+) -> Result<String, Error> {
     let encoded = serde_json::to_vec(&json!([binary_digest, reported_version, configuration]))
-        .expect("JSON fingerprint input");
-    format!("{:x}", Sha256::digest(encoded))
+        .map_err(Error::from)?;
+    Ok(format!("{:x}", Sha256::digest(encoded)))
 }
 
 pub fn probe_result(response: Result<&Value, &RpcError>) -> ProbeResult {
@@ -272,11 +276,23 @@ mod tests {
         assert_eq!(info.auth_methods[0].kind, AuthKind::Terminal);
         assert_eq!(info.auth_methods[0].args, ["login"]);
         assert_eq!(info.auth_methods[1].kind, AuthKind::Agent);
-        let a = fingerprint("digest", "7", &json!({"b":2,"a":1}));
-        assert_eq!(a, fingerprint("digest", "7", &json!({"a":1,"b":2})));
-        assert_ne!(a, fingerprint("different", "7", &json!({"a":1,"b":2})));
-        assert_ne!(a, fingerprint("digest", "8", &json!({"a":1,"b":2})));
-        assert_ne!(a, fingerprint("digest", "7", &json!({"a":2,"b":2})));
+        let a = fingerprint("digest", "7", &json!({"b":2,"a":1})).unwrap();
+        assert_eq!(
+            a,
+            fingerprint("digest", "7", &json!({"a":1,"b":2})).unwrap()
+        );
+        assert_ne!(
+            a,
+            fingerprint("different", "7", &json!({"a":1,"b":2})).unwrap()
+        );
+        assert_ne!(
+            a,
+            fingerprint("digest", "8", &json!({"a":1,"b":2})).unwrap()
+        );
+        assert_ne!(
+            a,
+            fingerprint("digest", "7", &json!({"a":2,"b":2})).unwrap()
+        );
     }
 
     #[test]

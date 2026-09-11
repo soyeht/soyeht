@@ -178,7 +178,10 @@ impl Log {
                 size: MAGIC.len() as u64,
             });
         }
-        let segment = self.segments.back_mut().expect("active segment");
+        let segment = self
+            .segments
+            .back_mut()
+            .ok_or_else(|| invalid("terminal segment was not created"))?;
         let mut file = OpenOptions::new()
             .write(true)
             .custom_flags(libc::O_NOFOLLOW)
@@ -197,10 +200,17 @@ impl Log {
         self.next = record.end();
         let mut total: u64 = self.segments.iter().map(|s| s.size).sum();
         while total > limits::PANE_RETENTION_BYTES as u64 && self.segments.len() > 1 {
-            let oldest = self.segments.front().expect("oldest segment");
-            fs::remove_file(self.directory.join(filename(oldest.number)))?;
+            let oldest_number = self
+                .segments
+                .front()
+                .ok_or_else(|| invalid("terminal segment index is empty"))?
+                .number;
+            fs::remove_file(self.directory.join(filename(oldest_number)))?;
             File::open(&self.directory)?.sync_all()?;
-            let oldest = self.segments.pop_front().expect("oldest segment");
+            let oldest = self
+                .segments
+                .pop_front()
+                .ok_or_else(|| invalid("terminal segment disappeared during retention"))?;
             total -= oldest.size;
             while self
                 .index
@@ -274,8 +284,16 @@ fn encode(record: &Record) -> io::Result<Vec<u8>> {
 fn read_record(reader: &mut File) -> io::Result<Record> {
     let mut header = [0; HEADER];
     reader.read_exact(&mut header)?;
-    let offset = u64::from_be_bytes(header[1..9].try_into().expect("fixed header"));
-    let length = u32::from_be_bytes(header[9..13].try_into().expect("fixed header")) as usize;
+    let offset = u64::from_be_bytes(
+        header[1..9]
+            .try_into()
+            .map_err(|_| invalid("terminal record offset is malformed"))?,
+    );
+    let length = u32::from_be_bytes(
+        header[9..13]
+            .try_into()
+            .map_err(|_| invalid("terminal record length is malformed"))?,
+    ) as usize;
     if length > limits::TERMINAL_PAYLOAD_BYTES || (header[0] == 1 && length != 8) || header[0] > 1 {
         return Err(invalid("invalid terminal record length or type"));
     }
@@ -300,7 +318,11 @@ fn read_record(reader: &mut File) -> io::Result<Record> {
     } else {
         Record::Gap {
             from: offset,
-            to: u64::from_be_bytes(payload.try_into().expect("validated gap length")),
+            to: u64::from_be_bytes(
+                payload
+                    .try_into()
+                    .map_err(|_| invalid("terminal gap length is malformed"))?,
+            ),
         }
     };
     if record.end() <= record.from() {

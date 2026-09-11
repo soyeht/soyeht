@@ -88,10 +88,9 @@ fn public_question(
                 .unwrap_or("Permission required"),
             512
         )?);
-        public["detail"] = json!(bounded(
-            &serde_json::to_string(&params["toolCall"]).expect("tool JSON"),
-            64 * 1024
-        )?);
+        let detail = serde_json::to_string(&params["toolCall"])
+            .map_err(|_| errors::internal("Permission detail serialization failed"))?;
+        public["detail"] = json!(bounded(&detail, 64 * 1024)?);
         public["options"] = json!(public_options);
         "pane.permission_requested"
     } else {
@@ -110,7 +109,7 @@ fn public_question(
         public["schema"] = params["requestedSchema"].clone();
         "pane.elicitation_requested"
     };
-    if serde_json::to_vec(&public).expect("public question").len() > 512 * 1024 {
+    if errors::json_bytes(&public)?.len() > 512 * 1024 {
         return Err(invalid("Question exceeds snapshot item capacity"));
     }
     Ok((public, event))
@@ -140,7 +139,7 @@ pub fn receive(
     let expires_ms = now_ms + QUESTION_TIMEOUT_MS;
     let request_id = Uuid::new_v4().to_string();
     let expires_at = chrono::DateTime::from_timestamp_millis(expires_ms)
-        .expect("bounded deadline")
+        .ok_or_else(|| errors::internal("Question deadline is outside the timestamp range"))?
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let public = json!({"paneId":saved.pane.pane_id,"requestId":request_id,
         "generation":saved.pane.generation,"promptId":prompt.prompt_id,"expiresAt":expires_at});
@@ -157,8 +156,9 @@ pub fn receive(
         expires_ms,
         result: None,
     });
-    let request = changes.received.last().expect("received question").clone();
-    if let Some(option) = automatic(state, &request, &saved.pane.cwd) {
+    let request =
+        errors::invariant(changes.received.last(), "Received question was not staged")?.clone();
+    if let Some(option) = automatic(state, &request, &saved.pane.cwd)? {
         decision(
             state,
             &request,
@@ -183,59 +183,60 @@ pub fn receive(
     Ok(())
 }
 
-fn rule_key(state: &State, request: &NativeRequest) -> String {
+fn rule_key(state: &State, request: &NativeRequest) -> Result<String> {
     let mut tool = request.params["toolCall"].clone();
     if let Some(object) = tool.as_object_mut() {
         object.remove("toolCallId");
         object.remove("status");
     }
     use sha2::{Digest, Sha256};
-    format!(
+    Ok(format!(
         "{:x}",
-        Sha256::digest(serde_json::to_vec(&json!([state.launch.id, tool])).expect("rule"))
-    )
+        Sha256::digest(errors::json_bytes(&json!([state.launch.id, tool]))?)
+    ))
 }
 
 /// Permission policy never handles elicitation. Native persistent grants are
 /// translated to one-time answers; their rule is owned by this pane alone.
-pub fn automatic(state: &State, request: &NativeRequest, cwd: &str) -> Option<String> {
+pub fn automatic(state: &State, request: &NativeRequest, cwd: &str) -> Result<Option<String>> {
     if request.method != "session/request_permission" {
-        return None;
+        return Ok(None);
     }
-    let allowed = state
-        .permission_rules
-        .get(&rule_key(state, request))
-        .copied()
-        .or_else(|| {
-            let edit = state.permission == PermissionMode::AcceptEdits
-                && request.params["toolCall"]["kind"] == "edit"
-                && request.params["toolCall"]["locations"]
-                    .as_array()
-                    .is_some_and(|paths| {
-                        !paths.is_empty()
-                            && paths.iter().all(|location| {
-                                location["path"].as_str().is_some_and(|path| {
-                                    super::filesystem::permits_edit(
-                                        std::path::Path::new(cwd),
-                                        std::path::Path::new(path),
-                                    )
-                                })
+    let rule = rule_key(state, request)?;
+    let allowed = state.permission_rules.get(&rule).copied().or_else(|| {
+        let edit = state.permission == PermissionMode::AcceptEdits
+            && request.params["toolCall"]["kind"] == "edit"
+            && request.params["toolCall"]["locations"]
+                .as_array()
+                .is_some_and(|paths| {
+                    !paths.is_empty()
+                        && paths.iter().all(|location| {
+                            location["path"].as_str().is_some_and(|path| {
+                                super::filesystem::permits_edit(
+                                    std::path::Path::new(cwd),
+                                    std::path::Path::new(path),
+                                )
                             })
-                    });
-            if state.permission == PermissionMode::AllowAll || edit {
-                Some(true)
-            } else {
-                None
-            }
-        })?;
+                        })
+                });
+        if state.permission == PermissionMode::AllowAll || edit {
+            Some(true)
+        } else {
+            None
+        }
+    });
+    let Some(allowed) = allowed else {
+        return Ok(None);
+    };
     let kind = if allowed { "allow_once" } else { "reject_once" };
-    request.public["options"]
-        .as_array()?
-        .iter()
-        .find(|o| o["kind"] == kind)?
-        .get("optionId")?
-        .as_str()
-        .map(str::to_owned)
+    Ok(request.public["options"].as_array().and_then(|options| {
+        options
+            .iter()
+            .find(|option| option["kind"] == kind)
+            .and_then(|option| option.get("optionId"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    }))
 }
 
 pub fn decision(
@@ -316,16 +317,13 @@ pub fn decision(
                         .ok_or_else(|| invalid("Persistent choice has no pane-scoped equivalent"))?
                         .into(),
                 );
+                let rule = rule_key(state, request)?;
                 if state.permission_rules.len() >= 128
-                    && !state
-                        .permission_rules
-                        .contains_key(&rule_key(state, request))
+                    && !state.permission_rules.contains_key(&rule)
                 {
                     return Err(invalid("Pane permission rule limit reached"));
                 }
-                state
-                    .permission_rules
-                    .insert(rule_key(state, request), allow);
+                state.permission_rules.insert(rule, allow);
             }
         }
         client::permission_answer(request.native_id.clone(), selected.as_deref())
@@ -364,12 +362,12 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
-        let pane = params["paneId"].as_str().expect("validated pane");
+        let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
         let request = self
             .store
-            .agent_request(params["requestId"].as_str().expect("validated request"))
+            .agent_request(errors::param_str(params, "requestId")?)
             .map_err(errors::storage)?
             .filter(|r| r.pane_id == pane)
             .ok_or_else(|| errors::error(ErrorKind::NotFound, "Question not found"))?;

@@ -139,8 +139,11 @@ impl Pending {
                 .find(|(_, request)| request.native_id == native_id)
                 .map(|(key, _)| *key);
             if let Some(key) = key {
-                let removed = self.requests.remove(&key).expect("existing request");
-                self.bytes -= removed.bytes.len();
+                if let Some(removed) = self.requests.remove(&key) {
+                    self.bytes -= removed.bytes.len();
+                } else {
+                    self.fault = true;
+                }
             }
         }
     }

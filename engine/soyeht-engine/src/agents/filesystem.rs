@@ -116,7 +116,8 @@ pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) 
         Err(error) if error.kind() == io::ErrorKind::NotFound => 0o600,
         Err(error) => return Err(error),
     };
-    let temporary = CString::new(format!(".soyeht-write-{operation}")).expect("temporary name");
+    let temporary = CString::new(format!(".soyeht-write-{operation}"))
+        .map_err(|_| invalid("invalid temporary file name"))?;
     let mut file = child(
         &directory,
         &temporary,

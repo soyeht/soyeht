@@ -107,7 +107,11 @@ impl Core {
         state.probe_session_id = None;
         state.replay_role = None;
         self.commit_agent(saved, state, Changes::default(), None, json!({}))?;
-        self.agents.get_mut(id).expect("agent").decoder = soyeht_acp::rpc::Decoder::new(0);
+        errors::invariant(
+            self.agents.get_mut(id),
+            "Agent runtime disappeared during recovery",
+        )?
+        .decoder = soyeht_acp::rpc::Decoder::new(0);
         self.spawn_agent(id)
     }
 

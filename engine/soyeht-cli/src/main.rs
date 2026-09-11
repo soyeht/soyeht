@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 mod commands;
 
 use commands::USAGE;
@@ -12,7 +14,10 @@ fn run() -> io::Result<Value> {
     .join("Library/Application Support/Soyeht.next/dev");
     let mut args = std::env::args().skip(1).peekable();
     while args.peek().is_some_and(|s| s.starts_with("--")) {
-        match args.next().expect("argument").as_str() {
+        let argument = args
+            .next()
+            .ok_or_else(|| io::Error::other("missing command-line argument"))?;
+        match argument.as_str() {
             "--profile" => {
                 if args.next().as_deref() != Some("dev") {
                     return Err(io::Error::other("only the new dev profile is available"));
@@ -39,11 +44,8 @@ fn run() -> io::Result<Value> {
 }
 
 fn main() {
-    match run() {
-        Ok(value) => println!(
-            "{}",
-            serde_json::to_string_pretty(&value).expect("JSON output")
-        ),
+    match run().and_then(|value| serde_json::to_string_pretty(&value).map_err(io::Error::other)) {
+        Ok(output) => println!("{output}"),
         Err(error) => {
             eprintln!("{}", json!({"error":error.to_string()}));
             std::process::exit(1);

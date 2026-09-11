@@ -61,7 +61,7 @@ impl Core {
         Ok(Outcome::Queued)
     }
 
-    pub fn publish_native_completion(&mut self, completion: &Completion) {
+    pub fn publish_native_completion(&mut self, completion: &Completion) -> Result<()> {
         let waiters = self
             .native_waiters
             .remove(&(completion.user.scope.clone(), completion.user.key.clone()))
@@ -72,11 +72,13 @@ impl Core {
                 .get(&connection)
                 .filter(|client| client.scope == completion.user.scope && client.actor.is_some())
             {
-                client.outbox.send(match &completion.result {
-                    Ok(value) => model::response(id, value.clone()),
-                    Err(error) => model::failure(id, error.clone()),
-                });
+                let frame = match &completion.result {
+                    Ok(value) => model::response(id, value.clone())?,
+                    Err(error) => model::failure(id, error.clone())?,
+                };
+                client.outbox.send(frame);
             }
         }
+        Ok(())
     }
 }

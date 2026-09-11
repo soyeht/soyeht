@@ -24,7 +24,10 @@ impl Core {
     /// stream checkpoint: the caller commits the declared gap only afterward.
     fn recover_agent_requests_before(&mut self, pane: &str, before: u64) -> Result<()> {
         let saved = self.panes[pane].stored.clone();
-        let instance = saved.instance_id.as_ref().expect("adopted agent");
+        let instance = errors::invariant(
+            saved.instance_id.as_ref(),
+            "Agent process has no adopted instance during recovery",
+        )?;
         let Response::PendingRequests {
             items,
             recovery_gap,
@@ -136,7 +139,11 @@ impl Core {
                 "Agent output contains a missing section; turn completion is unconfirmed".into();
         }
         self.commit_agent(saved, state, changes, None, json!({}))?;
-        self.agents.get_mut(pane).expect("agent").decoder = Decoder::new(to);
+        errors::invariant(
+            self.agents.get_mut(pane),
+            "Agent runtime disappeared during gap recovery",
+        )?
+        .decoder = Decoder::new(to);
         Ok(())
     }
 
@@ -157,7 +164,11 @@ impl Core {
             None,
             json!({}),
         )?;
-        self.agents.get_mut(pane).expect("agent").decoder = Decoder::new(to);
+        errors::invariant(
+            self.agents.get_mut(pane),
+            "Agent runtime disappeared while skipping an interrupted record",
+        )?
+        .decoder = Decoder::new(to);
         Ok(())
     }
 }

@@ -259,41 +259,41 @@ impl Receiver {
         }
     }
 
-    fn closing_packet(&mut self) -> Option<Packet> {
+    fn closing_packet(&mut self) -> crate::errors::Result<Option<Packet>> {
         // Free queued bytes and wake blocked snapshot writers before the final error.
         self.control.close();
         self.terminal.close();
         while self.control.try_recv().is_ok() {}
         while self.terminal.try_recv().is_ok() {}
         if self.reported_close || self.close_reason() != Some(CloseReason::SlowConsumer) {
-            return None;
+            return Ok(None);
         }
         self.reported_close = true;
-        Some(Packet {
+        Ok(Some(Packet {
             frame: crate::model::failure(
                 serde_json::Value::Null,
                 crate::errors::error(
                     soyeht_protocol::ErrorKind::SlowConsumer,
                     "Output queue exceeded; request a new snapshot",
                 ),
-            ),
+            )?,
             _permit: None,
             sent: None,
             current: None,
             close_after_write: true,
-        })
+        }))
     }
 
-    pub async fn next(&mut self) -> Option<Packet> {
+    pub async fn next(&mut self) -> crate::errors::Result<Option<Packet>> {
         if self.close_reason().is_some() {
             return self.closing_packet();
         }
         tokio::select! {
             biased;
             _ = self.budget.wake.notified() => self.closing_packet(),
-            Some(packet) = self.control.recv() => Some(packet),
-            Some(packet) = self.terminal.recv() => Some(packet),
-            else => None,
+            Some(packet) = self.control.recv() => Ok(Some(packet)),
+            Some(packet) = self.terminal.recv() => Ok(Some(packet)),
+            else => Ok(None),
         }
     }
 }
@@ -320,8 +320,8 @@ mod tests {
             Arc::clone(&current),
         );
         current.store(false, Ordering::Release);
-        assert!(!receiver.next().await.unwrap().is_current());
-        assert!(!receiver.next().await.unwrap().is_current());
+        assert!(!receiver.next().await.unwrap().unwrap().is_current());
+        assert!(!receiver.next().await.unwrap().unwrap().is_current());
         assert_eq!(outbox.budget.used.load(Ordering::Acquire), 0);
     }
 
@@ -336,7 +336,7 @@ mod tests {
         }));
         assert!(outbox.send(Frame::Json(b"{}".to_vec())));
         assert!(matches!(
-            receiver.next().await.unwrap().frame,
+            receiver.next().await.unwrap().unwrap().frame,
             Frame::Json(_)
         ));
         while outbox.send(Frame::Terminal {
@@ -348,7 +348,7 @@ mod tests {
         assert!(outbox.is_closed());
         assert_eq!(outbox.close_reason(), Some(CloseReason::SlowConsumer));
         assert!(outbox.budget.used.load(Ordering::Acquire) <= limits::CONNECTION_QUEUE_BYTES);
-        let Frame::Json(bytes) = receiver.next().await.unwrap().frame else {
+        let Frame::Json(bytes) = receiver.next().await.unwrap().unwrap().frame else {
             panic!("missing close reason")
         };
         let error: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -358,7 +358,7 @@ mod tests {
             error["error"]["code"],
             soyeht_protocol::error_code(&soyeht_protocol::ErrorKind::SlowConsumer)
         );
-        assert!(receiver.next().await.is_none());
+        assert!(receiver.next().await.unwrap().is_none());
         drop(receiver);
         assert_eq!(outbox.budget.used.load(Ordering::Acquire), 0);
     }
@@ -378,7 +378,7 @@ mod tests {
         let writing = outbox.clone();
         let task =
             tokio::spawn(async move { writing.write_page(Frame::Json(b"{}".to_vec())).await });
-        let mut packet = receiver.next().await.unwrap();
+        let mut packet = receiver.next().await.unwrap().unwrap();
         assert!(!task.is_finished());
         assert_eq!(outbox.budget.used.load(Ordering::Acquire), 0);
         packet.written();

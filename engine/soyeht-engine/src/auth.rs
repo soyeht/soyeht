@@ -50,7 +50,9 @@ pub fn pair_proof(
     derivation.update(code.as_bytes());
     derivation.update(key.as_bytes());
     let derived = derivation.finalize();
-    let mut mac = Hmac::<Sha256>::new_from_slice(&derived).expect("SHA-256 key length");
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(&derived) else {
+        return false;
+    };
     mac.update(challenge);
     mac.update(name.as_bytes());
     let Ok(proof) = STANDARD.decode(proof) else {

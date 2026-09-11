@@ -193,7 +193,7 @@ impl Core {
     }
 
     pub fn agent_yolo(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let pane = params["paneId"].as_str().expect("validated pane");
+        let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
         if state.operation.is_some() || state.cancel_at_ms.is_some() {
             return Err(errors::error(
@@ -201,7 +201,7 @@ impl Core {
                 "Another pane operation is pending",
             ));
         }
-        let on = params["on"].as_bool().expect("validated toggle");
+        let on = errors::param_bool(params, "on")?;
         if on == state.yolo {
             let result = json!({"effectiveMode":state.permission,"on":state.yolo});
             return Ok(self
@@ -263,16 +263,17 @@ impl Core {
         let result = if let Some(selection) = selection {
             let user = UserOperation {
                 scope: self.clients[connection].scope.clone(),
-                key: params["idempotencyKey"]
-                    .as_str()
-                    .expect("validated key")
-                    .into(),
+                key: errors::param_str(params, "idempotencyKey")?.into(),
             };
+            let native_option = errors::invariant(
+                option.as_ref(),
+                "Selected native mode has no configuration option",
+            )?;
             let operation = begin(
                 &mut state,
                 pane,
                 ChangeRequest {
-                    config: &option.expect("mode option").id,
+                    config: &native_option.id,
                     value: ConfigValue::V0(selection),
                     user: Some(user),
                     kind: ConfigOperationKind::Yolo,

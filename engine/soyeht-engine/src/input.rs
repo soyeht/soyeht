@@ -52,7 +52,7 @@ fn resolve_intent(
 
 impl Core {
     pub fn pane_input(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let id = params["paneId"].as_str().expect("pane");
+        let id = errors::param_str(params, "paneId")?;
         let saved = self
             .panes
             .get(id)
@@ -69,9 +69,12 @@ impl Core {
         let instance = saved
             .instance_id
             .ok_or_else(|| errors::error(ErrorKind::PaneBusy, "Pane is recovering"))?;
-        let supervisor = saved.supervisor_id.expect("adopted supervisor");
+        let supervisor = errors::invariant(
+            saved.supervisor_id,
+            "Terminal process has no adopted supervisor",
+        )?;
         let scope = self.clients[connection].scope.clone();
-        let key = params["idempotencyKey"].as_str().expect("key");
+        let key = errors::param_str(params, "idempotencyKey")?;
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
             &json!(["pane.input", params]).to_string(),
         ));
@@ -88,7 +91,7 @@ impl Core {
         )?;
         let Response::Accepted { bytes } = self.pty_request(Request::Input {
             instance_id: instance,
-            bytes: params["bytes"].as_str().expect("bytes").into(),
+            bytes: errors::param_str(params, "bytes")?.into(),
             operation_key: operation_key.clone(),
             fingerprint,
         })?

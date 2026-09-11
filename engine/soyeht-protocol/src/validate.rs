@@ -3,35 +3,39 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use std::sync::OnceLock;
 
-fn schema() -> &'static Value {
-    static PARSED: OnceLock<Value> = OnceLock::new();
-    PARSED.get_or_init(|| serde_json::from_str(SCHEMA).expect("compiled schema"))
+fn schema() -> Result<&'static Value, &'static str> {
+    static PARSED: OnceLock<Result<Value, String>> = OnceLock::new();
+    PARSED
+        .get_or_init(|| serde_json::from_str(SCHEMA).map_err(|error| error.to_string()))
+        .as_ref()
+        .map_err(|_| "compiled schema is invalid")
 }
 
 pub fn parameters(method: &str, value: &Value) -> Result<Request, &'static str> {
-    let registry = &schema()["x-methods"];
+    let schema = schema()?;
+    let registry = &schema["x-methods"];
     let definition = registry.get(method).ok_or("unknown method")?;
-    if !valid(&definition["params"], value) {
+    if !valid(schema, &definition["params"], value) {
         return Err("invalid parameters");
     }
     serde_json::from_value(serde_json::json!({"method":method,"params":value}))
         .map_err(|_| "invalid parameters")
 }
 
-fn valid(rule: &Value, value: &Value) -> bool {
+fn valid(schema: &Value, rule: &Value, value: &Value) -> bool {
     if let Some(reference) = rule.get("$ref").and_then(Value::as_str) {
         let Some(target) = reference
             .strip_prefix("#/$defs/")
-            .and_then(|name| schema()["$defs"].get(name))
+            .and_then(|name| schema["$defs"].get(name))
         else {
             return false;
         };
-        return valid(target, value);
+        return valid(schema, target, value);
     }
     if let Some(branches) = rule.get("oneOf").and_then(Value::as_array) {
         return branches
             .iter()
-            .filter(|branch| valid(branch, value))
+            .filter(|branch| valid(schema, branch, value))
             .count()
             == 1;
     }
@@ -91,21 +95,23 @@ fn valid(rule: &Value, value: &Value) -> bool {
         }
         Some("array") => value
             .as_array()
-            .is_some_and(|items| items.iter().all(|item| valid(&rule["items"], item))),
+            .is_some_and(|items| items.iter().all(|item| valid(schema, &rule["items"], item))),
         Some("object") => {
             let Some(object) = value.as_object() else {
                 return false;
             };
             if rule["required"].as_array().is_some_and(|keys| {
                 keys.iter()
-                    .any(|key| !object.contains_key(key.as_str().expect("schema key")))
+                    .any(|key| key.as_str().is_none_or(|key| !object.contains_key(key)))
             }) {
                 return false;
             }
             rule["properties"].as_object().is_some_and(|properties| {
-                properties
-                    .iter()
-                    .all(|(key, child)| object.get(key).is_none_or(|value| valid(child, value)))
+                properties.iter().all(|(key, child)| {
+                    object
+                        .get(key)
+                        .is_none_or(|value| valid(schema, child, value))
+                })
             })
         }
         _ => false,

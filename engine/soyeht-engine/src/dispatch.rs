@@ -24,7 +24,7 @@ impl Core {
         outbox.send(model::notification(
             "auth.challenge",
             json!({"nonce":STANDARD.encode(nonce),"engineId":self.store.db_id}),
-        ));
+        )?);
         self.clients.insert(
             id.clone(),
             Connected {
@@ -42,8 +42,12 @@ impl Core {
         Ok(id)
     }
     fn hello(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let hello: HelloParams = serde_json::from_value(params.clone()).expect("validated hello");
-        let client = &self.clients[connection];
+        let hello: HelloParams = serde_json::from_value(params.clone())
+            .map_err(|_| errors::invalid("Invalid hello parameters"))?;
+        let client = errors::invariant(
+            self.clients.get(connection),
+            "Handshake connection disappeared",
+        )?;
         if client.actor.is_some() || client.pair_request.is_some() {
             return Err(errors::error(
                 ErrorKind::Unauthorized,
@@ -114,10 +118,13 @@ impl Core {
             device_id,
             pane_id: None,
         };
-        let client = self.clients.get_mut(connection).expect("client");
+        let client = errors::invariant(
+            self.clients.get_mut(connection),
+            "Handshake connection disappeared",
+        )?;
         client.scope = scope;
         client.actor = Some(actor);
-        Ok(serde_json::to_value(Welcome {
+        serde_json::to_value(Welcome {
             engine_version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: 1,
             connection_id: connection.into(),
@@ -125,7 +132,28 @@ impl Core {
             capabilities: capabilities(),
             db_id: self.store.db_id.clone(),
         })
-        .expect("welcome"))
+        .map_err(|_| errors::internal("Welcome response serialization failed"))
+    }
+
+    fn subscribe_events(&mut self, connection: &str, params: &Value) -> Result<Value> {
+        let since = params["since"]
+            .as_str()
+            .and_then(|value| value.parse::<u64>().ok())
+            .ok_or_else(|| errors::invalid("Invalid event cursor"))?;
+        // Registration, the replay boundary, and publication all share the
+        // Core mutex. No live event can enter between these steps.
+        let (through, events) = self.store.replay(since).map_err(errors::storage)?;
+        let client = errors::invariant(
+            self.clients.get_mut(connection),
+            "Subscription connection disappeared",
+        )?;
+        client.events = true;
+        for event in events {
+            client
+                .outbox
+                .send(model::notification(&event.method, event.params)?);
+        }
+        Ok(json!({"subscriptionId":Uuid::new_v4().to_string(),"through":through.to_string()}))
     }
 
     pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
@@ -193,26 +221,15 @@ impl Core {
         }
         let result = match method {
             "state.snapshot" => return self.snapshot_parts(connection),
-            "events.subscribe" => {
-                let since = params["since"]
-                    .as_str()
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .expect("validated cursor");
-                // Registration, the replay boundary, and publication all share
-                // the Core mutex. No live event can enter between these steps.
-                let (through, events) = self.store.replay(since).map_err(errors::storage)?;
-                let client = self.clients.get_mut(connection).expect("client");
-                client.events = true;
-                for event in events {
-                    client
-                        .outbox
-                        .send(model::notification(&event.method, event.params));
-                }
-                json!({"subscriptionId":Uuid::new_v4().to_string(),"through":through.to_string()})
-            }
+            "events.subscribe" => self.subscribe_events(connection, &params)?,
             "workspace.list" => {
                 let snapshot = self.store.snapshot().map_err(errors::storage)?;
-                json!({"items":snapshot.sections.into_iter().find(|(name,_)|name=="workspaces").expect("workspaces").1})
+                let (_, workspaces) = snapshot
+                    .sections
+                    .into_iter()
+                    .find(|(name, _)| name == "workspaces")
+                    .ok_or_else(|| errors::internal("Snapshot has no workspaces section"))?;
+                json!({"items":workspaces})
             }
             "workspace.create" => self.workspace_create(connection, &params)?,
             "workspace.rename" | "workspace.close" | "workspace.focus" => {
@@ -238,23 +255,31 @@ impl Core {
                 return Ok(Outcome::Queued);
             }
             "pane.stream.unsubscribe" => {
-                self.clients
-                    .get_mut(connection)
-                    .expect("client")
-                    .streams
-                    .remove(params["paneId"].as_str().expect("pane"));
+                let pane_id = errors::param_str(&params, "paneId")?;
+                errors::invariant(
+                    self.clients.get_mut(connection),
+                    "Stream connection disappeared",
+                )?
+                .streams
+                .remove(pane_id);
                 json!({})
             }
             "engine.status" => {
                 json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION}})
             }
             "settings.get" => {
-                json!({"key":params["key"],"value":self.setting(params["key"].as_str().expect("key"))?})
+                let key = errors::param_str(&params, "key")?;
+                json!({"key":params["key"],"value":self.setting(key)?})
             }
             "settings.set" => self.setting_set(connection, &params)?,
             "device.list" => {
                 let snapshot = self.store.snapshot().map_err(errors::storage)?;
-                json!({"items":snapshot.sections.into_iter().find(|(name,_)|name=="devices").expect("devices").1})
+                let (_, devices) = snapshot
+                    .sections
+                    .into_iter()
+                    .find(|(name, _)| name == "devices")
+                    .ok_or_else(|| errors::internal("Snapshot has no devices section"))?;
+                json!({"items":devices})
             }
             "device.pair.start" | "device.pair.decide" | "device.revoke" => {
                 self.device_request(connection, method, &params)?
@@ -270,7 +295,7 @@ impl Core {
             return self.native_rpc_result(
                 connection,
                 request["id"].clone(),
-                params["idempotencyKey"].as_str().expect("validated key"),
+                errors::param_str(&params, "idempotencyKey")?,
                 result,
             );
         }
@@ -339,10 +364,13 @@ impl Core {
             pages.push((name, page));
         }
         let count = pages.len();
-        let focus = self
-            .store
-            .client_focus(&self.clients[connection].scope)
-            .map_err(errors::storage)?;
+        let scope = errors::invariant(
+            self.clients.get(connection),
+            "Snapshot connection disappeared",
+        )?
+        .scope
+        .clone();
+        let focus = self.store.client_focus(&scope).map_err(errors::storage)?;
         let mut focus_value = json!({});
         if let Some(focus) = focus {
             if let Some(workspace) = focus.workspace_id {
@@ -352,7 +380,16 @@ impl Core {
                 focus_value["paneId"] = json!(pane);
             }
         }
-        let parts=pages.into_iter().enumerate().map(|(index,(section,data))|model::notification("state.snapshot_part",json!({"snapshotId":snapshot_id,"index":index,"of":count,"section":section,"data":data}))).collect();
+        let parts = pages
+            .into_iter()
+            .enumerate()
+            .map(|(index, (section, data))| {
+                model::notification(
+                    "state.snapshot_part",
+                    json!({"snapshotId":snapshot_id,"index":index,"of":count,"section":section,"data":data}),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(Outcome::Snapshot {
             parts,
             result: json!({"snapshotId":snapshot_id,"cursor":snapshot.cursor.to_string(),"parts":count,"focus":focus_value}),

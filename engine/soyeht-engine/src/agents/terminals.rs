@@ -123,8 +123,10 @@ impl Terminal {
     fn status(&self) -> Value {
         json!({"exitCode":self.exit_code.filter(|code| *code >= 0)})
     }
-    fn output(&self) -> Value {
-        let bytes = STANDARD.decode(&self.bytes).expect("stored terminal bytes");
+    fn output(&self) -> std::result::Result<Value, soyeht_acp::RpcError> {
+        let bytes = STANDARD
+            .decode(&self.bytes)
+            .map_err(|_| effects::failure("Stored terminal output is invalid"))?;
         let mut output = String::from_utf8_lossy(&bytes).into_owned();
         let mut truncated = self.truncated;
         if output.len() > self.limit {
@@ -139,7 +141,7 @@ impl Terminal {
         if self.exit_code.is_some() {
             result["exitStatus"] = self.status();
         }
-        result
+        Ok(result)
     }
 }
 
@@ -257,7 +259,7 @@ impl Core {
                 exit_code: terminal.exit_code.map(i64::from),
             });
             item.complete = terminal.exit_code.is_some();
-            terminal.message_seq = Some(item.seq.parse().expect("allocated sequence"));
+            terminal.message_seq = Some(transcript::sequence(&item.seq)?);
             transcript::put(&mut changes, pane, item, "terminal_output")?;
             state.terminals.insert(id, terminal.clone());
             self.commit_agent(saved, state, changes, None, json!({}))?;
@@ -304,7 +306,10 @@ impl Core {
                         }
                     }
                 }
-                let terminal = state.terminals.get_mut(&id).expect("reserved terminal");
+                let terminal = state
+                    .terminals
+                    .get_mut(&id)
+                    .ok_or_else(|| errors::internal("Reserved inline terminal disappeared"))?;
                 let instance = match self.pty_request(Request::Spawn(terminal.spawn.clone())) {
                     Ok(Response::Instance(instance)) => instance,
                     Err(error) if error.data.kind == ErrorKind::HarnessUnavailable => {
@@ -337,7 +342,7 @@ impl Core {
             {
                 let terminal = &state.terminals[id];
                 match request.method.as_str() {
-                    "terminal/output" => Ok(terminal.output()),
+                    "terminal/output" => terminal.output(),
                     "terminal/wait_for_exit" => {
                         if terminal.exit_code.is_none() {
                             continue;

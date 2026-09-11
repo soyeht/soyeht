@@ -1,7 +1,10 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AuthChallengeEvent, StateSnapshotPartEvent, StateSnapshotResult, Welcome, frame::Frame,
+    AuthChallengeEvent, SnapshotSection, StateSnapshotPartEvent, StateSnapshotResult, Welcome,
+    frame::Frame,
 };
 use std::{
     collections::BTreeMap,
@@ -84,7 +87,7 @@ impl Client {
                 result => return result,
             }
         }
-        unreachable!("last attempt returns its result")
+        Err(io::Error::other("request attempts exhausted"))
     }
 
     fn request_once<T: DeserializeOwned>(&mut self, method: &str, params: Value) -> io::Result<T> {
@@ -130,10 +133,7 @@ impl Client {
             identity = Some(part.snapshot_id);
             total = Some(part.of);
             count += 1;
-            let name = serde_json::to_value(part.section)?
-                .as_str()
-                .expect("section name")
-                .to_owned();
+            let name = snapshot_section_name(&part.section).to_owned();
             let items = part
                 .data
                 .as_array()
@@ -143,6 +143,19 @@ impl Client {
                 .or_default()
                 .extend(items.iter().cloned());
         }
+    }
+}
+
+fn snapshot_section_name(section: &SnapshotSection) -> &'static str {
+    match section {
+        SnapshotSection::Workspaces => "workspaces",
+        SnapshotSection::Panes => "panes",
+        SnapshotSection::Tasks => "tasks",
+        SnapshotSection::Requests => "requests",
+        SnapshotSection::Attention => "attention",
+        SnapshotSection::Devices => "devices",
+        SnapshotSection::Capabilities => "capabilities",
+        SnapshotSection::Streams => "streams",
     }
 }
 

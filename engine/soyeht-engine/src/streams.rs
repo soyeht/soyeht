@@ -10,7 +10,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 
 impl Core {
     pub fn subscribe_stream(&mut self, connection: &str, id: Value, params: &Value) -> Result<()> {
-        let pane_id = params["paneId"].as_str().expect("validated pane id");
+        let pane_id = errors::param_str(params, "paneId")?;
         let running = self
             .panes
             .get(pane_id)
@@ -27,7 +27,7 @@ impl Core {
             .pane
             .stream_id
             .clone()
-            .expect("stream identity");
+            .ok_or_else(|| errors::internal("Terminal pane has no stream identity"))?;
         let generation = running.stored.pane.generation;
         let high = running.screen.next_offset();
         let tail = params["from"] == "tail";
@@ -53,7 +53,10 @@ impl Core {
             offset
         };
         let current = Arc::new(AtomicBool::new(true));
-        let client = self.clients.get_mut(connection).expect("connected");
+        let client = errors::invariant(
+            self.clients.get_mut(connection),
+            "Stream connection disappeared",
+        )?;
         let binary_ref = client.next_binary_ref;
         client.next_binary_ref = binary_ref.checked_add(1).ok_or_else(|| {
             errors::error(
@@ -64,8 +67,8 @@ impl Core {
         // Mapping precedes every binary frame. All tail boundaries were captured
         // while holding the same engine lock used by output ingestion.
         client.streams.remove(pane_id);
-        client.outbox.send(model::response(id,json!({"streamId":stream_id,"paneId":pane_id,"generation":generation,"firstRetainedOffset":running.screen.first_offset().to_string(),"nextOffset":high.to_string(),"binaryPaneRef":binary_ref})));
-        client.outbox.send_stream(model::notification("stream.replay_start",json!({"streamId":stream_id,"generation":generation,"fromOffset":from.to_string(),"toOffset":high.to_string(),"reset":tail})),Arc::clone(&current));
+        client.outbox.send(model::response(id,json!({"streamId":stream_id,"paneId":pane_id,"generation":generation,"firstRetainedOffset":running.screen.first_offset().to_string(),"nextOffset":high.to_string(),"binaryPaneRef":binary_ref}))?);
+        client.outbox.send_stream(model::notification("stream.replay_start",json!({"streamId":stream_id,"generation":generation,"fromOffset":from.to_string(),"toOffset":high.to_string(),"reset":tail}))?,Arc::clone(&current));
         client.streams.insert(
             pane_id.into(),
             Subscription {
@@ -93,7 +96,10 @@ impl Core {
                     client.streams.remove(&id);
                     continue;
                 };
-                let subscription = client.streams.get_mut(&id).expect("subscribed");
+                let subscription = errors::invariant(
+                    client.streams.get_mut(&id),
+                    "Stream subscription disappeared during its pump",
+                )?;
                 if pane.stored.pane.stream_id.as_ref() != Some(&subscription.stream_id) {
                     client
                         .outbox
@@ -107,7 +113,7 @@ impl Core {
                 };
                 if subscription.next < pane.screen.first_offset() {
                     let to = pane.screen.first_offset().min(through);
-                    client.outbox.send_stream(model::notification("stream.gap",json!({"streamId":subscription.stream_id,"fromOffset":subscription.next.to_string(),"toOffset":to.to_string()})),Arc::clone(&subscription.current));
+                    client.outbox.send_stream(model::notification("stream.gap",json!({"streamId":subscription.stream_id,"fromOffset":subscription.next.to_string(),"toOffset":to.to_string()}))?,Arc::clone(&subscription.current));
                     subscription.next = to;
                 }
                 if subscription.next < through {
@@ -127,7 +133,7 @@ impl Core {
                             Record::Gap { from, to } => model::notification(
                                 "stream.gap",
                                 json!({"streamId":subscription.stream_id,"fromOffset":from.to_string(),"toOffset":to.to_string()}),
-                            ),
+                            )?,
                         };
                         if !client
                             .outbox
@@ -139,7 +145,7 @@ impl Core {
                     }
                 }
                 if subscription.replaying && subscription.next == subscription.replay_until {
-                    client.outbox.send_stream(model::notification("stream.replay_done",json!({"streamId":subscription.stream_id,"nextOffset":subscription.next.to_string()})),Arc::clone(&subscription.current));
+                    client.outbox.send_stream(model::notification("stream.replay_done",json!({"streamId":subscription.stream_id,"nextOffset":subscription.next.to_string()}))?,Arc::clone(&subscription.current));
                     subscription.replaying = false;
                 }
             }

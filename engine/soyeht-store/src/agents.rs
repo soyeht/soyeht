@@ -579,13 +579,17 @@ pub fn transcript(
         items.push(serde_json::from_str::<TranscriptMessage>(&raw)?);
     }
     items.reverse();
-    let next_cursor = more.then(|| {
-        items
-            .first()
-            .expect("one bounded message fits a page")
-            .seq
-            .clone()
-    });
+    let next_cursor = if more {
+        Some(
+            items
+                .first()
+                .ok_or(Error::Invalid("transcript message exceeds page bounds"))?
+                .seq
+                .clone(),
+        )
+    } else {
+        None
+    };
     Ok(PaneTranscriptResult { items, next_cursor })
 }
 

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{Pane, PaneState};

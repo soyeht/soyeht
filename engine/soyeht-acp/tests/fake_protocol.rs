@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use serde_json::{Value, json};
 use soyeht_acp::{Message, RpcError, client, config::Options, session};
 use soyeht_protocol::ProbeResult;

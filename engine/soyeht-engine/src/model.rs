@@ -43,22 +43,20 @@ pub struct Connected {
     pub pair_request: Option<String>,
 }
 
-pub fn notification(method: &str, params: Value) -> Frame {
-    Frame::Json(
-        serde_json::to_vec(&json!({"jsonrpc":"2.0","method":method,"params":params}))
-            .expect("JSON notification"),
-    )
+pub fn notification(method: &str, params: Value) -> Result<Frame> {
+    Ok(Frame::Json(errors::json_bytes(
+        &json!({"jsonrpc":"2.0","method":method,"params":params}),
+    )?))
 }
-pub fn response(id: Value, result: Value) -> Frame {
-    Frame::Json(
-        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"result":result}))
-            .expect("JSON response"),
-    )
+pub fn response(id: Value, result: Value) -> Result<Frame> {
+    Ok(Frame::Json(errors::json_bytes(
+        &json!({"jsonrpc":"2.0","id":id,"result":result}),
+    )?))
 }
-pub fn failure(id: Value, error: soyeht_protocol::RpcError) -> Frame {
-    Frame::Json(
-        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"error":error})).expect("JSON error"),
-    )
+pub fn failure(id: Value, error: soyeht_protocol::RpcError) -> Result<Frame> {
+    Ok(Frame::Json(errors::json_bytes(
+        &json!({"jsonrpc":"2.0","id":id,"error":error}),
+    )?))
 }
 
 pub fn workspace(store: &impl StorePort, id: &str) -> Result<Workspace> {

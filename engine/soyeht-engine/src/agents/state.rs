@@ -72,11 +72,12 @@ pub struct State {
 
 impl State {
     pub fn new(launch: HarnessLaunch, binary_digest: String, permission: PermissionMode) -> Self {
-        let policy = serde_json::to_value(&permission)
-            .expect("permission")
-            .as_str()
-            .expect("policy string")
-            .to_owned();
+        let policy = match &permission {
+            PermissionMode::Ask => "ask",
+            PermissionMode::AcceptEdits => "accept_edits",
+            PermissionMode::AllowAll => "allow_all",
+        }
+        .to_owned();
         Self {
             launch,
             binary_digest,
@@ -233,7 +234,10 @@ impl State {
             .or_else(|| (self.draft_until_ms <= now_ms && !self.queue.is_empty()).then_some(0));
         let Some(index) = index else { return Ok(None) };
         self.changed_queue()?;
-        let mut prompt = self.queue.remove(index).expect("selected prompt");
+        let mut prompt = self
+            .queue
+            .remove(index)
+            .ok_or_else(|| errors::internal("Selected prompt disappeared from the queue"))?;
         prompt.generation = Some(generation);
         prompt.status = PromptStatus::Active;
         self.active = Some(prompt.clone());
@@ -280,10 +284,7 @@ impl State {
         let mut items = Vec::new();
         let mut bytes = 0;
         for item in self.queue.iter().skip(start).take(limit) {
-            let size = serde_json::to_vec(item)
-                .expect("prompt serialization")
-                .len()
-                + 1;
+            let size = errors::json_bytes(item)?.len() + 1;
             if bytes + size > limits::TRANSCRIPT_PAGE_BYTES - 256 {
                 break;
             }

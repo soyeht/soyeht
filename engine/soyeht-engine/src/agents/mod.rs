@@ -82,6 +82,25 @@ impl Core {
             .ok_or_else(|| errors::error(ErrorKind::InvalidParams, "Agent pane required"))
     }
 
+    fn replace_agent_state(&mut self, id: &str, state: State) -> Result<()> {
+        errors::invariant(self.agents.get_mut(id), "Agent runtime disappeared")?.state = state;
+        Ok(())
+    }
+
+    fn install_committed_agent(&mut self, id: &str, saved: StoredPane, state: State) -> Result<()> {
+        errors::invariant(
+            self.panes.get_mut(id),
+            "Agent pane disappeared before commit publication",
+        )?
+        .stored = saved;
+        if let Some(running) = self.agents.get_mut(id) {
+            running.state = state;
+        } else {
+            self.agents.insert(id.to_owned(), Running::new(state));
+        }
+        Ok(())
+    }
+
     /// No in-memory state or native bytes change until the whole transaction
     /// commits. `user` retains the existing client idempotency and actor scope.
     pub fn commit_agent(
@@ -223,19 +242,14 @@ impl Core {
                 change,
             )
             .map_err(errors::storage)?;
-            self.publish(&mutation.events);
+            self.publish(&mutation.events)?;
             mutation
         };
         if !mutation.repeated {
             if let Some(completion) = &changes.completed_user {
-                self.publish_native_completion(completion);
+                self.publish_native_completion(completion)?;
             }
-            self.panes.get_mut(&id).expect("known pane").stored = saved;
-            if let Some(running) = self.agents.get_mut(&id) {
-                running.state = state;
-            } else {
-                self.agents.insert(id, Running::new(state));
-            }
+            self.install_committed_agent(&id, saved, state)?;
         }
         Ok(mutation)
     }

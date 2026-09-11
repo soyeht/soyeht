@@ -1,4 +1,5 @@
 //! Deterministic ACP v1 peer. It only operates in an explicitly selected test directory.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod state;
 mod turns;
 

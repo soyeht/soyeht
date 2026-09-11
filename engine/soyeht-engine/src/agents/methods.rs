@@ -34,7 +34,9 @@ fn read_agent_state(
     if method == "pane.transcript" {
         let before = params["before"]
             .as_str()
-            .map(|value| value.parse::<u64>().expect("validated cursor"));
+            .map(str::parse::<u64>)
+            .transpose()
+            .map_err(|_| errors::invalid("Transcript cursor is invalid"))?;
         return store
             .agent_transcript(
                 pane,
@@ -48,9 +50,20 @@ fn read_agent_state(
     Ok(None)
 }
 
+fn prompt_origin(params: &Value) -> Result<PromptOrigin> {
+    params
+        .get("origin")
+        .map(|value| {
+            serde_json::from_value(value.clone())
+                .map_err(|_| errors::invalid("Prompt origin is invalid"))
+        })
+        .transpose()
+        .map(|origin| origin.unwrap_or(PromptOrigin::Human))
+}
+
 impl Core {
     pub fn close_agent(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let pane = params["paneId"].as_str().expect("validated pane");
+        let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
         let instance = saved.instance_id.clone();
@@ -139,7 +152,7 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
-        let pane = params["paneId"].as_str().expect("validated pane");
+        let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
         let mut changes = Changes::default();
@@ -160,12 +173,9 @@ impl Core {
                         "Attachment upload is not available in this slice",
                     ));
                 }
-                let origin = params
-                    .get("origin")
-                    .map(|v| serde_json::from_value(v.clone()).expect("validated origin"))
-                    .unwrap_or(PromptOrigin::Human);
+                let origin = prompt_origin(params)?;
                 let prompt = state.enqueue(
-                    params["text"].as_str().expect("validated text").into(),
+                    errors::param_str(params, "text")?.into(),
                     origin,
                     timestamp.clone(),
                 )?;
@@ -173,7 +183,7 @@ impl Core {
                 json!({"promptId":prompt.prompt_id,"queued":true})
             }
             "pane.queue.remove" => {
-                let prompt = params["promptId"].as_str().expect("validated prompt");
+                let prompt = errors::param_str(params, "promptId")?;
                 let removed = state.remove(prompt)?;
                 if removed {
                     changes.events.push(queued(pane, &state, now_ms));
@@ -181,7 +191,7 @@ impl Core {
                 json!({"promptId":prompt,"removed":removed})
             }
             "pane.draft" => {
-                let active = params["active"].as_bool().expect("validated draft");
+                let active = errors::param_bool(params, "active")?;
                 state.draft_until_ms = if active { now_ms + 10_000 } else { 0 };
                 changes.events.push(queued(pane, &state, now_ms));
                 json!({"active":active})
@@ -201,9 +211,10 @@ impl Core {
                         state.cancel_at_ms = Some(now_ms);
                         saved.pane.state = PaneState::Cancelling;
                         saved.pane.phrase = "Cancelling agent turn".into();
-                        changes.outgoing.push(client::cancel(
-                            state.session_id.as_deref().expect("active session"),
-                        ));
+                        changes.outgoing.push(client::cancel(errors::invariant(
+                            state.session_id.as_deref(),
+                            "Active prompt has no native session",
+                        )?));
                         for request in self
                             .store
                             .agent_open_requests(pane)
@@ -237,15 +248,12 @@ impl Core {
                 json!({"paneId":pane,"paused":false})
             }
             "pane.config.set" => {
-                let config_id = params["configId"].as_str().expect("validated config ID");
+                let config_id = errors::param_str(params, "configId")?;
                 let value = serde_json::from_value(params["value"].clone())
-                    .expect("validated config value");
+                    .map_err(|_| errors::invalid("Configuration value is invalid"))?;
                 let user = super::pending::UserOperation {
                     scope: self.clients[connection].scope.clone(),
-                    key: params["idempotencyKey"]
-                        .as_str()
-                        .expect("validated key")
-                        .into(),
+                    key: errors::param_str(params, "idempotencyKey")?.into(),
                 };
                 let operation_id = super::configuration::begin(
                     &mut state,

@@ -26,6 +26,20 @@ use tokio::{
 
 type Shared = Arc<Mutex<Core>>;
 
+fn lock_core(shared: &Shared) -> io::Result<std::sync::MutexGuard<'_, Core>> {
+    shared
+        .lock()
+        .map_err(|_| io::Error::other("engine state lock poisoned"))
+}
+
+fn update_pair_address(shared: &Shared, address: SocketAddr) -> io::Result<()> {
+    let mut state = lock_core(shared)?;
+    if !address.ip().is_loopback() || state.pair_address.starts_with("127.") {
+        state.pair_address = address.to_string();
+    }
+    Ok(())
+}
+
 pub struct Config {
     pub directory: PathBuf,
     pub listen: Vec<SocketAddr>,
@@ -82,11 +96,7 @@ pub async fn run(config: Config) -> io::Result<()> {
     for address in config.listen {
         let listener = TcpListener::bind(address).await?;
         let address = listener.local_addr()?;
-        if !address.ip().is_loopback()
-            || core.lock().expect("core").pair_address.starts_with("127.")
-        {
-            core.lock().expect("core").pair_address = address.to_string();
-        }
+        update_pair_address(&core, address)?;
         let core = Arc::clone(&core);
         let permits = Arc::clone(&permits);
         tasks.spawn(async move {
@@ -148,7 +158,7 @@ pub async fn run(config: Config) -> io::Result<()> {
                 ticks.tick().await;
                 let core=Arc::clone(&core);
                 let result=tokio::task::spawn_blocking(move || {
-                    let mut core=core.lock().expect("core");
+                    let mut core=core.lock().map_err(|_| crate::errors::internal("Engine state lock poisoned"))?;
                     let output=core.poll_output();let streams=core.pump_streams();
                     if prune==0 {core.store.prune().map_err(crate::errors::storage)?;}
                     output.and(streams)
@@ -174,7 +184,7 @@ pub async fn run(config: Config) -> io::Result<()> {
         result=tasks.join_next()=>{if let Some(result)=result {result.map_err(io::Error::other)??;}},
     }
     tasks.abort_all();
-    for client in core.lock().expect("core").clients.values() {
+    for client in lock_core(&core)?.clients.values() {
         client.outbox.close(CloseReason::ServerShutdown);
     }
     fs::remove_file(socket)?;
@@ -188,7 +198,11 @@ async fn connection(
     writer: transport::Writer,
 ) {
     let (outbox, receiver) = outbox::channel();
-    let id = match core.lock().expect("core").connect(local, outbox.clone()) {
+    let id = match core
+        .lock()
+        .map_err(|_| crate::errors::internal("Engine state lock poisoned"))
+        .and_then(|mut state| state.connect(local, outbox.clone()))
+    {
         Ok(id) => id,
         Err(_) => return,
     };
@@ -199,13 +213,13 @@ async fn connection(
     };
     outbox.close(reason);
     write_task.abort();
-    let mut core = core.lock().expect("core");
-    core.clients.remove(&id);
-    core.native_waiters.retain(|_, waiters| {
-        waiters.retain(|(connection, _)| connection != &id);
-        !waiters.is_empty()
-    });
-    drop(core);
+    if let Ok(mut state) = core.lock() {
+        state.clients.remove(&id);
+        state.native_waiters.retain(|_, waiters| {
+            waiters.retain(|(connection, _)| connection != &id);
+            !waiters.is_empty()
+        });
+    }
     eprintln!("{}", connection_close_record(&id, local, reason));
 }
 
@@ -214,10 +228,14 @@ async fn write_frames(
     mut writer: transport::Writer,
 ) -> CloseReason {
     let reason = loop {
-        let Some(mut packet) = receiver.next().await else {
-            break receiver
-                .close_reason()
-                .unwrap_or(CloseReason::WriterStopped);
+        let mut packet = match receiver.next().await {
+            Ok(Some(packet)) => packet,
+            Ok(None) => {
+                break receiver
+                    .close_reason()
+                    .unwrap_or(CloseReason::WriterStopped);
+            }
+            Err(_) => break CloseReason::WorkerFailed,
         };
         if !packet.is_current() {
             continue;
@@ -253,8 +271,8 @@ async fn next_frame(
     reader: &mut transport::Reader,
 ) -> Result<Frame, CloseReason> {
     let wait = {
-        let core = core.lock().expect("core");
-        let client = &core.clients[id];
+        let core = core.lock().map_err(|_| CloseReason::WorkerFailed)?;
+        let client = core.clients.get(id).ok_or(CloseReason::WorkerFailed)?;
         if client.actor.is_some() {
             None
         } else if client.pair_request.is_some() {
@@ -308,7 +326,10 @@ async fn read_requests(
         let shared = Arc::clone(&core);
         let connection = id.to_owned();
         let outcome = tokio::task::spawn_blocking(move || {
-            shared.lock().expect("core").dispatch(&connection, request)
+            shared
+                .lock()
+                .map_err(|_| crate::errors::internal("Engine state lock poisoned"))?
+                .dispatch(&connection, request)
         })
         .await;
         log_operation(
@@ -320,7 +341,10 @@ async fn read_requests(
         );
         match outcome {
             Ok(Ok(Outcome::Reply(result))) => {
-                if !outbox.send(model::response(request_id, result)) {
+                let Ok(frame) = model::response(request_id, result) else {
+                    return CloseReason::WorkerFailed;
+                };
+                if !outbox.send(frame) {
                     return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
                 }
             }
@@ -333,16 +357,25 @@ async fn read_requests(
                             .unwrap_or(CloseReason::SnapshotWriteFailed);
                     }
                 }
-                if !outbox.send(model::response(request_id, result)) {
+                let Ok(frame) = model::response(request_id, result) else {
+                    return CloseReason::WorkerFailed;
+                };
+                if !outbox.send(frame) {
                     return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
                 }
             }
             Ok(Err(error)) if failed_handshake => {
-                let _ = outbox.write_page(model::failure(request_id, error)).await;
+                let Ok(frame) = model::failure(request_id, error) else {
+                    return CloseReason::WorkerFailed;
+                };
+                let _ = outbox.write_page(frame).await;
                 return CloseReason::HandshakeRejected;
             }
             Ok(Err(error)) => {
-                if !outbox.send(model::failure(request_id, error)) {
+                let Ok(frame) = model::failure(request_id, error) else {
+                    return CloseReason::WorkerFailed;
+                };
+                if !outbox.send(frame) {
                     return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
                 }
             }

@@ -71,12 +71,12 @@ pub fn event(pane: &str, message: &TranscriptMessage, kind: &str) -> Value {
         "usage" => result["usage"] = json!(message.usage),
         "terminal_output" => {
             if let Some(terminal) = &message.terminal {
-                for (key, value) in serde_json::to_value(terminal)
-                    .expect("terminal")
-                    .as_object()
-                    .expect("terminal object")
-                {
-                    result[key] = value.clone();
+                result["terminalId"] = json!(terminal.terminal_id);
+                result["bytes"] = json!(terminal.bytes);
+                result["offset"] = json!(terminal.offset);
+                result["truncated"] = json!(terminal.truncated);
+                if let Some(exit_code) = terminal.exit_code {
+                    result["exitCode"] = json!(exit_code);
                 }
             }
         }
@@ -84,17 +84,19 @@ pub fn event(pane: &str, message: &TranscriptMessage, kind: &str) -> Value {
     }
     result
 }
+
+pub fn sequence(value: &str) -> Result<u64> {
+    value
+        .parse()
+        .map_err(|_| errors::internal("Allocated transcript sequence is invalid"))
+}
 pub fn put(
     changes: &mut Changes,
     pane: &str,
     message: TranscriptMessage,
     kind: &str,
 ) -> Result<()> {
-    if serde_json::to_vec(&message)
-        .expect("message serialization")
-        .len()
-        > limits::TRANSCRIPT_MESSAGE_BYTES
-    {
+    if errors::json_bytes(&message)?.len() > limits::TRANSCRIPT_MESSAGE_BYTES {
         return Err(errors::error(
             ErrorKind::InvalidParams,
             "Normalized message exceeds its 256 KiB limit",
@@ -177,10 +179,8 @@ pub fn append_text_role(
         };
         let original = item.text.len();
         item.text.push_str(text);
-        if serde_json::to_vec(&item).expect("message").len() <= limits::TRANSCRIPT_MESSAGE_BYTES {
-            state
-                .open_messages
-                .insert(key.into(), item.seq.parse().expect("allocated sequence"));
+        if errors::json_bytes(&item)?.len() <= limits::TRANSCRIPT_MESSAGE_BYTES {
+            state.open_messages.insert(key.into(), sequence(&item.seq)?);
             put(changes, pane, item, event_kind)?;
             return Ok(());
         }
@@ -196,8 +196,7 @@ pub fn append_text_role(
             let middle = (low + high).div_ceil(2);
             item.text.truncate(original);
             item.text.push_str(&text[..boundaries[middle]]);
-            if serde_json::to_vec(&item).expect("message").len() <= limits::TRANSCRIPT_MESSAGE_BYTES
-            {
+            if errors::json_bytes(&item)?.len() <= limits::TRANSCRIPT_MESSAGE_BYTES {
                 low = middle
             } else {
                 high = middle - 1

@@ -168,6 +168,18 @@ fn finish_configuration(
     Ok(())
 }
 
+fn initialized_version(state: &State) -> Result<&str> {
+    Ok(&errors::invariant(
+        state.initialized.as_ref(),
+        "Agent session opened before initialization completed",
+    )?
+    .version)
+}
+
+fn fingerprint(state: &State, version: &str) -> Result<String> {
+    session::fingerprint(&state.binary_digest, version, &json!(state.launch)).map_err(native_error)
+}
+
 pub fn response(
     store: &impl StorePort,
     state: &mut State,
@@ -193,8 +205,7 @@ pub fn response(
     if request.context == "initialize" {
         let value = result.map_err(|e| errors::error(ErrorKind::HarnessUnavailable, e.message))?;
         let info = Initialization::parse(&value).map_err(native_error)?;
-        state.fingerprint =
-            session::fingerprint(&state.binary_digest, &info.version, &json!(state.launch));
+        state.fingerprint = fingerprint(state, &info.version)?;
         state.initialized = Some(info);
         let mut all_known = true;
         for method in PROBED_METHODS {
@@ -347,7 +358,7 @@ pub fn response(
                     PaneState::Starting
                 };
                 saved.pane.phrase = "Agent session ready".into();
-                changes.events.push(("pane.session_started".into(),json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"version":state.initialized.as_ref().expect("initialized").version,"sessionId":state.session_id,"generation":saved.pane.generation,"options":state.options.values})));
+                changes.events.push(("pane.session_started".into(),json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"version":initialized_version(state)?,"sessionId":state.session_id,"generation":saved.pane.generation,"options":state.options.values})));
             }
             Err(error) if error.code == -32000 => needs_login(state, saved, changes),
             Err(error) if request.context == "load" && matches!(error.code, -32601 | -32002) => {

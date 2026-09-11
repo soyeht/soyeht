@@ -95,7 +95,7 @@ pub fn update(
             transcript::append_text(store, pane, state, generation, thought, text, changes)?;
         }
         Update::Tool { update, fields } => {
-            let id = fields["toolCallId"].as_str().expect("checked tool ID");
+            let id = errors::param_str(&fields, "toolCallId")?;
             if id.is_empty() || id.chars().count() > 128 {
                 return Err(errors::error(
                     ErrorKind::InvalidParams,
@@ -143,7 +143,7 @@ pub fn update(
             );
             state
                 .open_messages
-                .insert(key, item.seq.parse().expect("allocated sequence"));
+                .insert(key, transcript::sequence(&item.seq)?);
             transcript::put(
                 changes,
                 pane,

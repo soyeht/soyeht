@@ -81,11 +81,18 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> io::Result<Sp
             _ => return Err(io::Error::other("invalid pipe guardian response")),
         };
         // SAFETY: ownership moves from ChildStdin/ChildStdout into File once.
-        let input =
-            unsafe { File::from_raw_fd(child.stdin.take().expect("piped stdin").into_raw_fd()) };
-        // SAFETY: stdout is a distinct owned descriptor.
-        let output =
-            unsafe { File::from_raw_fd(child.stdout.take().expect("piped stdout").into_raw_fd()) };
+        let child_input = child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("pipe guardian stdin was not created"))?;
+        // SAFETY: ownership moves from ChildStdin into File once.
+        let input = unsafe { File::from_raw_fd(child_input.into_raw_fd()) };
+        let child_output = child
+            .stdout
+            .take()
+            .ok_or_else(|| io::Error::other("pipe guardian stdout was not created"))?;
+        // SAFETY: stdout is a distinct owned descriptor moved into File once.
+        let output = unsafe { File::from_raw_fd(child_output.into_raw_fd()) };
         process::nonblocking(&input)?;
         process::nonblocking(&output)?;
         Ok((pid, input, output))

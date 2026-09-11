@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 use soyeht_engine::server::{self, Config};
 use std::{io, net::SocketAddr, path::PathBuf};
 
@@ -30,7 +32,7 @@ async fn main() -> io::Result<()> {
         return server::run(Config { directory, listen }).await;
     }
     let addresses = soyeht_engine::network::tailnet_addresses().unwrap_or_default();
-    listen.push("127.0.0.1:8291".parse().expect("loopback"));
+    listen.push(SocketAddr::from(([127, 0, 0, 1], 8291)));
     for ip in &addresses {
         listen.push(SocketAddr::new(*ip, 8291));
     }

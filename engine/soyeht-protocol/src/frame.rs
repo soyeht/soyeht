@@ -89,17 +89,46 @@ impl Frame {
         reader.read_exact(&mut bytes)?;
         let frame = match kind[0] {
             1 => Self::Json(bytes),
-            2 => Self::Terminal {
-                pane_ref: u32::from_be_bytes(bytes[0..4].try_into().expect("validated header")),
-                generation: u32::from_be_bytes(bytes[4..8].try_into().expect("validated header")),
-                offset: u64::from_be_bytes(bytes[8..16].try_into().expect("validated header")),
-                bytes: bytes[16..].to_vec(),
-            },
-            3 => Self::Attachment {
-                header: bytes[..16].try_into().expect("validated header"),
-                bytes: bytes[16..].to_vec(),
-            },
-            _ => unreachable!("validated frame type"),
+            2 => {
+                let header: [u8; limits::TERMINAL_HEADER_BYTES] = bytes
+                    .get(..limits::TERMINAL_HEADER_BYTES)
+                    .ok_or_else(|| invalid("terminal header is missing"))?
+                    .try_into()
+                    .map_err(|_| invalid("terminal header has the wrong size"))?;
+                let pane_ref = u32::from_be_bytes(
+                    header[..4]
+                        .try_into()
+                        .map_err(|_| invalid("terminal pane reference is malformed"))?,
+                );
+                let generation = u32::from_be_bytes(
+                    header[4..8]
+                        .try_into()
+                        .map_err(|_| invalid("terminal generation is malformed"))?,
+                );
+                let offset = u64::from_be_bytes(
+                    header[8..]
+                        .try_into()
+                        .map_err(|_| invalid("terminal offset is malformed"))?,
+                );
+                Self::Terminal {
+                    pane_ref,
+                    generation,
+                    offset,
+                    bytes: bytes[limits::TERMINAL_HEADER_BYTES..].to_vec(),
+                }
+            }
+            3 => {
+                let header = bytes
+                    .get(..limits::ATTACHMENT_HEADER_BYTES)
+                    .ok_or_else(|| invalid("attachment header is missing"))?
+                    .try_into()
+                    .map_err(|_| invalid("attachment header has the wrong size"))?;
+                Self::Attachment {
+                    header,
+                    bytes: bytes[limits::ATTACHMENT_HEADER_BYTES..].to_vec(),
+                }
+            }
+            _ => return Err(invalid("unknown frame type")),
         };
         Ok(Some(frame))
     }

@@ -11,7 +11,7 @@ use soyeht_protocol::{ErrorKind, HarnessInfo, ModelInfo, ModelListSource, limits
 fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
     let digest = format!(
         "{:x}",
-        Sha256::digest(serde_json::to_vec(&json!([items, fixed])).expect("catalogue"))
+        Sha256::digest(errors::json_bytes(&json!([items, fixed]))?)
     );
     let start = if let Some(cursor) = params["cursor"].as_str() {
         let (prior, index) = cursor
@@ -32,13 +32,10 @@ fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
         0
     };
     let mut accepted = Vec::new();
-    let mut bytes = serde_json::to_vec(&fixed)
-        .expect("catalogue metadata")
-        .len()
-        + 512;
+    let mut bytes = errors::json_bytes(&fixed)?.len() + 512;
     let maximum = params["limit"].as_u64().unwrap_or(64) as usize;
     for item in items.iter().skip(start).take(maximum) {
-        let size = serde_json::to_vec(item).expect("catalogue item").len() + 1;
+        let size = errors::json_bytes(item)?.len() + 1;
         if bytes + size > limits::JSON_BYTES {
             if accepted.is_empty() {
                 return Err(errors::error(
@@ -101,7 +98,7 @@ impl Core {
             }
             return page(items, json!({}), params);
         }
-        let harness = params["harness"].as_str().expect("validated harness");
+        let harness = errors::required(params["harness"].as_str(), "Harness ID is required")?;
         if !entries.iter().any(|entry| entry.id == harness) {
             return Err(errors::error(
                 ErrorKind::HarnessUnavailable,

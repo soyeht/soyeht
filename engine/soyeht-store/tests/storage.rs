@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use serde_json::json;
 use soyeht_protocol::Workspace;
 use soyeht_store::{

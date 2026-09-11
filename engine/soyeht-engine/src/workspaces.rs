@@ -23,7 +23,7 @@ fn workspace_for_action(
 
 impl Core {
     pub fn workspace_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let path = params["path"].as_str().expect("validated path");
+        let path = errors::param_str(params, "path")?;
         if !Path::new(path).is_absolute() || !Path::new(path).is_dir() {
             return Err(errors::error(
                 ErrorKind::InvalidParams,
@@ -32,7 +32,7 @@ impl Core {
         }
         let workspace = Workspace {
             workspace_id: Uuid::new_v4().to_string(),
-            name: params["name"].as_str().expect("validated name").into(),
+            name: errors::param_str(params, "name")?.into(),
             path: path.into(),
             layout: json!({"panes":[]}),
         };
@@ -52,12 +52,13 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
-        let id = params["workspaceId"].as_str().expect("validated workspace");
-        let workspace = workspace_for_action(
-            &self.store,
-            id,
-            (method == "workspace.rename").then(|| params["name"].as_str().expect("name")),
-        )?;
+        let id = errors::param_str(params, "workspaceId")?;
+        let new_name = if method == "workspace.rename" {
+            Some(errors::param_str(params, "name")?)
+        } else {
+            None
+        };
+        let workspace = workspace_for_action(&self.store, id, new_name)?;
         if method == "workspace.rename" {
             return Ok(self
                 .mutate(connection, method, params, |tx| {
@@ -70,7 +71,12 @@ impl Core {
                 .result);
         }
         if method == "workspace.focus" {
-            let scope = self.clients[connection].scope.clone();
+            let scope = errors::invariant(
+                self.clients.get(connection),
+                "Workspace connection disappeared",
+            )?
+            .scope
+            .clone();
             return Ok(self
                 .mutate(connection, method, params, |tx| {
                     tx.focus_workspace(&scope, id)?;
@@ -101,12 +107,13 @@ impl Core {
             })?
             .result;
         for pane in closed {
-            self.panes
-                .get_mut(&pane.pane.pane_id)
-                .expect("known pane")
-                .stored
-                .closed = true;
-            self.finish_close(&pane.pane.pane_id);
+            errors::invariant(
+                self.panes.get_mut(&pane.pane.pane_id),
+                "Workspace pane disappeared after its close committed",
+            )?
+            .stored
+            .closed = true;
+            self.finish_close(&pane.pane.pane_id)?;
         }
         Ok(result)
     }
