@@ -50,10 +50,12 @@ jobs:
         run: bash scripts/check_swift.sh
       - name: Native client tests
         run: |
-          swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources
+          swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources
           swift test --package-path apps/shared
       - name: Mac app
         run: bash scripts/check_mac.sh
+      - name: iPhone app
+        run: bash scripts/check_ios.sh
       - name: TypeScript
         working-directory: contracts/typescript
         run: |

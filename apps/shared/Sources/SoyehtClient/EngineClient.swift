@@ -6,8 +6,11 @@ import SoyehtProtocol
 public final class EngineClient {
   public private(set) var panes: [Pane] = []
   public private(set) var workspaces: [Workspace] = []
+  public private(set) var devices: [Device] = []
   public private(set) var pairRequests: [PairPrompt] = []
   public private(set) var connected = false
+  public private(set) var connectionRevision: UInt64 = 0
+  public private(set) var credentialRejected = false
   public private(set) var connectionText = "Conectando ao perfil Dev…"
   public var problem: String?
   public private(set) var selectedPaneId: String?
@@ -25,6 +28,8 @@ public final class EngineClient {
   @ObservationIgnored private var queuedInputBytes = 0
   @ObservationIgnored private var resizeTask: Task<Void, Never>?
   @ObservationIgnored private let socket: String
+  @ObservationIgnored private let credential: DeviceCredential?
+  public var readOnly: Bool { credential != nil }
 
   private struct Pending {
     var method: String
@@ -33,7 +38,14 @@ public final class EngineClient {
     var timeout: Task<Void, Never>
   }
 
-  public init(socket: String = DevProfile.socketPath) { self.socket = socket }
+  public init(socket: String = DevProfile.socketPath) {
+    self.socket = socket
+    credential = nil
+  }
+  public init(credential: DeviceCredential) {
+    self.credential = credential
+    socket = ""
+  }
   public var selectedPane: Pane? { panes.first { $0.paneId == selectedPaneId } }
 
   public func start() {
@@ -41,7 +53,16 @@ public final class EngineClient {
     lifecycle = Task { [weak self] in
       while !Task.isCancelled {
         guard let self else { return }
-        do { try await self.session() } catch { self.connectionText = error.localizedDescription }
+        do { try await self.session() } catch {
+          self.connectionText = error.localizedDescription
+          if case ClientFailure.remote(let kind, _) = error,
+            self.readOnly && ["unauthorized", "engine_identity_changed"].contains(kind)
+          {
+            self.credentialRejected = true
+            self.disconnect()
+            return
+          }
+        }
         if Task.isCancelled { break }
         self.disconnect()
         do { try await Task.sleep(for: .seconds(1)) } catch { break }
@@ -55,6 +76,11 @@ public final class EngineClient {
   }
   private func disconnect() {
     connected = false
+    if readOnly {
+      panes = []
+      workspaces = []
+      terminalOutput?(Data(), true)
+    }
     position = nil
     wire?.close()
     wire = nil
@@ -67,7 +93,7 @@ public final class EngineClient {
     snapshot = SnapshotAssembly()
   }
   private func session() async throws {
-    let wire = Wire(socket: socket)
+    let wire = credential.map { Wire(url: $0.address) } ?? Wire(socket: socket)
     self.wire = wire
     try await wire.open()
     let challenge = try await wire.next()
@@ -92,13 +118,20 @@ public final class EngineClient {
       reader.cancel()
       wire.close()
     }
-    let hello = HelloParams(client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1)
+    let hello: HelloParams
+    if let credential {
+      hello = try credential.hello(challenge: first["params"].decoded(AuthChallengeEvent.self))
+    } else {
+      hello = HelloParams(client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1)
+    }
     let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
-    guard welcome.role == .human_local, welcome.protocolVersion == 1 else {
+    guard welcome.role == (readOnly ? .human_device : .human_local), welcome.protocolVersion == 1
+    else {
       throw ClientFailure.invalidFrame
     }
     _ = try await request("state.snapshot", .object([:]))
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
+    connectionRevision &+= 1
     connected = true
     connectionText = "Perfil Dev · conectado"
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
@@ -233,7 +266,12 @@ public final class EngineClient {
       let event = try params.decoded(DevicePairRequestedEvent.self)
       pairRequests.removeAll { $0.requestId == event.requestId }
       pairRequests.append(PairPrompt(event))
-    case "device.paired": pairRequests.removeAll { $0.requestId == params["requestId"].string }
+    case "device.paired":
+      let device = try params["device"].decoded(Device.self)
+      pairRequests.removeAll { $0.fingerprint == device.fingerprint }
+      devices.removeAll { $0.deviceId == device.deviceId }
+      if !device.revoked { devices.append(device) }
+    case "device.revoked": devices.removeAll { $0.deviceId == params["deviceId"].string }
     default: break
     }
   }
@@ -244,6 +282,9 @@ public final class EngineClient {
     let workspaces = try (sections["workspaces"] ?? []).map { try $0.decoded(Workspace.self) }
     let requests = try (sections["requests"] ?? []).filter { $0["kind"].string == "device_pair" }
       .map { try PairPrompt($0.decoded(DevicePairPending.self)) }
+    self.devices = try (sections["devices"] ?? []).map { try $0.decoded(Device.self) }.filter {
+      !$0.revoked
+    }
     self.panes = panes
     self.workspaces = workspaces
     pairRequests = requests
@@ -306,7 +347,7 @@ public final class EngineClient {
     }
   }
   public func input(_ data: Data) {
-    guard connected, let pane = selectedPaneId, !data.isEmpty else { return }
+    guard !readOnly, connected, let pane = selectedPaneId, !data.isEmpty else { return }
     guard queuedInputBytes + data.count <= 1_048_576 else {
       problem = "Entrada grande demais. Aguarde a fila de teclado esvaziar."
       return
@@ -364,6 +405,12 @@ public final class EngineClient {
         "device.pair.start",
         DevicePairStartParams(idempotencyKey: UUID().uuidString)
       ).decoded(DevicePairStartResult.self)
+    }
+  }
+  public func revokeDevice(_ id: String) {
+    perform {
+      _ = try await self.mutation(
+        "device.revoke", DeviceRevokeParams(deviceId: id, idempotencyKey: UUID().uuidString))
     }
   }
   public func clearPairCode() { pairCode = nil }

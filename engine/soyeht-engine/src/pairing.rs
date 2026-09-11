@@ -87,6 +87,40 @@ impl Core {
         let idem = params["idempotencyKey"].as_str().expect("key");
         if method == "pair.begin" {
             let code = params["code"].as_str().expect("code");
+            let key = params["devicePublicKey"].as_str().expect("key");
+            let public =
+                auth::public_key(key).map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
+            let scope = format!("pair:{}", auth::fingerprint(&public));
+            let receipt: Option<(String, String)> = self
+                .store
+                .connection()
+                .query_row(
+                    "SELECT fingerprint,result FROM idempotency WHERE scope=?1 AND key=?2",
+                    params![scope, idem],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|e| errors::storage(e.into()))?;
+            if let Some((previous, result)) = receipt {
+                if previous != fingerprint {
+                    return Err(errors::error(
+                        ErrorKind::IdempotencyConflict,
+                        "Pairing key reused with different content",
+                    ));
+                }
+                let result: Value = serde_json::from_str(&result).map_err(|_| {
+                    errors::error(ErrorKind::InternalError, "Invalid pairing receipt")
+                })?;
+                let id = result["requestId"].as_str().ok_or_else(|| {
+                    errors::error(ErrorKind::InternalError, "Missing pairing request")
+                })?;
+                self.pending_pair(id)?;
+                self.clients
+                    .get_mut(connection)
+                    .expect("connection")
+                    .pair_request = Some(id.into());
+                return Ok(result);
+            }
             let expires: Option<i64> = self
                 .store
                 .connection()
@@ -100,10 +134,6 @@ impl Core {
             let expires = expires.ok_or_else(|| {
                 errors::error(ErrorKind::Unauthorized, "Pairing code expired or invalid")
             })?;
-            let key = params["devicePublicKey"].as_str().expect("key");
-            let public =
-                auth::public_key(key).map_err(|s| errors::error(ErrorKind::InvalidParams, s))?;
-            let scope = format!("pair:{}", auth::fingerprint(&public));
             let pending = Pending {
                 id: Uuid::new_v4().to_string(),
                 code: code.into(),
@@ -251,6 +281,21 @@ impl Core {
         let approve = params["approve"].as_bool().expect("approve");
         pending.approved = Some(approve);
         if approve {
+            let available: bool = self
+                .store
+                .connection()
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pair_windows WHERE code=?1 AND expires_unix>?2)",
+                    params![pending.code, Utc::now().timestamp()],
+                    |row| row.get(0),
+                )
+                .map_err(|e| errors::storage(e.into()))?;
+            if !available {
+                return Err(errors::error(
+                    ErrorKind::Unauthorized,
+                    "Pairing code expired or already used",
+                ));
+            }
             pending.token =
                 Some(auth::token().map_err(|s| errors::error(ErrorKind::InternalError, s))?);
             pending.device = Some(Device {
@@ -263,6 +308,7 @@ impl Core {
         let result=self.mutate(connection,method,params,|tx| {
             let mut events=vec![];
             if let Some(device)=&pending.device {
+                tx.execute("DELETE FROM pair_windows WHERE code=?1", [&pending.code])?;
                 tx.execute("INSERT INTO devices(id,payload,public_key,token_hash) VALUES (?1,?2,?3,?4)",params![device.device_id,serde_json::to_string(device)?,public.as_bytes().as_slice(),auth::token_hash(pending.token.as_ref().expect("token"))])?;
                 events.push(("device.paired".into(),json!({"device":device})));
             }

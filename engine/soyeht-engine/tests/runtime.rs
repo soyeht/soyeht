@@ -511,6 +511,43 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     assert_eq!(paired["params"]["approved"], true);
     let token = paired["params"]["deviceToken"].as_str().unwrap();
     let device = paired["params"]["deviceId"].as_str().unwrap();
+    let mut reuse = Phone::connect(address);
+    assert_eq!(
+        reuse.request(
+            "pair.begin",
+            json!({
+                "code": window["code"], "deviceName": "Another attempt",
+                "devicePublicKey": STANDARD.encode(key.verifying_key().to_bytes()),
+                "idempotencyKey": "used-code"
+            })
+        )["error"]["data"]["kind"],
+        "unauthorized",
+        "pairing code must be consumed by consent"
+    );
+    drop(reuse);
+    let mut recover = Phone::connect(address);
+    let recovered = recover.request("pair.begin",json!({"code":window["code"],"deviceName":"Test phone","devicePublicKey":STANDARD.encode(key.verifying_key().to_bytes()),"idempotencyKey":"begin"}));
+    assert_eq!(
+        recovered["result"], *begin,
+        "original attempt remains recoverable after code consumption"
+    );
+    let mut recovery_mac = Hmac::<Sha256>::new_from_slice(&derived).unwrap();
+    recovery_mac.update(
+        &STANDARD
+            .decode(begin["challenge"].as_str().unwrap())
+            .unwrap(),
+    );
+    recovery_mac.update(b"Test phone");
+    recover.socket.send(tokio_tungstenite::tungstenite::Message::Text(json!({
+        "jsonrpc":"2.0","id":900,"method":"pair.prove","params":{
+            "requestId":begin["requestId"],"proof":STANDARD.encode(recovery_mac.finalize().into_bytes()),"idempotencyKey":"prove"
+        }
+    }).to_string().into())).unwrap();
+    let replayed = recover.read();
+    assert_eq!(replayed["method"], "pair.result");
+    assert_eq!(replayed["params"]["deviceToken"], token);
+    assert_eq!(recover.read()["id"], 900);
+    drop(recover);
     drop(phone);
     let mut phone = Phone::connect(address);
     assert_eq!(phone.hello(&key, token)["result"]["role"], "human_device");

@@ -23,6 +23,7 @@ struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
   @State private var paneToClose: String?
   @State private var showPairing = false
+  @State private var deviceToRevoke: String?
   var body: some View {
     VStack(spacing: 22) {
       HStack(spacing: 16) {
@@ -195,6 +196,9 @@ struct WorkspaceWindow: View {
     }
   }
   private var pairing: some View {
+    ScrollView { pairingContent }.frame(width: 520, height: 720).background(Palette.canvas)
+  }
+  private var pairingContent: some View {
     VStack(spacing: 20) {
       Text("Continue no iPhone").font(.system(size: 24, weight: .semibold, design: .rounded))
       Text(
@@ -221,8 +225,33 @@ struct WorkspaceWindow: View {
           .buttonStyle(.borderedProminent)
         }
       }
+      if !client.devices.isEmpty {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("iPhones pareados").font(.headline)
+          ForEach(client.devices, id: \.deviceId) { device in
+            HStack {
+              Label(device.name, systemImage: "iphone")
+              Spacer()
+              Button("Revogar", role: .destructive) { deviceToRevoke = device.deviceId }
+            }
+          }
+        }.padding(.vertical, 12)
+      }
       Button("Fechar") { showPairing = false }
     }.padding(32).frame(width: 460).background(Palette.canvas).foregroundStyle(Palette.ink)
+      .confirmationDialog(
+        "Revogar o acesso deste iPhone?",
+        isPresented: Binding(
+          get: { deviceToRevoke != nil }, set: { if !$0 { deviceToRevoke = nil } })
+      ) {
+        Button("Revogar", role: .destructive) {
+          if let id = deviceToRevoke { client.revokeDevice(id) }
+          deviceToRevoke = nil
+        }
+        Button("Cancelar", role: .cancel) { deviceToRevoke = nil }
+      } message: {
+        Text("As conexões serão fechadas. Um novo acesso exige outro pareamento.")
+      }
   }
   private func qr(_ value: String) -> NSImage? {
     let filter = CIFilter.qrCodeGenerator()

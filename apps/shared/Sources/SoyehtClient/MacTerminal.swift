@@ -41,11 +41,16 @@
       return view
     }
     public func updateNSView(_ view: TerminalView, context: Context) {
+      guard client.connected, let pane = client.selectedPane else { return }
       let terminal = view.getTerminal()
-      if client.connected, let pane = client.selectedPane,
-        pane.cols != terminal.cols || pane.rows != terminal.rows
-      {
+      let revision = "\(pane.paneId):\(client.connectionRevision)"
+      if context.coordinator.selection != revision {
+        context.coordinator.selection = revision
         client.resize(cols: terminal.cols, rows: terminal.rows)
+      } else if pane.cols != terminal.cols || pane.rows != terminal.rows {
+        context.coordinator.applyingRemoteSize = true
+        terminal.resize(cols: Int(pane.cols), rows: Int(pane.rows))
+        context.coordinator.applyingRemoteSize = false
       }
     }
     public static func dismantleNSView(_ view: TerminalView, coordinator: Coordinator) {
@@ -56,9 +61,11 @@
     public final class Coordinator: NSObject, @preconcurrency TerminalViewDelegate {
       let client: EngineClient
       var feeding = false
+      var selection: String?
+      var applyingRemoteSize = false
       init(client: EngineClient) { self.client = client }
       public func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-        client.resize(cols: newCols, rows: newRows)
+        if !applyingRemoteSize { client.resize(cols: newCols, rows: newRows) }
       }
       public func send(source: TerminalView, data: ArraySlice<UInt8>) {
         // Replayed control sequences must not become new input to the shell.

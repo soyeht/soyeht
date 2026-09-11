@@ -1,8 +1,8 @@
 import Foundation
 
 public enum DevProfile {
-  public static let dataDirectory = FileManager.default.homeDirectoryForCurrentUser
-    .appending(path: "Library/Application Support/Soyeht.next/dev", directoryHint: .isDirectory)
+  public static let dataDirectory = URL.applicationSupportDirectory
+    .appending(path: "Soyeht.next/dev", directoryHint: .isDirectory)
   public static let socketPath: String = {
     #if DEBUG
       if let value = ProcessInfo.processInfo.environment["SOYEHT_TEST_SOCKET"],
