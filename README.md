@@ -23,44 +23,16 @@ Early. macOS is the supported platform. The engine builds on Linux, but Linux is
 
 ## Architecture
 
-- `engine/` (Rust): terminal supervisor, workspace state, orchestrator and identity, behind one HTTP and WebSocket API. The same binary exposes the MCP server and a CLI.
-- `desktop/` (TypeScript): the desktop app for Linux and Windows, a client of the engine API.
-- The macOS and iOS apps are native Swift, live in their own repository, and speak the same API.
+- `engine/` (Rust): the process supervisor, workspace state, orchestrator and identity, behind one local socket and WebSocket API. The same workspace builds the MCP server and the CLI.
+- `apps/mac/` and `apps/ios/` (Swift): the native macOS and iPhone apps, clients of the engine API.
+- `apps/desktop/` (TypeScript): the desktop app for Linux and Windows, a client of the same API.
+- `contracts/`: the protocol schema, the single source for the types generated in Rust, Swift and TypeScript.
 - Connectivity between your devices goes over Tailscale.
 
 ## Contributing
 
-Every feature starts in `docs/spec.md`; if it is not in the spec, it is not in scope yet. Open an issue before a large change. CI must be green to merge.
-
-## Developing
-
-Everything in this repository is written in English: code, comments, docs, ADRs and commit messages.
-Install the pinned toolchains from [docs/toolchains.md](docs/toolchains.md), then run from the repository root:
-
-```sh
-python3 contracts/generate.py --check
-python3 -m unittest discover -s contracts -p 'test_*.py'
-python3 -m unittest discover -s scripts -p 'test_*.py'
-cargo fmt --manifest-path engine/Cargo.toml --all --check
-cargo clippy --manifest-path engine/Cargo.toml --locked --workspace --all-targets -- -D warnings
-cargo build --manifest-path engine/Cargo.toml --locked --workspace
-cargo test --manifest-path engine/Cargo.toml --locked --workspace
-bash scripts/check_swift.sh
-swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources
-swift test --package-path apps/shared
-bash scripts/check_mac.sh
-bash scripts/check_ios.sh
-python3 scripts/e2e.py --report .cache/e2e.json
-npm --prefix contracts/typescript ci --ignore-scripts
-npm --prefix contracts/typescript run check
-npm --prefix contracts/typescript test
-```
-
-The engine tests use real processes in their own temporary directories. The six launchd acceptance tests run in CI. Physical reboot, camera pairing and cellular reads follow the manual acceptance script in `docs/`.
-
-Changes land through pull requests with green checks; there is no direct push to `main`. The `forbidden-terms` check reads a repository secret and fails closed when the secret is unavailable.
-
+Every feature starts in `docs/contracts/`; if it is not in a contract, it is not in scope yet. Open an issue before a large change. CI must be green to merge. Developer setup and verification commands live in `docs/dev-local.md`.
 
 ## License
 
-MIT. See `LICENSE`.
+Apache-2.0. See `LICENSE`.
