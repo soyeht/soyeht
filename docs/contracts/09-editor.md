@@ -90,9 +90,11 @@ collaboration, extensions.
 - 05 (pane state): agent file edits feed the state phrase ("editing screen.rs").
 
 ## 6. Place in the slice plan
-New slice 4, "Editor", right after tasks (3) and before the harness switch.
-The following slices shift: 5 harness switch · 6 raw terminal and the
-experiment · 7 full iPhone · 8 Linux and Windows · 9 production.
+Slice 4, "Editor and app bar", right after tasks (3), together with
+contract 10. Slice 5 is the browser (contract 11); the earlier slices shift
+after it: 6 harness switch · 7 raw terminal and the experiment · 8 full
+iPhone · 9 Linux and Windows · 10 production.
 Order inside the slice: buffer + highlighting + save/reload/history →
 palette/open/search → LSP (definition, references, symbols, diagnostics) →
-diff/git → agent (marks, review, comments, links) → Markdown → Vim.
+diff/git → agent (marks, review, comments, links) → Markdown → Vim → app bar
+and usage rings.
