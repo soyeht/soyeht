@@ -18,4 +18,5 @@ pub mod settings;
 pub mod streams;
 pub mod tasks;
 pub mod transport;
+pub mod usage;
 pub mod workspaces;

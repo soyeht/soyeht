@@ -10,6 +10,6 @@ pub enum SourceRead {
     RateLimited { retry_after_sec: u32 },
 }
 
-pub trait UsageSourcePort {
+pub trait UsageSourcePort: Send {
     fn read(&mut self, provider: UsageProvider, source: UsageSource) -> SourceRead;
 }

@@ -16,6 +16,10 @@ pub enum Error {
     StaleVersion(String),
     DependencyCycle(String),
     DependencyOpen(String),
+    RateLimited {
+        message: String,
+        retry_after_sec: u32,
+    },
     IdempotencyConflict(String),
     HarnessUnavailable(String),
     NeedsLogin(String),
@@ -32,6 +36,7 @@ pub enum Error {
     Storage(soyeht_store::Error),
     Io(io::Error),
     Acp(soyeht_acp::Error),
+    Usage(soyeht_usage::Error),
     Supervisor(soyeht_ptyd::Error),
     Protocol(soyeht_protocol::Error),
     WebSocket(tokio_tungstenite::tungstenite::Error),
@@ -89,6 +94,13 @@ constructor!(stale_engine_generation, StaleEngineGeneration);
 constructor!(worktree_unavailable, WorktreeUnavailable);
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
+
+pub fn rate_limited(message: impl Into<String>, retry_after_sec: u32) -> Error {
+    Error::RateLimited {
+        message: message.into(),
+        retry_after_sec,
+    }
+}
 
 pub fn required<T>(value: Option<T>, message: &'static str) -> Result<T> {
     value.ok_or_else(|| invalid(message))
@@ -203,6 +215,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::StaleVersion(_) => ErrorKind::StaleVersion,
         Error::DependencyCycle(_) => ErrorKind::DependencyCycle,
         Error::DependencyOpen(_) => ErrorKind::DependencyOpen,
+        Error::RateLimited { .. } => ErrorKind::RateLimited,
         Error::IdempotencyConflict(_) => ErrorKind::IdempotencyConflict,
         Error::HarnessUnavailable(_) | Error::Acp(_) => ErrorKind::HarnessUnavailable,
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
@@ -220,6 +233,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::Utf8(_)
         | Error::Address(_)
         | Error::Join(_)
+        | Error::Usage(_)
         | Error::EngineStatePoisoned
         | Error::AlreadyRunning
         | Error::SocketPathNotSocket
@@ -268,6 +282,7 @@ fn message(error: &Error) -> String {
         | Error::WorktreeUnavailable(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
+        Error::RateLimited { message, .. } => message.clone(),
         Error::Storage(soyeht_store::Error::IdempotencyConflict) => {
             "The idempotency key has different parameters".into()
         }
@@ -278,6 +293,7 @@ fn message(error: &Error) -> String {
         Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => "Storage is full".into(),
         Error::Io(_) => "I/O operation failed".into(),
         Error::Acp(error) => error.to_string(),
+        Error::Usage(_) => "Usage operation failed".into(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
         Error::Supervisor(_) => "Supervisor unavailable".into(),
         Error::Protocol(_) => "Protocol operation failed".into(),
@@ -310,13 +326,19 @@ pub fn wire(error: Error) -> RpcError {
         return error;
     }
     let kind = kind(&error);
+    let retry_after_sec = match &error {
+        Error::RateLimited {
+            retry_after_sec, ..
+        } => Some(*retry_after_sec),
+        _ => None,
+    };
     RpcError {
         code: error_code(&kind),
         message: message(&error),
         data: ErrorData {
             kind,
             detail: None,
-            retry_after_sec: None,
+            retry_after_sec,
         },
     }
 }
@@ -333,6 +355,7 @@ impl std::error::Error for Error {
             Self::Storage(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::Acp(error) => Some(error),
+            Self::Usage(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
             Self::WebSocket(error) => Some(error),
@@ -359,6 +382,12 @@ impl From<io::Error> for Error {
 impl From<soyeht_acp::Error> for Error {
     fn from(error: soyeht_acp::Error) -> Self {
         Self::Acp(error)
+    }
+}
+
+impl From<soyeht_usage::Error> for Error {
+    fn from(error: soyeht_usage::Error) -> Self {
+        Self::Usage(error)
     }
 }
 
@@ -428,6 +457,9 @@ mod tests {
             wire(dependency_open("open")).data.kind,
             ErrorKind::DependencyOpen
         );
+        let limited = wire(rate_limited("wait", 17));
+        assert_eq!(limited.data.kind, ErrorKind::RateLimited);
+        assert_eq!(limited.data.retry_after_sec, Some(17));
         assert_eq!(
             wire(Error::Storage(soyeht_store::Error::TaskReservationConflict))
                 .data

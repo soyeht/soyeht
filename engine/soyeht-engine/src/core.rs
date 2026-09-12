@@ -33,6 +33,7 @@ pub struct Core {
     pub clock: Arc<dyn Clock>,
     pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
     pub worktrees: Box<dyn crate::tasks::worktree::WorktreePort>,
+    pub usage: crate::usage::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
@@ -48,6 +49,7 @@ impl Core {
         if generation > u32::MAX as u64 {
             return Err(errors::internal("Engine generation exhausted"));
         }
+        let usage_readings = store.usage_readings().map_err(errors::storage)?;
         let mut core = Self {
             store,
             directory: directory.into(),
@@ -56,6 +58,10 @@ impl Core {
             clock: Arc::new(SystemClock),
             revision: Box::new(crate::tasks::revision::GitRevision),
             worktrees: Box::new(crate::tasks::worktree::CommandWorktree::default()),
+            usage: crate::usage::Service::restore(
+                usage_readings,
+                Box::new(crate::usage::SystemSources::default()),
+            ),
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),

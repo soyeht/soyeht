@@ -288,6 +288,8 @@ impl Core {
             "task.show" | "task.list" | "task.comments" => {
                 self.task_query(connection, method, params)?
             }
+            "usage.list" => self.usage_list()?,
+            "usage.refresh" => self.usage_refresh(connection, params)?,
             "task.dispatch" => self.task_dispatch(connection, params)?,
             "task.next" => self.task_next(connection, params)?,
             "task.worktree.clean" => self.task_worktree_clean(connection, params)?,
@@ -469,5 +471,6 @@ pub fn capabilities() -> Vec<String> {
         "terminal-replay".into(),
         "device-pairing".into(),
         "workspace-tasks".into(),
+        "subscription-usage".into(),
     ]
 }

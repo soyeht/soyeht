@@ -800,6 +800,7 @@ dependencies = [
  "soyeht-protocol",
  "soyeht-ptyd",
  "soyeht-store",
+ "soyeht-usage",
  "tokio",
  "tokio-tungstenite",
  "uuid",
