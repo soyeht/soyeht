@@ -17,6 +17,18 @@ struct SoyehtMacApp: App {
     }
     .defaultSize(width: 1440, height: 900)
     .windowStyle(.hiddenTitleBar)
-    .commands { CommandGroup(replacing: .newItem) {} }
+    .commands {
+      CommandGroup(replacing: .newItem) {}
+      CommandGroup(replacing: .appSettings) {
+        Button("Preferences…") {
+          NotificationCenter.default.post(name: .showSoyehtPreferences, object: nil)
+        }
+        .keyboardShortcut(",", modifiers: .command)
+      }
+    }
   }
+}
+
+extension Notification.Name {
+  static let showSoyehtPreferences = Notification.Name("showSoyehtPreferences")
 }

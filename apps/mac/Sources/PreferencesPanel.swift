@@ -1,0 +1,330 @@
+import SoyehtClient
+import SoyehtProtocol
+import SwiftUI
+
+struct PreferencesPanel: View {
+  @Bindable var client: EngineClient
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      PreferencesSidebar(client: client)
+      PreferencesHarnesses(client: client)
+    }
+    .padding(MacTheme.Space.x10)
+    .frame(width: 1080, height: 700)
+    .foregroundStyle(MacTheme.ink)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+    .onAppear { refreshCatalogues() }
+    .onChange(of: client.harnesses.map(\.id)) { _, _ in refreshCatalogues() }
+  }
+
+  private func refreshCatalogues() {
+    client.refreshHarnesses()
+    for harness in client.harnesses where harness.available {
+      client.refreshCatalogue(harness: harness.id)
+    }
+  }
+}
+
+private struct PreferencesSidebar: View {
+  @Bindable var client: EngineClient
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      Text("Preferences")
+        .font(MacTheme.chrome(16, weight: .bold))
+        .padding(.horizontal, MacTheme.Space.x4)
+      Color.clear.frame(height: MacTheme.Space.x8)
+      sidebarRow("General", icon: "gearshape")
+      sidebarRow("Appearance", icon: "paintpalette")
+      sidebarRow("Harnesses", icon: "cpu", selected: true)
+      sidebarRow("Engine", icon: "memorychip")
+      sidebarRow("Phone", icon: "iphone")
+      sidebarRow("Tasks & loops", icon: "list.bullet.clipboard")
+      sidebarRow("Shortcuts", icon: "keyboard")
+      Spacer()
+      VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+        Text("Soyeht \(appVersion) · Dev profile")
+        Text(client.connected ? "Engine connected · ACP v1" : "Engine reconnecting · ACP v1")
+      }
+      .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))
+      .foregroundStyle(MacTheme.muted)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .padding(.vertical, MacTheme.Space.x8)
+    }
+    .padding(.vertical, MacTheme.Space.x12)
+    .padding(.horizontal, MacTheme.Space.x8)
+    .frame(width: 220)
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+  }
+
+  private func sidebarRow(_ title: String, icon: String, selected: Bool = false) -> some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      Image(systemName: icon)
+        .font(.system(size: 13, weight: .semibold))
+        .frame(width: 15, height: 15)
+        .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
+      Text(title)
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: selected ? .bold : .semibold))
+        .foregroundStyle(selected ? MacTheme.ink : MacTheme.secondary)
+      Spacer()
+    }
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: 34)
+    .background(
+      selected ? MacTheme.well : Color.clear,
+      in: RoundedRectangle(cornerRadius: MacTheme.Radius.compact)
+    )
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  private var appVersion: String {
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Dev"
+  }
+}
+
+private struct PreferencesHarnesses: View {
+  @Bindable var client: EngineClient
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
+      header
+      Text(
+        "Each harness runs as an engine subprocess and communicates over ACP. A raw terminal remains available for every command-line agent."
+      )
+      .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+      .foregroundStyle(MacTheme.secondary)
+      .lineSpacing(4)
+      ScrollView {
+        VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+          ForEach(client.harnesses, id: \.id) { harness in
+            HarnessPreferenceRow(
+              harness: harness, catalogue: client.agentCatalogues[harness.id],
+              isDefault: harness.id == client.harnesses.first(where: \.available)?.id)
+          }
+          if client.harnesses.isEmpty {
+            EmptyHarnessRow(connected: client.connected)
+          }
+          Text("RAW TERMINAL")
+            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+            .tracking(1)
+            .foregroundStyle(MacTheme.muted)
+            .padding(.top, MacTheme.Space.x2)
+          RawTerminalPreferenceRow()
+        }
+        .padding(.horizontal, MacTheme.Space.x4)
+        .padding(.vertical, MacTheme.Space.x4)
+      }
+    }
+    .padding(.vertical, MacTheme.Space.x16)
+    .padding(.horizontal, 22)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+  }
+
+  private var header: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      Text("Harnesses").font(MacTheme.chrome(18, weight: .bold))
+      Spacer()
+      PreferencePreviewAction(icon: "arrow.down.to.line", title: "Install from ACP registry")
+    }
+  }
+}
+
+private struct HarnessPreferenceRow: View {
+  let harness: HarnessInfo
+  let catalogue: AgentCatalogue?
+  let isDefault: Bool
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x14) {
+      identity
+      HStack(spacing: MacTheme.Space.x8) {
+        PreferenceChip(icon: "cpu", text: modelLabel)
+        PreferenceChip(icon: "gauge.with.dots.needle.50percent", text: effortLabel)
+        PreferenceChip(icon: "checkmark.shield", text: "Ask every time")
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      status
+      Image(systemName: "ellipsis")
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(MacTheme.muted)
+        .accessibilityHidden(true)
+    }
+    .padding(.horizontal, MacTheme.Space.x16)
+    .frame(height: 58)
+    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+  }
+
+  private var identity: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+      HStack(spacing: MacTheme.Space.x8) {
+        Text(harness.name)
+          .font(MacTheme.chrome(14, weight: .bold))
+          .lineLimit(1)
+        if isDefault {
+          Text("default")
+            .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+            .foregroundStyle(MacTheme.secondary)
+            .padding(.horizontal, MacTheme.Space.x7)
+            .padding(.vertical, 1)
+            .background(MacTheme.well, in: Capsule())
+        }
+      }
+      Text(versionLabel)
+        .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))
+        .foregroundStyle(MacTheme.muted)
+        .lineLimit(1)
+    }
+    .frame(width: 160, alignment: .leading)
+  }
+
+  private var status: some View {
+    HStack(spacing: MacTheme.Space.x6) {
+      Circle().fill(statusColor).frame(width: 7, height: 7)
+      Text(statusLabel)
+        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+        .foregroundStyle(MacTheme.secondary)
+    }
+    .frame(width: 118, alignment: .leading)
+  }
+
+  private var versionLabel: String {
+    guard let version = harness.version, !version.isEmpty else {
+      return "Version unavailable · ACP"
+    }
+    return "\(version) · ACP"
+  }
+
+  private var modelLabel: String {
+    if let option = options.first(where: { $0.category == "model" }),
+      case .v0(let value) = option.currentValue
+    {
+      return option.options.first(where: { $0.value == value })?.name ?? value
+    }
+    return catalogue?.models.first?.name ?? "Agent default"
+  }
+
+  private var effortLabel: String {
+    guard
+      let option = options.first(where: {
+        $0.category == "thought_level" || $0.id == "effort"
+      }), case .v0(let value) = option.currentValue
+    else { return "Default effort" }
+    return option.options.first(where: { $0.value == value })?.name ?? value.capitalized
+  }
+
+  private var options: [ConfigOption] { catalogue?.options ?? harness.options }
+
+  private var statusLabel: String {
+    if !harness.available { return "not installed" }
+    if harness.capabilities.contains(where: { $0.result == .unauthenticated }) { return "sign in" }
+    if harness.capabilities.contains(where: { $0.result == .inconclusive }) { return "check setup" }
+    return "ready"
+  }
+
+  private var statusColor: Color {
+    if !harness.available { return MacTheme.muted }
+    return statusLabel == "ready" ? MacTheme.success : MacTheme.warning
+  }
+}
+
+private struct EmptyHarnessRow: View {
+  let connected: Bool
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      ProgressView().controlSize(.small)
+      Text(connected ? "Loading harnesses…" : "Waiting for the engine…")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .foregroundStyle(MacTheme.secondary)
+      Spacer()
+    }
+    .padding(.horizontal, MacTheme.Space.x16)
+    .frame(height: 58)
+    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+  }
+}
+
+private struct RawTerminalPreferenceRow: View {
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x14) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+        Text("Default shell").font(MacTheme.chrome(14, weight: .bold))
+        Text("\(shell) · JetBrains Mono 13")
+          .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))
+          .foregroundStyle(MacTheme.muted)
+      }
+      .frame(width: 200, alignment: .leading)
+      PreferenceChip(icon: "waveform.path.ecg", text: "Detect agent state heuristically")
+      Spacer()
+      Text("Chrome font: Nunito")
+        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+        .foregroundStyle(MacTheme.secondary)
+      PreferenceToggle(isOn: true)
+    }
+    .padding(.horizontal, MacTheme.Space.x16)
+    .frame(height: 58)
+    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+  }
+
+  private var shell: String { ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh" }
+}
+
+private struct PreferenceChip: View {
+  let icon: String
+  let text: String
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x5) {
+      Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+      Text(text)
+        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+        .lineLimit(1)
+      Image(systemName: "chevron.down")
+        .font(.system(size: 8, weight: .bold))
+        .foregroundStyle(MacTheme.muted)
+    }
+    .foregroundStyle(MacTheme.secondary)
+    .padding(.horizontal, MacTheme.Space.x8)
+    .frame(height: 26)
+    .neoRaised(radius: MacTheme.Radius.pill, elevation: .chip)
+    .accessibilityElement(children: .combine)
+  }
+}
+
+private struct PreferenceToggle: View {
+  let isOn: Bool
+
+  var body: some View {
+    HStack {
+      if isOn { Spacer(minLength: 0) }
+      Circle().fill(MacTheme.onAccent).frame(width: 18, height: 18)
+        .neoRaised(radius: MacTheme.Radius.pill, elevation: .toggle)
+      if !isOn { Spacer(minLength: 0) }
+    }
+    .padding(MacTheme.Space.x2)
+    .frame(width: 40, height: 22)
+    .background(isOn ? MacTheme.accent : MacTheme.well, in: Capsule())
+    .accessibilityHidden(true)
+  }
+}
+
+private struct PreferencePreviewAction: View {
+  let icon: String
+  let title: String
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x6) {
+      Image(systemName: icon).font(.system(size: 10, weight: .bold))
+      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+    }
+    .foregroundStyle(MacTheme.onAccent)
+    .padding(.horizontal, MacTheme.Space.x14)
+    .frame(height: 28)
+    .neoAccent(radius: MacTheme.Radius.pill)
+    .accessibilityHidden(true)
+  }
+}

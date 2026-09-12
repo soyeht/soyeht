@@ -17,6 +17,7 @@ struct WorkspaceWindow: View {
   @State private var deviceToRevoke: String?
   @State private var surface = WorkspaceSurface.panes
   @State private var taskWorkspaceId: String?
+  @State private var showPreferences = false
   var body: some View {
     VStack(spacing: MacTheme.Space.x16) {
       WorkspaceTopBar(
@@ -78,6 +79,21 @@ struct WorkspaceWindow: View {
           .padding(.bottom, 40)
       }
     }
+    .overlay {
+      if showPreferences {
+        ZStack {
+          Color.clear.contentShape(Rectangle()).onTapGesture { showPreferences = false }
+          PreferencesPanel(client: client)
+            .onTapGesture {}
+            .transition(.scale(scale: 0.98).combined(with: .opacity))
+        }
+        .zIndex(40)
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .showSoyehtPreferences)) { _ in
+      showPreferences = true
+    }
+    .onExitCommand { showPreferences = false }
   }
   private func selectWorkspace(_ workspaceId: String) {
     taskWorkspaceId = workspaceId
