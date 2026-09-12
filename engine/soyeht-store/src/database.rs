@@ -454,6 +454,7 @@ impl Store {
             &tx,
             "SELECT json_object('paneId',pane_id,'config',json(payload)) FROM task_loops ORDER BY pane_id",
         )?;
+        let files = crate::editor::snapshot_files(&tx)?;
         let sections = vec![
             ("workspaces".into(), json!(workspaces)),
             ("panes".into(), json!(panes)),
@@ -461,6 +462,7 @@ impl Store {
             ("requests".into(), json!(requests)),
             ("tasks".into(), json!(tasks)),
             ("loops".into(), json!(loops)),
+            ("files".into(), json!(files)),
             (
                 "attention".into(),
                 json!(rows_json(

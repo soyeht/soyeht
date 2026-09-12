@@ -2,7 +2,7 @@
 
 use crate::database::{Change, Error, Result, Store};
 use rusqlite::{OptionalExtension, params};
-use soyeht_protocol::{EditorLanguage, FileAuthor, FileVersion};
+use soyeht_protocol::{EditorLanguage, FileAuthor, FileDocument, FileVersion};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EditorFile {
@@ -76,7 +76,7 @@ impl Store {
 
     pub fn editor_files(&self) -> Result<Vec<EditorFile>> {
         let mut statement = self.connection.prepare(
-            "SELECT file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms FROM editor_files ORDER BY workspace_id,relative_path",
+            "SELECT e.file_id,e.pane_id,e.workspace_id,e.relative_path,e.language,e.revision,e.disk_revision,e.disk_text,e.draft_text,e.draft_author,e.conflict_text,e.watching,e.updated_ms FROM editor_files e JOIN panes p ON p.id=e.pane_id WHERE p.closed=0 ORDER BY e.workspace_id,e.relative_path",
         )?;
         let rows = statement.query_map([], decode_file)?;
         rows.map(|row| validate_file(row?)).collect()
@@ -126,6 +126,32 @@ impl Store {
             .then(|| items.last().map(|item| item.version_id.clone()))
             .flatten();
         Ok(FileHistoryPage { items, next_cursor })
+    }
+}
+
+pub(crate) fn snapshot_files(transaction: &rusqlite::Transaction<'_>) -> Result<Vec<FileDocument>> {
+    let mut statement = transaction.prepare(
+        "SELECT e.file_id,e.pane_id,e.workspace_id,e.relative_path,e.language,e.revision,e.disk_revision,e.disk_text,e.draft_text,e.draft_author,e.conflict_text,e.watching,e.updated_ms FROM editor_files e JOIN panes p ON p.id=e.pane_id WHERE p.closed=0 ORDER BY e.workspace_id,e.relative_path",
+    )?;
+    let rows = statement.query_map([], decode_file)?;
+    rows.map(|row| validate_file(row?).map(document)).collect()
+}
+
+pub fn document(file: EditorFile) -> FileDocument {
+    let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
+    FileDocument {
+        file_id: file.file_id,
+        pane_id: file.pane_id,
+        workspace_id: file.workspace_id,
+        path: file.relative_path,
+        language: file.language,
+        revision: file.revision.to_string(),
+        disk_revision: file.disk_revision.to_string(),
+        line_count: text.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1,
+        byte_count: text.len().to_string(),
+        dirty: file.draft_text.is_some(),
+        conflicted: file.conflict_text.is_some(),
+        watching: file.watching,
     }
 }
 

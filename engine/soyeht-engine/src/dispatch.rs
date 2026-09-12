@@ -290,6 +290,8 @@ impl Core {
             }
             "usage.list" => self.usage_list()?,
             "usage.refresh" => self.usage_refresh(connection, params)?,
+            "file.open" => self.file_open(connection, params)?,
+            "file.read" => self.file_read(params)?,
             "task.dispatch" => self.task_dispatch(connection, params)?,
             "task.next" => self.task_next(connection, params)?,
             "task.worktree.clean" => self.task_worktree_clean(connection, params)?,

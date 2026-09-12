@@ -34,6 +34,7 @@ pub struct Core {
     pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
     pub worktrees: Box<dyn crate::tasks::worktree::WorktreePort>,
     pub usage: crate::usage::Service,
+    pub editor: crate::editor::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
@@ -50,6 +51,7 @@ impl Core {
             return Err(errors::internal("Engine generation exhausted"));
         }
         let usage_readings = store.usage_readings().map_err(errors::storage)?;
+        let editor_files = store.editor_files().map_err(errors::storage)?;
         let mut core = Self {
             store,
             directory: directory.into(),
@@ -62,6 +64,7 @@ impl Core {
                 usage_readings,
                 Box::new(crate::usage::SystemSources::default()),
             ),
+            editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
@@ -83,6 +86,9 @@ impl Core {
             )?;
             core.panes
                 .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
+        }
+        for file in editor_files {
+            core.editor.restore(file);
         }
         // The supervisor can start after the engine under the service manager.
         // No process is declared dead until its registry has been reconciled.

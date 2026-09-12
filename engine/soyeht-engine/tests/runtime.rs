@@ -14,7 +14,7 @@ use soyeht_store::{
 };
 use std::{
     fs,
-    os::unix::{fs::PermissionsExt, net::UnixStream},
+    os::unix::{fs::PermissionsExt, fs::symlink, net::UnixStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
     thread,
@@ -1471,6 +1471,114 @@ fn agent_turns_and_permission_survive_engine_adoption() {
     );
     exercise_yolo_and_form(&mut first, &pane);
     exercise_cancel_and_tools(&rig, &mut first, &pane);
+}
+
+#[test]
+fn editor_open_owns_one_bounded_workspace_file_and_restores_it_in_the_snapshot() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("editor-repository");
+    fs::create_dir_all(repository.join("src")).unwrap();
+    fs::write(
+        repository.join("src/main.rs"),
+        "fn main() {\n    println!(\"ready\");\n}\n",
+    )
+    .unwrap();
+    fs::write(repository.join("src/lib.rs"), "pub fn ready() {}\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Editor","path":repository,"idempotencyKey":"editor-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"src/main.rs","line":1,"column":4,"idempotencyKey":"open-main"}),
+    );
+    assert_eq!(opened["pane"]["mode"], "editor");
+    assert_eq!(opened["pane"]["pid"], Value::Null);
+    assert_eq!(opened["file"]["path"], "src/main.rs");
+    assert_eq!(opened["viewport"]["fromLine"], 1);
+    assert_eq!(opened["viewport"]["lines"][0]["line"], 1);
+    let file_id = opened["file"]["fileId"].as_str().unwrap();
+    let pane_id = opened["pane"]["paneId"].as_str().unwrap();
+    let read = client.call(
+        "file.read",
+        json!({"fileId":file_id,"revision":"1","source":"buffer","fromLine":0,"lineCount":1}),
+    );
+    assert_eq!(read["lines"][0]["text"], "fn main() {");
+    let invalid_version = client.request(
+        "file.read",
+        json!({"fileId":file_id,"source":"disk","versionId":"unused","fromLine":0,"lineCount":1}),
+    );
+    assert_eq!(invalid_version["error"]["data"]["kind"], "invalid_params");
+    let second = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"src/main.rs","idempotencyKey":"open-main-again"}),
+    );
+    assert_eq!(second["file"]["fileId"], file_id);
+    assert_eq!(second["pane"]["paneId"], pane_id);
+    let files = client.section("files");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["fileId"], file_id);
+    let editor_pane = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"editor","path":"src/lib.rs","idempotencyKey":"create-editor-pane"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(client.pane(&editor_pane)["mode"], "editor");
+    assert_eq!(client.pane(&editor_pane)["pid"], Value::Null);
+
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let files = restored.section("files");
+    assert_eq!(files.len(), 2);
+    let read = restored.call(
+        "file.read",
+        json!({"fileId":file_id,"fromLine":1,"lineCount":1}),
+    );
+    assert_eq!(read["lines"][0]["text"], "    println!(\"ready\");");
+}
+
+#[test]
+fn editor_open_rejects_absolute_parent_symlink_escape_and_oversized_files() {
+    let rig = Rig::new();
+    let repository = rig.path.join("editor-boundary");
+    let outside = rig.path.join("outside.rs");
+    fs::create_dir_all(&repository).unwrap();
+    fs::write(&outside, "secret\n").unwrap();
+    symlink(&outside, repository.join("link.rs")).unwrap();
+    let large = fs::File::create(repository.join("large.rs")).unwrap();
+    large
+        .set_len(soyeht_protocol::limits::EDITOR_HISTORY_BYTES as u64 + 1)
+        .unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Boundary","path":repository,"idempotencyKey":"boundary-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for (index, path) in [
+        outside.to_str().unwrap(),
+        "../outside.rs",
+        "link.rs",
+        "large.rs",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let response = client.request(
+            "file.open",
+            json!({"workspaceId":workspace,"path":path,"idempotencyKey":format!("refused-{index}")}),
+        );
+        assert_eq!(response["error"]["data"]["kind"], "invalid_params");
+    }
 }
 
 impl Client {

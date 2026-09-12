@@ -4,6 +4,7 @@ pub mod agents;
 pub mod auth;
 pub mod core;
 pub mod dispatch;
+pub mod editor;
 pub mod errors;
 pub mod input;
 pub mod model;

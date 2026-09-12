@@ -86,6 +86,9 @@ fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::s
 
 impl Core {
     pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
+        if params["mode"] == "editor" {
+            return self.editor_pane_create(connection, params);
+        }
         let defaults = pane_defaults(&self.store)?;
         let agent_mode = params["mode"] == "agent";
         let agent = new_agent(&self.directory, params)?;
@@ -255,6 +258,7 @@ impl Core {
             running.screen.recording = saved.pane.record;
             running.stored = saved.clone();
             if saved.closed {
+                self.editor.remove_pane(id);
                 self.finish_close(id)?;
             }
             if method == "pane.resize"

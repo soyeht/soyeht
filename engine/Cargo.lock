@@ -867,6 +867,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "soyeht-acp",
+ "soyeht-editor",
  "soyeht-protocol",
  "soyeht-ptyd",
  "soyeht-store",

@@ -36,6 +36,7 @@ pub enum Error {
     Storage(soyeht_store::Error),
     Io(io::Error),
     Acp(soyeht_acp::Error),
+    Editor(soyeht_editor::Error),
     Usage(soyeht_usage::Error),
     Supervisor(soyeht_ptyd::Error),
     Protocol(soyeht_protocol::Error),
@@ -218,6 +219,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::RateLimited { .. } => ErrorKind::RateLimited,
         Error::IdempotencyConflict(_) => ErrorKind::IdempotencyConflict,
         Error::HarnessUnavailable(_) | Error::Acp(_) => ErrorKind::HarnessUnavailable,
+        Error::Editor(_) => ErrorKind::InvalidParams,
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
         Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
@@ -253,6 +255,12 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => ErrorKind::DiskFull,
         Error::Io(_) => ErrorKind::InternalError,
         Error::Supervisor(error) => supervisor_kind(error),
+    }
+}
+
+impl From<soyeht_editor::Error> for Error {
+    fn from(error: soyeht_editor::Error) -> Self {
+        Self::Editor(error)
     }
 }
 
@@ -293,6 +301,7 @@ fn message(error: &Error) -> String {
         Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => "Storage is full".into(),
         Error::Io(_) => "I/O operation failed".into(),
         Error::Acp(error) => error.to_string(),
+        Error::Editor(error) => error.to_string(),
         Error::Usage(_) => "Usage operation failed".into(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
         Error::Supervisor(_) => "Supervisor unavailable".into(),
@@ -355,6 +364,7 @@ impl std::error::Error for Error {
             Self::Storage(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::Acp(error) => Some(error),
+            Self::Editor(error) => Some(error),
             Self::Usage(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
