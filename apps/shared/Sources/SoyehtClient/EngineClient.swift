@@ -16,6 +16,7 @@ public final class EngineClient {
   public internal(set) var attentionByWorkspace: [String: [AttentionItem]] = [:]
   public internal(set) var paneLoops: [String: LoopConfig] = [:]
   public internal(set) var usageReadings: [UsageReading] = []
+  public internal(set) var editorFiles: [String: EditorFileView] = [:]
   public private(set) var connected = false
   public private(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
@@ -24,6 +25,7 @@ public final class EngineClient {
   public private(set) var selectedPaneId: String?
   public private(set) var gapText: String?
   public private(set) var pairCode: DevicePairStartResult?
+  public private(set) var connectionActor: Actor?
   @ObservationIgnored public var terminalOutput: ((Data, Bool) -> Void)?
   @ObservationIgnored private var wire: Wire?
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
@@ -95,8 +97,10 @@ public final class EngineClient {
       attentionByWorkspace = [:]
       paneLoops = [:]
       usageReadings = []
+      editorFiles = [:]
       terminalOutput?(Data(), true)
     }
+    connectionActor = nil
     position = nil
     wire?.close()
     wire = nil
@@ -145,6 +149,8 @@ public final class EngineClient {
     else {
       throw ClientFailure.invalidFrame
     }
+    connectionActor = Actor(
+      role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
     _ = try await request("state.snapshot", .object([:]))
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
     try await loadUsage()
@@ -153,10 +159,10 @@ public final class EngineClient {
     connectionText = "Dev profile · connected"
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
     if let pane = selectedPane {
-      if pane.mode == .terminal {
-        try await subscribe(pane.paneId)
-      } else {
-        try await loadAgentPane(pane.paneId, replacing: true)
+      switch pane.mode {
+      case .terminal: try await subscribe(pane.paneId)
+      case .agent: try await loadAgentPane(pane.paneId, replacing: true)
+      case .editor: try await loadEditorPane(pane.paneId)
       }
     }
     await reader.value
@@ -263,8 +269,7 @@ public final class EngineClient {
     case .stateSnapshotPart: try snapshot.append(params.decoded(StateSnapshotPartEvent.self))
     case .paneCreated, .paneUpdated, .paneRenamed:
       let pane = try params["pane"].decoded(Pane.self)
-      panes.removeAll { $0.paneId == pane.paneId }
-      panes.append(pane)
+      upsertPane(pane)
       if pane.mode == .agent {
         var view = agentPanes[pane.paneId] ?? AgentPaneView()
         view.queuePaused = pane.agent?.queuePaused ?? false
@@ -274,6 +279,7 @@ public final class EngineClient {
       let id = params["paneId"].string
       panes.removeAll { $0.paneId == id }
       if let id { agentPanes.removeValue(forKey: id) }
+      if let id { discardEditorPane(id) }
       if selectedPaneId == id { select(panes.first?.paneId) }
     case .paneStateChanged:
       let event = try params.decoded(PaneStateChangedEvent.self)
@@ -319,7 +325,7 @@ public final class EngineClient {
     case .usageChanged: try applyUsageEvent(params)
     case .fileChangedOnDisk, .fileSaved, .fileConflict, .lspDiagnostics,
       .editorAgentCursor, .editorReviewRequested:
-      break
+      try applyEditorEvent(eventName, params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
       .paneConfigChanged:
@@ -355,6 +361,7 @@ public final class EngineClient {
     self.workspaces = workspaces
     try applyAgentSnapshot(sections, panes: panes)
     try applyTaskSnapshot(sections, panes: panes)
+    try applyEditorSnapshot(sections, panes: panes)
     pairRequests = requests
     cursor = UInt64(result.cursor)!
     if !panes.contains(where: { $0.paneId == selectedPaneId }) {
@@ -379,14 +386,18 @@ public final class EngineClient {
         if self.selectedPaneId == paneId,
           let pane = self.panes.first(where: { $0.paneId == paneId })
         {
-          if pane.mode == .terminal {
-            try await self.subscribe(paneId)
-          } else {
-            try await self.loadAgentPane(paneId, replacing: true)
+          switch pane.mode {
+          case .terminal: try await self.subscribe(paneId)
+          case .agent: try await self.loadAgentPane(paneId, replacing: true)
+          case .editor: try await self.loadEditorPane(paneId)
           }
         }
       }
     }
+  }
+  func upsertPane(_ pane: Pane) {
+    panes.removeAll { $0.paneId == pane.paneId }
+    panes.append(pane)
   }
   private func subscribe(_ pane: String) async throws {
     _ = try await request(

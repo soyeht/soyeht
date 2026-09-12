@@ -2,9 +2,10 @@
   import Foundation
   import Testing
   @testable import SoyehtClient
+  import SoyehtProtocol
 
   /// Runs against disposable daemons; never opens the installed Dev socket.
-  @MainActor @Test func nativeClientReconnectsAndDrivesItsOwnShell() async throws {
+  @MainActor @Test func nativeClientReconnectsAndDrivesItsOwnShellAndEditor() async throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent()
@@ -97,6 +98,25 @@
     client.stop()
     client.start()
     try await until { client.connected && client.selectedPane?.pid == pid }
+    let source = directory.appendingPathComponent("sample.swift")
+    try "let value = 1\n".write(to: source, atomically: true, encoding: .utf8)
+    let workspaceId = try #require(client.selectedPane?.workspaceId)
+    let opened = try await client.openEditorFile(workspaceId: workspaceId, path: "sample.swift")
+    #expect(opened.viewport.lines.first?.text == "let value = 1")
+    _ = try await client.writeEditorFile(
+      fileId: opened.file.fileId, baseRevision: opened.file.revision,
+      edits: [
+        TextEdit(
+          range: TextRange(
+            start: TextPosition(line: 0, column: 12),
+            end: TextPosition(line: 0, column: 13)),
+          text: "2")
+      ])
+    let edited = try await client.readEditorFile(
+      fileId: opened.file.fileId, fromLine: 0, lineCount: 1)
+    #expect(edited.lines.first?.text == "let value = 2")
+    client.closePane(opened.pane.paneId)
+    try await until { !client.panes.contains { $0.paneId == opened.pane.paneId } }
     client.closePane(paneId)
     try await until { client.panes.isEmpty }
   }
