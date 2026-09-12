@@ -206,6 +206,18 @@ impl Service {
         }
     }
 
+    pub fn project_disk_text(&self, file: &ProjectFile) -> Result<Option<String>> {
+        match self.files.read_text(
+            &file.canonical,
+            soyeht_protocol::limits::EDITOR_HISTORY_BYTES,
+        ) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => Ok(None),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(errors::io(error)),
+        }
+    }
+
     pub fn current_disk(&self, workspace_root: &Path, file: &EditorFile) -> Result<String> {
         let path = self.resolve(workspace_root, &file.relative_path)?;
         self.read_disk(&path.canonical)
@@ -256,6 +268,10 @@ impl Service {
             .get_mut(file_id)
             .map(|item| &mut item.file)
             .ok_or_else(|| errors::not_found("Open file not found"))
+    }
+
+    pub fn is_open(&self, file_id: &str) -> bool {
+        self.open.contains_key(file_id)
     }
 
     pub fn prepare_edit(
@@ -496,7 +512,10 @@ pub fn language(path: &Path) -> EditorLanguage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
 
     #[derive(Default)]
     struct FakeFiles {
@@ -539,6 +558,49 @@ mod tests {
         }
     }
 
+    struct SwappingFiles {
+        root: PathBuf,
+        target: PathBuf,
+        outside: PathBuf,
+        target_resolutions: AtomicUsize,
+        wrote: Arc<AtomicBool>,
+    }
+
+    impl FileSystemPort for SwappingFiles {
+        fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+            if path == self.root {
+                return Ok(self.root.clone());
+            }
+            if path == self.root.join("note.txt") {
+                let call = self.target_resolutions.fetch_add(1, Ordering::SeqCst);
+                return Ok(if call == 0 {
+                    self.target.clone()
+                } else {
+                    self.outside.clone()
+                });
+            }
+            Err(io::Error::new(io::ErrorKind::NotFound, "fixture path"))
+        }
+
+        fn project_files(&self, _root: &Path) -> io::Result<Vec<ProjectFile>> {
+            Ok(Vec::new())
+        }
+
+        fn read_text(&self, _path: &Path, _limit: usize) -> io::Result<String> {
+            Ok("before".into())
+        }
+
+        fn write_text_if_unchanged(
+            &self,
+            _path: &Path,
+            _expected: &str,
+            _text: &str,
+        ) -> io::Result<bool> {
+            self.wrote.store(true, Ordering::SeqCst);
+            Ok(true)
+        }
+    }
+
     #[test]
     fn resolver_rejects_absolute_parent_and_symlink_escape_before_opening() {
         let root = PathBuf::from("/repo");
@@ -568,6 +630,38 @@ mod tests {
             language(Path::new("notes.unknown")),
             EditorLanguage::PlainText
         );
+    }
+
+    #[test]
+    fn conditional_write_re_resolves_and_rejects_a_swapped_symlink_target() {
+        let root = PathBuf::from("/repo");
+        let wrote = Arc::new(AtomicBool::new(false));
+        let service = Service::new(Box::new(SwappingFiles {
+            root: root.clone(),
+            target: root.join("note.txt"),
+            outside: PathBuf::from("/outside/secret.txt"),
+            target_resolutions: AtomicUsize::new(0),
+            wrote: wrote.clone(),
+        }));
+        let file = EditorFile {
+            file_id: "file-1".into(),
+            pane_id: None,
+            workspace_id: "workspace-1".into(),
+            relative_path: "note.txt".into(),
+            language: EditorLanguage::PlainText,
+            revision: 0,
+            disk_revision: 0,
+            disk_text: "before".into(),
+            draft_text: None,
+            draft_author: None,
+            conflict_text: None,
+            watching: false,
+            updated_ms: 0,
+        };
+
+        assert_eq!(service.current_disk(&root, &file).unwrap(), "before");
+        assert!(service.save_disk(&root, &file, "before", "after").is_err());
+        assert!(!wrote.load(Ordering::SeqCst));
     }
 
     #[test]

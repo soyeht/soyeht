@@ -278,7 +278,7 @@ impl Core {
         self.publish(&mutation.events)
     }
 
-    fn file_author(&self, connection: &str) -> Result<FileAuthor> {
+    pub(super) fn file_author(&self, connection: &str) -> Result<FileAuthor> {
         let actor = self
             .clients
             .get(connection)
@@ -307,13 +307,13 @@ fn revision(value: &str) -> Result<u64> {
         .map_err(|_| errors::invalid("Invalid file revision"))
 }
 
-fn next_revision(current: u64) -> Result<u64> {
+pub(super) fn next_revision(current: u64) -> Result<u64> {
     current
         .checked_add(1)
         .ok_or_else(|| errors::internal("File revision exhausted"))
 }
 
-fn stored_version(
+pub(super) fn stored_version(
     file: &EditorFile,
     content: String,
     author: FileAuthor,
@@ -332,7 +332,7 @@ fn stored_version(
     }
 }
 
-fn filesystem_author() -> FileAuthor {
+pub(super) fn filesystem_author() -> FileAuthor {
     FileAuthor {
         actor: Actor {
             role: Role::HumanLocal,

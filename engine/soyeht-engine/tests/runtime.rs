@@ -2,6 +2,7 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use soyeht_protocol::{Task, frame::Frame};
 use soyeht_ptyd::{
     client::Client as PtyClient,
@@ -9,6 +10,7 @@ use soyeht_ptyd::{
 };
 use soyeht_store::{
     database::Store,
+    editor::{EditorFile, ProjectReplacement, ProjectReplacementItem},
     tasks::{ReviewStage, TaskReviewRecord},
     test_support::DatabaseProbe,
 };
@@ -1519,6 +1521,16 @@ fn editor_open_owns_one_bounded_workspace_file_and_restores_it_in_the_snapshot()
     );
     assert_eq!(second["file"]["fileId"], file_id);
     assert_eq!(second["pane"]["paneId"], pane_id);
+    client.call(
+        "pane.close",
+        json!({"paneId":pane_id,"idempotencyKey":"close-main-editor"}),
+    );
+    let reopened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"src/main.rs","idempotencyKey":"reopen-main"}),
+    );
+    assert_eq!(reopened["file"]["fileId"], file_id);
+    assert_ne!(reopened["pane"]["paneId"], pane_id);
     let files = client.section("files");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0]["fileId"], file_id);
@@ -1632,7 +1644,16 @@ fn project_search_is_ignore_aware_symlink_safe_bounded_and_idempotent() {
     assert_eq!(paths["items"][0]["preview"], "src/main.rs");
     assert_eq!(paths["items"][0]["range"]["start"]["line"], 0);
 
-    let replace = client.request(
+    let (snapshot, _) = client.snapshot();
+    client.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+    let opened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"src/main.rs","idempotencyKey":"search-open-main"}),
+    );
+    let file_id = opened["file"]["fileId"].as_str().unwrap().to_owned();
+    client.messages.clear();
+
+    let replace_params = (
         "file.search",
         json!({
             "workspaceId":workspace,"scope":"content","query":"needle",
@@ -1640,7 +1661,244 @@ fn project_search_is_ignore_aware_symlink_safe_bounded_and_idempotent() {
             "idempotencyKey":"search-replace"
         }),
     );
-    assert_eq!(replace["error"]["data"]["kind"], "invalid_params");
+    let replaced = client.call(replace_params.0, replace_params.1.clone());
+    assert_eq!(replaced["replaced"], 10);
+    assert_eq!(replaced["items"].as_array().unwrap().len(), 10);
+    assert_eq!(
+        client.call(replace_params.0, replace_params.1.clone()),
+        replaced
+    );
+    let mismatch = client.request(
+        replace_params.0,
+        json!({
+            "workspaceId":workspace,"scope":"content","query":"needle",
+            "replacement":"different","caseSensitive":true,"limit":10,
+            "idempotencyKey":"search-replace"
+        }),
+    );
+    assert_eq!(mismatch["error"]["data"]["kind"], "idempotency_conflict");
+    assert_eq!(
+        fs::read_to_string(repository.join("src/main.rs")).unwrap(),
+        "safe\nsafe\n"
+    );
+    let read = client.call(
+        "file.read",
+        json!({"fileId":file_id,"revision":"2","fromLine":0,"lineCount":2}),
+    );
+    assert_eq!(read["lines"][0]["text"], "safe");
+    let history = client.call("file.history", json!({"fileId":file_id,"limit":10}));
+    assert_eq!(history["items"].as_array().unwrap().len(), 1);
+    assert!(client.messages.iter().any(|frame| {
+        let Frame::Json(bytes) = frame else {
+            return false;
+        };
+        let event: Value = serde_json::from_slice(bytes).unwrap();
+        event["method"] == "file.saved" && event["params"]["file"]["fileId"] == file_id
+    }));
+    assert_eq!(
+        fs::read_to_string(repository.join("ignored.txt")).unwrap(),
+        "needle\n"
+    );
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "needle\n");
+}
+
+#[test]
+fn project_replacement_refuses_dirty_files_without_touching_disk() {
+    let rig = Rig::new();
+    let repository = rig.path.join("editor-dirty-replace");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("note.txt");
+    fs::write(&path, "clean\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Dirty","path":repository,"idempotencyKey":"dirty-workspace"}),
+    )["workspace"]["workspaceId"]
+        .clone();
+    let opened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"dirty-open"}),
+    );
+    client.call(
+        "file.write",
+        json!({
+            "fileId":opened["file"]["fileId"],"baseRevision":"1",
+            "author":local_file_author(),
+            "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":5}},"text":"needle"}],
+            "idempotencyKey":"dirty-write"
+        }),
+    );
+    let response = client.request(
+        "file.search",
+        json!({
+            "workspaceId":workspace,"query":"needle","replacement":"safe",
+            "caseSensitive":true,"limit":10,"idempotencyKey":"dirty-replace"
+        }),
+    );
+    assert_eq!(response["error"]["data"]["kind"], "stale_version");
+    assert_eq!(fs::read_to_string(path).unwrap(), "clean\n");
+}
+
+#[test]
+fn project_replacement_recovers_after_disk_write_and_preserves_file_identity() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("editor-replace-recovery");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("note.txt");
+    let before = "needle\n";
+    let after = "safe\n";
+    fs::write(&path, before).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Recovery","path":repository,"idempotencyKey":"recovery-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let params = json!({
+        "workspaceId":workspace,"query":"needle","replacement":"safe",
+        "caseSensitive":true,"limit":10,"idempotencyKey":"recover-replace"
+    });
+    rig.kill_engine();
+    let file_id = stage_interrupted_replacement(&rig, &workspace, &params, before, after);
+    fs::write(&path, after).unwrap();
+    rig.start();
+    let mut restored = rig.client();
+    let result = restored.call("file.search", params.clone());
+    assert_eq!(result["replaced"], 1);
+    assert_eq!(restored.call("file.search", params), result);
+    let opened = restored.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"open-replaced"}),
+    );
+    assert_eq!(opened["file"]["fileId"], file_id);
+    assert_eq!(opened["file"]["revision"], "1");
+    let history = restored.call("file.history", json!({"fileId":file_id,"limit":10}));
+    assert_eq!(history["items"].as_array().unwrap().len(), 1);
+    assert_eq!(history["items"][0]["author"]["name"], "you");
+    rig.kill_engine();
+    let store = Store::open(&rig.path).unwrap();
+    assert!(store.active_file_replacements().unwrap().is_empty());
+}
+
+#[test]
+fn project_replacement_never_overwrites_unexpected_disk_content() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("editor-replace-race");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("note.txt");
+    let before = "needle\n";
+    fs::write(&path, before).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Race","path":repository,"idempotencyKey":"race-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let params = json!({
+        "workspaceId":workspace,"query":"needle","replacement":"safe",
+        "caseSensitive":true,"limit":10,"idempotencyKey":"race-replace"
+    });
+    rig.kill_engine();
+    stage_interrupted_replacement(&rig, &workspace, &params, before, "safe\n");
+    {
+        let store = Store::open(&rig.path).unwrap();
+        // SAFETY: geteuid has no arguments or memory preconditions.
+        let uid = unsafe { libc::geteuid() };
+        assert!(
+            store
+                .file_replacement(&format!("local:{uid}:runtime-test"), "race-replace")
+                .unwrap()
+                .is_some()
+        );
+    }
+    fs::write(&path, "external\n").unwrap();
+    rig.start();
+    let response = rig.client().request("file.search", params);
+    assert_eq!(
+        response["error"]["data"]["kind"], "stale_version",
+        "{response}"
+    );
+    assert_eq!(fs::read_to_string(path).unwrap(), "external\n");
+    rig.kill_engine();
+    let store = Store::open(&rig.path).unwrap();
+    assert_eq!(store.active_file_replacements().unwrap().len(), 1);
+}
+
+fn stage_interrupted_replacement(
+    rig: &Rig,
+    workspace: &str,
+    params: &Value,
+    before: &str,
+    after: &str,
+) -> String {
+    let mut store = Store::open(&rig.path).unwrap();
+    let file_id = Uuid::new_v4().to_string();
+    let author = serde_json::from_value(local_file_author()).unwrap();
+    let matcher = soyeht_editor::ContentMatcher::new("needle", true).unwrap();
+    let found = matcher.search(before, Some("safe"), 10).unwrap();
+    let fingerprint = STANDARD.encode(soyeht_engine::auth::token_hash(
+        &json!(["file.search", params]).to_string(),
+    ));
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    let uid = unsafe { libc::geteuid() };
+    let item = ProjectReplacementItem {
+        ordinal: 0,
+        file_id: file_id.clone(),
+        relative_path: "note.txt".into(),
+        before_hash: test_content_hash(before),
+        after_hash: test_content_hash(after),
+        replaced: 1,
+        applied: false,
+    };
+    let file = EditorFile {
+        file_id: file_id.clone(),
+        pane_id: None,
+        workspace_id: workspace.into(),
+        relative_path: "note.txt".into(),
+        language: soyeht_protocol::EditorLanguage::PlainText,
+        revision: 0,
+        disk_revision: 0,
+        disk_text: before.into(),
+        draft_text: None,
+        draft_author: None,
+        conflict_text: None,
+        watching: false,
+        updated_ms: 1,
+    };
+    store
+        .begin_file_replacement(
+            &ProjectReplacement {
+                operation_id: Uuid::new_v4().to_string(),
+                scope: format!("local:{uid}:runtime-test"),
+                idempotency_key: params["idempotencyKey"].as_str().unwrap().into(),
+                fingerprint,
+                workspace_id: workspace.into(),
+                query: "needle".into(),
+                replacement: "safe".into(),
+                case_sensitive: true,
+                author,
+                matches: vec![soyeht_protocol::FileSearchMatch {
+                    workspace_id: workspace.into(),
+                    path: "note.txt".into(),
+                    range: found.matches[0].range.clone(),
+                    preview: found.matches[0].preview.clone(),
+                }],
+                total_replaced: 1,
+                created_ms: 1,
+                items: vec![item],
+            },
+            &[file],
+        )
+        .unwrap();
+    file_id
+}
+
+fn test_content_hash(content: &str) -> String {
+    format!("{:x}", Sha256::digest(content.as_bytes()))
 }
 
 fn local_file_author() -> Value {

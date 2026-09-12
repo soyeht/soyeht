@@ -152,6 +152,7 @@ fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
         Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
         Error::SubitemNotFound => ErrorKind::NotFound,
         Error::FileVersionNotFound => ErrorKind::NotFound,
+        Error::FileReplacementBusy => ErrorKind::StaleVersion,
         Error::InvalidEngineGeneration
         | Error::InvalidIdempotencyKey
         | Error::EventParametersNotObject
@@ -186,7 +187,9 @@ fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
         | Error::InvalidTranscriptPageLimit
         | Error::TranscriptPageTooLarge
         | Error::ApprovedPairTokenMissing => ErrorKind::InvalidParams,
-        Error::InvalidEditorFile | Error::InvalidFileHistoryLimit => ErrorKind::InvalidParams,
+        Error::InvalidEditorFile
+        | Error::InvalidFileHistoryLimit
+        | Error::InvalidFileReplacement => ErrorKind::InvalidParams,
         _ => ErrorKind::InternalError,
     }
 }

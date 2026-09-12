@@ -1,3 +1,4 @@
+use super::persistence::{filesystem_author, next_revision, stored_version};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -10,11 +11,21 @@ use soyeht_protocol::{
     EditorContentSource, FileOpenParams, FileOpenResult, FileReadParams, FileReadResult, Pane,
     PaneMode, PaneState, StateSource,
 };
-use soyeht_store::editor::{EditorFile, document};
+use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use std::path::Path;
 use uuid::Uuid;
 
 const INITIAL_VIEWPORT_LINES: usize = 200;
+
+struct ReattachRequest<'a> {
+    connection: &'a str,
+    method: &'a str,
+    params: &'a Value,
+    line: Option<u32>,
+    pane_only: bool,
+    workspace: &'a soyeht_protocol::Workspace,
+    canonical: &'a Path,
+}
 
 impl Core {
     pub fn file_open(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -48,18 +59,32 @@ impl Core {
             .resolve(Path::new(&workspace.path), &request.path)?;
         if let Some(file) = self
             .store
-            .editor_files()
+            .editor_file_for_path(&request.workspace_id, &resolved.relative)
             .map_err(errors::storage)?
-            .into_iter()
-            .find(|file| {
-                file.workspace_id == request.workspace_id && file.relative_path == resolved.relative
-            })
         {
-            let result = self.open_result(&file, request.line)?;
-            let reply = open_reply(result, pane_only)?;
-            return Ok(self
-                .mutate(connection, method, params, |_| Ok((reply, vec![])))?
-                .result);
+            if file.pane_id.as_deref().is_some_and(|pane_id| {
+                self.panes
+                    .get(pane_id)
+                    .is_some_and(|pane| !pane.stored.closed)
+            }) {
+                let result = self.open_result(&file, request.line)?;
+                let reply = open_reply(result, pane_only)?;
+                return Ok(self
+                    .mutate(connection, method, params, |_| Ok((reply, vec![])))?
+                    .result);
+            }
+            return self.reattach_editor(
+                ReattachRequest {
+                    connection,
+                    method,
+                    params,
+                    line: request.line,
+                    pane_only,
+                    workspace: &workspace,
+                    canonical: &resolved.canonical,
+                },
+                file,
+            );
         }
         let text = self.editor.read_disk(&resolved.canonical)?;
         let language = super::service::language(&resolved.canonical);
@@ -101,6 +126,56 @@ impl Core {
                 vec![("pane.created".into(), json!({"pane":saved.pane}))],
             ))
         })?;
+        if !mutation.repeated {
+            self.panes.insert(
+                pane.pane_id.clone(),
+                RunningPane {
+                    stored: saved,
+                    screen,
+                },
+            );
+            self.editor.insert_parsed(file, syntax);
+        }
+        Ok(mutation.result)
+    }
+
+    fn reattach_editor(&mut self, request: ReattachRequest<'_>, file: EditorFile) -> Result<Value> {
+        let disk = self.editor.read_disk(request.canonical)?;
+        let (mut file, version) =
+            reconcile_reopened_file(file, disk, self.now_ms(), self.timestamp())?;
+        let pane = editor_pane(request.workspace, &file.relative_path);
+        file.pane_id = Some(pane.pane_id.clone());
+        file.watching = true;
+        let saved = StoredPane {
+            pane: pane.clone(),
+            closed: false,
+            instance_key: Uuid::new_v4().to_string(),
+            instance_id: None,
+            supervisor_id: None,
+            sequence_base: 0,
+        };
+        let (opened, syntax) = initial_open_result(&file, &pane, request.line)?;
+        let reply = open_reply(opened, request.pane_only)?;
+        let screen = Screen::open(
+            &self.directory.join("sessions").join(&saved.pane.pane_id),
+            false,
+        )?;
+        let mutation = self.mutate(
+            request.connection,
+            request.method,
+            request.params,
+            |change| {
+                persist_new_pane(change, &saved, None)?;
+                change.save_editor_file(&file)?;
+                if let Some(version) = &version {
+                    change.record_file_version(version)?;
+                }
+                Ok((
+                    reply,
+                    vec![("pane.created".into(), json!({"pane":saved.pane}))],
+                ))
+            },
+        )?;
         if !mutation.repeated {
             self.panes.insert(
                 pane.pane_id.clone(),
@@ -198,6 +273,41 @@ impl Core {
             .clone();
         initial_open_result(file, &pane, line).map(|(result, _)| result)
     }
+}
+
+fn reconcile_reopened_file(
+    mut file: EditorFile,
+    disk: String,
+    now_ms: i64,
+    created_at: String,
+) -> Result<(EditorFile, Option<StoredFileVersion>)> {
+    let known = file.conflict_text.as_ref().unwrap_or(&file.disk_text);
+    if file.draft_text.as_deref() == Some(&disk) {
+        let author = file
+            .draft_author
+            .take()
+            .ok_or_else(|| errors::internal("Reopened draft has no author"))?;
+        file.draft_text = None;
+        file.conflict_text = None;
+        file.disk_text = disk.clone();
+        file.disk_revision = next_revision(file.disk_revision)?;
+        file.updated_ms = now_ms;
+        let version = stored_version(&file, disk, author, created_at);
+        return Ok((file, Some(version)));
+    }
+    if disk == *known {
+        return Ok((file, None));
+    }
+    file.disk_revision = next_revision(file.disk_revision)?;
+    file.updated_ms = now_ms;
+    if file.draft_text.is_some() {
+        file.conflict_text = Some(disk);
+        return Ok((file, None));
+    }
+    file.revision = next_revision(file.revision)?;
+    file.disk_text = disk.clone();
+    let version = stored_version(&file, disk, filesystem_author(), created_at);
+    Ok((file, Some(version)))
 }
 
 fn open_reply(result: FileOpenResult, pane_only: bool) -> Result<Value> {
