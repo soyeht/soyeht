@@ -5,14 +5,14 @@ import SwiftUI
 import VisionKit
 
 enum PhonePalette {
-  static let canvas = Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255)
-  static let face = Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255)
-  static let ink = Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255)
-  static let secondary = Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255)
-  static let accent = Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255)
-  static let success = Color(red: 50 / 255, green: 172 / 255, blue: 113 / 255)
-  static let warning = Color(red: 236 / 255, green: 165 / 255, blue: 55 / 255)
-  static let danger = Color(red: 224 / 255, green: 88 / 255, blue: 96 / 255)
+  static let canvas = SoyehtThemeColors.canvas
+  static let face = SoyehtThemeColors.face
+  static let ink = SoyehtThemeColors.ink
+  static let secondary = SoyehtThemeColors.secondary
+  static let accent = SoyehtThemeColors.accent
+  static let success = SoyehtThemeColors.success
+  static let warning = SoyehtThemeColors.warning
+  static let danger = SoyehtThemeColors.danger
 }
 struct PhoneHome: View {
   @Bindable var model: PhoneModel

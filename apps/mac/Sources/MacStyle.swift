@@ -3,22 +3,22 @@ import SoyehtClient
 import SwiftUI
 
 enum MacTheme {
-  static let canvas = Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255)
-  static let face = Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255)
-  static let well = Color(red: 216 / 255, green: 222 / 255, blue: 232 / 255)
-  static let hover = Color(red: 220 / 255, green: 226 / 255, blue: 234 / 255)
-  static let border = Color(red: 216 / 255, green: 222 / 255, blue: 232 / 255)
-  static let ink = Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255)
-  static let secondary = Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255)
-  static let muted = Color(red: 142 / 255, green: 154 / 255, blue: 179 / 255)
-  static let accent = Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255)
-  static let onAccent = Color.white
-  static let shadowDark = Color(red: 166 / 255, green: 180 / 255, blue: 200 / 255)
-  static let shadowLight = Color.white
-  static let selection = Color(red: 201 / 255, green: 214 / 255, blue: 238 / 255)
-  static let success = Color(red: 46 / 255, green: 154 / 255, blue: 115 / 255)
-  static let warning = Color(red: 185 / 255, green: 138 / 255, blue: 46 / 255)
-  static let danger = Color(red: 217 / 255, green: 85 / 255, blue: 106 / 255)
+  static let canvas = SoyehtThemeColors.canvas
+  static let face = SoyehtThemeColors.face
+  static let well = SoyehtThemeColors.well
+  static let hover = SoyehtThemeColors.hover
+  static let border = SoyehtThemeColors.well
+  static let ink = SoyehtThemeColors.ink
+  static let secondary = SoyehtThemeColors.secondary
+  static let muted = SoyehtThemeColors.muted
+  static let accent = SoyehtThemeColors.accent
+  static let onAccent = SoyehtThemeColors.onAccent
+  static let shadowDark = SoyehtThemeColors.shadowDark
+  static let shadowLight = SoyehtThemeColors.shadowLight
+  static let selection = SoyehtThemeColors.selection
+  static let success = SoyehtThemeColors.success
+  static let warning = SoyehtThemeColors.warning
+  static let danger = SoyehtThemeColors.danger
   static let urgent = danger
   static let agentRose = Color(red: 246 / 255, green: 214 / 255, blue: 219 / 255)
   static let agentBlue = Color(red: 216 / 255, green: 224 / 255, blue: 254 / 255)

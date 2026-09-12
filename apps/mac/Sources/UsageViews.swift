@@ -16,7 +16,8 @@ struct UsageRing: View {
       VStack(spacing: 0) {
         ZStack {
           Circle()
-            .stroke(MacTheme.shadowDark.opacity(0.42), lineWidth: 5)
+            .fill(MacTheme.face)
+            .overlay { Circle().stroke(MacTheme.well, lineWidth: 5) }
             .frame(width: 34, height: 34)
           if let fraction = presentation.fraction {
             Circle()

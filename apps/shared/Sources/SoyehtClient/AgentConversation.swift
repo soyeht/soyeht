@@ -51,15 +51,12 @@ public struct AgentConversationStyle: Sendable {
   }
 
   public static let standard = AgentConversationStyle(
-    canvas: Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255),
-    face: Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255),
-    well: Color(red: 216 / 255, green: 222 / 255, blue: 232 / 255),
-    ink: Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255),
-    secondary: Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255),
-    muted: Color(red: 142 / 255, green: 154 / 255, blue: 179 / 255),
-    accent: Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255),
-    shadowDark: Color(red: 166 / 255, green: 180 / 255, blue: 200 / 255),
-    shadowLight: .white, success: .green, warning: .orange, danger: .red,
+    canvas: SoyehtThemeColors.canvas, face: SoyehtThemeColors.face,
+    well: SoyehtThemeColors.well, ink: SoyehtThemeColors.ink,
+    secondary: SoyehtThemeColors.secondary, muted: SoyehtThemeColors.muted,
+    accent: SoyehtThemeColors.accent, shadowDark: SoyehtThemeColors.shadowDark,
+    shadowLight: SoyehtThemeColors.shadowLight, success: SoyehtThemeColors.success,
+    warning: SoyehtThemeColors.warning, danger: SoyehtThemeColors.danger,
     bodyFont: .body, captionFont: .caption, controlFont: .caption, headingFont: .headline,
     monoFont: .caption.monospaced(), monoSmallFont: .caption2.monospaced(),
     canonicalLayout: false)
