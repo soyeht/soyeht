@@ -191,11 +191,11 @@ private struct AgentWell: ViewModifier {
         LazyVStack(spacing: 12) {
           if view.hasOlderMessages {
             Button("Load earlier messages") { client.loadOlderAgentMessages(paneId) }
-              .font(.caption).buttonStyle(.bordered)
+              .font(style.captionFont).buttonStyle(.bordered)
           }
           if let notice = view.notice {
             Label(notice, systemImage: "exclamationmark.triangle")
-              .font(.caption).foregroundStyle(style.warning).padding(10)
+              .font(style.captionFont).foregroundStyle(style.warning).padding(10)
           }
           ForEach(view.messages, id: \.localId) { message in
             TranscriptRow(message: message, style: style).id(message.localId)
@@ -406,10 +406,11 @@ private struct TranscriptRow: View {
                 ? "exclamationmark.triangle" : "wrench.and.screwdriver")
             VStack(alignment: .leading, spacing: 4) {
               Text(tool.title).fontWeight(.semibold)
-              Text(tool.status.rawValue.replacingOccurrences(of: "_", with: " ")).font(.caption)
+              Text(tool.status.rawValue.replacingOccurrences(of: "_", with: " "))
+                .font(style.captionFont)
               ForEach(Array(tool.locations.enumerated()), id: \.offset) { _, location in
                 Text(location.line.map { "\(location.path):\($0)" } ?? location.path)
-                  .font(.caption.monospaced()).textSelection(.enabled)
+                  .font(style.monoFont).textSelection(.enabled)
               }
             }
             Spacer()
@@ -422,7 +423,7 @@ private struct TranscriptRow: View {
       case .terminal:
         if let output = message.terminal {
           Text(Data(base64Encoded: output.bytes).map { String(decoding: $0, as: UTF8.self) } ?? "")
-            .font(.caption.monospaced()).textSelection(.enabled).frame(
+            .font(style.monoFont).textSelection(.enabled).frame(
               maxWidth: .infinity, alignment: .leading
             )
             .padding(style.canonicalLayout ? 10 : 11)
@@ -438,7 +439,7 @@ private struct TranscriptRow: View {
               entry.content,
               systemImage: entry.status == .completed ? "checkmark.circle.fill" : "circle")
           }
-        }.font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+        }.font(style.captionFont).frame(maxWidth: .infinity, alignment: .leading)
       case .usage:
         EmptyView()
       default:
@@ -499,7 +500,7 @@ private struct ElicitationCard: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 9) {
-      Label(request.title, systemImage: "list.clipboard").font(.headline)
+      Label(request.title, systemImage: "list.clipboard").font(style.headingFont)
       ForEach(fields, id: \.0) { field in
         TextField(
           field.1,

@@ -62,10 +62,12 @@ struct WorkspaceWindow: View {
     .overlay(alignment: .bottom) {
       if let request = client.pairRequests.first {
         VStack(alignment: .leading, spacing: 12) {
-          Text("Allow access for \(request.deviceName)?").font(.headline)
-          Text("Compare this fingerprint on the iPhone:").font(.subheadline)
-          Text(request.fingerprint).font(.system(size: 12, design: .monospaced)).textSelection(
-            .enabled)
+          Text("Allow access for \(request.deviceName)?")
+            .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+          Text("Compare this fingerprint on the iPhone:")
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          Text(request.fingerprint).font(MacTheme.mono(MacTheme.TypeScale.control))
+            .textSelection(.enabled)
           HStack {
             Button("Deny") { client.decidePairing(request, approve: false) }
             Spacer()
@@ -108,7 +110,7 @@ struct WorkspaceWindow: View {
   }
   private var pairingContent: some View {
     VStack(spacing: 20) {
-      Text("Continue on iPhone").font(.system(size: 24, weight: .semibold, design: .rounded))
+      Text("Continue on iPhone").font(MacTheme.chrome(24, weight: .semibold))
       Text(
         "Open Soyeht Dev on iPhone and scan this code.\nBoth devices must be on the same tailnet."
       )
@@ -118,14 +120,16 @@ struct WorkspaceWindow: View {
           .padding(MacTheme.Space.x16)
           .background(
             MacTheme.onAccent, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
-        Text("Code valid for 10 minutes.").font(.caption).foregroundStyle(MacTheme.secondary)
+        Text("Code valid for 10 minutes.").font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.secondary)
       } else {
         ProgressView().frame(width: 292, height: 292)
       }
       if let request = client.pairRequests.first {
-        Text(request.deviceName).font(.headline)
-        Text(request.fingerprint).font(.system(size: 11, design: .monospaced)).textSelection(
-          .enabled)
+        Text(request.deviceName)
+          .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+        Text(request.fingerprint).font(MacTheme.mono(MacTheme.TypeScale.small))
+          .textSelection(.enabled)
         HStack {
           Button("Deny") { client.decidePairing(request, approve: false) }
           Button("Allow") {
@@ -137,7 +141,8 @@ struct WorkspaceWindow: View {
       }
       if !client.devices.isEmpty {
         VStack(alignment: .leading, spacing: 12) {
-          Text("Paired iPhones").font(.headline)
+          Text("Paired iPhones")
+            .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
           ForEach(client.devices, id: \.deviceId) { device in
             HStack {
               Label(device.name, systemImage: "iphone")
@@ -355,7 +360,8 @@ private struct PaneCard: View {
       }
       .help("Close this pane").disabled(!client.connected)
     }
-    .font(.system(size: 12, weight: .medium)).foregroundStyle(MacTheme.secondary)
+    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+    .foregroundStyle(MacTheme.secondary)
     .padding(.horizontal, MacTheme.Space.x12).frame(height: 26)
     .background(tint, in: Capsule())
   }
@@ -478,7 +484,7 @@ private struct NewPaneSheet: View {
         }
         .help("Close new pane")
       }
-      .font(.system(size: 12)).foregroundStyle(MacTheme.secondary)
+      .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
       .padding(.horizontal, MacTheme.Space.x12).frame(height: 26)
       .background(MacTheme.well, in: Capsule())
 
