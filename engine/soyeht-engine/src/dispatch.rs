@@ -296,6 +296,7 @@ impl Core {
             "file.watch" => self.file_watch(connection, params)?,
             "file.history" => self.file_history(params)?,
             "file.revert" => self.file_revert(connection, params)?,
+            "file.search" => self.file_search(connection, params)?,
             "task.dispatch" => self.task_dispatch(connection, params)?,
             "task.next" => self.task_next(connection, params)?,
             "task.worktree.clean" => self.task_worktree_clean(connection, params)?,

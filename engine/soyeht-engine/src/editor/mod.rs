@@ -2,6 +2,7 @@
 
 mod api;
 mod persistence;
+mod search;
 mod service;
 
 pub use service::{FileSystemPort, Service, SystemFiles};

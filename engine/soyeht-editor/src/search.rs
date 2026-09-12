@@ -31,6 +31,15 @@ struct ByteMatch {
     end: usize,
 }
 
+pub struct ContentMatcher {
+    pattern: ContentPattern,
+}
+
+enum ContentPattern {
+    Sensitive(memmem::Finder<'static>),
+    Folded(regex::Regex),
+}
+
 pub fn search_content(
     text: &str,
     query: &str,
@@ -38,27 +47,74 @@ pub fn search_content(
     case_sensitive: bool,
     limit: usize,
 ) -> Result<ContentSearch> {
-    if query.is_empty() {
-        return Err(Error::EmptySearch);
+    ContentMatcher::new(query, case_sensitive)?.search(text, replacement, limit)
+}
+
+impl ContentMatcher {
+    pub fn new(query: &str, case_sensitive: bool) -> Result<Self> {
+        if query.is_empty() {
+            return Err(Error::EmptySearch);
+        }
+        let pattern = if case_sensitive {
+            ContentPattern::Sensitive(memmem::Finder::new(query.as_bytes()).into_owned())
+        } else {
+            ContentPattern::Folded(
+                RegexBuilder::new(&regex::escape(query))
+                    .case_insensitive(true)
+                    .unicode(true)
+                    .build()
+                    .map_err(|_| Error::SearchPattern)?,
+            )
+        };
+        Ok(Self { pattern })
     }
-    let limit = limit.min(soyeht_protocol::limits::EDITOR_SEARCH_RESULTS);
-    let byte_matches = find_matches(text, query, case_sensitive, limit)?;
-    let lines = line_starts(text);
-    let matches = byte_matches
-        .iter()
-        .map(|found| ContentMatch {
-            range: text_range(text, &lines, *found),
-            preview: preview(text, &lines, found.start),
+
+    pub fn search(
+        &self,
+        text: &str,
+        replacement: Option<&str>,
+        limit: usize,
+    ) -> Result<ContentSearch> {
+        let limit = limit.min(soyeht_protocol::limits::EDITOR_SEARCH_RESULTS);
+        let byte_matches = self.find_matches(text, limit);
+        let lines = line_starts(text);
+        let matches = byte_matches
+            .iter()
+            .map(|found| ContentMatch {
+                range: text_range(text, &lines, *found),
+                preview: preview(text, &lines, found.start),
+            })
+            .collect();
+        let updated = replacement
+            .map(|value| replace_matches(text, &byte_matches, value))
+            .transpose()?;
+        Ok(ContentSearch {
+            matches,
+            replacement: updated,
+            replaced: replacement.map_or(0, |_| byte_matches.len()),
         })
-        .collect();
-    let updated = replacement
-        .map(|value| replace_matches(text, &byte_matches, value))
-        .transpose()?;
-    Ok(ContentSearch {
-        matches,
-        replacement: updated,
-        replaced: replacement.map_or(0, |_| byte_matches.len()),
-    })
+    }
+
+    fn find_matches(&self, text: &str, limit: usize) -> Vec<ByteMatch> {
+        match &self.pattern {
+            ContentPattern::Sensitive(finder) => finder
+                .find_iter(text.as_bytes())
+                .take(limit)
+                .map(|start| ByteMatch {
+                    start,
+                    end: start + finder.needle().len(),
+                })
+                .collect(),
+            ContentPattern::Folded(expression) => expression
+                .find_iter(text)
+                .take(limit)
+                .map(|found| ByteMatch {
+                    start: found.start(),
+                    end: found.end(),
+                })
+                .collect(),
+        }
+    }
 }
 
 pub fn rank_paths(paths: &[String], query: &str, limit: usize) -> Result<Vec<PathSearchMatch>> {
@@ -82,36 +138,6 @@ pub fn rank_paths(paths: &[String], query: &str, limit: usize) -> Result<Vec<Pat
     });
     matches.truncate(limit.min(soyeht_protocol::limits::EDITOR_SEARCH_RESULTS));
     Ok(matches)
-}
-
-fn find_matches(
-    text: &str,
-    query: &str,
-    case_sensitive: bool,
-    limit: usize,
-) -> Result<Vec<ByteMatch>> {
-    if case_sensitive {
-        return Ok(memmem::find_iter(text.as_bytes(), query.as_bytes())
-            .take(limit)
-            .map(|start| ByteMatch {
-                start,
-                end: start + query.len(),
-            })
-            .collect());
-    }
-    let expression = RegexBuilder::new(&regex::escape(query))
-        .case_insensitive(true)
-        .unicode(true)
-        .build()
-        .map_err(|_| Error::SearchPattern)?;
-    Ok(expression
-        .find_iter(text)
-        .take(limit)
-        .map(|found| ByteMatch {
-            start: found.start(),
-            end: found.end(),
-        })
-        .collect())
 }
 
 fn replace_matches(text: &str, matches: &[ByteMatch], replacement: &str) -> Result<String> {

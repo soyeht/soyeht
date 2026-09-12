@@ -1581,6 +1581,68 @@ fn editor_open_rejects_absolute_parent_symlink_escape_and_oversized_files() {
     }
 }
 
+#[test]
+fn project_search_is_ignore_aware_symlink_safe_bounded_and_idempotent() {
+    let rig = Rig::new();
+    let repository = rig.path.join("editor-search");
+    let outside = rig.path.join("search-outside.txt");
+    fs::create_dir_all(repository.join("src")).unwrap();
+    fs::create_dir_all(repository.join("ignored-dir")).unwrap();
+    fs::create_dir_all(repository.join(".git")).unwrap();
+    fs::write(repository.join(".gitignore"), "ignored.txt\nignored-dir/\n").unwrap();
+    fs::write(repository.join("src/main.rs"), "needle\nneedle\n").unwrap();
+    fs::write(repository.join("src/many.txt"), "needle\n".repeat(600)).unwrap();
+    fs::write(repository.join("ignored.txt"), "needle\n").unwrap();
+    fs::write(repository.join("ignored-dir/data.txt"), "needle\n").unwrap();
+    fs::write(repository.join(".git/secret"), "needle\n").unwrap();
+    fs::write(repository.join("invalid.bin"), [0xff, 0xfe]).unwrap();
+    fs::write(&outside, "needle\n").unwrap();
+    symlink(&outside, repository.join("src/link.txt")).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Search","path":repository,"idempotencyKey":"search-workspace"}),
+    )["workspace"]["workspaceId"]
+        .clone();
+
+    let params = json!({
+        "workspaceId":workspace,"query":"needle","caseSensitive":true,
+        "limit":500,"idempotencyKey":"search-content"
+    });
+    let result = client.call("file.search", params.clone());
+    assert_eq!(result["items"].as_array().unwrap().len(), 500);
+    assert_eq!(result["replaced"], 0);
+    assert_eq!(client.call("file.search", params), result);
+    assert!(
+        result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| { matches!(item["path"].as_str(), Some("src/main.rs" | "src/many.txt")) })
+    );
+
+    let paths = client.call(
+        "file.search",
+        json!({
+            "workspaceId":workspace,"scope":"path","query":"smr",
+            "caseSensitive":false,"limit":10,"idempotencyKey":"search-path"
+        }),
+    );
+    assert_eq!(paths["items"][0]["path"], "src/main.rs");
+    assert_eq!(paths["items"][0]["preview"], "src/main.rs");
+    assert_eq!(paths["items"][0]["range"]["start"]["line"], 0);
+
+    let replace = client.request(
+        "file.search",
+        json!({
+            "workspaceId":workspace,"scope":"content","query":"needle",
+            "replacement":"safe","caseSensitive":true,"limit":10,
+            "idempotencyKey":"search-replace"
+        }),
+    );
+    assert_eq!(replace["error"]["data"]["kind"], "invalid_params");
+}
+
 fn local_file_author() -> Value {
     json!({
         "actor":{"role":"human_local","client":"runtime-test"},
