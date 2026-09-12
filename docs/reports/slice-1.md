@@ -11,8 +11,10 @@ No tag or release was created.
 ## Delivered scope
 
 The schema in `contracts/protocol.json` is the source of Rust, Swift and
-TypeScript types. This scope contains 26 methods and 22 events, with shared
-vectors, binary limits and numeric errors. Generation without a diff is mandatory in CI.
+TypeScript types. It contained 26 methods and 22 events when slice 1 closed.
+After slice 2, the same generated schema contains 40 methods and 39 events,
+with shared vectors, binary limits and numeric errors. Generation without a
+diff is mandatory in CI.
 
 `ptyd` keeps shells separate from the engine, with idempotent creation,
 exclusive generation, 8 MiB retention and sequence acknowledgement. The engine uses
