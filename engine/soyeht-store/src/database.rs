@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 #[derive(Debug)]
 pub enum Error {
@@ -68,6 +68,10 @@ pub enum Error {
     SegmentChecksumMismatch,
     MalformedGap,
     InvalidRecordInterval,
+    InvalidTaskLimit,
+    InvalidTaskNumber,
+    InvalidTaskVersion,
+    TaskReservationConflict,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -143,6 +147,10 @@ impl fmt::Display for Error {
             Self::SegmentChecksumMismatch => f.write_str("terminal record checksum mismatch"),
             Self::MalformedGap => f.write_str("terminal gap length is malformed"),
             Self::InvalidRecordInterval => f.write_str("invalid terminal record interval"),
+            Self::InvalidTaskLimit => f.write_str("invalid task page limit"),
+            Self::InvalidTaskNumber => f.write_str("invalid task number"),
+            Self::InvalidTaskVersion => f.write_str("invalid task version"),
+            Self::TaskReservationConflict => f.write_str("task reservation conflict"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -261,6 +269,9 @@ impl Store {
             }
             if version < 6 {
                 tx.execute_batch(include_str!("../migrations/006-agent-auth-snapshot.sql"))?;
+            }
+            if version < 7 {
+                tx.execute_batch(include_str!("../migrations/007-workspace-tasks.sql"))?;
             }
             tx.commit()?;
         }
@@ -400,11 +411,16 @@ impl Store {
             &tx,
             "SELECT json_object('kind',CASE method WHEN 'session/request_permission' THEN 'permission' ELSE 'elicitation' END,'request',json(public)) FROM agent_requests WHERE result IS NULL AND method IN ('session/request_permission','elicitation/create') AND pane_id IN (SELECT id FROM panes WHERE closed=0) ORDER BY request_id",
         )?;
+        let tasks = rows_json(
+            &tx,
+            "SELECT payload FROM tasks ORDER BY workspace_id,priority_rank,ordinal",
+        )?;
         let sections = vec![
             ("workspaces".into(), json!(workspaces)),
             ("panes".into(), json!(panes)),
             ("devices".into(), json!(devices)),
             ("requests".into(), json!(requests)),
+            ("tasks".into(), json!(tasks)),
             (
                 "attention".into(),
                 json!(rows_json(

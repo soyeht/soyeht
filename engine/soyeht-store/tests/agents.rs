@@ -684,7 +684,7 @@ fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
             .connection()
             .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
             .unwrap(),
-        6
+        soyeht_store::database::SCHEMA_VERSION
     );
     let backups = fs::read_dir(profile.0.join("backups"))
         .unwrap()
@@ -761,6 +761,6 @@ fn migration_from_v5_adds_reconnectable_authentication_state() {
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
-        6
+        soyeht_store::database::SCHEMA_VERSION
     );
 }
