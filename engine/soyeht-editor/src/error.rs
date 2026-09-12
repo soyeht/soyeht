@@ -9,6 +9,8 @@ pub enum Error {
     ViewportTooLarge,
     ParserLanguage,
     ParserStopped,
+    EmptySearch,
+    SearchPattern,
 }
 
 impl fmt::Display for Error {
@@ -21,6 +23,8 @@ impl fmt::Display for Error {
             Self::ViewportTooLarge => "one editor line exceeds the viewport byte budget",
             Self::ParserLanguage => "syntax parser refused its language",
             Self::ParserStopped => "syntax parser did not return a tree",
+            Self::EmptySearch => "search query is empty",
+            Self::SearchPattern => "search pattern could not be compiled",
         };
         formatter.write_str(message)
     }
