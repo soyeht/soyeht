@@ -133,7 +133,9 @@ struct WorkspaceWindow: View {
         client: client, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
         onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
     case .editor:
-      EmptyWorkspaceView(icon: "doc.text", title: "Open a file to begin")
+      PaneGrid(
+        client: client, workspaceId: selectedTaskWorkspaceId, mode: .editor,
+        onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
     case .phone:
       phoneWorkspace
     }
@@ -387,20 +389,23 @@ private struct PaneGrid: View {
     Group {
       if panes.isEmpty {
         VStack(spacing: MacTheme.Space.x18) {
-          Image(systemName: "rectangle.split.2x1").font(.system(size: 42, weight: .light))
+          Image(systemName: mode == .editor ? "doc.text" : "rectangle.split.2x1")
+            .font(.system(size: 42, weight: .light))
             .foregroundStyle(MacTheme.secondary)
-          Text("Your space to begin")
+          Text(mode == .editor ? "Open a file to begin" : "Your space to begin")
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
-          Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))
+          if mode == .editor {
+            Button("Open file", action: openEditorFile)
+              .buttonStyle(NeoPillButtonStyle(accent: true))
+              .disabled(!client.connected || workspaceId == nil)
+          } else {
+            Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))
+          }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if panes.count <= 2 {
-        HStack(spacing: MacTheme.Space.x18) {
-          ForEach(Array(panes.enumerated()), id: \.element.paneId) { index, pane in
-            PaneCard(
-              client: client, pane: pane, tint: paneTint(index), onClose: onClose,
-              onTasks: onTasks)
-          }
-        }
+        PanePair(
+          client: client, panes: panes, onClose: onClose, onTasks: onTasks,
+          tint: paneTint)
       } else {
         LazyVGrid(
           columns: [GridItem(.adaptive(minimum: 420), spacing: MacTheme.Space.x18)],
@@ -419,6 +424,67 @@ private struct PaneGrid: View {
 
   private func paneTint(_ index: Int) -> Color {
     [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand][index % 4]
+  }
+
+  private func openEditorFile() {
+    guard let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId }) else {
+      return
+    }
+    let panel = NSOpenPanel()
+    panel.directoryURL = URL(fileURLWithPath: workspace.path, isDirectory: true)
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = false
+    guard panel.runModal() == .OK, let file = panel.url,
+      let relative = relativePath(file, within: URL(fileURLWithPath: workspace.path))
+    else { return }
+    Task { @MainActor in
+      do {
+        _ = try await client.openEditorFile(workspaceId: workspace.workspaceId, path: relative)
+      } catch { client.problem = error.localizedDescription }
+    }
+  }
+
+  private func relativePath(_ file: URL, within root: URL) -> String? {
+    let rootParts = root.standardizedFileURL.pathComponents
+    let fileParts = file.standardizedFileURL.pathComponents
+    guard fileParts.count > rootParts.count,
+      Array(fileParts.prefix(rootParts.count)) == rootParts
+    else { return nil }
+    return fileParts.dropFirst(rootParts.count).joined(separator: "/")
+  }
+}
+
+private struct PanePair: View {
+  @Bindable var client: EngineClient
+  let panes: [Pane]
+  let onClose: (String) -> Void
+  let onTasks: () -> Void
+  let tint: (Int) -> Color
+
+  var body: some View {
+    GeometryReader { geometry in
+      HStack(spacing: MacTheme.Space.x18) {
+        ForEach(Array(ordered.enumerated()), id: \.element.paneId) { index, pane in
+          PaneCard(
+            client: client, pane: pane, tint: tint(index), onClose: onClose,
+            onTasks: onTasks
+          )
+          .frame(width: width(for: pane, total: geometry.size.width))
+        }
+      }
+    }
+  }
+
+  private var ordered: [Pane] {
+    guard panes.count == 2, panes.contains(where: { $0.mode == .editor }) else { return panes }
+    return panes.sorted { left, right in left.mode == .editor && right.mode != .editor }
+  }
+
+  private func width(for pane: Pane, total: CGFloat) -> CGFloat? {
+    guard ordered.count == 2, ordered.contains(where: { $0.mode == .editor }) else { return nil }
+    let available = max(0, total - MacTheme.Space.x18)
+    return pane.mode == .editor ? available * 0.7 : available * 0.3
   }
 }
 
@@ -447,11 +513,17 @@ private struct PaneCard: View {
   @State private var showingAutomation = false
 
   var body: some View {
-    VStack(spacing: MacTheme.Space.x8) {
-      header
-      paneBody
+    Group {
+      if pane.mode == .editor {
+        EditorPaneView(client: client, pane: pane)
+      } else {
+        VStack(spacing: MacTheme.Space.x8) {
+          header
+          paneBody
+        }
+        .padding(MacTheme.Space.x10).neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+      }
     }
-    .padding(MacTheme.Space.x10).neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .simultaneousGesture(TapGesture().onEnded { client.select(pane.paneId) })
     .contextMenu { Button("Close pane", role: .destructive) { onClose(pane.paneId) } }

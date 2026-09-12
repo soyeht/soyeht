@@ -16,6 +16,8 @@ public enum SoyehtThemeColors {
   public static let success = Color(red: 46 / 255, green: 154 / 255, blue: 115 / 255)
   public static let warning = Color(red: 185 / 255, green: 138 / 255, blue: 46 / 255)
   public static let danger = Color(red: 217 / 255, green: 85 / 255, blue: 106 / 255)
+  public static let syntaxType = Color(red: 142 / 255, green: 91 / 255, blue: 250 / 255)
+  public static let diffAdded = Color(red: 63 / 255, green: 156 / 255, blue: 106 / 255)
   public static let agentRose = Color(red: 246 / 255, green: 214 / 255, blue: 219 / 255)
   public static let agentBlue = Color(red: 216 / 255, green: 224 / 255, blue: 254 / 255)
   public static let agentGreen = Color(red: 205 / 255, green: 231 / 255, blue: 221 / 255)

@@ -19,6 +19,8 @@ enum MacTheme {
   static let success = SoyehtThemeColors.success
   static let warning = SoyehtThemeColors.warning
   static let danger = SoyehtThemeColors.danger
+  static let syntaxType = SoyehtThemeColors.syntaxType
+  static let diffAdded = SoyehtThemeColors.diffAdded
   static let urgent = danger
   static let agentRose = SoyehtThemeColors.agentRose
   static let agentBlue = SoyehtThemeColors.agentBlue
