@@ -1,7 +1,9 @@
 //! Workspace task rules and their persistence boundary.
 
+pub mod feedback;
 mod phrase;
 pub mod ports;
+pub mod revision;
 mod rules;
 pub mod worktree;
 
