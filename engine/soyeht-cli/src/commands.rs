@@ -5,7 +5,9 @@ use soyeht_protocol::*;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-pub const USAGE: &str = "soyeht --profile dev [--data-dir PATH] COMMAND\n\
+use crate::task_commands;
+
+pub const USAGE: &str = "soyeht --profile dev [--data-dir PATH] [--bound] COMMAND\n\
 status\n\
 pane create --shell|--agent HARNESS [--cwd PATH] [--model MODEL] [--effort EFFORT] [--permission ask|accept_edits|allow_all]\n\
 pane list | pane close ID | pane prompt ID TEXT | pane cancel ID\n\
@@ -15,7 +17,22 @@ pane transcript ID [--before CURSOR] [--limit COUNT]\n\
 pane queue ID [--cursor CURSOR] | pane queue-resume ID | pane queue-remove ID PROMPT_ID\n\
 harness list [--cursor CURSOR] | model list HARNESS [--pane ID] [--cursor CURSOR]\n\
 device pair-start | device list\n\
-Mutating commands accept --idempotency-key KEY for safe retries.";
+task create WORKSPACE TITLE --must-not-change TEXT [OPTIONS]\n\
+task next WORKSPACE PANE GENERATION | task list WORKSPACE [OPTIONS] | task show WORKSPACE TASK\n\
+task dispatch WORKSPACE TASK [OPTIONS] | task update WORKSPACE TASK VERSION [OPTIONS]\n\
+task comment WORKSPACE TASK TEXT | task subitem add WORKSPACE TASK TEXT [OPTIONS]\n\
+task subitem done WORKSPACE TASK SUBITEM | task block WORKSPACE TASK KIND REASON [OPTIONS]\n\
+task release WORKSPACE TASK [OPTIONS] | task request-review WORKSPACE TASK [OPTIONS]\n\
+task complete WORKSPACE TASK SUMMARY [OPTIONS] | task move WORKSPACE TASK STATE REASON\n\
+task unblock WORKSPACE TASK [OPTIONS] | task worktree-clean WORKSPACE TASK\n\
+loop set PANE PROMPT INTERVAL_SECONDS MAX_ROUNDS STOP_WHEN ENABLED\n\
+Task create options: --description, --how-to-verify, --harness, --model, --effort,\n\
+  --priority, --create-worktree true|false, --permission, --dependencies WS-1,WS-2.\n\
+Task update uses the same editable text, priority and dependency options.\n\
+Task complete accepts --contract-changes JSON and --out-of-scope-edits JSON arrays.\n\
+Executor commands accept --pane ID --generation N --attempt N together.\n\
+Use --bound to read SOYEHT_MCP_BINDING from the pane environment for agent-only calls.\n\
+Mutating commands accept --idempotency-key KEY as the final option for safe retries.";
 
 fn invalid(message: impl Into<String>) -> Error {
     Error::InvalidArguments(message.into())
@@ -167,6 +184,8 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
         ["device", "pair-start"] => {
             rpc::<DevicePairStartResult>(client, "device.pair.start", json!({"idempotencyKey":key}))
         }
+        ["task", rest @ ..] => task_commands::execute_task(client, rest, &key),
+        ["loop", rest @ ..] => task_commands::execute_loop(client, rest, &key),
         _ => Err(invalid(USAGE)),
     }
 }

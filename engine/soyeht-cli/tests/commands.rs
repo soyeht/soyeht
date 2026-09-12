@@ -5,6 +5,7 @@ use soyeht_ptyd::{
     client::Client,
     wire::{Request, Response},
 };
+use soyeht_store::test_support::DatabaseProbe;
 use std::{
     fs,
     path::PathBuf,
@@ -50,10 +51,20 @@ impl Rig {
         rig
     }
     fn command(&self, args: &[&str]) -> Value {
-        let output = Command::new(env!("CARGO_BIN_EXE_soyeht"))
+        self.command_with_binding(args, None)
+    }
+    fn command_with_binding(&self, args: &[&str], binding: Option<&str>) -> Value {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_soyeht"));
+        command
             .args(["--profile", "dev", "--data-dir"])
-            .arg(&self.path)
+            .arg(&self.path);
+        if binding.is_some() {
+            command.arg("--bound");
+        }
+        let output = command
             .args(args)
+            .env_remove("SOYEHT_MCP_BINDING")
+            .envs(binding.map(|value| ("SOYEHT_MCP_BINDING", value)))
             .current_dir(&self.path)
             .output()
             .unwrap();
@@ -63,6 +74,74 @@ impl Rig {
             String::from_utf8_lossy(&output.stderr)
         );
         serde_json::from_slice(&output.stdout).unwrap()
+    }
+}
+
+fn create_task(rig: &Rig, workspace: &str) -> Value {
+    rig.command(&[
+        "task",
+        "create",
+        workspace,
+        "Document the flow",
+        "--description",
+        "Keep the operator informed",
+        "--how-to-verify",
+        "Run the focused test",
+        "--must-not-change",
+        "Keep terminal panes available",
+        "--priority",
+        "high",
+        "--create-worktree",
+        "false",
+        "--idempotency-key",
+        "task-create",
+    ])
+}
+
+fn assert_bound_loop_disabled(rig: &Rig, pane: &str, binding: &str) {
+    assert_eq!(
+        rig.command_with_binding(
+            &[
+                "loop",
+                "set",
+                pane,
+                "Pull the next task",
+                "30",
+                "10",
+                "explicit_off",
+                "false",
+                "--idempotency-key",
+                "loop-off",
+            ],
+            Some(binding),
+        )["config"]["enabled"],
+        false
+    );
+}
+
+fn wait_for_agent_options(rig: &Rig) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let list = rig.command(&["pane", "list"]);
+        let current = &list["items"][0];
+        let ready = current["agent"]["options"]
+            .as_array()
+            .is_some_and(|options| {
+                options
+                    .iter()
+                    .any(|o| o["id"] == "model" && o["currentValue"] == "model-b")
+                    && options
+                        .iter()
+                        .any(|o| o["id"] == "effort" && o["currentValue"] == "high")
+            });
+        if ready {
+            return current.clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "initial CLI selectors not applied"
+        );
+        thread::sleep(Duration::from_millis(20));
     }
 }
 impl Drop for Rig {
@@ -144,6 +223,118 @@ fn another_profile_is_refused_before_connecting() {
 }
 
 #[test]
+fn bound_mode_requires_the_inherited_session_binding() {
+    let output = Command::new(env!("CARGO_BIN_EXE_soyeht"))
+        .args(["--bound", "status"])
+        .env_remove("SOYEHT_MCP_BINDING")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("SOYEHT_MCP_BINDING"));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn cli_task_commands_mutate_and_query_the_real_store() {
+    let rig = Rig::start();
+    let pane = rig.command(&[
+        "pane",
+        "create",
+        "--shell",
+        "--idempotency-key",
+        "task-workspace",
+    ]);
+    let panes = rig.command(&["pane", "list"]);
+    let workspace = panes["items"][0]["workspaceId"].as_str().unwrap();
+    let created = create_task(&rig, workspace);
+    assert_eq!(created["task"]["taskId"], "WS-1");
+    assert_eq!(created["task"]["createdBy"], "you");
+    assert_eq!(created, create_task(&rig, workspace));
+    let task = created["task"]["taskId"].as_str().unwrap();
+    assert_eq!(
+        rig.command(&["task", "list", workspace, "--state", "todo"])["items"][0]["taskId"],
+        task
+    );
+    let updated = rig.command(&[
+        "task",
+        "update",
+        workspace,
+        task,
+        "1",
+        "--title",
+        "Document the complete flow",
+        "--priority",
+        "urgent",
+        "--idempotency-key",
+        "task-update",
+    ]);
+    assert_eq!(updated["task"]["version"], 2);
+    assert_eq!(updated["task"]["priority"], "urgent");
+    assert_eq!(
+        rig.command(&[
+            "task",
+            "comment",
+            workspace,
+            task,
+            "First milestone",
+            "--idempotency-key",
+            "task-comment",
+        ])["comment"]["author"],
+        "you"
+    );
+    let subitem = rig.command(&[
+        "task",
+        "subitem",
+        "add",
+        workspace,
+        task,
+        "Run the focused test",
+        "--idempotency-key",
+        "subitem-add",
+    ]);
+    let subitem_id = subitem["subitem"]["subitemId"].as_str().unwrap();
+    assert_eq!(
+        rig.command(&[
+            "task",
+            "subitem",
+            "done",
+            workspace,
+            task,
+            subitem_id,
+            "--idempotency-key",
+            "subitem-done",
+        ])["subitem"]["state"],
+        "done"
+    );
+    let shown = rig.command(&["task", "show", workspace, task]);
+    assert_eq!(shown["comments"][0]["text"], "First milestone");
+    assert_eq!(shown["subitems"][0]["state"], "done");
+    assert_eq!(
+        rig.command(&[
+            "task",
+            "move",
+            workspace,
+            task,
+            "cancelled",
+            "No longer needed",
+            "--idempotency-key",
+            "task-move",
+        ])["task"]["state"],
+        "cancelled"
+    );
+    let clean = rig.command(&[
+        "task",
+        "worktree-clean",
+        workspace,
+        task,
+        "--idempotency-key",
+        "task-clean",
+    ]);
+    assert_eq!(clean["cleaned"], false);
+    rig.command(&["pane", "close", pane["paneId"].as_str().unwrap()]);
+}
+
+#[test]
 fn client_reconnects_after_engine_restart() {
     let mut rig = Rig::start();
     let mut client = soyeht_cli::Client::connect(&rig.path).unwrap();
@@ -198,29 +389,7 @@ fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
         "agent-create",
     ]);
     let pane = created["paneId"].as_str().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let before = loop {
-        let list = rig.command(&["pane", "list"]);
-        let current = &list["items"][0];
-        let ready = current["agent"]["options"]
-            .as_array()
-            .is_some_and(|options| {
-                options
-                    .iter()
-                    .any(|o| o["id"] == "model" && o["currentValue"] == "model-b")
-                    && options
-                        .iter()
-                        .any(|o| o["id"] == "effort" && o["currentValue"] == "high")
-            });
-        if ready {
-            break current.clone();
-        }
-        assert!(
-            Instant::now() < deadline,
-            "initial CLI selectors not applied"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    let before = wait_for_agent_options(&rig);
     assert_eq!(
         rig.command(&["model", "list", "test-agent", "--pane", pane])["source"],
         "native_session"
@@ -267,6 +436,11 @@ fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
     }
     assert_eq!(rig.command(&["pane", "yolo", pane, "on"])["on"], true);
     assert_eq!(rig.command(&["pane", "yolo", pane, "off"])["on"], false);
+    let binding = DatabaseProbe::open(&rig.path)
+        .unwrap()
+        .agent_binding(pane)
+        .unwrap();
+    assert_bound_loop_disabled(&rig, pane, &binding);
     let transcript = rig.command(&["pane", "transcript", pane, "--limit", "1"]);
     assert_eq!(transcript["items"].as_array().unwrap().len(), 1);
     let cursor = transcript["nextCursor"]

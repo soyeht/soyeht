@@ -21,6 +21,7 @@ pub enum Error {
     MissingArgument,
     UnsupportedProfile,
     MissingDataDirectory,
+    MissingBinding,
     EngineUnavailable(Box<Error>),
 }
 
@@ -68,6 +69,9 @@ impl fmt::Display for Error {
                 formatter.write_str("only the new dev profile is available")
             }
             Self::MissingDataDirectory => formatter.write_str("missing data directory"),
+            Self::MissingBinding => {
+                formatter.write_str("SOYEHT_MCP_BINDING is required with --bound")
+            }
             Self::EngineUnavailable(error) => {
                 write!(formatter, "cannot connect to the new Dev engine: {error}")
             }

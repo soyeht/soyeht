@@ -6,7 +6,8 @@ pub use error::{Error, Result};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AuthChallengeEvent, SnapshotSection, StateSnapshotPartEvent, StateSnapshotResult, Welcome,
+    AuthChallengeEvent, HelloParams, SnapshotSection, StateSnapshotPartEvent, StateSnapshotResult,
+    Welcome,
     frame::{read_json, write_json},
     profile::DEV_ENGINE_SOCKET,
 };
@@ -22,6 +23,7 @@ pub struct Client {
     socket: UnixStream,
     next: u64,
     directory: PathBuf,
+    binding: Option<String>,
 }
 pub struct Snapshot {
     pub metadata: StateSnapshotResult,
@@ -30,6 +32,14 @@ pub struct Snapshot {
 
 impl Client {
     pub fn connect(directory: &Path) -> Result<Self> {
+        Self::connect_as(directory, None)
+    }
+
+    pub fn connect_bound(directory: &Path, binding: &str) -> Result<Self> {
+        Self::connect_as(directory, Some(binding))
+    }
+
+    fn connect_as(directory: &Path, binding: Option<&str>) -> Result<Self> {
         let socket = UnixStream::connect(directory.join(DEV_ENGINE_SOCKET))?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
@@ -37,14 +47,31 @@ impl Client {
             socket,
             next: 0,
             directory: directory.into(),
+            binding: binding.map(str::to_owned),
         };
         let challenge = client.read()?;
         if challenge["method"] != "auth.challenge" {
             return Err(Error::EngineChallengeExpected);
         }
         let _: AuthChallengeEvent = serde_json::from_value(challenge["params"].clone())?;
-        let welcome:Welcome=client.request("hello",json!({"client":"soyeht-cli","clientVersion":env!("CARGO_PKG_VERSION"),"protocolVersion":1}))?;
-        if welcome.protocol_version != 1 || welcome.role != soyeht_protocol::Role::HumanLocal {
+        let hello = serde_json::to_value(HelloParams {
+            client: "soyeht-cli".into(),
+            client_version: env!("CARGO_PKG_VERSION").into(),
+            protocol_version: 1,
+            device_token: None,
+            proof: None,
+            binding: binding.map(str::to_owned),
+        })?;
+        let welcome: Welcome = client.request("hello", hello)?;
+        let expected_role = if binding.is_some() {
+            matches!(
+                welcome.role,
+                soyeht_protocol::Role::Agent | soyeht_protocol::Role::Chief
+            )
+        } else {
+            welcome.role == soyeht_protocol::Role::HumanLocal
+        };
+        if welcome.protocol_version != 1 || !expected_role {
             return Err(Error::UnexpectedHandshake);
         }
         Ok(client)
@@ -66,7 +93,7 @@ impl Client {
         for attempt in 0..4 {
             if reconnect {
                 std::thread::sleep(Duration::from_millis(500 * attempt));
-                match Self::connect(&self.directory) {
+                match Self::connect_as(&self.directory, self.binding.as_deref()) {
                     Ok(client) => *self = client,
                     Err(error) if attempt < 3 && retryable(&error) => continue,
                     Err(error) => return Err(error),

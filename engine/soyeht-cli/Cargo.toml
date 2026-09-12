@@ -21,3 +21,4 @@ workspace = true
 
 [dev-dependencies]
 soyeht-ptyd = { path = "../soyeht-ptyd" }
+soyeht-store = { path = "../soyeht-store", features = ["test-support"] }
