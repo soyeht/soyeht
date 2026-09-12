@@ -26,6 +26,7 @@ pub enum Error {
     DiskFull(String),
     PtydUnavailable(String),
     StaleEngineGeneration(String),
+    WorktreeUnavailable(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -85,6 +86,7 @@ constructor!(protocol_version_unsupported, ProtocolVersionUnsupported);
 constructor!(disk_full, DiskFull);
 constructor!(ptyd_unavailable, PtydUnavailable);
 constructor!(stale_engine_generation, StaleEngineGeneration);
+constructor!(worktree_unavailable, WorktreeUnavailable);
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -207,6 +209,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::DiskFull(_) => ErrorKind::DiskFull,
         Error::PtydUnavailable(_) => ErrorKind::PtydUnavailable,
         Error::StaleEngineGeneration(_) => ErrorKind::StaleEngineGeneration,
+        Error::WorktreeUnavailable(_) => ErrorKind::InternalError,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -258,6 +261,7 @@ fn message(error: &Error) -> String {
         | Error::DiskFull(message)
         | Error::PtydUnavailable(message)
         | Error::StaleEngineGeneration(message)
+        | Error::WorktreeUnavailable(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::Storage(soyeht_store::Error::IdempotencyConflict) => {

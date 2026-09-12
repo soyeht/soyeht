@@ -236,6 +236,50 @@ impl Store {
             )
             .optional()?)
     }
+
+    pub fn dispatch_checkpoints(&self) -> Result<Vec<(String, String, DispatchCheckpoint)>> {
+        let mut statement = self.connection.prepare(
+            "SELECT workspace_id,task_id,stage,worktree_path,branch,pane_id FROM task_dispatch ORDER BY workspace_id,task_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                DispatchCheckpoint {
+                    stage: row.get(2)?,
+                    worktree_path: row.get(3)?,
+                    branch: row.get(4)?,
+                    pane_id: row.get(5)?,
+                },
+            ))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn record_dispatch_checkpoint(
+        &mut self,
+        workspace_id: &str,
+        task_id: &str,
+        checkpoint: &DispatchCheckpoint,
+    ) -> Result<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let change = Change { transaction };
+        change.save_dispatch_checkpoint(workspace_id, task_id, checkpoint)?;
+        change.transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn remove_dispatch_checkpoint(&mut self, workspace_id: &str, task_id: &str) -> Result<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let change = Change { transaction };
+        change.clear_dispatch_checkpoint(workspace_id, task_id)?;
+        change.transaction.commit()?;
+        Ok(())
+    }
 }
 
 impl Change<'_> {

@@ -3,6 +3,7 @@
 mod phrase;
 pub mod ports;
 mod rules;
+pub mod worktree;
 
 pub use phrase::{PhraseFacts, phrase, review_badge};
 pub use rules::{

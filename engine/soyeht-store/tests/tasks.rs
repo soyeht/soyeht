@@ -321,6 +321,46 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
 }
 
 #[test]
+fn dispatch_journal_lists_updates_and_removes_internal_steps() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    insert(
+        &mut store,
+        &task("WS-1", TaskPriority::Medium),
+        "journal-task",
+    );
+    let checkpoint = DispatchCheckpoint {
+        stage: "reserved".into(),
+        worktree_path: None,
+        branch: Some("task/ws-1".into()),
+        pane_id: Some("pane-1".into()),
+    };
+    store
+        .record_dispatch_checkpoint("workspace-1", "WS-1", &checkpoint)
+        .unwrap();
+    assert_eq!(
+        store.dispatch_checkpoints().unwrap(),
+        vec![("workspace-1".into(), "WS-1".into(), checkpoint.clone())]
+    );
+
+    let mut advanced = checkpoint;
+    advanced.stage = "worktree_created".into();
+    advanced.worktree_path = Some("/tmp/worktree".into());
+    store
+        .record_dispatch_checkpoint("workspace-1", "WS-1", &advanced)
+        .unwrap();
+    assert_eq!(
+        store.dispatch_checkpoint("workspace-1", "WS-1").unwrap(),
+        Some(advanced)
+    );
+    store
+        .remove_dispatch_checkpoint("workspace-1", "WS-1")
+        .unwrap();
+    assert!(store.dispatch_checkpoints().unwrap().is_empty());
+}
+
+#[test]
 fn one_real_database_transaction_reserves_a_task_only_once() {
     let profile = Arc::new(Profile::new());
     let mut seed_store = profile.store();
