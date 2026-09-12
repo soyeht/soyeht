@@ -2,13 +2,13 @@
 
 use serde_json::json;
 use soyeht_protocol::{
-    Actor, EditorLanguage, FileAuthor, FileVersion, Pane, PaneMode, PaneState, Role, StateSource,
-    Workspace,
+    Actor, EditorLanguage, FileAuthor, FileSearchMatch, FileVersion, Pane, PaneMode, PaneState,
+    Role, StateSource, TextPosition, TextRange, Workspace,
 };
 use soyeht_store::{
     database::Store,
     domain::PaneRecord,
-    editor::{EditorFile, StoredFileVersion},
+    editor::{EditorFile, ProjectReplacement, ProjectReplacementItem, StoredFileVersion},
 };
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
@@ -48,7 +48,7 @@ fn author(name: &str) -> FileAuthor {
 fn editor_file() -> EditorFile {
     EditorFile {
         file_id: "file-1".into(),
-        pane_id: "pane-1".into(),
+        pane_id: Some("pane-1".into()),
         workspace_id: "workspace-1".into(),
         relative_path: "src/main.rs".into(),
         language: EditorLanguage::Rust,
@@ -74,6 +74,48 @@ fn version(revision: u64, content: String) -> StoredFileVersion {
             byte_count: content.len().to_string(),
         },
         content,
+    }
+}
+
+fn replacement(files: &[EditorFile]) -> ProjectReplacement {
+    let items = files
+        .iter()
+        .enumerate()
+        .map(|(ordinal, file)| ProjectReplacementItem {
+            ordinal: ordinal as u32,
+            file_id: file.file_id.clone(),
+            relative_path: file.relative_path.clone(),
+            before_hash: "a".repeat(64),
+            after_hash: "b".repeat(64),
+            replaced: 1,
+            applied: false,
+        })
+        .collect::<Vec<_>>();
+    ProjectReplacement {
+        operation_id: "replace-1".into(),
+        scope: "client-1".into(),
+        idempotency_key: "request-1".into(),
+        fingerprint: "fingerprint-1".into(),
+        workspace_id: "workspace-1".into(),
+        query: "before".into(),
+        replacement: "after".into(),
+        case_sensitive: true,
+        author: author("Caio"),
+        matches: files
+            .iter()
+            .map(|file| FileSearchMatch {
+                workspace_id: "workspace-1".into(),
+                path: file.relative_path.clone(),
+                range: TextRange {
+                    start: TextPosition { line: 0, column: 0 },
+                    end: TextPosition { line: 0, column: 6 },
+                },
+                preview: "before".into(),
+            })
+            .collect(),
+        total_replaced: items.len() as u32,
+        created_ms: 200,
+        items,
     }
 }
 
@@ -216,6 +258,150 @@ fn history_retention_enforces_both_the_count_and_byte_caps_in_the_transaction() 
 }
 
 #[test]
+fn replacement_journal_keeps_detached_history_and_closes_only_after_every_item() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let mut open = editor_file();
+    open.draft_text = None;
+    open.draft_author = None;
+    open.disk_text = "before one\n".into();
+    let detached = EditorFile {
+        file_id: "file-2".into(),
+        pane_id: None,
+        workspace_id: "workspace-1".into(),
+        relative_path: "src/other.rs".into(),
+        language: EditorLanguage::Rust,
+        revision: 1,
+        disk_revision: 1,
+        disk_text: "before two\n".into(),
+        draft_text: None,
+        draft_author: None,
+        conflict_text: None,
+        watching: false,
+        updated_ms: 200,
+    };
+    store
+        .mutate("test", "clean", "clean", |change| {
+            change.save_editor_file(&open)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let journal = replacement(&[open.clone(), detached.clone()]);
+    assert_eq!(
+        store
+            .begin_file_replacement(&journal, &[open.clone(), detached.clone()])
+            .unwrap(),
+        journal
+    );
+    let mut busy = journal.clone();
+    busy.operation_id = "replace-2".into();
+    busy.idempotency_key = "request-2".into();
+    busy.fingerprint = "fingerprint-2".into();
+    assert!(matches!(
+        store.begin_file_replacement(&busy, &[open.clone(), detached.clone()]),
+        Err(soyeht_store::Error::FileReplacementBusy)
+    ));
+    assert_eq!(
+        store
+            .begin_file_replacement(&journal, &[open.clone(), detached.clone()])
+            .unwrap(),
+        journal
+    );
+    let mut conflicting = journal.clone();
+    conflicting.fingerprint = "different".into();
+    assert!(matches!(
+        store.begin_file_replacement(&conflicting, &[open.clone(), detached.clone()]),
+        Err(soyeht_store::Error::IdempotencyConflict)
+    ));
+    drop(store);
+
+    finish_replacement_after_reopen(&profile, journal, open, detached);
+}
+
+fn finish_replacement_after_reopen(
+    profile: &Profile,
+    journal: ProjectReplacement,
+    open: EditorFile,
+    detached: EditorFile,
+) {
+    let mut store = profile.store();
+    assert_eq!(
+        store.active_file_replacements().unwrap(),
+        vec![journal.clone()]
+    );
+    assert_eq!(store.editor_file("file-2").unwrap(), Some(detached.clone()));
+    let mut applied_open = open;
+    applied_open.revision = 3;
+    applied_open.disk_revision = 2;
+    applied_open.disk_text = "after one\n".into();
+    applied_open.updated_ms = 300;
+    let open_version = StoredFileVersion {
+        version: FileVersion {
+            version_id: "replace-version-1".into(),
+            file_id: "file-1".into(),
+            revision: "3".into(),
+            created_at: "2026-09-12T21:00:00Z".into(),
+            author: author("Caio"),
+            byte_count: "10".into(),
+        },
+        content: "after one\n".into(),
+    };
+    store
+        .mutate("replace", "first", "first", |change| {
+            assert!(change.mark_file_replacement_applied(
+                "replace-1",
+                0,
+                &applied_open,
+                &open_version,
+            )?);
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert!(matches!(
+        store.mutate("replace", "early", "early", |change| {
+            change.complete_file_replacement("replace-1")?;
+            Ok((json!({}), vec![]))
+        }),
+        Err(soyeht_store::Error::FileReplacementIncomplete)
+    ));
+    let mut applied_detached = detached;
+    applied_detached.revision = 2;
+    applied_detached.disk_revision = 2;
+    applied_detached.disk_text = "after two\n".into();
+    applied_detached.updated_ms = 300;
+    let detached_version = StoredFileVersion {
+        version: FileVersion {
+            version_id: "replace-version-2".into(),
+            file_id: "file-2".into(),
+            revision: "2".into(),
+            created_at: "2026-09-12T21:00:00Z".into(),
+            author: author("Caio"),
+            byte_count: "10".into(),
+        },
+        content: "after two\n".into(),
+    };
+    store
+        .mutate("replace", "second", "second", |change| {
+            assert!(change.mark_file_replacement_applied(
+                "replace-1",
+                1,
+                &applied_detached,
+                &detached_version,
+            )?);
+            change.complete_file_replacement("replace-1")?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert!(store.active_file_replacements().unwrap().is_empty());
+    assert_eq!(
+        store.file_history("file-2", None, 10).unwrap().items[0].revision,
+        "2"
+    );
+    assert_eq!(store.editor_files().unwrap(), vec![applied_open]);
+}
+
+#[test]
 fn migration_from_populated_v11_preserves_existing_rows_and_adds_editor_storage() {
     let profile = Profile::new();
     let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
@@ -253,6 +439,73 @@ fn migration_from_populated_v11_preserves_existing_rows_and_adds_editor_storage(
         })
         .unwrap();
     assert!(store.editor_file("file-1").unwrap().is_some());
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        soyeht_store::database::SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn migration_from_populated_v12_preserves_open_files_and_history() {
+    let profile = Profile::new();
+    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
+    for migration in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+        include_str!("../migrations/005-native-replay.sql"),
+        include_str!("../migrations/006-agent-auth-snapshot.sql"),
+        include_str!("../migrations/007-workspace-tasks.sql"),
+        include_str!("../migrations/008-task-reviews.sql"),
+        include_str!("../migrations/009-task-block-retries.sql"),
+        include_str!("../migrations/010-agent-pane-role.sql"),
+        include_str!("../migrations/011-usage-readings.sql"),
+        include_str!("../migrations/012-editor-files.sql"),
+    ] {
+        connection.execute_batch(migration).unwrap();
+    }
+    connection
+        .execute_batch(
+            r#"INSERT INTO metadata(key,value) VALUES ('db_id','v12-db'),('engine_generation','0');
+               INSERT INTO workspaces(id,payload,closed) VALUES ('workspace-1','{"workspaceId":"workspace-1","name":"Editor","path":"/tmp/editor","layout":{}}',0);
+               INSERT INTO panes(id,workspace_id,payload,closed,instance_key,sequence_base) VALUES ('pane-1','workspace-1','{"paneId":"pane-1","workspaceId":"workspace-1","name":"main.rs","cwd":"/tmp/editor","mode":"editor","state":"idle","source":"protocol","confidence":1.0,"phrase":"","generation":1,"cols":80,"rows":24,"record":false}',0,'editor-pane-1','0');"#,
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO editor_files VALUES ('file-1','pane-1','workspace-1','src/main.rs','rust',2,2,?1,NULL,NULL,NULL,1,200)",
+            ["saved\n"],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO editor_file_versions(version_id,file_id,revision,created_at,author,content,byte_count) VALUES ('version-2','file-1',2,'2026-09-12T21:00:00Z',?1,?2,6)",
+            [r#"{"actor":{"role":"human_local","client":"mac"},"name":"Caio"}"#, "saved\n"],
+        )
+        .unwrap();
+    drop(connection);
+
+    let mut store = profile.store();
+    let file = store.editor_file("file-1").unwrap().unwrap();
+    assert_eq!(file.pane_id.as_deref(), Some("pane-1"));
+    assert_eq!(file.disk_text, "saved\n");
+    assert_eq!(
+        store
+            .file_version("file-1", "version-2")
+            .unwrap()
+            .unwrap()
+            .content,
+        "saved\n"
+    );
+    save_version(&mut store, &version(3, "next\n".into()));
+    assert_eq!(
+        store.file_history("file-1", None, 10).unwrap().items.len(),
+        2
+    );
     assert_eq!(
         store
             .connection()

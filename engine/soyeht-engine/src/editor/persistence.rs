@@ -30,7 +30,7 @@ impl Core {
             self.now_ms(),
         )?;
         let result = serde_json::to_value(FileWriteResult {
-            file: document(prepared.file.clone()),
+            file: document(prepared.file.clone()).map_err(errors::storage)?,
             changed_lines: prepared.changed_lines.clone(),
         })
         .map_err(|_| errors::internal("File write result serialization failed"))?;
@@ -106,7 +106,7 @@ impl Core {
         file.draft_author = Some(self.file_author(connection)?);
         file.updated_ms = self.now_ms();
         let result = serde_json::to_value(FileRevertResult {
-            file: document(file.clone()),
+            file: document(file.clone()).map_err(errors::storage)?,
         })
         .map_err(|_| errors::internal("File revert result serialization failed"))?;
         let saved = file.clone();
@@ -196,11 +196,9 @@ impl Core {
         file.conflict_text = None;
         file.updated_ms = now;
         let version = stored_version(&file, content, author.clone(), self.timestamp());
-        let result = json!({"file":document(file.clone())});
-        let events = vec![(
-            "file.saved".into(),
-            json!({"file":document(file.clone()),"by":author}),
-        )];
+        let wire = document(file.clone()).map_err(errors::storage)?;
+        let result = json!({"file":wire});
+        let events = vec![("file.saved".into(), json!({"file":wire,"by":author}))];
         self.persist_editor_system("save", file, Some(version), result, events, true)
     }
 

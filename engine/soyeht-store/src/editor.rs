@@ -2,12 +2,12 @@
 
 use crate::database::{Change, Error, Result, Store};
 use rusqlite::{OptionalExtension, params};
-use soyeht_protocol::{EditorLanguage, FileAuthor, FileDocument, FileVersion};
+use soyeht_protocol::{EditorLanguage, FileAuthor, FileDocument, FileSearchMatch, FileVersion};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EditorFile {
     pub file_id: String,
-    pub pane_id: String,
+    pub pane_id: Option<String>,
     pub workspace_id: String,
     pub relative_path: String,
     pub language: EditorLanguage,
@@ -35,7 +35,7 @@ pub struct FileHistoryPage {
 
 struct RawEditorFile {
     file_id: String,
-    pane_id: String,
+    pane_id: Option<String>,
     workspace_id: String,
     relative_path: String,
     language: String,
@@ -47,6 +47,34 @@ struct RawEditorFile {
     conflict_text: Option<String>,
     watching: bool,
     updated_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ProjectReplacement {
+    pub operation_id: String,
+    pub scope: String,
+    pub idempotency_key: String,
+    pub fingerprint: String,
+    pub workspace_id: String,
+    pub query: String,
+    pub replacement: String,
+    pub case_sensitive: bool,
+    pub author: FileAuthor,
+    pub matches: Vec<FileSearchMatch>,
+    pub total_replaced: u32,
+    pub created_ms: i64,
+    pub items: Vec<ProjectReplacementItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectReplacementItem {
+    pub ordinal: u32,
+    pub file_id: String,
+    pub relative_path: String,
+    pub before_hash: String,
+    pub after_hash: String,
+    pub replaced: u32,
+    pub applied: bool,
 }
 
 impl Store {
@@ -74,12 +102,87 @@ impl Store {
         raw.map(validate_file).transpose()
     }
 
+    pub fn editor_file_for_path(
+        &self,
+        workspace_id: &str,
+        relative_path: &str,
+    ) -> Result<Option<EditorFile>> {
+        let raw = self
+            .connection
+            .query_row(
+                "SELECT file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms FROM editor_files WHERE workspace_id=?1 AND relative_path=?2",
+                params![workspace_id, relative_path],
+                decode_file,
+            )
+            .optional()?;
+        raw.map(validate_file).transpose()
+    }
+
     pub fn editor_files(&self) -> Result<Vec<EditorFile>> {
         let mut statement = self.connection.prepare(
             "SELECT e.file_id,e.pane_id,e.workspace_id,e.relative_path,e.language,e.revision,e.disk_revision,e.disk_text,e.draft_text,e.draft_author,e.conflict_text,e.watching,e.updated_ms FROM editor_files e JOIN panes p ON p.id=e.pane_id WHERE p.closed=0 ORDER BY e.workspace_id,e.relative_path",
         )?;
         let rows = statement.query_map([], decode_file)?;
         rows.map(|row| validate_file(row?)).collect()
+    }
+
+    pub fn file_replacement(
+        &self,
+        scope: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<ProjectReplacement>> {
+        replacement_by_key(&self.connection, scope, idempotency_key)
+    }
+
+    pub fn active_file_replacements(&self) -> Result<Vec<ProjectReplacement>> {
+        let mut statement = self.connection.prepare(
+            "SELECT operation_id FROM editor_replace_operations ORDER BY created_ms,operation_id",
+        )?;
+        let ids = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        ids.into_iter()
+            .map(|id| replacement_by_id(&self.connection, &id))
+            .collect()
+    }
+
+    pub fn begin_file_replacement(
+        &mut self,
+        replacement: &ProjectReplacement,
+        files: &[EditorFile],
+    ) -> Result<ProjectReplacement> {
+        validate_replacement(replacement, files)?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        if let Some(previous) = replacement_by_key(
+            &transaction,
+            &replacement.scope,
+            &replacement.idempotency_key,
+        )? {
+            if previous.fingerprint != replacement.fingerprint {
+                return Err(Error::IdempotencyConflict);
+            }
+            return Ok(previous);
+        }
+        let busy = transaction
+            .query_row(
+                "SELECT 1 FROM editor_replace_operations WHERE workspace_id=?1",
+                [&replacement.workspace_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if busy {
+            return Err(Error::FileReplacementBusy);
+        }
+        let change = Change { transaction };
+        for file in files {
+            change.stage_replacement_file(file)?;
+        }
+        change.insert_file_replacement(replacement)?;
+        change.transaction.commit()?;
+        Ok(replacement.clone())
     }
 
     pub fn file_version(
@@ -134,14 +237,16 @@ pub(crate) fn snapshot_files(transaction: &rusqlite::Transaction<'_>) -> Result<
         "SELECT e.file_id,e.pane_id,e.workspace_id,e.relative_path,e.language,e.revision,e.disk_revision,e.disk_text,e.draft_text,e.draft_author,e.conflict_text,e.watching,e.updated_ms FROM editor_files e JOIN panes p ON p.id=e.pane_id WHERE p.closed=0 ORDER BY e.workspace_id,e.relative_path",
     )?;
     let rows = statement.query_map([], decode_file)?;
-    rows.map(|row| validate_file(row?).map(document)).collect()
+    rows.map(|row| validate_file(row?).and_then(document))
+        .collect()
 }
 
-pub fn document(file: EditorFile) -> FileDocument {
+pub fn document(file: EditorFile) -> Result<FileDocument> {
     let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
-    FileDocument {
+    let pane_id = file.pane_id.ok_or(Error::InvalidEditorFile)?;
+    Ok(FileDocument {
         file_id: file.file_id,
-        pane_id: file.pane_id,
+        pane_id,
         workspace_id: file.workspace_id,
         path: file.relative_path,
         language: file.language,
@@ -152,7 +257,7 @@ pub fn document(file: EditorFile) -> FileDocument {
         dirty: file.draft_text.is_some(),
         conflicted: file.conflict_text.is_some(),
         watching: file.watching,
-    }
+    })
 }
 
 impl Change<'_> {
@@ -203,6 +308,115 @@ impl Change<'_> {
         )?;
         Ok(())
     }
+
+    pub fn mark_file_replacement_applied(
+        &self,
+        operation_id: &str,
+        ordinal: u32,
+        file: &EditorFile,
+        version: &StoredFileVersion,
+    ) -> Result<bool> {
+        validate_file_record(file)?;
+        validate_version(version.clone())?;
+        let row = self
+            .transaction
+            .query_row(
+                "SELECT file_id,applied FROM editor_replace_items WHERE operation_id=?1 AND ordinal=?2",
+                params![operation_id, i64::from(ordinal)],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .optional()?
+            .ok_or(Error::InvalidFileReplacement)?;
+        if row.0 != file.file_id || version.version.file_id != file.file_id {
+            return Err(Error::InvalidFileReplacement);
+        }
+        if row.1 {
+            return Ok(false);
+        }
+        self.save_editor_file(file)?;
+        self.record_file_version(version)?;
+        let changed = self.transaction.execute(
+            "UPDATE editor_replace_items SET applied=1 WHERE operation_id=?1 AND ordinal=?2 AND applied=0",
+            params![operation_id, i64::from(ordinal)],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn complete_file_replacement(&self, operation_id: &str) -> Result<()> {
+        let pending = self.transaction.query_row(
+            "SELECT count(*) FROM editor_replace_items WHERE operation_id=?1 AND applied=0",
+            [operation_id],
+            |row| row.get::<_, u32>(0),
+        )?;
+        if pending != 0 {
+            return Err(Error::FileReplacementIncomplete);
+        }
+        let removed = self.transaction.execute(
+            "DELETE FROM editor_replace_operations WHERE operation_id=?1",
+            [operation_id],
+        )?;
+        if removed != 1 {
+            return Err(Error::InvalidFileReplacement);
+        }
+        Ok(())
+    }
+
+    fn stage_replacement_file(&self, file: &EditorFile) -> Result<()> {
+        let previous = self
+            .transaction
+            .query_row(
+                "SELECT file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms FROM editor_files WHERE workspace_id=?1 AND relative_path=?2",
+                params![file.workspace_id, file.relative_path],
+                decode_file,
+            )
+            .optional()?
+            .map(validate_file)
+            .transpose()?;
+        if let Some(previous) = previous {
+            if previous != *file {
+                return Err(Error::InvalidFileReplacement);
+            }
+        } else {
+            self.save_editor_file(file)?;
+        }
+        Ok(())
+    }
+
+    fn insert_file_replacement(&self, replacement: &ProjectReplacement) -> Result<()> {
+        self.transaction.execute(
+            "INSERT INTO editor_replace_operations(operation_id,scope,idempotency_key,fingerprint,workspace_id,query,replacement,case_sensitive,author,matches,total_replaced,created_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+            params![
+                replacement.operation_id,
+                replacement.scope,
+                replacement.idempotency_key,
+                replacement.fingerprint,
+                replacement.workspace_id,
+                replacement.query,
+                replacement.replacement,
+                replacement.case_sensitive,
+                serde_json::to_string(&replacement.author)?,
+                serde_json::to_string(&replacement.matches)?,
+                replacement.total_replaced,
+                replacement.created_ms,
+            ],
+        )?;
+        for item in &replacement.items {
+            self.transaction.execute(
+                "INSERT INTO editor_replace_items(operation_id,ordinal,file_id,relative_path,before_hash,after_hash,replaced,applied) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    replacement.operation_id,
+                    item.ordinal,
+                    item.file_id,
+                    item.relative_path,
+                    item.before_hash,
+                    item.after_hash,
+                    item.replaced,
+                    item.applied,
+                ],
+            )?;
+        }
+        Ok(())
+    }
 }
 
 fn decode_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawEditorFile> {
@@ -247,7 +461,7 @@ fn validate_file(raw: RawEditorFile) -> Result<EditorFile> {
 }
 
 fn validate_file_record(file: &EditorFile) -> Result<()> {
-    let identifiers = [&file.file_id, &file.pane_id, &file.workspace_id];
+    let identifiers = [&file.file_id, &file.workspace_id];
     let draft_matches = file.draft_text.is_some() == file.draft_author.is_some();
     if identifiers
         .iter()
@@ -258,10 +472,148 @@ fn validate_file_record(file: &EditorFile) -> Result<()> {
         || file.updated_ms < 0
         || !draft_matches
         || (file.conflict_text.is_some() && file.draft_text.is_none())
+        || (file.pane_id.is_none()
+            && (file.draft_text.is_some() || file.conflict_text.is_some() || file.watching))
+        || file
+            .pane_id
+            .as_ref()
+            .is_some_and(|value| value.is_empty() || value.len() > 128)
     {
         return Err(Error::InvalidEditorFile);
     }
     Ok(())
+}
+
+fn replacement_by_key(
+    connection: &rusqlite::Connection,
+    scope: &str,
+    idempotency_key: &str,
+) -> Result<Option<ProjectReplacement>> {
+    let id = connection
+        .query_row(
+            "SELECT operation_id FROM editor_replace_operations WHERE scope=?1 AND idempotency_key=?2",
+            params![scope, idempotency_key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    id.map(|id| replacement_by_id(connection, &id)).transpose()
+}
+
+fn replacement_by_id(
+    connection: &rusqlite::Connection,
+    operation_id: &str,
+) -> Result<ProjectReplacement> {
+    let mut replacement = connection.query_row(
+        "SELECT scope,idempotency_key,fingerprint,workspace_id,query,replacement,case_sensitive,author,matches,total_replaced,created_ms FROM editor_replace_operations WHERE operation_id=?1",
+        [operation_id],
+        |row| {
+            let author: String = row.get(7)?;
+            let matches: String = row.get(8)?;
+            Ok(ProjectReplacement {
+                operation_id: operation_id.to_owned(),
+                scope: row.get(0)?,
+                idempotency_key: row.get(1)?,
+                fingerprint: row.get(2)?,
+                workspace_id: row.get(3)?,
+                query: row.get(4)?,
+                replacement: row.get(5)?,
+                case_sensitive: row.get(6)?,
+                author: serde_json::from_str(&author).map_err(json_error)?,
+                matches: serde_json::from_str(&matches).map_err(json_error)?,
+                total_replaced: row.get(9)?,
+                created_ms: row.get(10)?,
+                items: Vec::new(),
+            })
+        },
+    )?;
+    let mut statement = connection.prepare(
+        "SELECT ordinal,file_id,relative_path,before_hash,after_hash,replaced,applied FROM editor_replace_items WHERE operation_id=?1 ORDER BY ordinal",
+    )?;
+    replacement.items = statement
+        .query_map([operation_id], |row| {
+            Ok(ProjectReplacementItem {
+                ordinal: row.get(0)?,
+                file_id: row.get(1)?,
+                relative_path: row.get(2)?,
+                before_hash: row.get(3)?,
+                after_hash: row.get(4)?,
+                replaced: row.get(5)?,
+                applied: row.get(6)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    validate_replacement(&replacement, &[])?;
+    Ok(replacement)
+}
+
+fn validate_replacement(replacement: &ProjectReplacement, files: &[EditorFile]) -> Result<()> {
+    let ids = [
+        &replacement.operation_id,
+        &replacement.scope,
+        &replacement.idempotency_key,
+        &replacement.workspace_id,
+    ];
+    let items_match = files.is_empty()
+        || (files.len() == replacement.items.len()
+            && files.iter().zip(&replacement.items).all(|(file, item)| {
+                file.file_id == item.file_id
+                    && file.workspace_id == replacement.workspace_id
+                    && file.relative_path == item.relative_path
+            }));
+    let ordinals_match = replacement
+        .items
+        .iter()
+        .enumerate()
+        .all(|(index, item)| usize::try_from(item.ordinal).ok() == Some(index));
+    if ids
+        .iter()
+        .any(|value| value.is_empty() || value.len() > 128)
+        || replacement.fingerprint.is_empty()
+        || replacement.fingerprint.len() > 256
+        || replacement.query.is_empty()
+        || replacement.query.len() > 4096
+        || replacement.replacement.len() > 262_144
+        || replacement.created_ms < 0
+        || replacement.items.is_empty()
+        || replacement.items.len() > soyeht_protocol::limits::EDITOR_SEARCH_RESULTS
+        || replacement.matches.len() > soyeht_protocol::limits::EDITOR_SEARCH_RESULTS
+        || replacement.total_replaced == 0
+        || replacement.total_replaced as usize > soyeht_protocol::limits::EDITOR_SEARCH_RESULTS
+        || replacement.matches.len() != replacement.total_replaced as usize
+        || replacement
+            .items
+            .iter()
+            .map(|item| item.replaced)
+            .try_fold(0_u32, u32::checked_add)
+            != Some(replacement.total_replaced)
+        || replacement.items.iter().any(|item| {
+            item.file_id.is_empty()
+                || item.file_id.len() > 128
+                || item.relative_path.is_empty()
+                || item.relative_path.len() > 4096
+                || item.relative_path.starts_with('/')
+                || !valid_hash(&item.before_hash)
+                || !valid_hash(&item.after_hash)
+                || item.before_hash == item.after_hash
+                || item.replaced == 0
+                || item.replaced as usize > soyeht_protocol::limits::EDITOR_SEARCH_RESULTS
+        })
+        || !items_match
+        || !ordinals_match
+    {
+        return Err(Error::InvalidFileReplacement);
+    }
+    for file in files {
+        validate_file_record(file)?;
+        if file.draft_text.is_some() || file.conflict_text.is_some() {
+            return Err(Error::InvalidFileReplacement);
+        }
+    }
+    Ok(())
+}
+
+fn valid_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn validate_version(version: StoredFileVersion) -> Result<StoredFileVersion> {

@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 #[derive(Debug)]
 pub enum Error {
@@ -82,6 +82,9 @@ pub enum Error {
     InvalidEditorFile,
     InvalidFileHistoryLimit,
     FileVersionNotFound,
+    InvalidFileReplacement,
+    FileReplacementBusy,
+    FileReplacementIncomplete,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -171,6 +174,9 @@ impl fmt::Display for Error {
             Self::InvalidEditorFile => f.write_str("invalid stored editor file"),
             Self::InvalidFileHistoryLimit => f.write_str("invalid file history page limit"),
             Self::FileVersionNotFound => f.write_str("file version not found"),
+            Self::InvalidFileReplacement => f.write_str("invalid file replacement"),
+            Self::FileReplacementBusy => f.write_str("workspace already has a file replacement"),
+            Self::FileReplacementIncomplete => f.write_str("file replacement is incomplete"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -307,6 +313,11 @@ impl Store {
             }
             if version < 12 {
                 tx.execute_batch(include_str!("../migrations/012-editor-files.sql"))?;
+            }
+            if version < 13 {
+                tx.execute_batch(include_str!(
+                    "../migrations/013-editor-project-replacements.sql"
+                ))?;
             }
             tx.commit()?;
         }

@@ -403,7 +403,8 @@ impl Service {
     }
 
     pub fn remove_pane(&mut self, pane_id: &str) {
-        self.open.retain(|_, item| item.file.pane_id != pane_id);
+        self.open
+            .retain(|_, item| item.file.pane_id.as_deref() != Some(pane_id));
     }
 }
 

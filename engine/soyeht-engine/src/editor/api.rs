@@ -74,7 +74,7 @@ impl Core {
         };
         let file = EditorFile {
             file_id: Uuid::new_v4().to_string(),
-            pane_id: pane.pane_id.clone(),
+            pane_id: Some(pane.pane_id.clone()),
             workspace_id: workspace.workspace_id,
             relative_path: resolved.relative,
             language,
@@ -135,7 +135,7 @@ impl Core {
         )?;
         let to_line = request.from_line.saturating_add(lines.len() as u32);
         serde_json::to_value(FileReadResult {
-            file: document(file),
+            file: document(file).map_err(errors::storage)?,
             source,
             from_line: request.from_line,
             to_line,
@@ -187,7 +187,11 @@ impl Core {
     fn open_result(&self, file: &EditorFile, line: Option<u32>) -> Result<FileOpenResult> {
         let pane = self
             .panes
-            .get(&file.pane_id)
+            .get(
+                file.pane_id
+                    .as_deref()
+                    .ok_or_else(|| errors::internal("Open file has no pane"))?,
+            )
             .ok_or_else(|| errors::internal("Open file has no pane"))?
             .stored
             .pane
@@ -216,7 +220,7 @@ fn initial_open_result(
     let from = (line.unwrap_or(0) as usize).min(last);
     let lines = soyeht_editor::project(&syntax, from, INITIAL_VIEWPORT_LINES)?;
     let viewport = FileReadResult {
-        file: document(file.clone()),
+        file: document(file.clone()).map_err(errors::storage)?,
         source: if file.draft_text.is_some() {
             EditorContentSource::Draft
         } else {
