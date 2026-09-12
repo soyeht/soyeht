@@ -20,6 +20,26 @@ struct SoyehtMacApp: App {
     .commands {
       CommandGroup(replacing: .newItem) {}
       CommandGroup(after: .toolbar) {
+        Button("Command Palette") {
+          NotificationCenter.default.post(
+            name: .showSoyehtEditorPalette, object: EditorPaletteMode.commands)
+        }
+        .keyboardShortcut("p", modifiers: [.command, .shift])
+        Button("Open File") {
+          NotificationCenter.default.post(
+            name: .showSoyehtEditorPalette, object: EditorPaletteMode.files)
+        }
+        .keyboardShortcut("p", modifiers: .command)
+        Button("Search Project") {
+          NotificationCenter.default.post(
+            name: .showSoyehtEditorPalette, object: EditorPaletteMode.project)
+        }
+        .keyboardShortcut("f", modifiers: [.command, .shift])
+        Button("Go to Line") {
+          NotificationCenter.default.post(
+            name: .showSoyehtEditorPalette, object: EditorPaletteMode.line)
+        }
+        .keyboardShortcut("g", modifiers: .control)
         Divider()
         Button("Toggle App Bar") {
           NotificationCenter.default.post(name: .toggleSoyehtAppBar, object: nil)
@@ -55,4 +75,5 @@ extension Notification.Name {
   static let showSoyehtPreferences = Notification.Name("showSoyehtPreferences")
   static let toggleSoyehtAppBar = Notification.Name("toggleSoyehtAppBar")
   static let selectSoyehtWorkspaceView = Notification.Name("selectSoyehtWorkspaceView")
+  static let showSoyehtEditorPalette = Notification.Name("showSoyehtEditorPalette")
 }

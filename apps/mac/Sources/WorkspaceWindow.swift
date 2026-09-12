@@ -14,6 +14,7 @@ struct WorkspaceWindow: View {
   @State private var taskWorkspaceId: String?
   @State private var showPreferences = false
   @State private var selectedUsageProvider: UsageProvider?
+  @State private var editorPaletteMode: EditorPaletteMode?
   var body: some View {
     VStack(spacing: MacTheme.Space.x16) {
       WorkspaceTopBar(
@@ -95,6 +96,24 @@ struct WorkspaceWindow: View {
         .zIndex(40)
       }
     }
+    .overlay {
+      if editorPaletteMode != nil {
+        ZStack {
+          MacTheme.ink.opacity(0.12).contentShape(Rectangle())
+            .onTapGesture { editorPaletteMode = nil }
+          EditorNavigationPalette(
+            client: client, workspaceId: selectedTaskWorkspaceId, mode: $editorPaletteMode
+          )
+          .onTapGesture {}
+        }
+        .zIndex(60)
+      }
+    }
+    .background(
+      EditorDoubleShiftMonitor {
+        editorPaletteMode = .everywhere
+      }
+    )
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtPreferences)) { _ in
       selectedUsageProvider = nil
       showPreferences = true
@@ -106,6 +125,9 @@ struct WorkspaceWindow: View {
       if let destination = note.object as? WorkspaceDestination {
         selectDestination(destination)
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .showSoyehtEditorPalette)) { note in
+      editorPaletteMode = note.object as? EditorPaletteMode ?? .commands
     }
     .onExitCommand { showPreferences = false }
   }
