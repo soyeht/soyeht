@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 571c3b53dd43fc4dffcf2d710d309007a04676be25bd61dd7066f0b979a40e08). Do not edit.
+// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -9,13 +9,15 @@ export type ByteString = string;
 
 export type Role = "human_local" | "human_device" | "agent" | "chief";
 
+export type AgentPaneRole = "worker" | "chief";
+
 export type PaneMode = "terminal" | "agent";
 
 export type PaneState = "starting" | "working" | "idle" | "waiting_for_you" | "cancelling" | "no_signal" | "recovering" | "dead" | "unknown";
 
 export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
-export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "devices" | "capabilities" | "streams";
+export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams";
 
 export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open";
 
@@ -667,6 +669,7 @@ export interface AgentSession {
   "draft": boolean;
   "activePromptId"?: Id;
   "queuePaused"?: boolean;
+  "role": AgentPaneRole;
 }
 
 export interface ProbeCapability {
@@ -1699,6 +1702,17 @@ export interface LoopStoppedEvent {
   "reason": string;
 }
 
+export interface PaneRoleSetParams {
+  "paneId": Id;
+  "role": AgentPaneRole;
+  "idempotencyKey": Id;
+}
+
+export interface PaneRoleSetResult {
+  "paneId": Id;
+  "role": AgentPaneRole;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -1709,6 +1723,7 @@ export interface Methods {
   "workspace.close": { params: WorkspaceCloseParams; result: WorkspaceCloseResult };
   "workspace.focus": { params: WorkspaceFocusParams; result: WorkspaceFocusResult };
   "pane.create": { params: PaneCreateParams; result: PaneCreateResult };
+  "pane.role.set": { params: PaneRoleSetParams; result: PaneRoleSetResult };
   "pane.close": { params: PaneCloseParams; result: PaneCloseResult };
   "pane.focus": { params: PaneFocusParams; result: PaneFocusResult };
   "pane.rename": { params: PaneRenameParams; result: PaneRenameResult };

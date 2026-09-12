@@ -28,6 +28,13 @@
         "chief"
       ]
     },
+    "AgentPaneRole": {
+      "type": "string",
+      "enum": [
+        "worker",
+        "chief"
+      ]
+    },
     "PaneMode": {
       "type": "string",
       "enum": [
@@ -67,6 +74,7 @@
         "tasks",
         "requests",
         "attention",
+        "loops",
         "devices",
         "capabilities",
         "streams"
@@ -2321,6 +2329,9 @@
         },
         "queuePaused": {
           "type": "boolean"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentPaneRole"
         }
       },
       "required": [
@@ -2332,7 +2343,8 @@
         "permission",
         "yolo",
         "queue",
-        "draft"
+        "draft",
+        "role"
       ],
       "additionalProperties": true
     },
@@ -6059,6 +6071,42 @@
         "reason"
       ],
       "additionalProperties": true
+    },
+    "PaneRoleSetParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentPaneRole"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "role",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneRoleSetResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentPaneRole"
+        }
+      },
+      "required": [
+        "paneId",
+        "role"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -6141,6 +6189,15 @@
       },
       "result": {
         "$ref": "#/$defs/PaneCreateResult"
+      },
+      "mutation": true
+    },
+    "pane.role.set": {
+      "params": {
+        "$ref": "#/$defs/PaneRoleSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneRoleSetResult"
       },
       "mutation": true
     },

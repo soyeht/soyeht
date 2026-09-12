@@ -273,6 +273,7 @@ impl Core {
             }
             "pane.input" => self.pane_input(connection, params)?,
             "pane.yolo" => self.agent_yolo(connection, params)?,
+            "pane.role.set" => self.pane_role_set(connection, params)?,
             "pane.auth.start" => self.agent_auth_start(connection, params)?,
             "harness.list" | "model.list" => self.agent_catalog(method, params)?,
             "pane.prompt" | "pane.queue.list" | "pane.queue.remove" | "pane.queue.resume"
@@ -287,6 +288,7 @@ impl Core {
             }
             "task.dispatch" => self.task_dispatch(connection, params)?,
             "task.next" => self.task_next(connection, params)?,
+            "loop.set" => self.loop_set(connection, params)?,
             "task.create"
             | "task.update"
             | "task.comment"

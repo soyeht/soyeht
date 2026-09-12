@@ -6,7 +6,7 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
-const REQUIRED_TOOLS: [&str; 8] = [
+const REQUIRED_AGENT_TOOLS: [&str; 8] = [
     "task_next",
     "task_subitem_add",
     "task_subitem_done",
@@ -15,6 +15,17 @@ const REQUIRED_TOOLS: [&str; 8] = [
     "task_request_review",
     "task_complete",
     "task_release",
+];
+
+const REQUIRED_CHIEF_TOOLS: [&str; 8] = [
+    "task_create",
+    "task_show",
+    "task_list",
+    "task_update",
+    "task_comment",
+    "task_dispatch",
+    "task_unblock",
+    "loop_set",
 ];
 
 pub struct Client {
@@ -79,10 +90,12 @@ impl Client {
         let listed = tools["tools"]
             .as_array()
             .ok_or_else(|| io_error("MCP tool list missing"))?;
-        if REQUIRED_TOOLS
-            .iter()
-            .any(|name| !listed.iter().any(|tool| tool["name"] == *name))
-        {
+        let complete = |required: &[&str]| {
+            required
+                .iter()
+                .all(|name| listed.iter().any(|tool| tool["name"] == *name))
+        };
+        if !complete(&REQUIRED_AGENT_TOOLS) && !complete(&REQUIRED_CHIEF_TOOLS) {
             return invalid("MCP task tool missing");
         }
         Ok(())

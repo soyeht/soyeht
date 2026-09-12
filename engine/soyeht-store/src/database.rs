@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 #[derive(Debug)]
 pub enum Error {
@@ -291,6 +291,9 @@ impl Store {
             if version < 9 {
                 tx.execute_batch(include_str!("../migrations/009-task-block-retries.sql"))?;
             }
+            if version < 10 {
+                tx.execute_batch(include_str!("../migrations/010-agent-pane-role.sql"))?;
+            }
             tx.commit()?;
         }
         let db_id =
@@ -433,12 +436,17 @@ impl Store {
             &tx,
             "SELECT payload FROM tasks ORDER BY workspace_id,priority_rank,ordinal",
         )?;
+        let loops = rows_json(
+            &tx,
+            "SELECT json_object('paneId',pane_id,'config',json(payload)) FROM task_loops ORDER BY pane_id",
+        )?;
         let sections = vec![
             ("workspaces".into(), json!(workspaces)),
             ("panes".into(), json!(panes)),
             ("devices".into(), json!(devices)),
             ("requests".into(), json!(requests)),
             ("tasks".into(), json!(tasks)),
+            ("loops".into(), json!(loops)),
             (
                 "attention".into(),
                 json!(rows_json(

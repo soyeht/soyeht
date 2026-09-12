@@ -28,6 +28,7 @@ pub enum CloseReason {
     DeviceRevoked = 12,
     StreamChanged = 13,
     WriterStopped = 14,
+    RoleChanged = 15,
 }
 
 impl CloseReason {
@@ -47,6 +48,7 @@ impl CloseReason {
             Self::DeviceRevoked => "device_revoked",
             Self::StreamChanged => "stream_changed",
             Self::WriterStopped => "writer_stopped",
+            Self::RoleChanged => "role_changed",
         }
     }
 
@@ -66,6 +68,7 @@ impl CloseReason {
             12 => Self::DeviceRevoked,
             13 => Self::StreamChanged,
             14 => Self::WriterStopped,
+            15 => Self::RoleChanged,
             _ => return None,
         })
     }

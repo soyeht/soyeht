@@ -2281,6 +2281,254 @@ fn two_idle_panes_claim_one_task_exactly_once() {
     }
 }
 
+fn loop_for(client: &mut Client, pane: &str) -> Value {
+    client
+        .section("loops")
+        .into_iter()
+        .find(|item| item["paneId"] == pane)
+        .expect("loop in snapshot")
+}
+
+fn native_prompt_count(rig: &Rig, session: &str, prompt: &str) -> usize {
+    rig.native_session(session)["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|turn| turn[0] == prompt)
+        .count()
+}
+
+const CHIEF_ROLE_PROMPT: &str = "Coordinate; do not implement. Create small, self-contained tasks with how to verify. Never depend on another task's memory. Dispatch only when no free pane is available to claim.";
+
+fn appoint_chief(rig: &Rig, human: &mut Client, pane: &str) -> String {
+    human.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"ready","idempotencyKey":"prime-lead-pane"}),
+    );
+    human.wait_state(pane, "idle");
+    human.call(
+        "pane.role.set",
+        json!({"paneId":pane,"role":"chief","idempotencyKey":"appoint-lead"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let session = loop {
+        let current = human.pane(pane);
+        let session = current["agent"]["sessionId"].as_str().unwrap_or_default();
+        if current["state"] == "idle"
+            && current["agent"]["role"] == "chief"
+            && !session.is_empty()
+            && native_prompt_count(rig, session, CHIEF_ROLE_PROMPT) == 1
+        {
+            break session.to_owned();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "chief role was not applied: {current}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    human.call(
+        "pane.role.set",
+        json!({"paneId":pane,"role":"chief","idempotencyKey":"keep-lead"}),
+    );
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(native_prompt_count(rig, &session, CHIEF_ROLE_PROMPT), 1);
+    session
+}
+
+#[test]
+fn pane_loop_stops_after_three_empty_task_results_and_explicit_off() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"ready","idempotencyKey":"prime-loop-pane"}),
+    );
+    client.wait_state(&pane, "idle");
+    client.call(
+        "loop.set",
+        json!({
+            "paneId":pane,"prompt":"task-claim","interval":1,"maxRounds":10,
+            "stopWhen":"three_empty","enabled":true,"idempotencyKey":"three-empty-loop"
+        }),
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let saved = loop_for(&mut client, &pane);
+        if saved["config"]["enabled"] == false
+            && saved["config"]["emptyResults"] == 3
+            && client.pane(&pane)["state"] == "idle"
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "loop did not stop: {saved}");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(rig.database_probe().event_count("loop.tick").unwrap(), 3);
+    assert_eq!(rig.database_probe().event_count("loop.stopped").unwrap(), 1);
+    assert_eq!(native_prompt_count(&rig, &session, "task-claim"), 3);
+    thread::sleep(Duration::from_millis(1200));
+    assert_eq!(rig.database_probe().event_count("loop.tick").unwrap(), 3);
+
+    client.call(
+        "loop.set",
+        json!({
+            "paneId":pane,"prompt":"","interval":0,"maxRounds":0,
+            "stopWhen":"explicit_off","enabled":false,"idempotencyKey":"explicit-off"
+        }),
+    );
+    assert_eq!(rig.database_probe().event_count("loop.stopped").unwrap(), 2);
+    assert_eq!(loop_for(&mut client, &pane)["config"]["enabled"], false);
+}
+
+#[test]
+fn pane_loop_waits_while_busy_and_dispatches_only_one_due_round() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"slow","idempotencyKey":"busy-turn"}),
+    );
+    client.wait_state(&pane, "working");
+    client.call(
+        "loop.set",
+        json!({
+            "paneId":pane,"prompt":"loop-after-idle","interval":1,"maxRounds":1,
+            "stopWhen":"round_limit","enabled":true,"idempotencyKey":"busy-loop"
+        }),
+    );
+    thread::sleep(Duration::from_millis(1200));
+    assert_eq!(rig.database_probe().event_count("loop.tick").unwrap(), 0);
+
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let saved = loop_for(&mut client, &pane);
+        if saved["config"]["enabled"] == false
+            && saved["config"]["rounds"] == 1
+            && client.pane(&pane)["state"] == "idle"
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "due round did not finish: {saved}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(rig.database_probe().event_count("loop.tick").unwrap(), 1);
+    assert_eq!(native_prompt_count(&rig, &session, "loop-after-idle"), 1);
+}
+
+#[test]
+fn lead_role_prompt_and_task_authority_are_applied_to_the_live_session() {
+    let mut rig = Rig::new();
+    let (mut human, pane) = rig.agent();
+    let workspace = human.pane(&pane)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    appoint_chief(&rig, &mut human, &pane);
+    rig.kill_engine();
+    rig.start();
+    human = rig.client();
+    assert_eq!(human.pane(&pane)["agent"]["role"], "chief");
+
+    let binding = rig.database_probe().agent_binding(&pane).unwrap();
+    let (mut lead, welcome) = binding_hello(&rig.path.join("engine.sock"), &binding);
+    assert_eq!(welcome["result"]["role"], "chief");
+    let created = binding_request(
+        &mut lead,
+        2,
+        "task.create",
+        json!({
+            "workspaceId":workspace,"title":"Lead-created task",
+            "mustNotChange":"Keep the task contract","idempotencyKey":"lead-create"
+        }),
+    );
+    let task = created["result"]["task"].clone();
+    let listed = binding_request(
+        &mut lead,
+        3,
+        "task.list",
+        json!({"workspaceId":workspace,"limit":20}),
+    );
+    assert_eq!(listed["result"]["items"][0]["taskId"], task["taskId"]);
+    let comment = binding_request(
+        &mut lead,
+        4,
+        "task.comment",
+        json!({
+            "workspaceId":workspace,"taskId":task["taskId"],"text":"Ready to dispatch",
+            "idempotencyKey":"lead-comment"
+        }),
+    );
+    assert_eq!(comment["result"]["comment"]["text"], "Ready to dispatch");
+    let dispatched = binding_request(
+        &mut lead,
+        5,
+        "task.dispatch",
+        json!({
+            "workspaceId":workspace,"taskId":task["taskId"],
+            "preset":{"workspaceDefault":true},"idempotencyKey":"lead-dispatch"
+        }),
+    );
+    let worker_pane = dispatched["result"]["paneId"].as_str().unwrap();
+    let busy_role = human.request(
+        "pane.role.set",
+        json!({"paneId":worker_pane,"role":"chief","idempotencyKey":"busy-role"}),
+    );
+    assert_eq!(busy_role["error"]["data"]["kind"], "pane_busy");
+    let current = human.wait_state(worker_pane, "idle");
+    let worker_binding = rig.database_probe().agent_binding(worker_pane).unwrap();
+    let (mut worker, worker_welcome) =
+        binding_hello(&rig.path.join("engine.sock"), &worker_binding);
+    assert_eq!(worker_welcome["result"]["role"], "agent");
+    let blocked = binding_request(
+        &mut worker,
+        6,
+        "task.block",
+        json!({
+            "workspaceId":workspace,"taskId":task["taskId"],"kind":"missing_information",
+            "reason":"Need a decision","paneId":worker_pane,
+            "sessionGeneration":current["generation"],"attempt":dispatched["result"]["attempt"],
+            "idempotencyKey":"worker-block"
+        }),
+    );
+    assert_eq!(
+        blocked["result"]["task"]["blocking"]["kind"],
+        "missing_information"
+    );
+    let unblocked = binding_request(
+        &mut lead,
+        7,
+        "task.unblock",
+        json!({
+            "workspaceId":workspace,"taskId":task["taskId"],"reason":"Decision supplied",
+            "idempotencyKey":"lead-unblock"
+        }),
+    );
+    assert!(unblocked["result"]["task"]["blocking"].is_null());
+    let denied = binding_request(
+        &mut lead,
+        8,
+        "task.complete",
+        json!({
+            "workspaceId":workspace,"taskId":task["taskId"],"summary":"Not mine",
+            "contractChanges":[],"outOfScopeEdits":[],"idempotencyKey":"lead-complete"
+        }),
+    );
+    assert_eq!(denied["error"]["data"]["kind"], "forbidden_role");
+}
+
 fn transcript_contains(transcript: &Value, needle: &str) -> bool {
     transcript["items"].as_array().is_some_and(|items| {
         items.iter().any(|item| {

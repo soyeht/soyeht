@@ -513,7 +513,8 @@ impl Core {
         }
         self.advance_task_reviews()?;
         self.advance_task_blocking()?;
-        self.advance_task_dispatches()
+        self.advance_task_dispatches()?;
+        self.advance_task_loops()
     }
 
     pub fn now_ms(&self) -> i64 {

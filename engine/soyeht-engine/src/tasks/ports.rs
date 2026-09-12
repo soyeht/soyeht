@@ -38,6 +38,7 @@ pub trait TaskStorePort {
     fn blocked_tasks(&self) -> StoreResult<Vec<Task>>;
     fn due_task_retries(&self, now_ms: i64) -> StoreResult<Vec<Task>>;
     fn loop_config(&self, pane: &str) -> StoreResult<Option<(LoopConfig, u64)>>;
+    fn due_loop_configs(&self, now_ms: u64) -> StoreResult<Vec<(String, LoopConfig, u64)>>;
     fn feedback_state(&self, workspace: &str, task: &str) -> StoreResult<Option<FeedbackState>>;
     fn dispatch_checkpoint(
         &self,
@@ -115,6 +116,10 @@ impl TaskStorePort for Store {
 
     fn loop_config(&self, pane: &str) -> StoreResult<Option<(LoopConfig, u64)>> {
         Store::loop_config(self, pane)
+    }
+
+    fn due_loop_configs(&self, now_ms: u64) -> StoreResult<Vec<(String, LoopConfig, u64)>> {
+        Store::due_loop_configs(self, now_ms)
     }
 
     fn feedback_state(&self, workspace: &str, task: &str) -> StoreResult<Option<FeedbackState>> {
@@ -254,6 +259,10 @@ pub(crate) mod testing {
 
         fn loop_config(&self, _: &str) -> StoreResult<Option<(LoopConfig, u64)>> {
             Ok(None)
+        }
+
+        fn due_loop_configs(&self, _: u64) -> StoreResult<Vec<(String, LoopConfig, u64)>> {
+            Ok(Vec::new())
         }
 
         fn feedback_state(&self, _: &str, _: &str) -> StoreResult<Option<FeedbackState>> {

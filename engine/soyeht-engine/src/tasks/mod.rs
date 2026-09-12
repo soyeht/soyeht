@@ -6,11 +6,13 @@ pub(crate) mod dispatching;
 pub mod drift;
 pub mod feedback;
 mod lifecycle;
+pub(crate) mod looping;
 mod movement;
 mod phrase;
 pub mod ports;
 mod review;
 pub mod revision;
+pub(crate) mod roles;
 mod rules;
 pub mod worktree;
 

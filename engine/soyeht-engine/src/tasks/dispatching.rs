@@ -1,6 +1,6 @@
 //! Durable routing from task reservation to an agent pane.
 
-use super::{api::parameters, worktree};
+use super::{api::parameters, looping, worktree};
 use crate::{
     agents::{Changes, Running, state::State},
     core::Core,
@@ -71,14 +71,17 @@ impl Core {
         let model = selected_option(&state, "model").unwrap_or_default();
         let workspace = params.workspace_id.clone();
         let timestamp = self.timestamp();
+        let loop_context = self.task_next_loop(&pane_id)?;
         let branch_pane = pane_id.clone();
         let actor_name = self.actor_name(&actor)?;
         let mutation = self.mutate(connection, "task.next", raw, move |change| {
             let Some(task) =
                 change.reserve_next_task(&workspace, &branch_pane, &harness, &model, &timestamp)?
             else {
-                return Ok((json!({"empty":true,"willRestartSession":false}), Vec::new()));
+                let events = looping::record_task_next(change, loop_context.as_ref(), true)?;
+                return Ok((json!({"empty":true,"willRestartSession":false}), events));
             };
+            let events = looping::record_task_next(change, loop_context.as_ref(), false)?;
             let movement = claimed_move(actor_name, TaskState::Todo, &timestamp);
             change.insert_move(&workspace, &task.task_id, &movement)?;
             change.save_dispatch_checkpoint(
@@ -88,7 +91,7 @@ impl Core {
             )?;
             Ok((
                 json!({"task":task,"empty":false,"willRestartSession":true}),
-                Vec::new(),
+                events,
             ))
         })?;
         Ok(mutation.result)

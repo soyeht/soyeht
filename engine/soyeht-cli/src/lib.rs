@@ -141,6 +141,7 @@ fn snapshot_section_name(section: &SnapshotSection) -> &'static str {
         SnapshotSection::Workspaces => "workspaces",
         SnapshotSection::Panes => "panes",
         SnapshotSection::Tasks => "tasks",
+        SnapshotSection::Loops => "loops",
         SnapshotSection::Requests => "requests",
         SnapshotSection::Attention => "attention",
         SnapshotSection::Devices => "devices",

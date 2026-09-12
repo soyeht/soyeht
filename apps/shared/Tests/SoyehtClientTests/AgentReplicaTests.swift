@@ -46,7 +46,8 @@ import Testing
   let authMethod = AuthMethod(id: "login", name: "Sign in", terminal: true)
   let session = AgentSession(
     harness: "agent", version: "1", fingerprint: "fingerprint", options: [],
-    authMethods: [authMethod], permission: .ask, yolo: false, queue: [], draft: false)
+    authMethods: [authMethod], permission: .ask, yolo: false, queue: [], draft: false,
+    role: .worker)
   let pane = Pane(
     paneId: paneId, workspaceId: "workspace", name: "Agent", cwd: "/tmp",
     mode: .agent, state: .idle, source: .protocol, confidence: 1, phrase: "Ready",

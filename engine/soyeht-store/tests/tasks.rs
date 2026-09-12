@@ -526,7 +526,21 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
         .unwrap();
     drop(store);
     let mut store = profile.store();
-    assert_eq!(store.loop_config("pane-a").unwrap(), Some((config, 4000)));
+    assert_eq!(
+        store.loop_config("pane-a").unwrap(),
+        Some((config.clone(), 4000))
+    );
+    assert!(store.due_loop_configs(3999).unwrap().is_empty());
+    let due = store.due_loop_configs(4000).unwrap();
+    assert_eq!(due, vec![("pane-a".into(), config.clone(), 4000)]);
+    let snapshot = store.snapshot().unwrap();
+    let loops = snapshot
+        .sections
+        .iter()
+        .find(|(name, _)| name == "loops")
+        .unwrap();
+    assert_eq!(loops.1[0]["paneId"], "pane-a");
+    assert_eq!(loops.1[0]["config"], json!(config));
     assert_eq!(
         store.feedback_state("workspace-1", "WS-1").unwrap(),
         Some(feedback)
@@ -545,6 +559,15 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
         store.dispatch_checkpoint("workspace-1", "WS-1").unwrap(),
         None
     );
+    let mut stopped = config;
+    stopped.enabled = false;
+    store
+        .mutate("test", "stop-loop", "stop-loop", |change| {
+            change.save_loop_config("pane-a", &stopped, 0)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert!(store.due_loop_configs(u64::MAX).unwrap().is_empty());
 }
 
 #[test]

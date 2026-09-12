@@ -2,8 +2,9 @@ use crate::errors::{self, Result};
 use serde::{Deserialize, Serialize};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
-    AgentSession, ConfigOperation, ConfigValue, HarnessLaunch, PaneQueueListResult, PermissionMode,
-    PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, Role, TaskExecutor, limits,
+    AgentPaneRole, AgentSession, ConfigOperation, ConfigValue, HarnessLaunch, PaneQueueListResult,
+    PermissionMode, PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, Role,
+    TaskExecutor, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
@@ -197,6 +198,11 @@ impl State {
 
     pub fn public(&self, now_ms: i64) -> AgentSession {
         AgentSession {
+            role: if self.mcp_role == Role::Chief {
+                AgentPaneRole::Chief
+            } else {
+                AgentPaneRole::Worker
+            },
             harness: self.launch.id.clone(),
             version: self
                 .initialized

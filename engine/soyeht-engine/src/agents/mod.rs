@@ -71,6 +71,7 @@ pub struct Changes {
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
     pub(crate) task_blocking: Option<crate::tasks::blocking::TaskBlockingChange>,
     pub(crate) task_dispatch: Option<crate::tasks::dispatching::TaskDispatchChange>,
+    pub(crate) task_loop: Option<crate::tasks::looping::TaskLoopChange>,
 }
 
 pub fn native_error(error: soyeht_acp::Error) -> errors::Error {
@@ -152,6 +153,9 @@ impl AgentPersistence<'_> {
         }
         if let Some(dispatch) = &self.changes.task_dispatch {
             dispatch.persist(tx)?;
+        }
+        if let Some(task_loop) = &self.changes.task_loop {
+            task_loop.persist(tx)?;
         }
         write_pane(tx, self.saved)?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;

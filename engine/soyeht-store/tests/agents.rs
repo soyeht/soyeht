@@ -755,6 +755,7 @@ fn migration_from_v5_adds_reconnectable_authentication_state() {
         .unwrap()
         .1;
     assert_eq!(panes[0]["agent"]["authMethods"], json!([]));
+    assert_eq!(panes[0]["agent"]["role"], "worker");
     let _: soyeht_protocol::Pane = serde_json::from_value(panes[0].clone()).unwrap();
     assert_eq!(
         store

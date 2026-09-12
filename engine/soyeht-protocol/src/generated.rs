@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 571c3b53dd43fc4dffcf2d710d309007a04676be25bd61dd7066f0b979a40e08). Do not edit.
+// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -11,6 +11,13 @@ pub enum Role {
     HumanDevice,
     #[serde(rename = "agent")]
     Agent,
+    #[serde(rename = "chief")]
+    Chief,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AgentPaneRole {
+    #[serde(rename = "worker")]
+    Worker,
     #[serde(rename = "chief")]
     Chief,
 }
@@ -67,6 +74,8 @@ pub enum SnapshotSection {
     Requests,
     #[serde(rename = "attention")]
     Attention,
+    #[serde(rename = "loops")]
+    Loops,
     #[serde(rename = "devices")]
     Devices,
     #[serde(rename = "capabilities")]
@@ -1210,6 +1219,8 @@ pub struct AgentSession {
     pub active_prompt_id: Option<Id>,
     #[serde(rename = "queuePaused", skip_serializing_if = "Option::is_none")]
     pub queue_paused: Option<bool>,
+    #[serde(rename = "role")]
+    pub role: AgentPaneRole,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProbeCapability {
@@ -2994,6 +3005,22 @@ pub struct LoopStoppedEvent {
     #[serde(rename = "reason")]
     pub reason: String,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneRoleSetParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "role")]
+    pub role: AgentPaneRole,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneRoleSetResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "role")]
+    pub role: AgentPaneRole,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -3015,6 +3042,8 @@ pub enum Request {
     WorkspaceFocus(WorkspaceFocusParams),
     #[serde(rename = "pane.create")]
     PaneCreate(PaneCreateParams),
+    #[serde(rename = "pane.role.set")]
+    PaneRoleSet(PaneRoleSetParams),
     #[serde(rename = "pane.close")]
     PaneClose(PaneCloseParams),
     #[serde(rename = "pane.focus")]
@@ -3159,6 +3188,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     ("pane.create", "PaneCreateParams", "PaneCreateResult", true),
+    (
+        "pane.role.set",
+        "PaneRoleSetParams",
+        "PaneRoleSetResult",
+        true,
+    ),
     ("pane.close", "PaneCloseParams", "PaneCloseResult", true),
     ("pane.focus", "PaneFocusParams", "PaneFocusResult", true),
     ("pane.rename", "PaneRenameParams", "PaneRenameResult", true),

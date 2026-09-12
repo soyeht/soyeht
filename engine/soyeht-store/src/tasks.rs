@@ -288,6 +288,33 @@ impl Store {
             .transpose()
     }
 
+    pub fn due_loop_configs(&self, now_ms: u64) -> Result<Vec<(String, LoopConfig, u64)>> {
+        let mut statement = self.connection.prepare(
+            "SELECT pane_id,payload,next_tick_ms FROM task_loops WHERE next_tick_ms<=?1 ORDER BY next_tick_ms,pane_id",
+        )?;
+        let rows = statement.query_map([now_ms.min(i64::MAX as u64) as i64], |row| {
+            let payload: String = row.get(1)?;
+            Ok((
+                row.get(0)?,
+                serde_json::from_str::<LoopConfig>(&payload).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        payload.len(),
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?,
+                row.get::<_, i64>(2)?.max(0) as u64,
+            ))
+        })?;
+        rows.filter(|row| {
+            row.as_ref()
+                .map(|(_, config, _)| config.enabled)
+                .unwrap_or(true)
+        })
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
+    }
+
     pub fn feedback_state(
         &self,
         workspace_id: &str,

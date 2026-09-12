@@ -166,7 +166,7 @@ answered by yolo),
 `pane.config.set {configId, value}` → `{applied: bool, effective, sessionPreserved: bool}`,
 `pane.yolo {on}` → `{effectiveMode}` (stores the previous mode; contract 04 §4),
 `pane.switch_harness {harness, model?, effort?}` → `{switchId}`,
-`pane.loop.set {prompt, intervalSec, maxRounds, stopWhen}` / `pane.loop.stop`,
+`loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`,
 `pane.role.set {role: "chief"|"worker"}`,
 `pane.auth.start` → opens login (contract 04 §7); event `pane.auth_finished`,
 `pane.transcript {before?, limit}` → normalized messages with `role,
@@ -302,7 +302,7 @@ English in every contract (mapping table at the end). All carry
 does not return the snapshot in its response. The engine opens ONE read
 transaction, sends the snapshot in `state.snapshot_part {snapshotId, index,
 of, section, data}` notifications (each ≤ 1 MiB; sections: workspaces,
-panes, tasks, requests, attention, devices, capabilities, streams), and only
+panes, tasks, loops, requests, attention, devices, capabilities, streams), and only
 then responds with `{snapshotId, cursor, parts: of}`. Parts do NOT enter the
 queue's 8 MiB budget: the engine queues the next part only after the previous
 one was written to the socket (reader-paced). If the connection drops midway,

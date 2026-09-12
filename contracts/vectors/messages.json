@@ -27,6 +27,11 @@
     "value": "human_local"
   },
   {
+    "name": "AgentPaneRole",
+    "type": "AgentPaneRole",
+    "value": "chief"
+  },
+  {
     "name": "PaneMode",
     "type": "PaneMode",
     "value": "terminal"
@@ -328,6 +333,23 @@
     "type": "PaneCreateResult",
     "value": {
       "paneId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneRoleSetParams",
+    "type": "PaneRoleSetParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "role": "chief",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneRoleSetResult",
+    "type": "PaneRoleSetResult",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "role": "chief"
     }
   },
   {
@@ -1207,6 +1229,32 @@
       "id": "request-1",
       "result": {
         "paneId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pane.role.set",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.role.set",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "role": "chief",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.role.set",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "role": "chief"
       }
     }
   },
@@ -2288,6 +2336,7 @@
       ],
       "permission": "ask",
       "yolo": false,
+      "role": "worker",
       "queue": [
         {
           "promptId": "00000000-0000-4000-8000-000000000001",

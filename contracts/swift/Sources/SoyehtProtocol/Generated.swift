@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 571c3b53dd43fc4dffcf2d710d309007a04676be25bd61dd7066f0b979a40e08). Do not edit.
+// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
 import Foundation
 
 
@@ -13,6 +13,11 @@ public enum Role: String, Codable, Sendable {
     case `human_local` = "human_local"
     case `human_device` = "human_device"
     case `agent` = "agent"
+    case `chief` = "chief"
+}
+
+public enum AgentPaneRole: String, Codable, Sendable {
+    case `worker` = "worker"
     case `chief` = "chief"
 }
 
@@ -47,6 +52,7 @@ public enum SnapshotSection: String, Codable, Sendable {
     case `tasks` = "tasks"
     case `requests` = "requests"
     case `attention` = "attention"
+    case `loops` = "loops"
     case `devices` = "devices"
     case `capabilities` = "capabilities"
     case `streams` = "streams"
@@ -1340,7 +1346,8 @@ public struct AgentSession: Codable, Sendable {
     public var `draft`: Bool
     public var `activePromptId`: Id?
     public var `queuePaused`: Bool?
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil) {
+    public var `role`: AgentPaneRole
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
@@ -1356,6 +1363,7 @@ public struct AgentSession: Codable, Sendable {
         self.`draft` = `draft`
         self.`activePromptId` = `activePromptId`
         self.`queuePaused` = `queuePaused`
+        self.`role` = `role`
     }
 }
 
@@ -3358,6 +3366,26 @@ public struct LoopStoppedEvent: Codable, Sendable {
         self.`at` = `at`
         self.`paneId` = `paneId`
         self.`reason` = `reason`
+    }
+}
+
+public struct PaneRoleSetParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `role`: AgentPaneRole
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `role`: AgentPaneRole, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`role` = `role`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneRoleSetResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `role`: AgentPaneRole
+    public init(`paneId`: Id, `role`: AgentPaneRole) {
+        self.`paneId` = `paneId`
+        self.`role` = `role`
     }
 }
 

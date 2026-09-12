@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 571c3b53dd43fc4dffcf2d710d309007a04676be25bd61dd7066f0b979a40e08). Do not edit.
+// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -9,6 +9,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "Decimal": return try codec(SoyehtProtocol.Decimal.self, data)
         case "ByteString": return try codec(SoyehtProtocol.ByteString.self, data)
         case "Role": return try codec(SoyehtProtocol.Role.self, data)
+        case "AgentPaneRole": return try codec(SoyehtProtocol.AgentPaneRole.self, data)
         case "PaneMode": return try codec(SoyehtProtocol.PaneMode.self, data)
         case "PaneState": return try codec(SoyehtProtocol.PaneState.self, data)
         case "StateSource": return try codec(SoyehtProtocol.StateSource.self, data)
@@ -283,6 +284,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "TaskAttentionEvent": return try codec(SoyehtProtocol.TaskAttentionEvent.self, data)
         case "LoopTickEvent": return try codec(SoyehtProtocol.LoopTickEvent.self, data)
         case "LoopStoppedEvent": return try codec(SoyehtProtocol.LoopStoppedEvent.self, data)
+        case "PaneRoleSetParams": return try codec(SoyehtProtocol.PaneRoleSetParams.self, data)
+        case "PaneRoleSetResult": return try codec(SoyehtProtocol.PaneRoleSetResult.self, data)
     default: throw NSError(domain: "Unknown schema", code: 1)
     }
 }
