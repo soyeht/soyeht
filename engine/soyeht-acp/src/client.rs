@@ -3,6 +3,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EnvVariable {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StdioMcpServer {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: Vec<EnvVariable>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Call {
     pub method: String,
@@ -84,10 +98,16 @@ pub fn cancel(session_id: &str) -> Message {
 }
 
 pub fn new_session(cwd: &str) -> Value {
-    json!({"cwd":cwd,"mcpServers":[]})
+    new_session_with_mcp(cwd, &[])
 }
 pub fn load_session(cwd: &str, session_id: &str) -> Value {
-    json!({"cwd":cwd,"sessionId":session_id,"mcpServers":[]})
+    load_session_with_mcp(cwd, session_id, &[])
+}
+pub fn new_session_with_mcp(cwd: &str, servers: &[StdioMcpServer]) -> Value {
+    json!({"cwd":cwd,"mcpServers":servers})
+}
+pub fn load_session_with_mcp(cwd: &str, session_id: &str, servers: &[StdioMcpServer]) -> Value {
+    json!({"cwd":cwd,"sessionId":session_id,"mcpServers":servers})
 }
 
 pub fn permission_answer(id: Value, selected: Option<&str>) -> Message {
@@ -149,5 +169,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(next.value()["id"], "s-2");
+    }
+
+    #[test]
+    fn stdio_mcp_declaration_matches_the_acp_v1_shape() {
+        let server = StdioMcpServer {
+            name: "Soyeht".into(),
+            command: "/opt/soyeht/bin/soyeht-mcp".into(),
+            args: vec!["--binding".into(), "opaque".into()],
+            env: vec![EnvVariable {
+                name: "LANG".into(),
+                value: "en_US.UTF-8".into(),
+            }],
+        };
+        let value = new_session_with_mcp("/tmp/worktree", std::slice::from_ref(&server));
+        assert_eq!(value["mcpServers"][0]["name"], "Soyeht");
+        assert_eq!(
+            value["mcpServers"][0]["command"],
+            "/opt/soyeht/bin/soyeht-mcp"
+        );
+        assert_eq!(value["mcpServers"][0]["args"][1], "opaque");
+        assert_eq!(value["mcpServers"][0]["env"][0]["name"], "LANG");
+        assert!(value["mcpServers"][0].get("type").is_none());
+        let loaded = load_session_with_mcp("/tmp/worktree", "session-1", &[server]);
+        assert_eq!(loaded["sessionId"], "session-1");
+        assert_eq!(loaded["mcpServers"][0], value["mcpServers"][0]);
     }
 }

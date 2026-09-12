@@ -1,7 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
-use soyeht_acp::{Message, RpcError, client, config::Options, session};
+use soyeht_acp::{
+    Message, RpcError,
+    client::{self, EnvVariable, StdioMcpServer},
+    config::Options,
+    session,
+};
 use soyeht_protocol::ProbeResult;
 use std::{
     fs,
@@ -127,6 +132,18 @@ impl Peer {
             session::session_id(&response).unwrap(),
             Options::from_response(&response).unwrap(),
         )
+    }
+    fn session_with_mcp(&mut self, directory: &Directory, server: &StdioMcpServer) -> String {
+        let response = self
+            .call(
+                "session/new",
+                client::new_session_with_mcp(
+                    directory.0.to_str().unwrap(),
+                    std::slice::from_ref(server),
+                ),
+            )
+            .unwrap();
+        session::session_id(&response).unwrap()
     }
     fn native_request(&mut self, expected: &str) -> (Value, Value) {
         loop {
@@ -342,5 +359,72 @@ fn login_runs_as_a_separate_terminal_invocation() {
             client::new_session(directory.0.to_str().unwrap())
         )
         .is_ok()
+    );
+}
+
+#[test]
+fn injected_stdio_mcp_drives_the_deterministic_task_workflow() {
+    let directory = Directory::new();
+    let log = directory.0.join("task-tools.ndjson");
+    let server = StdioMcpServer {
+        name: "Soyeht".into(),
+        command: env!("CARGO_BIN_EXE_soyeht-fake-mcp").into(),
+        args: vec!["--log".into(), log.to_string_lossy().into_owned()],
+        env: vec![EnvVariable {
+            name: "SOYEHT_TEST_MCP".into(),
+            value: "1".into(),
+        }],
+    };
+    let mut peer = Peer::start(&directory, &[]);
+    peer.initialize();
+    for instruction in ["task-claim", "task-execute", "task-block", "task-drift"] {
+        let session = peer.session_with_mcp(&directory, &server);
+        let result = peer
+            .call("session/prompt", client::prompt(&session, instruction))
+            .unwrap();
+        assert_eq!(session::stop_reason(&result).unwrap(), "end_turn");
+    }
+
+    let calls: Vec<Value> = fs::read_to_string(log)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "task_next",
+            "task_subitem_add",
+            "task_subitem_add",
+            "task_comment",
+            "task_subitem_done",
+            "task_subitem_done",
+            "task_request_review",
+            "task_complete",
+            "task_block",
+            "task_complete",
+        ]
+    );
+    assert_eq!(calls[0]["arguments"], json!({}));
+    assert_eq!(
+        calls[3]["arguments"]["text"],
+        "Planning milestone completed"
+    );
+    assert_eq!(calls[7]["arguments"]["contractChanges"], json!([]));
+    assert_eq!(calls[7]["arguments"]["outOfScopeEdits"], json!([]));
+    assert_eq!(calls[8]["arguments"]["kind"], "missing_information");
+    assert_eq!(
+        calls[9]["arguments"]["contractChanges"][0]["label"],
+        "silent_fallback"
+    );
+    assert_eq!(
+        calls[9]["arguments"]["outOfScopeEdits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
 }

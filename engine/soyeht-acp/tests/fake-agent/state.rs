@@ -57,13 +57,16 @@ pub struct Session {
     pub cwd: String,
     pub values: BTreeMap<String, Value>,
     pub history: Vec<(String, String)>,
+    #[serde(default)]
+    pub mcp_servers: Vec<Value>,
 }
 impl Session {
-    pub fn new(cwd: String) -> Self {
+    pub fn new(cwd: String, mcp_servers: Vec<Value>) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             cwd,
             history: Vec::new(),
+            mcp_servers,
             values: BTreeMap::from([
                 ("model".into(), json!("model-a")),
                 ("effort".into(), json!("medium")),

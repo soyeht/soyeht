@@ -19,5 +19,11 @@ path = "tests/fake-agent/program.rs"
 test = false
 bench = false
 
+[[bin]]
+name = "soyeht-fake-mcp"
+path = "tests/fake-mcp/program.rs"
+test = false
+bench = false
+
 [lints]
 workspace = true

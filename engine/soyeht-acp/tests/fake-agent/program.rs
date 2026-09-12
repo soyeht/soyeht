@@ -1,6 +1,7 @@
 //! Deterministic ACP v1 peer. It only operates in an explicitly selected test directory.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod error;
+mod mcp;
 mod state;
 mod turns;
 
@@ -24,6 +25,7 @@ pub struct Runtime {
     sessions: Mutex<BTreeMap<String, Session>>,
     replies: Mutex<BTreeMap<String, mpsc::Sender<Value>>>,
     active: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
+    mcp_clients: Mutex<BTreeMap<String, mcp::Client>>,
 }
 impl Runtime {
     fn send(&self, message: Message) {
@@ -74,7 +76,15 @@ impl Runtime {
             self.error(id, -32602, "mcpServers required");
             return;
         }
-        let session = Session::new(cwd.into());
+        let servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
+        let session = Session::new(cwd.into(), servers);
+        let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
+            Ok(mcp) => mcp,
+            Err(_) => {
+                self.error(id, -32603, "Could not start session MCP server");
+                return;
+            }
+        };
         if session.save(&self.settings).is_err() {
             self.error(id, -32603, "Could not persist fake session");
             return;
@@ -83,6 +93,12 @@ impl Runtime {
             .lock()
             .unwrap()
             .insert(session.id.clone(), session.clone());
+        if let Some(mcp) = mcp {
+            self.mcp_clients
+                .lock()
+                .unwrap()
+                .insert(session.id.clone(), mcp);
+        }
         self.answer(id, session.response());
     }
 
@@ -104,11 +120,29 @@ impl Runtime {
             return;
         };
         match Session::load(&self.settings, session_id) {
-            Ok(session) => {
+            Ok(mut session) => {
+                session.mcp_servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
+                let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
+                    Ok(mcp) => mcp,
+                    Err(_) => {
+                        self.error(id, -32603, "Could not start session MCP server");
+                        return;
+                    }
+                };
+                if session.save(&self.settings).is_err() {
+                    self.error(id, -32603, "Could not persist fake session");
+                    return;
+                }
                 self.sessions
                     .lock()
                     .unwrap()
                     .insert(session.id.clone(), session.clone());
+                if let Some(mcp) = mcp {
+                    self.mcp_clients
+                        .lock()
+                        .unwrap()
+                        .insert(session.id.clone(), mcp);
+                }
                 for (prompt, text) in &session.history {
                     self.update(&session.id,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
                     self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
@@ -229,6 +263,7 @@ fn main() -> Result<()> {
         sessions: Mutex::new(BTreeMap::new()),
         replies: Mutex::new(BTreeMap::new()),
         active: Mutex::new(BTreeMap::new()),
+        mcp_clients: Mutex::new(BTreeMap::new()),
     });
     for line in io::stdin().lock().split(b'\n') {
         match Message::parse(&line?)? {

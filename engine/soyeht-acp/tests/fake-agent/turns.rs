@@ -221,6 +221,10 @@ fn execute_turn(
     text: &str,
     cancelled: &AtomicBool,
 ) -> String {
+    if let Some(output) = crate::mcp::task_turn(runtime, session, text) {
+        emit(runtime, session, &output);
+        return output;
+    }
     if text.starts_with("permission") {
         permission_turn(runtime, session, text, cancelled)
     } else {
