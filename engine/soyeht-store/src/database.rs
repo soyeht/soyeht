@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 #[derive(Debug)]
 pub enum Error {
@@ -78,6 +78,7 @@ pub enum Error {
     TaskReservationConflict,
     InvalidReviewVersion,
     ReviewVersionConflict,
+    InvalidUsageReading,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -163,6 +164,7 @@ impl fmt::Display for Error {
             Self::TaskReservationConflict => f.write_str("task reservation conflict"),
             Self::InvalidReviewVersion => f.write_str("invalid task review version"),
             Self::ReviewVersionConflict => f.write_str("task review version conflict"),
+            Self::InvalidUsageReading => f.write_str("invalid stored usage reading"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -293,6 +295,9 @@ impl Store {
             }
             if version < 10 {
                 tx.execute_batch(include_str!("../migrations/010-agent-pane-role.sql"))?;
+            }
+            if version < 11 {
+                tx.execute_batch(include_str!("../migrations/011-usage-readings.sql"))?;
             }
             tx.commit()?;
         }
