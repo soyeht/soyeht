@@ -2,12 +2,12 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::frame::Frame;
+use soyeht_protocol::{Task, frame::Frame};
 use soyeht_ptyd::{
     client::Client as PtyClient,
     wire::{Request, Response},
 };
-use soyeht_store::test_support::DatabaseProbe;
+use soyeht_store::{database::Store, test_support::DatabaseProbe};
 use std::{
     fs,
     os::unix::net::UnixStream,
@@ -57,7 +57,7 @@ impl Rig {
             thread::sleep(Duration::from_millis(10));
         }
     }
-    fn agent(&self) -> (Client, String) {
+    fn install_fake_harness(&self) {
         let binary =
             PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
         fs::write(
@@ -69,17 +69,13 @@ impl Rig {
             .unwrap(),
         )
         .unwrap();
-        let mut client = self.client();
-        let workspace = client.call(
-            "workspace.create",
-            json!({"name":"Test","path":self.path,
-            "idempotencyKey":"agent-workspace"}),
-        )["workspace"]["workspaceId"]
-            .clone();
+    }
+    fn open_agent(&self, mut client: Client, workspace: &Value) -> (Client, String) {
+        self.install_fake_harness();
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent",
-            "harness":"test-agent","idempotencyKey":"agent-pane"}),
+            "harness":"test-agent","idempotencyKey":Uuid::new_v4().to_string()}),
         )["paneId"]
             .as_str()
             .unwrap()
@@ -90,6 +86,19 @@ impl Rig {
             thread::sleep(Duration::from_millis(20));
         }
         (client, pane)
+    }
+    fn agent(&self) -> (Client, String) {
+        let mut client = self.client();
+        let workspace = client.call(
+            "workspace.create",
+            json!({"name":"Test","path":self.path,
+            "idempotencyKey":"agent-workspace"}),
+        )["workspace"]["workspaceId"]
+            .clone();
+        self.open_agent(client, &workspace)
+    }
+    fn agent_in_workspace(&self, workspace: &str) -> (Client, String) {
+        self.open_agent(self.client(), &json!(workspace))
     }
     fn database_probe(&self) -> DatabaseProbe {
         DatabaseProbe::open(&self.path).unwrap()
@@ -159,6 +168,91 @@ fn binding_request(socket: &mut UnixStream, id: u64, method: &str, params: Value
         if response["id"] == id {
             return response;
         }
+    }
+}
+
+fn reserve_task(rig: &Rig, workspace: &str, pane: &str, key: &str) -> Task {
+    let mut store = Store::open(&rig.path).unwrap();
+    let result = store
+        .mutate("test", key, key, |change| {
+            let task = change.reserve_next_task(
+                workspace,
+                pane,
+                "test-agent",
+                "test-model",
+                "2026-09-12T00:00:00Z",
+            )?;
+            Ok((json!(task), vec![]))
+        })
+        .unwrap()
+        .result;
+    serde_json::from_value(result).unwrap()
+}
+
+struct TaskLifecycleRig {
+    rig: Rig,
+    human: Client,
+    executor: UnixStream,
+    workspace: String,
+    pane: String,
+    generation: u32,
+    next_id: u64,
+}
+
+impl TaskLifecycleRig {
+    fn new() -> Self {
+        let rig = Rig::new();
+        let mut human = rig.client();
+        let workspace = human.call(
+            "workspace.create",
+            json!({"name":"Lifecycle","path":rig.path,"idempotencyKey":"lifecycle-workspace"}),
+        )["workspace"]["workspaceId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (agent, pane) = rig.agent_in_workspace(&workspace);
+        drop(agent);
+        let generation = human.pane(&pane)["generation"].as_u64().unwrap() as u32;
+        let binding = rig.database_probe().agent_binding(&pane).unwrap();
+        let (executor, welcome) = binding_hello(&rig.path.join("engine.sock"), &binding);
+        assert_eq!(welcome["result"]["role"], "agent");
+        Self {
+            rig,
+            human,
+            executor,
+            workspace,
+            pane,
+            generation,
+            next_id: 10,
+        }
+    }
+
+    fn create_and_reserve(&mut self, title: &str, key: &str) -> Task {
+        self.human.call(
+            "task.create",
+            json!({
+                "workspaceId":self.workspace,"title":title,"mustNotChange":"Keep behavior",
+                "idempotencyKey":format!("create-{key}")
+            }),
+        );
+        reserve_task(&self.rig, &self.workspace, &self.pane, key)
+    }
+
+    fn executor_request(&mut self, method: &str, task: &Task, fields: Value, key: &str) -> Value {
+        let mut params = fields.as_object().unwrap().clone();
+        params.insert("workspaceId".into(), json!(self.workspace));
+        params.insert("taskId".into(), json!(task.task_id));
+        params.insert("paneId".into(), json!(self.pane));
+        params.insert("sessionGeneration".into(), json!(self.generation));
+        params.insert("attempt".into(), json!(task.current_attempt));
+        params.insert("idempotencyKey".into(), json!(key));
+        self.next_id += 1;
+        binding_request(
+            &mut self.executor,
+            self.next_id,
+            method,
+            Value::Object(params),
+        )
     }
 }
 impl Drop for Rig {
@@ -1950,6 +2044,119 @@ fn task_authoring_is_durable_paged_versioned_and_closed_by_role() {
     let (workspace, first, second) = create_task_fixture(&rig, &mut client);
     assert_task_mutations_and_snapshot(&mut client, &workspace, &first, &second);
     assert_executor_cannot_read_unowned_tasks(&rig, &workspace, &first);
+}
+
+#[test]
+fn active_executor_blocks_requests_review_and_completes_one_durable_attempt() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Complete lifecycle", "reserve-complete");
+    let blocked = lifecycle.executor_request(
+        "task.block",
+        &task,
+        json!({"kind":"missing_information","reason":"Need an answer"}),
+        "block",
+    );
+    assert_eq!(
+        blocked["result"]["task"]["blocking"]["kind"],
+        "missing_information"
+    );
+    lifecycle.human.call(
+        "task.unblock",
+        json!({
+            "workspaceId":lifecycle.workspace,"taskId":task.task_id,
+            "reason":"Answer supplied","idempotencyKey":"unblock"
+        }),
+    );
+    let added = lifecycle.executor_request(
+        "task.subitem.add",
+        &task,
+        json!({"text":"Check the result"}),
+        "add-step",
+    );
+    let refused = lifecycle.executor_request(
+        "task.request_review",
+        &task,
+        json!({"reason":"Ready"}),
+        "review-too-early",
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "transition_refused");
+    lifecycle.executor_request(
+        "task.subitem.done",
+        &task,
+        json!({"subitemId":added["result"]["subitem"]["subitemId"]}),
+        "finish-step",
+    );
+    let review = lifecycle.executor_request(
+        "task.request_review",
+        &task,
+        json!({"reason":"Ready"}),
+        "request-review",
+    );
+    assert_eq!(review["result"]["task"]["state"], "in_review");
+    let review_task: Task = serde_json::from_value(review["result"]["task"].clone()).unwrap();
+    let mut stale = review_task.clone();
+    stale.current_attempt = 0;
+    let refused = lifecycle.executor_request(
+        "task.complete",
+        &stale,
+        json!({"summary":"Done","contractChanges":[],"outOfScopeEdits":[]}),
+        "stale-complete",
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "stale_attempt");
+    let fields = json!({"summary":"Done","contractChanges":[],"outOfScopeEdits":[]});
+    let completed =
+        lifecycle.executor_request("task.complete", &review_task, fields.clone(), "complete");
+    assert_eq!(completed["result"]["task"]["state"], "completed");
+    assert!(completed["result"]["task"]["ownerPaneId"].is_null());
+    let repeated = lifecycle.executor_request("task.complete", &review_task, fields, "complete");
+    assert_eq!(repeated["result"], completed["result"]);
+    let store = Store::open(&lifecycle.rig.path).unwrap();
+    let attempts = store
+        .task_attempts(&lifecycle.workspace, &task.task_id)
+        .unwrap();
+    assert_eq!(
+        attempts[0].result,
+        Some(soyeht_protocol::AttemptResult::Completed)
+    );
+    assert_eq!(attempts[0].summary.as_deref(), Some("Done"));
+    assert!(attempts[0].end.is_some());
+    assert_eq!(
+        store
+            .task_moves(&lifecycle.workspace, &task.task_id)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn executor_release_is_idempotent_and_closes_the_attempt_as_returned() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Return lifecycle", "reserve-return");
+    let fields = json!({"reason":"Needs another pass"});
+    let released =
+        lifecycle.executor_request("task.release", &task, fields.clone(), "release-task");
+    assert_eq!(released["result"]["task"]["state"], "todo");
+    assert!(released["result"]["task"]["ownerPaneId"].is_null());
+    let repeated = lifecycle.executor_request("task.release", &task, fields, "release-task");
+    assert_eq!(repeated["result"], released["result"]);
+    let store = Store::open(&lifecycle.rig.path).unwrap();
+    let attempts = store
+        .task_attempts(&lifecycle.workspace, &task.task_id)
+        .unwrap();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(
+        attempts[0].result,
+        Some(soyeht_protocol::AttemptResult::Returned)
+    );
+    assert_eq!(attempts[0].summary.as_deref(), Some("Needs another pass"));
+    assert_eq!(
+        store
+            .task_moves(&lifecycle.workspace, &task.task_id)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]

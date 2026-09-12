@@ -244,6 +244,40 @@ fn version_one_migration_preserves_identity_and_records_the_actor() {
 }
 
 #[test]
+fn an_explicit_domain_actor_is_not_replaced_by_the_request_actor() {
+    let directory = Directory::new();
+    let mut store = Store::open(&directory.0).unwrap();
+    let request_actor = json!({"role":"human_local","client":"test"});
+    let changed = store
+        .mutate_as(
+            "local:test",
+            "domain-actor",
+            "domain-actor-request",
+            Some(&request_actor),
+            |_| {
+                Ok((
+                    json!({}),
+                    vec![("task.moved".into(), json!({"actor":"you"}))],
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(changed.events[0].params["actor"], "you");
+    let stored_actor: String = store
+        .connection()
+        .query_row(
+            "SELECT actor FROM idempotency WHERE key='domain-actor'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&stored_actor).unwrap(),
+        request_actor
+    );
+}
+
+#[test]
 fn output_gap_and_delta_survive_reopen_without_inventing_bytes() {
     let directory = Directory::new();
     let mut log = Log::open(&directory.0).unwrap();

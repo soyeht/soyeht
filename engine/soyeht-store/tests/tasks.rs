@@ -242,7 +242,7 @@ fn task_details_round_trip_as_separate_named_relations() {
     store
         .mutate("test", "detail-updates", "detail-updates", |change| {
             change.replace_subitem("workspace-1", "WS-1", &subitem)?;
-            assert!(change.replace_attempt("workspace-1", "WS-1", &closed)?);
+            change.replace_attempt("workspace-1", "WS-1", &closed)?;
             Ok((json!({}), vec![]))
         })
         .unwrap();
@@ -261,6 +261,38 @@ fn task_details_round_trip_as_separate_named_relations() {
         [closed]
     );
     assert_eq!(store.task_moves("workspace-1", "WS-1").unwrap(), [movement]);
+}
+
+#[test]
+fn closing_an_unknown_attempt_fails_the_whole_mutation() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    insert(&mut store, &task("WS-1", TaskPriority::Medium), "task");
+    let missing = Attempt {
+        n: 1,
+        pane_id: "pane-a".into(),
+        harness: "harness".into(),
+        model: "model".into(),
+        start: "start".into(),
+        end: Some("end".into()),
+        result: Some(AttemptResult::Returned),
+        summary: Some("closed".into()),
+    };
+    let error = match store.mutate("test", "missing-attempt", "missing-attempt", |change| {
+        change.replace_attempt("workspace-1", "WS-1", &missing)?;
+        Ok((json!({}), vec![]))
+    }) {
+        Ok(_) => panic!("closing an unknown attempt must fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, soyeht_store::Error::AttemptNotFound));
+    assert!(
+        store
+            .task_attempts("workspace-1", "WS-1")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

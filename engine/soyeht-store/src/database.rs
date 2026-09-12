@@ -74,6 +74,7 @@ pub enum Error {
     TaskVersionConflict,
     TaskDependencyCycle,
     SubitemNotFound,
+    AttemptNotFound,
     TaskReservationConflict,
     TestFixture(&'static str),
 }
@@ -156,6 +157,7 @@ impl fmt::Display for Error {
             Self::TaskVersionConflict => f.write_str("task version conflict"),
             Self::TaskDependencyCycle => f.write_str("task dependency cycle"),
             Self::SubitemNotFound => f.write_str("task subitem not found"),
+            Self::AttemptNotFound => f.write_str("task attempt not found"),
             Self::TaskReservationConflict => f.write_str("task reservation conflict"),
             Self::TestFixture(message) => f.write_str(message),
         }
@@ -380,7 +382,7 @@ impl Store {
             object.insert("eventId".into(), json!(id.to_string()));
             object.insert("at".into(), json!(at));
             if let Some(actor) = actor {
-                object.insert("actor".into(), actor.clone());
+                object.entry("actor").or_insert_with(|| actor.clone());
             }
             change.transaction.execute(
                 "UPDATE events SET params=?1 WHERE id=?2",

@@ -282,8 +282,16 @@ impl Core {
             "task.show" | "task.list" | "task.comments" => {
                 self.task_query(connection, method, params)?
             }
-            "task.create" | "task.update" | "task.comment" | "task.subitem.add"
-            | "task.subitem.done" => self.task_author(connection, method, params)?,
+            "task.create"
+            | "task.update"
+            | "task.comment"
+            | "task.subitem.add"
+            | "task.subitem.done"
+            | "task.block"
+            | "task.release"
+            | "task.request_review"
+            | "task.complete"
+            | "task.unblock" => self.task_author(connection, method, params)?,
             "pane.stream.subscribe" => {
                 self.subscribe_stream(connection, request_id, params)?;
                 return Ok(Outcome::Queued);

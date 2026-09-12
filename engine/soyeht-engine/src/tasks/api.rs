@@ -17,12 +17,12 @@ use soyeht_protocol::{
 use soyeht_store::database::Error as StoreError;
 use uuid::Uuid;
 
-fn parameters<T: DeserializeOwned>(params: &Value) -> Result<T> {
+pub(super) fn parameters<T: DeserializeOwned>(params: &Value) -> Result<T> {
     serde_json::from_value(params.clone())
         .map_err(|_| errors::invalid("Task parameters do not match the protocol"))
 }
 
-fn task(store: &impl TaskStorePort, workspace: &str, task_id: &str) -> Result<Task> {
+pub(super) fn task(store: &impl TaskStorePort, workspace: &str, task_id: &str) -> Result<Task> {
     store
         .task(workspace, task_id)
         .map_err(errors::storage)?
@@ -56,18 +56,23 @@ impl Core {
             "task.comment" => self.task_comment(connection, params, parameters(params)?),
             "task.subitem.add" => self.task_subitem_add(connection, params, parameters(params)?),
             "task.subitem.done" => self.task_subitem_done(connection, params, parameters(params)?),
+            "task.block"
+            | "task.release"
+            | "task.request_review"
+            | "task.complete"
+            | "task.unblock" => self.task_lifecycle(connection, method, params),
             _ => Err(errors::invalid("Unknown task authoring method")),
         }
     }
 
-    fn task_actor(&self, connection: &str) -> Result<Actor> {
+    pub(super) fn task_actor(&self, connection: &str) -> Result<Actor> {
         self.clients
             .get(connection)
             .and_then(|client| client.actor.clone())
             .ok_or_else(|| errors::unauthorized("Task connection is not authenticated"))
     }
 
-    fn actor_name(&self, actor: &Actor) -> Result<String> {
+    pub(super) fn actor_name(&self, actor: &Actor) -> Result<String> {
         match actor.role {
             Role::HumanLocal | Role::HumanDevice => Ok("you".into()),
             Role::Agent | Role::Chief => {
@@ -81,7 +86,7 @@ impl Core {
         }
     }
 
-    fn authorize_task_read(&self, actor: &Actor, item: &Task) -> Result<()> {
+    pub(super) fn authorize_task_read(&self, actor: &Actor, item: &Task) -> Result<()> {
         if actor.role == Role::Agent && actor.pane_id.as_deref() != item.owner_pane_id.as_deref() {
             return Err(errors::forbidden_role(
                 "An agent may read only the task bound to its pane",
@@ -90,7 +95,12 @@ impl Core {
         Ok(())
     }
 
-    fn authorize_executor(&self, actor: &Actor, item: &Task, params: &Value) -> Result<()> {
+    pub(super) fn authorize_executor(
+        &self,
+        actor: &Actor,
+        item: &Task,
+        params: &Value,
+    ) -> Result<()> {
         if actor.role != Role::Agent {
             return Ok(());
         }

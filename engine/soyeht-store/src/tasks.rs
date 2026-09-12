@@ -499,11 +499,15 @@ impl Change<'_> {
         workspace_id: &str,
         task_id: &str,
         attempt: &Attempt,
-    ) -> Result<bool> {
-        Ok(self.transaction.execute(
+    ) -> Result<()> {
+        let changed = self.transaction.execute(
             "UPDATE task_attempts SET payload=?1 WHERE workspace_id=?2 AND task_id=?3 AND attempt=?4",
             params![serde_json::to_string(attempt)?,workspace_id,task_id,attempt.n],
-        )? == 1)
+        )?;
+        if changed != 1 {
+            return Err(Error::AttemptNotFound);
+        }
+        Ok(())
     }
 
     pub fn insert_move(

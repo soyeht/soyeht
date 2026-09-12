@@ -2,6 +2,7 @@
 
 mod api;
 pub mod feedback;
+mod lifecycle;
 mod phrase;
 pub mod ports;
 pub mod revision;
