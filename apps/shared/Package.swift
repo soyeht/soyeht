@@ -10,10 +10,14 @@ let package = Package(
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.20.0"),
     ],
     targets: [
-        .target(name: "SoyehtClient", dependencies: [
-            .product(name: "SoyehtProtocol", package: "swift"),
-            .product(name: "SwiftTerm", package: "SwiftTerm"),
-        ]),
+        .target(
+            name: "SoyehtClient",
+            dependencies: [
+                .product(name: "SoyehtProtocol", package: "swift"),
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ],
+            resources: [.process("Resources")]
+        ),
         .testTarget(name: "SoyehtClientTests", dependencies: ["SoyehtClient"]),
     ]
 )

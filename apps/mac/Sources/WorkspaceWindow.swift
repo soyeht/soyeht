@@ -13,6 +13,7 @@ struct WorkspaceWindow: View {
   @State private var deviceToRevoke: String?
   @State private var taskWorkspaceId: String?
   @State private var showPreferences = false
+  @State private var selectedUsageProvider: UsageProvider?
   var body: some View {
     VStack(spacing: MacTheme.Space.x16) {
       WorkspaceTopBar(
@@ -22,11 +23,20 @@ struct WorkspaceWindow: View {
       HStack(spacing: 0) {
         if navigation.appBarOpen {
           AppRail(
+            client: client,
             destination: navigation.destination,
             onSelect: selectDestination,
-            onSettings: { showPreferences = true }
+            onSettings: {
+              selectedUsageProvider = nil
+              showPreferences = true
+            },
+            onUsageDetails: { provider in
+              selectedUsageProvider = provider
+              showPreferences = true
+            }
           )
           .transition(.move(edge: .leading).combined(with: .opacity))
+          .zIndex(30)
         }
         workspaceContent
       }
@@ -78,7 +88,7 @@ struct WorkspaceWindow: View {
       if showPreferences {
         ZStack {
           Color.clear.contentShape(Rectangle()).onTapGesture { showPreferences = false }
-          PreferencesPanel(client: client)
+          PreferencesPanel(client: client, initialUsageProvider: selectedUsageProvider)
             .onTapGesture {}
             .transition(.scale(scale: 0.98).combined(with: .opacity))
         }
@@ -86,6 +96,7 @@ struct WorkspaceWindow: View {
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtPreferences)) { _ in
+      selectedUsageProvider = nil
       showPreferences = true
     }
     .onReceive(NotificationCenter.default.publisher(for: .toggleSoyehtAppBar)) { _ in

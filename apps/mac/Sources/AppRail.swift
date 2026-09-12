@@ -1,10 +1,13 @@
 import SoyehtClient
+import SoyehtProtocol
 import SwiftUI
 
 struct AppRail: View {
+  @Bindable var client: EngineClient
   let destination: WorkspaceDestination
   let onSelect: (WorkspaceDestination) -> Void
   let onSettings: () -> Void
+  let onUsageDetails: (UsageProvider) -> Void
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x6) {
@@ -19,6 +22,9 @@ struct AppRail: View {
         .fill(MacTheme.shadowDark)
         .frame(width: 24, height: 1)
         .padding(.vertical, MacTheme.Space.x2)
+      ForEach(client.usageReadings, id: \.provider) { reading in
+        UsageRing(client: client, reading: reading, onDetails: onUsageDetails)
+      }
       Spacer(minLength: 0)
       AppRailButton(icon: "gearshape", label: "Settings", selected: false, action: onSettings)
     }
@@ -28,6 +34,15 @@ struct AppRail: View {
     .frame(maxHeight: .infinity)
     .background(MacTheme.canvas)
     .accessibilityIdentifier("app-bar")
+    .task { await refreshWhileOpen() }
+  }
+
+  private func refreshWhileOpen() async {
+    try? await client.refreshUsage()
+    while !Task.isCancelled {
+      do { try await Task.sleep(for: .seconds(300)) } catch { return }
+      try? await client.refreshUsage()
+    }
   }
 
   private var items: [AppRailItem] {

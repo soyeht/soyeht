@@ -1,0 +1,9 @@
+The provider glyphs in ProviderIcons.xcassets come from Lobe Icons static SVG package version 1.95.0.
+
+Source: https://github.com/lobehub/lobe-icons
+License: MIT. See Provider-Icons-MIT.txt in this directory.
+
+Included files:
+- claudecode.svg, stored as claude.svg
+- codex.svg
+- cursor.svg

@@ -59,8 +59,24 @@ enum MacTheme {
   }
 
   struct Elevation: Sendable {
-    let offset: CGFloat
-    let blur: CGFloat
+    let lightOffset: CGFloat
+    let lightBlur: CGFloat
+    let darkOffset: CGFloat
+    let darkBlur: CGFloat
+
+    init(offset: CGFloat, blur: CGFloat) {
+      lightOffset = offset
+      lightBlur = blur
+      darkOffset = offset
+      darkBlur = blur
+    }
+
+    init(lightOffset: CGFloat, lightBlur: CGFloat, darkOffset: CGFloat, darkBlur: CGFloat) {
+      self.lightOffset = lightOffset
+      self.lightBlur = lightBlur
+      self.darkOffset = darkOffset
+      self.darkBlur = darkBlur
+    }
 
     static let chip = Elevation(offset: 3, blur: 5)
     static let toggle = Elevation(offset: 2, blur: 4)
@@ -70,8 +86,7 @@ enum MacTheme {
     static let pane = Elevation(offset: 5, blur: 10)
     static let pill = Elevation(offset: 6, blur: 10)
     static let panel = Elevation(offset: 9, blur: 18)
-
-    var swiftUIRadius: CGFloat { blur / 2 }
+    static let balloon = Elevation(lightOffset: 4, lightBlur: 10, darkOffset: 6, darkBlur: 14)
   }
 
   static func chrome(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
@@ -108,12 +123,12 @@ private struct NeoRaised: ViewModifier {
         .fill(MacTheme.face)
         .compositingGroup()
         .shadow(
-          color: MacTheme.shadowLight, radius: elevation.swiftUIRadius,
-          x: -elevation.offset, y: -elevation.offset
+          color: MacTheme.shadowLight, radius: elevation.lightBlur / 2,
+          x: -elevation.lightOffset, y: -elevation.lightOffset
         )
         .shadow(
-          color: MacTheme.shadowDark, radius: elevation.swiftUIRadius,
-          x: elevation.offset, y: elevation.offset)
+          color: MacTheme.shadowDark, radius: elevation.darkBlur / 2,
+          x: elevation.darkOffset, y: elevation.darkOffset)
     }
   }
 }

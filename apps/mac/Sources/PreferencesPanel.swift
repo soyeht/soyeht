@@ -2,13 +2,30 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
+private enum PreferencesSection {
+  case harnesses
+  case usage
+}
+
 struct PreferencesPanel: View {
   @Bindable var client: EngineClient
+  @State private var section: PreferencesSection
+  @State private var selectedUsageProvider: UsageProvider?
+
+  init(client: EngineClient, initialUsageProvider: UsageProvider? = nil) {
+    self.client = client
+    _section = State(initialValue: initialUsageProvider == nil ? .harnesses : .usage)
+    _selectedUsageProvider = State(initialValue: initialUsageProvider)
+  }
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x10) {
-      PreferencesSidebar(client: client)
-      PreferencesHarnesses(client: client)
+      PreferencesSidebar(client: client, selection: $section)
+      switch section {
+      case .harnesses: PreferencesHarnesses(client: client)
+      case .usage:
+        UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
+      }
     }
     .padding(MacTheme.Space.x10)
     .frame(width: 1080, height: 700)
@@ -28,6 +45,7 @@ struct PreferencesPanel: View {
 
 private struct PreferencesSidebar: View {
   @Bindable var client: EngineClient
+  @Binding var selection: PreferencesSection
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
@@ -37,7 +55,8 @@ private struct PreferencesSidebar: View {
       Color.clear.frame(height: MacTheme.Space.x8)
       sidebarRow("General", icon: "gearshape")
       sidebarRow("Appearance", icon: "paintpalette")
-      sidebarRow("Harnesses", icon: "cpu", selected: true)
+      sidebarButton("Harnesses", icon: "cpu", section: .harnesses)
+      sidebarButton("Usage", icon: "gauge.with.dots.needle.50percent", section: .usage)
       sidebarRow("Engine", icon: "memorychip")
       sidebarRow("Phone", icon: "iphone")
       sidebarRow("Tasks & loops", icon: "list.bullet.clipboard")
@@ -78,6 +97,17 @@ private struct PreferencesSidebar: View {
     )
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  private func sidebarButton(
+    _ title: String, icon: String, section: PreferencesSection
+  ) -> some View {
+    Button {
+      selection = section
+    } label: {
+      sidebarRow(title, icon: icon, selected: selection == section)
+    }
+    .buttonStyle(.plain)
   }
 
   private var appVersion: String {

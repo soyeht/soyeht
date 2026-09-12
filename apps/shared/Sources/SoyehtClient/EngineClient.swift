@@ -15,6 +15,7 @@ public final class EngineClient {
   public internal(set) var taskDetails: [String: TaskShowResult] = [:]
   public internal(set) var attentionByWorkspace: [String: [AttentionItem]] = [:]
   public internal(set) var paneLoops: [String: LoopConfig] = [:]
+  public internal(set) var usageReadings: [UsageReading] = []
   public private(set) var connected = false
   public private(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
@@ -93,6 +94,7 @@ public final class EngineClient {
       taskDetails = [:]
       attentionByWorkspace = [:]
       paneLoops = [:]
+      usageReadings = []
       terminalOutput?(Data(), true)
     }
     position = nil
@@ -145,6 +147,7 @@ public final class EngineClient {
     }
     _ = try await request("state.snapshot", .object([:]))
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
+    try await loadUsage()
     connectionRevision &+= 1
     connected = true
     connectionText = "Dev profile · connected"
@@ -313,9 +316,10 @@ public final class EngineClient {
       try applyTaskEvent(eventName, params)
     case .attentionChanged: try applyAttentionEvent(params)
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
+    case .usageChanged: try applyUsageEvent(params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
-      .paneConfigChanged, .usageChanged:
+      .paneConfigChanged:
       break
     }
   }
