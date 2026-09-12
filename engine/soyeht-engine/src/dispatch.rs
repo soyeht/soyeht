@@ -143,24 +143,7 @@ impl Core {
         Ok(json!({"subscriptionId":Uuid::new_v4().to_string(),"through":through.to_string()}))
     }
 
-    pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
-        if request["jsonrpc"] != "2.0" || !request["id"].is_string() && !request["id"].is_u64() {
-            return Err(errors::invalid("Expected JSON-RPC 2.0 request with id"));
-        }
-        let method = request["method"]
-            .as_str()
-            .ok_or_else(|| errors::invalid("Missing method"))?;
-        let params = request.get("params").cloned().unwrap_or(json!({}));
-        soyeht_protocol::validate::parameters(method, &params)
-            .map_err(|error| errors::invalid(error.to_string()))?;
-        if method == "hello" {
-            return self.hello(connection, &params).map(Outcome::Reply);
-        }
-        if method.starts_with("pair.") {
-            return self
-                .pair_request(connection, method, &params)
-                .map(Outcome::Reply);
-        }
+    fn authenticated_scope(&self, connection: &str, method: &str) -> Result<String> {
         let client = self
             .clients
             .get(connection)
@@ -179,12 +162,23 @@ impl Core {
                 "Operation requires the local human client",
             ));
         }
+        Ok(client.scope.clone())
+    }
+
+    fn repeated_result(
+        &mut self,
+        connection: &str,
+        request_id: &Value,
+        method: &str,
+        params: &Value,
+        scope: &str,
+    ) -> Result<Option<Outcome>> {
         // Look up before state-dependent validation: a repeated close still
         // succeeds after its pane has disappeared, without rerunning effects.
         if let Some(key) = params["idempotencyKey"].as_str() {
             let previous = self
                 .store
-                .idempotency_receipt(&client.scope, key)
+                .idempotency_receipt(scope, key)
                 .map_err(errors::storage)?;
             if let Some(previous) = previous {
                 let incoming =
@@ -196,14 +190,26 @@ impl Core {
                 }
                 let value = previous.result;
                 if matches!(method, "pane.config.set" | "pane.yolo") {
-                    return self.native_rpc_result(connection, request["id"].clone(), key, value);
+                    return self
+                        .native_rpc_result(connection, request_id.clone(), key, value)
+                        .map(Some);
                 }
-                return Ok(Outcome::Reply(value));
+                return Ok(Some(Outcome::Reply(value)));
             }
         }
+        Ok(None)
+    }
+
+    fn route(
+        &mut self,
+        connection: &str,
+        request_id: Value,
+        method: &str,
+        params: &Value,
+    ) -> Result<Outcome> {
         let result = match method {
             "state.snapshot" => return self.snapshot_parts(connection),
-            "events.subscribe" => self.subscribe_events(connection, &params)?,
+            "events.subscribe" => self.subscribe_events(connection, params)?,
             "workspace.list" => {
                 let snapshot = self.store.snapshot().map_err(errors::storage)?;
                 let (_, workspaces) = snapshot
@@ -213,31 +219,31 @@ impl Core {
                     .ok_or_else(|| errors::internal("Snapshot has no workspaces section"))?;
                 json!({"items":workspaces})
             }
-            "workspace.create" => self.workspace_create(connection, &params)?,
+            "workspace.create" => self.workspace_create(connection, params)?,
             "workspace.rename" | "workspace.close" | "workspace.focus" => {
-                self.workspace_edit(connection, method, &params)?
+                self.workspace_edit(connection, method, params)?
             }
-            "pane.create" => self.pane_create(connection, &params)?,
+            "pane.create" => self.pane_create(connection, params)?,
             "pane.close" | "pane.focus" | "pane.rename" | "pane.resize" | "pane.record.set" => {
-                self.pane_edit(connection, method, &params)?
+                self.pane_edit(connection, method, params)?
             }
-            "pane.input" => self.pane_input(connection, &params)?,
-            "pane.yolo" => self.agent_yolo(connection, &params)?,
-            "pane.auth.start" => self.agent_auth_start(connection, &params)?,
-            "harness.list" | "model.list" => self.agent_catalog(method, &params)?,
+            "pane.input" => self.pane_input(connection, params)?,
+            "pane.yolo" => self.agent_yolo(connection, params)?,
+            "pane.auth.start" => self.agent_auth_start(connection, params)?,
+            "harness.list" | "model.list" => self.agent_catalog(method, params)?,
             "pane.prompt" | "pane.queue.list" | "pane.queue.remove" | "pane.queue.resume"
             | "pane.cancel" | "pane.config.set" | "pane.transcript" | "pane.draft" => {
-                self.agent_method(connection, method, &params)?
+                self.agent_method(connection, method, params)?
             }
             "pane.permission.answer" | "pane.elicitation.answer" => {
-                self.agent_answer(connection, method, &params)?
+                self.agent_answer(connection, method, params)?
             }
             "pane.stream.subscribe" => {
-                self.subscribe_stream(connection, request["id"].clone(), &params)?;
+                self.subscribe_stream(connection, request_id, params)?;
                 return Ok(Outcome::Queued);
             }
             "pane.stream.unsubscribe" => {
-                let pane_id = errors::param_str(&params, "paneId")?;
+                let pane_id = errors::param_str(params, "paneId")?;
                 errors::invariant(
                     self.clients.get_mut(connection),
                     "Stream connection disappeared",
@@ -250,10 +256,10 @@ impl Core {
                 json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION}})
             }
             "settings.get" => {
-                let key = errors::param_str(&params, "key")?;
+                let key = errors::param_str(params, "key")?;
                 json!({"key":params["key"],"value":self.setting(key)?})
             }
-            "settings.set" => self.setting_set(connection, &params)?,
+            "settings.set" => self.setting_set(connection, params)?,
             "device.list" => {
                 let snapshot = self.store.snapshot().map_err(errors::storage)?;
                 let (_, devices) = snapshot
@@ -264,7 +270,7 @@ impl Core {
                 json!({"items":devices})
             }
             "device.pair.start" | "device.pair.decide" | "device.revoke" => {
-                self.device_request(connection, method, &params)?
+                self.device_request(connection, method, params)?
             }
             _ => {
                 return Err(errors::invalid("Method unavailable"));
@@ -273,12 +279,39 @@ impl Core {
         if matches!(method, "pane.config.set" | "pane.yolo") {
             return self.native_rpc_result(
                 connection,
-                request["id"].clone(),
-                errors::param_str(&params, "idempotencyKey")?,
+                request_id,
+                errors::param_str(params, "idempotencyKey")?,
                 result,
             );
         }
         Ok(Outcome::Reply(result))
+    }
+
+    pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
+        if request["jsonrpc"] != "2.0" || !request["id"].is_string() && !request["id"].is_u64() {
+            return Err(errors::invalid("Expected JSON-RPC 2.0 request with id"));
+        }
+        let method = request["method"]
+            .as_str()
+            .ok_or_else(|| errors::invalid("Missing method"))?;
+        let params = request.get("params").cloned().unwrap_or(json!({}));
+        soyeht_protocol::validate::parameters(method, &params)
+            .map_err(|error| errors::invalid(error.to_string()))?;
+        if method == "hello" {
+            return self.hello(connection, &params).map(Outcome::Reply);
+        }
+        if method.starts_with("pair.") {
+            return self
+                .pair_request(connection, method, &params)
+                .map(Outcome::Reply);
+        }
+        let scope = self.authenticated_scope(connection, method)?;
+        if let Some(outcome) =
+            self.repeated_result(connection, &request["id"], method, &params, &scope)?
+        {
+            return Ok(outcome);
+        }
+        self.route(connection, request["id"].clone(), method, &params)
     }
 
     fn snapshot_parts(&mut self, connection: &str) -> Result<Outcome> {

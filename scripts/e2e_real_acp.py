@@ -54,36 +54,41 @@ def agent_option(client, pane_id, option_id):
     return next(option for option in pane["agent"]["options"] if option["id"] == option_id)
 
 
+def open_real_agent(services, adapter):
+    settings = services.data / ".claude"
+    settings.mkdir(mode=0o700)
+    (settings / "settings.local.json").write_text(json.dumps({
+        "permissions": {"ask": ["Bash(*)"]},
+    }))
+    (services.data / "harnesses.json").write_text(json.dumps([{
+        "id": "real-acp",
+        "name": "Real ACP",
+        "command": str(adapter),
+        "args": [],
+        "version": ADAPTER_VERSION,
+    }]))
+    services.start("ptyd")
+    services.start("engine")
+    client = services.client("real-acp-mac")
+    workspace = client.mutate(
+        "workspace.create", name="Real ACP acceptance", path=str(services.data)
+    )["workspace"]["workspaceId"]
+    pane = client.mutate(
+        "pane.create", workspaceId=workspace, mode="agent", harness="real-acp"
+    )["paneId"]
+    until(
+        lambda: client.pane(pane).get("agent", {}).get("sessionId"),
+        "the authenticated ACP session did not open",
+        seconds=90,
+    )
+    return client, pane
+
+
 def run_acceptances(binaries, adapter):
     services = Services(binaries)
     results = []
     try:
-        settings = services.data / ".claude"
-        settings.mkdir(mode=0o700)
-        (settings / "settings.local.json").write_text(json.dumps({
-            "permissions": {"ask": ["Bash(*)"]},
-        }))
-        (services.data / "harnesses.json").write_text(json.dumps([{
-            "id": "real-acp",
-            "name": "Real ACP",
-            "command": str(adapter),
-            "args": [],
-            "version": ADAPTER_VERSION,
-        }]))
-        services.start("ptyd")
-        services.start("engine")
-        mac = services.client("real-acp-mac")
-        workspace = mac.mutate(
-            "workspace.create", name="Real ACP acceptance", path=str(services.data)
-        )["workspace"]["workspaceId"]
-        pane_id = mac.mutate(
-            "pane.create", workspaceId=workspace, mode="agent", harness="real-acp"
-        )["paneId"]
-        until(
-            lambda: mac.pane(pane_id).get("agent", {}).get("sessionId"),
-            "the authenticated ACP session did not open",
-            seconds=90,
-        )
+        mac, pane_id = open_real_agent(services, adapter)
 
         phone = services.client("real-acp-second-client")
         prompt_id = mac.mutate(

@@ -4,7 +4,7 @@
   import Testing
   @testable import SoyehtClient
 
-  @MainActor @Test func phonePairsByConsentReadsFreshStateAndLosesRevokedAccess() async throws {
+  private func preparePhoneFixture() throws -> (bins: URL, data: URL, output: FileHandle) {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent()
@@ -16,12 +16,11 @@
       at: data, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     try "PROMPT='PHONE_READY> '\nHISTFILE=\nSAVEHIST=0\n".write(
       to: data.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
-    let fake = bins.appendingPathComponent("soyeht-fake-acp")
     let registry: [[String: Any]] = [
       [
         "id": "swift-test",
         "name": "Swift test agent",
-        "command": fake.path,
+        "command": bins.appendingPathComponent("soyeht-fake-acp").path,
         "args": [
           "--state-dir", data.appendingPathComponent("native-agent").path,
           "--load", "supported",
@@ -33,51 +32,49 @@
       to: data.appendingPathComponent("harnesses.json"), options: .atomic)
     let log = data.appendingPathComponent("test.log")
     FileManager.default.createFile(atPath: log.path, contents: nil)
-    let output = try FileHandle(forWritingTo: log)
-    func launch(_ name: String) throws -> Process {
-      let process = Process()
-      process.executableURL = bins.appendingPathComponent(name)
-      process.arguments = ["--data-dir", data.path]
-      if name == "soyeht-engine" { process.arguments! += ["--listen", "127.0.0.1:0"] }
-      process.environment = ProcessInfo.processInfo.environment
-      process.environment?["ZDOTDIR"] = data.path
-      process.standardOutput = output
-      process.standardError = output
-      try process.run()
-      return process
+    return (bins, data, try FileHandle(forWritingTo: log))
+  }
+
+  private func launchPhoneProcess(
+    _ name: String, bins: URL, data: URL, output: FileHandle
+  ) throws -> Process {
+    let process = Process()
+    process.executableURL = bins.appendingPathComponent(name)
+    process.arguments = ["--data-dir", data.path]
+    if name == "soyeht-engine" { process.arguments! += ["--listen", "127.0.0.1:0"] }
+    process.environment = ProcessInfo.processInfo.environment
+    process.environment?["ZDOTDIR"] = data.path
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    return process
+  }
+
+  @MainActor private func cleanPhoneFixture(
+    phone: EngineClient?, local: EngineClient, engine: Process?, supervisor: Process,
+    bins: URL, data: URL, output: FileHandle
+  ) {
+    phone?.stop()
+    for pane in local.panes {
+      let close = Process()
+      close.executableURL = bins.appendingPathComponent("soyeht")
+      close.arguments = [
+        "--profile", "dev", "--data-dir", data.path, "pane", "close", pane.paneId,
+      ]
+      close.standardOutput = output
+      close.standardError = output
+      if (try? close.run()) != nil { close.waitUntilExit() }
     }
-    let supervisor = try launch("soyeht-ptyd")
-    var engine: Process?
-    let local = EngineClient(socket: data.appendingPathComponent("engine.sock").path)
-    var phone: EngineClient?
-    defer {
-      phone?.stop()
-      for pane in local.panes {
-        let close = Process()
-        close.executableURL = bins.appendingPathComponent("soyeht")
-        close.arguments = [
-          "--profile", "dev", "--data-dir", data.path, "pane", "close", pane.paneId,
-        ]
-        close.standardOutput = output
-        close.standardError = output
-        if (try? close.run()) != nil { close.waitUntilExit() }
-      }
-      local.stop()
-      engine?.terminate()
-      supervisor.terminate()
-      if engine?.isRunning == true { engine?.waitUntilExit() }
-      if supervisor.isRunning { supervisor.waitUntilExit() }
-      try? output.close()
-      try? FileManager.default.removeItem(at: data)
-    }
-    try await phoneWait {
-      FileManager.default.fileExists(atPath: data.appendingPathComponent("ptyd.sock").path)
-    }
-    engine = try launch("soyeht-engine")
-    local.start()
-    try await phoneWait { local.connected }
-    local.createPane(directory: data)
-    try await phoneWait { local.selectedPane?.pid != nil }
+    local.stop()
+    engine?.terminate()
+    supervisor.terminate()
+    if engine?.isRunning == true { engine?.waitUntilExit() }
+    if supervisor.isRunning { supervisor.waitUntilExit() }
+    try? output.close()
+    try? FileManager.default.removeItem(at: data)
+  }
+
+  @MainActor private func pairCredential(_ local: EngineClient) async throws -> DeviceCredential {
     local.beginPairing()
     try await phoneWait { local.pairCode != nil }
     let pairing = PairingSession()
@@ -94,98 +91,94 @@
     local.decidePairing(request, approve: true)
     let credential = try await pair.value
     try await phoneWait { local.devices.count == 1 && local.pairRequests.isEmpty }
-    let roundTrip = try JSONDecoder().decode(
+    return try JSONDecoder().decode(
       DeviceCredential.self, from: JSONEncoder().encode(credential))
-    let reader = EngineClient(credential: roundTrip)
-    phone = reader
-    var screen = Data()
-    reader.terminalOutput = { bytes, reset in
-      if reset { screen.removeAll() }
-      screen.append(bytes)
-    }
-    reader.start()
-    try await phoneWait { reader.connected && !reader.panes.isEmpty }
-    #expect(reader.readOnly)
-    #expect(reader.selectedPane?.pid == local.selectedPane?.pid)
-    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READY>") }
-    local.input(Data("printf 'PHONE_READER_%s\\n' OK\r".utf8))
-    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READER_OK") }
+  }
 
+  @MainActor private func selectedAgentValue(
+    _ client: EngineClient, pane: String, option: String
+  ) -> String? {
+    guard
+      let value = client.panes.first(where: { $0.paneId == pane })?.agent?.options
+        .first(where: { $0.id == option })?.currentValue,
+      case .v0(let selected) = value
+    else { return nil }
+    return selected
+  }
+
+  @MainActor private func exerciseAgentPane(
+    local: EngineClient, reader: EngineClient, data: URL
+  ) async throws {
     local.createAgentPane(
       directory: data, harness: "swift-test", model: nil, effort: nil, permission: .ask)
     try await phoneWait("local agent session did not open") {
       local.panes.contains { $0.mode == .agent && $0.agent?.sessionId != nil }
     }
-    let agentId = try #require(local.panes.first { $0.mode == .agent }?.paneId)
+    let agent = try #require(local.panes.first { $0.mode == .agent }?.paneId)
     try await phoneWait("remote client did not receive the agent pane") {
-      reader.panes.contains { $0.paneId == agentId }
+      reader.panes.contains { $0.paneId == agent }
     }
-    reader.select(agentId)
-    func selectedValue(_ client: EngineClient, _ id: String) -> String? {
-      guard
-        let value = client.panes.first(where: { $0.paneId == agentId })?.agent?.options
-          .first(where: { $0.id == id })?.currentValue,
-        case .v0(let selected) = value
-      else { return nil }
-      return selected
-    }
-    reader.setAgentConfig(agentId, configId: "model", value: .v0("model-b"))
+    reader.select(agent)
+    reader.setAgentConfig(agent, configId: "model", value: .v0("model-b"))
     try await phoneWait("remote model selection did not converge") {
-      [local, reader].allSatisfy { selectedValue($0, "model") == "model-b" }
+      [local, reader].allSatisfy {
+        selectedAgentValue($0, pane: agent, option: "model") == "model-b"
+      }
     }
-    reader.setAgentConfig(agentId, configId: "effort", value: .v0("high"))
+    reader.setAgentConfig(agent, configId: "effort", value: .v0("high"))
     try await phoneWait("remote effort selection did not converge") {
-      [local, reader].allSatisfy { selectedValue($0, "effort") == "high" }
+      [local, reader].allSatisfy { selectedAgentValue($0, pane: agent, option: "effort") == "high" }
     }
-    reader.sendPrompt(agentId, text: "hello from phone")
+    reader.sendPrompt(agent, text: "hello from phone")
     try await phoneWait("two Swift clients did not receive the completed reply") {
       [local, reader].allSatisfy { replica in
-        replica.agentPanes[agentId]?.messages.contains {
+        replica.agentPanes[agent]?.messages.contains {
           $0.role == .assistant && $0.complete && $0.text == "Echo: hello from phone"
         } == true
       }
     }
     try await phoneWait("two Swift clients did not converge on the same transcript") {
-      let localBytes = try? canonicalTranscript(local.agentPanes[agentId]?.messages ?? [])
-      let remoteBytes = try? canonicalTranscript(reader.agentPanes[agentId]?.messages ?? [])
+      let localBytes = try? canonicalTranscript(local.agentPanes[agent]?.messages ?? [])
+      let remoteBytes = try? canonicalTranscript(reader.agentPanes[agent]?.messages ?? [])
       return localBytes == remoteBytes
-        && local.agentPanes[agentId]?.messages.contains {
+        && local.agentPanes[agent]?.messages.contains {
           $0.role == .user && $0.text == "hello from phone"
         } == true
     }
-    let localTranscript = try canonicalTranscript(local.agentPanes[agentId]?.messages ?? [])
-    let remoteTranscript = try canonicalTranscript(reader.agentPanes[agentId]?.messages ?? [])
-    #expect(localTranscript == remoteTranscript)
-
-    local.sendPrompt(agentId, text: "permission")
+    #expect(
+      try canonicalTranscript(local.agentPanes[agent]?.messages ?? [])
+        == canonicalTranscript(reader.agentPanes[agent]?.messages ?? []))
+    local.sendPrompt(agent, text: "permission")
     try await phoneWait("permission did not reach both Swift clients") {
-      local.agentPanes[agentId]?.permission != nil
-        && reader.agentPanes[agentId]?.permission != nil
+      local.agentPanes[agent]?.permission != nil && reader.agentPanes[agent]?.permission != nil
     }
-    let permission = try #require(reader.agentPanes[agentId]?.permission)
-    #expect(local.agentPanes[agentId]?.permission?.requestId == permission.requestId)
+    let permission = try #require(reader.agentPanes[agent]?.permission)
+    #expect(local.agentPanes[agent]?.permission?.requestId == permission.requestId)
     reader.answerPermission(permission, optionId: "once")
     try await phoneWait("remote permission answer did not settle") {
-      local.agentPanes[agentId]?.permission == nil
-        && reader.agentPanes[agentId]?.permission == nil
-        && local.panes.first(where: { $0.paneId == agentId })?.state == .idle
+      local.agentPanes[agent]?.permission == nil
+        && reader.agentPanes[agent]?.permission == nil
+        && local.panes.first(where: { $0.paneId == agent })?.state == .idle
     }
-    reader.setYolo(agentId, on: true)
+    reader.setYolo(agent, on: true)
     try await phoneWait("yolo enablement did not reach both Swift clients") {
       [local, reader].allSatisfy {
-        $0.panes.first(where: { $0.paneId == agentId })?.agent?.yolo == true
+        $0.panes.first(where: { $0.paneId == agent })?.agent?.yolo == true
       }
     }
-    reader.setYolo(agentId, on: false)
+    reader.setYolo(agent, on: false)
     try await phoneWait("yolo disablement did not reach both Swift clients") {
       [local, reader].allSatisfy {
-        $0.panes.first(where: { $0.paneId == agentId })?.agent?.yolo == false
+        $0.panes.first(where: { $0.paneId == agent })?.agent?.yolo == false
       }
     }
+  }
 
+  @MainActor private func reconnectAndRevoke(
+    local: EngineClient, reader: EngineClient, credential: DeviceCredential, data: URL
+  ) async throws {
     reader.stop()
     #expect(reader.panes.isEmpty)
-    #expect(screen.isEmpty)
     let paneCount = local.panes.count
     local.createPane(directory: data)
     try await phoneWait("local client did not receive the added pane") {
@@ -205,6 +198,47 @@
     }
     #expect(!reader.connected)
     #expect(reader.panes.isEmpty)
+  }
+
+  @MainActor @Test func phonePairsByConsentReadsFreshStateAndLosesRevokedAccess() async throws {
+    let fixture = try preparePhoneFixture()
+    let supervisor = try launchPhoneProcess(
+      "soyeht-ptyd", bins: fixture.bins, data: fixture.data, output: fixture.output)
+    var engine: Process?
+    let local = EngineClient(socket: fixture.data.appendingPathComponent("engine.sock").path)
+    var phone: EngineClient?
+    defer {
+      cleanPhoneFixture(
+        phone: phone, local: local, engine: engine, supervisor: supervisor,
+        bins: fixture.bins, data: fixture.data, output: fixture.output)
+    }
+    try await phoneWait {
+      FileManager.default.fileExists(atPath: fixture.data.appendingPathComponent("ptyd.sock").path)
+    }
+    engine = try launchPhoneProcess(
+      "soyeht-engine", bins: fixture.bins, data: fixture.data, output: fixture.output)
+    local.start()
+    try await phoneWait { local.connected }
+    local.createPane(directory: fixture.data)
+    try await phoneWait { local.selectedPane?.pid != nil }
+    let credential = try await pairCredential(local)
+    let reader = EngineClient(credential: credential)
+    phone = reader
+    var screen = Data()
+    reader.terminalOutput = { bytes, reset in
+      if reset { screen.removeAll() }
+      screen.append(bytes)
+    }
+    reader.start()
+    try await phoneWait { reader.connected && !reader.panes.isEmpty }
+    #expect(reader.readOnly)
+    #expect(reader.selectedPane?.pid == local.selectedPane?.pid)
+    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READY>") }
+    local.input(Data("printf 'PHONE_READER_%s\\n' OK\r".utf8))
+    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READER_OK") }
+    try await exerciseAgentPane(local: local, reader: reader, data: fixture.data)
+    try await reconnectAndRevoke(
+      local: local, reader: reader, credential: credential, data: fixture.data)
   }
 
   @MainActor private func phoneWait(

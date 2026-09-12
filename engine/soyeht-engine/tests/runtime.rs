@@ -681,9 +681,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
 }
 
-#[test]
-fn agent_turns_and_permission_survive_engine_adoption() {
-    let mut rig = Rig::new();
+fn start_agent_case(rig: &Rig) -> (Client, String, Value) {
     let binary =
         PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
     fs::write(rig.path.join("harnesses.json"), serde_json::to_vec(&json!([{
@@ -708,8 +706,15 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         );
         thread::sleep(Duration::from_millis(20));
     };
-    let native_session = ready["agent"]["sessionId"].clone();
-    let native_pid = ready["pid"].clone();
+    (client, pane, ready)
+}
+
+fn configure_and_run_first_turn(
+    client: &mut Client,
+    pane: &str,
+    native_pid: &Value,
+    native_session: &Value,
+) {
     let configured = client.call(
         "pane.config.set",
         json!({"paneId":pane,"configId":"model","value":"model-b","idempotencyKey":"model-change"}),
@@ -724,14 +729,14 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         client.request("pane.config.set", invalid)["error"],
         refused["error"]
     );
-    assert_eq!(client.pane(&pane)["pid"], native_pid);
-    assert_eq!(client.pane(&pane)["agent"]["sessionId"], native_session);
+    assert_eq!(client.pane(pane)["pid"], *native_pid);
+    assert_eq!(client.pane(pane)["agent"]["sessionId"], *native_session);
     assert_eq!(
-        client.pane(&pane)["agent"]["options"]
+        client.pane(pane)["agent"]["options"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|o| o["id"] == "model")
+            .find(|option| option["id"] == "model")
             .unwrap()["currentValue"],
         "model-b"
     );
@@ -739,73 +744,84 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         "pane.prompt",
         json!({"paneId":pane,"text":"hello","idempotencyKey":"first-prompt"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let view = client.pane(&pane);
-        if view["state"] == "idle" {
-            break;
-        }
-        assert!(Instant::now() < deadline, "turn did not end: {view}");
-        thread::sleep(Duration::from_millis(20));
-    }
+    client.wait_state(pane, "idle");
     let transcript = client.call("pane.transcript", json!({"paneId":pane}));
-    assert!(transcript["items"].as_array().unwrap().iter().any(
-        |m| m["role"] == "assistant" && m["text"].as_str().is_some_and(|s| s.contains("hello"))
-    ));
+    assert!(
+        transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["role"] == "assistant"
+                && message["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("hello")))
+    );
+}
+
+fn request_permission(client: &mut Client, pane: &str) -> Value {
     client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"permission-null","idempotencyKey":"permission-prompt"}),
     );
     let deadline = Instant::now() + Duration::from_secs(10);
-    let question = loop {
+    loop {
         let (_, parts) = client.snapshot();
         if let Some(question) = parts
             .iter()
-            .filter(|p| p["section"] == "requests")
-            .flat_map(|p| p["data"].as_array().unwrap())
-            .find(|r| r["kind"] == "permission")
+            .filter(|part| part["section"] == "requests")
+            .flat_map(|part| part["data"].as_array().unwrap())
+            .find(|request| request["kind"] == "permission")
         {
-            break question["request"].clone();
+            return question["request"].clone();
         }
         assert!(Instant::now() < deadline, "no permission question");
         thread::sleep(Duration::from_millis(20));
-    };
+    }
+}
+
+fn answer_after_engine_adoption(
+    rig: &mut Rig,
+    pane: &str,
+    native_pid: &Value,
+    native_session: &Value,
+    question: &Value,
+) -> Client {
     rig.kill_engine();
     rig.start();
     let mut first = rig.client();
     let mut second = rig.client();
-    let restored = first.pane(&pane);
-    assert_eq!(restored["pid"], native_pid);
-    assert_eq!(restored["agent"]["sessionId"], native_session);
+    let restored = first.pane(pane);
+    assert_eq!(restored["pid"], *native_pid);
+    assert_eq!(restored["agent"]["sessionId"], *native_session);
     let selected = first.call("pane.permission.answer", json!({"paneId":pane,"requestId":question["requestId"],"optionId":"once","idempotencyKey":"answer-once"}));
     let repeated = second.call("pane.permission.answer", json!({"paneId":pane,"requestId":question["requestId"],"optionId":"deny","idempotencyKey":"late-answer"}));
     assert_eq!(selected, repeated);
     assert_eq!(selected["optionId"], "once");
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let view = first.pane(&pane);
-        if view["state"] == "idle" {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "permission turn did not end: {view}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    first.wait_state(pane, "idle");
     let transcript = first.call("pane.transcript", json!({"paneId":pane}));
     let decisions: Vec<_> = transcript["items"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|m| {
-            m["text"]
+        .filter(|message| {
+            message["text"]
                 .as_str()
-                .is_some_and(|t| t.starts_with("Permission result:"))
+                .is_some_and(|text| text.starts_with("Permission result:"))
         })
         .collect();
     assert_eq!(decisions.len(), 1);
     assert!(decisions[0]["text"].as_str().unwrap().contains("once"));
+    first
+}
+
+fn restart_supervisor_and_assert_load(
+    rig: &mut Rig,
+    client: &mut Client,
+    pane: &str,
+    ready_generation: u64,
+    native_pid: &Value,
+    native_session: &Value,
+) {
     rig.ptyd.kill().unwrap();
     rig.ptyd.wait().unwrap();
     rig.ptyd = Command::new(
@@ -818,12 +834,10 @@ fn agent_turns_and_permission_survive_engine_adoption() {
     .unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let view = first.pane(&pane);
-        if view["generation"].as_u64().unwrap() > ready["generation"].as_u64().unwrap()
-            && view["state"] == "idle"
-        {
-            assert_ne!(view["pid"], native_pid);
-            assert_eq!(view["agent"]["sessionId"], native_session);
+        let view = client.pane(pane);
+        if view["generation"].as_u64().unwrap() > ready_generation && view["state"] == "idle" {
+            assert_ne!(view["pid"], *native_pid);
+            assert_eq!(view["agent"]["sessionId"], *native_session);
             break;
         }
         assert!(
@@ -832,64 +846,79 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    let transcript = first.call("pane.transcript", json!({"paneId":pane}));
+    let transcript = client.call("pane.transcript", json!({"paneId":pane}));
     let items = transcript["items"].as_array().unwrap();
-    assert_eq!(items.iter().filter(|m| m["role"] == "user").count(), 2);
-    assert_eq!(items.iter().filter(|m| m["role"] == "assistant").count(), 2);
-    assert!(
+    assert_eq!(
         items
             .iter()
-            .any(|m| m["text"] == "hello" && m["role"] == "user")
+            .filter(|message| message["role"] == "user")
+            .count(),
+        2
     );
     assert_eq!(
         items
             .iter()
-            .filter(|m| m["text"]
+            .filter(|message| message["role"] == "assistant")
+            .count(),
+        2
+    );
+    assert!(
+        items
+            .iter()
+            .any(|message| { message["text"] == "hello" && message["role"] == "user" })
+    );
+    assert_eq!(
+        items
+            .iter()
+            .filter(|message| message["text"]
                 .as_str()
-                .is_some_and(|t| t.starts_with("Permission result:")))
+                .is_some_and(|text| text.starts_with("Permission result:")))
             .count(),
         1
     );
-    let toggled = first.call(
+}
+
+fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
+    let toggled = client.call(
         "pane.yolo",
         json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-on"}),
     );
     assert_eq!(toggled["effectiveMode"], "allow_all");
     assert_eq!(toggled["on"], true);
-    first.call("pane.config.set", json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"manual-mode"}));
-    let manual = first.pane(&pane);
+    client.call("pane.config.set", json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"manual-mode"}));
+    let manual = client.pane(pane);
     assert_eq!(manual["agent"]["permission"], "accept_edits");
     assert_eq!(manual["agent"]["yolo"], false);
     assert!(manual["agent"]["previousPermission"].is_null());
-    first.call(
+    client.call(
         "pane.yolo",
         json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-after-manual"}),
     );
-    let restored = first.call(
+    let restored = client.call(
         "pane.yolo",
         json!({"paneId":pane,"on":false,"idempotencyKey":"restore-manual"}),
     );
     assert_eq!(restored["effectiveMode"], "accept_edits");
-    first.call(
+    client.call(
         "pane.config.set",
         json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"restore-ask"}),
     );
-    first.call(
+    client.call(
         "pane.yolo",
         json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-before-form"}),
     );
-    first.call(
+    client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"elicitation","idempotencyKey":"form-prompt"}),
     );
     let deadline = Instant::now() + Duration::from_secs(10);
     let form = loop {
-        let (_, parts) = first.snapshot();
+        let (_, parts) = client.snapshot();
         if let Some(form) = parts
             .iter()
-            .filter(|p| p["section"] == "requests")
-            .flat_map(|p| p["data"].as_array().unwrap())
-            .find(|r| r["kind"] == "elicitation")
+            .filter(|part| part["section"] == "requests")
+            .flat_map(|part| part["data"].as_array().unwrap())
+            .find(|request| request["kind"] == "elicitation")
         {
             break form["request"].clone();
         }
@@ -899,55 +928,57 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         );
         thread::sleep(Duration::from_millis(20));
     };
-    assert_eq!(first.pane(&pane)["state"], "waiting_for_you");
-    let invalid = first.request("pane.elicitation.answer", json!({"paneId":pane,"requestId":form["requestId"],"fields":{"answer":42},"idempotencyKey":"invalid-form"}));
+    assert_eq!(client.pane(pane)["state"], "waiting_for_you");
+    let invalid = client.request("pane.elicitation.answer", json!({"paneId":pane,"requestId":form["requestId"],"fields":{"answer":42},"idempotencyKey":"invalid-form"}));
     assert_eq!(invalid["error"]["data"]["kind"], "invalid_params");
-    let answered = first.call("pane.elicitation.answer", json!({"paneId":pane,"requestId":form["requestId"],"fields":{"answer":"yes"},"idempotencyKey":"valid-form"}));
+    let answered = client.call("pane.elicitation.answer", json!({"paneId":pane,"requestId":form["requestId"],"fields":{"answer":"yes"},"idempotencyKey":"valid-form"}));
     assert_eq!(answered["result"], "submitted");
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while first.pane(&pane)["state"] != "idle" {
+    while client.pane(pane)["state"] != "idle" {
         assert!(Instant::now() < deadline, "form turn did not end");
         thread::sleep(Duration::from_millis(20));
     }
-    let off = first.call(
+    let off = client.call(
         "pane.yolo",
         json!({"paneId":pane,"on":false,"idempotencyKey":"yolo-off"}),
     );
     assert_eq!(off["effectiveMode"], "ask");
     assert_eq!(off["on"], false);
-    let pid = first.pane(&pane)["pid"].clone();
-    first.call(
+}
+
+fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
+    let pid = client.pane(pane)["pid"].clone();
+    client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"slow","idempotencyKey":"slow-prompt"}),
     );
     let deadline = Instant::now() + Duration::from_secs(10);
-    while first.pane(&pane)["state"] != "working" {
+    while client.pane(pane)["state"] != "working" {
         assert!(Instant::now() < deadline, "slow turn did not start");
         thread::sleep(Duration::from_millis(20));
     }
-    first.call(
+    client.call(
         "pane.cancel",
         json!({"paneId":pane,"idempotencyKey":"cancel-slow"}),
     );
-    while first.pane(&pane)["state"] != "idle" {
+    while client.pane(pane)["state"] != "idle" {
         assert!(
             Instant::now() < deadline,
             "healthy cancellation exceeded deadline"
         );
         thread::sleep(Duration::from_millis(20));
     }
-    assert_eq!(first.pane(&pane)["pid"], pid);
-    first.call(
+    assert_eq!(client.pane(pane)["pid"], pid);
+    client.call(
         "pane.queue.resume",
         json!({"paneId":pane,"idempotencyKey":"resume-tools"}),
     );
-    first.call(
+    client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"tools","idempotencyKey":"native-tools"}),
     );
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let transcript = first.call("pane.transcript", json!({"paneId":pane}));
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
         let has_terminal = transcript["items"].as_array().unwrap().iter().any(|item| {
             item["kind"] == "terminal"
                 && item["terminal"]["bytes"].as_str().is_some_and(|bytes| {
@@ -956,7 +987,7 @@ fn agent_turns_and_permission_survive_engine_adoption() {
                         .is_ok_and(|bytes| bytes == b"fake-terminal")
                 })
         });
-        if first.pane(&pane)["state"] == "idle" && has_terminal {
+        if client.pane(pane)["state"] == "idle" && has_terminal {
             break;
         }
         assert!(
@@ -970,6 +1001,29 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         "test data\n"
     );
 }
+
+#[test]
+fn agent_turns_and_permission_survive_engine_adoption() {
+    let mut rig = Rig::new();
+    let (mut client, pane, ready) = start_agent_case(&rig);
+    let native_session = ready["agent"]["sessionId"].clone();
+    let native_pid = ready["pid"].clone();
+    configure_and_run_first_turn(&mut client, &pane, &native_pid, &native_session);
+    let question = request_permission(&mut client, &pane);
+    let mut first =
+        answer_after_engine_adoption(&mut rig, &pane, &native_pid, &native_session, &question);
+    restart_supervisor_and_assert_load(
+        &mut rig,
+        &mut first,
+        &pane,
+        ready["generation"].as_u64().unwrap(),
+        &native_pid,
+        &native_session,
+    );
+    exercise_yolo_and_form(&mut first, &pane);
+    exercise_cancel_and_tools(&rig, &mut first, &pane);
+}
+
 impl Client {
     fn wait_state(&mut self, pane: &str, state: &str) -> Value {
         let deadline = Instant::now() + Duration::from_secs(10);

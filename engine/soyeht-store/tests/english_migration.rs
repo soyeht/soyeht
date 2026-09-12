@@ -3,7 +3,7 @@
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{Pane, PaneState};
-use soyeht_store::database::{SCHEMA_VERSION, Store};
+use soyeht_store::database::{Event, SCHEMA_VERSION, Store};
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
 
@@ -69,12 +69,12 @@ fn scalar(connection: &Connection, sql: &str) -> String {
     connection.query_row(sql, [], |row| row.get(0)).unwrap()
 }
 
-#[test]
-fn populated_v2_preserves_identity_history_and_retries_while_converting_states() {
-    let (profile, old) = Profile::v2();
+const USER_TEXT: &str = r#"{"state":"ociosa","phrase":"Shell ativo","pane":{"paneId":"user","workspaceId":"text","state":"morta"}}"#;
+
+fn insert_history(old: &Connection) {
     for (index, (state, _)) in STATES.iter().enumerate() {
         let pane = old_pane(state, index);
-        insert_pane(&old, index, &pane);
+        insert_pane(old, index, &pane);
         for method in [
             "pane.created",
             "pane.updated",
@@ -104,27 +104,26 @@ fn populated_v2_preserves_identity_history_and_retries_while_converting_states()
         }
         old.execute("INSERT INTO idempotency(scope,key,fingerprint,result,created_unix,actor) VALUES ('test',?1,'stable-fingerprint',?2,123,'{}')",params![format!("key-{index}"),json!({"pane":pane}).to_string()]).unwrap();
     }
-    let user_text = r#"{"state":"ociosa","phrase":"Shell ativo","pane":{"paneId":"user","workspaceId":"text","state":"morta"}}"#;
-    old.execute("INSERT INTO settings VALUES ('user-text',?1)", [user_text])
+    old.execute("INSERT INTO settings VALUES ('user-text',?1)", [USER_TEXT])
         .unwrap();
     old.execute(
         "INSERT INTO events(method,params,created_unix) VALUES ('unrelated',?1,123)",
-        [user_text],
+        [USER_TEXT],
     )
     .unwrap();
-    old.execute("INSERT INTO idempotency(scope,key,fingerprint,result,created_unix) VALUES ('test','user-text','unchanged',?1,123)",[json!({"value":serde_json::from_str::<Value>(user_text).unwrap()}).to_string()]).unwrap();
+    old.execute("INSERT INTO idempotency(scope,key,fingerprint,result,created_unix) VALUES ('test','user-text','unchanged',?1,123)",[json!({"value":serde_json::from_str::<Value>(USER_TEXT).unwrap()}).to_string()]).unwrap();
     old.execute(
         "INSERT INTO client_focus(scope,workspace_id,pane_id) VALUES ('test','workspace','pane-1')",
         [],
     )
     .unwrap();
-    drop(old);
+}
 
-    let mut store = Store::open(&profile.0).unwrap();
+fn assert_metadata(store: &mut Store) {
     assert_eq!(
         store
             .connection()
-            .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
         SCHEMA_VERSION
     );
@@ -136,7 +135,7 @@ fn populated_v2_preserves_identity_history_and_retries_while_converting_states()
             store.connection(),
             "SELECT value FROM settings WHERE key='user-text'"
         ),
-        user_text
+        USER_TEXT
     );
     assert_eq!(
         scalar(store.connection(), "SELECT payload FROM workspaces"),
@@ -147,79 +146,79 @@ fn populated_v2_preserves_identity_history_and_retries_while_converting_states()
             store.connection(),
             "SELECT params FROM events WHERE method='unrelated'"
         ),
-        user_text
+        USER_TEXT
     );
     assert_eq!(
         scalar(store.connection(), "SELECT pane_id FROM client_focus"),
         "pane-1"
     );
-    let (_, events) = store.replay(0).unwrap();
-    for (index, (old_state, expected)) in STATES.iter().enumerate() {
-        let raw: String = store
-            .connection()
-            .query_row(
-                "SELECT payload FROM panes WHERE id=?1",
-                [format!("pane-{index}")],
-                |r| r.get(0),
-            )
-            .unwrap();
-        let actual: Value = serde_json::from_str(&raw).unwrap();
-        let mut wanted = old_pane(old_state, index);
-        wanted["state"] = serde_json::to_value(expected).unwrap();
-        wanted["phrase"] = json!("Shell active");
-        assert_eq!(actual, wanted);
-        assert_eq!(
-            serde_json::from_value::<Pane>(actual.clone())
-                .unwrap()
-                .state,
-            *expected
-        );
-        let process:(bool,String,String,String,String)=store.connection().query_row("SELECT closed,instance_key,instance_id,supervisor_id,sequence_base FROM panes WHERE id=?1",[format!("pane-{index}")],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).unwrap();
-        assert_eq!(
-            process,
-            (
-                index == 7,
-                format!("pane-{index}"),
-                "instance".into(),
-                "supervisor".into(),
-                "123456".into()
-            )
-        );
-        for event in &events[index * 4..index * 4 + 4] {
-            assert_eq!(event.params["eventId"], event.id.to_string());
-            assert_eq!(event.params["actor"]["client"], "test");
-            if event.method == "pane.state_changed" {
-                assert_eq!(event.params["state"], wanted["state"]);
-            } else {
-                assert_eq!(event.params["pane"], wanted);
-            }
-        }
-        let replay = store
-            .mutate(
-                "test",
-                &format!("key-{index}"),
-                "stable-fingerprint",
-                |_| panic!("old mutation ran again"),
-            )
-            .unwrap();
-        assert!(replay.repeated);
-        assert_eq!(replay.result, json!({"pane":wanted}));
-    }
-    let receipt = store
-        .mutate("test", "user-text", "unchanged", |_| {
-            panic!("user operation repeated")
-        })
+}
+
+fn assert_pane_migration(
+    store: &mut Store,
+    events: &[Event],
+    index: usize,
+    old_state: &str,
+    expected: &PaneState,
+) {
+    let raw: String = store
+        .connection()
+        .query_row(
+            "SELECT payload FROM panes WHERE id=?1",
+            [format!("pane-{index}")],
+            |row| row.get(0),
+        )
         .unwrap();
+    let actual: Value = serde_json::from_str(&raw).unwrap();
+    let mut wanted = old_pane(old_state, index);
+    wanted["state"] = serde_json::to_value(expected).unwrap();
+    wanted["phrase"] = json!("Shell active");
+    assert_eq!(actual, wanted);
     assert_eq!(
-        receipt.result["value"],
-        serde_json::from_str::<Value>(user_text).unwrap()
+        serde_json::from_value::<Pane>(actual.clone())
+            .unwrap()
+            .state,
+        *expected
     );
+    let process:(bool,String,String,String,String)=store.connection().query_row("SELECT closed,instance_key,instance_id,supervisor_id,sequence_base FROM panes WHERE id=?1",[format!("pane-{index}")],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).unwrap();
+    assert_eq!(
+        process,
+        (
+            index == 7,
+            format!("pane-{index}"),
+            "instance".into(),
+            "supervisor".into(),
+            "123456".into()
+        )
+    );
+    for event in &events[index * 4..index * 4 + 4] {
+        assert_eq!(event.params["eventId"], event.id.to_string());
+        assert_eq!(event.params["actor"]["client"], "test");
+        if event.method == "pane.state_changed" {
+            assert_eq!(event.params["state"], wanted["state"]);
+        } else {
+            assert_eq!(event.params["pane"], wanted);
+        }
+    }
+    let replay = store
+        .mutate(
+            "test",
+            &format!("key-{index}"),
+            "stable-fingerprint",
+            |_| panic!("old mutation ran again"),
+        )
+        .unwrap();
+    assert!(replay.repeated);
+    assert_eq!(replay.result, json!({"pane":wanted}));
+}
+
+fn assert_backup(profile: &Profile) {
     let backups = profile.backups();
     assert_eq!(backups.len(), 1);
     let backup = Connection::open(&backups[0]).unwrap();
     assert_eq!(
         backup
-            .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
         2
     );
@@ -231,6 +230,29 @@ fn populated_v2_preserves_identity_history_and_retries_while_converting_states()
         .unwrap()["state"],
         "iniciando"
     );
+}
+
+#[test]
+fn populated_v2_preserves_identity_history_and_retries_while_converting_states() {
+    let (profile, old) = Profile::v2();
+    insert_history(&old);
+    drop(old);
+    let mut store = Store::open(&profile.0).unwrap();
+    assert_metadata(&mut store);
+    let (_, events) = store.replay(0).unwrap();
+    for (index, (old_state, expected)) in STATES.iter().enumerate() {
+        assert_pane_migration(&mut store, &events, index, old_state, expected);
+    }
+    let receipt = store
+        .mutate("test", "user-text", "unchanged", |_| {
+            panic!("user operation repeated")
+        })
+        .unwrap();
+    assert_eq!(
+        receipt.result["value"],
+        serde_json::from_str::<Value>(USER_TEXT).unwrap()
+    );
+    assert_backup(&profile);
     drop(store);
     let mut reopened = Store::open(&profile.0).unwrap();
     assert_eq!(reopened.snapshot().unwrap().cursor, 37);

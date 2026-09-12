@@ -116,7 +116,7 @@ def supervisor_pending(services, generation, instance):
         return result["value"]["items"]
 
 
-def acceptances(services, results):
+def harness_registry(services):
     fake = services.binaries / "soyeht-fake-acp"
     entries = []
     for harness, policy in [("test", "supported"), ("no-load", "unsupported"),
@@ -128,11 +128,10 @@ def acceptances(services, results):
                         "args": args, "version": "1"})
     registry = services.data / "harnesses.json"
     registry.write_text(json.dumps(entries))
-    client = services.client("first")
-    workspace = client.mutate("workspace.create", name="Agent acceptances", path=str(services.data))["workspace"]["workspaceId"]
-    pane = open_agent(client, workspace, "test")
+    return entries, registry
 
-    # Both live clients receive full, ordered replacement text for each chunk.
+
+def acceptance_streaming(services, client, pane, results):
     observers = [services.client(name) for name in ("first-observer", "second-observer")]
     for observer in observers:
         cursor = observer.snapshot()[0]["cursor"]
@@ -162,7 +161,10 @@ def acceptances(services, results):
     client = services.restart_engine()
     require(transcript(client, pane) == before, "engine restart changed the transcript")
     results.append({"acceptance": 1, "name": "two_clients_stream_and_page_history", "passed": True})
+    return client
 
+
+def acceptance_permission(services, client, pane, results):
     turn_id = client.mutate("pane.prompt", paneId=pane, text="permission")["promptId"]
     first = until(lambda: question(client, pane), "permission was not presented")
     other = services.client("second-answer")
@@ -174,8 +176,8 @@ def acceptances(services, results):
     client.mutate("pane.prompt", paneId=pane, text="permission")
     expiry = until(lambda: question(client, pane), "expiring permission missing")
     services.stop_engine()
-    with sqlite3.connect(services.data / "soyeht.db") as db:
-        db.execute("UPDATE agent_requests SET expires_ms=0 WHERE request_id=?", (expiry["requestId"],))
+    with sqlite3.connect(services.data / "soyeht.db") as database:
+        database.execute("UPDATE agent_requests SET expires_ms=0 WHERE request_id=?", (expiry["requestId"],))
     services.start("engine")
     client = services.client()
     until(lambda: any(item.get("attentionId") == expiry["requestId"] for item in client.snapshot()[1]["attention"]),
@@ -186,7 +188,10 @@ def acceptances(services, results):
     require(receipt["result"] == "expired", "expired permission was accepted")
     until(lambda: client.pane(pane)["state"] == "idle", "expiry did not finish the turn")
     results.append({"acceptance": 2, "name": "first_answer_and_durable_expiry", "passed": True})
+    return client
 
+
+def acceptance_cancel(services, client, pane, results):
     original = client.pane(pane)
     client.mutate("pane.prompt", paneId=pane, text="silent")
     until(lambda: client.pane(pane)["state"] == "working", "silent turn did not start")
@@ -199,12 +204,13 @@ def acceptances(services, results):
     client.mutate("pane.queue.resume", paneId=pane)
     results.append({"acceptance": 3, "name": "cancel_preserves_process_and_pauses_queue", "passed": True})
 
+
+def acceptance_engine_outage(services, client, pane, results):
     original = client.pane(pane)
     generation = client.call("engine.status", {})["generation"]
     turn_id = client.mutate("pane.prompt", paneId=pane, text="permission-delayed")["promptId"]
     until(lambda: client.pane(pane)["state"] == "working", "delayed turn did not start")
     hold_engine(services)
-    # The registry is the supervisor's own persisted process identity.
     supervisor = json.loads((services.data / "ptyd-registry.json").read_text())
     instance = next(value["instance_id"] for value in supervisor["instances"].values()
                     if value.get("pid") == original["pid"])
@@ -222,7 +228,10 @@ def acceptances(services, results):
     require(len([event for event in events(services, "pane.permission_answered", pane)
                  if event["requestId"] == recovered["requestId"]]) == 1, "recovered permission was answered twice")
     results.append({"acceptance": 4, "name": "permission_created_during_engine_outage", "passed": True})
+    return client
 
+
+def acceptance_configuration(services, client, pane, results):
     session = client.pane(pane)["agent"]["sessionId"]
     for key, value in [("model", "model-b"), ("effort", "high")]:
         confirmed = client.mutate("pane.config.set", paneId=pane, configId=key, value=value)
@@ -235,6 +244,8 @@ def acceptances(services, results):
             "configuration lifecycle events missing")
     results.append({"acceptance": 5, "name": "native_configuration_confirmation", "passed": True})
 
+
+def acceptance_yolo_forms(services, client, pane, results):
     require(client.mutate("pane.yolo", paneId=pane, on=True)["on"], "yolo was not confirmed")
     count = len(events(services, "pane.permission_requested", pane))
     turn(services, client, pane, "permission")
@@ -248,6 +259,8 @@ def acceptances(services, results):
     require(not client.mutate("pane.yolo", paneId=pane, on=False)["on"], "yolo restoration was not confirmed")
     results.append({"acceptance": 6, "name": "yolo_never_answers_forms", "passed": True})
 
+
+def acceptance_queue(services, client, pane, results):
     client.mutate("pane.prompt", paneId=pane, text="permission")
     pending = until(lambda: question(client, pane), "queue setup permission missing")
     waiting = client.mutate("pane.prompt", paneId=pane, text="queued human")["promptId"]
@@ -264,7 +277,10 @@ def acceptances(services, results):
     client.mutate("pane.draft", paneId=pane, active=False)
     until(lambda: ended(services, automatic), "automatic queue did not resume after draft ended")
     results.append({"acceptance": 7, "name": "durable_queue_respects_human_draft", "passed": True})
+    return client
 
+
+def acceptance_supervisor_loss(services, client, workspace, pane, results):
     without = open_agent(client, workspace, "no-load")
     turn(services, client, without, "no resume history")
     old = {key: client.pane(key) for key in (pane, without)}
@@ -283,6 +299,8 @@ def acceptances(services, results):
     require(restored == preserved, f"native replay changed conversation messages: expected {preserved!r}; received {restored!r}")
     results.append({"acceptance": 8, "name": "supervisor_loss_load_or_visible_session_loss", "passed": True})
 
+
+def acceptance_probe_cache(services, client, workspace, entries, registry, results):
     advertised = open_agent(client, workspace, "advertised")
     fingerprint = client.pane(advertised)["agent"]["fingerprint"]
     cached = query(services, "SELECT payload FROM agent_probes WHERE fingerprint=? AND method='session/load'", (fingerprint,))
@@ -304,6 +322,8 @@ def acceptances(services, results):
             "changed harness version did not get a new probe")
     results.append({"acceptance": 9, "name": "probe_cache_requires_version_change", "passed": True})
 
+
+def acceptance_login(services, client, workspace, results):
     login = client.mutate("pane.create", workspaceId=workspace, mode="agent", harness="login")["paneId"]
     until(lambda: events(services, "pane.needs_login", login), "native login requirement missing")
     started = client.mutate("pane.auth.start", paneId=login, authMethodId="login")
@@ -312,6 +332,23 @@ def acceptances(services, results):
     until(lambda: events(services, "pane.auth_finished", login)
           and client.pane(login)["agent"].get("sessionId"), "login did not unlock a session")
     results.append({"acceptance": 10, "name": "native_login_terminal", "passed": True})
+
+
+def acceptances(services, results):
+    entries, registry = harness_registry(services)
+    client = services.client("first")
+    workspace = client.mutate("workspace.create", name="Agent acceptances", path=str(services.data))["workspace"]["workspaceId"]
+    pane = open_agent(client, workspace, "test")
+    client = acceptance_streaming(services, client, pane, results)
+    client = acceptance_permission(services, client, pane, results)
+    acceptance_cancel(services, client, pane, results)
+    client = acceptance_engine_outage(services, client, pane, results)
+    acceptance_configuration(services, client, pane, results)
+    acceptance_yolo_forms(services, client, pane, results)
+    client = acceptance_queue(services, client, pane, results)
+    acceptance_supervisor_loss(services, client, workspace, pane, results)
+    acceptance_probe_cache(services, client, workspace, entries, registry, results)
+    acceptance_login(services, client, workspace, results)
 
 
 def main():

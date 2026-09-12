@@ -27,12 +27,13 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::Message;
-use soyeht_protocol::{ProbeCapability, TranscriptMessage, ndjson::Decoder};
+use soyeht_protocol::{ProbeCapability, PromptItem, TranscriptMessage, ndjson::Decoder};
 use soyeht_store::{
     agents::{self, NativeRequest, Outgoing},
     database::{Change, Mutation},
 };
 use state::State;
+use std::collections::VecDeque;
 use uuid::Uuid;
 
 pub struct Running {
@@ -69,6 +70,137 @@ pub struct Changes {
 
 pub fn native_error(error: soyeht_acp::Error) -> errors::Error {
     errors::invalid(error.to_string())
+}
+
+fn outgoing_messages(
+    pane: &str,
+    saved: &StoredPane,
+    messages: &[Message],
+) -> Result<Vec<Outgoing>> {
+    if messages.is_empty() {
+        return Ok(Vec::new());
+    }
+    let instance_id = saved
+        .instance_id
+        .as_ref()
+        .ok_or_else(|| errors::ptyd_unavailable("Agent process is not adopted"))?;
+    let supervisor_id = saved
+        .supervisor_id
+        .as_ref()
+        .ok_or_else(|| errors::ptyd_unavailable("Agent supervisor is not adopted"))?;
+    messages
+        .iter()
+        .map(|message| {
+            Ok(Outgoing {
+                operation_key: Uuid::new_v4().to_string(),
+                pane_id: pane.into(),
+                generation: saved.pane.generation,
+                instance_id: instance_id.clone(),
+                supervisor_id: supervisor_id.clone(),
+                bytes: message.encode().map_err(native_error)?,
+                accepted_bytes: 0,
+                attempt: 0,
+            })
+        })
+        .collect()
+}
+
+struct AgentPersistence<'a> {
+    id: &'a str,
+    saved: &'a StoredPane,
+    state: &'a State,
+    old_queue: &'a VecDeque<PromptItem>,
+    changes: &'a Changes,
+    outgoing: &'a [Outgoing],
+}
+
+impl AgentPersistence<'_> {
+    fn apply(
+        self,
+        tx: &Change<'_>,
+        mut events: Vec<(String, Value)>,
+        result: Value,
+    ) -> soyeht_store::database::Result<(Value, Vec<(String, Value)>)> {
+        if let Some(completion) = &self.changes.completed_user {
+            let changed = tx.update_idempotency_result(
+                &completion.user.scope,
+                &completion.user.key,
+                &completion.stored(),
+            )?;
+            if !changed {
+                return Err(soyeht_store::database::Error::NativeEffectNotFound);
+            }
+        }
+        if let Some((instance, supervisor)) = &self.changes.retire_instance {
+            tx.retire_agent_outbox_process(self.id, instance, supervisor)?;
+        }
+        write_pane(tx, self.saved)?;
+        agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;
+        let attention_changed = self.changes.clear_attention
+            || !self.changes.attention.is_empty()
+            || !self.changes.remove_attention.is_empty();
+        if self.changes.clear_attention {
+            tx.clear_attention(self.id)?;
+        }
+        for attention in &self.changes.remove_attention {
+            tx.remove_attention(self.id, attention)?;
+        }
+        for attention in &self.changes.attention {
+            agents::save_attention(tx, &self.saved.pane.workspace_id, attention)?;
+        }
+        if attention_changed {
+            let items = agents::attention_in_change(tx, &self.saved.pane.workspace_id)?;
+            events.push(("attention.changed".into(),json!({"workspaceId":self.saved.pane.workspace_id,"count":items.len(),"items":items})));
+        }
+        if self.changes.clear_failed_probes {
+            tx.clear_failed_probes(&self.state.fingerprint)?;
+        }
+        if self.changes.clear_replay {
+            agents::discard_replay(tx, self.id)?;
+        }
+        for prompt in self.old_queue {
+            if !self
+                .state
+                .queue
+                .iter()
+                .any(|item| item.prompt_id == prompt.prompt_id)
+            {
+                agents::remove_prompt(tx, self.id, &prompt.prompt_id)?;
+            }
+        }
+        for prompt in &self.state.queue {
+            if !self
+                .old_queue
+                .iter()
+                .any(|item| item.prompt_id == prompt.prompt_id)
+            {
+                agents::enqueue_prompt(tx, self.id, prompt)?;
+            }
+        }
+        for request in &self.changes.received {
+            agents::receive(tx, request)?;
+        }
+        for (request, answer) in &self.changes.answers {
+            agents::answer(tx, request, answer)?;
+        }
+        for message in &self.changes.messages {
+            if self.changes.replay_messages {
+                agents::stage_message(tx, self.id, message)?;
+            } else {
+                agents::save_message(tx, self.id, message)?;
+            }
+        }
+        if self.changes.publish_replay {
+            agents::publish_replay(tx, self.id, self.saved.pane.generation)?;
+        }
+        for output in self.outgoing {
+            agents::enqueue(tx, output)?;
+        }
+        for probe in &self.changes.probes {
+            agents::save_probe(tx, &self.state.fingerprint, probe)?;
+        }
+        Ok((result, events))
+    }
 }
 
 impl Core {
@@ -118,26 +250,8 @@ impl Core {
             .get(&id)
             .map(|a| a.state.queue.clone())
             .unwrap_or_default();
-        let mut outgoing = Vec::new();
-        for message in changes.outgoing {
-            outgoing.push(Outgoing {
-                operation_key: Uuid::new_v4().to_string(),
-                pane_id: id.clone(),
-                generation: saved.pane.generation,
-                instance_id: saved
-                    .instance_id
-                    .clone()
-                    .ok_or_else(|| errors::ptyd_unavailable("Agent process is not adopted"))?,
-                supervisor_id: saved
-                    .supervisor_id
-                    .clone()
-                    .ok_or_else(|| errors::ptyd_unavailable("Agent supervisor is not adopted"))?,
-                bytes: message.encode().map_err(native_error)?,
-                accepted_bytes: 0,
-                attempt: 0,
-            });
-        }
-        let mut events = changes.events;
+        let outgoing = outgoing_messages(&id, &saved, &changes.outgoing)?;
+        let mut events = changes.events.clone();
         if self.panes.get(&id).is_none_or(|running| {
             running.stored.pane.state != saved.pane.state
                 || running.stored.pane.source != saved.pane.source
@@ -156,78 +270,15 @@ impl Core {
         {
             events.push(("pane.updated".into(), json!({"pane":saved.pane})));
         }
-        let change = |tx: &Change<'_>| {
-            if let Some(completion) = &changes.completed_user {
-                let changed = tx.update_idempotency_result(
-                    &completion.user.scope,
-                    &completion.user.key,
-                    &completion.stored(),
-                )?;
-                if !changed {
-                    return Err(soyeht_store::database::Error::NativeEffectNotFound);
-                }
-            }
-            if let Some((instance, supervisor)) = changes.retire_instance {
-                tx.retire_agent_outbox_process(&id, &instance, &supervisor)?;
-            }
-            write_pane(tx, &saved)?;
-            agents::save_runtime(tx, &id, saved.pane.generation, &state)?;
-            let attention_changed = changes.clear_attention
-                || !changes.attention.is_empty()
-                || !changes.remove_attention.is_empty();
-            if changes.clear_attention {
-                tx.clear_attention(&id)?;
-            }
-            for attention in changes.remove_attention {
-                tx.remove_attention(&id, &attention)?;
-            }
-            for attention in changes.attention {
-                agents::save_attention(tx, &saved.pane.workspace_id, &attention)?;
-            }
-            if attention_changed {
-                let items = agents::attention_in_change(tx, &saved.pane.workspace_id)?;
-                events.push(("attention.changed".into(),json!({"workspaceId":saved.pane.workspace_id,"count":items.len(),"items":items})));
-            }
-            if changes.clear_failed_probes {
-                tx.clear_failed_probes(&state.fingerprint)?;
-            }
-            if changes.clear_replay {
-                agents::discard_replay(tx, &id)?;
-            }
-            for prompt in &old_queue {
-                if !state.queue.iter().any(|p| p.prompt_id == prompt.prompt_id) {
-                    agents::remove_prompt(tx, &id, &prompt.prompt_id)?;
-                }
-            }
-            for prompt in &state.queue {
-                if !old_queue.iter().any(|p| p.prompt_id == prompt.prompt_id) {
-                    agents::enqueue_prompt(tx, &id, prompt)?;
-                }
-            }
-            for request in changes.received {
-                agents::receive(tx, &request)?;
-            }
-            for (request, result) in changes.answers {
-                agents::answer(tx, &request, &result)?;
-            }
-            for message in changes.messages {
-                if changes.replay_messages {
-                    agents::stage_message(tx, &id, &message)?;
-                } else {
-                    agents::save_message(tx, &id, &message)?;
-                }
-            }
-            if changes.publish_replay {
-                agents::publish_replay(tx, &id, saved.pane.generation)?;
-            }
-            for output in outgoing {
-                agents::enqueue(tx, &output)?;
-            }
-            for probe in changes.probes {
-                agents::save_probe(tx, &state.fingerprint, &probe)?;
-            }
-            Ok((result, events))
+        let persistence = AgentPersistence {
+            id: &id,
+            saved: &saved,
+            state: &state,
+            old_queue: &old_queue,
+            changes: &changes,
+            outgoing: &outgoing,
         };
+        let change = |tx: &Change<'_>| persistence.apply(tx, events, result);
         let mutation = if let Some((connection, method, params)) = user {
             self.mutate(connection, method, params, change)?
         } else {

@@ -61,6 +61,54 @@ fn prompt_origin(params: &Value) -> Result<PromptOrigin> {
         .map(|origin| origin.unwrap_or(PromptOrigin::Human))
 }
 
+fn cancel(
+    store: &impl StorePort,
+    pane: &str,
+    state: &mut super::state::State,
+    saved: &mut crate::model::StoredPane,
+    changes: &mut Changes,
+    now_ms: i64,
+    timestamp: &str,
+) -> Result<Value> {
+    if !state.queue_paused {
+        state.queue_paused = true;
+        changes.events.push((
+            "pane.queue.paused".into(),
+            json!({"paneId":pane,"paused":true,"reason":"interrupted"}),
+        ));
+    }
+    let mut result = json!({"paneId":pane,"cancelling":state.active.is_some()});
+    let Some(prompt) = &state.active else {
+        return Ok(result);
+    };
+    result["promptId"] = json!(prompt.prompt_id);
+    if state.cancel_at_ms.is_some() {
+        return Ok(result);
+    }
+    state.cancel_at_ms = Some(now_ms);
+    saved.pane.state = PaneState::Cancelling;
+    saved.pane.phrase = "Cancelling agent turn".into();
+    changes.outgoing.push(client::cancel(errors::invariant(
+        state.session_id.as_deref(),
+        "Active prompt has no native session",
+    )?));
+    for request in store.agent_open_requests(pane).map_err(errors::storage)? {
+        super::questions::decision(
+            state,
+            &request,
+            super::questions::Decision {
+                option: None,
+                fields: None,
+                by: "system",
+                expired: false,
+                timestamp,
+            },
+            changes,
+        )?;
+    }
+    Ok(result)
+}
+
 impl Core {
     pub fn close_agent(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
@@ -194,47 +242,15 @@ impl Core {
                 changes.events.push(queued(pane, &state, now_ms));
                 json!({"active":active})
             }
-            "pane.cancel" => {
-                if !state.queue_paused {
-                    state.queue_paused = true;
-                    changes.events.push((
-                        "pane.queue.paused".into(),
-                        json!({"paneId":pane,"paused":true,"reason":"interrupted"}),
-                    ));
-                }
-                let mut result = json!({"paneId":pane,"cancelling":state.active.is_some()});
-                if let Some(prompt) = &state.active {
-                    result["promptId"] = json!(prompt.prompt_id);
-                    if state.cancel_at_ms.is_none() {
-                        state.cancel_at_ms = Some(now_ms);
-                        saved.pane.state = PaneState::Cancelling;
-                        saved.pane.phrase = "Cancelling agent turn".into();
-                        changes.outgoing.push(client::cancel(errors::invariant(
-                            state.session_id.as_deref(),
-                            "Active prompt has no native session",
-                        )?));
-                        for request in self
-                            .store
-                            .agent_open_requests(pane)
-                            .map_err(errors::storage)?
-                        {
-                            super::questions::decision(
-                                &mut state,
-                                &request,
-                                super::questions::Decision {
-                                    option: None,
-                                    fields: None,
-                                    by: "system",
-                                    expired: false,
-                                    timestamp: &timestamp,
-                                },
-                                &mut changes,
-                            )?;
-                        }
-                    }
-                }
-                result
-            }
+            "pane.cancel" => cancel(
+                &self.store,
+                pane,
+                &mut state,
+                &mut saved,
+                &mut changes,
+                now_ms,
+                &timestamp,
+            )?,
             "pane.queue.resume" => {
                 if state.queue_paused {
                     state.queue_paused = false;

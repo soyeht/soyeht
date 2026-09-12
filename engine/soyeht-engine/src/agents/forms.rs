@@ -1,39 +1,39 @@
 use serde_json::Value;
 
+fn allowed_key(key: &str) -> bool {
+    matches!(
+        key,
+        "type"
+            | "title"
+            | "description"
+            | "properties"
+            | "required"
+            | "additionalProperties"
+            | "enum"
+            | "enumNames"
+            | "const"
+            | "items"
+            | "minItems"
+            | "maxItems"
+            | "minLength"
+            | "maxLength"
+            | "minimum"
+            | "maximum"
+            | "default"
+            | "format"
+            | "$schema"
+            | "oneOf"
+            | "anyOf"
+    )
+}
+
 /// Unsupported assertions are refused before displaying the question. They
 /// are never silently ignored while validating a submitted answer.
 pub fn supported(schema: &Value, depth: usize) -> bool {
     let Some(object) = schema.as_object() else {
         return false;
     };
-    if depth > 8
-        || object.keys().any(|key| {
-            !matches!(
-                key.as_str(),
-                "type"
-                    | "title"
-                    | "description"
-                    | "properties"
-                    | "required"
-                    | "additionalProperties"
-                    | "enum"
-                    | "enumNames"
-                    | "const"
-                    | "items"
-                    | "minItems"
-                    | "maxItems"
-                    | "minLength"
-                    | "maxLength"
-                    | "minimum"
-                    | "maximum"
-                    | "default"
-                    | "format"
-                    | "$schema"
-                    | "oneOf"
-                    | "anyOf"
-            )
-        })
-    {
+    if depth > 8 || object.keys().any(|key| !allowed_key(key)) {
         return false;
     }
     if schema.get("type").is_some_and(|kind| {

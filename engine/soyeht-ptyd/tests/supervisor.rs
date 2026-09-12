@@ -400,6 +400,25 @@ fn registry_write_failure_does_not_close_a_live_process_or_advance_authority() {
     ));
 }
 
+fn assert_private_diagnostic(daemon: &Daemon, instance_id: &str) {
+    let log = daemon
+        .directory
+        .join("harness-logs")
+        .join(format!("{instance_id}.stderr.log"));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !fs::read_to_string(&log)
+        .unwrap()
+        .contains("private diagnostic")
+    {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        fs::metadata(log).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
 #[test]
 fn pipes_recover_native_requests_after_ack_and_reconnect_without_echoing_stdin() {
     let (daemon, mut client) = Daemon::start();
@@ -498,22 +517,7 @@ fn pipes_recover_native_requests_after_ack_and_reconnect_without_echoing_stdin()
     assert!(
         matches!(client.request(Request::Resize { instance_id: instance.instance_id.clone(), cols: 80, rows: 24 }).unwrap(), Response::Error { kind, .. } if kind == "wrong_process_kind")
     );
-    let log = daemon
-        .directory
-        .join("harness-logs")
-        .join(format!("{}.stderr.log", instance.instance_id));
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while !fs::read_to_string(&log)
-        .unwrap()
-        .contains("private diagnostic")
-    {
-        assert!(Instant::now() < deadline);
-        thread::sleep(Duration::from_millis(10));
-    }
-    assert_eq!(
-        fs::metadata(log).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
+    assert_private_diagnostic(&daemon, &instance.instance_id);
     assert!(matches!(
         client
             .request(Request::Close {

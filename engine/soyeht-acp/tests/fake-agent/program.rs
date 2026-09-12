@@ -56,11 +56,150 @@ impl Runtime {
         });
     }
 
+    fn initialize(&self, id: Value) {
+        self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
+            "agentCapabilities":{"loadSession":self.settings.load!="unsupported"},
+            "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--login"]}]}));
+    }
+
+    fn new_session(&self, id: Value, params: &Value) {
+        let Some(cwd) = params["cwd"]
+            .as_str()
+            .filter(|cwd| std::path::Path::new(cwd).is_absolute())
+        else {
+            self.error(id, -32602, "Absolute cwd required");
+            return;
+        };
+        if !params["mcpServers"].is_array() {
+            self.error(id, -32602, "mcpServers required");
+            return;
+        }
+        let session = Session::new(cwd.into());
+        if session.save(&self.settings).is_err() {
+            self.error(id, -32603, "Could not persist fake session");
+            return;
+        }
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session.id.clone(), session.clone());
+        self.answer(id, session.response());
+    }
+
+    fn load_session(&self, id: Value, params: &Value) {
+        match self.settings.load.as_str() {
+            "unsupported" | "advertised-only" => {
+                self.error(id, -32601, "Method not found");
+                return;
+            }
+            "missing" => {
+                self.error(id, -32002, "Session not found");
+                return;
+            }
+            "timeout" => return,
+            _ => (),
+        }
+        let Some(session_id) = params["sessionId"].as_str() else {
+            self.error(id, -32602, "Session ID required");
+            return;
+        };
+        match Session::load(&self.settings, session_id) {
+            Ok(session) => {
+                self.sessions
+                    .lock()
+                    .unwrap()
+                    .insert(session.id.clone(), session.clone());
+                for (prompt, text) in &session.history {
+                    self.update(&session.id,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
+                    self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
+                }
+                self.answer(id, json!({"configOptions":session.options()}));
+            }
+            Err(_) => self.error(id, -32002, "Session not found"),
+        }
+    }
+
+    fn set_config_option(self: &Arc<Self>, id: Value, params: &Value) {
+        let Some(session_id) = params["sessionId"].as_str() else {
+            self.error(id, -32602, "Session ID required");
+            return;
+        };
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(session) = sessions.get_mut(session_id) else {
+            self.error(id, -32002, "Session not found");
+            return;
+        };
+        let config = params["configId"].as_str().unwrap_or("");
+        let value = &params["value"];
+        let allowed = match config {
+            "model" => matches!(
+                value.as_str(),
+                Some("model-a" | "model-b" | "delayed-model")
+            ),
+            "effort" => matches!(value.as_str(), Some("low" | "medium" | "high")),
+            "mode" => matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all")),
+            "fast" => value.is_boolean() && params["type"] == "boolean",
+            _ => false,
+        };
+        if !allowed {
+            self.error(id, -32602, "Configuration value refused");
+            return;
+        }
+        let mut next = session.clone();
+        next.values.insert(config.into(), value.clone());
+        if next.save(&self.settings).is_err() {
+            self.error(id, -32603, "Could not save configuration");
+            return;
+        }
+        *session = next;
+        let response = json!({"configOptions":session.options()});
+        if value == "delayed-model" {
+            let runtime = self.clone();
+            std::fs::write(self.settings.directory.join("config-waiting"), b"ready").unwrap();
+            std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+                while !runtime.settings.directory.join("config-release").exists() {
+                    if std::time::Instant::now() >= deadline {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                runtime.answer(id, response);
+            });
+        } else {
+            self.answer(id, response);
+        }
+    }
+
+    fn prompt(self: &Arc<Self>, id: Value, params: &Value) {
+        let session = params["sessionId"].as_str().unwrap_or("").to_owned();
+        if !self.sessions.lock().unwrap().contains_key(&session) {
+            self.error(id, -32002, "Session not found");
+            return;
+        }
+        let Some(prompt) = params["prompt"].as_array() else {
+            self.error(id, -32602, "Prompt blocks required");
+            return;
+        };
+        let text = prompt
+            .iter()
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut active = self.active.lock().unwrap();
+        if active.contains_key(&session) {
+            self.error(id, -32600, "Session already has an active turn");
+            return;
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        active.insert(session.clone(), cancelled.clone());
+        let runtime = self.clone();
+        std::thread::spawn(move || turns::run(runtime, id, session, text, cancelled));
+    }
+
     fn request(self: &Arc<Self>, id: Value, method: String, params: Value) {
         if method == "initialize" {
-            self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
-                "agentCapabilities":{"loadSession":self.settings.load!="unsupported"},
-                "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--login"]}]}));
+            self.initialize(id);
             return;
         }
         if !self.settings.logged_in() {
@@ -68,139 +207,10 @@ impl Runtime {
             return;
         }
         match method.as_str() {
-            "session/new" => {
-                let Some(cwd) = params["cwd"]
-                    .as_str()
-                    .filter(|cwd| std::path::Path::new(cwd).is_absolute())
-                else {
-                    self.error(id, -32602, "Absolute cwd required");
-                    return;
-                };
-                if !params["mcpServers"].is_array() {
-                    self.error(id, -32602, "mcpServers required");
-                    return;
-                }
-                let session = Session::new(cwd.into());
-                if session.save(&self.settings).is_err() {
-                    self.error(id, -32603, "Could not persist fake session");
-                    return;
-                }
-                self.sessions
-                    .lock()
-                    .unwrap()
-                    .insert(session.id.clone(), session.clone());
-                self.answer(id, session.response());
-            }
-            "session/load" => {
-                match self.settings.load.as_str() {
-                    "unsupported" | "advertised-only" => {
-                        self.error(id, -32601, "Method not found");
-                        return;
-                    }
-                    "missing" => {
-                        self.error(id, -32002, "Session not found");
-                        return;
-                    }
-                    "timeout" => return,
-                    _ => (),
-                }
-                let Some(session_id) = params["sessionId"].as_str() else {
-                    self.error(id, -32602, "Session ID required");
-                    return;
-                };
-                match Session::load(&self.settings, session_id) {
-                    Ok(session) => {
-                        self.sessions
-                            .lock()
-                            .unwrap()
-                            .insert(session.id.clone(), session.clone());
-                        for (prompt, text) in &session.history {
-                            self.update(&session.id,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
-                            self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
-                        }
-                        self.answer(id, json!({"configOptions":session.options()}));
-                    }
-                    Err(_) => self.error(id, -32002, "Session not found"),
-                }
-            }
-            "session/set_config_option" => {
-                let Some(session_id) = params["sessionId"].as_str() else {
-                    self.error(id, -32602, "Session ID required");
-                    return;
-                };
-                let mut sessions = self.sessions.lock().unwrap();
-                let Some(session) = sessions.get_mut(session_id) else {
-                    self.error(id, -32002, "Session not found");
-                    return;
-                };
-                let config = params["configId"].as_str().unwrap_or("");
-                let value = &params["value"];
-                let allowed = match config {
-                    "model" => matches!(
-                        value.as_str(),
-                        Some("model-a" | "model-b" | "delayed-model")
-                    ),
-                    "effort" => matches!(value.as_str(), Some("low" | "medium" | "high")),
-                    "mode" => matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all")),
-                    "fast" => value.is_boolean() && params["type"] == "boolean",
-                    _ => false,
-                };
-                if !allowed {
-                    self.error(id, -32602, "Configuration value refused");
-                    return;
-                }
-                let mut next = session.clone();
-                next.values.insert(config.into(), value.clone());
-                if next.save(&self.settings).is_err() {
-                    self.error(id, -32603, "Could not save configuration");
-                    return;
-                }
-                *session = next;
-                let response = json!({"configOptions":session.options()});
-                if value == "delayed-model" {
-                    let runtime = self.clone();
-                    std::fs::write(self.settings.directory.join("config-waiting"), b"ready")
-                        .unwrap();
-                    std::thread::spawn(move || {
-                        let deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(20);
-                        while !runtime.settings.directory.join("config-release").exists() {
-                            if std::time::Instant::now() >= deadline {
-                                return;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(10));
-                        }
-                        runtime.answer(id, response);
-                    });
-                } else {
-                    self.answer(id, response);
-                }
-            }
-            "session/prompt" => {
-                let session = params["sessionId"].as_str().unwrap_or("").to_owned();
-                if !self.sessions.lock().unwrap().contains_key(&session) {
-                    self.error(id, -32002, "Session not found");
-                    return;
-                }
-                let Some(prompt) = params["prompt"].as_array() else {
-                    self.error(id, -32602, "Prompt blocks required");
-                    return;
-                };
-                let text = prompt
-                    .iter()
-                    .filter_map(|b| b["text"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let mut active = self.active.lock().unwrap();
-                if active.contains_key(&session) {
-                    self.error(id, -32600, "Session already has an active turn");
-                    return;
-                }
-                let cancelled = Arc::new(AtomicBool::new(false));
-                active.insert(session.clone(), cancelled.clone());
-                let runtime = self.clone();
-                std::thread::spawn(move || turns::run(runtime, id, session, text, cancelled));
-            }
+            "session/new" => self.new_session(id, &params),
+            "session/load" => self.load_session(id, &params),
+            "session/set_config_option" => self.set_config_option(id, &params),
+            "session/prompt" => self.prompt(id, &params),
             _ => self.error(id, -32601, "Method not found"),
         }
     }

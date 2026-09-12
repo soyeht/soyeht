@@ -187,256 +187,297 @@ fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> Result<()> {
 
 fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> Result<Response> {
     match request {
-        Request::Hello { .. } => Ok(error("already_authenticated", "hello was already accepted")),
-        Request::List => Ok(Response::Instances(
-            state.registry.instances.values().cloned().collect(),
-        )),
-        Request::Spawn(config) => {
-            if let Some(existing) = state.registry.instances.get(&config.instance_key) {
-                return Ok(if existing.spawn == config {
-                    Response::Instance(existing.clone())
-                } else {
-                    error("idempotency_conflict", "spawn key has different parameters")
-                });
-            }
-            let instance_id = Uuid::new_v4().to_string();
-            let process::Spawned {
-                child,
-                input,
-                output: reader,
-                pid,
-                guard,
-            } = match process::spawn(&config, &state.directory, &instance_id) {
-                Ok(spawned) => spawned,
-                Err(failure) if config.kind == ProcessKind::Pty => {
-                    // PTY setup either never starts a child or kills and reaps
-                    // it before returning an error. No process needs adoption.
-                    return Ok(error("spawn_failed", &failure.to_string()));
-                }
-                Err(failure) => return Err(failure),
-            };
-            let pipes = config.kind == ProcessKind::PipesAcp;
-            let instance = Instance {
-                instance_id,
-                supervisor_id: state.supervisor_id.clone(),
-                pid,
-                spawn: config,
-                closed: false,
-                exit_code: None,
-            };
-            let live = Arc::new(Live {
-                master: Mutex::new(input),
-                child: Mutex::new(child),
-                output: Mutex::new(OutputState {
-                    retention: Retention::new(limits::PTY_RETENTION_BYTES)?,
-                    pending: pipes.then(Pending::default),
-                }),
-                guard: guard.map(Mutex::new),
-                exited: AtomicBool::new(false),
-                read_done: AtomicBool::new(false),
-            });
-            state
-                .registry
-                .instances
-                .insert(instance.spawn.instance_key.clone(), instance.clone());
-            if let Err(error) = state.registry.save(&state.directory) {
-                state
-                    .registry
-                    .instances
-                    .remove(&instance.spawn.instance_key);
-                let mut child = lock(&live.child, "child")?;
-                process::terminate_group(child.id());
-                let _ = child.wait();
-                return Err(error);
-            }
-            state
-                .live
-                .insert(instance.instance_id.clone(), Arc::clone(&live));
-            start_readers(
-                reader,
-                live,
-                Arc::clone(shared),
-                instance.spawn.instance_key.clone(),
-            );
-            Ok(Response::Instance(instance))
-        }
-        Request::Kill { instance_id } => {
-            let Some(live) = state.live.get(&instance_id) else {
-                return Ok(error("not_found", "process not found"));
-            };
-            let mut child = lock(&live.child, "child")?;
-            if child.try_wait()?.is_none() {
-                process::terminate_group(child.id());
-                let _ = child.wait();
-            }
-            // Keep the live output and registry entry until Close. ACP kill
-            // stops a command but leaves its output available to the caller.
-            Ok(Response::Ok)
-        }
-        Request::Close { instance_id } => {
-            if let Some(instance) = state
-                .registry
-                .instances
-                .values_mut()
-                .find(|i| i.instance_id == instance_id)
-            {
-                let key = instance.spawn.instance_key.clone();
-                let was_closed = instance.closed;
-                instance.closed = true;
-                if !was_closed && let Err(error) = state.registry.save(&state.directory) {
-                    let restored = state
-                        .registry
-                        .instances
-                        .get_mut(&key)
-                        .ok_or(Error::RegistryInstanceMissing)?;
-                    restored.closed = false;
-                    return Err(error);
-                }
-                if let Some(live) = state.live.remove(&instance_id) {
-                    let mut child = lock(&live.child, "child")?;
-                    if child.try_wait()?.is_none() {
-                        process::terminate_group(child.id());
-                        let _ = child.wait();
-                    }
-                    live.exited.store(true, Ordering::Release);
-                }
-            }
-            Ok(Response::Ok)
-        }
-        Request::PendingInputs => Ok(Response::InputReceipts(
-            state.inputs.keys().cloned().collect(),
-        )),
-        Request::PendingRequests { instance_id } => {
-            let Some(live) = state.live.get(&instance_id) else {
-                return Ok(error("not_found", "process not found"));
-            };
-            let output = lock(&live.output, "output")?;
-            let Some(pending) = &output.pending else {
-                return Ok(error("wrong_process_kind", "ACP pipes required"));
-            };
-            let (items, recovery_gap) = pending.list();
-            Ok(Response::PendingRequests {
-                items,
-                recovery_gap,
-            })
-        }
+        Request::Hello { .. } => execute_hello(),
+        Request::List => execute_list(state),
+        Request::Spawn(config) => execute_spawn(state, shared, config),
+        Request::Kill { instance_id } => execute_kill(state, &instance_id),
+        Request::Close { instance_id } => execute_close(state, &instance_id),
+        Request::PendingInputs => execute_pending_inputs(state),
+        Request::PendingRequests { instance_id } => execute_pending_requests(state, &instance_id),
         Request::PendingRequestChunk {
             instance_id,
             request_key,
             offset,
-        } => {
-            let Some(live) = state.live.get(&instance_id) else {
-                return Ok(error("not_found", "process not found"));
-            };
-            let output = lock(&live.output, "output")?;
-            let Some(pending) = &output.pending else {
-                return Ok(error("wrong_process_kind", "ACP pipes required"));
-            };
-            Ok(match pending.chunk(request_key, offset) {
-                Ok(chunk) => Response::PendingRequestChunk(chunk),
-                Err(failure) => error(failure.wire_kind(), "pending request could not be read"),
-            })
-        }
-        Request::ConfirmInput { operation_key } => {
-            state.inputs.remove(&operation_key);
-            Ok(Response::Ok)
-        }
+        } => execute_pending_request_chunk(state, &instance_id, request_key, offset),
+        Request::ConfirmInput { operation_key } => execute_confirm_input(state, &operation_key),
         Request::Input {
             instance_id,
             bytes,
             operation_key,
             fingerprint,
-        } => {
-            if operation_key.is_empty() || operation_key.len() > 128 || fingerprint.len() > 128 {
-                return Ok(error("invalid_params", "invalid input identity"));
-            }
-            if let Some((prior_instance, prior_fingerprint, accepted)) =
-                state.inputs.get(&operation_key)
-            {
-                return Ok(
-                    if prior_instance == &instance_id && prior_fingerprint == &fingerprint {
-                        Response::Accepted { bytes: *accepted }
-                    } else {
-                        error("idempotency_conflict", "input identity reused")
-                    },
-                );
-            }
-            if state.inputs.len() >= 1024 {
-                return Ok(error(
-                    "input_pending_limit",
-                    "confirm previous input receipts before submitting more",
-                ));
-            }
-            let Some(live) = state.live.get(&instance_id) else {
-                return Ok(error("not_found", "process not found"));
-            };
-            if live.exited.load(Ordering::Acquire) {
-                return Ok(error("process_exited", "process has exited"));
-            }
-            let bytes = STANDARD
-                .decode(bytes)
-                .map_err(|_| Error::InvalidBase64Input)?;
-            if bytes.len() > limits::TERMINAL_PAYLOAD_BYTES {
-                return Ok(error("input_too_large", "input exceeds 64 KiB"));
-            }
-            let mut output = lock(&live.output, "output")?;
-            let count = match lock(&live.master, "master")?.write(&bytes) {
-                Ok(count) => count,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => 0,
-                Err(e) => return Err(e.into()),
-            };
-            if let Some(pending) = &mut output.pending {
-                pending.input(&bytes[..count]);
-            }
-            state
-                .inputs
-                .insert(operation_key, (instance_id, fingerprint, count));
-            Ok(Response::Accepted { bytes: count })
-        }
+        } => execute_input(state, instance_id, bytes, operation_key, fingerprint),
         Request::Resize {
             instance_id,
             cols,
             rows,
-        } => {
-            let Some(live) = state.live.get(&instance_id) else {
-                return Ok(error("not_found", "process not found"));
-            };
-            if live.guard.is_some() {
-                return Ok(error("wrong_process_kind", "terminal PTY required"));
-            }
-            let master = lock(&live.master, "master")?;
-            process::resize(&master, cols, rows)?;
-            Ok(Response::Ok)
-        }
+        } => execute_resize(state, &instance_id, cols, rows),
         Request::Drain {
             instance_id,
             from_seq,
-        } => {
-            let Some(live) = state.live.get(&instance_id) else {
-                return Ok(error("not_found", "process not found"));
-            };
-            let output = lock(&live.output, "output")?.retention.read(
-                from_seq,
-                limits::TERMINAL_PAYLOAD_BYTES,
-                live.exited.load(Ordering::Acquire) && live.read_done.load(Ordering::Acquire),
-            );
-            Ok(match output {
-                Ok(output) => Response::Output(output),
-                Err(failure) => error(failure.wire_kind(), "invalid output cursor"),
-            })
+        } => execute_drain(state, &instance_id, from_seq),
+        Request::Ack { instance_id, seq } => execute_ack(state, &instance_id, seq),
+    }
+}
+
+fn execute_hello() -> Result<Response> {
+    Ok(error("already_authenticated", "hello was already accepted"))
+}
+
+fn execute_list(state: &State) -> Result<Response> {
+    Ok(Response::Instances(
+        state.registry.instances.values().cloned().collect(),
+    ))
+}
+
+fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -> Result<Response> {
+    if let Some(existing) = state.registry.instances.get(&config.instance_key) {
+        return Ok(if existing.spawn == config {
+            Response::Instance(existing.clone())
+        } else {
+            error("idempotency_conflict", "spawn key has different parameters")
+        });
+    }
+    let instance_id = Uuid::new_v4().to_string();
+    let process::Spawned {
+        child,
+        input,
+        output: reader,
+        pid,
+        guard,
+    } = match process::spawn(&config, &state.directory, &instance_id) {
+        Ok(spawned) => spawned,
+        Err(failure) if config.kind == ProcessKind::Pty => {
+            // PTY setup either never starts a child or kills and reaps it before
+            // returning an error. No process needs adoption.
+            return Ok(error("spawn_failed", &failure.to_string()));
         }
-        Request::Ack { instance_id, seq } => {
-            let Some(live) = state.live.get(&instance_id) else {
-                return Ok(error("not_found", "process not found"));
-            };
-            Ok(
-                match lock(&live.output, "output")?.retention.acknowledge(seq) {
-                    Ok(()) => Response::Ok,
-                    Err(failure) => error(failure.wire_kind(), "invalid acknowledgement"),
-                },
-            )
+        Err(failure) => return Err(failure),
+    };
+    let pipes = config.kind == ProcessKind::PipesAcp;
+    let instance = Instance {
+        instance_id,
+        supervisor_id: state.supervisor_id.clone(),
+        pid,
+        spawn: config,
+        closed: false,
+        exit_code: None,
+    };
+    let live = Arc::new(Live {
+        master: Mutex::new(input),
+        child: Mutex::new(child),
+        output: Mutex::new(OutputState {
+            retention: Retention::new(limits::PTY_RETENTION_BYTES)?,
+            pending: pipes.then(Pending::default),
+        }),
+        guard: guard.map(Mutex::new),
+        exited: AtomicBool::new(false),
+        read_done: AtomicBool::new(false),
+    });
+    state
+        .registry
+        .instances
+        .insert(instance.spawn.instance_key.clone(), instance.clone());
+    if let Err(failure) = state.registry.save(&state.directory) {
+        state
+            .registry
+            .instances
+            .remove(&instance.spawn.instance_key);
+        let mut child = lock(&live.child, "child")?;
+        process::terminate_group(child.id());
+        let _ = child.wait();
+        return Err(failure);
+    }
+    state
+        .live
+        .insert(instance.instance_id.clone(), Arc::clone(&live));
+    start_readers(
+        reader,
+        live,
+        Arc::clone(shared),
+        instance.spawn.instance_key.clone(),
+    );
+    Ok(Response::Instance(instance))
+}
+
+fn execute_kill(state: &State, instance_id: &str) -> Result<Response> {
+    let Some(live) = state.live.get(instance_id) else {
+        return Ok(error("not_found", "process not found"));
+    };
+    let mut child = lock(&live.child, "child")?;
+    if child.try_wait()?.is_none() {
+        process::terminate_group(child.id());
+        let _ = child.wait();
+    }
+    // Keep the live output and registry entry until Close. ACP kill stops a
+    // command but leaves its output available to the caller.
+    Ok(Response::Ok)
+}
+
+fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
+    if let Some(instance) = state
+        .registry
+        .instances
+        .values_mut()
+        .find(|instance| instance.instance_id == instance_id)
+    {
+        let key = instance.spawn.instance_key.clone();
+        let was_closed = instance.closed;
+        instance.closed = true;
+        if !was_closed && let Err(failure) = state.registry.save(&state.directory) {
+            let restored = state
+                .registry
+                .instances
+                .get_mut(&key)
+                .ok_or(Error::RegistryInstanceMissing)?;
+            restored.closed = false;
+            return Err(failure);
+        }
+        if let Some(live) = state.live.remove(instance_id) {
+            let mut child = lock(&live.child, "child")?;
+            if child.try_wait()?.is_none() {
+                process::terminate_group(child.id());
+                let _ = child.wait();
+            }
+            live.exited.store(true, Ordering::Release);
         }
     }
+    Ok(Response::Ok)
+}
+
+fn execute_pending_inputs(state: &State) -> Result<Response> {
+    Ok(Response::InputReceipts(
+        state.inputs.keys().cloned().collect(),
+    ))
+}
+
+fn execute_pending_requests(state: &State, instance_id: &str) -> Result<Response> {
+    let Some(live) = state.live.get(instance_id) else {
+        return Ok(error("not_found", "process not found"));
+    };
+    let output = lock(&live.output, "output")?;
+    let Some(pending) = &output.pending else {
+        return Ok(error("wrong_process_kind", "ACP pipes required"));
+    };
+    let (items, recovery_gap) = pending.list();
+    Ok(Response::PendingRequests {
+        items,
+        recovery_gap,
+    })
+}
+
+fn execute_pending_request_chunk(
+    state: &State,
+    instance_id: &str,
+    request_key: u64,
+    offset: usize,
+) -> Result<Response> {
+    let Some(live) = state.live.get(instance_id) else {
+        return Ok(error("not_found", "process not found"));
+    };
+    let output = lock(&live.output, "output")?;
+    let Some(pending) = &output.pending else {
+        return Ok(error("wrong_process_kind", "ACP pipes required"));
+    };
+    Ok(match pending.chunk(request_key, offset) {
+        Ok(chunk) => Response::PendingRequestChunk(chunk),
+        Err(failure) => error(failure.wire_kind(), "pending request could not be read"),
+    })
+}
+
+fn execute_confirm_input(state: &mut State, operation_key: &str) -> Result<Response> {
+    state.inputs.remove(operation_key);
+    Ok(Response::Ok)
+}
+
+fn execute_input(
+    state: &mut State,
+    instance_id: String,
+    bytes: String,
+    operation_key: String,
+    fingerprint: String,
+) -> Result<Response> {
+    if operation_key.is_empty() || operation_key.len() > 128 || fingerprint.len() > 128 {
+        return Ok(error("invalid_params", "invalid input identity"));
+    }
+    if let Some((prior_instance, prior_fingerprint, accepted)) = state.inputs.get(&operation_key) {
+        return Ok(
+            if prior_instance == &instance_id && prior_fingerprint == &fingerprint {
+                Response::Accepted { bytes: *accepted }
+            } else {
+                error("idempotency_conflict", "input identity reused")
+            },
+        );
+    }
+    if state.inputs.len() >= 1024 {
+        return Ok(error(
+            "input_pending_limit",
+            "confirm previous input receipts before submitting more",
+        ));
+    }
+    let Some(live) = state.live.get(&instance_id) else {
+        return Ok(error("not_found", "process not found"));
+    };
+    if live.exited.load(Ordering::Acquire) {
+        return Ok(error("process_exited", "process has exited"));
+    }
+    let bytes = STANDARD
+        .decode(bytes)
+        .map_err(|_| Error::InvalidBase64Input)?;
+    if bytes.len() > limits::TERMINAL_PAYLOAD_BYTES {
+        return Ok(error("input_too_large", "input exceeds 64 KiB"));
+    }
+    let mut output = lock(&live.output, "output")?;
+    let count = match lock(&live.master, "master")?.write(&bytes) {
+        Ok(count) => count,
+        Err(failure) if failure.kind() == io::ErrorKind::WouldBlock => 0,
+        Err(failure) => return Err(failure.into()),
+    };
+    if let Some(pending) = &mut output.pending {
+        pending.input(&bytes[..count]);
+    }
+    state
+        .inputs
+        .insert(operation_key, (instance_id, fingerprint, count));
+    Ok(Response::Accepted { bytes: count })
+}
+
+fn execute_resize(state: &State, instance_id: &str, cols: u16, rows: u16) -> Result<Response> {
+    let Some(live) = state.live.get(instance_id) else {
+        return Ok(error("not_found", "process not found"));
+    };
+    if live.guard.is_some() {
+        return Ok(error("wrong_process_kind", "terminal PTY required"));
+    }
+    let master = lock(&live.master, "master")?;
+    process::resize(&master, cols, rows)?;
+    Ok(Response::Ok)
+}
+
+fn execute_drain(state: &State, instance_id: &str, from_seq: u64) -> Result<Response> {
+    let Some(live) = state.live.get(instance_id) else {
+        return Ok(error("not_found", "process not found"));
+    };
+    let output = lock(&live.output, "output")?.retention.read(
+        from_seq,
+        limits::TERMINAL_PAYLOAD_BYTES,
+        live.exited.load(Ordering::Acquire) && live.read_done.load(Ordering::Acquire),
+    );
+    Ok(match output {
+        Ok(output) => Response::Output(output),
+        Err(failure) => error(failure.wire_kind(), "invalid output cursor"),
+    })
+}
+
+fn execute_ack(state: &State, instance_id: &str, seq: u64) -> Result<Response> {
+    let Some(live) = state.live.get(instance_id) else {
+        return Ok(error("not_found", "process not found"));
+    };
+    Ok(
+        match lock(&live.output, "output")?.retention.acknowledge(seq) {
+            Ok(()) => Response::Ok,
+            Err(failure) => error(failure.wire_kind(), "invalid acknowledgement"),
+        },
+    )
 }
 
 fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, key: String) {

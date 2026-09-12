@@ -178,6 +178,329 @@ fn fingerprint(state: &State, version: &str) -> Result<String> {
     session::fingerprint(&state.binary_digest, version, &json!(state.launch)).map_err(native_error)
 }
 
+type NativeResult = std::result::Result<Value, soyeht_acp::RpcError>;
+
+fn auth_response(
+    state: &mut State,
+    saved: &StoredPane,
+    changes: &mut Changes,
+    result: NativeResult,
+) {
+    let ok = result.is_ok();
+    state.phase = if ok {
+        Phase::RestartAfterProbe
+    } else {
+        Phase::NeedsLogin
+    };
+    state.probe_started_ms = None;
+    changes.clear_failed_probes = ok;
+    changes.events.push(("pane.auth_finished".into(),json!({"paneId":saved.pane.pane_id,"ok":ok,"reason":result.err().map(|error|error.message).unwrap_or_else(||"Sign-in completed".into())})));
+}
+
+fn initialize_response(
+    store: &impl StorePort,
+    state: &mut State,
+    saved: &StoredPane,
+    changes: &mut Changes,
+    result: NativeResult,
+    now_ms: i64,
+) -> Result<()> {
+    let value = result.map_err(|error| errors::harness_unavailable(error.message))?;
+    let info = Initialization::parse(&value).map_err(native_error)?;
+    state.fingerprint = fingerprint(state, &info.version)?;
+    state.initialized = Some(info);
+    let mut all_known = true;
+    for method in PROBED_METHODS {
+        all_known &= store
+            .agent_probe(&state.fingerprint, method)
+            .map_err(errors::storage)?
+            .is_some();
+    }
+    if all_known {
+        return open(state, saved, changes, now_ms);
+    }
+    state.phase = Phase::ProbeNew;
+    state.probe_started_ms = Some(now_ms);
+    call(
+        state,
+        changes,
+        "session/new",
+        client::new_session(&saved.pane.cwd),
+        "probe:new",
+        now_ms,
+    )
+}
+
+fn probe_new_response(
+    state: &mut State,
+    saved: &mut StoredPane,
+    changes: &mut Changes,
+    result: NativeResult,
+    now_ms: i64,
+) -> Result<()> {
+    match result {
+        Ok(value) => {
+            state.probe_session_id = Some(session::session_id(&value).map_err(native_error)?);
+            state.options = Options::from_response(&value).map_err(native_error)?;
+            state.phase = Phase::ProbeList;
+            call(
+                state,
+                changes,
+                "session/list",
+                json!({}),
+                "probe:list",
+                now_ms,
+            )
+        }
+        Err(error) if error.code == -32000 => {
+            needs_login(state, saved, changes);
+            Ok(())
+        }
+        Err(error) => Err(errors::harness_unavailable(error.message)),
+    }
+}
+
+fn probe_response(
+    state: &mut State,
+    saved: &StoredPane,
+    request: &client::Call,
+    changes: &mut Changes,
+    result: NativeResult,
+    now_ms: i64,
+    timestamp: &str,
+) -> Result<()> {
+    let mut classified = session::probe_result(result.as_ref());
+    if request.context == "probe:config"
+        && let Ok(value) = &result
+    {
+        let confirmed = request.params["configId"]
+            .as_str()
+            .zip(
+                serde_json::from_value::<soyeht_protocol::ConfigValue>(
+                    request.params["value"].clone(),
+                )
+                .ok(),
+            )
+            .is_some_and(|(id, desired)| state.options.confirmed(id, &desired, value).is_ok());
+        if !confirmed {
+            classified = ProbeResult::Inconclusive;
+        }
+    }
+    changes.probes.push(ProbeCapability {
+        method: request.method.clone(),
+        result: classified,
+        checked_at: timestamp.into(),
+    });
+    let id = state
+        .probe_session_id
+        .clone()
+        .ok_or_else(|| errors::internal("Probe has no disposable session"))?;
+    match request.context.as_str() {
+        "probe:list" => {
+            state.phase = Phase::ProbeLoad;
+            call(
+                state,
+                changes,
+                "session/load",
+                client::load_session(&saved.pane.cwd, &id),
+                "probe:load",
+                now_ms,
+            )
+        }
+        "probe:load" => probe_configuration(state, changes, &id, now_ms, timestamp),
+        "probe:config" => {
+            state.phase = Phase::RestartAfterProbe;
+            Ok(())
+        }
+        _ => Err(errors::internal("Unknown probe response")),
+    }
+}
+
+fn probe_configuration(
+    state: &mut State,
+    changes: &mut Changes,
+    session_id: &str,
+    now_ms: i64,
+    timestamp: &str,
+) -> Result<()> {
+    let option = state
+        .options
+        .values
+        .iter()
+        .find(|option| {
+            state.options.routes.get(&option.id) == Some(&soyeht_acp::config::Route::ConfigOption)
+        })
+        .cloned();
+    if let Some(option) = option {
+        state.phase = Phase::ProbeConfig;
+        let (method, params) = state
+            .options
+            .request(session_id, &option.id, &option.current_value)
+            .map_err(native_error)?;
+        call(state, changes, method, params, "probe:config", now_ms)
+    } else {
+        // No advertised option supplies valid probe parameters. This is
+        // inconclusive, never evidence of a missing method.
+        changes.probes.push(ProbeCapability {
+            method: "session/set_config_option".into(),
+            result: ProbeResult::Inconclusive,
+            checked_at: timestamp.into(),
+        });
+        state.phase = Phase::RestartAfterProbe;
+        Ok(())
+    }
+}
+
+fn session_response(
+    store: &impl StorePort,
+    state: &mut State,
+    saved: &mut StoredPane,
+    context: &str,
+    changes: &mut Changes,
+    result: NativeResult,
+    now_ms: i64,
+) -> Result<()> {
+    match result {
+        Ok(value) => session_opened(store, state, saved, context, changes, &value),
+        Err(error) if error.code == -32000 => {
+            needs_login(state, saved, changes);
+            Ok(())
+        }
+        Err(error) if context == "load" && matches!(error.code, -32601 | -32002) => {
+            session_lost(state, saved, changes, now_ms, error.message)
+        }
+        Err(error) => Err(errors::harness_unavailable(error.message)),
+    }
+}
+
+fn session_opened(
+    store: &impl StorePort,
+    state: &mut State,
+    saved: &mut StoredPane,
+    context: &str,
+    changes: &mut Changes,
+    value: &Value,
+) -> Result<()> {
+    if context == "open" {
+        let id = session::session_id(value).map_err(native_error)?;
+        if id.chars().count() > 128 {
+            return Err(errors::invalid(
+                "Native session ID exceeds the public protocol bound",
+            ));
+        }
+        state.session_id = Some(id);
+    }
+    if context == "load" {
+        changes.replay_messages = true;
+        transcript::complete(store, &saved.pane.pane_id, state, changes)?;
+        changes.publish_replay = true;
+        state.replay_role = None;
+    }
+    if value.get("configOptions").is_some() || value.get("modes").is_some() || context == "open" {
+        state.options = Options::from_response(value).map_err(native_error)?;
+    }
+    state.phase = Phase::Ready;
+    saved.pane.state = if state.has_finished_turn {
+        PaneState::Idle
+    } else {
+        PaneState::Starting
+    };
+    saved.pane.phrase = "Agent session ready".into();
+    changes.events.push(("pane.session_started".into(),json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"version":initialized_version(state)?,"sessionId":state.session_id,"generation":saved.pane.generation,"options":state.options.values})));
+    Ok(())
+}
+
+fn session_lost(
+    state: &mut State,
+    saved: &StoredPane,
+    changes: &mut Changes,
+    now_ms: i64,
+    reason: String,
+) -> Result<()> {
+    changes.clear_replay = true;
+    state.open_messages.clear();
+    state.replay_role = None;
+    let text = "Native session lost; opening a new session without a continuation package";
+    changes.events.push((
+        "pane.session_lost".into(),
+        json!({"paneId":saved.pane.pane_id,"reason":reason,"recovery":"new_session"}),
+    ));
+    changes.messages.push(transcript::new_message(
+        state,
+        saved.pane.generation,
+        TranscriptRole::System,
+        TranscriptKind::System,
+        text.into(),
+        true,
+    )?);
+    state.session_id = None;
+    state.has_finished_turn = false;
+    open(state, saved, changes, now_ms)
+}
+
+fn prompt_response(
+    store: &impl StorePort,
+    state: &mut State,
+    saved: &mut StoredPane,
+    context: &str,
+    changes: &mut Changes,
+    result: NativeResult,
+    timestamp: &str,
+) -> Result<()> {
+    if state
+        .active
+        .as_ref()
+        .map(|prompt| prompt.prompt_id.as_str())
+        != Some(context)
+    {
+        return Err(errors::internal("Prompt response belongs to another turn"));
+    }
+    let reason = match result {
+        Ok(value) => session::stop_reason(&value)
+            .map_err(native_error)?
+            .to_owned(),
+        Err(error) => {
+            changes.messages.push(transcript::new_message(
+                state,
+                saved.pane.generation,
+                TranscriptRole::System,
+                TranscriptKind::System,
+                error.message,
+                true,
+            )?);
+            "error".into()
+        }
+    };
+    for request in store
+        .agent_open_requests(&saved.pane.pane_id)
+        .map_err(errors::storage)?
+    {
+        super::questions::decision(
+            state,
+            &request,
+            super::questions::Decision {
+                option: None,
+                fields: None,
+                by: "system",
+                expired: false,
+                timestamp,
+            },
+            changes,
+        )?;
+    }
+    transcript::complete(store, &saved.pane.pane_id, state, changes)?;
+    state.active = None;
+    state.cancel_at_ms = None;
+    state.has_finished_turn = true;
+    saved.pane.state = PaneState::Idle;
+    saved.pane.phrase = "Agent turn ended".into();
+    changes.events.push((
+        "pane.turn_ended".into(),
+        json!({"paneId":saved.pane.pane_id,"promptId":context,"stopReason":reason}),
+    ));
+    Ok(())
+}
+
 pub fn response(
     store: &impl StorePort,
     state: &mut State,
@@ -189,244 +512,39 @@ pub fn response(
 ) -> Result<()> {
     let (request, result) = state.client.response(message).map_err(native_error)?;
     if request.context == "auth" {
-        let ok = result.is_ok();
-        state.phase = if ok {
-            Phase::RestartAfterProbe
-        } else {
-            Phase::NeedsLogin
-        };
-        state.probe_started_ms = None;
-        changes.clear_failed_probes = ok;
-        changes.events.push(("pane.auth_finished".into(),json!({"paneId":saved.pane.pane_id,"ok":ok,"reason":result.err().map(|e|e.message).unwrap_or_else(||"Sign-in completed".into())})));
+        auth_response(state, saved, changes, result);
         return Ok(());
     }
     if request.context == "initialize" {
-        let value = result.map_err(|e| errors::harness_unavailable(e.message))?;
-        let info = Initialization::parse(&value).map_err(native_error)?;
-        state.fingerprint = fingerprint(state, &info.version)?;
-        state.initialized = Some(info);
-        let mut all_known = true;
-        for method in PROBED_METHODS {
-            all_known &= store
-                .agent_probe(&state.fingerprint, method)
-                .map_err(errors::storage)?
-                .is_some();
-        }
-        if all_known {
-            return open(state, saved, changes, now_ms);
-        }
-        state.phase = Phase::ProbeNew;
-        state.probe_started_ms = Some(now_ms);
-        return call(
+        return initialize_response(store, state, saved, changes, result, now_ms);
+    }
+    if request.context == "probe:new" {
+        return probe_new_response(state, saved, changes, result, now_ms);
+    }
+    if request.context.starts_with("probe:") {
+        return probe_response(state, saved, &request, changes, result, now_ms, timestamp);
+    }
+    if request.context == "open" || request.context == "load" {
+        return session_response(
+            store,
             state,
+            saved,
+            &request.context,
             changes,
-            "session/new",
-            client::new_session(&saved.pane.cwd),
-            "probe:new",
+            result,
             now_ms,
         );
     }
-    if request.context == "probe:new" {
-        match result {
-            Ok(value) => {
-                state.probe_session_id = Some(session::session_id(&value).map_err(native_error)?);
-                state.options = Options::from_response(&value).map_err(native_error)?;
-                state.phase = Phase::ProbeList;
-                return call(
-                    state,
-                    changes,
-                    "session/list",
-                    json!({}),
-                    "probe:list",
-                    now_ms,
-                );
-            }
-            Err(error) if error.code == -32000 => {
-                needs_login(state, saved, changes);
-                return Ok(());
-            }
-            Err(error) => return Err(errors::harness_unavailable(error.message)),
-        }
-    }
-    if request.context.starts_with("probe:") {
-        let mut classified = session::probe_result(result.as_ref());
-        if request.context == "probe:config"
-            && let Ok(value) = &result
-        {
-            let confirmed = request.params["configId"]
-                .as_str()
-                .zip(
-                    serde_json::from_value::<soyeht_protocol::ConfigValue>(
-                        request.params["value"].clone(),
-                    )
-                    .ok(),
-                )
-                .is_some_and(|(id, desired)| state.options.confirmed(id, &desired, value).is_ok());
-            if !confirmed {
-                classified = ProbeResult::Inconclusive;
-            }
-        }
-        changes.probes.push(ProbeCapability {
-            method: request.method.clone(),
-            result: classified,
-            checked_at: timestamp.into(),
-        });
-        let id = state
-            .probe_session_id
-            .clone()
-            .ok_or_else(|| errors::internal("Probe has no disposable session"))?;
-        match request.context.as_str() {
-            "probe:list" => {
-                state.phase = Phase::ProbeLoad;
-                call(
-                    state,
-                    changes,
-                    "session/load",
-                    client::load_session(&saved.pane.cwd, &id),
-                    "probe:load",
-                    now_ms,
-                )?;
-            }
-            "probe:load" => {
-                if let Some(option) = state
-                    .options
-                    .values
-                    .iter()
-                    .find(|o| {
-                        state.options.routes.get(&o.id)
-                            == Some(&soyeht_acp::config::Route::ConfigOption)
-                    })
-                    .cloned()
-                {
-                    state.phase = Phase::ProbeConfig;
-                    let (method, params) = state
-                        .options
-                        .request(&id, &option.id, &option.current_value)
-                        .map_err(native_error)?;
-                    call(state, changes, method, params, "probe:config", now_ms)?;
-                } else {
-                    // No advertised option supplies valid probe parameters.
-                    // This is inconclusive, never evidence of a missing method.
-                    changes.probes.push(ProbeCapability {
-                        method: "session/set_config_option".into(),
-                        result: ProbeResult::Inconclusive,
-                        checked_at: timestamp.into(),
-                    });
-                    state.phase = Phase::RestartAfterProbe;
-                }
-            }
-            "probe:config" => state.phase = Phase::RestartAfterProbe,
-            _ => {
-                return Err(errors::internal("Unknown probe response"));
-            }
-        }
-        return Ok(());
-    }
-    if request.context == "open" || request.context == "load" {
-        match result {
-            Ok(value) => {
-                if request.context == "open" {
-                    let id = session::session_id(&value).map_err(native_error)?;
-                    if id.chars().count() > 128 {
-                        return Err(errors::invalid(
-                            "Native session ID exceeds the public protocol bound",
-                        ));
-                    }
-                    state.session_id = Some(id);
-                }
-                if request.context == "load" {
-                    changes.replay_messages = true;
-                    transcript::complete(store, &saved.pane.pane_id, state, changes)?;
-                    changes.publish_replay = true;
-                    state.replay_role = None;
-                }
-                if value.get("configOptions").is_some()
-                    || value.get("modes").is_some()
-                    || request.context == "open"
-                {
-                    state.options = Options::from_response(&value).map_err(native_error)?;
-                }
-                state.phase = Phase::Ready;
-                saved.pane.state = if state.has_finished_turn {
-                    PaneState::Idle
-                } else {
-                    PaneState::Starting
-                };
-                saved.pane.phrase = "Agent session ready".into();
-                changes.events.push(("pane.session_started".into(),json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"version":initialized_version(state)?,"sessionId":state.session_id,"generation":saved.pane.generation,"options":state.options.values})));
-            }
-            Err(error) if error.code == -32000 => needs_login(state, saved, changes),
-            Err(error) if request.context == "load" && matches!(error.code, -32601 | -32002) => {
-                changes.clear_replay = true;
-                state.open_messages.clear();
-                state.replay_role = None;
-                let text =
-                    "Native session lost; opening a new session without a continuation package";
-                changes.events.push(("pane.session_lost".into(),json!({"paneId":saved.pane.pane_id,"reason":error.message,"recovery":"new_session"})));
-                changes.messages.push(transcript::new_message(
-                    state,
-                    saved.pane.generation,
-                    TranscriptRole::System,
-                    TranscriptKind::System,
-                    text.into(),
-                    true,
-                )?);
-                state.session_id = None;
-                state.has_finished_turn = false;
-                open(state, saved, changes, now_ms)?;
-            }
-            Err(error) => return Err(errors::harness_unavailable(error.message)),
-        }
-        return Ok(());
-    }
     if request.method == "session/prompt" {
-        if state.active.as_ref().map(|p| p.prompt_id.as_str()) != Some(request.context.as_str()) {
-            return Err(errors::internal("Prompt response belongs to another turn"));
-        }
-        let reason = match result {
-            Ok(value) => session::stop_reason(&value)
-                .map_err(native_error)?
-                .to_owned(),
-            Err(error) => {
-                changes.messages.push(transcript::new_message(
-                    state,
-                    saved.pane.generation,
-                    TranscriptRole::System,
-                    TranscriptKind::System,
-                    error.message,
-                    true,
-                )?);
-                "error".into()
-            }
-        };
-        for request in store
-            .agent_open_requests(&saved.pane.pane_id)
-            .map_err(errors::storage)?
-        {
-            super::questions::decision(
-                state,
-                &request,
-                super::questions::Decision {
-                    option: None,
-                    fields: None,
-                    by: "system",
-                    expired: false,
-                    timestamp,
-                },
-                changes,
-            )?;
-        }
-        transcript::complete(store, &saved.pane.pane_id, state, changes)?;
-        state.active = None;
-        state.cancel_at_ms = None;
-        state.has_finished_turn = true;
-        saved.pane.state = PaneState::Idle;
-        saved.pane.phrase = "Agent turn ended".into();
-        changes.events.push((
-            "pane.turn_ended".into(),
-            json!({"paneId":saved.pane.pane_id,"promptId":request.context,"stopReason":reason}),
-        ));
-        return Ok(());
+        return prompt_response(
+            store,
+            state,
+            saved,
+            &request.context,
+            changes,
+            result,
+            timestamp,
+        );
     }
     if let Some(operation) = state
         .operation
