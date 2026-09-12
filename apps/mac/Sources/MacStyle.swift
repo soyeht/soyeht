@@ -20,10 +20,10 @@ enum MacTheme {
   static let warning = SoyehtThemeColors.warning
   static let danger = SoyehtThemeColors.danger
   static let urgent = danger
-  static let agentRose = Color(red: 246 / 255, green: 214 / 255, blue: 219 / 255)
-  static let agentBlue = Color(red: 216 / 255, green: 224 / 255, blue: 254 / 255)
-  static let agentGreen = Color(red: 205 / 255, green: 231 / 255, blue: 221 / 255)
-  static let agentSand = Color(red: 238 / 255, green: 227 / 255, blue: 205 / 255)
+  static let agentRose = SoyehtThemeColors.agentRose
+  static let agentBlue = SoyehtThemeColors.agentBlue
+  static let agentGreen = SoyehtThemeColors.agentGreen
+  static let agentSand = SoyehtThemeColors.agentSand
 
   enum Radius {
     static let compact: CGFloat = 10
