@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from e2e import ROOT, Services, receive, require, send
+from generated_profile import DEV_PTYD_SOCKET
 
 
 def until(action, message, seconds=20):
@@ -105,7 +106,7 @@ def hold_engine(services):
 def supervisor_pending(services, generation, instance):
     with socket.socket(socket.AF_UNIX) as stream:
         stream.settimeout(5)
-        stream.connect(str(services.data / "ptyd.sock"))
+        stream.connect(str(services.data / DEV_PTYD_SOCKET))
         send(stream, {"method": "hello", "params": {"version": services.ptyd_version,
                                                      "engine_generation": generation}})
         require(receive(stream)["status"] == "welcome", "supervisor handshake failed")

@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+use soyeht_protocol::profile::DEV_DATA_DIRECTORY_FROM_HOME;
 use soyeht_ptyd::{Error, Result};
 use std::{env, path::PathBuf};
 
@@ -18,7 +19,7 @@ fn main() -> Result<()> {
     }
     let directory = match args.as_slice() {
         [] => PathBuf::from(env::var("HOME").map_err(|_| Error::HomeMissing)?)
-            .join("Library/Application Support/Soyeht.next/dev"),
+            .join(DEV_DATA_DIRECTORY_FROM_HOME),
         [flag, path] if flag == "--data-dir" => PathBuf::from(path),
         _ => return Err(Error::InvalidArguments),
     };

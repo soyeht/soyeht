@@ -7,7 +7,7 @@ use crate::{
     transport,
 };
 use serde_json::Value;
-use soyeht_protocol::frame::Frame;
+use soyeht_protocol::{frame::Frame, profile::DEV_ENGINE_SOCKET};
 use std::{
     fs::{self, File, OpenOptions},
     io,
@@ -77,7 +77,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     let _lock = singleton(&config.directory)?;
     let core = Arc::new(Mutex::new(Core::open(&config.directory)?));
-    let socket = config.directory.join("engine.sock");
+    let socket = config.directory.join(DEV_ENGINE_SOCKET);
     match fs::symlink_metadata(&socket) {
         Ok(m) if m.file_type().is_socket() => fs::remove_file(&socket)?,
         Ok(_) => return Err(Error::SocketPathNotSocket),

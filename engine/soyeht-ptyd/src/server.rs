@@ -5,6 +5,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{
     frame::{read_json, write_json},
     limits,
+    profile::DEV_PTYD_SOCKET,
 };
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
@@ -79,7 +80,7 @@ pub fn run(directory: &Path) -> Result<()> {
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
         return Err(Error::AlreadyRunning);
     }
-    let socket = directory.join("ptyd.sock");
+    let socket = directory.join(DEV_PTYD_SOCKET);
     match fs::symlink_metadata(&socket) {
         Ok(metadata) if metadata.file_type().is_socket() => fs::remove_file(&socket)?,
         Ok(_) => return Err(Error::SocketPathNotSocket),

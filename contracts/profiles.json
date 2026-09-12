@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "profiles": {
+    "dev": {
+      "dataDirectoryFromHome": "Library/Application Support/Soyeht.next/dev",
+      "sockets": {
+        "engine": "engine.sock",
+        "ptyd": "ptyd.sock"
+      },
+      "tcpPort": 8291,
+      "launchdLabels": {
+        "engine": "com.soyeht.next.dev.engine",
+        "ptyd": "com.soyeht.next.dev.ptyd"
+      }
+    }
+  }
+}

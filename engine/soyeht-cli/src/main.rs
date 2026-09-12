@@ -5,11 +5,12 @@ mod commands;
 use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
+use soyeht_protocol::profile::DEV_DATA_DIRECTORY_FROM_HOME;
 use std::path::PathBuf;
 
 fn run() -> Result<Value> {
     let mut directory = PathBuf::from(std::env::var_os("HOME").ok_or(Error::HomeMissing)?)
-        .join("Library/Application Support/Soyeht.next/dev");
+        .join(DEV_DATA_DIRECTORY_FROM_HOME);
     let mut args = std::env::args().skip(1).peekable();
     while args.peek().is_some_and(|s| s.starts_with("--")) {
         let argument = args.next().ok_or(Error::MissingArgument)?;

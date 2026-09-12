@@ -9,8 +9,14 @@ import subprocess
 import time
 from pathlib import Path
 
+from generated_profile import (
+    DEV_DATA_DIRECTORY_FROM_HOME,
+    DEV_LAUNCHD_LABELS,
+    DEV_SOCKET_NAMES,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
-DATA = Path.home() / "Library/Application Support/Soyeht.next/dev"
+DATA = Path.home() / DEV_DATA_DIRECTORY_FROM_HOME
 COMPONENTS = ("ptyd", "engine")
 
 
@@ -23,7 +29,7 @@ def install_components(components, domain="gui"):
     subprocess.run(["launchctl", "print", target], check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for component in components:
-        label = f"com.soyeht.next.dev.{component}"
+        label = DEV_LAUNCHD_LABELS[component]
         running = subprocess.run(["launchctl", "print", f"{target}/{label}"], capture_output=True)
         if running.returncode == 0:
             raise SystemExit(f"Stop the new Dev {component} job before replacing its binary")
@@ -39,7 +45,7 @@ def install_components(components, domain="gui"):
     agents = Path.home() / "Library/LaunchAgents"
     agents.mkdir(parents=True, exist_ok=True)
     for component in components:
-        label = f"com.soyeht.next.dev.{component}"
+        label = DEV_LAUNCHD_LABELS[component]
         installed = DATA / f"bin/soyeht-{component}"
         temporary = installed.with_suffix(".new")
         if temporary.is_symlink():
@@ -47,7 +53,9 @@ def install_components(components, domain="gui"):
         shutil.copy2(ROOT / f"engine/target/debug/soyeht-{component}", temporary)
         temporary.chmod(0o700)
         temporary.replace(installed)
-        values = plistlib.loads((ROOT / f"engine/soyeht-{component}/launchd/{label}.plist").read_bytes())
+        values = plistlib.loads(
+            (ROOT / f"engine/soyeht-{component}/launchd/dev.plist").read_bytes()
+        )
         values["ProgramArguments"] = [str(installed), "--data-dir", str(DATA)]
         values["EnvironmentVariables"] = {
             "HOME": str(Path.home()), "USER": os.environ.get("USER", ""),
@@ -74,7 +82,7 @@ def install_components(components, domain="gui"):
             try:
                 with socket.socket(socket.AF_UNIX) as probe:
                     probe.settimeout(1)
-                    probe.connect(str(DATA / f"{component}.sock"))
+                    probe.connect(str(DATA / DEV_SOCKET_NAMES[component]))
                 break
             except OSError:
                 if time.monotonic() >= deadline:

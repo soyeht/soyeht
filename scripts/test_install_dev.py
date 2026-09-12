@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import install_dev
+from generated_profile import DEV_ENGINE_LAUNCHD_LABEL
 
 
 class InstallGuardTests(unittest.TestCase):
@@ -33,7 +34,11 @@ class InstallGuardTests(unittest.TestCase):
                     install_dev.install_components(["engine"])
                 self.assertFalse(data.exists())
                 self.assertEqual(len(run.call_args_list), 2)
-                self.assertTrue(run.call_args_list[1].args[0][-1].endswith("/com.soyeht.next.dev.engine"))
+                self.assertTrue(
+                    run.call_args_list[1].args[0][-1].endswith(
+                        "/" + DEV_ENGINE_LAUNCHD_LABEL
+                    )
+                )
 
 
 if __name__ == "__main__":

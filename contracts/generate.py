@@ -10,6 +10,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "contracts/protocol.json"
+PROFILES_PATH = ROOT / "contracts/profiles.json"
+PROFILE_COMPONENTS = ("engine", "ptyd")
 
 
 def snake(name):
@@ -161,6 +163,133 @@ def validate_schema(schema):
         visit(method["result"])
 
 
+def validate_profiles(document):
+    if set(document) != {"version", "profiles"} or document["version"] != 1:
+        raise ValueError("Profiles document must have version 1 and profiles")
+    if set(document["profiles"]) != {"dev"}:
+        raise ValueError("Exactly one Dev profile is required")
+    profile = document["profiles"]["dev"]
+    required = {"dataDirectoryFromHome", "sockets", "tcpPort", "launchdLabels"}
+    if set(profile) != required:
+        raise ValueError("Dev profile fields do not match the generated contract")
+    data = profile["dataDirectoryFromHome"]
+    prefix = "Library/Application Support/"
+    if (
+        not isinstance(data, str)
+        or not data.isascii()
+        or not data.isprintable()
+        or "\\" in data
+        or not data.startswith(prefix)
+        or data.endswith("/")
+    ):
+        raise ValueError("Dev data directory must be relative to the macOS home directory")
+    if any(part in {"", ".", ".."} for part in data.split("/")):
+        raise ValueError("Dev data directory has an unsafe component")
+    port = profile["tcpPort"]
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError("Dev TCP port must be between 1 and 65535")
+    for field, suffix in (("sockets", ".sock"), ("launchdLabels", None)):
+        values = profile[field]
+        if not isinstance(values, dict) or set(values) != set(PROFILE_COMPONENTS):
+            raise ValueError(f"Dev {field} must name every component")
+        if len(set(values.values())) != len(PROFILE_COMPONENTS):
+            raise ValueError(f"Dev {field} values must be unique")
+        for component, value in values.items():
+            if not isinstance(value, str) or not value or not value.isascii():
+                raise ValueError(f"Dev {field} contains an invalid value")
+            if suffix and not re.fullmatch(r"[A-Za-z0-9._-]+\.sock", value):
+                raise ValueError("Dev socket names must be .sock basenames")
+            if field == "launchdLabels" and not re.fullmatch(
+                rf"[a-z0-9]+(?:[.-][a-z0-9]+)*\.{component}", value
+            ):
+                raise ValueError("Dev launchd label must end with its component")
+    prefixes = {
+        value.removesuffix(f".{component}")
+        for component, value in profile["launchdLabels"].items()
+    }
+    if len(prefixes) != 1:
+        raise ValueError("Dev launchd labels must share one namespace")
+
+
+def profile_values(document):
+    profile = document["profiles"]["dev"]
+    data = profile["dataDirectoryFromHome"]
+    labels = profile["launchdLabels"]
+    return {
+        "data": data,
+        "application_support": data.removeprefix("Library/Application Support/"),
+        "engine_socket": profile["sockets"]["engine"],
+        "ptyd_socket": profile["sockets"]["ptyd"],
+        "port": profile["tcpPort"],
+        "engine_label": labels["engine"],
+        "ptyd_label": labels["ptyd"],
+        "label_prefix": labels["engine"].removesuffix(".engine"),
+    }
+
+
+def launchd_plist(component, label, digest):
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated from contracts/profiles.json (sha256 {digest}). Do not edit. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{label}</string>
+  <key>ProgramArguments</key><array><string>__BINARY__</string><string>--data-dir</string><string>__DATA__</string></array>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>1</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>__DATA__/logs/{component}.log</string>
+  <key>StandardErrorPath</key><string>__DATA__/logs/{component}.log</string>
+</dict></plist>
+'''
+
+
+def render_profiles(document, digest):
+    value = profile_values(document)
+    header = f"Generated from contracts/profiles.json (sha256 {digest}). Do not edit."
+    rust = f'''// {header}
+pub const DEV_DATA_DIRECTORY_FROM_HOME: &str = {json.dumps(value["data"])};
+pub const DEV_ENGINE_SOCKET: &str = {json.dumps(value["engine_socket"])};
+pub const DEV_PTYD_SOCKET: &str = {json.dumps(value["ptyd_socket"])};
+pub const DEV_TCP_PORT: u16 = {value["port"]};
+pub const DEV_ENGINE_LAUNCHD_LABEL: &str = {json.dumps(value["engine_label"])};
+pub const DEV_PTYD_LAUNCHD_LABEL: &str = {json.dumps(value["ptyd_label"])};
+'''
+    swift = f'''// {header}
+public enum DevProfileValues {{
+    public static let dataDirectoryFromHome = {json.dumps(value["data"])}
+    public static let applicationSupportSubpath = {json.dumps(value["application_support"])}
+    public static let engineSocketName = {json.dumps(value["engine_socket"])}
+    public static let ptydSocketName = {json.dumps(value["ptyd_socket"])}
+    public static let tcpPort: UInt16 = {value["port"]}
+    public static let engineLaunchdLabel = {json.dumps(value["engine_label"])}
+    public static let ptydLaunchdLabel = {json.dumps(value["ptyd_label"])}
+}}
+'''
+    python = f'''# {header}
+DEV_DATA_DIRECTORY_FROM_HOME = {value["data"]!r}
+DEV_ENGINE_SOCKET = {value["engine_socket"]!r}
+DEV_PTYD_SOCKET = {value["ptyd_socket"]!r}
+DEV_SOCKET_NAMES = {{"engine": DEV_ENGINE_SOCKET, "ptyd": DEV_PTYD_SOCKET}}
+DEV_TCP_PORT = {value["port"]}
+DEV_ENGINE_LAUNCHD_LABEL = {value["engine_label"]!r}
+DEV_PTYD_LAUNCHD_LABEL = {value["ptyd_label"]!r}
+DEV_LAUNCHD_LABELS = {{"engine": DEV_ENGINE_LAUNCHD_LABEL, "ptyd": DEV_PTYD_LAUNCHD_LABEL}}
+DEV_LAUNCHD_PREFIX = {value["label_prefix"]!r}
+'''
+    return {
+        "engine/soyeht-protocol/src/profile.rs": rust,
+        "contracts/swift/Sources/SoyehtProtocol/Profile.swift": swift,
+        "scripts/generated_profile.py": python,
+        "engine/soyeht-engine/launchd/dev.plist": launchd_plist(
+            "engine", value["engine_label"], digest
+        ),
+        "engine/soyeht-ptyd/launchd/dev.plist": launchd_plist(
+            "ptyd", value["ptyd_label"], digest
+        ),
+    }
+
+
 def render(schema, digest):
     outputs = {}
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
@@ -198,6 +327,10 @@ def main():
     schema = json.loads(data)
     validate_schema(schema)
     outputs = render(schema, hashlib.sha256(data).hexdigest())
+    profile_data = PROFILES_PATH.read_bytes()
+    profiles = json.loads(profile_data)
+    validate_profiles(profiles)
+    outputs.update(render_profiles(profiles, hashlib.sha256(profile_data).hexdigest()))
     mismatches = []
     for relative, content in outputs.items():
         path = ROOT / relative

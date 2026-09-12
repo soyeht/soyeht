@@ -5,6 +5,11 @@ to its parameters and result. `x-events` binds each notification to its paramete
 and declares whether it has a durable cursor. `x-limits` defines shared limits;
 `x-framing` describes binary frame integers.
 
+`profiles.json` is the single source for installed profile values. It defines
+the Dev data directory, socket names, TCP port and launchd labels. The same
+generator emits constants for Rust, Swift and Python, plus the launchd service
+templates. Runtime code and installation scripts consume those generated values.
+
 The format is JSON Schema 2020-12. The generator accepts local references in
 `$defs`, objects with required and optional fields, arrays, strings, numbers,
 integers, booleans, null, enum and oneOf. It accepts numeric and length limits,
@@ -29,8 +34,9 @@ python3 contracts/generate.py
 ```
 
 The generator does not use the network. It produces Rust, Swift and TypeScript
-models, limits and test dispatchers. Generated files are included in the same
-commit as the schema. `--check` writes nothing and fails if they differ.
+models, profile constants, limits, service templates and test dispatchers.
+Generated files are included in the same commit as their source. `--check`
+writes nothing and fails if they differ.
 
 `vectors/messages.json` contains type values and full envelopes for every method
 and event. The same values pass through Rust and Swift types and the TypeScript

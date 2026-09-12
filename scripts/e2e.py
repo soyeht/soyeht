@@ -13,6 +13,12 @@ import time
 import uuid
 from pathlib import Path
 
+from generated_profile import (
+    DEV_ENGINE_SOCKET,
+    DEV_LAUNCHD_PREFIX,
+    DEV_PTYD_SOCKET,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -55,7 +61,7 @@ class Client:
         self.stream = socket.socket(socket.AF_UNIX)
         self.stream.settimeout(10)
         try:
-            self.stream.connect(str(data / "engine.sock"))
+            self.stream.connect(str(data / DEV_ENGINE_SOCKET))
             require(receive(self.stream).get("method") == "auth.challenge", "missing challenge")
             self.next = 0
             self.pending = []
@@ -151,7 +157,7 @@ class Services:
             (self.binaries/name).chmod(0o700)
         self.ptyd_version = int(subprocess.check_output(
             [str(self.binaries / "soyeht-ptyd"), "--protocol-version"], text=True))
-        self.prefix = f"com.soyeht.next.dev.e2e.{identity}"
+        self.prefix = f"{DEV_LAUNCHD_PREFIX}.e2e.{identity}"
         self.attempted = set()
         self.clients = []
         self.domain = f"gui/{os.getuid()}"
@@ -160,7 +166,7 @@ class Services:
         subprocess.run(["launchctl", "print", self.domain], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for component in ("ptyd", "engine"):
-            source = ROOT / f"engine/soyeht-{component}/launchd/com.soyeht.next.dev.{component}.plist"
+            source = ROOT / f"engine/soyeht-{component}/launchd/dev.plist"
             values = plistlib.loads(source.read_bytes())
             values["Label"] = f"{self.prefix}.{component}"
             values["ProgramArguments"] = [str(self.binaries / f"soyeht-{component}"), "--data-dir", str(self.data)]
@@ -226,7 +232,7 @@ class Services:
         try:
             with socket.socket(socket.AF_UNIX) as stream:
                 stream.settimeout(5)
-                stream.connect(str(self.data / "ptyd.sock"))
+                stream.connect(str(self.data / DEV_PTYD_SOCKET))
                 send(stream, {"method": "hello", "params": {"version": self.ptyd_version, "engine_generation": 18446744073709551615}})
                 require(receive(stream)["status"] == "welcome", "cleanup supervisor handshake")
                 send(stream, {"method": "list"})

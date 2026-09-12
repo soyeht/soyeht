@@ -6,7 +6,10 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::{PaneState, StateSource};
+use soyeht_protocol::{
+    PaneState, StateSource,
+    profile::{DEV_PTYD_SOCKET, DEV_TCP_PORT},
+};
 use soyeht_ptyd::{
     client::Client,
     wire::{Instance, ProcessKind, Request, Response, Spawn},
@@ -52,7 +55,7 @@ impl Core {
             agents: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
-            pair_address: "127.0.0.1:8291".into(),
+            pair_address: format!("127.0.0.1:{DEV_TCP_PORT}"),
         };
         for stored in model::panes(&core.store)? {
             if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
@@ -176,7 +179,7 @@ impl Core {
     }
 
     pub fn connect_supervisor(&mut self) -> Result<()> {
-        let client = Client::connect(&self.directory.join("ptyd.sock"), self.generation)
+        let client = Client::connect(&self.directory.join(DEV_PTYD_SOCKET), self.generation)
             .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))?;
         self.ptyd = Some(Box::new(client));
         let result = self.reconcile_registry();

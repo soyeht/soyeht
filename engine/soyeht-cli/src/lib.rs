@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     AuthChallengeEvent, SnapshotSection, StateSnapshotPartEvent, StateSnapshotResult, Welcome,
     frame::{read_json, write_json},
+    profile::DEV_ENGINE_SOCKET,
 };
 use std::{
     collections::BTreeMap,
@@ -29,7 +30,7 @@ pub struct Snapshot {
 
 impl Client {
     pub fn connect(directory: &Path) -> Result<Self> {
-        let socket = UnixStream::connect(directory.join("engine.sock"))?;
+        let socket = UnixStream::connect(directory.join(DEV_ENGINE_SOCKET))?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
         let mut client = Self {

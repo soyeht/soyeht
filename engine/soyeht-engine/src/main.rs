@@ -4,12 +4,13 @@ use soyeht_engine::{
     errors::{Error, Result},
     server::{self, Config},
 };
+use soyeht_protocol::profile::{DEV_DATA_DIRECTORY_FROM_HOME, DEV_TCP_PORT};
 use std::{net::SocketAddr, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut directory = PathBuf::from(std::env::var_os("HOME").ok_or(Error::HomeMissing)?)
-        .join("Library/Application Support/Soyeht.next/dev");
+        .join(DEV_DATA_DIRECTORY_FROM_HOME);
     let mut listen = vec![];
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -30,9 +31,9 @@ async fn main() -> Result<()> {
         return server::run(Config { directory, listen }).await;
     }
     let addresses = soyeht_engine::network::tailnet_addresses().unwrap_or_default();
-    listen.push(SocketAddr::from(([127, 0, 0, 1], 8291)));
+    listen.push(SocketAddr::from(([127, 0, 0, 1], DEV_TCP_PORT)));
     for ip in &addresses {
-        listen.push(SocketAddr::new(*ip, 8291));
+        listen.push(SocketAddr::new(*ip, DEV_TCP_PORT));
     }
     tokio::select! {
         result = server::run(Config { directory, listen }) => result,
