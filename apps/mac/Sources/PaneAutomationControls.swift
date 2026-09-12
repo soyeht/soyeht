@@ -39,7 +39,7 @@ private struct PaneAutomationPopover: View {
         Text("Lead").tag(AgentPaneRole.chief)
       }.pickerStyle(.segmented)
       Text("Lead panes can coordinate tasks and cannot complete them.")
-        .font(.caption).foregroundStyle(Palette.secondary)
+        .font(.caption).foregroundStyle(MacTheme.secondary)
       Divider()
       Toggle("Run a task loop", isOn: $enabled)
       TextField("Loop prompt", text: $prompt, axis: .vertical).lineLimit(2...4)
@@ -52,7 +52,7 @@ private struct PaneAutomationPopover: View {
       }
       if let config = client.paneLoops[pane.paneId] {
         Text("Rounds \(config.rounds ?? 0) · empty results \(config.emptyResults ?? 0)")
-          .font(.caption).foregroundStyle(Palette.secondary)
+          .font(.caption).foregroundStyle(MacTheme.secondary)
       }
       HStack {
         Button("Cancel", action: dismiss)
@@ -60,7 +60,7 @@ private struct PaneAutomationPopover: View {
         Button("Apply", action: apply).buttonStyle(.borderedProminent)
           .disabled(enabled && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }
-    }.padding(20).frame(width: 360).background(Palette.face).foregroundStyle(Palette.ink)
+    }.padding(20).frame(width: 360).background(MacTheme.face).foregroundStyle(MacTheme.ink)
       .onAppear(perform: load)
   }
 

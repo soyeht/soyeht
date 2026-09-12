@@ -31,6 +31,10 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "A10000000000000000000013";
 		};
+		"A20000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A20000000000000000000011";
+		};
 		"C046A0DA18BED3407C966DDF" = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
@@ -104,7 +108,7 @@
 		"AD936FCBED631FA67E05C3EA" = {
 			"isa" = "PBXGroup";
 			"sourceTree" = "<group>";
-			"children" = ( "41CF6794BA4200B839C53531", "0A3E27B8CA818264D75C8D81", );
+			"children" = ( "41CF6794BA4200B839C53531", "A20000000000000000000011", "0A3E27B8CA818264D75C8D81", );
 		};
 		"4C9A8D7A2C3C670C889D63E4" = {
 			"isa" = "XCBuildConfiguration";
@@ -143,8 +147,14 @@
 		"41D311A605520FC7B8B9A980" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ();
+			"files" = ( "A20000000000000000000001", );
 			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"A20000000000000000000011" = {
+			"path" = "Resources/Fonts";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder";
+			"sourceTree" = "<group>";
 		};
 		"BC4A71180870F7945155FBB0" = {
 			"isa" = "XCLocalSwiftPackageReference";

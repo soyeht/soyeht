@@ -23,7 +23,7 @@ struct WorkspaceWindow: View {
         Text("Soyeht").font(.system(size: 22, weight: .bold, design: .rounded))
         Text("DEV").font(.system(size: 10, weight: .bold, design: .rounded))
           .padding(.horizontal, 9).padding(.vertical, 5)
-          .background(Palette.accent.opacity(0.12), in: Capsule()).foregroundStyle(Palette.accent)
+          .background(MacTheme.accent.opacity(0.12), in: Capsule()).foregroundStyle(MacTheme.accent)
         Picker("Surface", selection: $surface) {
           ForEach(WorkspaceSurface.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }.pickerStyle(.segmented).frame(width: 170)
@@ -32,13 +32,14 @@ struct WorkspaceWindow: View {
           client.connected ? "Connected" : "Reconnecting",
           systemImage: client.connected ? "circle.fill" : "arrow.trianglehead.2.clockwise"
         )
-        .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+        .font(.system(size: 12)).foregroundStyle(MacTheme.secondary)
         Button {
           client.beginPairing()
           showPairing = true
         } label: {
           Label("Add iPhone", systemImage: "iphone")
-            .padding(.horizontal, 16).padding(.vertical, 10).modifier(Raised(radius: 12))
+            .padding(.horizontal, 16).padding(.vertical, 10).neoRaised(
+              radius: MacTheme.Radius.control)
         }.disabled(!client.connected)
       }.padding(.leading, 72).padding(.top, 3)
       HStack(alignment: .top, spacing: 22) {
@@ -48,7 +49,7 @@ struct WorkspaceWindow: View {
             Spacer()
             Button(action: presentNewPane) { Image(systemName: "plus").padding(6) }
               .help("Open a terminal or agent pane").disabled(!client.connected)
-          }.foregroundStyle(Palette.secondary)
+          }.foregroundStyle(MacTheme.secondary)
           ScrollView {
             VStack(alignment: .leading, spacing: 20) {
               ForEach(client.workspaces, id: \.workspaceId) { workspace in
@@ -75,13 +76,13 @@ struct WorkspaceWindow: View {
                         VStack(alignment: .leading, spacing: 3) {
                           Text(pane.name).font(.system(size: 13, weight: .semibold))
                           Text(pane.phrase).font(.system(size: 10)).foregroundStyle(
-                            Palette.secondary)
+                            MacTheme.secondary)
                         }.lineLimit(1)
                         Spacer(minLength: 0)
                       }.padding(11).frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                           client.selectedPaneId == pane.paneId
-                            ? Palette.accent.opacity(0.12) : .clear,
+                            ? MacTheme.accent.opacity(0.12) : .clear,
                           in: RoundedRectangle(cornerRadius: 12))
                     }.contextMenu {
                       Button("Close pane", role: .destructive) { paneToClose = pane.paneId }
@@ -95,7 +96,7 @@ struct WorkspaceWindow: View {
           Button(action: presentNewPane) {
             Label("New pane", systemImage: "plus")
               .font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity)
-              .padding(.vertical, 13).modifier(Raised(radius: 12))
+              .padding(.vertical, 13).neoRaised(radius: MacTheme.Radius.control)
           }.disabled(!client.connected)
         }.frame(width: 218).padding(.vertical, 10)
         VStack(alignment: .leading, spacing: 0) {
@@ -107,15 +108,15 @@ struct WorkspaceWindow: View {
             HStack {
               Image(
                 systemName: pane.mode == .agent ? "bubble.left.and.bubble.right" : "terminal"
-              ).foregroundStyle(Palette.accent)
+              ).foregroundStyle(MacTheme.accent)
               Text(pane.name).font(.system(size: 15, weight: .semibold, design: .rounded))
               if pane.mode == .agent, let harness = pane.agent?.harness {
-                Text(harness).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                Text(harness).font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
               } else if pane.generation > 1 {
-                Text("new shell").font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                Text("new shell").font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
               }
               Spacer()
-              Text(pane.phrase).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+              Text(pane.phrase).font(.system(size: 12)).foregroundStyle(MacTheme.secondary)
               if pane.mode == .agent { PaneAutomationButton(client: client, pane: pane) }
               Button {
                 paneToClose = pane.paneId
@@ -125,10 +126,10 @@ struct WorkspaceWindow: View {
               .help("Close this pane").disabled(!client.connected)
             }.padding(.horizontal, 20).padding(.vertical, 16)
             Text(pane.cwd).font(.system(size: 11, design: .monospaced)).foregroundStyle(
-              Palette.secondary
+              MacTheme.secondary
             )
             .lineLimit(1).truncationMode(.middle).padding(.horizontal, 20).padding(.bottom, 12)
-            Rectangle().fill(Palette.canvas).frame(height: 1)
+            Rectangle().fill(MacTheme.canvas).frame(height: 1)
             if pane.mode == .agent {
               AgentConversationView(client: client, paneId: pane.paneId)
             } else {
@@ -142,28 +143,31 @@ struct WorkspaceWindow: View {
             Spacer()
             VStack(spacing: 18) {
               Image(systemName: "rectangle.split.2x1").font(.system(size: 42, weight: .light))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(MacTheme.secondary)
               Text("Your space to begin").font(
                 .system(size: 23, weight: .semibold, design: .rounded))
               Text(
                 "Open a terminal or agent in a directory. The process continues\neven when you close this window."
               )
-              .font(.system(size: 14)).foregroundStyle(Palette.secondary).multilineTextAlignment(
+              .font(.system(size: 14)).foregroundStyle(MacTheme.secondary).multilineTextAlignment(
                 .center)
               Button("New pane", action: presentNewPane)
-                .padding(.horizontal, 22).padding(.vertical, 12).modifier(Raised(radius: 12))
+                .padding(.horizontal, 22).padding(.vertical, 12).neoRaised(
+                  radius: MacTheme.Radius.control
+                )
                 .disabled(!client.connected)
             }.frame(maxWidth: .infinity)
             Spacer()
           }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).modifier(Raised(radius: 20))
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).neoRaised(
+          radius: MacTheme.Radius.card, elevation: .panel)
       }
       HStack {
         Text(client.connectionText).font(.system(size: 11))
         Spacer()
         Text("Soyeht · Dev").font(.system(size: 11, weight: .medium, design: .rounded))
-      }.foregroundStyle(Palette.secondary)
-    }.padding(24).background(Palette.canvas).foregroundStyle(Palette.ink).buttonStyle(.plain)
+      }.foregroundStyle(MacTheme.secondary)
+    }.padding(24).background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
       .sheet(isPresented: $showNewPane) {
         NewPaneSheet(client: client, isPresented: $showNewPane)
       }
@@ -202,7 +206,8 @@ struct WorkspaceWindow: View {
               Button("Allow") { client.decidePairing(request, approve: true) }.buttonStyle(
                 .borderedProminent)
             }
-          }.padding(22).frame(width: 420).modifier(Raised(radius: 20)).padding(.bottom, 40)
+          }.padding(22).frame(width: 420).neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+            .padding(.bottom, 40)
         }
       }
   }
@@ -218,7 +223,7 @@ struct WorkspaceWindow: View {
     surface = .panes
   }
   private var pairing: some View {
-    ScrollView { pairingContent }.frame(width: 520, height: 720).background(Palette.canvas)
+    ScrollView { pairingContent }.frame(width: 520, height: 720).background(MacTheme.canvas)
   }
   private var pairingContent: some View {
     VStack(spacing: 20) {
@@ -226,11 +231,11 @@ struct WorkspaceWindow: View {
       Text(
         "Open Soyeht Dev on iPhone and scan this code.\nBoth devices must be on the same tailnet."
       )
-      .multilineTextAlignment(.center).foregroundStyle(Palette.secondary)
+      .multilineTextAlignment(.center).foregroundStyle(MacTheme.secondary)
       if let code = client.pairCode, let image = qr(code.uri) {
         Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
           .padding(16).background(.white, in: RoundedRectangle(cornerRadius: 16))
-        Text("Code valid for 10 minutes.").font(.caption).foregroundStyle(Palette.secondary)
+        Text("Code valid for 10 minutes.").font(.caption).foregroundStyle(MacTheme.secondary)
       } else {
         ProgressView().frame(width: 292, height: 292)
       }
@@ -260,7 +265,7 @@ struct WorkspaceWindow: View {
         }.padding(.vertical, 12)
       }
       Button("Close") { showPairing = false }
-    }.padding(32).frame(width: 460).background(Palette.canvas).foregroundStyle(Palette.ink)
+    }.padding(32).frame(width: 460).background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
       .confirmationDialog(
         "Revoke this iPhone's access?",
         isPresented: Binding(
@@ -309,13 +314,13 @@ private struct NewPaneSheet: View {
         Text("Agent").tag(PaneMode.agent)
       }.pickerStyle(.segmented)
       VStack(alignment: .leading, spacing: 8) {
-        Text("Directory").font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
+        Text("Directory").font(.caption.weight(.semibold)).foregroundStyle(MacTheme.secondary)
         HStack {
           Text(directory?.path ?? "Choose where this pane will work")
             .font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
           Spacer()
           Button("Choose…", action: chooseDirectory).buttonStyle(.bordered)
-        }.padding(12).modifier(Raised(radius: 12))
+        }.padding(12).neoRaised(radius: MacTheme.Radius.control)
       }
       if mode == .agent {
         agentOptions
@@ -328,7 +333,7 @@ private struct NewPaneSheet: View {
           .disabled(directory == nil || (mode == .agent && harness.isEmpty))
       }
     }.padding(28).frame(width: 520).frame(minHeight: mode == .agent ? 560 : 330)
-      .background(Palette.canvas).foregroundStyle(Palette.ink)
+      .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
       .onAppear {
         client.refreshHarnesses()
         selectFirstHarness()
@@ -370,7 +375,7 @@ private struct NewPaneSheet: View {
           catalogue?.models.isEmpty != false
         {
           Text("The agent will use its default and report available models after opening.")
-            .font(.caption).foregroundStyle(Palette.secondary)
+            .font(.caption).foregroundStyle(MacTheme.secondary)
         }
       }
     }.pickerStyle(.menu)

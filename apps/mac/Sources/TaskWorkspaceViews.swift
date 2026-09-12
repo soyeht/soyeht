@@ -26,7 +26,7 @@ struct TaskWorkspaceView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
-      Divider().overlay(Palette.canvas)
+      Divider().overlay(MacTheme.canvas)
       toolbar
       if tasks.isEmpty {
         emptyState
@@ -38,7 +38,7 @@ struct TaskWorkspaceView: View {
         TaskList(client: client, tasks: tasks, open: openTask)
       }
     }
-    .background(Palette.face)
+    .background(MacTheme.face)
     .sheet(isPresented: $showNewTask) {
       NewTaskSheet(
         client: client, workspaceId: workspaceId, isPresented: $showNewTask)
@@ -51,10 +51,10 @@ struct TaskWorkspaceView: View {
 
   private var header: some View {
     HStack(spacing: 12) {
-      Image(systemName: "list.bullet.clipboard").foregroundStyle(Palette.accent)
+      Image(systemName: "list.bullet.clipboard").foregroundStyle(MacTheme.accent)
       VStack(alignment: .leading, spacing: 2) {
         Text("Workspace tasks").font(.system(size: 15, weight: .semibold, design: .rounded))
-        Text(summary).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+        Text(summary).font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
       }
       Spacer()
       Button {
@@ -63,7 +63,7 @@ struct TaskWorkspaceView: View {
         Label("\(attention.count) need you", systemImage: "bell")
           .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 8)
           .background(
-            attention.isEmpty ? Palette.canvas : Palette.warning.opacity(0.16), in: Capsule())
+            attention.isEmpty ? MacTheme.canvas : MacTheme.warning.opacity(0.16), in: Capsule())
       }
       .popover(isPresented: $showAttention, arrowEdge: .bottom) {
         AttentionPopover(items: attention, openPane: openAttentionPane)
@@ -87,7 +87,7 @@ struct TaskWorkspaceView: View {
       } label: {
         Label("New task", systemImage: "plus")
           .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 9)
-          .modifier(Raised(radius: 11))
+          .neoRaised(radius: 11, elevation: .pill)
       }.disabled(!client.connected)
     }.padding(.horizontal, 20).padding(.vertical, 12)
   }
@@ -152,9 +152,9 @@ private struct TaskColumn: View {
       HStack {
         Text(state.title.uppercased()).font(.system(size: 10, weight: .bold)).tracking(1.1)
         Text("\(tasks.count)").font(.system(size: 10, weight: .bold)).padding(5)
-          .background(Palette.canvas, in: Circle())
+          .background(MacTheme.canvas, in: Circle())
         Spacer()
-      }.foregroundStyle(Palette.secondary)
+      }.foregroundStyle(MacTheme.secondary)
       ForEach(tasks, id: \.taskId) { task in
         TaskCard(task: task, dispatch: { client.dispatchTask(task) })
           .onTapGesture { open(task) }.draggable(task.taskId)
@@ -162,7 +162,7 @@ private struct TaskColumn: View {
       Spacer(minLength: 40)
     }
     .padding(14).frame(width: 224).frame(minHeight: 500, alignment: .top)
-    .background(Palette.canvas.opacity(0.62), in: RoundedRectangle(cornerRadius: 16))
+    .background(MacTheme.canvas.opacity(0.62), in: RoundedRectangle(cornerRadius: 16))
     .dropDestination(for: String.self) { ids, _ in move(ids.first) }
   }
 
@@ -191,7 +191,7 @@ private struct TaskCard: View {
         .fixedSize(horizontal: false, vertical: true)
       HStack(spacing: 7) {
         Circle().fill(task.state.color).frame(width: 7, height: 7)
-        Text(task.phrase).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+        Text(task.phrase).font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
           .lineLimit(2)
       }
       if let badge = task.reviewBadge {
@@ -211,8 +211,8 @@ private struct TaskCard: View {
           Button(action: dispatch) { Image(systemName: "paperplane.fill") }
             .help("Dispatch task")
         }
-      }.font(.system(size: 9)).foregroundStyle(Palette.secondary)
-    }.padding(13).modifier(Raised(radius: 13))
+      }.font(.system(size: 9)).foregroundStyle(MacTheme.secondary)
+    }.padding(13).neoRaised(radius: 13)
   }
 }
 
@@ -231,17 +231,17 @@ private struct TaskList: View {
               .frame(width: 62, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
               Text(task.title).font(.system(size: 13, weight: .semibold))
-              Text(task.phrase).font(.system(size: 10)).foregroundStyle(Palette.secondary)
+              Text(task.phrase).font(.system(size: 10)).foregroundStyle(MacTheme.secondary)
             }
             Spacer()
             Text(task.priority.title).font(.system(size: 10, weight: .bold))
               .foregroundStyle(task.priority.color)
-            Text(task.state.title).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+            Text(task.state.title).font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
             if task.state == .todo && task.ownerPaneId == nil {
               Button("Dispatch") { client.dispatchTask(task) }.buttonStyle(.bordered)
             }
             Button("Open") { open(task) }.buttonStyle(.bordered)
-          }.padding(13).modifier(Raised(radius: 12))
+          }.padding(13).neoRaised(radius: MacTheme.Radius.control)
         }
       }.padding(20)
     }
@@ -264,16 +264,16 @@ private struct AttentionPopover: View {
     VStack(alignment: .leading, spacing: 14) {
       Text("\(items.count) need you").font(.headline)
       if items.isEmpty {
-        Text("Nothing needs your attention.").foregroundStyle(Palette.secondary)
+        Text("Nothing needs your attention.").foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(items, id: \.attentionId) { item in
           VStack(alignment: .leading, spacing: 8) {
             Text(item.message).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
             Button("Go to pane") { openPane(item.paneId) }.buttonStyle(.bordered)
-          }.padding(12).modifier(InsetPanel(radius: 10))
+          }.padding(12).neoWell(radius: MacTheme.Radius.compact)
         }
       }
-    }.padding(20).frame(width: 340).background(Palette.face).foregroundStyle(Palette.ink)
+    }.padding(20).frame(width: 340).background(MacTheme.face).foregroundStyle(MacTheme.ink)
   }
 }
 
@@ -302,7 +302,7 @@ private struct TaskDetailSheet: View {
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-    }.frame(width: 620, height: 760).background(Palette.face).foregroundStyle(Palette.ink)
+    }.frame(width: 620, height: 760).background(MacTheme.face).foregroundStyle(MacTheme.ink)
   }
 
   private func detailContent(_ task: TaskRecord) -> some View {
@@ -314,7 +314,7 @@ private struct TaskDetailSheet: View {
           DetailPill(text: task.priority.title, color: task.priority.color)
           if let badge = task.reviewBadge { DetailPill(text: badge.title, color: badge.color) }
         }
-        Text(task.phrase).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+        Text(task.phrase).font(.system(size: 12)).foregroundStyle(MacTheme.secondary)
       }
       DetailSection(title: "DESCRIPTION", text: task.description)
       DetailSection(title: "MUST NOT CHANGE", text: task.mustNotChange)
@@ -335,11 +335,11 @@ private struct TaskDetailSheet: View {
   private var subitems: some View {
     DetailGroup(title: "SUBITEMS") {
       if detail?.subitems.isEmpty != false {
-        Text("No subitems.").foregroundStyle(Palette.secondary)
+        Text("No subitems.").foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(detail?.subitems ?? [], id: \.subitemId) { item in
           Label(item.text, systemImage: item.state == .done ? "checkmark.circle.fill" : "circle")
-            .foregroundStyle(item.state == .done ? Palette.success : Palette.ink)
+            .foregroundStyle(item.state == .done ? MacTheme.success : MacTheme.ink)
         }
       }
     }
@@ -352,7 +352,7 @@ private struct TaskDetailSheet: View {
           Text("Attempt \(attempt.n) · \(attempt.harness) · \(attempt.model)").font(
             .system(size: 12, weight: .semibold))
           Text(attempt.result?.title ?? "active").font(.system(size: 11)).foregroundStyle(
-            Palette.secondary)
+            MacTheme.secondary)
           if let value = attempt.summary { Text(value).font(.system(size: 11)) }
         }
       }
@@ -362,7 +362,7 @@ private struct TaskDetailSheet: View {
   private func summary(_ task: TaskRecord) -> some View {
     DetailGroup(title: "SUMMARY") {
       Text(task.summary ?? "No summary yet.").foregroundStyle(
-        task.summary == nil ? Palette.secondary : Palette.ink)
+        task.summary == nil ? MacTheme.secondary : MacTheme.ink)
       DeclarationList(
         title: "Contract changes",
         values: task.contractChanges?.map {
@@ -380,7 +380,7 @@ private struct TaskDetailSheet: View {
     }
     return DetailGroup(title: "DRIFT REVIEW") {
       if lines.isEmpty {
-        Text("No reviewer findings.").foregroundStyle(Palette.secondary)
+        Text("No reviewer findings.").foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
           Text(line).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
@@ -395,7 +395,7 @@ private struct TaskDetailSheet: View {
         VStack(alignment: .leading, spacing: 3) {
           Text(comment.author).font(.system(size: 11, weight: .bold))
           Text(comment.text).font(.system(size: 12)).textSelection(.enabled)
-          Text(comment.at).font(.system(size: 9)).foregroundStyle(Palette.secondary)
+          Text(comment.at).font(.system(size: 9)).foregroundStyle(MacTheme.secondary)
         }.padding(.vertical, 4)
       }
     }
@@ -434,7 +434,7 @@ private struct DetailGroup<Content: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 9) {
       Text(title).font(.system(size: 10, weight: .bold)).tracking(1.1).foregroundStyle(
-        Palette.secondary)
+        MacTheme.secondary)
       content
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -447,11 +447,11 @@ private struct DeclarationList: View {
     VStack(alignment: .leading, spacing: 5) {
       Text(title).font(.system(size: 11, weight: .semibold))
       if values.isEmpty {
-        Text("None declared.").font(.system(size: 11)).foregroundStyle(Palette.secondary)
+        Text("None declared.").font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(values, id: \.self) { Text($0).font(.system(size: 11, design: .monospaced)) }
       }
-    }.padding(12).modifier(InsetPanel(radius: 10))
+    }.padding(12).neoWell(radius: MacTheme.Radius.compact)
   }
 }
 
@@ -489,7 +489,7 @@ private struct NewTaskSheet: View {
         VStack(alignment: .leading, spacing: 3) {
           Text("New task").font(.system(size: 24, weight: .semibold, design: .rounded))
           Text("Add it to the workspace list, or create and dispatch it now.")
-            .font(.system(size: 12)).foregroundStyle(Palette.secondary)
+            .font(.system(size: 12)).foregroundStyle(MacTheme.secondary)
         }
         Spacer()
         Button {
@@ -510,15 +510,15 @@ private struct NewTaskSheet: View {
       }
       HStack {
         Text("⌘↩ creates · ⇧⌘↩ creates and dispatches")
-          .font(.system(size: 10)).foregroundStyle(Palette.secondary)
+          .font(.system(size: 10)).foregroundStyle(MacTheme.secondary)
         Spacer()
         Button("Create in list") { create(dispatch: false) }.buttonStyle(.bordered).disabled(!valid)
           .keyboardShortcut(.return, modifiers: [.command])
         Button("Create and dispatch") { create(dispatch: true) }.buttonStyle(.borderedProminent)
           .disabled(!valid).keyboardShortcut(.return, modifiers: [.command, .shift])
       }
-    }.padding(26).frame(width: 640, height: 760).background(Palette.canvas).foregroundStyle(
-      Palette.ink
+    }.padding(26).frame(width: 640, height: 760).background(MacTheme.canvas).foregroundStyle(
+      MacTheme.ink
     )
     .onAppear { client.refreshHarnesses() }
     .onChange(of: harness) { _, value in
@@ -601,8 +601,9 @@ private struct TaskField: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
       Text(title).font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(
-        Palette.secondary)
-      TextField("", text: $text).textFieldStyle(.plain).padding(12).modifier(InsetPanel(radius: 10))
+        MacTheme.secondary)
+      TextField("", text: $text).textFieldStyle(.plain).padding(12).neoWell(
+        radius: MacTheme.Radius.compact)
     }
   }
 }
@@ -613,9 +614,9 @@ private struct TaskEditor: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
       Text(title).font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(
-        Palette.secondary)
+        MacTheme.secondary)
       TextEditor(text: $text).scrollContentBackground(.hidden).frame(minHeight: 74).padding(9)
-        .modifier(InsetPanel(radius: 10))
+        .neoWell(radius: MacTheme.Radius.compact)
     }
   }
 }
@@ -639,11 +640,11 @@ extension TaskState {
   }
   fileprivate var color: Color {
     switch self {
-    case .todo: Palette.secondary
-    case .in_progress: Palette.accent
-    case .in_review: Palette.warning
-    case .completed: Palette.success
-    case .cancelled: Palette.urgent
+    case .todo: MacTheme.secondary
+    case .in_progress: MacTheme.accent
+    case .in_review: MacTheme.warning
+    case .completed: MacTheme.success
+    case .cancelled: MacTheme.urgent
     }
   }
 }
@@ -653,17 +654,17 @@ extension TaskPriority {
   fileprivate var title: String { rawValue.replacingOccurrences(of: "_", with: " ").capitalized }
   fileprivate var color: Color {
     switch self {
-    case .urgent: Palette.urgent
-    case .high: Palette.warning
-    case .medium: Palette.accent
-    case .low: Palette.secondary
+    case .urgent: MacTheme.urgent
+    case .high: MacTheme.warning
+    case .medium: MacTheme.accent
+    case .low: MacTheme.secondary
     }
   }
 }
 
 extension TaskReviewBadge {
   fileprivate var title: String { self == .your_turn ? "YOUR TURN" : "SYSTEM'S TURN" }
-  fileprivate var color: Color { self == .your_turn ? Palette.accent : Palette.warning }
+  fileprivate var color: Color { self == .your_turn ? MacTheme.accent : MacTheme.warning }
 }
 
 extension BlockingKind {

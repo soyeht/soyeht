@@ -4,6 +4,11 @@ import SwiftUI
 @main
 struct SoyehtMacApp: App {
   @State private var client = EngineClient()
+
+  init() {
+    MacTheme.registerFonts()
+  }
+
   var body: some Scene {
     Window("Soyeht · Dev", id: "main") {
       WorkspaceWindow(client: client)
