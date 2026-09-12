@@ -19,6 +19,18 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "12F90E2E9B6DDF5BCAF4119F";
 		};
+		"A10000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A10000000000000000000011";
+		};
+		"A10000000000000000000002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A10000000000000000000012";
+		};
+		"A10000000000000000000003" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A10000000000000000000013";
+		};
 		"C046A0DA18BED3407C966DDF" = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
@@ -147,13 +159,13 @@
 		"41CF6794BA4200B839C53531" = {
 			"path" = "Sources";
 			"isa" = "PBXGroup";
-			"children" = ( "12F90E2E9B6DDF5BCAF4119F", "E00209EE3DCE335806B2F38A", );
+			"children" = ( "12F90E2E9B6DDF5BCAF4119F", "E00209EE3DCE335806B2F38A", "A10000000000000000000011", "A10000000000000000000012", "A10000000000000000000013", );
 			"sourceTree" = "<group>";
 		};
 		"878A52FC5FF6A57D50B7B870" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ( "559CB21771B824D09CDDDFC8", "C991EF065A43B2B3133FE858", );
+			"files" = ( "559CB21771B824D09CDDDFC8", "C991EF065A43B2B3133FE858", "A10000000000000000000001", "A10000000000000000000002", "A10000000000000000000003", );
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
 		"F26350DAFE3F19AABFD69AC4" = {
@@ -162,6 +174,24 @@
 		};
 		"E00209EE3DCE335806B2F38A" = {
 			"path" = "WorkspaceWindow.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"A10000000000000000000011" = {
+			"path" = "MacStyle.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"A10000000000000000000012" = {
+			"path" = "TaskWorkspaceViews.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"A10000000000000000000013" = {
+			"path" = "PaneAutomationControls.swift";
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"sourceTree" = "<group>";

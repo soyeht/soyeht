@@ -4,28 +4,19 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-private enum Palette {
-  static let canvas = Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255)
-  static let face = Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255)
-  static let ink = Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255)
-  static let secondary = Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255)
-  static let accent = Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255)
-  static let shadow = Color(red: 166 / 255, green: 180 / 255, blue: 200 / 255)
+private enum WorkspaceSurface: String, CaseIterable {
+  case panes = "Panes"
+  case tasks = "Tasks"
 }
-private struct Raised: ViewModifier {
-  var radius: CGFloat = 16
-  func body(content: Content) -> some View {
-    content.background(Palette.face, in: RoundedRectangle(cornerRadius: radius))
-      .shadow(color: .white.opacity(0.85), radius: 8, x: -5, y: -5)
-      .shadow(color: Palette.shadow.opacity(0.55), radius: 8, x: 5, y: 5)
-  }
-}
+
 struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
   @State private var paneToClose: String?
   @State private var showNewPane = false
   @State private var showPairing = false
   @State private var deviceToRevoke: String?
+  @State private var surface = WorkspaceSurface.panes
+  @State private var taskWorkspaceId: String?
   var body: some View {
     VStack(spacing: 22) {
       HStack(spacing: 16) {
@@ -33,6 +24,9 @@ struct WorkspaceWindow: View {
         Text("DEV").font(.system(size: 10, weight: .bold, design: .rounded))
           .padding(.horizontal, 9).padding(.vertical, 5)
           .background(Palette.accent.opacity(0.12), in: Capsule()).foregroundStyle(Palette.accent)
+        Picker("Surface", selection: $surface) {
+          ForEach(WorkspaceSurface.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }.pickerStyle(.segmented).frame(width: 170)
         Spacer()
         Label(
           client.connected ? "Connected" : "Reconnecting",
@@ -59,13 +53,20 @@ struct WorkspaceWindow: View {
             VStack(alignment: .leading, spacing: 20) {
               ForEach(client.workspaces, id: \.workspaceId) { workspace in
                 VStack(alignment: .leading, spacing: 9) {
-                  Label(workspace.name, systemImage: "folder")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded)).lineLimit(1)
+                  Button {
+                    taskWorkspaceId = workspace.workspaceId
+                    surface = .tasks
+                  } label: {
+                    Label(workspace.name, systemImage: "folder")
+                      .font(.system(size: 14, weight: .semibold, design: .rounded)).lineLimit(1)
+                  }
                   ForEach(
                     client.panes.filter { $0.workspaceId == workspace.workspaceId }, id: \.paneId
                   ) { pane in
                     Button {
                       client.select(pane.paneId)
+                      taskWorkspaceId = workspace.workspaceId
+                      surface = .panes
                     } label: {
                       HStack(spacing: 9) {
                         Image(
@@ -98,7 +99,11 @@ struct WorkspaceWindow: View {
           }.disabled(!client.connected)
         }.frame(width: 218).padding(.vertical, 10)
         VStack(alignment: .leading, spacing: 0) {
-          if let pane = client.selectedPane {
+          if surface == .tasks, let workspaceId = selectedTaskWorkspaceId {
+            TaskWorkspaceView(
+              client: client, workspaceId: workspaceId,
+              onOpenPane: openPane)
+          } else if let pane = client.selectedPane {
             HStack {
               Image(
                 systemName: pane.mode == .agent ? "bubble.left.and.bubble.right" : "terminal"
@@ -111,6 +116,7 @@ struct WorkspaceWindow: View {
               }
               Spacer()
               Text(pane.phrase).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+              if pane.mode == .agent { PaneAutomationButton(client: client, pane: pane) }
               Button {
                 paneToClose = pane.paneId
               } label: {
@@ -203,6 +209,13 @@ struct WorkspaceWindow: View {
   private func presentNewPane() {
     client.refreshHarnesses()
     showNewPane = true
+  }
+  private var selectedTaskWorkspaceId: String? {
+    taskWorkspaceId ?? client.selectedPane?.workspaceId ?? client.workspaces.first?.workspaceId
+  }
+  private func openPane(_ paneId: String) {
+    client.select(paneId)
+    surface = .panes
   }
   private var pairing: some View {
     ScrollView { pairingContent }.frame(width: 520, height: 720).background(Palette.canvas)
