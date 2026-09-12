@@ -131,6 +131,32 @@ fn insert(store: &mut Store, item: &Task, key: &str) {
         .unwrap();
 }
 
+#[test]
+fn pull_request_feedback_query_returns_only_review_cards_with_a_pr() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let mut review = task("WS-1", TaskPriority::Medium);
+    review.state = TaskState::InReview;
+    review.pr = Some(soyeht_protocol::TaskPullRequest {
+        url: "https://example.invalid/pull/1".into(),
+        check_state: soyeht_protocol::TaskCheckState::Pending,
+        review_state: soyeht_protocol::TaskReviewState::None,
+        head: None,
+    });
+    let mut todo = review.clone();
+    todo.task_id = "WS-2".into();
+    todo.state = TaskState::Todo;
+    let mut no_pr = review.clone();
+    no_pr.task_id = "WS-3".into();
+    no_pr.pr = None;
+    insert(&mut store, &review, "insert-review-pr");
+    insert(&mut store, &todo, "insert-todo-pr");
+    insert(&mut store, &no_pr, "insert-review-no-pr");
+
+    assert_eq!(store.tasks_with_pull_requests().unwrap(), vec![review]);
+}
+
 fn insert_review_task(store: &mut Store, id: &str, pane_id: &str) {
     let mut item = task(id, TaskPriority::Medium);
     item.current_attempt = 1;

@@ -177,6 +177,14 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    pub fn tasks_with_pull_requests(&self) -> Result<Vec<Task>> {
+        let mut statement = self.connection.prepare(
+            "SELECT payload FROM tasks WHERE state='in_review' AND json_type(payload,'$.pr')='object' ORDER BY workspace_id,ordinal",
+        )?;
+        let rows = statement.query_map([], |row| decoded(row, 0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn task_subitems(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Subitem>> {
         let mut statement = self.connection.prepare(
             "SELECT payload FROM task_subitems WHERE workspace_id=?1 AND task_id=?2 ORDER BY ordinal",

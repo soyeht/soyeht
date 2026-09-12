@@ -15,6 +15,7 @@ pub trait TaskStorePort {
         limit: u32,
         offset: u32,
     ) -> StoreResult<Vec<Task>>;
+    fn tasks_with_pull_requests(&self) -> StoreResult<Vec<Task>>;
     fn subitems(&self, workspace: &str, task: &str) -> StoreResult<Vec<Subitem>>;
     fn comments(
         &self,
@@ -60,6 +61,10 @@ impl TaskStorePort for Store {
         offset: u32,
     ) -> StoreResult<Vec<Task>> {
         Store::list_tasks(self, workspace, state, limit, offset)
+    }
+
+    fn tasks_with_pull_requests(&self) -> StoreResult<Vec<Task>> {
+        Store::tasks_with_pull_requests(self)
     }
 
     fn subitems(&self, workspace: &str, task: &str) -> StoreResult<Vec<Subitem>> {
@@ -171,6 +176,15 @@ pub(crate) mod testing {
                 .into_iter()
                 .skip(offset as usize)
                 .take(limit as usize)
+                .collect())
+        }
+
+        fn tasks_with_pull_requests(&self) -> StoreResult<Vec<Task>> {
+            Ok(self
+                .tasks
+                .values()
+                .filter(|task| task.state == TaskState::InReview && task.pr.is_some())
+                .cloned()
                 .collect())
         }
 

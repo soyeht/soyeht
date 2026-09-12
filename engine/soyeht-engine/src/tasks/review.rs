@@ -569,7 +569,7 @@ impl ReviewResolution {
     }
 }
 
-fn review_repository(core: &Core, task: &Task) -> Result<PathBuf> {
+pub(crate) fn review_repository(core: &Core, task: &Task) -> Result<PathBuf> {
     if let Some(worktree) = &task.worktree {
         return Ok(PathBuf::from(&worktree.path));
     }

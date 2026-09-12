@@ -3,10 +3,18 @@ use crate::{
     agents::{Changes, methods::cancel},
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{Attempt, AttemptResult, Role, Task, TaskMove, TaskMoveParams, TaskState};
-use soyeht_store::database::{Change, Result as StoreResult};
+use soyeht_protocol::{
+    Attempt, AttemptResult, AttentionItem, ErrorKind, Role, Task, TaskMove, TaskMoveParams,
+    TaskState,
+};
+use soyeht_store::{
+    agents,
+    database::{Change, Result as StoreResult},
+};
+use uuid::Uuid;
 
 fn closing_result(state: &TaskState) -> AttemptResult {
     match state {
@@ -71,14 +79,24 @@ impl Core {
             .task_subitems(&params.workspace_id, &params.task_id)
             .map_err(errors::storage)?;
         let reason = params.reason.trim().to_owned();
-        let (updated, movement) = apply_move(
+        let move_result = apply_move(
             &current,
             params.state,
             self.actor_name(&actor)?,
             reason.clone(),
             self.timestamp(),
             &subitems,
-        )?;
+        );
+        let (updated, movement) = match move_result {
+            Ok(value) => value,
+            Err(error) => {
+                if errors::kind(&error) == ErrorKind::TransitionRefused {
+                    self.record_refused_move(&current, &error.to_string())?;
+                }
+                return Err(error);
+            }
+        };
+        let refused_attention = self.refused_move_attention(&current)?;
         let attempt = self.closed_attempt_for_move(&current, &updated, &reason)?;
         let change = TaskHumanMove {
             expected_version: current.version,
@@ -89,9 +107,63 @@ impl Core {
         if let Some(pane) = current.owner_pane_id.as_deref()
             && change.task.owner_pane_id.is_none()
         {
-            return self.move_owned_task(connection, raw, pane, change);
+            return self.move_owned_task(connection, raw, pane, change, refused_attention);
         }
-        self.persist_human_move(connection, raw, change)
+        self.persist_human_move(connection, raw, change, refused_attention)
+    }
+
+    fn refused_move_attention(&self, task: &Task) -> Result<Option<AttentionItem>> {
+        let attention_id = format!("task:{}:move-refused", task.task_id);
+        Ok(agents::attention(&self.store, &task.workspace_id)
+            .map_err(errors::storage)?
+            .into_iter()
+            .find(|item| item.attention_id == attention_id))
+    }
+
+    fn record_refused_move(&mut self, task: &Task, reason: &str) -> Result<()> {
+        let Some(pane) = task.owner_pane_id.as_deref() else {
+            return Ok(());
+        };
+        let prior = self.refused_move_attention(task)?;
+        let item = AttentionItem {
+            attention_id: format!("task:{}:move-refused", task.task_id),
+            pane_id: pane.into(),
+            request_id: None,
+            message: format!("Move refused for {}: {reason}", task.task_id),
+            created_at: prior
+                .as_ref()
+                .map_or_else(|| self.timestamp(), |item| item.created_at.clone()),
+        };
+        if prior.as_ref() == Some(&item) {
+            return Ok(());
+        }
+        let workspace = task.workspace_id.clone();
+        let task_id = task.task_id.clone();
+        let mutation = StorePort::mutate(
+            &mut self.store,
+            "engine-task-move",
+            &Uuid::new_v4().to_string(),
+            "refused-task-move",
+            |change| {
+                agents::save_attention(change, &workspace, &item)?;
+                let items = agents::attention_in_change(change, &workspace)?;
+                Ok((
+                    json!({}),
+                    vec![
+                        (
+                            "task.attention".into(),
+                            json!({"workspaceId":workspace,"taskId":task_id,"n":1}),
+                        ),
+                        (
+                            "attention.changed".into(),
+                            json!({"workspaceId":workspace,"count":items.len(),"items":items}),
+                        ),
+                    ],
+                ))
+            },
+        )
+        .map_err(errors::storage)?;
+        self.publish(&mutation.events)
     }
 
     fn closed_attempt_for_move(
@@ -116,6 +188,7 @@ impl Core {
         raw: &Value,
         pane: &str,
         movement: TaskHumanMove,
+        refused_attention: Option<AttentionItem>,
     ) -> Result<Value> {
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
@@ -123,6 +196,9 @@ impl Core {
             task_human_move: Some(movement),
             ..Changes::default()
         };
+        if let Some(item) = refused_attention {
+            changes.remove_attention.push(item.attention_id);
+        }
         if state.active.is_some() {
             cancel(
                 &self.store,
@@ -155,11 +231,21 @@ impl Core {
         connection: &str,
         raw: &Value,
         movement: TaskHumanMove,
+        refused_attention: Option<AttentionItem>,
     ) -> Result<Value> {
         let result = json!({"task":movement.task});
         let mutation = self.mutate(connection, "task.move", raw, move |change| {
             movement.persist(change)?;
-            Ok((result, movement.events()))
+            let mut events = movement.events();
+            if let Some(item) = &refused_attention {
+                change.remove_attention(&item.pane_id, &item.attention_id)?;
+                let items = agents::attention_in_change(change, &movement.task.workspace_id)?;
+                events.push((
+                    "attention.changed".into(),
+                    json!({"workspaceId":movement.task.workspace_id,"count":items.len(),"items":items}),
+                ));
+            }
+            Ok((result, events))
         })?;
         Ok(mutation.result)
     }

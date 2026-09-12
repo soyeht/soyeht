@@ -3292,6 +3292,39 @@ fn human_drag_table_refuses_reserved_targets_and_records_accepted_moves() {
 }
 
 #[test]
+fn refused_move_enters_attention_and_a_valid_move_clears_it() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Move needs attention", "reserve-attention-move");
+    let refused = lifecycle.human.request(
+        "task.move",
+        json!({
+            "workspaceId":lifecycle.workspace,"taskId":task.task_id,"state":"in_progress",
+            "reason":"Cannot reserve by dragging","idempotencyKey":"refused-attention-move"
+        }),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "transition_refused");
+    let attention = lifecycle.human.section("attention");
+    assert_eq!(attention.len(), 1);
+    assert_eq!(attention[0]["paneId"], lifecycle.pane);
+    assert!(
+        attention[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Move refused")
+    );
+
+    let moved = lifecycle.human.call(
+        "task.move",
+        json!({
+            "workspaceId":lifecycle.workspace,"taskId":task.task_id,"state":"in_review",
+            "reason":"Ready for review","idempotencyKey":"accepted-attention-move"
+        }),
+    );
+    assert_eq!(moved["task"]["state"], "in_review");
+    assert!(lifecycle.human.section("attention").is_empty());
+}
+
+#[test]
 fn supervisor_overflow_during_engine_outage_produces_an_explicit_replay_gap() {
     let mut rig = Rig::new();
     let mut client = rig.client();

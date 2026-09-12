@@ -33,6 +33,7 @@ pub struct Core {
     pub clock: Arc<dyn Clock>,
     pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
     pub worktrees: Box<dyn crate::tasks::worktree::WorktreePort>,
+    pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
@@ -55,6 +56,7 @@ impl Core {
             clock: Arc::new(SystemClock),
             revision: Box::new(crate::tasks::revision::GitRevision),
             worktrees: Box::new(crate::tasks::worktree::CommandWorktree::default()),
+            task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
@@ -108,11 +110,7 @@ impl Core {
             )
             .map_err(errors::storage)?;
         }
-        state.queue = self
-            .store
-            .agent_queue(pane)
-            .map_err(errors::storage)?
-            .into();
+        state.restore_queue(self.store.agent_queue(pane).map_err(errors::storage)?);
         Ok(state)
     }
 
@@ -512,6 +510,7 @@ impl Core {
             }
         }
         self.advance_task_reviews()?;
+        self.advance_task_feedback()?;
         self.advance_task_blocking()?;
         self.advance_task_dispatches()?;
         self.advance_task_loops()

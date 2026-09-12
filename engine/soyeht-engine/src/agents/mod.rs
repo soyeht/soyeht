@@ -71,6 +71,7 @@ pub struct Changes {
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
     pub(crate) task_blocking: Option<crate::tasks::blocking::TaskBlockingChange>,
     pub(crate) task_dispatch: Option<crate::tasks::dispatching::TaskDispatchChange>,
+    pub(crate) task_feedback: Option<crate::tasks::feedback::TaskFeedbackChange>,
     pub(crate) task_loop: Option<crate::tasks::looping::TaskLoopChange>,
 }
 
@@ -153,6 +154,9 @@ impl AgentPersistence<'_> {
         }
         if let Some(dispatch) = &self.changes.task_dispatch {
             dispatch.persist(tx)?;
+        }
+        if let Some(feedback) = &self.changes.task_feedback {
+            feedback.persist(tx)?;
         }
         if let Some(task_loop) = &self.changes.task_loop {
             task_loop.persist(tx)?;

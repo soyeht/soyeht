@@ -286,7 +286,26 @@ impl State {
             generation: None,
         };
         self.queue.push_back(prompt.clone());
+        self.prioritize_queue();
         Ok(prompt)
+    }
+
+    pub(crate) fn enqueue_feedback(
+        &mut self,
+        prompt_id: String,
+        text: String,
+        at: String,
+    ) -> Result<PromptItem> {
+        self.enqueue_identified(prompt_id, text, PromptOrigin::Automatic, at)
+    }
+
+    pub(crate) fn restore_queue(&mut self, queue: Vec<PromptItem>) {
+        self.queue = queue.into();
+        self.prioritize_queue();
+    }
+
+    fn prioritize_queue(&mut self) {
+        self.queue.make_contiguous().sort_by_key(prompt_priority);
     }
 
     pub fn remove(&mut self, id: &str) -> Result<bool> {
@@ -399,6 +418,16 @@ fn mcp_enabled() -> bool {
 
 fn default_mcp_role() -> Role {
     Role::Agent
+}
+
+fn prompt_priority(item: &PromptItem) -> u8 {
+    if item.origin == PromptOrigin::Human {
+        0
+    } else if item.prompt_id.starts_with("task-feedback:") {
+        1
+    } else {
+        2
+    }
 }
 
 #[cfg(test)]
@@ -563,5 +592,85 @@ mod tests {
             automatic.prompt_id
         );
         assert_eq!(restored.active.unwrap().generation, Some(2));
+    }
+
+    #[test]
+    fn feedback_is_queued_after_people_and_before_loop_ticks() {
+        let mut state = state();
+        state
+            .enqueue_identified(
+                "loop:one".into(),
+                "pull work".into(),
+                PromptOrigin::Automatic,
+                "now".into(),
+            )
+            .unwrap();
+        let person = state
+            .enqueue("person".into(), PromptOrigin::Human, "now".into())
+            .unwrap();
+        state
+            .enqueue_feedback("task-feedback:WS-1:1".into(), "fix CI".into(), "now".into())
+            .unwrap();
+        assert_eq!(
+            state
+                .queue
+                .iter()
+                .map(|item| item.prompt_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                person.prompt_id.as_str(),
+                "task-feedback:WS-1:1",
+                "loop:one"
+            ]
+        );
+
+        state.phase = Phase::Ready;
+        state.requested_options.clear();
+        let mut delivered = Vec::new();
+        for generation in 1..=3 {
+            let prompt = state.take_next(generation, 1, false).unwrap().unwrap();
+            delivered.push(prompt.text);
+            state.active = None;
+        }
+        assert_eq!(delivered, vec!["person", "fix CI", "pull work"]);
+    }
+
+    #[test]
+    fn restored_queue_recovers_source_priority_without_changing_fifo_order() {
+        let mut state = state();
+        for (id, text, origin) in [
+            ("loop:one", "loop one", PromptOrigin::Automatic),
+            ("task-feedback:one", "feedback one", PromptOrigin::Automatic),
+            ("person-one", "person one", PromptOrigin::Human),
+            ("loop:two", "loop two", PromptOrigin::Automatic),
+            ("task-feedback:two", "feedback two", PromptOrigin::Automatic),
+            ("person-two", "person two", PromptOrigin::Human),
+        ] {
+            state.queue.push_back(PromptItem {
+                prompt_id: id.into(),
+                text: text.into(),
+                origin,
+                status: PromptStatus::Queued,
+                queued_at: "now".into(),
+                generation: None,
+            });
+        }
+        let restored = state.queue.drain(..).collect();
+        state.restore_queue(restored);
+        assert_eq!(
+            state
+                .queue
+                .iter()
+                .map(|item| item.prompt_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "person-one",
+                "person-two",
+                "task-feedback:one",
+                "task-feedback:two",
+                "loop:one",
+                "loop:two"
+            ]
+        );
     }
 }
