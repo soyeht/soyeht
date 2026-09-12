@@ -16,5 +16,6 @@ pub mod screen;
 pub mod server;
 pub mod settings;
 pub mod streams;
+pub mod tasks;
 pub mod transport;
 pub mod workspaces;

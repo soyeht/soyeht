@@ -12,7 +12,10 @@ pub enum Error {
     PaneBusy(String),
     TaskHasOwner(String),
     TransitionRefused(String),
+    StaleAttempt(String),
     StaleVersion(String),
+    DependencyCycle(String),
+    DependencyOpen(String),
     IdempotencyConflict(String),
     HarnessUnavailable(String),
     NeedsLogin(String),
@@ -68,7 +71,10 @@ constructor!(forbidden_role, ForbiddenRole);
 constructor!(pane_busy, PaneBusy);
 constructor!(task_has_owner, TaskHasOwner);
 constructor!(transition_refused, TransitionRefused);
+constructor!(stale_attempt, StaleAttempt);
 constructor!(stale_version, StaleVersion);
+constructor!(dependency_cycle, DependencyCycle);
+constructor!(dependency_open, DependencyOpen);
 constructor!(idempotency_conflict, IdempotencyConflict);
 constructor!(harness_unavailable, HarnessUnavailable);
 constructor!(needs_login, NeedsLogin);
@@ -187,7 +193,10 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::PaneBusy(_) => ErrorKind::PaneBusy,
         Error::TaskHasOwner(_) => ErrorKind::TaskHasOwner,
         Error::TransitionRefused(_) => ErrorKind::TransitionRefused,
+        Error::StaleAttempt(_) => ErrorKind::StaleAttempt,
         Error::StaleVersion(_) => ErrorKind::StaleVersion,
+        Error::DependencyCycle(_) => ErrorKind::DependencyCycle,
+        Error::DependencyOpen(_) => ErrorKind::DependencyOpen,
         Error::IdempotencyConflict(_) => ErrorKind::IdempotencyConflict,
         Error::HarnessUnavailable(_) | Error::Acp(_) => ErrorKind::HarnessUnavailable,
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
@@ -235,7 +244,10 @@ fn message(error: &Error) -> String {
         | Error::PaneBusy(message)
         | Error::TaskHasOwner(message)
         | Error::TransitionRefused(message)
+        | Error::StaleAttempt(message)
         | Error::StaleVersion(message)
+        | Error::DependencyCycle(message)
+        | Error::DependencyOpen(message)
         | Error::IdempotencyConflict(message)
         | Error::HarnessUnavailable(message)
         | Error::NeedsLogin(message)
@@ -391,5 +403,18 @@ mod tests {
 
         let error = wire(Error::Acp(soyeht_acp::Error::MissingSessionId));
         assert_eq!(error.data.kind, ErrorKind::HarnessUnavailable);
+
+        assert_eq!(
+            wire(stale_attempt("stale")).data.kind,
+            ErrorKind::StaleAttempt
+        );
+        assert_eq!(
+            wire(dependency_cycle("cycle")).data.kind,
+            ErrorKind::DependencyCycle
+        );
+        assert_eq!(
+            wire(dependency_open("open")).data.kind,
+            ErrorKind::DependencyOpen
+        );
     }
 }
