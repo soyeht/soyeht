@@ -1,0 +1,20 @@
+[package]
+name = "soyeht-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "soyeht-mcp"
+path = "src/main.rs"
+
+[dependencies]
+soyeht-protocol = { path = "../soyeht-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
