@@ -309,7 +309,10 @@ public final class EngineClient {
       try applyAgentEvent(eventName, params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
-      .paneConfigChanged, .attentionChanged:
+      .paneConfigChanged, .attentionChanged, .taskCreated, .taskMoved,
+      .taskClaimed, .taskReleased, .taskCommented, .taskSubitemChanged,
+      .taskBlocked, .taskUnblocked, .taskPhraseChanged, .taskUpdated,
+      .taskAttention, .loopTick, .loopStopped:
       break
     }
   }

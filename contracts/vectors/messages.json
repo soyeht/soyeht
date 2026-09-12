@@ -4220,5 +4220,1895 @@
         "reason": "interrupted"
       }
     }
+  },
+  {
+    "name": "TaskState",
+    "type": "TaskState",
+    "value": "todo"
+  },
+  {
+    "name": "TaskPriority",
+    "type": "TaskPriority",
+    "value": "urgent"
+  },
+  {
+    "name": "SubitemState",
+    "type": "SubitemState",
+    "value": "open"
+  },
+  {
+    "name": "AttemptResult",
+    "type": "AttemptResult",
+    "value": "completed"
+  },
+  {
+    "name": "BlockingKind",
+    "type": "BlockingKind",
+    "value": "dependency"
+  },
+  {
+    "name": "TaskCheckState",
+    "type": "TaskCheckState",
+    "value": "unknown"
+  },
+  {
+    "name": "TaskReviewState",
+    "type": "TaskReviewState",
+    "value": "none"
+  },
+  {
+    "name": "TaskReviewBadge",
+    "type": "TaskReviewBadge",
+    "value": "system_turn"
+  },
+  {
+    "name": "LoopStopWhen",
+    "type": "LoopStopWhen",
+    "value": "round_limit"
+  },
+  {
+    "name": "DriftLabel",
+    "type": "DriftLabel",
+    "value": "equivalent"
+  },
+  {
+    "name": "TaskExecutor",
+    "type": "TaskExecutor",
+    "value": {
+      "workspaceDefault": true
+    }
+  },
+  {
+    "name": "TaskWorktree",
+    "type": "TaskWorktree",
+    "value": {
+      "path": "example",
+      "branch": "example"
+    }
+  },
+  {
+    "name": "TaskPullRequest",
+    "type": "TaskPullRequest",
+    "value": {
+      "url": "example",
+      "checkState": "unknown",
+      "reviewState": "none"
+    }
+  },
+  {
+    "name": "Blocking",
+    "type": "Blocking",
+    "value": {
+      "kind": "dependency",
+      "reason": "example"
+    }
+  },
+  {
+    "name": "Subitem",
+    "type": "Subitem",
+    "value": {
+      "subitemId": "example",
+      "taskId": "example",
+      "text": "example",
+      "state": "open"
+    }
+  },
+  {
+    "name": "Comment",
+    "type": "Comment",
+    "value": {
+      "commentId": "example",
+      "taskId": "example",
+      "author": "example",
+      "text": "example",
+      "at": "example"
+    }
+  },
+  {
+    "name": "Attempt",
+    "type": "Attempt",
+    "value": {
+      "n": 1,
+      "paneId": "example",
+      "harness": "example",
+      "model": "example",
+      "start": "example"
+    }
+  },
+  {
+    "name": "TaskMove",
+    "type": "TaskMove",
+    "value": {
+      "actor": "example",
+      "from": "todo",
+      "to": "todo",
+      "reason": "example",
+      "at": "example"
+    }
+  },
+  {
+    "name": "ContractChange",
+    "type": "ContractChange",
+    "value": {
+      "path": "example",
+      "name": "example",
+      "label": "equivalent",
+      "contractRef": "example"
+    }
+  },
+  {
+    "name": "OutOfScopeEdit",
+    "type": "OutOfScopeEdit",
+    "value": {
+      "path": "example",
+      "reason": "example"
+    }
+  },
+  {
+    "name": "LoopConfig",
+    "type": "LoopConfig",
+    "value": {
+      "prompt": "example",
+      "interval": 1,
+      "maxRounds": 1,
+      "stopWhen": "round_limit",
+      "enabled": true
+    }
+  },
+  {
+    "name": "Task",
+    "type": "Task",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "title": "example",
+      "description": "example",
+      "mustNotChange": "example",
+      "state": "todo",
+      "priority": "urgent",
+      "dependencies": [
+        "example"
+      ],
+      "currentAttempt": 1,
+      "prContract": true,
+      "createdAt": "example",
+      "createdBy": "example",
+      "version": 1,
+      "phrase": "example"
+    }
+  },
+  {
+    "name": "TaskCreateParams",
+    "type": "TaskCreateParams",
+    "value": {
+      "workspaceId": "example",
+      "title": "example",
+      "mustNotChange": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskCreateResult",
+    "type": "TaskCreateResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskNextParams",
+    "type": "TaskNextParams",
+    "value": {
+      "workspaceId": "example",
+      "paneId": "example",
+      "sessionGeneration": 1,
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskNextResult",
+    "type": "TaskNextResult",
+    "value": {
+      "empty": true,
+      "willRestartSession": true
+    }
+  },
+  {
+    "name": "TaskShowParams",
+    "type": "TaskShowParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example"
+    }
+  },
+  {
+    "name": "TaskShowResult",
+    "type": "TaskShowResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      },
+      "subitems": [
+        {
+          "subitemId": "example",
+          "taskId": "example",
+          "text": "example",
+          "state": "open"
+        }
+      ],
+      "comments": [
+        {
+          "commentId": "example",
+          "taskId": "example",
+          "author": "example",
+          "text": "example",
+          "at": "example"
+        }
+      ],
+      "attempts": [
+        {
+          "n": 1,
+          "paneId": "example",
+          "harness": "example",
+          "model": "example",
+          "start": "example"
+        }
+      ],
+      "history": [
+        {
+          "actor": "example",
+          "from": "todo",
+          "to": "todo",
+          "reason": "example",
+          "at": "example"
+        }
+      ]
+    }
+  },
+  {
+    "name": "TaskListParams",
+    "type": "TaskListParams",
+    "value": {
+      "workspaceId": "example",
+      "limit": 1
+    }
+  },
+  {
+    "name": "TaskListResult",
+    "type": "TaskListResult",
+    "value": {
+      "items": [
+        {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      ]
+    }
+  },
+  {
+    "name": "TaskCommentsParams",
+    "type": "TaskCommentsParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "limit": 1
+    }
+  },
+  {
+    "name": "TaskCommentsResult",
+    "type": "TaskCommentsResult",
+    "value": {
+      "items": [
+        {
+          "commentId": "example",
+          "taskId": "example",
+          "author": "example",
+          "text": "example",
+          "at": "example"
+        }
+      ]
+    }
+  },
+  {
+    "name": "TaskUpdateParams",
+    "type": "TaskUpdateParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "version": 1,
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskUpdateResult",
+    "type": "TaskUpdateResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskCommentParams",
+    "type": "TaskCommentParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "text": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskCommentResult",
+    "type": "TaskCommentResult",
+    "value": {
+      "comment": {
+        "commentId": "example",
+        "taskId": "example",
+        "author": "example",
+        "text": "example",
+        "at": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskSubitemAddParams",
+    "type": "TaskSubitemAddParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "text": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskSubitemAddResult",
+    "type": "TaskSubitemAddResult",
+    "value": {
+      "subitem": {
+        "subitemId": "example",
+        "taskId": "example",
+        "text": "example",
+        "state": "open"
+      }
+    }
+  },
+  {
+    "name": "TaskSubitemDoneParams",
+    "type": "TaskSubitemDoneParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "subitemId": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskSubitemDoneResult",
+    "type": "TaskSubitemDoneResult",
+    "value": {
+      "subitem": {
+        "subitemId": "example",
+        "taskId": "example",
+        "text": "example",
+        "state": "open"
+      }
+    }
+  },
+  {
+    "name": "TaskBlockParams",
+    "type": "TaskBlockParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "kind": "dependency",
+      "reason": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskBlockResult",
+    "type": "TaskBlockResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskReleaseParams",
+    "type": "TaskReleaseParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskReleaseResult",
+    "type": "TaskReleaseResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskRequestReviewParams",
+    "type": "TaskRequestReviewParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskRequestReviewResult",
+    "type": "TaskRequestReviewResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskCompleteParams",
+    "type": "TaskCompleteParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "summary": "example",
+      "contractChanges": [
+        {
+          "path": "example",
+          "name": "example",
+          "label": "equivalent",
+          "contractRef": "example"
+        }
+      ],
+      "outOfScopeEdits": [
+        {
+          "path": "example",
+          "reason": "example"
+        }
+      ],
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskCompleteResult",
+    "type": "TaskCompleteResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskDispatchParams",
+    "type": "TaskDispatchParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "preset": {
+        "workspaceDefault": true
+      },
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskDispatchResult",
+    "type": "TaskDispatchResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      },
+      "paneId": "example",
+      "attempt": 1,
+      "resumed": true
+    }
+  },
+  {
+    "name": "TaskUnblockParams",
+    "type": "TaskUnblockParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskUnblockResult",
+    "type": "TaskUnblockResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskMoveParams",
+    "type": "TaskMoveParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "state": "todo",
+      "reason": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskMoveResult",
+    "type": "TaskMoveResult",
+    "value": {
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskWorktreeCleanParams",
+    "type": "TaskWorktreeCleanParams",
+    "value": {
+      "workspaceId": "example",
+      "taskId": "example",
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "TaskWorktreeCleanResult",
+    "type": "TaskWorktreeCleanResult",
+    "value": {
+      "cleaned": true
+    }
+  },
+  {
+    "name": "LoopSetParams",
+    "type": "LoopSetParams",
+    "value": {
+      "paneId": "example",
+      "prompt": "example",
+      "interval": 1,
+      "maxRounds": 1,
+      "stopWhen": "round_limit",
+      "enabled": true,
+      "idempotencyKey": "example"
+    }
+  },
+  {
+    "name": "LoopSetResult",
+    "type": "LoopSetResult",
+    "value": {
+      "config": {
+        "prompt": "example",
+        "interval": 1,
+        "maxRounds": 1,
+        "stopWhen": "round_limit",
+        "enabled": true
+      }
+    }
+  },
+  {
+    "name": "TaskCreatedEvent",
+    "type": "TaskCreatedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "task": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "title": "example",
+        "description": "example",
+        "mustNotChange": "example",
+        "state": "todo",
+        "priority": "urgent",
+        "dependencies": [
+          "example"
+        ],
+        "currentAttempt": 1,
+        "prContract": true,
+        "createdAt": "example",
+        "createdBy": "example",
+        "version": 1,
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskMovedEvent",
+    "type": "TaskMovedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "actor": "example",
+      "from": "todo",
+      "to": "todo",
+      "reason": "example"
+    }
+  },
+  {
+    "name": "TaskClaimedEvent",
+    "type": "TaskClaimedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "paneId": "example",
+      "attempt": 1
+    }
+  },
+  {
+    "name": "TaskReleasedEvent",
+    "type": "TaskReleasedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "reason": "example",
+      "attempt": 1
+    }
+  },
+  {
+    "name": "TaskCommentedEvent",
+    "type": "TaskCommentedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "comment": {
+        "commentId": "example",
+        "taskId": "example",
+        "author": "example",
+        "text": "example",
+        "at": "example"
+      }
+    }
+  },
+  {
+    "name": "TaskSubitemChangedEvent",
+    "type": "TaskSubitemChangedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "subitem": {
+        "subitemId": "example",
+        "taskId": "example",
+        "text": "example",
+        "state": "open"
+      }
+    }
+  },
+  {
+    "name": "TaskBlockedEvent",
+    "type": "TaskBlockedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "kind": "dependency",
+      "reason": "example"
+    }
+  },
+  {
+    "name": "TaskUnblockedEvent",
+    "type": "TaskUnblockedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "reason": "example"
+    }
+  },
+  {
+    "name": "TaskPhraseChangedEvent",
+    "type": "TaskPhraseChangedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "phrase": "example"
+    }
+  },
+  {
+    "name": "TaskUpdatedEvent",
+    "type": "TaskUpdatedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "version": 1
+    }
+  },
+  {
+    "name": "TaskAttentionEvent",
+    "type": "TaskAttentionEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "workspaceId": "example",
+      "taskId": "example",
+      "n": 1
+    }
+  },
+  {
+    "name": "LoopTickEvent",
+    "type": "LoopTickEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "paneId": "example",
+      "round": 1,
+      "of": 1
+    }
+  },
+  {
+    "name": "LoopStoppedEvent",
+    "type": "LoopStoppedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "paneId": "example",
+      "reason": "example"
+    }
+  },
+  {
+    "name": "request:task.create",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.create",
+      "params": {
+        "workspaceId": "example",
+        "title": "example",
+        "mustNotChange": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.create",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.next",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.next",
+      "params": {
+        "workspaceId": "example",
+        "paneId": "example",
+        "sessionGeneration": 1,
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.next",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "empty": true,
+        "willRestartSession": true
+      }
+    }
+  },
+  {
+    "name": "request:task.show",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.show",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.show",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        },
+        "subitems": [
+          {
+            "subitemId": "example",
+            "taskId": "example",
+            "text": "example",
+            "state": "open"
+          }
+        ],
+        "comments": [
+          {
+            "commentId": "example",
+            "taskId": "example",
+            "author": "example",
+            "text": "example",
+            "at": "example"
+          }
+        ],
+        "attempts": [
+          {
+            "n": 1,
+            "paneId": "example",
+            "harness": "example",
+            "model": "example",
+            "start": "example"
+          }
+        ],
+        "history": [
+          {
+            "actor": "example",
+            "from": "todo",
+            "to": "todo",
+            "reason": "example",
+            "at": "example"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:task.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.list",
+      "params": {
+        "workspaceId": "example",
+        "limit": 1
+      }
+    }
+  },
+  {
+    "name": "response:task.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "workspaceId": "example",
+            "taskId": "example",
+            "title": "example",
+            "description": "example",
+            "mustNotChange": "example",
+            "state": "todo",
+            "priority": "urgent",
+            "dependencies": [
+              "example"
+            ],
+            "currentAttempt": 1,
+            "prContract": true,
+            "createdAt": "example",
+            "createdBy": "example",
+            "version": 1,
+            "phrase": "example"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:task.comments",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.comments",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "limit": 1
+      }
+    }
+  },
+  {
+    "name": "response:task.comments",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "commentId": "example",
+            "taskId": "example",
+            "author": "example",
+            "text": "example",
+            "at": "example"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:task.update",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.update",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "version": 1,
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.update",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.comment",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.comment",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "text": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.comment",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "comment": {
+          "commentId": "example",
+          "taskId": "example",
+          "author": "example",
+          "text": "example",
+          "at": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.subitem.add",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.subitem.add",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "text": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.subitem.add",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "subitem": {
+          "subitemId": "example",
+          "taskId": "example",
+          "text": "example",
+          "state": "open"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.subitem.done",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.subitem.done",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "subitemId": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.subitem.done",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "subitem": {
+          "subitemId": "example",
+          "taskId": "example",
+          "text": "example",
+          "state": "open"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.block",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.block",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "kind": "dependency",
+        "reason": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.block",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.release",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.release",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.release",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.request_review",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.request_review",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.request_review",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.complete",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.complete",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "summary": "example",
+        "contractChanges": [
+          {
+            "path": "example",
+            "name": "example",
+            "label": "equivalent",
+            "contractRef": "example"
+          }
+        ],
+        "outOfScopeEdits": [
+          {
+            "path": "example",
+            "reason": "example"
+          }
+        ],
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.complete",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.dispatch",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.dispatch",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "preset": {
+          "workspaceDefault": true
+        },
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.dispatch",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        },
+        "paneId": "example",
+        "attempt": 1,
+        "resumed": true
+      }
+    }
+  },
+  {
+    "name": "request:task.unblock",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.unblock",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.unblock",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.move",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.move",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "state": "todo",
+        "reason": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.move",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:task.worktree.clean",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "task.worktree.clean",
+      "params": {
+        "workspaceId": "example",
+        "taskId": "example",
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:task.worktree.clean",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "cleaned": true
+      }
+    }
+  },
+  {
+    "name": "request:loop.set",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "loop.set",
+      "params": {
+        "paneId": "example",
+        "prompt": "example",
+        "interval": 1,
+        "maxRounds": 1,
+        "stopWhen": "round_limit",
+        "enabled": true,
+        "idempotencyKey": "example"
+      }
+    }
+  },
+  {
+    "name": "response:loop.set",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "config": {
+          "prompt": "example",
+          "interval": 1,
+          "maxRounds": 1,
+          "stopWhen": "round_limit",
+          "enabled": true
+        }
+      }
+    }
+  },
+  {
+    "name": "event:task.created",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.created",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "task": {
+          "workspaceId": "example",
+          "taskId": "example",
+          "title": "example",
+          "description": "example",
+          "mustNotChange": "example",
+          "state": "todo",
+          "priority": "urgent",
+          "dependencies": [
+            "example"
+          ],
+          "currentAttempt": 1,
+          "prContract": true,
+          "createdAt": "example",
+          "createdBy": "example",
+          "version": 1,
+          "phrase": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "event:task.moved",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.moved",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "actor": "example",
+        "from": "todo",
+        "to": "todo",
+        "reason": "example"
+      }
+    }
+  },
+  {
+    "name": "event:task.claimed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.claimed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "paneId": "example",
+        "attempt": 1
+      }
+    }
+  },
+  {
+    "name": "event:task.released",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.released",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "reason": "example",
+        "attempt": 1
+      }
+    }
+  },
+  {
+    "name": "event:task.commented",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.commented",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "comment": {
+          "commentId": "example",
+          "taskId": "example",
+          "author": "example",
+          "text": "example",
+          "at": "example"
+        }
+      }
+    }
+  },
+  {
+    "name": "event:task.subitem_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.subitem_changed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "subitem": {
+          "subitemId": "example",
+          "taskId": "example",
+          "text": "example",
+          "state": "open"
+        }
+      }
+    }
+  },
+  {
+    "name": "event:task.blocked",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.blocked",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "kind": "dependency",
+        "reason": "example"
+      }
+    }
+  },
+  {
+    "name": "event:task.unblocked",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.unblocked",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "reason": "example"
+      }
+    }
+  },
+  {
+    "name": "event:task.phrase_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.phrase_changed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "phrase": "example"
+      }
+    }
+  },
+  {
+    "name": "event:task.updated",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.updated",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "version": 1
+      }
+    }
+  },
+  {
+    "name": "event:task.attention",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "task.attention",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "workspaceId": "example",
+        "taskId": "example",
+        "n": 1
+      }
+    }
+  },
+  {
+    "name": "event:loop.tick",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "loop.tick",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "paneId": "example",
+        "round": 1,
+        "of": 1
+      }
+    }
+  },
+  {
+    "name": "event:loop.stopped",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "loop.stopped",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "example",
+        "paneId": "example",
+        "reason": "example"
+      }
+    }
   }
 ]

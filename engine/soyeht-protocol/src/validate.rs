@@ -136,4 +136,33 @@ mod tests {
         assert!(parameters("events.subscribe", &json!({"since":"+1"})).is_err());
         assert!(parameters("events.subscribe", &json!({"since":"01"})).is_err());
     }
+
+    #[test]
+    fn task_entry_points_enforce_preservation_and_review_fields() {
+        let create = json!({
+            "workspaceId": "workspace-1",
+            "title": "Keep the contract",
+            "mustNotChange": "Existing sessions keep working",
+            "idempotencyKey": "create-1"
+        });
+        assert!(parameters("task.create", &create).is_ok());
+        let mut empty_preservation = create;
+        empty_preservation["mustNotChange"] = json!("");
+        assert!(parameters("task.create", &empty_preservation).is_err());
+
+        let complete = json!({
+            "workspaceId": "workspace-1",
+            "taskId": "WS-1",
+            "summary": "Done",
+            "contractChanges": [],
+            "outOfScopeEdits": [],
+            "idempotencyKey": "complete-1"
+        });
+        assert!(parameters("task.complete", &complete).is_ok());
+        for field in ["contractChanges", "outOfScopeEdits"] {
+            let mut missing = complete.clone();
+            missing.as_object_mut().map(|value| value.remove(field));
+            assert!(parameters("task.complete", &missing).is_err());
+        }
+    }
 }

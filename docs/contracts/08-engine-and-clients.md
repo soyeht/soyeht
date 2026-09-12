@@ -184,8 +184,10 @@ messages with `queued|delivered|read` state),
 protected by `version`; conflict = `stale_version`), `task.move {taskId,
 state}`, `task.comment`, `task.subitem.add`, `task.subitem.done`,
 `task.block {kind, reason}`, `task.release`, `task.request_review`,
-`task.complete {summary}`, `task.dispatch {taskId, preset}`,
-`task.unblock`, **`task.next {}`** (`agent` role only; rules in 03 §5).
+`task.complete {summary, contractChanges, outOfScopeEdits}` (both lists are
+required even when empty), `task.dispatch {taskId, preset}`, `task.unblock`,
+`task.worktree.clean`, **`task.next {}`** (`agent` role only; rules in 03 §5),
+and `loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`.
 Task IDs are always `{workspaceId, taskId}` together.
 
 **Experiment (contract 05 §4)**: `experiment.record.set {paneId, on}`,

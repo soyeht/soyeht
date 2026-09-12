@@ -30,7 +30,8 @@ def lower_camel(value):
 
 def type_name(schema, lang):
     if "$ref" in schema:
-        return schema["$ref"].split("/")[-1]
+        name = schema["$ref"].split("/")[-1]
+        return "TaskRecord" if lang == "swift" and name == "Task" else name
     if not schema:
         return "JsonValue"
     kind = schema["type"]
@@ -74,6 +75,7 @@ def rust_definition(name, schema):
 
 
 def swift_definition(name, schema):
+    name = "TaskRecord" if name == "Task" else name
     if "enum" in schema:
         fields = [f'    case `{snake(variant(v))}` = {json.dumps(v, ensure_ascii=False)}' for v in schema["enum"]]
         return f"public enum {name}: String, Codable, Sendable {{\n" + "\n".join(fields) + "\n}"
@@ -439,7 +441,8 @@ def render(schema, digest):
     swift_cases = []
     rust_cases = []
     for name in schema["$defs"]:
-        swift_cases.append(f'        case "{name}": return try codec(SoyehtProtocol.{name}.self, data)')
+        swift_name = "TaskRecord" if name == "Task" else name
+        swift_cases.append(f'        case "{name}": return try codec(SoyehtProtocol.{swift_name}.self, data)')
         rust_cases.append(f'        "{name}" => roundtrip::<{name}>(value),')
     outputs["contracts/swift/Sources/ProtocolVectors/Dispatch.swift"] = header + "import Foundation\nimport SoyehtProtocol\n\nfunc roundtrip(_ name: String, _ data: Data) throws -> Data {\n    switch name {\n" + "\n".join(swift_cases) + '\n    default: throw NSError(domain: "Unknown schema", code: 1)\n    }\n}\n'
     outputs["engine/soyeht-protocol/tests/support/dispatch.rs"] = header + "fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {\n    match name {\n" + "\n".join(rust_cases) + '\n        _ => panic!("unknown schema: {name}"),\n    }\n}\n'

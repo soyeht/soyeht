@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8f54e8df331debb2c3a30f4aeddb689e999d43d97f97312d10864fc229a52a6). Do not edit.
+// Generated from contracts/protocol.json (sha256 571c3b53dd43fc4dffcf2d710d309007a04676be25bd61dd7066f0b979a40e08). Do not edit.
 import Foundation
 
 
@@ -74,6 +74,9 @@ public enum ErrorKind: String, Codable, Sendable {
     case `internal_error` = "internal_error"
     case `snapshot_too_large` = "snapshot_too_large"
     case `engine_identity_changed` = "engine_identity_changed"
+    case `stale_attempt` = "stale_attempt"
+    case `dependency_cycle` = "dependency_cycle"
+    case `dependency_open` = "dependency_open"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -2399,6 +2402,965 @@ public struct PaneQueueStateEvent: Codable, Sendable {
     }
 }
 
+public enum TaskState: String, Codable, Sendable {
+    case `todo` = "todo"
+    case `in_progress` = "in_progress"
+    case `in_review` = "in_review"
+    case `completed` = "completed"
+    case `cancelled` = "cancelled"
+}
+
+public enum TaskPriority: String, Codable, Sendable {
+    case `urgent` = "urgent"
+    case `high` = "high"
+    case `medium` = "medium"
+    case `low` = "low"
+}
+
+public enum SubitemState: String, Codable, Sendable {
+    case `open` = "open"
+    case `done` = "done"
+}
+
+public enum AttemptResult: String, Codable, Sendable {
+    case `completed` = "completed"
+    case `returned` = "returned"
+    case `failed` = "failed"
+    case `cancelled` = "cancelled"
+}
+
+public enum BlockingKind: String, Codable, Sendable {
+    case `dependency` = "dependency"
+    case `missing_information` = "missing_information"
+    case `external_error` = "external_error"
+}
+
+public enum TaskCheckState: String, Codable, Sendable {
+    case `unknown` = "unknown"
+    case `pending` = "pending"
+    case `green` = "green"
+    case `red` = "red"
+    case `conflict` = "conflict"
+}
+
+public enum TaskReviewState: String, Codable, Sendable {
+    case `none` = "none"
+    case `awaiting_person` = "awaiting_person"
+    case `changes_requested` = "changes_requested"
+    case `approved` = "approved"
+}
+
+public enum TaskReviewBadge: String, Codable, Sendable {
+    case `system_turn` = "system_turn"
+    case `your_turn` = "your_turn"
+}
+
+public enum LoopStopWhen: String, Codable, Sendable {
+    case `round_limit` = "round_limit"
+    case `three_empty` = "three_empty"
+    case `explicit_off` = "explicit_off"
+}
+
+public enum DriftLabel: String, Codable, Sendable {
+    case `equivalent` = "equivalent"
+    case `style` = "style"
+    case `algorithm` = "algorithm"
+    case `input_gating` = "input_gating"
+    case `silent_fallback` = "silent_fallback"
+    case `error_handling` = "error_handling"
+    case `return_shape` = "return_shape"
+    case `external_effects` = "external_effects"
+    case `extra_edits` = "extra_edits"
+    case `incomplete` = "incomplete"
+}
+
+public struct TaskExecutor: Codable, Sendable {
+    public var `workspaceDefault`: Bool
+    public var `harness`: Id?
+    public var `model`: String?
+    public var `effort`: String?
+    public var `permission`: PermissionMode?
+    public init(`workspaceDefault`: Bool, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil) {
+        self.`workspaceDefault` = `workspaceDefault`
+        self.`harness` = `harness`
+        self.`model` = `model`
+        self.`effort` = `effort`
+        self.`permission` = `permission`
+    }
+}
+
+public struct TaskWorktree: Codable, Sendable {
+    public var `path`: String
+    public var `branch`: String
+    public init(`path`: String, `branch`: String) {
+        self.`path` = `path`
+        self.`branch` = `branch`
+    }
+}
+
+public struct TaskPullRequest: Codable, Sendable {
+    public var `url`: String
+    public var `checkState`: TaskCheckState
+    public var `reviewState`: TaskReviewState
+    public var `head`: String?
+    public init(`url`: String, `checkState`: TaskCheckState, `reviewState`: TaskReviewState, `head`: String? = nil) {
+        self.`url` = `url`
+        self.`checkState` = `checkState`
+        self.`reviewState` = `reviewState`
+        self.`head` = `head`
+    }
+}
+
+public struct Blocking: Codable, Sendable {
+    public var `kind`: BlockingKind
+    public var `reason`: String
+    public var `dependencyTaskId`: Id?
+    public var `retryCount`: UInt32?
+    public init(`kind`: BlockingKind, `reason`: String, `dependencyTaskId`: Id? = nil, `retryCount`: UInt32? = nil) {
+        self.`kind` = `kind`
+        self.`reason` = `reason`
+        self.`dependencyTaskId` = `dependencyTaskId`
+        self.`retryCount` = `retryCount`
+    }
+}
+
+public struct Subitem: Codable, Sendable {
+    public var `subitemId`: Id
+    public var `taskId`: Id
+    public var `text`: String
+    public var `agent`: Id?
+    public var `instructions`: String?
+    public var `state`: SubitemState
+    public init(`subitemId`: Id, `taskId`: Id, `text`: String, `agent`: Id? = nil, `instructions`: String? = nil, `state`: SubitemState) {
+        self.`subitemId` = `subitemId`
+        self.`taskId` = `taskId`
+        self.`text` = `text`
+        self.`agent` = `agent`
+        self.`instructions` = `instructions`
+        self.`state` = `state`
+    }
+}
+
+public struct Comment: Codable, Sendable {
+    public var `commentId`: Id
+    public var `taskId`: Id
+    public var `author`: String
+    public var `text`: String
+    public var `at`: String
+    public init(`commentId`: Id, `taskId`: Id, `author`: String, `text`: String, `at`: String) {
+        self.`commentId` = `commentId`
+        self.`taskId` = `taskId`
+        self.`author` = `author`
+        self.`text` = `text`
+        self.`at` = `at`
+    }
+}
+
+public struct Attempt: Codable, Sendable {
+    public var `n`: UInt32
+    public var `paneId`: Id
+    public var `harness`: Id
+    public var `model`: String
+    public var `start`: String
+    public var `end`: String?
+    public var `result`: AttemptResult?
+    public var `summary`: String?
+    public init(`n`: UInt32, `paneId`: Id, `harness`: Id, `model`: String, `start`: String, `end`: String? = nil, `result`: AttemptResult? = nil, `summary`: String? = nil) {
+        self.`n` = `n`
+        self.`paneId` = `paneId`
+        self.`harness` = `harness`
+        self.`model` = `model`
+        self.`start` = `start`
+        self.`end` = `end`
+        self.`result` = `result`
+        self.`summary` = `summary`
+    }
+}
+
+public struct TaskMove: Codable, Sendable {
+    public var `actor`: String
+    public var `from`: TaskState
+    public var `to`: TaskState
+    public var `reason`: String
+    public var `at`: String
+    public init(`actor`: String, `from`: TaskState, `to`: TaskState, `reason`: String, `at`: String) {
+        self.`actor` = `actor`
+        self.`from` = `from`
+        self.`to` = `to`
+        self.`reason` = `reason`
+        self.`at` = `at`
+    }
+}
+
+public struct ContractChange: Codable, Sendable {
+    public var `path`: String
+    public var `name`: String
+    public var `label`: DriftLabel
+    public var `contractRef`: String
+    public init(`path`: String, `name`: String, `label`: DriftLabel, `contractRef`: String) {
+        self.`path` = `path`
+        self.`name` = `name`
+        self.`label` = `label`
+        self.`contractRef` = `contractRef`
+    }
+}
+
+public struct OutOfScopeEdit: Codable, Sendable {
+    public var `path`: String
+    public var `reason`: String
+    public init(`path`: String, `reason`: String) {
+        self.`path` = `path`
+        self.`reason` = `reason`
+    }
+}
+
+public struct LoopConfig: Codable, Sendable {
+    public var `prompt`: String
+    public var `interval`: UInt32
+    public var `maxRounds`: UInt32
+    public var `stopWhen`: LoopStopWhen
+    public var `enabled`: Bool
+    public var `rounds`: UInt32?
+    public var `emptyResults`: UInt32?
+    public init(`prompt`: String, `interval`: UInt32, `maxRounds`: UInt32, `stopWhen`: LoopStopWhen, `enabled`: Bool, `rounds`: UInt32? = nil, `emptyResults`: UInt32? = nil) {
+        self.`prompt` = `prompt`
+        self.`interval` = `interval`
+        self.`maxRounds` = `maxRounds`
+        self.`stopWhen` = `stopWhen`
+        self.`enabled` = `enabled`
+        self.`rounds` = `rounds`
+        self.`emptyResults` = `emptyResults`
+    }
+}
+
+public struct TaskRecord: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `title`: String
+    public var `description`: String
+    public var `howToVerify`: String?
+    public var `mustNotChange`: String
+    public var `state`: TaskState
+    public var `priority`: TaskPriority
+    public var `plannedOwner`: Id?
+    public var `ownerPaneId`: Id?
+    public var `executor`: TaskExecutor?
+    public var `dependencies`: [String]
+    public var `worktree`: TaskWorktree?
+    public var `currentAttempt`: UInt32
+    public var `blocking`: Blocking?
+    public var `pr`: TaskPullRequest?
+    public var `prContract`: Bool
+    public var `createdAt`: String
+    public var `createdBy`: String
+    public var `version`: UInt32
+    public var `phrase`: String
+    public var `reviewBadge`: TaskReviewBadge?
+    public var `summary`: String?
+    public var `contractChanges`: [ContractChange]?
+    public var `outOfScopeEdits`: [OutOfScopeEdit]?
+    public init(`workspaceId`: Id, `taskId`: Id, `title`: String, `description`: String, `howToVerify`: String? = nil, `mustNotChange`: String, `state`: TaskState, `priority`: TaskPriority, `plannedOwner`: Id? = nil, `ownerPaneId`: Id? = nil, `executor`: TaskExecutor? = nil, `dependencies`: [String], `worktree`: TaskWorktree? = nil, `currentAttempt`: UInt32, `blocking`: Blocking? = nil, `pr`: TaskPullRequest? = nil, `prContract`: Bool, `createdAt`: String, `createdBy`: String, `version`: UInt32, `phrase`: String, `reviewBadge`: TaskReviewBadge? = nil, `summary`: String? = nil, `contractChanges`: [ContractChange]? = nil, `outOfScopeEdits`: [OutOfScopeEdit]? = nil) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`title` = `title`
+        self.`description` = `description`
+        self.`howToVerify` = `howToVerify`
+        self.`mustNotChange` = `mustNotChange`
+        self.`state` = `state`
+        self.`priority` = `priority`
+        self.`plannedOwner` = `plannedOwner`
+        self.`ownerPaneId` = `ownerPaneId`
+        self.`executor` = `executor`
+        self.`dependencies` = `dependencies`
+        self.`worktree` = `worktree`
+        self.`currentAttempt` = `currentAttempt`
+        self.`blocking` = `blocking`
+        self.`pr` = `pr`
+        self.`prContract` = `prContract`
+        self.`createdAt` = `createdAt`
+        self.`createdBy` = `createdBy`
+        self.`version` = `version`
+        self.`phrase` = `phrase`
+        self.`reviewBadge` = `reviewBadge`
+        self.`summary` = `summary`
+        self.`contractChanges` = `contractChanges`
+        self.`outOfScopeEdits` = `outOfScopeEdits`
+    }
+}
+
+public struct TaskCreateParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `title`: String
+    public var `description`: String?
+    public var `howToVerify`: String?
+    public var `mustNotChange`: String
+    public var `executor`: TaskExecutor?
+    public var `priority`: TaskPriority?
+    public var `createWorktree`: Bool?
+    public var `permission`: PermissionMode?
+    public var `dependencies`: [String]?
+    public var `dispatch`: Bool?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `title`: String, `description`: String? = nil, `howToVerify`: String? = nil, `mustNotChange`: String, `executor`: TaskExecutor? = nil, `priority`: TaskPriority? = nil, `createWorktree`: Bool? = nil, `permission`: PermissionMode? = nil, `dependencies`: [String]? = nil, `dispatch`: Bool? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`title` = `title`
+        self.`description` = `description`
+        self.`howToVerify` = `howToVerify`
+        self.`mustNotChange` = `mustNotChange`
+        self.`executor` = `executor`
+        self.`priority` = `priority`
+        self.`createWorktree` = `createWorktree`
+        self.`permission` = `permission`
+        self.`dependencies` = `dependencies`
+        self.`dispatch` = `dispatch`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskCreateResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public var `paneId`: Id?
+    public init(`task`: TaskRecord, `paneId`: Id? = nil) {
+        self.`task` = `task`
+        self.`paneId` = `paneId`
+    }
+}
+
+public struct TaskNextParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `paneId`: Id
+    public var `sessionGeneration`: UInt32
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `paneId`: Id, `sessionGeneration`: UInt32, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskNextResult: Codable, Sendable {
+    public var `task`: TaskRecord?
+    public var `empty`: Bool
+    public var `willRestartSession`: Bool
+    public init(`task`: TaskRecord? = nil, `empty`: Bool, `willRestartSession`: Bool) {
+        self.`task` = `task`
+        self.`empty` = `empty`
+        self.`willRestartSession` = `willRestartSession`
+    }
+}
+
+public struct TaskShowParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public init(`workspaceId`: Id, `taskId`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+    }
+}
+
+public struct TaskShowResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public var `subitems`: [Subitem]
+    public var `comments`: [Comment]
+    public var `attempts`: [Attempt]
+    public var `history`: [TaskMove]
+    public init(`task`: TaskRecord, `subitems`: [Subitem], `comments`: [Comment], `attempts`: [Attempt], `history`: [TaskMove]) {
+        self.`task` = `task`
+        self.`subitems` = `subitems`
+        self.`comments` = `comments`
+        self.`attempts` = `attempts`
+        self.`history` = `history`
+    }
+}
+
+public struct TaskListParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `state`: TaskState?
+    public var `limit`: UInt32
+    public var `cursor`: Id?
+    public init(`workspaceId`: Id, `state`: TaskState? = nil, `limit`: UInt32, `cursor`: Id? = nil) {
+        self.`workspaceId` = `workspaceId`
+        self.`state` = `state`
+        self.`limit` = `limit`
+        self.`cursor` = `cursor`
+    }
+}
+
+public struct TaskListResult: Codable, Sendable {
+    public var `items`: [TaskRecord]
+    public var `nextCursor`: Id?
+    public init(`items`: [TaskRecord], `nextCursor`: Id? = nil) {
+        self.`items` = `items`
+        self.`nextCursor` = `nextCursor`
+    }
+}
+
+public struct TaskCommentsParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `before`: Id?
+    public var `limit`: UInt32
+    public init(`workspaceId`: Id, `taskId`: Id, `before`: Id? = nil, `limit`: UInt32) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`before` = `before`
+        self.`limit` = `limit`
+    }
+}
+
+public struct TaskCommentsResult: Codable, Sendable {
+    public var `items`: [Comment]
+    public var `nextCursor`: Id?
+    public init(`items`: [Comment], `nextCursor`: Id? = nil) {
+        self.`items` = `items`
+        self.`nextCursor` = `nextCursor`
+    }
+}
+
+public struct TaskUpdateParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `version`: UInt32
+    public var `title`: String?
+    public var `description`: String?
+    public var `howToVerify`: String?
+    public var `mustNotChange`: String?
+    public var `priority`: TaskPriority?
+    public var `dependencies`: [String]?
+    public var `plannedOwner`: Id?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `version`: UInt32, `title`: String? = nil, `description`: String? = nil, `howToVerify`: String? = nil, `mustNotChange`: String? = nil, `priority`: TaskPriority? = nil, `dependencies`: [String]? = nil, `plannedOwner`: Id? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`version` = `version`
+        self.`title` = `title`
+        self.`description` = `description`
+        self.`howToVerify` = `howToVerify`
+        self.`mustNotChange` = `mustNotChange`
+        self.`priority` = `priority`
+        self.`dependencies` = `dependencies`
+        self.`plannedOwner` = `plannedOwner`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskUpdateResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public init(`task`: TaskRecord) {
+        self.`task` = `task`
+    }
+}
+
+public struct TaskCommentParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `text`: String
+    public var `paneId`: Id?
+    public var `sessionGeneration`: UInt32?
+    public var `attempt`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `text`: String, `paneId`: Id? = nil, `sessionGeneration`: UInt32? = nil, `attempt`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`text` = `text`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`attempt` = `attempt`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskCommentResult: Codable, Sendable {
+    public var `comment`: Comment
+    public init(`comment`: Comment) {
+        self.`comment` = `comment`
+    }
+}
+
+public struct TaskSubitemAddParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `text`: String
+    public var `agent`: Id?
+    public var `instructions`: String?
+    public var `paneId`: Id?
+    public var `sessionGeneration`: UInt32?
+    public var `attempt`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `text`: String, `agent`: Id? = nil, `instructions`: String? = nil, `paneId`: Id? = nil, `sessionGeneration`: UInt32? = nil, `attempt`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`text` = `text`
+        self.`agent` = `agent`
+        self.`instructions` = `instructions`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`attempt` = `attempt`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskSubitemAddResult: Codable, Sendable {
+    public var `subitem`: Subitem
+    public init(`subitem`: Subitem) {
+        self.`subitem` = `subitem`
+    }
+}
+
+public struct TaskSubitemDoneParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `subitemId`: Id
+    public var `paneId`: Id?
+    public var `sessionGeneration`: UInt32?
+    public var `attempt`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `subitemId`: Id, `paneId`: Id? = nil, `sessionGeneration`: UInt32? = nil, `attempt`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`subitemId` = `subitemId`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`attempt` = `attempt`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskSubitemDoneResult: Codable, Sendable {
+    public var `subitem`: Subitem
+    public init(`subitem`: Subitem) {
+        self.`subitem` = `subitem`
+    }
+}
+
+public struct TaskBlockParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `kind`: BlockingKind
+    public var `reason`: String
+    public var `dependencyTaskId`: Id?
+    public var `paneId`: Id?
+    public var `sessionGeneration`: UInt32?
+    public var `attempt`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `kind`: BlockingKind, `reason`: String, `dependencyTaskId`: Id? = nil, `paneId`: Id? = nil, `sessionGeneration`: UInt32? = nil, `attempt`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`kind` = `kind`
+        self.`reason` = `reason`
+        self.`dependencyTaskId` = `dependencyTaskId`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`attempt` = `attempt`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskBlockResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public init(`task`: TaskRecord) {
+        self.`task` = `task`
+    }
+}
+
+public struct TaskReleaseParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `reason`: String?
+    public var `paneId`: Id?
+    public var `sessionGeneration`: UInt32?
+    public var `attempt`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `reason`: String? = nil, `paneId`: Id? = nil, `sessionGeneration`: UInt32? = nil, `attempt`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`reason` = `reason`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`attempt` = `attempt`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskReleaseResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public init(`task`: TaskRecord) {
+        self.`task` = `task`
+    }
+}
+
+public struct TaskRequestReviewParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `reason`: String?
+    public var `paneId`: Id?
+    public var `sessionGeneration`: UInt32?
+    public var `attempt`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `reason`: String? = nil, `paneId`: Id? = nil, `sessionGeneration`: UInt32? = nil, `attempt`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`reason` = `reason`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`attempt` = `attempt`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskRequestReviewResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public init(`task`: TaskRecord) {
+        self.`task` = `task`
+    }
+}
+
+public struct TaskCompleteParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `summary`: String
+    public var `contractChanges`: [ContractChange]
+    public var `outOfScopeEdits`: [OutOfScopeEdit]
+    public var `paneId`: Id?
+    public var `sessionGeneration`: UInt32?
+    public var `attempt`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `summary`: String, `contractChanges`: [ContractChange], `outOfScopeEdits`: [OutOfScopeEdit], `paneId`: Id? = nil, `sessionGeneration`: UInt32? = nil, `attempt`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`summary` = `summary`
+        self.`contractChanges` = `contractChanges`
+        self.`outOfScopeEdits` = `outOfScopeEdits`
+        self.`paneId` = `paneId`
+        self.`sessionGeneration` = `sessionGeneration`
+        self.`attempt` = `attempt`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskCompleteResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public init(`task`: TaskRecord) {
+        self.`task` = `task`
+    }
+}
+
+public struct TaskDispatchParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `preset`: TaskExecutor
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `preset`: TaskExecutor, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`preset` = `preset`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskDispatchResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public var `paneId`: Id
+    public var `attempt`: UInt32
+    public var `resumed`: Bool
+    public init(`task`: TaskRecord, `paneId`: Id, `attempt`: UInt32, `resumed`: Bool) {
+        self.`task` = `task`
+        self.`paneId` = `paneId`
+        self.`attempt` = `attempt`
+        self.`resumed` = `resumed`
+    }
+}
+
+public struct TaskUnblockParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `reason`: String?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `reason`: String? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`reason` = `reason`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskUnblockResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public init(`task`: TaskRecord) {
+        self.`task` = `task`
+    }
+}
+
+public struct TaskMoveParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `state`: TaskState
+    public var `reason`: String
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `state`: TaskState, `reason`: String, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`state` = `state`
+        self.`reason` = `reason`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskMoveResult: Codable, Sendable {
+    public var `task`: TaskRecord
+    public init(`task`: TaskRecord) {
+        self.`task` = `task`
+    }
+}
+
+public struct TaskWorktreeCleanParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `taskId`: Id, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct TaskWorktreeCleanResult: Codable, Sendable {
+    public var `cleaned`: Bool
+    public var `reason`: String?
+    public init(`cleaned`: Bool, `reason`: String? = nil) {
+        self.`cleaned` = `cleaned`
+        self.`reason` = `reason`
+    }
+}
+
+public struct LoopSetParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `prompt`: String
+    public var `interval`: UInt32
+    public var `maxRounds`: UInt32
+    public var `stopWhen`: LoopStopWhen
+    public var `enabled`: Bool
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `prompt`: String, `interval`: UInt32, `maxRounds`: UInt32, `stopWhen`: LoopStopWhen, `enabled`: Bool, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`prompt` = `prompt`
+        self.`interval` = `interval`
+        self.`maxRounds` = `maxRounds`
+        self.`stopWhen` = `stopWhen`
+        self.`enabled` = `enabled`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct LoopSetResult: Codable, Sendable {
+    public var `config`: LoopConfig
+    public init(`config`: LoopConfig) {
+        self.`config` = `config`
+    }
+}
+
+public struct TaskCreatedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `task`: TaskRecord
+    public init(`eventId`: Decimal, `at`: String, `task`: TaskRecord) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`task` = `task`
+    }
+}
+
+public struct TaskMovedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `actor`: String
+    public var `from`: TaskState
+    public var `to`: TaskState
+    public var `reason`: String
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `actor`: String, `from`: TaskState, `to`: TaskState, `reason`: String) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`actor` = `actor`
+        self.`from` = `from`
+        self.`to` = `to`
+        self.`reason` = `reason`
+    }
+}
+
+public struct TaskClaimedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `paneId`: Id
+    public var `attempt`: UInt32
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `paneId`: Id, `attempt`: UInt32) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`paneId` = `paneId`
+        self.`attempt` = `attempt`
+    }
+}
+
+public struct TaskReleasedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `reason`: String
+    public var `attempt`: UInt32
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `reason`: String, `attempt`: UInt32) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`reason` = `reason`
+        self.`attempt` = `attempt`
+    }
+}
+
+public struct TaskCommentedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `comment`: Comment
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `comment`: Comment) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`comment` = `comment`
+    }
+}
+
+public struct TaskSubitemChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `subitem`: Subitem
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `subitem`: Subitem) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`subitem` = `subitem`
+    }
+}
+
+public struct TaskBlockedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `kind`: BlockingKind
+    public var `reason`: String
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `kind`: BlockingKind, `reason`: String) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`kind` = `kind`
+        self.`reason` = `reason`
+    }
+}
+
+public struct TaskUnblockedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `reason`: String
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `reason`: String) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`reason` = `reason`
+    }
+}
+
+public struct TaskPhraseChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `phrase`: String
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `phrase`: String) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`phrase` = `phrase`
+    }
+}
+
+public struct TaskUpdatedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `version`: UInt32
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `version`: UInt32) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`version` = `version`
+    }
+}
+
+public struct TaskAttentionEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `taskId`: Id
+    public var `n`: UInt32
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `n`: UInt32) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`taskId` = `taskId`
+        self.`n` = `n`
+    }
+}
+
+public struct LoopTickEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `round`: UInt32
+    public var `of`: UInt32
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `round`: UInt32, `of`: UInt32) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`round` = `round`
+        self.`of` = `of`
+    }
+}
+
+public struct LoopStoppedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `reason`: String
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `reason`: String) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`reason` = `reason`
+    }
+}
+
 public enum EventName: String, Codable, Sendable, CaseIterable {
     case authChallenge = "auth.challenge"
     case stateSnapshotPart = "state.snapshot_part"
@@ -2439,6 +3401,19 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case attentionChanged = "attention.changed"
     case paneQueuePaused = "pane.queue.paused"
     case paneQueueResumed = "pane.queue.resumed"
+    case taskCreated = "task.created"
+    case taskMoved = "task.moved"
+    case taskClaimed = "task.claimed"
+    case taskReleased = "task.released"
+    case taskCommented = "task.commented"
+    case taskSubitemChanged = "task.subitem_changed"
+    case taskBlocked = "task.blocked"
+    case taskUnblocked = "task.unblocked"
+    case taskPhraseChanged = "task.phrase_changed"
+    case taskUpdated = "task.updated"
+    case taskAttention = "task.attention"
+    case loopTick = "loop.tick"
+    case loopStopped = "loop.stopped"
 }
 
 public struct EventDescriptor: Sendable {
@@ -2490,4 +3465,17 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .attentionChanged: EventDescriptor(paramsType: "AttentionChangedEvent", durable: true),
     .paneQueuePaused: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),
     .paneQueueResumed: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),
+    .taskCreated: EventDescriptor(paramsType: "TaskCreatedEvent", durable: true),
+    .taskMoved: EventDescriptor(paramsType: "TaskMovedEvent", durable: true),
+    .taskClaimed: EventDescriptor(paramsType: "TaskClaimedEvent", durable: true),
+    .taskReleased: EventDescriptor(paramsType: "TaskReleasedEvent", durable: true),
+    .taskCommented: EventDescriptor(paramsType: "TaskCommentedEvent", durable: true),
+    .taskSubitemChanged: EventDescriptor(paramsType: "TaskSubitemChangedEvent", durable: true),
+    .taskBlocked: EventDescriptor(paramsType: "TaskBlockedEvent", durable: true),
+    .taskUnblocked: EventDescriptor(paramsType: "TaskUnblockedEvent", durable: true),
+    .taskPhraseChanged: EventDescriptor(paramsType: "TaskPhraseChangedEvent", durable: true),
+    .taskUpdated: EventDescriptor(paramsType: "TaskUpdatedEvent", durable: true),
+    .taskAttention: EventDescriptor(paramsType: "TaskAttentionEvent", durable: true),
+    .loopTick: EventDescriptor(paramsType: "LoopTickEvent", durable: true),
+    .loopStopped: EventDescriptor(paramsType: "LoopStoppedEvent", durable: true),
 ]

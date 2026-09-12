@@ -95,7 +95,10 @@
         "stale_engine_generation",
         "internal_error",
         "snapshot_too_large",
-        "engine_identity_changed"
+        "engine_identity_changed",
+        "stale_attempt",
+        "dependency_cycle",
+        "dependency_open"
       ]
     },
     "RpcError": {
@@ -4276,6 +4279,1786 @@
         "paused"
       ],
       "additionalProperties": true
+    },
+    "TaskState": {
+      "type": "string",
+      "enum": [
+        "todo",
+        "in_progress",
+        "in_review",
+        "completed",
+        "cancelled"
+      ]
+    },
+    "TaskPriority": {
+      "type": "string",
+      "enum": [
+        "urgent",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "SubitemState": {
+      "type": "string",
+      "enum": [
+        "open",
+        "done"
+      ]
+    },
+    "AttemptResult": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "returned",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "BlockingKind": {
+      "type": "string",
+      "enum": [
+        "dependency",
+        "missing_information",
+        "external_error"
+      ]
+    },
+    "TaskCheckState": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "pending",
+        "green",
+        "red",
+        "conflict"
+      ]
+    },
+    "TaskReviewState": {
+      "type": "string",
+      "enum": [
+        "none",
+        "awaiting_person",
+        "changes_requested",
+        "approved"
+      ]
+    },
+    "TaskReviewBadge": {
+      "type": "string",
+      "enum": [
+        "system_turn",
+        "your_turn"
+      ]
+    },
+    "LoopStopWhen": {
+      "type": "string",
+      "enum": [
+        "round_limit",
+        "three_empty",
+        "explicit_off"
+      ]
+    },
+    "DriftLabel": {
+      "type": "string",
+      "enum": [
+        "equivalent",
+        "style",
+        "algorithm",
+        "input_gating",
+        "silent_fallback",
+        "error_handling",
+        "return_shape",
+        "external_effects",
+        "extra_edits",
+        "incomplete"
+      ]
+    },
+    "TaskExecutor": {
+      "type": "object",
+      "properties": {
+        "workspaceDefault": {
+          "type": "boolean"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "model": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "permission": {
+          "$ref": "#/$defs/PermissionMode"
+        }
+      },
+      "required": [
+        "workspaceDefault"
+      ],
+      "additionalProperties": true
+    },
+    "TaskWorktree": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "branch"
+      ],
+      "additionalProperties": true
+    },
+    "TaskPullRequest": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "checkState": {
+          "$ref": "#/$defs/TaskCheckState"
+        },
+        "reviewState": {
+          "$ref": "#/$defs/TaskReviewState"
+        },
+        "head": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "checkState",
+        "reviewState"
+      ],
+      "additionalProperties": true
+    },
+    "Blocking": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/BlockingKind"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "dependencyTaskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "retryCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "Subitem": {
+      "type": "object",
+      "properties": {
+        "subitemId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string"
+        },
+        "agent": {
+          "$ref": "#/$defs/Id"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/SubitemState"
+        }
+      },
+      "required": [
+        "subitemId",
+        "taskId",
+        "text",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "Comment": {
+      "type": "object",
+      "properties": {
+        "commentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "author": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "commentId",
+        "taskId",
+        "author",
+        "text",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "Attempt": {
+      "type": "object",
+      "properties": {
+        "n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "model": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/AttemptResult"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "paneId",
+        "harness",
+        "model",
+        "start"
+      ],
+      "additionalProperties": true
+    },
+    "TaskMove": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "to": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor",
+        "from",
+        "to",
+        "reason",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "ContractChange": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "$ref": "#/$defs/DriftLabel"
+        },
+        "contractRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "name",
+        "label",
+        "contractRef"
+      ],
+      "additionalProperties": true
+    },
+    "OutOfScopeEdit": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "LoopConfig": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "interval": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "maxRounds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "stopWhen": {
+          "$ref": "#/$defs/LoopStopWhen"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "emptyResults": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "prompt",
+        "interval",
+        "maxRounds",
+        "stopWhen",
+        "enabled"
+      ],
+      "additionalProperties": true
+    },
+    "Task": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "howToVerify": {
+          "type": "string"
+        },
+        "mustNotChange": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "priority": {
+          "$ref": "#/$defs/TaskPriority"
+        },
+        "plannedOwner": {
+          "$ref": "#/$defs/Id"
+        },
+        "ownerPaneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "executor": {
+          "$ref": "#/$defs/TaskExecutor"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "worktree": {
+          "$ref": "#/$defs/TaskWorktree"
+        },
+        "currentAttempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "blocking": {
+          "$ref": "#/$defs/Blocking"
+        },
+        "pr": {
+          "$ref": "#/$defs/TaskPullRequest"
+        },
+        "prContract": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "phrase": {
+          "type": "string"
+        },
+        "reviewBadge": {
+          "$ref": "#/$defs/TaskReviewBadge"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "contractChanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContractChange"
+          }
+        },
+        "outOfScopeEdits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OutOfScopeEdit"
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "title",
+        "description",
+        "mustNotChange",
+        "state",
+        "priority",
+        "dependencies",
+        "currentAttempt",
+        "prContract",
+        "createdAt",
+        "createdBy",
+        "version",
+        "phrase"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCreateParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "howToVerify": {
+          "type": "string"
+        },
+        "mustNotChange": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executor": {
+          "$ref": "#/$defs/TaskExecutor"
+        },
+        "priority": {
+          "$ref": "#/$defs/TaskPriority"
+        },
+        "createWorktree": {
+          "type": "boolean"
+        },
+        "permission": {
+          "$ref": "#/$defs/PermissionMode"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dispatch": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "title",
+        "mustNotChange",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCreateResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskNextParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "paneId",
+        "sessionGeneration",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskNextResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        },
+        "empty": {
+          "type": "boolean"
+        },
+        "willRestartSession": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "empty",
+        "willRestartSession"
+      ],
+      "additionalProperties": true
+    },
+    "TaskShowParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId"
+      ],
+      "additionalProperties": true
+    },
+    "TaskShowResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        },
+        "subitems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Subitem"
+          }
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Comment"
+          }
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Attempt"
+          }
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskMove"
+          }
+        }
+      },
+      "required": [
+        "task",
+        "subitems",
+        "comments",
+        "attempts",
+        "history"
+      ],
+      "additionalProperties": true
+    },
+    "TaskListParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "cursor": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "limit"
+      ],
+      "additionalProperties": true
+    },
+    "TaskListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Task"
+          }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCommentsParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "before": {
+          "$ref": "#/$defs/Id"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "limit"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCommentsResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Comment"
+          }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "TaskUpdateParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "howToVerify": {
+          "type": "string"
+        },
+        "mustNotChange": {
+          "type": "string"
+        },
+        "priority": {
+          "$ref": "#/$defs/TaskPriority"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "plannedOwner": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "version",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskUpdateResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCommentParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "text",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCommentResult": {
+      "type": "object",
+      "properties": {
+        "comment": {
+          "$ref": "#/$defs/Comment"
+        }
+      },
+      "required": [
+        "comment"
+      ],
+      "additionalProperties": true
+    },
+    "TaskSubitemAddParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string"
+        },
+        "agent": {
+          "$ref": "#/$defs/Id"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "text",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskSubitemAddResult": {
+      "type": "object",
+      "properties": {
+        "subitem": {
+          "$ref": "#/$defs/Subitem"
+        }
+      },
+      "required": [
+        "subitem"
+      ],
+      "additionalProperties": true
+    },
+    "TaskSubitemDoneParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "subitemId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "subitemId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskSubitemDoneResult": {
+      "type": "object",
+      "properties": {
+        "subitem": {
+          "$ref": "#/$defs/Subitem"
+        }
+      },
+      "required": [
+        "subitem"
+      ],
+      "additionalProperties": true
+    },
+    "TaskBlockParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/BlockingKind"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "dependencyTaskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "kind",
+        "reason",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskBlockResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskReleaseParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskReleaseResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskRequestReviewParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskRequestReviewResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCompleteParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "contractChanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ContractChange"
+          }
+        },
+        "outOfScopeEdits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OutOfScopeEdit"
+          }
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "sessionGeneration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "summary",
+        "contractChanges",
+        "outOfScopeEdits",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCompleteResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskDispatchParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "preset": {
+          "$ref": "#/$defs/TaskExecutor"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "preset",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskDispatchResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "resumed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "task",
+        "paneId",
+        "attempt",
+        "resumed"
+      ],
+      "additionalProperties": true
+    },
+    "TaskUnblockParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskUnblockResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskMoveParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "state",
+        "reason",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskMoveResult": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskWorktreeCleanParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "taskId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "TaskWorktreeCleanResult": {
+      "type": "object",
+      "properties": {
+        "cleaned": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cleaned"
+      ],
+      "additionalProperties": true
+    },
+    "LoopSetParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "interval": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "maxRounds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "stopWhen": {
+          "$ref": "#/$defs/LoopStopWhen"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "prompt",
+        "interval",
+        "maxRounds",
+        "stopWhen",
+        "enabled",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "LoopSetResult": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/LoopConfig"
+        }
+      },
+      "required": [
+        "config"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCreatedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "task"
+      ],
+      "additionalProperties": true
+    },
+    "TaskMovedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "actor": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "to": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "actor",
+        "from",
+        "to",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "TaskClaimedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "paneId",
+        "attempt"
+      ],
+      "additionalProperties": true
+    },
+    "TaskReleasedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "reason",
+        "attempt"
+      ],
+      "additionalProperties": true
+    },
+    "TaskCommentedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "comment": {
+          "$ref": "#/$defs/Comment"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "comment"
+      ],
+      "additionalProperties": true
+    },
+    "TaskSubitemChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "subitem": {
+          "$ref": "#/$defs/Subitem"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "subitem"
+      ],
+      "additionalProperties": true
+    },
+    "TaskBlockedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/BlockingKind"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "kind",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "TaskUnblockedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "TaskPhraseChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "phrase": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "phrase"
+      ],
+      "additionalProperties": true
+    },
+    "TaskUpdatedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "version"
+      ],
+      "additionalProperties": true
+    },
+    "TaskAttentionEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "taskId",
+        "n"
+      ],
+      "additionalProperties": true
+    },
+    "LoopTickEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "of": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "round",
+        "of"
+      ],
+      "additionalProperties": true
+    },
+    "LoopStoppedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "reason"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -4639,6 +6422,168 @@
         "$ref": "#/$defs/PaneQueueResumeResult"
       },
       "mutation": true
+    },
+    "task.create": {
+      "params": {
+        "$ref": "#/$defs/TaskCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskCreateResult"
+      },
+      "mutation": true
+    },
+    "task.next": {
+      "params": {
+        "$ref": "#/$defs/TaskNextParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskNextResult"
+      },
+      "mutation": true
+    },
+    "task.show": {
+      "params": {
+        "$ref": "#/$defs/TaskShowParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskShowResult"
+      },
+      "mutation": false
+    },
+    "task.list": {
+      "params": {
+        "$ref": "#/$defs/TaskListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskListResult"
+      },
+      "mutation": false
+    },
+    "task.comments": {
+      "params": {
+        "$ref": "#/$defs/TaskCommentsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskCommentsResult"
+      },
+      "mutation": false
+    },
+    "task.update": {
+      "params": {
+        "$ref": "#/$defs/TaskUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskUpdateResult"
+      },
+      "mutation": true
+    },
+    "task.comment": {
+      "params": {
+        "$ref": "#/$defs/TaskCommentParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskCommentResult"
+      },
+      "mutation": true
+    },
+    "task.subitem.add": {
+      "params": {
+        "$ref": "#/$defs/TaskSubitemAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskSubitemAddResult"
+      },
+      "mutation": true
+    },
+    "task.subitem.done": {
+      "params": {
+        "$ref": "#/$defs/TaskSubitemDoneParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskSubitemDoneResult"
+      },
+      "mutation": true
+    },
+    "task.block": {
+      "params": {
+        "$ref": "#/$defs/TaskBlockParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskBlockResult"
+      },
+      "mutation": true
+    },
+    "task.release": {
+      "params": {
+        "$ref": "#/$defs/TaskReleaseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskReleaseResult"
+      },
+      "mutation": true
+    },
+    "task.request_review": {
+      "params": {
+        "$ref": "#/$defs/TaskRequestReviewParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskRequestReviewResult"
+      },
+      "mutation": true
+    },
+    "task.complete": {
+      "params": {
+        "$ref": "#/$defs/TaskCompleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskCompleteResult"
+      },
+      "mutation": true
+    },
+    "task.dispatch": {
+      "params": {
+        "$ref": "#/$defs/TaskDispatchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskDispatchResult"
+      },
+      "mutation": true
+    },
+    "task.unblock": {
+      "params": {
+        "$ref": "#/$defs/TaskUnblockParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskUnblockResult"
+      },
+      "mutation": true
+    },
+    "task.move": {
+      "params": {
+        "$ref": "#/$defs/TaskMoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskMoveResult"
+      },
+      "mutation": true
+    },
+    "task.worktree.clean": {
+      "params": {
+        "$ref": "#/$defs/TaskWorktreeCleanParams"
+      },
+      "result": {
+        "$ref": "#/$defs/TaskWorktreeCleanResult"
+      },
+      "mutation": true
+    },
+    "loop.set": {
+      "params": {
+        "$ref": "#/$defs/LoopSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/LoopSetResult"
+      },
+      "mutation": true
     }
   },
   "x-events": {
@@ -4875,6 +6820,84 @@
         "$ref": "#/$defs/PaneQueueStateEvent"
       },
       "durable": true
+    },
+    "task.created": {
+      "params": {
+        "$ref": "#/$defs/TaskCreatedEvent"
+      },
+      "durable": true
+    },
+    "task.moved": {
+      "params": {
+        "$ref": "#/$defs/TaskMovedEvent"
+      },
+      "durable": true
+    },
+    "task.claimed": {
+      "params": {
+        "$ref": "#/$defs/TaskClaimedEvent"
+      },
+      "durable": true
+    },
+    "task.released": {
+      "params": {
+        "$ref": "#/$defs/TaskReleasedEvent"
+      },
+      "durable": true
+    },
+    "task.commented": {
+      "params": {
+        "$ref": "#/$defs/TaskCommentedEvent"
+      },
+      "durable": true
+    },
+    "task.subitem_changed": {
+      "params": {
+        "$ref": "#/$defs/TaskSubitemChangedEvent"
+      },
+      "durable": true
+    },
+    "task.blocked": {
+      "params": {
+        "$ref": "#/$defs/TaskBlockedEvent"
+      },
+      "durable": true
+    },
+    "task.unblocked": {
+      "params": {
+        "$ref": "#/$defs/TaskUnblockedEvent"
+      },
+      "durable": true
+    },
+    "task.phrase_changed": {
+      "params": {
+        "$ref": "#/$defs/TaskPhraseChangedEvent"
+      },
+      "durable": true
+    },
+    "task.updated": {
+      "params": {
+        "$ref": "#/$defs/TaskUpdatedEvent"
+      },
+      "durable": true
+    },
+    "task.attention": {
+      "params": {
+        "$ref": "#/$defs/TaskAttentionEvent"
+      },
+      "durable": true
+    },
+    "loop.tick": {
+      "params": {
+        "$ref": "#/$defs/LoopTickEvent"
+      },
+      "durable": true
+    },
+    "loop.stopped": {
+      "params": {
+        "$ref": "#/$defs/LoopStoppedEvent"
+      },
+      "durable": true
     }
   },
   "x-framing": {
@@ -4987,6 +7010,9 @@
     "stale_engine_generation": -32017,
     "internal_error": -32018,
     "snapshot_too_large": -32019,
-    "engine_identity_changed": -32020
+    "engine_identity_changed": -32020,
+    "stale_attempt": -32021,
+    "dependency_cycle": -32022,
+    "dependency_open": -32023
   }
 }

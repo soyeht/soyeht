@@ -88,6 +88,17 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_schema(changed)
 
+    def test_swift_task_name_does_not_shadow_concurrency(self):
+        outputs = render(self.schema, "test-digest")
+        swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]
+        dispatch = outputs["contracts/swift/Sources/ProtocolVectors/Dispatch.swift"]
+        self.assertIn("public struct TaskRecord", swift)
+        self.assertNotIn("public struct Task {", swift)
+        self.assertIn(
+            'case "Task": return try codec(SoyehtProtocol.TaskRecord.self, data)',
+            dispatch,
+        )
+
 
 class ProfileTests(unittest.TestCase):
     def setUp(self):

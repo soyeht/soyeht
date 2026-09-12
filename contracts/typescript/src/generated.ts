@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8f54e8df331debb2c3a30f4aeddb689e999d43d97f97312d10864fc229a52a6). Do not edit.
+// Generated from contracts/protocol.json (sha256 571c3b53dd43fc4dffcf2d710d309007a04676be25bd61dd7066f0b979a40e08). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -17,7 +17,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "devices" | "capabilities" | "streams";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open";
 
 export interface RpcError {
   "code": number;
@@ -1205,6 +1205,500 @@ export interface PaneQueueStateEvent {
   "reason"?: string;
 }
 
+export type TaskState = "todo" | "in_progress" | "in_review" | "completed" | "cancelled";
+
+export type TaskPriority = "urgent" | "high" | "medium" | "low";
+
+export type SubitemState = "open" | "done";
+
+export type AttemptResult = "completed" | "returned" | "failed" | "cancelled";
+
+export type BlockingKind = "dependency" | "missing_information" | "external_error";
+
+export type TaskCheckState = "unknown" | "pending" | "green" | "red" | "conflict";
+
+export type TaskReviewState = "none" | "awaiting_person" | "changes_requested" | "approved";
+
+export type TaskReviewBadge = "system_turn" | "your_turn";
+
+export type LoopStopWhen = "round_limit" | "three_empty" | "explicit_off";
+
+export type DriftLabel = "equivalent" | "style" | "algorithm" | "input_gating" | "silent_fallback" | "error_handling" | "return_shape" | "external_effects" | "extra_edits" | "incomplete";
+
+export interface TaskExecutor {
+  "workspaceDefault": boolean;
+  "harness"?: Id;
+  "model"?: string;
+  "effort"?: string;
+  "permission"?: PermissionMode;
+}
+
+export interface TaskWorktree {
+  "path": string;
+  "branch": string;
+}
+
+export interface TaskPullRequest {
+  "url": string;
+  "checkState": TaskCheckState;
+  "reviewState": TaskReviewState;
+  "head"?: string;
+}
+
+export interface Blocking {
+  "kind": BlockingKind;
+  "reason": string;
+  "dependencyTaskId"?: Id;
+  "retryCount"?: number;
+}
+
+export interface Subitem {
+  "subitemId": Id;
+  "taskId": Id;
+  "text": string;
+  "agent"?: Id;
+  "instructions"?: string;
+  "state": SubitemState;
+}
+
+export interface Comment {
+  "commentId": Id;
+  "taskId": Id;
+  "author": string;
+  "text": string;
+  "at": string;
+}
+
+export interface Attempt {
+  "n": number;
+  "paneId": Id;
+  "harness": Id;
+  "model": string;
+  "start": string;
+  "end"?: string;
+  "result"?: AttemptResult;
+  "summary"?: string;
+}
+
+export interface TaskMove {
+  "actor": string;
+  "from": TaskState;
+  "to": TaskState;
+  "reason": string;
+  "at": string;
+}
+
+export interface ContractChange {
+  "path": string;
+  "name": string;
+  "label": DriftLabel;
+  "contractRef": string;
+}
+
+export interface OutOfScopeEdit {
+  "path": string;
+  "reason": string;
+}
+
+export interface LoopConfig {
+  "prompt": string;
+  "interval": number;
+  "maxRounds": number;
+  "stopWhen": LoopStopWhen;
+  "enabled": boolean;
+  "rounds"?: number;
+  "emptyResults"?: number;
+}
+
+export interface Task {
+  "workspaceId": Id;
+  "taskId": Id;
+  "title": string;
+  "description": string;
+  "howToVerify"?: string;
+  "mustNotChange": string;
+  "state": TaskState;
+  "priority": TaskPriority;
+  "plannedOwner"?: Id;
+  "ownerPaneId"?: Id;
+  "executor"?: TaskExecutor;
+  "dependencies": Array<string>;
+  "worktree"?: TaskWorktree;
+  "currentAttempt": number;
+  "blocking"?: Blocking;
+  "pr"?: TaskPullRequest;
+  "prContract": boolean;
+  "createdAt": string;
+  "createdBy": string;
+  "version": number;
+  "phrase": string;
+  "reviewBadge"?: TaskReviewBadge;
+  "summary"?: string;
+  "contractChanges"?: Array<ContractChange>;
+  "outOfScopeEdits"?: Array<OutOfScopeEdit>;
+}
+
+export interface TaskCreateParams {
+  "workspaceId": Id;
+  "title": string;
+  "description"?: string;
+  "howToVerify"?: string;
+  "mustNotChange": string;
+  "executor"?: TaskExecutor;
+  "priority"?: TaskPriority;
+  "createWorktree"?: boolean;
+  "permission"?: PermissionMode;
+  "dependencies"?: Array<string>;
+  "dispatch"?: boolean;
+  "idempotencyKey": Id;
+}
+
+export interface TaskCreateResult {
+  "task": Task;
+  "paneId"?: Id;
+}
+
+export interface TaskNextParams {
+  "workspaceId": Id;
+  "paneId": Id;
+  "sessionGeneration": number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskNextResult {
+  "task"?: Task;
+  "empty": boolean;
+  "willRestartSession": boolean;
+}
+
+export interface TaskShowParams {
+  "workspaceId": Id;
+  "taskId": Id;
+}
+
+export interface TaskShowResult {
+  "task": Task;
+  "subitems": Array<Subitem>;
+  "comments": Array<Comment>;
+  "attempts": Array<Attempt>;
+  "history": Array<TaskMove>;
+}
+
+export interface TaskListParams {
+  "workspaceId": Id;
+  "state"?: TaskState;
+  "limit": number;
+  "cursor"?: Id;
+}
+
+export interface TaskListResult {
+  "items": Array<Task>;
+  "nextCursor"?: Id;
+}
+
+export interface TaskCommentsParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "before"?: Id;
+  "limit": number;
+}
+
+export interface TaskCommentsResult {
+  "items": Array<Comment>;
+  "nextCursor"?: Id;
+}
+
+export interface TaskUpdateParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "version": number;
+  "title"?: string;
+  "description"?: string;
+  "howToVerify"?: string;
+  "mustNotChange"?: string;
+  "priority"?: TaskPriority;
+  "dependencies"?: Array<string>;
+  "plannedOwner"?: Id;
+  "idempotencyKey": Id;
+}
+
+export interface TaskUpdateResult {
+  "task": Task;
+}
+
+export interface TaskCommentParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "text": string;
+  "paneId"?: Id;
+  "sessionGeneration"?: number;
+  "attempt"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskCommentResult {
+  "comment": Comment;
+}
+
+export interface TaskSubitemAddParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "text": string;
+  "agent"?: Id;
+  "instructions"?: string;
+  "paneId"?: Id;
+  "sessionGeneration"?: number;
+  "attempt"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskSubitemAddResult {
+  "subitem": Subitem;
+}
+
+export interface TaskSubitemDoneParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "subitemId": Id;
+  "paneId"?: Id;
+  "sessionGeneration"?: number;
+  "attempt"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskSubitemDoneResult {
+  "subitem": Subitem;
+}
+
+export interface TaskBlockParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "kind": BlockingKind;
+  "reason": string;
+  "dependencyTaskId"?: Id;
+  "paneId"?: Id;
+  "sessionGeneration"?: number;
+  "attempt"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskBlockResult {
+  "task": Task;
+}
+
+export interface TaskReleaseParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "reason"?: string;
+  "paneId"?: Id;
+  "sessionGeneration"?: number;
+  "attempt"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskReleaseResult {
+  "task": Task;
+}
+
+export interface TaskRequestReviewParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "reason"?: string;
+  "paneId"?: Id;
+  "sessionGeneration"?: number;
+  "attempt"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskRequestReviewResult {
+  "task": Task;
+}
+
+export interface TaskCompleteParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "summary": string;
+  "contractChanges": Array<ContractChange>;
+  "outOfScopeEdits": Array<OutOfScopeEdit>;
+  "paneId"?: Id;
+  "sessionGeneration"?: number;
+  "attempt"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface TaskCompleteResult {
+  "task": Task;
+}
+
+export interface TaskDispatchParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "preset": TaskExecutor;
+  "idempotencyKey": Id;
+}
+
+export interface TaskDispatchResult {
+  "task": Task;
+  "paneId": Id;
+  "attempt": number;
+  "resumed": boolean;
+}
+
+export interface TaskUnblockParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "reason"?: string;
+  "idempotencyKey": Id;
+}
+
+export interface TaskUnblockResult {
+  "task": Task;
+}
+
+export interface TaskMoveParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "state": TaskState;
+  "reason": string;
+  "idempotencyKey": Id;
+}
+
+export interface TaskMoveResult {
+  "task": Task;
+}
+
+export interface TaskWorktreeCleanParams {
+  "workspaceId": Id;
+  "taskId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface TaskWorktreeCleanResult {
+  "cleaned": boolean;
+  "reason"?: string;
+}
+
+export interface LoopSetParams {
+  "paneId": Id;
+  "prompt": string;
+  "interval": number;
+  "maxRounds": number;
+  "stopWhen": LoopStopWhen;
+  "enabled": boolean;
+  "idempotencyKey": Id;
+}
+
+export interface LoopSetResult {
+  "config": LoopConfig;
+}
+
+export interface TaskCreatedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "task": Task;
+}
+
+export interface TaskMovedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "actor": string;
+  "from": TaskState;
+  "to": TaskState;
+  "reason": string;
+}
+
+export interface TaskClaimedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "paneId": Id;
+  "attempt": number;
+}
+
+export interface TaskReleasedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "reason": string;
+  "attempt": number;
+}
+
+export interface TaskCommentedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "comment": Comment;
+}
+
+export interface TaskSubitemChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "subitem": Subitem;
+}
+
+export interface TaskBlockedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "kind": BlockingKind;
+  "reason": string;
+}
+
+export interface TaskUnblockedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "reason": string;
+}
+
+export interface TaskPhraseChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "phrase": string;
+}
+
+export interface TaskUpdatedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "version": number;
+}
+
+export interface TaskAttentionEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "taskId": Id;
+  "n": number;
+}
+
+export interface LoopTickEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "round": number;
+  "of": number;
+}
+
+export interface LoopStoppedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "reason": string;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -1246,6 +1740,24 @@ export interface Methods {
   "harness.list": { params: HarnessListParams; result: HarnessListResult };
   "model.list": { params: ModelListParams; result: ModelListResult };
   "pane.queue.resume": { params: PaneQueueResumeParams; result: PaneQueueResumeResult };
+  "task.create": { params: TaskCreateParams; result: TaskCreateResult };
+  "task.next": { params: TaskNextParams; result: TaskNextResult };
+  "task.show": { params: TaskShowParams; result: TaskShowResult };
+  "task.list": { params: TaskListParams; result: TaskListResult };
+  "task.comments": { params: TaskCommentsParams; result: TaskCommentsResult };
+  "task.update": { params: TaskUpdateParams; result: TaskUpdateResult };
+  "task.comment": { params: TaskCommentParams; result: TaskCommentResult };
+  "task.subitem.add": { params: TaskSubitemAddParams; result: TaskSubitemAddResult };
+  "task.subitem.done": { params: TaskSubitemDoneParams; result: TaskSubitemDoneResult };
+  "task.block": { params: TaskBlockParams; result: TaskBlockResult };
+  "task.release": { params: TaskReleaseParams; result: TaskReleaseResult };
+  "task.request_review": { params: TaskRequestReviewParams; result: TaskRequestReviewResult };
+  "task.complete": { params: TaskCompleteParams; result: TaskCompleteResult };
+  "task.dispatch": { params: TaskDispatchParams; result: TaskDispatchResult };
+  "task.unblock": { params: TaskUnblockParams; result: TaskUnblockResult };
+  "task.move": { params: TaskMoveParams; result: TaskMoveResult };
+  "task.worktree.clean": { params: TaskWorktreeCleanParams; result: TaskWorktreeCleanResult };
+  "loop.set": { params: LoopSetParams; result: LoopSetResult };
 }
 
 export interface Events {
@@ -1288,6 +1800,19 @@ export interface Events {
   "attention.changed": AttentionChangedEvent;
   "pane.queue.paused": PaneQueueStateEvent;
   "pane.queue.resumed": PaneQueueStateEvent;
+  "task.created": TaskCreatedEvent;
+  "task.moved": TaskMovedEvent;
+  "task.claimed": TaskClaimedEvent;
+  "task.released": TaskReleasedEvent;
+  "task.commented": TaskCommentedEvent;
+  "task.subitem_changed": TaskSubitemChangedEvent;
+  "task.blocked": TaskBlockedEvent;
+  "task.unblocked": TaskUnblockedEvent;
+  "task.phrase_changed": TaskPhraseChangedEvent;
+  "task.updated": TaskUpdatedEvent;
+  "task.attention": TaskAttentionEvent;
+  "loop.tick": LoopTickEvent;
+  "loop.stopped": LoopStoppedEvent;
 }
 export type EventName = keyof Events;
 export interface EventDescriptor {
@@ -1334,4 +1859,17 @@ export const eventRegistry = {
   "attention.changed": { paramsType: "AttentionChangedEvent", durable: true },
   "pane.queue.paused": { paramsType: "PaneQueueStateEvent", durable: true },
   "pane.queue.resumed": { paramsType: "PaneQueueStateEvent", durable: true },
+  "task.created": { paramsType: "TaskCreatedEvent", durable: true },
+  "task.moved": { paramsType: "TaskMovedEvent", durable: true },
+  "task.claimed": { paramsType: "TaskClaimedEvent", durable: true },
+  "task.released": { paramsType: "TaskReleasedEvent", durable: true },
+  "task.commented": { paramsType: "TaskCommentedEvent", durable: true },
+  "task.subitem_changed": { paramsType: "TaskSubitemChangedEvent", durable: true },
+  "task.blocked": { paramsType: "TaskBlockedEvent", durable: true },
+  "task.unblocked": { paramsType: "TaskUnblockedEvent", durable: true },
+  "task.phrase_changed": { paramsType: "TaskPhraseChangedEvent", durable: true },
+  "task.updated": { paramsType: "TaskUpdatedEvent", durable: true },
+  "task.attention": { paramsType: "TaskAttentionEvent", durable: true },
+  "loop.tick": { paramsType: "LoopTickEvent", durable: true },
+  "loop.stopped": { paramsType: "LoopStoppedEvent", durable: true },
 } as const satisfies Record<EventName, EventDescriptor>;

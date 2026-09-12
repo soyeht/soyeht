@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8f54e8df331debb2c3a30f4aeddb689e999d43d97f97312d10864fc229a52a6). Do not edit.
+// Generated from contracts/protocol.json (sha256 571c3b53dd43fc4dffcf2d710d309007a04676be25bd61dd7066f0b979a40e08). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -118,6 +118,12 @@ pub enum ErrorKind {
     SnapshotTooLarge,
     #[serde(rename = "engine_identity_changed")]
     EngineIdentityChanged,
+    #[serde(rename = "stale_attempt")]
+    StaleAttempt,
+    #[serde(rename = "dependency_cycle")]
+    DependencyCycle,
+    #[serde(rename = "dependency_open")]
+    DependencyOpen,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -2109,6 +2115,885 @@ pub struct PaneQueueStateEvent {
     #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskState {
+    #[serde(rename = "todo")]
+    Todo,
+    #[serde(rename = "in_progress")]
+    InProgress,
+    #[serde(rename = "in_review")]
+    InReview,
+    #[serde(rename = "completed")]
+    Completed,
+    #[serde(rename = "cancelled")]
+    Cancelled,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskPriority {
+    #[serde(rename = "urgent")]
+    Urgent,
+    #[serde(rename = "high")]
+    High,
+    #[serde(rename = "medium")]
+    Medium,
+    #[serde(rename = "low")]
+    Low,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SubitemState {
+    #[serde(rename = "open")]
+    Open,
+    #[serde(rename = "done")]
+    Done,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AttemptResult {
+    #[serde(rename = "completed")]
+    Completed,
+    #[serde(rename = "returned")]
+    Returned,
+    #[serde(rename = "failed")]
+    Failed,
+    #[serde(rename = "cancelled")]
+    Cancelled,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum BlockingKind {
+    #[serde(rename = "dependency")]
+    Dependency,
+    #[serde(rename = "missing_information")]
+    MissingInformation,
+    #[serde(rename = "external_error")]
+    ExternalError,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskCheckState {
+    #[serde(rename = "unknown")]
+    Unknown,
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "green")]
+    Green,
+    #[serde(rename = "red")]
+    Red,
+    #[serde(rename = "conflict")]
+    Conflict,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskReviewState {
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "awaiting_person")]
+    AwaitingPerson,
+    #[serde(rename = "changes_requested")]
+    ChangesRequested,
+    #[serde(rename = "approved")]
+    Approved,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskReviewBadge {
+    #[serde(rename = "system_turn")]
+    SystemTurn,
+    #[serde(rename = "your_turn")]
+    YourTurn,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum LoopStopWhen {
+    #[serde(rename = "round_limit")]
+    RoundLimit,
+    #[serde(rename = "three_empty")]
+    ThreeEmpty,
+    #[serde(rename = "explicit_off")]
+    ExplicitOff,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum DriftLabel {
+    #[serde(rename = "equivalent")]
+    Equivalent,
+    #[serde(rename = "style")]
+    Style,
+    #[serde(rename = "algorithm")]
+    Algorithm,
+    #[serde(rename = "input_gating")]
+    InputGating,
+    #[serde(rename = "silent_fallback")]
+    SilentFallback,
+    #[serde(rename = "error_handling")]
+    ErrorHandling,
+    #[serde(rename = "return_shape")]
+    ReturnShape,
+    #[serde(rename = "external_effects")]
+    ExternalEffects,
+    #[serde(rename = "extra_edits")]
+    ExtraEdits,
+    #[serde(rename = "incomplete")]
+    Incomplete,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskExecutor {
+    #[serde(rename = "workspaceDefault")]
+    pub workspace_default: bool,
+    #[serde(rename = "harness", skip_serializing_if = "Option::is_none")]
+    pub harness: Option<Id>,
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
+    pub permission: Option<PermissionMode>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskWorktree {
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "branch")]
+    pub branch: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskPullRequest {
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "checkState")]
+    pub check_state: TaskCheckState,
+    #[serde(rename = "reviewState")]
+    pub review_state: TaskReviewState,
+    #[serde(rename = "head", skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Blocking {
+    #[serde(rename = "kind")]
+    pub kind: BlockingKind,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "dependencyTaskId", skip_serializing_if = "Option::is_none")]
+    pub dependency_task_id: Option<Id>,
+    #[serde(rename = "retryCount", skip_serializing_if = "Option::is_none")]
+    pub retry_count: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Subitem {
+    #[serde(rename = "subitemId")]
+    pub subitem_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "agent", skip_serializing_if = "Option::is_none")]
+    pub agent: Option<Id>,
+    #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    #[serde(rename = "state")]
+    pub state: SubitemState,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Comment {
+    #[serde(rename = "commentId")]
+    pub comment_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "author")]
+    pub author: String,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "at")]
+    pub at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Attempt {
+    #[serde(rename = "n")]
+    pub n: u32,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "model")]
+    pub model: String,
+    #[serde(rename = "start")]
+    pub start: String,
+    #[serde(rename = "end", skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    #[serde(rename = "result", skip_serializing_if = "Option::is_none")]
+    pub result: Option<AttemptResult>,
+    #[serde(rename = "summary", skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskMove {
+    #[serde(rename = "actor")]
+    pub actor: String,
+    #[serde(rename = "from")]
+    pub from: TaskState,
+    #[serde(rename = "to")]
+    pub to: TaskState,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "at")]
+    pub at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ContractChange {
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "label")]
+    pub label: DriftLabel,
+    #[serde(rename = "contractRef")]
+    pub contract_ref: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OutOfScopeEdit {
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LoopConfig {
+    #[serde(rename = "prompt")]
+    pub prompt: String,
+    #[serde(rename = "interval")]
+    pub interval: u32,
+    #[serde(rename = "maxRounds")]
+    pub max_rounds: u32,
+    #[serde(rename = "stopWhen")]
+    pub stop_when: LoopStopWhen,
+    #[serde(rename = "enabled")]
+    pub enabled: bool,
+    #[serde(rename = "rounds", skip_serializing_if = "Option::is_none")]
+    pub rounds: Option<u32>,
+    #[serde(rename = "emptyResults", skip_serializing_if = "Option::is_none")]
+    pub empty_results: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Task {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "description")]
+    pub description: String,
+    #[serde(rename = "howToVerify", skip_serializing_if = "Option::is_none")]
+    pub how_to_verify: Option<String>,
+    #[serde(rename = "mustNotChange")]
+    pub must_not_change: String,
+    #[serde(rename = "state")]
+    pub state: TaskState,
+    #[serde(rename = "priority")]
+    pub priority: TaskPriority,
+    #[serde(rename = "plannedOwner", skip_serializing_if = "Option::is_none")]
+    pub planned_owner: Option<Id>,
+    #[serde(rename = "ownerPaneId", skip_serializing_if = "Option::is_none")]
+    pub owner_pane_id: Option<Id>,
+    #[serde(rename = "executor", skip_serializing_if = "Option::is_none")]
+    pub executor: Option<TaskExecutor>,
+    #[serde(rename = "dependencies")]
+    pub dependencies: Vec<String>,
+    #[serde(rename = "worktree", skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<TaskWorktree>,
+    #[serde(rename = "currentAttempt")]
+    pub current_attempt: u32,
+    #[serde(rename = "blocking", skip_serializing_if = "Option::is_none")]
+    pub blocking: Option<Blocking>,
+    #[serde(rename = "pr", skip_serializing_if = "Option::is_none")]
+    pub pr: Option<TaskPullRequest>,
+    #[serde(rename = "prContract")]
+    pub pr_contract: bool,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "createdBy")]
+    pub created_by: String,
+    #[serde(rename = "version")]
+    pub version: u32,
+    #[serde(rename = "phrase")]
+    pub phrase: String,
+    #[serde(rename = "reviewBadge", skip_serializing_if = "Option::is_none")]
+    pub review_badge: Option<TaskReviewBadge>,
+    #[serde(rename = "summary", skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(rename = "contractChanges", skip_serializing_if = "Option::is_none")]
+    pub contract_changes: Option<Vec<ContractChange>>,
+    #[serde(rename = "outOfScopeEdits", skip_serializing_if = "Option::is_none")]
+    pub out_of_scope_edits: Option<Vec<OutOfScopeEdit>>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCreateParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "howToVerify", skip_serializing_if = "Option::is_none")]
+    pub how_to_verify: Option<String>,
+    #[serde(rename = "mustNotChange")]
+    pub must_not_change: String,
+    #[serde(rename = "executor", skip_serializing_if = "Option::is_none")]
+    pub executor: Option<TaskExecutor>,
+    #[serde(rename = "priority", skip_serializing_if = "Option::is_none")]
+    pub priority: Option<TaskPriority>,
+    #[serde(rename = "createWorktree", skip_serializing_if = "Option::is_none")]
+    pub create_worktree: Option<bool>,
+    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
+    pub permission: Option<PermissionMode>,
+    #[serde(rename = "dependencies", skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<Vec<String>>,
+    #[serde(rename = "dispatch", skip_serializing_if = "Option::is_none")]
+    pub dispatch: Option<bool>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCreateResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskNextParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "sessionGeneration")]
+    pub session_generation: u32,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskNextResult {
+    #[serde(rename = "task", skip_serializing_if = "Option::is_none")]
+    pub task: Option<Task>,
+    #[serde(rename = "empty")]
+    pub empty: bool,
+    #[serde(rename = "willRestartSession")]
+    pub will_restart_session: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskShowParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskShowResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+    #[serde(rename = "subitems")]
+    pub subitems: Vec<Subitem>,
+    #[serde(rename = "comments")]
+    pub comments: Vec<Comment>,
+    #[serde(rename = "attempts")]
+    pub attempts: Vec<Attempt>,
+    #[serde(rename = "history")]
+    pub history: Vec<TaskMove>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskListParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "state", skip_serializing_if = "Option::is_none")]
+    pub state: Option<TaskState>,
+    #[serde(rename = "limit")]
+    pub limit: u32,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<Task>,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCommentsParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "before", skip_serializing_if = "Option::is_none")]
+    pub before: Option<Id>,
+    #[serde(rename = "limit")]
+    pub limit: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCommentsResult {
+    #[serde(rename = "items")]
+    pub items: Vec<Comment>,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskUpdateParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "version")]
+    pub version: u32,
+    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "howToVerify", skip_serializing_if = "Option::is_none")]
+    pub how_to_verify: Option<String>,
+    #[serde(rename = "mustNotChange", skip_serializing_if = "Option::is_none")]
+    pub must_not_change: Option<String>,
+    #[serde(rename = "priority", skip_serializing_if = "Option::is_none")]
+    pub priority: Option<TaskPriority>,
+    #[serde(rename = "dependencies", skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<Vec<String>>,
+    #[serde(rename = "plannedOwner", skip_serializing_if = "Option::is_none")]
+    pub planned_owner: Option<Id>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskUpdateResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCommentParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+    #[serde(rename = "sessionGeneration", skip_serializing_if = "Option::is_none")]
+    pub session_generation: Option<u32>,
+    #[serde(rename = "attempt", skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCommentResult {
+    #[serde(rename = "comment")]
+    pub comment: Comment,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskSubitemAddParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "agent", skip_serializing_if = "Option::is_none")]
+    pub agent: Option<Id>,
+    #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+    #[serde(rename = "sessionGeneration", skip_serializing_if = "Option::is_none")]
+    pub session_generation: Option<u32>,
+    #[serde(rename = "attempt", skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskSubitemAddResult {
+    #[serde(rename = "subitem")]
+    pub subitem: Subitem,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskSubitemDoneParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "subitemId")]
+    pub subitem_id: Id,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+    #[serde(rename = "sessionGeneration", skip_serializing_if = "Option::is_none")]
+    pub session_generation: Option<u32>,
+    #[serde(rename = "attempt", skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskSubitemDoneResult {
+    #[serde(rename = "subitem")]
+    pub subitem: Subitem,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskBlockParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "kind")]
+    pub kind: BlockingKind,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "dependencyTaskId", skip_serializing_if = "Option::is_none")]
+    pub dependency_task_id: Option<Id>,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+    #[serde(rename = "sessionGeneration", skip_serializing_if = "Option::is_none")]
+    pub session_generation: Option<u32>,
+    #[serde(rename = "attempt", skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskBlockResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskReleaseParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+    #[serde(rename = "sessionGeneration", skip_serializing_if = "Option::is_none")]
+    pub session_generation: Option<u32>,
+    #[serde(rename = "attempt", skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskReleaseResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskRequestReviewParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+    #[serde(rename = "sessionGeneration", skip_serializing_if = "Option::is_none")]
+    pub session_generation: Option<u32>,
+    #[serde(rename = "attempt", skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskRequestReviewResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCompleteParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "summary")]
+    pub summary: String,
+    #[serde(rename = "contractChanges")]
+    pub contract_changes: Vec<ContractChange>,
+    #[serde(rename = "outOfScopeEdits")]
+    pub out_of_scope_edits: Vec<OutOfScopeEdit>,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
+    #[serde(rename = "sessionGeneration", skip_serializing_if = "Option::is_none")]
+    pub session_generation: Option<u32>,
+    #[serde(rename = "attempt", skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCompleteResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskDispatchParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "preset")]
+    pub preset: TaskExecutor,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskDispatchResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "attempt")]
+    pub attempt: u32,
+    #[serde(rename = "resumed")]
+    pub resumed: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskUnblockParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskUnblockResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskMoveParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "state")]
+    pub state: TaskState,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskMoveResult {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskWorktreeCleanParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskWorktreeCleanResult {
+    #[serde(rename = "cleaned")]
+    pub cleaned: bool,
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LoopSetParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "prompt")]
+    pub prompt: String,
+    #[serde(rename = "interval")]
+    pub interval: u32,
+    #[serde(rename = "maxRounds")]
+    pub max_rounds: u32,
+    #[serde(rename = "stopWhen")]
+    pub stop_when: LoopStopWhen,
+    #[serde(rename = "enabled")]
+    pub enabled: bool,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LoopSetResult {
+    #[serde(rename = "config")]
+    pub config: LoopConfig,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCreatedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskMovedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "actor")]
+    pub actor: String,
+    #[serde(rename = "from")]
+    pub from: TaskState,
+    #[serde(rename = "to")]
+    pub to: TaskState,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskClaimedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "attempt")]
+    pub attempt: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskReleasedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "attempt")]
+    pub attempt: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskCommentedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "comment")]
+    pub comment: Comment,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskSubitemChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "subitem")]
+    pub subitem: Subitem,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskBlockedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "kind")]
+    pub kind: BlockingKind,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskUnblockedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskPhraseChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "phrase")]
+    pub phrase: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskUpdatedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "version")]
+    pub version: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TaskAttentionEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "n")]
+    pub n: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LoopTickEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "round")]
+    pub round: u32,
+    #[serde(rename = "of")]
+    pub of: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LoopStoppedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -2192,6 +3077,42 @@ pub enum Request {
     ModelList(ModelListParams),
     #[serde(rename = "pane.queue.resume")]
     PaneQueueResume(PaneQueueResumeParams),
+    #[serde(rename = "task.create")]
+    TaskCreate(TaskCreateParams),
+    #[serde(rename = "task.next")]
+    TaskNext(TaskNextParams),
+    #[serde(rename = "task.show")]
+    TaskShow(TaskShowParams),
+    #[serde(rename = "task.list")]
+    TaskList(TaskListParams),
+    #[serde(rename = "task.comments")]
+    TaskComments(TaskCommentsParams),
+    #[serde(rename = "task.update")]
+    TaskUpdate(TaskUpdateParams),
+    #[serde(rename = "task.comment")]
+    TaskComment(TaskCommentParams),
+    #[serde(rename = "task.subitem.add")]
+    TaskSubitemAdd(TaskSubitemAddParams),
+    #[serde(rename = "task.subitem.done")]
+    TaskSubitemDone(TaskSubitemDoneParams),
+    #[serde(rename = "task.block")]
+    TaskBlock(TaskBlockParams),
+    #[serde(rename = "task.release")]
+    TaskRelease(TaskReleaseParams),
+    #[serde(rename = "task.request_review")]
+    TaskRequestReview(TaskRequestReviewParams),
+    #[serde(rename = "task.complete")]
+    TaskComplete(TaskCompleteParams),
+    #[serde(rename = "task.dispatch")]
+    TaskDispatch(TaskDispatchParams),
+    #[serde(rename = "task.unblock")]
+    TaskUnblock(TaskUnblockParams),
+    #[serde(rename = "task.move")]
+    TaskMove(TaskMoveParams),
+    #[serde(rename = "task.worktree.clean")]
+    TaskWorktreeClean(TaskWorktreeCleanParams),
+    #[serde(rename = "loop.set")]
+    LoopSet(LoopSetParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -2359,6 +3280,74 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "PaneQueueResumeResult",
         true,
     ),
+    ("task.create", "TaskCreateParams", "TaskCreateResult", true),
+    ("task.next", "TaskNextParams", "TaskNextResult", true),
+    ("task.show", "TaskShowParams", "TaskShowResult", false),
+    ("task.list", "TaskListParams", "TaskListResult", false),
+    (
+        "task.comments",
+        "TaskCommentsParams",
+        "TaskCommentsResult",
+        false,
+    ),
+    ("task.update", "TaskUpdateParams", "TaskUpdateResult", true),
+    (
+        "task.comment",
+        "TaskCommentParams",
+        "TaskCommentResult",
+        true,
+    ),
+    (
+        "task.subitem.add",
+        "TaskSubitemAddParams",
+        "TaskSubitemAddResult",
+        true,
+    ),
+    (
+        "task.subitem.done",
+        "TaskSubitemDoneParams",
+        "TaskSubitemDoneResult",
+        true,
+    ),
+    ("task.block", "TaskBlockParams", "TaskBlockResult", true),
+    (
+        "task.release",
+        "TaskReleaseParams",
+        "TaskReleaseResult",
+        true,
+    ),
+    (
+        "task.request_review",
+        "TaskRequestReviewParams",
+        "TaskRequestReviewResult",
+        true,
+    ),
+    (
+        "task.complete",
+        "TaskCompleteParams",
+        "TaskCompleteResult",
+        true,
+    ),
+    (
+        "task.dispatch",
+        "TaskDispatchParams",
+        "TaskDispatchResult",
+        true,
+    ),
+    (
+        "task.unblock",
+        "TaskUnblockParams",
+        "TaskUnblockResult",
+        true,
+    ),
+    ("task.move", "TaskMoveParams", "TaskMoveResult", true),
+    (
+        "task.worktree.clean",
+        "TaskWorktreeCleanParams",
+        "TaskWorktreeCleanResult",
+        true,
+    ),
+    ("loop.set", "LoopSetParams", "LoopSetResult", true),
 ];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EventName {
@@ -2440,6 +3429,32 @@ pub enum EventName {
     PaneQueuePaused,
     #[serde(rename = "pane.queue.resumed")]
     PaneQueueResumed,
+    #[serde(rename = "task.created")]
+    TaskCreated,
+    #[serde(rename = "task.moved")]
+    TaskMoved,
+    #[serde(rename = "task.claimed")]
+    TaskClaimed,
+    #[serde(rename = "task.released")]
+    TaskReleased,
+    #[serde(rename = "task.commented")]
+    TaskCommented,
+    #[serde(rename = "task.subitem_changed")]
+    TaskSubitemChanged,
+    #[serde(rename = "task.blocked")]
+    TaskBlocked,
+    #[serde(rename = "task.unblocked")]
+    TaskUnblocked,
+    #[serde(rename = "task.phrase_changed")]
+    TaskPhraseChanged,
+    #[serde(rename = "task.updated")]
+    TaskUpdated,
+    #[serde(rename = "task.attention")]
+    TaskAttention,
+    #[serde(rename = "loop.tick")]
+    LoopTick,
+    #[serde(rename = "loop.stopped")]
+    LoopStopped,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -2483,6 +3498,19 @@ impl EventName {
             Self::AttentionChanged => "attention.changed",
             Self::PaneQueuePaused => "pane.queue.paused",
             Self::PaneQueueResumed => "pane.queue.resumed",
+            Self::TaskCreated => "task.created",
+            Self::TaskMoved => "task.moved",
+            Self::TaskClaimed => "task.claimed",
+            Self::TaskReleased => "task.released",
+            Self::TaskCommented => "task.commented",
+            Self::TaskSubitemChanged => "task.subitem_changed",
+            Self::TaskBlocked => "task.blocked",
+            Self::TaskUnblocked => "task.unblocked",
+            Self::TaskPhraseChanged => "task.phrase_changed",
+            Self::TaskUpdated => "task.updated",
+            Self::TaskAttention => "task.attention",
+            Self::LoopTick => "loop.tick",
+            Self::LoopStopped => "loop.stopped",
         }
     }
 }
@@ -2688,6 +3716,71 @@ pub const EVENTS: &[EventDescriptor] = &[
         params_type: "PaneQueueStateEvent",
         durable: true,
     },
+    EventDescriptor {
+        name: EventName::TaskCreated,
+        params_type: "TaskCreatedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskMoved,
+        params_type: "TaskMovedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskClaimed,
+        params_type: "TaskClaimedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskReleased,
+        params_type: "TaskReleasedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskCommented,
+        params_type: "TaskCommentedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskSubitemChanged,
+        params_type: "TaskSubitemChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskBlocked,
+        params_type: "TaskBlockedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskUnblocked,
+        params_type: "TaskUnblockedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskPhraseChanged,
+        params_type: "TaskPhraseChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskUpdated,
+        params_type: "TaskUpdatedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::TaskAttention,
+        params_type: "TaskAttentionEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::LoopTick,
+        params_type: "LoopTickEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::LoopStopped,
+        params_type: "LoopStoppedEvent",
+        durable: true,
+    },
 ];
 
 pub fn error_code(kind: &ErrorKind) -> i64 {
@@ -2713,5 +3806,8 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::InternalError => -32018,
         ErrorKind::SnapshotTooLarge => -32019,
         ErrorKind::EngineIdentityChanged => -32020,
+        ErrorKind::StaleAttempt => -32021,
+        ErrorKind::DependencyCycle => -32022,
+        ErrorKind::DependencyOpen => -32023,
     }
 }
