@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
+// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -283,6 +283,16 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "LoopStoppedEvent" => roundtrip::<LoopStoppedEvent>(value),
         "PaneRoleSetParams" => roundtrip::<PaneRoleSetParams>(value),
         "PaneRoleSetResult" => roundtrip::<PaneRoleSetResult>(value),
+        "UsageProvider" => roundtrip::<UsageProvider>(value),
+        "UsageState" => roundtrip::<UsageState>(value),
+        "UsageSource" => roundtrip::<UsageSource>(value),
+        "UsageWindow" => roundtrip::<UsageWindow>(value),
+        "UsageReading" => roundtrip::<UsageReading>(value),
+        "UsageListParams" => roundtrip::<UsageListParams>(value),
+        "UsageListResult" => roundtrip::<UsageListResult>(value),
+        "UsageRefreshParams" => roundtrip::<UsageRefreshParams>(value),
+        "UsageRefreshResult" => roundtrip::<UsageRefreshResult>(value),
+        "UsageChangedEvent" => roundtrip::<UsageChangedEvent>(value),
         _ => panic!("unknown schema: {name}"),
     }
 }

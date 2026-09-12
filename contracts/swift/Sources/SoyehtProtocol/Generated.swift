@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
+// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
 import Foundation
 
 
@@ -83,6 +83,7 @@ public enum ErrorKind: String, Codable, Sendable {
     case `stale_attempt` = "stale_attempt"
     case `dependency_cycle` = "dependency_cycle"
     case `dependency_open` = "dependency_open"
+    case `rate_limited` = "rate_limited"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -99,9 +100,11 @@ public struct RpcError: Codable, Sendable {
 public struct ErrorData: Codable, Sendable {
     public var `kind`: ErrorKind
     public var `detail`: String?
-    public init(`kind`: ErrorKind, `detail`: String? = nil) {
+    public var `retryAfterSec`: UInt32?
+    public init(`kind`: ErrorKind, `detail`: String? = nil, `retryAfterSec`: UInt32? = nil) {
         self.`kind` = `kind`
         self.`detail` = `detail`
+        self.`retryAfterSec` = `retryAfterSec`
     }
 }
 
@@ -3389,6 +3392,108 @@ public struct PaneRoleSetResult: Codable, Sendable {
     }
 }
 
+public enum UsageProvider: String, Codable, Sendable {
+    case `claude` = "claude"
+    case `codex` = "codex"
+    case `cursor` = "cursor"
+}
+
+public enum UsageState: String, Codable, Sendable {
+    case `ok` = "ok"
+    case `stale` = "stale"
+    case `login_needed` = "login_needed"
+    case `no_access` = "no_access"
+    case `unavailable` = "unavailable"
+}
+
+public enum UsageSource: String, Codable, Sendable {
+    case `claude_cli_usage` = "claude_cli_usage"
+    case `claude_oauth_endpoint` = "claude_oauth_endpoint"
+    case `claude_desktop_cache` = "claude_desktop_cache"
+    case `codex_app_server` = "codex_app_server"
+    case `codex_account_endpoint` = "codex_account_endpoint"
+    case `cursor_current_period` = "cursor_current_period"
+}
+
+public struct UsageWindow: Codable, Sendable {
+    public var `used`: Double
+    public var `resetsAt`: String
+    public var `label`: String
+    public init(`used`: Double, `resetsAt`: String, `label`: String) {
+        self.`used` = `used`
+        self.`resetsAt` = `resetsAt`
+        self.`label` = `label`
+    }
+}
+
+public struct UsageReading: Codable, Sendable {
+    public var `provider`: UsageProvider
+    public var `state`: UsageState
+    public var `primary`: UsageWindow?
+    public var `secondary`: UsageWindow?
+    public var `source`: UsageSource
+    public var `fetchedAt`: String
+    public init(`provider`: UsageProvider, `state`: UsageState, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+        self.`provider` = `provider`
+        self.`state` = `state`
+        self.`primary` = `primary`
+        self.`secondary` = `secondary`
+        self.`source` = `source`
+        self.`fetchedAt` = `fetchedAt`
+    }
+}
+
+public struct UsageListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct UsageListResult: Codable, Sendable {
+    public var `providers`: [UsageReading]
+    public init(`providers`: [UsageReading]) {
+        self.`providers` = `providers`
+    }
+}
+
+public struct UsageRefreshParams: Codable, Sendable {
+    public var `provider`: UsageProvider?
+    public var `idempotencyKey`: Id
+    public init(`provider`: UsageProvider? = nil, `idempotencyKey`: Id) {
+        self.`provider` = `provider`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct UsageRefreshResult: Codable, Sendable {
+    public var `providers`: [UsageReading]
+    public init(`providers`: [UsageReading]) {
+        self.`providers` = `providers`
+    }
+}
+
+public struct UsageChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `provider`: UsageProvider
+    public var `state`: UsageState
+    public var `primary`: UsageWindow?
+    public var `secondary`: UsageWindow?
+    public var `source`: UsageSource
+    public var `fetchedAt`: String
+    public init(`eventId`: Decimal, `at`: String, `provider`: UsageProvider, `state`: UsageState, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`provider` = `provider`
+        self.`state` = `state`
+        self.`primary` = `primary`
+        self.`secondary` = `secondary`
+        self.`source` = `source`
+        self.`fetchedAt` = `fetchedAt`
+    }
+}
+
 public enum EventName: String, Codable, Sendable, CaseIterable {
     case authChallenge = "auth.challenge"
     case stateSnapshotPart = "state.snapshot_part"
@@ -3442,6 +3547,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case taskAttention = "task.attention"
     case loopTick = "loop.tick"
     case loopStopped = "loop.stopped"
+    case usageChanged = "usage.changed"
 }
 
 public struct EventDescriptor: Sendable {
@@ -3506,4 +3612,5 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .taskAttention: EventDescriptor(paramsType: "TaskAttentionEvent", durable: true),
     .loopTick: EventDescriptor(paramsType: "LoopTickEvent", durable: true),
     .loopStopped: EventDescriptor(paramsType: "LoopStoppedEvent", durable: true),
+    .usageChanged: EventDescriptor(paramsType: "UsageChangedEvent", durable: true),
 ]

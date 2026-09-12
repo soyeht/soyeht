@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
+// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -133,6 +133,8 @@ pub enum ErrorKind {
     DependencyCycle,
     #[serde(rename = "dependency_open")]
     DependencyOpen,
+    #[serde(rename = "rate_limited")]
+    RateLimited,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -149,6 +151,8 @@ pub struct ErrorData {
     pub kind: ErrorKind,
     #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    #[serde(rename = "retryAfterSec", skip_serializing_if = "Option::is_none")]
+    pub retry_after_sec: Option<u32>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Actor {
@@ -3021,6 +3025,105 @@ pub struct PaneRoleSetResult {
     #[serde(rename = "role")]
     pub role: AgentPaneRole,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum UsageProvider {
+    #[serde(rename = "claude")]
+    Claude,
+    #[serde(rename = "codex")]
+    Codex,
+    #[serde(rename = "cursor")]
+    Cursor,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum UsageState {
+    #[serde(rename = "ok")]
+    Ok,
+    #[serde(rename = "stale")]
+    Stale,
+    #[serde(rename = "login_needed")]
+    LoginNeeded,
+    #[serde(rename = "no_access")]
+    NoAccess,
+    #[serde(rename = "unavailable")]
+    Unavailable,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum UsageSource {
+    #[serde(rename = "claude_cli_usage")]
+    ClaudeCliUsage,
+    #[serde(rename = "claude_oauth_endpoint")]
+    ClaudeOauthEndpoint,
+    #[serde(rename = "claude_desktop_cache")]
+    ClaudeDesktopCache,
+    #[serde(rename = "codex_app_server")]
+    CodexAppServer,
+    #[serde(rename = "codex_account_endpoint")]
+    CodexAccountEndpoint,
+    #[serde(rename = "cursor_current_period")]
+    CursorCurrentPeriod,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageWindow {
+    #[serde(rename = "used")]
+    pub used: f64,
+    #[serde(rename = "resetsAt")]
+    pub resets_at: String,
+    #[serde(rename = "label")]
+    pub label: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageReading {
+    #[serde(rename = "provider")]
+    pub provider: UsageProvider,
+    #[serde(rename = "state")]
+    pub state: UsageState,
+    #[serde(rename = "primary", skip_serializing_if = "Option::is_none")]
+    pub primary: Option<UsageWindow>,
+    #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<UsageWindow>,
+    #[serde(rename = "source")]
+    pub source: UsageSource,
+    #[serde(rename = "fetchedAt")]
+    pub fetched_at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageListResult {
+    #[serde(rename = "providers")]
+    pub providers: Vec<UsageReading>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageRefreshParams {
+    #[serde(rename = "provider", skip_serializing_if = "Option::is_none")]
+    pub provider: Option<UsageProvider>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageRefreshResult {
+    #[serde(rename = "providers")]
+    pub providers: Vec<UsageReading>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "provider")]
+    pub provider: UsageProvider,
+    #[serde(rename = "state")]
+    pub state: UsageState,
+    #[serde(rename = "primary", skip_serializing_if = "Option::is_none")]
+    pub primary: Option<UsageWindow>,
+    #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<UsageWindow>,
+    #[serde(rename = "source")]
+    pub source: UsageSource,
+    #[serde(rename = "fetchedAt")]
+    pub fetched_at: String,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -3142,6 +3245,10 @@ pub enum Request {
     TaskWorktreeClean(TaskWorktreeCleanParams),
     #[serde(rename = "loop.set")]
     LoopSet(LoopSetParams),
+    #[serde(rename = "usage.list")]
+    UsageList(UsageListParams),
+    #[serde(rename = "usage.refresh")]
+    UsageRefresh(UsageRefreshParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -3383,6 +3490,13 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     ("loop.set", "LoopSetParams", "LoopSetResult", true),
+    ("usage.list", "UsageListParams", "UsageListResult", false),
+    (
+        "usage.refresh",
+        "UsageRefreshParams",
+        "UsageRefreshResult",
+        true,
+    ),
 ];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EventName {
@@ -3490,6 +3604,8 @@ pub enum EventName {
     LoopTick,
     #[serde(rename = "loop.stopped")]
     LoopStopped,
+    #[serde(rename = "usage.changed")]
+    UsageChanged,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -3546,6 +3662,7 @@ impl EventName {
             Self::TaskAttention => "task.attention",
             Self::LoopTick => "loop.tick",
             Self::LoopStopped => "loop.stopped",
+            Self::UsageChanged => "usage.changed",
         }
     }
 }
@@ -3816,6 +3933,11 @@ pub const EVENTS: &[EventDescriptor] = &[
         params_type: "LoopStoppedEvent",
         durable: true,
     },
+    EventDescriptor {
+        name: EventName::UsageChanged,
+        params_type: "UsageChangedEvent",
+        durable: true,
+    },
 ];
 
 pub fn error_code(kind: &ErrorKind) -> i64 {
@@ -3844,5 +3966,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::StaleAttempt => -32021,
         ErrorKind::DependencyCycle => -32022,
         ErrorKind::DependencyOpen => -32023,
+        ErrorKind::RateLimited => -32024,
     }
 }

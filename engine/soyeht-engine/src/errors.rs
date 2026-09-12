@@ -313,7 +313,11 @@ pub fn wire(error: Error) -> RpcError {
     RpcError {
         code: error_code(&kind),
         message: message(&error),
-        data: ErrorData { kind, detail: None },
+        data: ErrorData {
+            kind,
+            detail: None,
+            retry_after_sec: None,
+        },
     }
 }
 

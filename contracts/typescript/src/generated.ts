@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
+// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -19,7 +19,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited";
 
 export interface RpcError {
   "code": number;
@@ -30,6 +30,7 @@ export interface RpcError {
 export interface ErrorData {
   "kind": ErrorKind;
   "detail"?: string;
+  "retryAfterSec"?: number;
 }
 
 export interface Actor {
@@ -1713,6 +1714,55 @@ export interface PaneRoleSetResult {
   "role": AgentPaneRole;
 }
 
+export type UsageProvider = "claude" | "codex" | "cursor";
+
+export type UsageState = "ok" | "stale" | "login_needed" | "no_access" | "unavailable";
+
+export type UsageSource = "claude_cli_usage" | "claude_oauth_endpoint" | "claude_desktop_cache" | "codex_app_server" | "codex_account_endpoint" | "cursor_current_period";
+
+export interface UsageWindow {
+  "used": number;
+  "resetsAt": string;
+  "label": string;
+}
+
+export interface UsageReading {
+  "provider": UsageProvider;
+  "state": UsageState;
+  "primary"?: UsageWindow;
+  "secondary"?: UsageWindow;
+  "source": UsageSource;
+  "fetchedAt": string;
+}
+
+export interface UsageListParams {
+
+}
+
+export interface UsageListResult {
+  "providers": Array<UsageReading>;
+}
+
+export interface UsageRefreshParams {
+  "provider"?: UsageProvider;
+  "idempotencyKey": Id;
+}
+
+export interface UsageRefreshResult {
+  "providers": Array<UsageReading>;
+}
+
+export interface UsageChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "provider": UsageProvider;
+  "state": UsageState;
+  "primary"?: UsageWindow;
+  "secondary"?: UsageWindow;
+  "source": UsageSource;
+  "fetchedAt": string;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -1773,6 +1823,8 @@ export interface Methods {
   "task.move": { params: TaskMoveParams; result: TaskMoveResult };
   "task.worktree.clean": { params: TaskWorktreeCleanParams; result: TaskWorktreeCleanResult };
   "loop.set": { params: LoopSetParams; result: LoopSetResult };
+  "usage.list": { params: UsageListParams; result: UsageListResult };
+  "usage.refresh": { params: UsageRefreshParams; result: UsageRefreshResult };
 }
 
 export interface Events {
@@ -1828,6 +1880,7 @@ export interface Events {
   "task.attention": TaskAttentionEvent;
   "loop.tick": LoopTickEvent;
   "loop.stopped": LoopStoppedEvent;
+  "usage.changed": UsageChangedEvent;
 }
 export type EventName = keyof Events;
 export interface EventDescriptor {
@@ -1887,4 +1940,5 @@ export const eventRegistry = {
   "task.attention": { paramsType: "TaskAttentionEvent", durable: true },
   "loop.tick": { paramsType: "LoopTickEvent", durable: true },
   "loop.stopped": { paramsType: "LoopStoppedEvent", durable: true },
+  "usage.changed": { paramsType: "UsageChangedEvent", durable: true },
 } as const satisfies Record<EventName, EventDescriptor>;

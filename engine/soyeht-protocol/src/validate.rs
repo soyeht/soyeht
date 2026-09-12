@@ -165,4 +165,19 @@ mod tests {
             assert!(parameters("task.complete", &missing).is_err());
         }
     }
+
+    #[test]
+    fn usage_refresh_requires_a_known_provider_and_idempotency_key() {
+        let refresh = json!({"provider":"claude","idempotencyKey":"usage-1"});
+        assert!(parameters("usage.refresh", &refresh).is_ok());
+        assert!(parameters("usage.refresh", &json!({"idempotencyKey":"usage-all"})).is_ok());
+        assert!(
+            parameters(
+                "usage.refresh",
+                &json!({"provider":"future","idempotencyKey":"usage-2"})
+            )
+            .is_err()
+        );
+        assert!(parameters("usage.refresh", &json!({"provider":"claude"})).is_err());
+    }
 }

@@ -106,7 +106,8 @@
         "engine_identity_changed",
         "stale_attempt",
         "dependency_cycle",
-        "dependency_open"
+        "dependency_open",
+        "rate_limited"
       ]
     },
     "RpcError": {
@@ -137,6 +138,11 @@
         },
         "detail": {
           "type": "string"
+        },
+        "retryAfterSec": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30
         }
       },
       "required": [
@@ -6107,6 +6113,181 @@
         "role"
       ],
       "additionalProperties": true
+    },
+    "UsageProvider": {
+      "type": "string",
+      "enum": [
+        "claude",
+        "codex",
+        "cursor"
+      ]
+    },
+    "UsageState": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "stale",
+        "login_needed",
+        "no_access",
+        "unavailable"
+      ]
+    },
+    "UsageSource": {
+      "type": "string",
+      "enum": [
+        "claude_cli_usage",
+        "claude_oauth_endpoint",
+        "claude_desktop_cache",
+        "codex_app_server",
+        "codex_account_endpoint",
+        "cursor_current_period"
+      ]
+    },
+    "UsageWindow": {
+      "type": "object",
+      "properties": {
+        "used": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "resetsAt": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "used",
+        "resetsAt",
+        "label"
+      ],
+      "additionalProperties": true
+    },
+    "UsageReading": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/UsageProvider"
+        },
+        "state": {
+          "$ref": "#/$defs/UsageState"
+        },
+        "primary": {
+          "$ref": "#/$defs/UsageWindow"
+        },
+        "secondary": {
+          "$ref": "#/$defs/UsageWindow"
+        },
+        "source": {
+          "$ref": "#/$defs/UsageSource"
+        },
+        "fetchedAt": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "provider",
+        "state",
+        "source",
+        "fetchedAt"
+      ],
+      "additionalProperties": true
+    },
+    "UsageListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "UsageListResult": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UsageReading"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "additionalProperties": true
+    },
+    "UsageRefreshParams": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/UsageProvider"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "UsageRefreshResult": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UsageReading"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "additionalProperties": true
+    },
+    "UsageChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/UsageProvider"
+        },
+        "state": {
+          "$ref": "#/$defs/UsageState"
+        },
+        "primary": {
+          "$ref": "#/$defs/UsageWindow"
+        },
+        "secondary": {
+          "$ref": "#/$defs/UsageWindow"
+        },
+        "source": {
+          "$ref": "#/$defs/UsageSource"
+        },
+        "fetchedAt": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "provider",
+        "state",
+        "source",
+        "fetchedAt"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -6641,6 +6822,24 @@
         "$ref": "#/$defs/LoopSetResult"
       },
       "mutation": true
+    },
+    "usage.list": {
+      "params": {
+        "$ref": "#/$defs/UsageListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/UsageListResult"
+      },
+      "mutation": false
+    },
+    "usage.refresh": {
+      "params": {
+        "$ref": "#/$defs/UsageRefreshParams"
+      },
+      "result": {
+        "$ref": "#/$defs/UsageRefreshResult"
+      },
+      "mutation": true
     }
   },
   "x-events": {
@@ -6955,6 +7154,12 @@
         "$ref": "#/$defs/LoopStoppedEvent"
       },
       "durable": true
+    },
+    "usage.changed": {
+      "params": {
+        "$ref": "#/$defs/UsageChangedEvent"
+      },
+      "durable": true
     }
   },
   "x-framing": {
@@ -7012,7 +7217,12 @@
     "permissionTimeoutSec": 1800,
     "cancelTimeoutSec": 10,
     "probeTimeoutSec": 10,
-    "noSignalSec": 90
+    "noSignalSec": 90,
+    "usageRefreshMinIntervalSec": 30,
+    "usageHoverRefreshAfterSec": 60,
+    "usageOpenRefreshIntervalSec": 300,
+    "usageStaleAfterSec": 900,
+    "usageMaxBackoffSec": 1800
   },
   "x-settings": {
     "terminal.defaultCols": {
@@ -7070,6 +7280,7 @@
     "engine_identity_changed": -32020,
     "stale_attempt": -32021,
     "dependency_cycle": -32022,
-    "dependency_open": -32023
+    "dependency_open": -32023,
+    "rate_limited": -32024
   }
 }

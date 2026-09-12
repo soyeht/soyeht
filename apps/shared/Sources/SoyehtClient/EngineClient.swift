@@ -315,7 +315,7 @@ public final class EngineClient {
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
-      .paneConfigChanged:
+      .paneConfigChanged, .usageChanged:
       break
     }
   }

@@ -6159,5 +6159,271 @@
         "reason": "example"
       }
     }
+  },
+  {
+    "name": "UsageProvider",
+    "type": "UsageProvider",
+    "value": "claude"
+  },
+  {
+    "name": "UsageState",
+    "type": "UsageState",
+    "value": "ok"
+  },
+  {
+    "name": "UsageSource",
+    "type": "UsageSource",
+    "value": "claude_cli_usage"
+  },
+  {
+    "name": "UsageWindow",
+    "type": "UsageWindow",
+    "value": {
+      "used": 0.42,
+      "resetsAt": "2026-09-12T18:00:00Z",
+      "label": "Current window"
+    }
+  },
+  {
+    "name": "UsageReading",
+    "type": "UsageReading",
+    "value": {
+      "provider": "claude",
+      "state": "ok",
+      "primary": {
+        "used": 0.42,
+        "resetsAt": "2026-09-12T18:00:00Z",
+        "label": "Current window"
+      },
+      "secondary": {
+        "used": 0.24,
+        "resetsAt": "2026-09-19T00:00:00Z",
+        "label": "Weekly"
+      },
+      "source": "claude_cli_usage",
+      "fetchedAt": "2026-09-12T17:00:00Z"
+    }
+  },
+  {
+    "name": "UsageListParams",
+    "type": "UsageListParams",
+    "value": {}
+  },
+  {
+    "name": "UsageListResult",
+    "type": "UsageListResult",
+    "value": {
+      "providers": [
+        {
+          "provider": "claude",
+          "state": "ok",
+          "primary": {
+            "used": 0.42,
+            "resetsAt": "2026-09-12T18:00:00Z",
+            "label": "Current window"
+          },
+          "secondary": {
+            "used": 0.24,
+            "resetsAt": "2026-09-19T00:00:00Z",
+            "label": "Weekly"
+          },
+          "source": "claude_cli_usage",
+          "fetchedAt": "2026-09-12T17:00:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "name": "UsageRefreshParams",
+    "type": "UsageRefreshParams",
+    "value": {
+      "provider": "claude",
+      "idempotencyKey": "usage-refresh-1"
+    }
+  },
+  {
+    "name": "UsageRefreshResult",
+    "type": "UsageRefreshResult",
+    "value": {
+      "providers": [
+        {
+          "provider": "claude",
+          "state": "ok",
+          "primary": {
+            "used": 0.42,
+            "resetsAt": "2026-09-12T18:00:00Z",
+            "label": "Current window"
+          },
+          "secondary": {
+            "used": 0.24,
+            "resetsAt": "2026-09-19T00:00:00Z",
+            "label": "Weekly"
+          },
+          "source": "claude_cli_usage",
+          "fetchedAt": "2026-09-12T17:00:00Z"
+        }
+      ]
+    }
+  },
+  {
+    "name": "UsageChangedEvent",
+    "type": "UsageChangedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-12T17:00:00Z",
+      "provider": "claude",
+      "state": "ok",
+      "primary": {
+        "used": 0.42,
+        "resetsAt": "2026-09-12T18:00:00Z",
+        "label": "Current window"
+      },
+      "secondary": {
+        "used": 0.24,
+        "resetsAt": "2026-09-19T00:00:00Z",
+        "label": "Weekly"
+      },
+      "source": "claude_cli_usage",
+      "fetchedAt": "2026-09-12T17:00:00Z"
+    }
+  },
+  {
+    "name": "request:usage.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "usage-list-1",
+      "method": "usage.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:usage.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "usage-list-1",
+      "result": {
+        "providers": [
+          {
+            "provider": "claude",
+            "state": "ok",
+            "primary": {
+              "used": 0.42,
+              "resetsAt": "2026-09-12T18:00:00Z",
+              "label": "Current window"
+            },
+            "secondary": {
+              "used": 0.24,
+              "resetsAt": "2026-09-19T00:00:00Z",
+              "label": "Weekly"
+            },
+            "source": "claude_cli_usage",
+            "fetchedAt": "2026-09-12T17:00:00Z"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:usage.refresh",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "usage-refresh-1",
+      "method": "usage.refresh",
+      "params": {
+        "provider": "claude",
+        "idempotencyKey": "usage-refresh-1"
+      }
+    }
+  },
+  {
+    "name": "response:usage.refresh",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "usage-refresh-1",
+      "result": {
+        "providers": [
+          {
+            "provider": "claude",
+            "state": "ok",
+            "primary": {
+              "used": 0.42,
+              "resetsAt": "2026-09-12T18:00:00Z",
+              "label": "Current window"
+            },
+            "secondary": {
+              "used": 0.24,
+              "resetsAt": "2026-09-19T00:00:00Z",
+              "label": "Weekly"
+            },
+            "source": "claude_cli_usage",
+            "fetchedAt": "2026-09-12T17:00:00Z"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "event:usage.changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "usage.changed",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-12T17:00:00Z",
+        "provider": "claude",
+        "state": "ok",
+        "primary": {
+          "used": 0.42,
+          "resetsAt": "2026-09-12T18:00:00Z",
+          "label": "Current window"
+        },
+        "secondary": {
+          "used": 0.24,
+          "resetsAt": "2026-09-19T00:00:00Z",
+          "label": "Weekly"
+        },
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-09-12T17:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "rate-limited-error-data",
+    "type": "ErrorData",
+    "value": {
+      "kind": "rate_limited",
+      "retryAfterSec": 30
+    }
+  },
+  {
+    "name": "rate-limited-error-envelope",
+    "type": "ErrorEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "usage-refresh-2",
+      "error": {
+        "code": -32024,
+        "message": "Refresh is rate limited",
+        "data": {
+          "kind": "rate_limited",
+          "retryAfterSec": 30
+        }
+      }
+    }
+  },
+  {
+    "name": "usage-stale-reading",
+    "type": "UsageReading",
+    "value": {
+      "provider": "cursor",
+      "state": "stale",
+      "source": "cursor_current_period",
+      "fetchedAt": "2026-09-12T16:00:00Z"
+    }
   }
 ]

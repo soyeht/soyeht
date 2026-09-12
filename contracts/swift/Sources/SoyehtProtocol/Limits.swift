@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
+// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
 public enum ProtocolLimits {
     public static let jsonBytes = 1048576
     public static let terminalPayloadBytes = 65536
@@ -23,4 +23,9 @@ public enum ProtocolLimits {
     public static let cancelTimeoutSec = 10
     public static let probeTimeoutSec = 10
     public static let noSignalSec = 90
+    public static let usageRefreshMinIntervalSec = 30
+    public static let usageHoverRefreshAfterSec = 60
+    public static let usageOpenRefreshIntervalSec = 300
+    public static let usageStaleAfterSec = 900
+    public static let usageMaxBackoffSec = 1800
 }

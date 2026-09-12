@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 742ff26d144d2473e0f726b9aa6cb686deb01ff88adc3a4a3b4f2ab81a946e67). Do not edit.
+// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -286,6 +286,16 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "LoopStoppedEvent": return try codec(SoyehtProtocol.LoopStoppedEvent.self, data)
         case "PaneRoleSetParams": return try codec(SoyehtProtocol.PaneRoleSetParams.self, data)
         case "PaneRoleSetResult": return try codec(SoyehtProtocol.PaneRoleSetResult.self, data)
+        case "UsageProvider": return try codec(SoyehtProtocol.UsageProvider.self, data)
+        case "UsageState": return try codec(SoyehtProtocol.UsageState.self, data)
+        case "UsageSource": return try codec(SoyehtProtocol.UsageSource.self, data)
+        case "UsageWindow": return try codec(SoyehtProtocol.UsageWindow.self, data)
+        case "UsageReading": return try codec(SoyehtProtocol.UsageReading.self, data)
+        case "UsageListParams": return try codec(SoyehtProtocol.UsageListParams.self, data)
+        case "UsageListResult": return try codec(SoyehtProtocol.UsageListResult.self, data)
+        case "UsageRefreshParams": return try codec(SoyehtProtocol.UsageRefreshParams.self, data)
+        case "UsageRefreshResult": return try codec(SoyehtProtocol.UsageRefreshResult.self, data)
+        case "UsageChangedEvent": return try codec(SoyehtProtocol.UsageChangedEvent.self, data)
     default: throw NSError(domain: "Unknown schema", code: 1)
     }
 }
