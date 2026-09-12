@@ -220,7 +220,15 @@ pub fn apply_block(
             "Dependency blocking needs a task id",
         ));
     }
-    let retry_count = (kind == BlockingKind::ExternalError).then_some(0);
+    let retry_count = (kind == BlockingKind::ExternalError).then(|| {
+        task.blocking
+            .as_ref()
+            .filter(|blocking| {
+                blocking.kind == BlockingKind::ExternalError && blocking.reason == reason
+            })
+            .and_then(|blocking| blocking.retry_count)
+            .unwrap_or(0)
+    });
     let mut updated = task.clone();
     updated.blocking = Some(Blocking {
         kind,
@@ -249,6 +257,11 @@ pub fn apply_request_review(task: &Task, subitems: &[Subitem]) -> Result<Task> {
     }
     if subitems.iter().any(|item| item.state == SubitemState::Open) {
         return Err(errors::transition_refused("Task has an open subitem"));
+    }
+    if task.blocking.is_some() {
+        return Err(errors::transition_refused(
+            "A blocked task cannot request review",
+        ));
     }
     let mut updated = task.clone();
     updated.state = TaskState::InReview;

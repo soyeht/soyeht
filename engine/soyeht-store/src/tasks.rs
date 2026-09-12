@@ -302,6 +302,22 @@ impl Store {
             .optional()?)
     }
 
+    pub fn blocked_tasks(&self) -> Result<Vec<Task>> {
+        let mut statement = self.connection.prepare(
+            "SELECT payload FROM tasks WHERE blocking_kind IS NOT NULL ORDER BY workspace_id,ordinal",
+        )?;
+        let rows = statement.query_map([], |row| decoded(row, 0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn due_task_retries(&self, now_ms: i64) -> Result<Vec<Task>> {
+        let mut statement = self.connection.prepare(
+            "SELECT t.payload FROM task_block_retries r JOIN tasks t ON t.workspace_id=r.workspace_id AND t.task_id=r.task_id WHERE r.due_ms<=?1 AND t.blocking_kind='external_error' ORDER BY r.due_ms,t.ordinal",
+        )?;
+        let rows = statement.query_map([now_ms.max(0)], |row| decoded(row, 0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn dispatch_checkpoint(
         &self,
         workspace_id: &str,
@@ -649,6 +665,27 @@ impl Change<'_> {
         self.transaction.execute(
             "INSERT INTO task_feedback(workspace_id,task_id,fingerprint,delivery_count,armed) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(workspace_id,task_id) DO UPDATE SET fingerprint=excluded.fingerprint,delivery_count=excluded.delivery_count,armed=excluded.armed",
             params![workspace_id,task_id,state.fingerprint,state.delivery_count,state.armed],
+        )?;
+        Ok(())
+    }
+
+    pub fn schedule_task_retry(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        due_ms: i64,
+    ) -> Result<()> {
+        self.transaction.execute(
+            "INSERT INTO task_block_retries(workspace_id,task_id,due_ms) VALUES (?1,?2,?3) ON CONFLICT(workspace_id,task_id) DO UPDATE SET due_ms=excluded.due_ms",
+            params![workspace_id, task_id, due_ms.max(0)],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_task_retry(&self, workspace_id: &str, task_id: &str) -> Result<()> {
+        self.transaction.execute(
+            "DELETE FROM task_block_retries WHERE workspace_id=?1 AND task_id=?2",
+            params![workspace_id, task_id],
         )?;
         Ok(())
     }

@@ -69,6 +69,7 @@ pub struct Changes {
     pub events: Vec<(String, Value)>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
+    pub(crate) task_blocking: Option<crate::tasks::blocking::TaskBlockingChange>,
 }
 
 pub fn native_error(error: soyeht_acp::Error) -> errors::Error {
@@ -144,6 +145,9 @@ impl AgentPersistence<'_> {
         if let Some(movement) = &self.changes.task_human_move {
             movement.persist(tx)?;
             events.extend(movement.events());
+        }
+        if let Some(blocking) = &self.changes.task_blocking {
+            blocking.persist(tx)?;
         }
         write_pane(tx, self.saved)?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;

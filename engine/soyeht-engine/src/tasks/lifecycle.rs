@@ -1,6 +1,7 @@
 use super::{
     api::{parameters, task},
     apply_block, apply_owner_loss, apply_release, apply_request_review,
+    blocking::{RETRY_DELAY_MS, attention},
 };
 use crate::{
     core::Core,
@@ -12,7 +13,10 @@ use soyeht_protocol::{
     TaskCompleteParams, TaskMove, TaskReleaseParams, TaskRequestReviewParams, TaskState,
     TaskUnblockParams,
 };
-use soyeht_store::database::{Change, Result as StoreResult};
+use soyeht_store::{
+    agents,
+    database::{Change, Result as StoreResult},
+};
 use uuid::Uuid;
 
 struct ClosingMove {
@@ -189,21 +193,50 @@ impl Core {
         let kind = params.kind;
         let reason = params.reason.trim().to_owned();
         let expected = current.version;
+        let pane = errors::invariant(
+            current.owner_pane_id.clone(),
+            "Executor task has no owning pane",
+        )?;
+        let next_retry = (kind == BlockingKind::ExternalError)
+            .then(|| self.now_ms().saturating_add(RETRY_DELAY_MS));
+        let attention = (kind == BlockingKind::MissingInformation)
+            .then(|| attention(&updated, &pane, self.timestamp()));
         let mutation = self.mutate(connection, "task.block", raw, move |change| {
             change.replace_task(&updated, expected)?;
-            Ok((
-                json!({"task":updated}),
-                vec![
-                    (
-                        "task.blocked".into(),
-                        json!({"workspaceId":workspace,"taskId":task_id,"kind":kind,"reason":reason}),
-                    ),
-                    (
-                        "task.phrase_changed".into(),
-                        json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
-                    ),
-                ],
-            ))
+            if let Some(due) = next_retry {
+                change.schedule_task_retry(&workspace, &task_id, due)?;
+            } else {
+                change.clear_task_retry(&workspace, &task_id)?;
+            }
+            if let Some(item) = &attention {
+                agents::save_attention(change, &workspace, item)?;
+            }
+            let mut events = vec![
+                (
+                    "task.blocked".into(),
+                    json!({"workspaceId":workspace,"taskId":task_id,"kind":kind,"reason":reason}),
+                ),
+                (
+                    "task.phrase_changed".into(),
+                    json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
+                ),
+                (
+                    "task.updated".into(),
+                    json!({"workspaceId":workspace,"taskId":task_id,"version":updated.version}),
+                ),
+            ];
+            if attention.is_some() {
+                let items = agents::attention_in_change(change, &workspace)?;
+                events.push((
+                    "task.attention".into(),
+                    json!({"workspaceId":workspace,"taskId":task_id,"n":1}),
+                ));
+                events.push((
+                    "attention.changed".into(),
+                    json!({"workspaceId":workspace,"count":items.len(),"items":items}),
+                ));
+            }
+            Ok((json!({"task":updated}), events))
         })?;
         Ok(mutation.result)
     }
@@ -328,7 +361,7 @@ impl Core {
             && let Some(dependency) = blocking.dependency_task_id.as_deref()
             && !matches!(
                 task(&self.store, &params.workspace_id, dependency)?.state,
-                TaskState::Completed
+                TaskState::Completed | TaskState::Cancelled
             )
         {
             return Err(errors::dependency_open("Task dependency is still open"));
@@ -338,21 +371,35 @@ impl Core {
         let task_id = params.task_id;
         let reason = params.reason.unwrap_or_else(|| "unblocked".into());
         let expected = current.version;
+        let owner = current.owner_pane_id.clone();
         let mutation = self.mutate(connection, "task.unblock", raw, move |change| {
             change.replace_task(&updated, expected)?;
-            Ok((
-                json!({"task":updated}),
-                vec![
-                    (
-                        "task.unblocked".into(),
-                        json!({"workspaceId":workspace,"taskId":task_id,"reason":reason}),
-                    ),
-                    (
-                        "task.phrase_changed".into(),
-                        json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
-                    ),
-                ],
-            ))
+            change.clear_task_retry(&workspace, &task_id)?;
+            if let Some(pane) = &owner {
+                change.remove_attention(pane, &format!("task:{task_id}:blocking"))?;
+            }
+            let mut events = vec![
+                (
+                    "task.unblocked".into(),
+                    json!({"workspaceId":workspace,"taskId":task_id,"reason":reason}),
+                ),
+                (
+                    "task.phrase_changed".into(),
+                    json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
+                ),
+                (
+                    "task.updated".into(),
+                    json!({"workspaceId":workspace,"taskId":task_id,"version":updated.version}),
+                ),
+            ];
+            if owner.is_some() {
+                let items = agents::attention_in_change(change, &workspace)?;
+                events.push((
+                    "attention.changed".into(),
+                    json!({"workspaceId":workspace,"count":items.len(),"items":items}),
+                ));
+            }
+            Ok((json!({"task":updated}), events))
         })?;
         Ok(mutation.result)
     }

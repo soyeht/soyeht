@@ -496,7 +496,8 @@ impl Core {
                 self.save_runtime(&id, dead)?;
             }
         }
-        self.advance_task_reviews()
+        self.advance_task_reviews()?;
+        self.advance_task_blocking()
     }
 
     pub fn now_ms(&self) -> i64 {

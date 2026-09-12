@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
 #[derive(Debug)]
 pub enum Error {
@@ -287,6 +287,9 @@ impl Store {
             }
             if version < 8 {
                 tx.execute_batch(include_str!("../migrations/008-task-reviews.sql"))?;
+            }
+            if version < 9 {
+                tx.execute_batch(include_str!("../migrations/009-task-block-retries.sql"))?;
             }
             tx.commit()?;
         }

@@ -2180,6 +2180,15 @@ fn active_executor_blocks_requests_review_and_completes_one_durable_attempt() {
         blocked["result"]["task"]["blocking"]["kind"],
         "missing_information"
     );
+    let attention = lifecycle.human.section("attention");
+    assert_eq!(attention.len(), 1);
+    assert_eq!(attention[0]["paneId"], lifecycle.pane);
+    assert!(
+        attention[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Need an answer")
+    );
     lifecycle.human.call(
         "task.unblock",
         json!({
@@ -2187,6 +2196,7 @@ fn active_executor_blocks_requests_review_and_completes_one_durable_attempt() {
             "reason":"Answer supplied","idempotencyKey":"unblock"
         }),
     );
+    assert!(lifecycle.human.section("attention").is_empty());
     let added = lifecycle.executor_request(
         "task.subitem.add",
         &task,
@@ -2262,6 +2272,180 @@ fn active_executor_blocks_requests_review_and_completes_one_durable_attempt() {
             .len(),
         2
     );
+}
+
+fn replace_task_state(rig: &Rig, workspace: &str, task_id: &str, state: &str, key: &str) {
+    let mut store = Store::open(&rig.path).unwrap();
+    let mut task = store.task(workspace, task_id).unwrap().unwrap();
+    task.state = serde_json::from_value(json!(state)).unwrap();
+    task.version += 1;
+    task.phrase = state.replace('_', " ");
+    store
+        .mutate("test", key, key, |change| {
+            change.replace_task(&task, task.version - 1)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+}
+
+fn completed_dependency_returns_task(lifecycle: &mut TaskLifecycleRig) -> Task {
+    let task = lifecycle.create_and_reserve("Dependency target", "reserve-dependency-target");
+    let dependency = lifecycle.human.call(
+        "task.create",
+        json!({
+            "workspaceId":lifecycle.workspace,"title":"Dependency",
+            "mustNotChange":"Keep behavior","idempotencyKey":"create-dependency"
+        }),
+    )["task"]
+        .clone();
+    lifecycle.executor_request(
+        "task.block",
+        &task,
+        json!({"kind":"dependency","reason":"waiting","dependencyTaskId":dependency["taskId"]}),
+        "block-dependency",
+    );
+    replace_task_state(
+        &lifecycle.rig,
+        &lifecycle.workspace,
+        dependency["taskId"].as_str().unwrap(),
+        "completed",
+        "complete-dependency",
+    );
+    let returned = lifecycle.wait_task_state(&task.task_id, "todo");
+    assert!(returned["task"]["blocking"].is_null());
+    assert!(returned["task"]["ownerPaneId"].is_null());
+    reserve_task(
+        &lifecycle.rig,
+        &lifecycle.workspace,
+        &lifecycle.pane,
+        "reserve-cancelled-dependency",
+    )
+}
+
+fn cancelled_dependency_requires_a_decision(lifecycle: &mut TaskLifecycleRig, active: &Task) {
+    let cancelled_dependency = lifecycle.human.call(
+        "task.create",
+        json!({
+            "workspaceId":lifecycle.workspace,"title":"Cancelled dependency",
+            "mustNotChange":"Keep behavior","idempotencyKey":"create-cancelled-dependency"
+        }),
+    )["task"]
+        .clone();
+    lifecycle.executor_request(
+        "task.block",
+        active,
+        json!({"kind":"dependency","reason":"waiting","dependencyTaskId":cancelled_dependency["taskId"]}),
+        "block-cancelled-dependency",
+    );
+    replace_task_state(
+        &lifecycle.rig,
+        &lifecycle.workspace,
+        cancelled_dependency["taskId"].as_str().unwrap(),
+        "cancelled",
+        "cancel-dependency",
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let shown = lifecycle.human.call(
+            "task.show",
+            json!({"workspaceId":lifecycle.workspace,"taskId":active.task_id}),
+        );
+        if shown["task"]["phrase"] == "blocked: dependency cancelled" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "cancelled dependency was not reported: {shown}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    lifecycle.human.call(
+        "task.unblock",
+        json!({
+            "workspaceId":lifecycle.workspace,"taskId":active.task_id,
+            "reason":"Proceed without dependency","idempotencyKey":"unblock-cancelled-dependency"
+        }),
+    );
+}
+
+fn wait_for_retry(lifecycle: &mut TaskLifecycleRig, active: &Task, count: u32) {
+    lifecycle
+        .rig
+        .database_probe()
+        .make_task_retry_due(&lifecycle.workspace, &active.task_id)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let shown = lifecycle.human.call(
+            "task.show",
+            json!({"workspaceId":lifecycle.workspace,"taskId":active.task_id}),
+        );
+        if shown["task"]["blocking"]["retryCount"] == count {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "retry {count} did not run: {shown}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn external_error_exhausts_two_durable_retries(lifecycle: &mut TaskLifecycleRig, active: &Task) {
+    lifecycle.executor_request(
+        "task.block",
+        active,
+        json!({"kind":"external_error","reason":"service unavailable"}),
+        "block-external",
+    );
+    for count in [1, 2] {
+        wait_for_retry(lifecycle, active, count);
+        lifecycle.executor_request(
+            "task.block",
+            active,
+            json!({"kind":"external_error","reason":"service unavailable"}),
+            &format!("external-still-blocked-{count}"),
+        );
+    }
+    wait_for_external_escalation(lifecycle, active);
+    assert_eq!(lifecycle.human.section("attention").len(), 1);
+}
+
+fn wait_for_external_escalation(lifecycle: &mut TaskLifecycleRig, active: &Task) {
+    lifecycle
+        .rig
+        .database_probe()
+        .make_task_retry_due(&lifecycle.workspace, &active.task_id)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let shown = lifecycle.human.call(
+            "task.show",
+            json!({"workspaceId":lifecycle.workspace,"taskId":active.task_id}),
+        );
+        if shown["task"]["blocking"]["kind"] == "missing_information" {
+            assert!(
+                shown["task"]["phrase"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("blocked:")
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "external block did not escalate: {shown}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn typed_blocks_advance_from_real_engine_ticks_and_durable_deadlines() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let active = completed_dependency_returns_task(&mut lifecycle);
+    cancelled_dependency_requires_a_decision(&mut lifecycle, &active);
+    external_error_exhausts_two_durable_retries(&mut lifecycle, &active);
 }
 
 #[test]

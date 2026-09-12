@@ -547,6 +547,50 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
 }
 
 #[test]
+fn typed_blocking_queries_and_retry_deadlines_use_the_real_database() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let mut dependency = task("WS-1", TaskPriority::High);
+    dependency.blocking = Some(soyeht_protocol::Blocking {
+        kind: soyeht_protocol::BlockingKind::Dependency,
+        reason: "waiting for WS-2".into(),
+        dependency_task_id: Some("WS-2".into()),
+        retry_count: None,
+    });
+    let mut external = task("WS-2", TaskPriority::Medium);
+    external.blocking = Some(soyeht_protocol::Blocking {
+        kind: soyeht_protocol::BlockingKind::ExternalError,
+        reason: "service unavailable".into(),
+        dependency_task_id: None,
+        retry_count: Some(0),
+    });
+    store
+        .mutate("test", "blocked", "blocked", |change| {
+            change.insert_task(&dependency)?;
+            change.insert_task(&external)?;
+            change.schedule_task_retry("workspace-1", "WS-2", 2_000)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+
+    assert_eq!(
+        store.blocked_tasks().unwrap(),
+        vec![dependency, external.clone()]
+    );
+    assert!(store.due_task_retries(1_999).unwrap().is_empty());
+    assert_eq!(store.due_task_retries(2_000).unwrap(), vec![external]);
+
+    store
+        .mutate("test", "clear-retry", "clear-retry", |change| {
+            change.clear_task_retry("workspace-1", "WS-2")?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert!(store.due_task_retries(i64::MAX).unwrap().is_empty());
+}
+
+#[test]
 fn review_inputs_survive_either_arrival_order_and_reject_stale_writes() {
     let profile = Profile::new();
     let mut store = profile.store();
@@ -630,7 +674,7 @@ fn review_inputs_survive_either_arrival_order_and_reject_stale_writes() {
 }
 
 #[test]
-fn migration_from_v7_preserves_tasks_and_adds_durable_reviews() {
+fn migration_from_v7_preserves_tasks_and_adds_durable_reviews_and_retries() {
     let profile = Profile::new();
     let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
     for migration in [
@@ -665,8 +709,15 @@ fn migration_from_v7_preserves_tasks_and_adds_durable_reviews() {
         .connection()
         .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
         .unwrap();
+    let retries: u32 = store
+        .connection()
+        .query_row("SELECT COUNT(*) FROM task_block_retries", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
     assert_eq!(version, soyeht_store::database::SCHEMA_VERSION);
     assert_eq!(tasks, 1);
+    assert_eq!(retries, 0);
     assert_eq!(
         store
             .task_review::<ReviewPayload>("workspace-1", "WS-1", 1)

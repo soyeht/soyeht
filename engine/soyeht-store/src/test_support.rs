@@ -46,6 +46,17 @@ impl DatabaseProbe {
         Ok(())
     }
 
+    pub fn make_task_retry_due(&self, workspace_id: &str, task_id: &str) -> Result<()> {
+        let changed = self.connection.execute(
+            "UPDATE task_block_retries SET due_ms=0 WHERE workspace_id=?1 AND task_id=?2",
+            params![workspace_id, task_id],
+        )?;
+        if changed != 1 {
+            return Err(Error::TestFixture("test task has no scheduled retry"));
+        }
+        Ok(())
+    }
+
     pub fn agent_binding(&self, pane_id: &str) -> Result<String> {
         let raw: String = self.connection.query_row(
             "SELECT payload FROM agent_runtime WHERE pane_id=?1",

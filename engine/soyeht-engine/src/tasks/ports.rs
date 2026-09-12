@@ -35,6 +35,8 @@ pub trait TaskStorePort {
     fn dependencies(&self, workspace: &str, task: &str) -> StoreResult<Vec<String>>;
     fn dependency_path_exists(&self, workspace: &str, from: &str, to: &str) -> StoreResult<bool>;
     fn active_task_for_pane(&self, pane: &str) -> StoreResult<Option<Task>>;
+    fn blocked_tasks(&self) -> StoreResult<Vec<Task>>;
+    fn due_task_retries(&self, now_ms: i64) -> StoreResult<Vec<Task>>;
     fn loop_config(&self, pane: &str) -> StoreResult<Option<(LoopConfig, u64)>>;
     fn feedback_state(&self, workspace: &str, task: &str) -> StoreResult<Option<FeedbackState>>;
     fn dispatch_checkpoint(
@@ -101,6 +103,14 @@ impl TaskStorePort for Store {
 
     fn active_task_for_pane(&self, pane: &str) -> StoreResult<Option<Task>> {
         Store::active_task_for_pane(self, pane)
+    }
+
+    fn blocked_tasks(&self) -> StoreResult<Vec<Task>> {
+        Store::blocked_tasks(self)
+    }
+
+    fn due_task_retries(&self, now_ms: i64) -> StoreResult<Vec<Task>> {
+        Store::due_task_retries(self, now_ms)
     }
 
     fn loop_config(&self, pane: &str) -> StoreResult<Option<(LoopConfig, u64)>> {
@@ -227,6 +237,19 @@ pub(crate) mod testing {
                 .values()
                 .find(|task| task.owner_pane_id.as_deref() == Some(pane))
                 .cloned())
+        }
+
+        fn blocked_tasks(&self) -> StoreResult<Vec<Task>> {
+            Ok(self
+                .tasks
+                .values()
+                .filter(|task| task.blocking.is_some())
+                .cloned()
+                .collect())
+        }
+
+        fn due_task_retries(&self, _: i64) -> StoreResult<Vec<Task>> {
+            Ok(Vec::new())
         }
 
         fn loop_config(&self, _: &str) -> StoreResult<Option<(LoopConfig, u64)>> {
