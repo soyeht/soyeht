@@ -2,21 +2,105 @@ import Foundation
 import SoyehtProtocol
 import SwiftUI
 
-private enum AgentColors {
-  static let canvas = Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255)
-  static let face = Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255)
-  static let ink = Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255)
-  static let secondary = Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255)
-  static let accent = Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255)
-  static let shadow = Color(red: 166 / 255, green: 180 / 255, blue: 200 / 255)
+public struct AgentConversationStyle: Sendable {
+  public let canvas: Color
+  public let face: Color
+  public let well: Color
+  public let ink: Color
+  public let secondary: Color
+  public let muted: Color
+  public let accent: Color
+  public let shadowDark: Color
+  public let shadowLight: Color
+  public let success: Color
+  public let warning: Color
+  public let danger: Color
+  public let bodyFont: Font
+  public let captionFont: Font
+  public let controlFont: Font
+  public let headingFont: Font
+  public let monoFont: Font
+  public let monoSmallFont: Font
+  public let canonicalLayout: Bool
+
+  public init(
+    canvas: Color, face: Color, well: Color, ink: Color, secondary: Color, muted: Color,
+    accent: Color, shadowDark: Color, shadowLight: Color, success: Color, warning: Color,
+    danger: Color, bodyFont: Font, captionFont: Font, controlFont: Font, headingFont: Font,
+    monoFont: Font, monoSmallFont: Font, canonicalLayout: Bool
+  ) {
+    self.canvas = canvas
+    self.face = face
+    self.well = well
+    self.ink = ink
+    self.secondary = secondary
+    self.muted = muted
+    self.accent = accent
+    self.shadowDark = shadowDark
+    self.shadowLight = shadowLight
+    self.success = success
+    self.warning = warning
+    self.danger = danger
+    self.bodyFont = bodyFont
+    self.captionFont = captionFont
+    self.controlFont = controlFont
+    self.headingFont = headingFont
+    self.monoFont = monoFont
+    self.monoSmallFont = monoSmallFont
+    self.canonicalLayout = canonicalLayout
+  }
+
+  public static let standard = AgentConversationStyle(
+    canvas: Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255),
+    face: Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255),
+    well: Color(red: 216 / 255, green: 222 / 255, blue: 232 / 255),
+    ink: Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255),
+    secondary: Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255),
+    muted: Color(red: 142 / 255, green: 154 / 255, blue: 179 / 255),
+    accent: Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255),
+    shadowDark: Color(red: 166 / 255, green: 180 / 255, blue: 200 / 255),
+    shadowLight: .white, success: .green, warning: .orange, danger: .red,
+    bodyFont: .body, captionFont: .caption, controlFont: .caption, headingFont: .headline,
+    monoFont: .caption.monospaced(), monoSmallFont: .caption2.monospaced(),
+    canonicalLayout: false)
 }
 
 private struct AgentRaised: ViewModifier {
+  let style: AgentConversationStyle
   var radius: CGFloat = 14
+  var offset: CGFloat = 3
+  var blur: CGFloat = 6
   func body(content: Content) -> some View {
-    content.background(AgentColors.face, in: RoundedRectangle(cornerRadius: radius))
-      .shadow(color: .white.opacity(0.78), radius: 5, x: -3, y: -3)
-      .shadow(color: AgentColors.shadow.opacity(0.42), radius: 5, x: 3, y: 3)
+    if style.canonicalLayout {
+      content.background(style.face, in: RoundedRectangle(cornerRadius: radius))
+        .compositingGroup()
+        .shadow(color: style.shadowLight, radius: blur / 2, x: -offset, y: -offset)
+        .shadow(color: style.shadowDark, radius: blur / 2, x: offset, y: offset)
+    } else {
+      content.background(style.face, in: RoundedRectangle(cornerRadius: radius))
+        .shadow(color: style.shadowLight.opacity(0.78), radius: 5, x: -3, y: -3)
+        .shadow(color: style.shadowDark.opacity(0.42), radius: 5, x: 3, y: 3)
+    }
+  }
+}
+
+private struct AgentWell: ViewModifier {
+  let style: AgentConversationStyle
+  var radius: CGFloat = 12
+  func body(content: Content) -> some View {
+    if style.canonicalLayout {
+      content.background {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+          .fill(
+            style.well
+              .shadow(.inner(color: style.shadowDark, radius: 3, x: 3, y: 3))
+              .shadow(.inner(color: style.shadowLight, radius: 3, x: -3, y: -3)))
+      }
+    } else {
+      content.background(style.face, in: RoundedRectangle(cornerRadius: radius))
+        .shadow(color: style.shadowLight.opacity(0.78), radius: 5, x: -3, y: -3)
+        .shadow(color: style.shadowDark.opacity(0.42), radius: 5, x: 3, y: 3)
+    }
   }
 }
 
@@ -24,13 +108,18 @@ private struct AgentRaised: ViewModifier {
   @Bindable private var client: EngineClient
   private let paneId: String
   private let showsConfiguration: Bool
+  private let style: AgentConversationStyle
   @State private var prompt = ""
   @FocusState private var promptFocused: Bool
 
-  public init(client: EngineClient, paneId: String, showsConfiguration: Bool = true) {
+  public init(
+    client: EngineClient, paneId: String, showsConfiguration: Bool = true,
+    style: AgentConversationStyle = .standard
+  ) {
     self.client = client
     self.paneId = paneId
     self.showsConfiguration = showsConfiguration
+    self.style = style
   }
 
   private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
@@ -46,9 +135,12 @@ private struct AgentRaised: ViewModifier {
       Divider().opacity(0.35)
       transcript
       if !view.authMethods.isEmpty { authentication }
-      if let permission = view.permission { PermissionCard(client: client, request: permission) }
+      if let permission = view.permission {
+        PermissionCard(client: client, request: permission, style: style)
+      }
       if let elicitation = view.elicitation {
-        ElicitationCard(client: client, request: elicitation).id(elicitation.requestId)
+        ElicitationCard(client: client, request: elicitation, style: style).id(
+          elicitation.requestId)
       }
       if !view.queue.isEmpty || view.queuePaused { queue }
       composer
@@ -56,7 +148,7 @@ private struct AgentRaised: ViewModifier {
         configuration(options)
       }
     }
-    .background(AgentColors.canvas).foregroundStyle(AgentColors.ink)
+    .background(style.canvas).foregroundStyle(style.ink)
     .task(id: prompt.isEmpty) {
       guard !prompt.isEmpty else { return }
       while !Task.isCancelled && !prompt.isEmpty {
@@ -71,14 +163,14 @@ private struct AgentRaised: ViewModifier {
 
   private var controls: some View {
     HStack(spacing: 10) {
-      if let usage = contextUsage { ContextRing(used: usage.0, total: usage.1) }
+      if let usage = contextUsage { ContextRing(used: usage.0, total: usage.1, style: style) }
       if let agent = pane?.agent {
         Button {
           client.setYolo(paneId, on: !agent.yolo)
         } label: {
           Label(agent.yolo ? "Yolo on" : "Yolo off", systemImage: agent.yolo ? "bolt.fill" : "bolt")
         }
-        .buttonStyle(.bordered).tint(agent.yolo ? .orange : AgentColors.secondary)
+        .buttonStyle(.bordered).tint(agent.yolo ? style.warning : style.secondary)
         .disabled(agent.operation != nil || !client.connected)
       }
       Spacer()
@@ -89,7 +181,8 @@ private struct AgentRaised: ViewModifier {
           Label("Cancel", systemImage: "stop.fill")
         }.buttonStyle(.bordered).disabled(pane?.state == .cancelling)
       }
-    }.font(.caption).padding(.horizontal, 16).padding(.vertical, 10)
+    }.font(style.controlFont).padding(.horizontal, style.canonicalLayout ? 14 : 16)
+      .padding(.vertical, style.canonicalLayout ? 8 : 10)
   }
 
   private var transcript: some View {
@@ -102,13 +195,14 @@ private struct AgentRaised: ViewModifier {
           }
           if let notice = view.notice {
             Label(notice, systemImage: "exclamationmark.triangle")
-              .font(.caption).foregroundStyle(.orange).padding(10)
+              .font(.caption).foregroundStyle(style.warning).padding(10)
           }
           ForEach(view.messages, id: \.localId) { message in
-            TranscriptRow(message: message).id(message.localId)
+            TranscriptRow(message: message, style: style).id(message.localId)
           }
           Color.clear.frame(height: 1).id("agent-bottom")
-        }.padding(16)
+        }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
+          .padding(.vertical, style.canonicalLayout ? 12 : 16)
       }
       .onChange(of: view.messages.count) { _, _ in
         withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("agent-bottom", anchor: .bottom) }
@@ -127,10 +221,10 @@ private struct AgentRaised: ViewModifier {
         if view.queuePaused {
           Button("Resume") { client.resumeAgentQueue(paneId) }.buttonStyle(.borderedProminent)
         }
-      }.font(.caption.weight(.semibold))
+      }.font(style.captionFont.weight(.semibold))
       ForEach(view.queue, id: \.promptId) { item in
         HStack(spacing: 8) {
-          Text(item.text).font(.caption).lineLimit(2)
+          Text(item.text).font(style.captionFont).lineLimit(2)
           Spacer()
           unavailableSteer
           Button(role: .destructive) {
@@ -141,13 +235,15 @@ private struct AgentRaised: ViewModifier {
           .buttonStyle(.plain).accessibilityLabel("Remove queued message")
         }
       }
-    }.padding(12).modifier(AgentRaised(radius: 12)).padding(.horizontal, 16).padding(.bottom, 10)
+    }.padding(12).modifier(AgentRaised(style: style, radius: 12))
+      .padding(.horizontal, style.canonicalLayout ? 14 : 16)
+      .padding(.bottom, 10)
   }
 
   private var authentication: some View {
     VStack(alignment: .leading, spacing: 10) {
       Label("Sign in to continue", systemImage: "person.badge.key")
-        .font(.headline).foregroundStyle(.orange)
+        .font(style.headingFont).foregroundStyle(style.warning)
       #if os(macOS)
         ForEach(view.authMethods, id: \.id) { method in
           Button {
@@ -157,7 +253,7 @@ private struct AgentRaised: ViewModifier {
               VStack(alignment: .leading, spacing: 3) {
                 Text(method.name).fontWeight(.semibold)
                 if let detail = method.description {
-                  Text(detail).font(.caption).foregroundStyle(AgentColors.secondary)
+                  Text(detail).font(style.captionFont).foregroundStyle(style.secondary)
                 }
               }
               Spacer()
@@ -167,9 +263,13 @@ private struct AgentRaised: ViewModifier {
         }
       #else
         Text("Finish sign-in on the Mac, then return here.")
-          .font(.caption).foregroundStyle(AgentColors.secondary)
+          .font(style.captionFont).foregroundStyle(style.secondary)
       #endif
-    }.padding(14).modifier(AgentRaised(radius: 14)).padding(.horizontal, 16).padding(.bottom, 10)
+    }.padding(14)
+      .modifier(
+        AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
+      )
+      .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
   }
 
   @ViewBuilder private var unavailableSteer: some View {
@@ -187,13 +287,17 @@ private struct AgentRaised: ViewModifier {
       TextField("Message the agent", text: $prompt, axis: .vertical)
         .lineLimit(1...6).textFieldStyle(.plain).focused($promptFocused)
         .onSubmit { submit() }
-        .padding(.horizontal, 14).padding(.vertical, 11).modifier(AgentRaised(radius: 14))
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
       Button(action: submit) {
         Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
-          .frame(width: 36, height: 36).background(AgentColors.accent, in: Circle())
+          .frame(
+            width: style.canonicalLayout ? 30 : 36,
+            height: style.canonicalLayout ? 30 : 36
+          ).background(style.accent, in: Circle())
       }.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         .accessibilityLabel("Send message")
-    }.padding(.horizontal, 16).padding(.vertical, 12)
+    }.padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.vertical, 12)
   }
 
   private func configuration(_ options: [ConfigOption]) -> some View {
@@ -221,7 +325,8 @@ private struct AgentRaised: ViewModifier {
       }
       Spacer()
       if pane?.agent?.operation != nil { ProgressView().controlSize(.small) }
-    }.font(.caption).padding(.horizontal, 16).padding(.bottom, 12)
+    }.font(style.captionFont).padding(.horizontal, style.canonicalLayout ? 14 : 16)
+      .padding(.bottom, 12)
   }
 
   private var contextUsage: (Double, Double)? {
@@ -261,16 +366,17 @@ private struct AgentRaised: ViewModifier {
 private struct ContextRing: View {
   let used: Double
   let total: Double
+  let style: AgentConversationStyle
   private var fraction: Double { used / total }
   private var color: Color {
-    fraction > 0.9 ? .red : fraction > 0.75 ? .orange : AgentColors.accent
+    fraction > 0.9 ? style.danger : fraction > 0.75 ? style.warning : style.accent
   }
   var body: some View {
     Menu {
       Text("\(Int(used)) of \(Int(total)) context tokens")
     } label: {
       ZStack {
-        Circle().stroke(AgentColors.shadow.opacity(0.35), lineWidth: 3)
+        Circle().stroke(style.shadowDark.opacity(0.35), lineWidth: 3)
         Circle().trim(from: 0, to: fraction).stroke(
           color, style: StrokeStyle(lineWidth: 3, lineCap: .round)
         )
@@ -282,6 +388,7 @@ private struct ContextRing: View {
 
 private struct TranscriptRow: View {
   let message: TranscriptMessage
+  let style: AgentConversationStyle
   @State private var showsThought = false
   var body: some View {
     Group {
@@ -290,7 +397,7 @@ private struct TranscriptRow: View {
         DisclosureGroup("Thought", isExpanded: $showsThought) {
           Text(message.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
-        }.foregroundStyle(AgentColors.secondary)
+        }.foregroundStyle(style.secondary)
       case .tool:
         if let tool = message.tool {
           HStack(alignment: .top, spacing: 10) {
@@ -306,7 +413,11 @@ private struct TranscriptRow: View {
               }
             }
             Spacer()
-          }.padding(11).modifier(AgentRaised(radius: 11))
+          }.padding(style.canonicalLayout ? 10 : 11)
+            .modifier(
+              AgentRaised(
+                style: style, radius: style.canonicalLayout ? 10 : 11, offset: 2, blur: 4)
+            )
         }
       case .terminal:
         if let output = message.terminal {
@@ -314,8 +425,10 @@ private struct TranscriptRow: View {
             .font(.caption.monospaced()).textSelection(.enabled).frame(
               maxWidth: .infinity, alignment: .leading
             )
-            .padding(11).background(
-              Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .padding(style.canonicalLayout ? 10 : 11)
+            .background(
+              style.canonicalLayout ? style.well : Color.black.opacity(0.06),
+              in: RoundedRectangle(cornerRadius: 10))
         }
       case .plan:
         VStack(alignment: .leading, spacing: 5) {
@@ -332,24 +445,26 @@ private struct TranscriptRow: View {
         Text(message.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
           .padding(12)
           .background(
-            message.role == .user ? AgentColors.accent.opacity(0.15) : AgentColors.face,
-            in: RoundedRectangle(cornerRadius: 14)
+            message.role == .user
+              ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
+            in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
           )
           .padding(.leading, message.role == .user ? 48 : 0)
           .padding(.trailing, message.role == .user ? 0 : 48)
       }
-    }.font(.body)
+    }.font(style.bodyFont)
   }
 }
 
 private struct PermissionCard: View {
   let client: EngineClient
   let request: PermissionRequest
+  let style: AgentConversationStyle
   var body: some View {
     VStack(alignment: .leading, spacing: 9) {
       Label(request.title, systemImage: "shield.lefthalf.filled.badge.checkmark")
-        .font(.headline).foregroundStyle(.orange)
-      Text(request.detail).font(.caption).textSelection(.enabled)
+        .font(style.headingFont).foregroundStyle(style.warning)
+      Text(request.detail).font(style.monoFont).textSelection(.enabled)
       HStack {
         ForEach(request.options, id: \.optionId) { option in
           if option.kind == .allow_once {
@@ -361,13 +476,18 @@ private struct PermissionCard: View {
           }
         }
       }
-    }.padding(14).modifier(AgentRaised(radius: 14)).padding(.horizontal, 16).padding(.bottom, 10)
+    }.padding(14)
+      .modifier(
+        AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
+      )
+      .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
   }
 }
 
 private struct ElicitationCard: View {
   let client: EngineClient
   let request: ElicitationRequest
+  let style: AgentConversationStyle
   @State private var values: [String: String] = [:]
   private var fields: [(String, String)] {
     guard case .object(let schema) = request.schema,
@@ -398,6 +518,10 @@ private struct ElicitationCard: View {
             request, fields: .object(values.mapValues(JsonValue.string)), cancel: false)
         }.buttonStyle(.borderedProminent).disabled(fields.isEmpty)
       }
-    }.padding(14).modifier(AgentRaised(radius: 14)).padding(.horizontal, 16).padding(.bottom, 10)
+    }.padding(14)
+      .modifier(
+        AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
+      )
+      .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
   }
 }

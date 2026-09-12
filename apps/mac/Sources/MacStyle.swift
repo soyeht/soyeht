@@ -1,4 +1,5 @@
 import CoreText
+import SoyehtClient
 import SwiftUI
 
 enum MacTheme {
@@ -63,6 +64,7 @@ enum MacTheme {
 
     static let chip = Elevation(offset: 3, blur: 5)
     static let card = Elevation(offset: 4, blur: 9)
+    static let pane = Elevation(offset: 5, blur: 10)
     static let pill = Elevation(offset: 6, blur: 10)
     static let panel = Elevation(offset: 9, blur: 18)
 
@@ -83,6 +85,14 @@ enum MacTheme {
       _ = CTFontManagerRegisterFontsForURL(font as CFURL, .process, nil)
     }
   }
+
+  static let agentConversation = AgentConversationStyle(
+    canvas: face, face: face, well: well, ink: ink, secondary: secondary, muted: muted,
+    accent: accent, shadowDark: shadowDark, shadowLight: shadowLight, success: success,
+    warning: warning, danger: danger, bodyFont: chrome(TypeScale.body),
+    captionFont: chrome(TypeScale.caption), controlFont: chrome(TypeScale.control),
+    headingFont: chrome(TypeScale.caption, weight: .bold), monoFont: mono(TypeScale.control),
+    monoSmallFont: mono(TypeScale.micro), canonicalLayout: true)
 }
 
 private struct NeoRaised: ViewModifier {
@@ -148,6 +158,11 @@ extension View {
 
   func neoAccent(radius: CGFloat = MacTheme.Radius.control) -> some View {
     modifier(NeoAccentGlow(radius: radius))
+  }
+
+  func pickerHeading() -> some View {
+    font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+      .tracking(1).foregroundStyle(MacTheme.muted)
   }
 }
 
