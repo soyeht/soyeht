@@ -63,6 +63,7 @@ enum MacTheme {
     let blur: CGFloat
 
     static let chip = Elevation(offset: 3, blur: 5)
+    static let taskCard = Elevation(offset: 3, blur: 6)
     static let card = Elevation(offset: 4, blur: 9)
     static let pane = Elevation(offset: 5, blur: 10)
     static let pill = Elevation(offset: 6, blur: 10)

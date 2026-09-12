@@ -24,21 +24,26 @@ struct TaskWorkspaceView: View {
   private var attention: [AttentionItem] { client.attention(in: workspaceId) }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      header
-      Divider().overlay(MacTheme.canvas)
-      toolbar
-      if tasks.isEmpty {
-        emptyState
-      } else if mode == .board {
-        TaskBoard(
-          client: client, tasks: tasks,
-          open: openTask)
-      } else {
-        TaskList(client: client, tasks: tasks, open: openTask)
+    VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
+      paneHeader
+      VStack(alignment: .leading, spacing: MacTheme.Space.x14) {
+        toolbar
+        if tasks.isEmpty {
+          emptyState
+        } else if mode == .board {
+          TaskBoard(client: client, tasks: tasks, open: openTask)
+        } else {
+          TaskList(client: client, tasks: tasks, open: openTask)
+        }
       }
+      .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
     }
-    .background(MacTheme.face)
+    .padding(MacTheme.Space.x10)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
     .sheet(isPresented: $showNewTask) {
       NewTaskSheet(
         client: client, workspaceId: workspaceId, isPresented: $showNewTask)
@@ -49,47 +54,56 @@ struct TaskWorkspaceView: View {
     .onAppear { client.refreshTasks(workspaceId) }
   }
 
-  private var header: some View {
-    HStack(spacing: 12) {
-      Image(systemName: "list.bullet.clipboard").foregroundStyle(MacTheme.accent)
-      VStack(alignment: .leading, spacing: 2) {
-        Text("Workspace tasks").font(.system(size: 15, weight: .semibold, design: .rounded))
-        Text(summary).font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
-      }
+  private var paneHeader: some View {
+    HStack(spacing: MacTheme.Space.x7) {
+      Image(systemName: "checklist").font(.system(size: 13, weight: .semibold))
+      Text("tasks · \(workspaceName)")
+        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
       Spacer()
       Button {
         showAttention.toggle()
       } label: {
-        Label("\(attention.count) need you", systemImage: "bell")
-          .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 8)
-          .background(
-            attention.isEmpty ? MacTheme.canvas : MacTheme.warning.opacity(0.16), in: Capsule())
+        Text(summary).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
       }
       .popover(isPresented: $showAttention, arrowEdge: .bottom) {
         AttentionPopover(items: attention, openPane: openAttentionPane)
       }
       Button {
-        client.refreshTasks(workspaceId)
+        mode = .board
       } label: {
-        Image(systemName: "arrow.clockwise").padding(7)
-      }.help("Refresh tasks")
-    }.padding(.horizontal, 20).padding(.vertical, 14)
+        Image(systemName: "rectangle.split.2x1")
+      }
+      .help("Board")
+      Button {
+        mode = .list
+      } label: {
+        Image(systemName: "rectangle.split.1x2")
+      }
+      .help("List")
+      Image(systemName: "xmark")
+    }
+    .font(.system(size: 14, weight: .medium)).foregroundStyle(MacTheme.secondary)
+    .padding(.horizontal, MacTheme.Space.x12).padding(.vertical, MacTheme.Space.x6)
+    .background(MacTheme.well, in: Capsule())
   }
 
   private var toolbar: some View {
-    HStack(spacing: 12) {
-      Picker("View", selection: $mode) {
-        ForEach(TaskViewMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-      }.pickerStyle(.segmented).frame(width: 180)
+    HStack(spacing: MacTheme.Space.x12) {
+      TaskViewToggle(mode: $mode)
+      TaskToolbarLabel(
+        "Filter", icon: "line.3.horizontal.decrease", trailingIcon: "chevron.down"
+      ).accessibilityHidden(true)
+      TaskToolbarLabel(
+        "Priority", icon: "arrow.up.arrow.down", trailingIcon: "chevron.down"
+      ).accessibilityHidden(true)
       Spacer()
+      dispatchMenu
       Button {
         showNewTask = true
       } label: {
-        Label("New task", systemImage: "plus")
-          .font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 9)
-          .neoRaised(radius: 11, elevation: .pill)
-      }.disabled(!client.connected)
-    }.padding(.horizontal, 20).padding(.vertical, 12)
+        TaskToolbarLabel("New task", icon: "plus", trailingIcon: nil, accent: true)
+      }.disabled(!client.connected).buttonStyle(.plain)
+    }.frame(maxWidth: .infinity, minHeight: 34)
   }
 
   private var emptyState: some View {
@@ -98,13 +112,33 @@ struct TaskWorkspaceView: View {
     } description: {
       Text("Create a task for this workspace, then dispatch it or let an idle pane claim it.")
     } actions: {
-      Button("New task") { showNewTask = true }.buttonStyle(.borderedProminent)
-    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+      Button("New task") { showNewTask = true }.buttonStyle(NeoPillButtonStyle(accent: true))
+    }.font(MacTheme.chrome(MacTheme.TypeScale.body))
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   private var summary: String {
     let active = tasks.filter { $0.state == .in_progress }.count
     return "\(tasks.count) tasks · \(active) in progress · \(attention.count) need you"
+  }
+
+  private var workspaceName: String {
+    client.workspaces.first { $0.workspaceId == workspaceId }?.name ?? "Workspace"
+  }
+
+  private var dispatchMenu: some View {
+    Menu {
+      let ready = tasks.filter { $0.state == .todo && $0.ownerPaneId == nil }
+      if ready.isEmpty {
+        Text("No task is ready")
+      } else {
+        ForEach(ready, id: \.taskId) { task in
+          Button("\(task.taskId) · \(task.title)") { client.dispatchTask(task) }
+        }
+      }
+    } label: {
+      TaskToolbarLabel("Dispatch", icon: "paperplane", trailingIcon: "chevron.down")
+    }.menuIndicator(.hidden).buttonStyle(.plain).fixedSize().disabled(!client.connected)
   }
 
   private func openTask(_ task: TaskRecord) {
@@ -115,6 +149,78 @@ struct TaskWorkspaceView: View {
   private func openAttentionPane(_ paneId: String) {
     showAttention = false
     onOpenPane(paneId)
+  }
+}
+
+private struct TaskViewToggle: View {
+  @Binding var mode: TaskViewMode
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x2) {
+      choice(.board, icon: "square.grid.2x2")
+      choice(.list, icon: "list.bullet")
+    }
+    .padding(MacTheme.Space.x3).background(MacTheme.well, in: Capsule())
+  }
+
+  private func choice(_ value: TaskViewMode, icon: String) -> some View {
+    Button {
+      mode = value
+    } label: {
+      Label(value.rawValue, systemImage: icon)
+        .font(
+          MacTheme.chrome(MacTheme.TypeScale.control, weight: mode == value ? .bold : .semibold)
+        )
+        .foregroundStyle(mode == value ? MacTheme.ink : MacTheme.muted)
+        .padding(.horizontal, MacTheme.Space.x12).padding(.vertical, MacTheme.Space.x6)
+        .background {
+          if mode == value {
+            RoundedRectangle(cornerRadius: MacTheme.Radius.pill).fill(MacTheme.face)
+              .shadow(color: MacTheme.shadowDark, radius: 2, x: 2, y: 2)
+              .shadow(color: MacTheme.shadowLight, radius: 2, x: -2, y: -2)
+          }
+        }
+    }.buttonStyle(.plain)
+  }
+}
+
+private struct TaskToolbarLabel: View {
+  let title: String
+  let icon: String
+  let trailingIcon: String?
+  let accent: Bool
+
+  init(_ title: String, icon: String, trailingIcon: String?, accent: Bool = false) {
+    self.title = title
+    self.icon = icon
+    self.trailingIcon = trailingIcon
+    self.accent = accent
+  }
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x5) {
+      Image(systemName: icon).font(.system(size: 13, weight: .semibold))
+      Text(title).font(
+        MacTheme.chrome(MacTheme.TypeScale.control, weight: accent ? .bold : .semibold))
+      if let trailingIcon {
+        Image(systemName: trailingIcon).font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(accent ? MacTheme.onAccent : MacTheme.muted)
+      }
+    }
+    .foregroundStyle(accent ? MacTheme.onAccent : MacTheme.secondary)
+    .padding(.leading, MacTheme.Space.x10).padding(.trailing, MacTheme.Space.x10)
+    .padding(.vertical, MacTheme.Space.x6)
+    .background {
+      if accent {
+        RoundedRectangle(cornerRadius: MacTheme.Radius.pill).fill(MacTheme.accent)
+          .shadow(color: MacTheme.accent.opacity(0.4), radius: 5, x: 4, y: 4)
+          .shadow(color: MacTheme.shadowLight, radius: 3, x: -3, y: -3)
+      } else {
+        RoundedRectangle(cornerRadius: MacTheme.Radius.pill).fill(MacTheme.face)
+          .shadow(color: MacTheme.shadowDark, radius: 2.5, x: 3, y: 3)
+          .shadow(color: MacTheme.shadowLight, radius: 2.5, x: -3, y: -3)
+      }
+    }
   }
 }
 
@@ -131,13 +237,13 @@ private struct TaskBoard: View {
 
   var body: some View {
     ScrollView([.horizontal, .vertical]) {
-      HStack(alignment: .top, spacing: 14) {
+      HStack(alignment: .top, spacing: MacTheme.Space.x16) {
         ForEach(visibleStates, id: \.rawValue) { state in
           TaskColumn(
             client: client, state: state, tasks: tasks.filter { $0.state == state }, open: open)
         }
-      }.padding(20)
-    }
+      }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }.scrollIndicators(.never)
   }
 }
 
@@ -148,22 +254,36 @@ private struct TaskColumn: View {
   let open: (TaskRecord) -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        Text(state.title.uppercased()).font(.system(size: 10, weight: .bold)).tracking(1.1)
-        Text("\(tasks.count)").font(.system(size: 10, weight: .bold)).padding(5)
-          .background(MacTheme.canvas, in: Circle())
+    VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+      HStack(spacing: MacTheme.Space.x8) {
+        Text(state.title.uppercased())
+          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold)).tracking(0.8)
+        Text("\(tasks.count)").font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+          .padding(.horizontal, MacTheme.Space.x7).padding(.vertical, 1)
+          .background(MacTheme.well, in: Capsule())
         Spacer()
-      }.foregroundStyle(MacTheme.secondary)
+        Image(systemName: "plus").font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(MacTheme.muted)
+      }.foregroundStyle(MacTheme.secondary).padding(.horizontal, MacTheme.Space.x4)
       ForEach(tasks, id: \.taskId) { task in
-        TaskCard(task: task, dispatch: { client.dispatchTask(task) })
-          .onTapGesture { open(task) }.draggable(task.taskId)
+        TaskCard(
+          task: task, ownerName: ownerName(task), commentCount: commentCount(task)
+        )
+        .onTapGesture { open(task) }.draggable(task.taskId)
       }
       Spacer(minLength: 40)
     }
-    .padding(14).frame(width: 224).frame(minHeight: 500, alignment: .top)
-    .background(MacTheme.canvas.opacity(0.62), in: RoundedRectangle(cornerRadius: 16))
+    .frame(minWidth: 250, maxWidth: .infinity, minHeight: 500, alignment: .top)
     .dropDestination(for: String.self) { ids, _ in move(ids.first) }
+  }
+
+  private func ownerName(_ task: TaskRecord) -> String? {
+    guard let owner = task.ownerPaneId else { return nil }
+    return client.panes.first { $0.paneId == owner }?.name ?? owner
+  }
+
+  private func commentCount(_ task: TaskRecord) -> Int {
+    client.taskDetails[task.taskId]?.comments.count ?? 0
   }
 
   private func move(_ taskId: String?) -> Bool {
@@ -177,42 +297,68 @@ private struct TaskColumn: View {
 
 private struct TaskCard: View {
   let task: TaskRecord
-  let dispatch: () -> Void
+  let ownerName: String?
+  let commentCount: Int
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack {
-        Text(task.taskId).font(.system(size: 10, weight: .bold, design: .monospaced))
+    VStack(alignment: .leading, spacing: MacTheme.Space.x7) {
+      HStack(spacing: MacTheme.Space.x6) {
+        Text(task.taskId).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+          .foregroundStyle(MacTheme.muted)
         Spacer()
-        Text(task.priority.title).font(.system(size: 10, weight: .bold))
-          .foregroundStyle(task.priority.color)
+        Text(task.priority.title.lowercased())
+          .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+          .foregroundStyle(MacTheme.secondary).padding(.horizontal, MacTheme.Space.x7)
+          .padding(.vertical, MacTheme.Space.x2).background(MacTheme.well, in: Capsule())
       }
-      Text(task.title).font(.system(size: 13, weight: .semibold, design: .rounded))
+      Text(task.title).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .foregroundStyle(MacTheme.ink).lineSpacing(3.9)
         .fixedSize(horizontal: false, vertical: true)
-      HStack(spacing: 7) {
-        Circle().fill(task.state.color).frame(width: 7, height: 7)
-        Text(task.phrase).font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
-          .lineLimit(2)
+      HStack(spacing: MacTheme.Space.x6) {
+        Circle().fill(indicatorColor).frame(width: 6, height: 6)
+        Text(statusLine).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          .foregroundStyle(MacTheme.secondary).lineLimit(2)
       }
-      if let badge = task.reviewBadge {
-        Text(badge.title).font(.system(size: 9, weight: .bold)).tracking(0.8)
-          .padding(.horizontal, 8).padding(.vertical, 4)
-          .background(badge.color.opacity(0.15), in: Capsule()).foregroundStyle(badge.color)
-      }
-      HStack(spacing: 8) {
-        if let owner = task.ownerPaneId {
-          Label(owner, systemImage: "person.crop.circle").lineLimit(1)
+      HStack(spacing: MacTheme.Space.x8) {
+        if let ownerName {
+          HStack(spacing: MacTheme.Space.x5) {
+            Circle().fill(MacTheme.ink.opacity(0.75)).frame(width: 6, height: 6)
+            Text(ownerName).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold))
+              .lineLimit(1)
+          }
+          .foregroundStyle(MacTheme.ink).padding(.leading, MacTheme.Space.x6)
+          .padding(.trailing, MacTheme.Space.x8).padding(.vertical, MacTheme.Space.x3)
+          .background(ownerColor, in: Capsule())
         }
         if let branch = task.worktree?.branch {
-          Label(branch, systemImage: "arrow.triangle.branch").lineLimit(1)
+          Label(branch, systemImage: "arrow.triangle.branch")
+            .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium)).lineLimit(1)
         }
         Spacer()
-        if task.state == .todo && task.ownerPaneId == nil {
-          Button(action: dispatch) { Image(systemName: "paperplane.fill") }
-            .help("Dispatch task")
-        }
-      }.font(.system(size: 9)).foregroundStyle(MacTheme.secondary)
-    }.padding(13).neoRaised(radius: 13)
+        Label("\(commentCount)", systemImage: "message")
+          .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .semibold))
+      }.foregroundStyle(MacTheme.muted)
+    }
+    .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+  }
+
+  private var statusLine: String {
+    task.reviewBadge.map { "\($0.title) · \(task.phrase)" } ?? task.phrase
+  }
+
+  private var indicatorColor: Color {
+    if let badge = task.reviewBadge { return badge.color }
+    if task.blocking != nil { return MacTheme.warning }
+    return task.state.color
+  }
+
+  private var ownerColor: Color {
+    let colors = [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand]
+    guard let ownerName else { return MacTheme.well }
+    let value = ownerName.utf8.reduce(0) { ($0 + Int($1)) % colors.count }
+    return colors[value]
   }
 }
 
@@ -227,7 +373,7 @@ private struct TaskList: View {
         ForEach(tasks.sorted(by: taskOrder), id: \.taskId) { task in
           HStack(spacing: 14) {
             Circle().fill(task.state.color).frame(width: 8, height: 8)
-            Text(task.taskId).font(.system(size: 11, weight: .bold, design: .monospaced))
+            Text(task.taskId).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
               .frame(width: 62, alignment: .leading)
             VStack(alignment: .leading, spacing: 3) {
               Text(task.title).font(.system(size: 13, weight: .semibold))
@@ -288,7 +434,7 @@ private struct TaskDetailSheet: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack {
-        Text(taskId).font(.system(size: 12, weight: .bold, design: .monospaced))
+        Text(taskId).font(MacTheme.mono(MacTheme.TypeScale.control, weight: .bold))
         Spacer()
         Button {
           dismiss()
@@ -383,7 +529,7 @@ private struct TaskDetailSheet: View {
         Text("No reviewer findings.").foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-          Text(line).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+          Text(line).font(MacTheme.mono(MacTheme.TypeScale.small)).textSelection(.enabled)
         }
       }
     }
@@ -449,7 +595,7 @@ private struct DeclarationList: View {
       if values.isEmpty {
         Text("None declared.").font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
       } else {
-        ForEach(values, id: \.self) { Text($0).font(.system(size: 11, design: .monospaced)) }
+        ForEach(values, id: \.self) { Text($0).font(MacTheme.mono(MacTheme.TypeScale.small)) }
       }
     }.padding(12).neoWell(radius: MacTheme.Radius.compact)
   }
