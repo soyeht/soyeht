@@ -71,6 +71,9 @@ pub enum Error {
     InvalidTaskLimit,
     InvalidTaskNumber,
     InvalidTaskVersion,
+    TaskVersionConflict,
+    TaskDependencyCycle,
+    SubitemNotFound,
     TaskReservationConflict,
     TestFixture(&'static str),
 }
@@ -150,6 +153,9 @@ impl fmt::Display for Error {
             Self::InvalidTaskLimit => f.write_str("invalid task page limit"),
             Self::InvalidTaskNumber => f.write_str("invalid task number"),
             Self::InvalidTaskVersion => f.write_str("invalid task version"),
+            Self::TaskVersionConflict => f.write_str("task version conflict"),
+            Self::TaskDependencyCycle => f.write_str("task dependency cycle"),
+            Self::SubitemNotFound => f.write_str("task subitem not found"),
             Self::TaskReservationConflict => f.write_str("task reservation conflict"),
             Self::TestFixture(message) => f.write_str(message),
         }

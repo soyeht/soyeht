@@ -178,7 +178,7 @@ fn dependency_queries_and_versioned_replacement_use_the_real_graph() {
     second.version = 2;
     store
         .mutate("test", "update", "update", |change| {
-            assert!(change.replace_task(&second, 1)?);
+            change.replace_task(&second, 1)?;
             Ok((json!({}), vec![]))
         })
         .unwrap();
@@ -241,7 +241,7 @@ fn task_details_round_trip_as_separate_named_relations() {
     closed.result = Some(AttemptResult::Completed);
     store
         .mutate("test", "detail-updates", "detail-updates", |change| {
-            assert!(change.replace_subitem("workspace-1", "WS-1", &subitem)?);
+            change.replace_subitem("workspace-1", "WS-1", &subitem)?;
             assert!(change.replace_attempt("workspace-1", "WS-1", &closed)?);
             Ok((json!({}), vec![]))
         })
@@ -261,6 +261,99 @@ fn task_details_round_trip_as_separate_named_relations() {
         [closed]
     );
     assert_eq!(store.task_moves("workspace-1", "WS-1").unwrap(), [movement]);
+}
+
+#[test]
+fn task_writes_report_stale_versions_and_allocate_subitem_ids_in_the_transaction() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let original = task("WS-1", TaskPriority::Medium);
+    insert(&mut store, &original, "task");
+    let mut updated = original.clone();
+    updated.version = 2;
+    store
+        .mutate("test", "first-update", "first-update", |change| {
+            change.replace_task(&updated, 1)?;
+            let first = change.allocate_subitem_id("workspace-1", "WS-1")?;
+            assert_eq!(first, "WS-1-T01");
+            change.insert_subitem(
+                "workspace-1",
+                "WS-1",
+                &Subitem {
+                    subitem_id: first,
+                    task_id: "WS-1".into(),
+                    text: "Plan".into(),
+                    agent: None,
+                    instructions: None,
+                    state: SubitemState::Open,
+                },
+            )?;
+            assert_eq!(
+                change.allocate_subitem_id("workspace-1", "WS-1")?,
+                "WS-1-T02"
+            );
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let error = match store.mutate("test", "stale-update", "stale-update", |change| {
+        change.replace_task(&updated, 1)?;
+        Ok((json!({}), vec![]))
+    }) {
+        Ok(_) => panic!("stale update must fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, soyeht_store::Error::TaskVersionConflict));
+}
+
+#[test]
+fn comment_pages_use_an_exclusive_cursor_from_the_real_database() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    insert(&mut store, &task("WS-1", TaskPriority::Medium), "task");
+    store
+        .mutate("test", "comments", "comments", |change| {
+            for (id, text) in [("first", "One"), ("second", "Two"), ("third", "Three")] {
+                change.insert_comment(
+                    "workspace-1",
+                    "WS-1",
+                    &Comment {
+                        comment_id: id.into(),
+                        task_id: "WS-1".into(),
+                        author: "you".into(),
+                        text: text.into(),
+                        at: id.into(),
+                    },
+                )?;
+            }
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+
+    let first = store
+        .task_comments_page("workspace-1", "WS-1", None, 2)
+        .unwrap();
+    assert_eq!(
+        first
+            .items
+            .iter()
+            .map(|item| item.comment_id.as_str())
+            .collect::<Vec<_>>(),
+        ["third", "second"]
+    );
+    let second = store
+        .task_comments_page("workspace-1", "WS-1", first.next_before, 2)
+        .unwrap();
+    assert_eq!(
+        second
+            .items
+            .iter()
+            .map(|item| item.comment_id.as_str())
+            .collect::<Vec<_>>(),
+        ["first"]
+    );
+    assert_eq!(second.next_before, None);
 }
 
 #[test]

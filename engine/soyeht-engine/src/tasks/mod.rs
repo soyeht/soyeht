@@ -1,5 +1,6 @@
 //! Workspace task rules and their persistence boundary.
 
+mod api;
 pub mod feedback;
 mod phrase;
 pub mod ports;

@@ -134,6 +134,9 @@ fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
         Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
         Error::CursorTooOld => ErrorKind::CursorTooOld,
         Error::DiskFull => ErrorKind::DiskFull,
+        Error::TaskVersionConflict => ErrorKind::StaleVersion,
+        Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
+        Error::SubitemNotFound => ErrorKind::NotFound,
         Error::InvalidEngineGeneration
         | Error::InvalidIdempotencyKey
         | Error::EventParametersNotObject

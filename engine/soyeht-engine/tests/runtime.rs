@@ -143,6 +143,24 @@ fn binding_hello(path: &std::path::Path, binding: &str) -> (UnixStream, Value) {
     };
     (socket, serde_json::from_slice(&response).unwrap())
 }
+
+fn binding_request(socket: &mut UnixStream, id: u64, method: &str, params: Value) -> Value {
+    Frame::Json(
+        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
+            .unwrap(),
+    )
+    .write_to(&mut *socket)
+    .unwrap();
+    loop {
+        let Some(Frame::Json(response)) = Frame::read_from(&mut *socket).unwrap() else {
+            panic!("binding response")
+        };
+        let response: Value = serde_json::from_slice(&response).unwrap();
+        if response["id"] == id {
+            return response;
+        }
+    }
+}
 impl Drop for Rig {
     fn drop(&mut self) {
         if let Some(mut child) = self.engine.take() {
@@ -1762,6 +1780,176 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
         phone.hello(&key, token)["error"]["data"]["kind"],
         "unauthorized"
     );
+}
+
+fn create_task_fixture(rig: &Rig, client: &mut Client) -> (String, Value, Value) {
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Tasks","path":rig.path,"idempotencyKey":"task-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let invalid = client.request(
+        "task.create",
+        json!({"workspaceId":workspace,"title":"Invalid","mustNotChange":"","idempotencyKey":"invalid-task"}),
+    );
+    assert_eq!(invalid["error"]["data"]["kind"], "invalid_params");
+    let first_params = json!({
+        "workspaceId":workspace,"title":"First","description":"Build it",
+        "mustNotChange":"Keep the boundary","idempotencyKey":"first-task"
+    });
+    let first = client.call("task.create", first_params.clone())["task"].clone();
+    let repeated = client.call("task.create", first_params)["task"].clone();
+    assert_eq!(repeated["taskId"], first["taskId"]);
+    assert_eq!(first["taskId"], "WS-1");
+    assert_eq!(first["createdBy"], "you");
+    let second = client.call(
+        "task.create",
+        json!({
+            "workspaceId":workspace,"title":"Second","mustNotChange":"Keep the first task",
+            "priority":"urgent","dependencies":[first["taskId"]],"idempotencyKey":"second-task"
+        }),
+    )["task"]
+        .clone();
+    let page = client.call("task.list", json!({"workspaceId":workspace,"limit":1}));
+    assert_eq!(page["items"][0]["taskId"], second["taskId"]);
+    assert_eq!(page["nextCursor"], "1");
+    let next = client.call(
+        "task.list",
+        json!({"workspaceId":workspace,"limit":1,"cursor":page["nextCursor"]}),
+    );
+    assert_eq!(next["items"][0]["taskId"], first["taskId"]);
+    assert!(next["nextCursor"].is_null());
+    (workspace, first, second)
+}
+
+fn assert_task_mutations_and_snapshot(
+    client: &mut Client,
+    workspace: &str,
+    first: &Value,
+    second: &Value,
+) {
+    let update = client.call(
+        "task.update",
+        json!({
+            "workspaceId":workspace,"taskId":first["taskId"],"version":1,
+            "title":"First revised","idempotencyKey":"update-first"
+        }),
+    );
+    assert_eq!(update["task"]["version"], 2);
+    let stale = client.request(
+        "task.update",
+        json!({
+            "workspaceId":workspace,"taskId":first["taskId"],"version":1,
+            "title":"Stale","idempotencyKey":"stale-first"
+        }),
+    );
+    assert_eq!(stale["error"]["data"]["kind"], "stale_version");
+    let cycle = client.request(
+        "task.update",
+        json!({
+            "workspaceId":workspace,"taskId":first["taskId"],"version":2,
+            "dependencies":[second["taskId"]],"idempotencyKey":"cycle-first"
+        }),
+    );
+    assert_eq!(cycle["error"]["data"]["kind"], "dependency_cycle");
+
+    let subitem = client.call(
+        "task.subitem.add",
+        json!({
+            "workspaceId":workspace,"taskId":first["taskId"],"text":"Plan",
+            "idempotencyKey":"subitem-add"
+        }),
+    )["subitem"]
+        .clone();
+    assert_eq!(subitem["subitemId"], "WS-1-T01");
+    let done = client.call(
+        "task.subitem.done",
+        json!({
+            "workspaceId":workspace,"taskId":first["taskId"],
+            "subitemId":subitem["subitemId"],"idempotencyKey":"subitem-done"
+        }),
+    );
+    assert_eq!(done["subitem"]["state"], "done");
+    for (key, text) in [("comment-one", "Started"), ("comment-two", "Finished")] {
+        client.call(
+            "task.comment",
+            json!({
+                "workspaceId":workspace,"taskId":first["taskId"],"text":text,
+                "idempotencyKey":key
+            }),
+        );
+    }
+    let comments = client.call(
+        "task.comments",
+        json!({"workspaceId":workspace,"taskId":first["taskId"],"limit":1}),
+    );
+    assert_eq!(comments["items"][0]["text"], "Finished");
+    let older = client.call(
+        "task.comments",
+        json!({
+            "workspaceId":workspace,"taskId":first["taskId"],"limit":1,
+            "before":comments["nextCursor"]
+        }),
+    );
+    assert_eq!(older["items"][0]["text"], "Started");
+
+    let shown = client.call(
+        "task.show",
+        json!({"workspaceId":workspace,"taskId":first["taskId"]}),
+    );
+    assert_eq!(shown["task"]["title"], "First revised");
+    assert_eq!(shown["subitems"].as_array().unwrap().len(), 1);
+    assert_eq!(shown["comments"].as_array().unwrap().len(), 2);
+    let (_, parts) = client.snapshot();
+    assert_eq!(
+        parts
+            .iter()
+            .filter(|part| part["section"] == "tasks")
+            .count(),
+        1
+    );
+    assert_eq!(
+        parts
+            .iter()
+            .find(|part| part["section"] == "tasks")
+            .unwrap()["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+fn assert_executor_cannot_read_unowned_tasks(rig: &Rig, workspace: &str, first: &Value) {
+    let (_, pane) = rig.agent();
+    let binding = rig.database_probe().agent_binding(&pane).unwrap();
+    let (mut bound, welcome) = binding_hello(&rig.path.join("engine.sock"), &binding);
+    assert_eq!(welcome["result"]["role"], "agent");
+    let denied = binding_request(
+        &mut bound,
+        2,
+        "task.show",
+        json!({"workspaceId":workspace,"taskId":first["taskId"]}),
+    );
+    assert_eq!(denied["error"]["data"]["kind"], "forbidden_role");
+    let denied = binding_request(
+        &mut bound,
+        3,
+        "task.list",
+        json!({"workspaceId":workspace,"limit":20}),
+    );
+    assert_eq!(denied["error"]["data"]["kind"], "forbidden_role");
+}
+
+#[test]
+fn task_authoring_is_durable_paged_versioned_and_closed_by_role() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let (workspace, first, second) = create_task_fixture(&rig, &mut client);
+    assert_task_mutations_and_snapshot(&mut client, &workspace, &first, &second);
+    assert_executor_cannot_read_unowned_tasks(&rig, &workspace, &first);
 }
 
 #[test]

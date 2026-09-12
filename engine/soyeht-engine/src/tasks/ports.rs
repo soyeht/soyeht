@@ -3,7 +3,7 @@
 use soyeht_protocol::{Attempt, Comment, LoopConfig, Subitem, Task, TaskMove, TaskState};
 use soyeht_store::{
     database::{Result as StoreResult, Store},
-    tasks::{DispatchCheckpoint, FeedbackState},
+    tasks::{CommentPage, DispatchCheckpoint, FeedbackState},
 };
 
 pub trait TaskStorePort {
@@ -23,6 +23,13 @@ pub trait TaskStorePort {
         before: Option<u64>,
         limit: u32,
     ) -> StoreResult<Vec<Comment>>;
+    fn comments_page(
+        &self,
+        workspace: &str,
+        task: &str,
+        before: Option<u64>,
+        limit: u32,
+    ) -> StoreResult<CommentPage>;
     fn attempts(&self, workspace: &str, task: &str) -> StoreResult<Vec<Attempt>>;
     fn moves(&self, workspace: &str, task: &str) -> StoreResult<Vec<TaskMove>>;
     fn dependencies(&self, workspace: &str, task: &str) -> StoreResult<Vec<String>>;
@@ -64,6 +71,16 @@ impl TaskStorePort for Store {
         limit: u32,
     ) -> StoreResult<Vec<Comment>> {
         Store::task_comments(self, workspace, task, before, limit)
+    }
+
+    fn comments_page(
+        &self,
+        workspace: &str,
+        task: &str,
+        before: Option<u64>,
+        limit: u32,
+    ) -> StoreResult<CommentPage> {
+        Store::task_comments_page(self, workspace, task, before, limit)
     }
 
     fn attempts(&self, workspace: &str, task: &str) -> StoreResult<Vec<Attempt>> {
@@ -148,6 +165,19 @@ pub(crate) mod testing {
 
         fn comments(&self, _: &str, _: &str, _: Option<u64>, _: u32) -> StoreResult<Vec<Comment>> {
             Ok(Vec::new())
+        }
+
+        fn comments_page(
+            &self,
+            _: &str,
+            _: &str,
+            _: Option<u64>,
+            _: u32,
+        ) -> StoreResult<CommentPage> {
+            Ok(CommentPage {
+                items: Vec::new(),
+                next_before: None,
+            })
         }
 
         fn attempts(&self, _: &str, _: &str) -> StoreResult<Vec<Attempt>> {

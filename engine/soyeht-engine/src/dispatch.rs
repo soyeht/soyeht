@@ -279,6 +279,11 @@ impl Core {
             "pane.permission.answer" | "pane.elicitation.answer" => {
                 self.agent_answer(connection, method, params)?
             }
+            "task.show" | "task.list" | "task.comments" => {
+                self.task_query(connection, method, params)?
+            }
+            "task.create" | "task.update" | "task.comment" | "task.subitem.add"
+            | "task.subitem.done" => self.task_author(connection, method, params)?,
             "pane.stream.subscribe" => {
                 self.subscribe_stream(connection, request_id, params)?;
                 return Ok(Outcome::Queued);
@@ -358,7 +363,6 @@ impl Core {
     fn snapshot_parts(&mut self, connection: &str) -> Result<Outcome> {
         let snapshot = self.store.snapshot().map_err(errors::storage)?;
         let mut sections = snapshot.sections;
-        sections.push(("tasks".into(), json!([])));
         let pairing = self.pending_pair_view()?;
         if let Some((_, requests)) = sections.iter_mut().find(|(name, _)| name == "requests") {
             let requests = requests
@@ -445,5 +449,6 @@ pub fn capabilities() -> Vec<String> {
         "event-replay".into(),
         "terminal-replay".into(),
         "device-pairing".into(),
+        "workspace-tasks".into(),
     ]
 }

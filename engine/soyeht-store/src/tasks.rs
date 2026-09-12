@@ -22,6 +22,12 @@ pub struct DispatchCheckpoint {
     pub pane_id: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommentPage {
+    pub items: Vec<Comment>,
+    pub next_before: Option<u64>,
+}
+
 fn decoded<T: DeserializeOwned>(row: &Row<'_>, index: usize) -> rusqlite::Result<T> {
     let payload: String = row.get(index)?;
     serde_json::from_str(&payload).map_err(|error| {
@@ -120,17 +126,39 @@ impl Store {
         before: Option<u64>,
         limit: u32,
     ) -> Result<Vec<Comment>> {
+        Ok(self
+            .task_comments_page(workspace_id, task_id, before, limit)?
+            .items)
+    }
+
+    pub fn task_comments_page(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        before: Option<u64>,
+        limit: u32,
+    ) -> Result<CommentPage> {
         if limit == 0 || limit > 500 {
             return Err(Error::InvalidTaskLimit);
         }
         let before = before.unwrap_or(i64::MAX as u64).min(i64::MAX as u64) as i64;
         let mut statement = self.connection.prepare(
-            "SELECT payload FROM task_comments WHERE workspace_id=?1 AND task_id=?2 AND ordinal<?3 ORDER BY ordinal DESC LIMIT ?4",
+            "SELECT ordinal,payload FROM task_comments WHERE workspace_id=?1 AND task_id=?2 AND ordinal<?3 ORDER BY ordinal DESC LIMIT ?4",
         )?;
-        let rows = statement.query_map(params![workspace_id, task_id, before, limit], |row| {
-            decoded(row, 0)
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        let rows = statement
+            .query_map(params![workspace_id, task_id, before, limit + 1], |row| {
+                Ok((row.get::<_, i64>(0)? as u64, decoded(row, 1)?))
+            })?;
+        let mut rows = rows.collect::<rusqlite::Result<Vec<(u64, Comment)>>>()?;
+        let has_more = rows.len() > limit as usize;
+        rows.truncate(limit as usize);
+        let next_before = has_more
+            .then(|| rows.last().map(|(ordinal, _)| *ordinal))
+            .flatten();
+        Ok(CommentPage {
+            items: rows.into_iter().map(|(_, comment)| comment).collect(),
+            next_before,
+        })
     }
 
     pub fn task_attempts(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Attempt>> {
@@ -305,7 +333,7 @@ impl Change<'_> {
         Ok(())
     }
 
-    pub fn replace_task(&self, task: &Task, expected_version: u32) -> Result<bool> {
+    pub fn replace_task(&self, task: &Task, expected_version: u32) -> Result<()> {
         if task.version
             != expected_version
                 .checked_add(1)
@@ -321,7 +349,22 @@ impl Change<'_> {
         if changed == 1 {
             self.replace_dependencies(task)?;
         }
-        Ok(changed == 1)
+        if changed != 1 {
+            return Err(Error::TaskVersionConflict);
+        }
+        Ok(())
+    }
+
+    pub fn allocate_subitem_id(&self, workspace_id: &str, task_id: &str) -> Result<String> {
+        let number: i64 = self.transaction.query_row(
+            "SELECT COALESCE(MAX(ordinal),0)+1 FROM task_subitems WHERE workspace_id=?1 AND task_id=?2",
+            params![workspace_id, task_id],
+            |row| row.get(0),
+        )?;
+        if number <= 0 {
+            return Err(Error::InvalidTaskNumber);
+        }
+        Ok(format!("{task_id}-T{number:02}"))
     }
 
     fn replace_dependencies(&self, task: &Task) -> Result<()> {
@@ -409,11 +452,15 @@ impl Change<'_> {
         workspace_id: &str,
         task_id: &str,
         subitem: &Subitem,
-    ) -> Result<bool> {
-        Ok(self.transaction.execute(
+    ) -> Result<()> {
+        let changed = self.transaction.execute(
             "UPDATE task_subitems SET payload=?1 WHERE workspace_id=?2 AND task_id=?3 AND subitem_id=?4",
             params![serde_json::to_string(subitem)?,workspace_id,task_id,subitem.subitem_id],
-        )? == 1)
+        )?;
+        if changed != 1 {
+            return Err(Error::SubitemNotFound);
+        }
+        Ok(())
     }
 
     pub fn insert_comment(
