@@ -87,8 +87,9 @@ impl Core {
             core.panes
                 .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
         }
+        let editor_restore_ms = core.now_ms();
         for file in editor_files {
-            core.editor.restore(file);
+            core.editor.restore(file, editor_restore_ms);
         }
         // The supervisor can start after the engine under the service manager.
         // No process is declared dead until its registry has been reconciled.
@@ -448,6 +449,7 @@ impl Core {
     }
 
     pub fn poll_output(&mut self) -> Result<()> {
+        self.advance_editor()?;
         if self.ptyd.is_none() {
             self.connect_supervisor()?;
         }

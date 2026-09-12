@@ -87,7 +87,8 @@ impl Core {
             watching: true,
             updated_ms: self.now_ms(),
         };
-        let reply = open_reply(initial_open_result(&file, &pane, request.line)?, pane_only)?;
+        let (opened, syntax) = initial_open_result(&file, &pane, request.line)?;
+        let reply = open_reply(opened, pane_only)?;
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             false,
@@ -108,7 +109,7 @@ impl Core {
                     screen,
                 },
             );
-            self.editor.insert(file);
+            self.editor.insert_parsed(file, syntax);
         }
         Ok(mutation.result)
     }
@@ -160,7 +161,10 @@ impl Core {
                 .draft_text
                 .clone()
                 .unwrap_or_else(|| file.disk_text.clone()),
-            EditorContentSource::Disk => file.disk_text.clone(),
+            EditorContentSource::Disk => file
+                .conflict_text
+                .clone()
+                .unwrap_or_else(|| file.disk_text.clone()),
             EditorContentSource::Draft => file
                 .draft_text
                 .clone()
@@ -188,7 +192,7 @@ impl Core {
             .stored
             .pane
             .clone();
-        initial_open_result(file, &pane, line)
+        initial_open_result(file, &pane, line).map(|(result, _)| result)
     }
 }
 
@@ -205,7 +209,7 @@ fn initial_open_result(
     file: &EditorFile,
     pane: &Pane,
     line: Option<u32>,
-) -> Result<FileOpenResult> {
+) -> Result<(FileOpenResult, soyeht_editor::SyntaxDocument)> {
     let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
     let syntax = soyeht_editor::SyntaxDocument::new(text, file.language.clone())?;
     let last = syntax.buffer().line_count().saturating_sub(1);
@@ -222,11 +226,14 @@ fn initial_open_result(
         to_line: from.saturating_add(lines.len()) as u32,
         lines,
     };
-    Ok(FileOpenResult {
-        file: viewport.file.clone(),
-        pane: pane.clone(),
-        viewport,
-    })
+    Ok((
+        FileOpenResult {
+            file: viewport.file.clone(),
+            pane: pane.clone(),
+            viewport,
+        },
+        syntax,
+    ))
 }
 
 fn editor_pane(workspace: &soyeht_protocol::Workspace, relative_path: &str) -> Pane {

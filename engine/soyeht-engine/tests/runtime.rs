@@ -1581,6 +1581,229 @@ fn editor_open_rejects_absolute_parent_symlink_escape_and_oversized_files() {
     }
 }
 
+fn local_file_author() -> Value {
+    json!({
+        "actor":{"role":"human_local","client":"runtime-test"},
+        "name":"you"
+    })
+}
+
+fn wait_for_editor_file(
+    client: &mut Client,
+    file_id: &str,
+    condition: impl Fn(&Value) -> bool,
+) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let file = client
+            .section("files")
+            .into_iter()
+            .find(|file| file["fileId"] == file_id)
+            .expect("editor file in snapshot");
+        if condition(&file) {
+            return file;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "editor file did not advance: {file}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn editor_draft_survives_restart_then_autosaves_versions_and_reverts() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("editor-save");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("note.txt");
+    fs::write(&path, "alpha\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Save","path":repository,"idempotencyKey":"save-workspace"}),
+    )["workspace"]["workspaceId"]
+        .clone();
+    let opened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"open-save"}),
+    );
+    let file_id = opened["file"]["fileId"].as_str().unwrap().to_owned();
+    let write_params = json!({
+        "fileId":file_id,"baseRevision":"1","author":local_file_author(),
+        "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":5}},"text":"bravo"}],
+        "idempotencyKey":"write-bravo"
+    });
+    let write = client.call("file.write", write_params.clone());
+    assert_eq!(write["file"]["dirty"], true);
+    assert_eq!(client.call("file.write", write_params), write);
+    let forged = client.request(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"2",
+            "author":{"actor":{"role":"human_local","client":"another-client"},"name":"you"},
+            "edits":[],"idempotencyKey":"forged-author"
+        }),
+    );
+    assert_eq!(forged["error"]["data"]["kind"], "unauthorized");
+    let stale = client.request(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"1","author":local_file_author(),
+            "edits":[],"idempotencyKey":"stale-editor-write"
+        }),
+    );
+    assert_eq!(stale["error"]["data"]["kind"], "stale_version");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "alpha\n");
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    assert_eq!(
+        wait_for_editor_file(&mut restored, &file_id, |file| file["dirty"] == true)["revision"],
+        "2"
+    );
+    let saved = wait_for_editor_file(&mut restored, &file_id, |file| file["dirty"] == false);
+    assert_eq!(saved["diskRevision"], "2");
+    assert_eq!(fs::read_to_string(&path).unwrap(), "bravo\n");
+    let history = restored.call("file.history", json!({"fileId":file_id,"limit":1}));
+    assert_eq!(history["items"].as_array().unwrap().len(), 1);
+    assert_eq!(history["items"][0]["author"]["name"], "you");
+    let bravo_version = history["items"][0]["versionId"].clone();
+    let (before_second, _) = restored.snapshot();
+    restored.call(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"2","author":local_file_author(),
+            "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":5}},"text":"charlie"}],
+            "idempotencyKey":"write-charlie"
+        }),
+    );
+    wait_for_editor_file(&mut restored, &file_id, |file| {
+        file["dirty"] == false && file["revision"] == "3"
+    });
+    assert_eq!(fs::read_to_string(&path).unwrap(), "charlie\n");
+    restored.messages.clear();
+    restored.call("events.subscribe", json!({"since":before_second["cursor"]}));
+    assert!(restored.messages.iter().any(|frame| {
+        let Frame::Json(bytes) = frame else {
+            return false;
+        };
+        let value: Value = serde_json::from_slice(bytes).unwrap();
+        value["method"] == "file.saved" && value["params"]["by"]["name"] == "you"
+    }));
+    restored.call(
+        "file.revert",
+        json!({
+            "fileId":file_id,"versionId":bravo_version,"baseRevision":"3",
+            "idempotencyKey":"revert-bravo"
+        }),
+    );
+    wait_for_editor_file(&mut restored, &file_id, |file| {
+        file["dirty"] == false && file["revision"] == "4"
+    });
+    assert_eq!(fs::read_to_string(&path).unwrap(), "bravo\n");
+    assert_eq!(
+        restored.call("file.history", json!({"fileId":file_id,"limit":10}))["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+#[test]
+fn editor_disk_reload_and_conflict_preserve_both_versions_until_resolution() {
+    let rig = Rig::new();
+    let repository = rig.path.join("editor-conflict");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("note.txt");
+    fs::write(&path, "base\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Conflict","path":repository,"idempotencyKey":"conflict-workspace"}),
+    )["workspace"]["workspaceId"]
+        .clone();
+    let opened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"open-conflict"}),
+    );
+    let file_id = opened["file"]["fileId"].as_str().unwrap().to_owned();
+    let (before_disk_changes, _) = client.snapshot();
+    client.call(
+        "file.watch",
+        json!({"fileId":file_id,"watch":false,"idempotencyKey":"watch-off"}),
+    );
+    fs::write(&path, "outside\n").unwrap();
+    thread::sleep(Duration::from_millis(400));
+    assert_eq!(client.section("files")[0]["revision"], "1");
+    client.call(
+        "file.watch",
+        json!({"fileId":file_id,"watch":true,"idempotencyKey":"watch-on"}),
+    );
+    let reloaded = wait_for_editor_file(&mut client, &file_id, |file| file["revision"] == "2");
+    assert_eq!(reloaded["dirty"], false);
+    let disk = client.call(
+        "file.read",
+        json!({"fileId":file_id,"source":"disk","fromLine":0,"lineCount":1}),
+    );
+    assert_eq!(disk["lines"][0]["text"], "outside");
+    client.call(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"2","author":local_file_author(),
+            "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":7}},"text":"draft"}],
+            "idempotencyKey":"write-draft"
+        }),
+    );
+    fs::write(&path, "second external\n").unwrap();
+    let conflicted = wait_for_editor_file(&mut client, &file_id, |file| file["conflicted"] == true);
+    assert_eq!(conflicted["revision"], "3");
+    thread::sleep(Duration::from_millis(600));
+    assert_eq!(fs::read_to_string(&path).unwrap(), "second external\n");
+    let draft = client.call(
+        "file.read",
+        json!({"fileId":file_id,"source":"draft","fromLine":0,"lineCount":1}),
+    );
+    let disk = client.call(
+        "file.read",
+        json!({"fileId":file_id,"source":"disk","fromLine":0,"lineCount":1}),
+    );
+    assert_eq!(draft["lines"][0]["text"], "draft");
+    assert_eq!(disk["lines"][0]["text"], "second external");
+    client.messages.clear();
+    client.call(
+        "events.subscribe",
+        json!({"since":before_disk_changes["cursor"]}),
+    );
+    let event_names: Vec<_> = client
+        .messages
+        .iter()
+        .filter_map(|frame| {
+            let Frame::Json(bytes) = frame else {
+                return None;
+            };
+            serde_json::from_slice::<Value>(bytes).ok()?["method"]
+                .as_str()
+                .map(str::to_owned)
+        })
+        .collect();
+    assert!(event_names.contains(&"file.changed_on_disk".to_owned()));
+    assert!(event_names.contains(&"file.conflict".to_owned()));
+    client.call(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"3","author":local_file_author(),
+            "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":5}},"text":"chosen"}],
+            "idempotencyKey":"resolve-conflict"
+        }),
+    );
+    wait_for_editor_file(&mut client, &file_id, |file| {
+        file["conflicted"] == false && file["dirty"] == false
+    });
+    assert_eq!(fs::read_to_string(&path).unwrap(), "chosen\n");
+}
+
 impl Client {
     fn wait_state(&mut self, pane: &str, state: &str) -> Value {
         let deadline = Instant::now() + Duration::from_secs(10);

@@ -1,9 +1,9 @@
 use crate::{errors, errors::Result};
-use soyeht_editor::SyntaxDocument;
-use soyeht_protocol::{EditorLanguage, EditorLine};
+use soyeht_editor::{SyntaxDocument, TextBuffer};
+use soyeht_protocol::{EditorLanguage, EditorLine, FileAuthor, TextEdit};
 use soyeht_store::editor::EditorFile;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::{self, Write},
     path::{Component, Path, PathBuf},
@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub trait FileSystemPort: Send {
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String>;
-    fn write_text(&self, path: &Path, text: &str) -> io::Result<()>;
+    fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool>;
 }
 
 #[derive(Default)]
@@ -43,7 +43,10 @@ impl FileSystemPort for SystemFiles {
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not UTF-8"))
     }
 
-    fn write_text(&self, path: &Path, text: &str) -> io::Result<()> {
+    fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool> {
+        if self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)? != expected {
+            return Ok(false);
+        }
         let parent = path.parent().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "file has no parent directory")
         })?;
@@ -58,18 +61,21 @@ impl FileSystemPort for SystemFiles {
             file.sync_all()?;
             fs::set_permissions(&temporary, permissions)?;
             fs::rename(&temporary, path)?;
+            fs::File::open(parent)?.sync_all()?;
             Ok(())
         })();
         if result.is_err() {
             let _ = fs::remove_file(temporary);
         }
-        result
+        result.map(|()| true)
     }
 }
 
 struct OpenDocument {
     file: EditorFile,
     syntax: Option<SyntaxDocument>,
+    save_due_ms: Option<i64>,
+    watch_due_ms: i64,
 }
 
 pub struct Service {
@@ -82,6 +88,14 @@ pub struct ResolvedPath {
     pub relative: String,
 }
 
+pub struct PreparedEdit {
+    pub file: EditorFile,
+    pub changed_lines: Vec<u32>,
+    pub edits: Vec<TextEdit>,
+}
+
+const WATCH_INTERVAL_MS: i64 = 250;
+
 impl Service {
     pub fn new(files: Box<dyn FileSystemPort>) -> Self {
         Self {
@@ -90,9 +104,18 @@ impl Service {
         }
     }
 
-    pub fn restore(&mut self, file: EditorFile) {
-        self.open
-            .insert(file.file_id.clone(), OpenDocument { file, syntax: None });
+    pub fn restore(&mut self, file: EditorFile, now_ms: i64) {
+        let save_due_ms = (file.draft_text.is_some() && file.conflict_text.is_none())
+            .then_some(now_ms.saturating_add(autosave_ms()));
+        self.open.insert(
+            file.file_id.clone(),
+            OpenDocument {
+                file,
+                syntax: None,
+                save_due_ms,
+                watch_due_ms: 0,
+            },
+        );
     }
 
     pub fn resolve(&self, workspace_root: &Path, requested: &str) -> Result<ResolvedPath> {
@@ -142,9 +165,42 @@ impl Service {
             })
     }
 
+    pub fn current_disk(&self, workspace_root: &Path, file: &EditorFile) -> Result<String> {
+        let path = self.resolve(workspace_root, &file.relative_path)?;
+        self.read_disk(&path.canonical)
+    }
+
+    pub fn save_disk(
+        &self,
+        workspace_root: &Path,
+        file: &EditorFile,
+        expected: &str,
+        text: &str,
+    ) -> Result<bool> {
+        let path = self.resolve(workspace_root, &file.relative_path)?;
+        self.files
+            .write_text_if_unchanged(&path.canonical, expected, text)
+            .map_err(errors::io)
+    }
+
     pub fn insert(&mut self, file: EditorFile) {
-        self.open
-            .insert(file.file_id.clone(), OpenDocument { file, syntax: None });
+        self.insert_with_syntax(file, None);
+    }
+
+    pub fn insert_parsed(&mut self, file: EditorFile, syntax: SyntaxDocument) {
+        self.insert_with_syntax(file, Some(syntax));
+    }
+
+    fn insert_with_syntax(&mut self, file: EditorFile, syntax: Option<SyntaxDocument>) {
+        self.open.insert(
+            file.file_id.clone(),
+            OpenDocument {
+                file,
+                syntax,
+                save_due_ms: None,
+                watch_due_ms: 0,
+            },
+        );
     }
 
     pub fn stored(&self, file_id: &str) -> Result<&EditorFile> {
@@ -159,6 +215,124 @@ impl Service {
             .get_mut(file_id)
             .map(|item| &mut item.file)
             .ok_or_else(|| errors::not_found("Open file not found"))
+    }
+
+    pub fn prepare_edit(
+        &self,
+        file_id: &str,
+        base_revision: u64,
+        edits: &[TextEdit],
+        author: FileAuthor,
+        now_ms: i64,
+    ) -> Result<PreparedEdit> {
+        let current = self.stored(file_id)?;
+        if current.revision != base_revision {
+            return Err(errors::stale_version("File revision changed"));
+        }
+        let mut file = current.clone();
+        if edits.is_empty() {
+            return Ok(PreparedEdit {
+                file,
+                changed_lines: Vec::new(),
+                edits: Vec::new(),
+            });
+        }
+        let text = current.draft_text.as_deref().unwrap_or(&current.disk_text);
+        let mut buffer = TextBuffer::new(text);
+        let applied = buffer.apply_all(edits)?;
+        let next_text = buffer.text();
+        if next_text.len() > soyeht_protocol::limits::EDITOR_HISTORY_BYTES {
+            return Err(errors::invalid("Edited file exceeds the editor size limit"));
+        }
+        if let Some(disk) = file.conflict_text.take() {
+            file.disk_text = disk;
+        }
+        file.revision = file
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("File revision exhausted"))?;
+        file.draft_text = Some(next_text);
+        file.draft_author = Some(author);
+        file.updated_ms = now_ms;
+        Ok(PreparedEdit {
+            file,
+            changed_lines: changed_lines(&applied),
+            edits: edits.to_vec(),
+        })
+    }
+
+    pub fn commit_edit(&mut self, prepared: PreparedEdit) {
+        let Some(item) = self.open.get_mut(&prepared.file.file_id) else {
+            return;
+        };
+        if !prepared.edits.is_empty() {
+            let old_text = item
+                .file
+                .draft_text
+                .as_deref()
+                .unwrap_or(&item.file.disk_text);
+            let language = item.file.language.clone();
+            let syntax = item
+                .syntax
+                .take()
+                .and_then(|mut document| {
+                    (document.buffer().text() == old_text)
+                        .then(|| document.apply_all(&prepared.edits).ok().map(|_| document))
+                        .flatten()
+                })
+                .or_else(|| SyntaxDocument::new(&prepared.file.draft_text.clone()?, language).ok());
+            item.syntax = syntax;
+            item.save_due_ms = Some(prepared.file.updated_ms.saturating_add(autosave_ms()));
+        }
+        item.file = prepared.file;
+    }
+
+    pub fn replace(&mut self, file: EditorFile, now_ms: i64) {
+        self.replace_with_syntax(file, now_ms, false);
+    }
+
+    pub fn replace_preserving_syntax(&mut self, file: EditorFile, now_ms: i64) {
+        self.replace_with_syntax(file, now_ms, true);
+    }
+
+    fn replace_with_syntax(&mut self, file: EditorFile, now_ms: i64, preserve: bool) {
+        if let Some(item) = self.open.get_mut(&file.file_id) {
+            if !preserve {
+                item.syntax = None;
+            }
+            item.save_due_ms = (file.draft_text.is_some() && file.conflict_text.is_none())
+                .then_some(now_ms.saturating_add(autosave_ms()));
+            item.watch_due_ms = now_ms.saturating_add(WATCH_INTERVAL_MS);
+            item.file = file;
+        }
+    }
+
+    pub fn due_saves(&self, now_ms: i64) -> Vec<String> {
+        self.open
+            .iter()
+            .filter(|(_, item)| item.save_due_ms.is_some_and(|due| due <= now_ms))
+            .map(|(file_id, _)| file_id.clone())
+            .collect()
+    }
+
+    pub fn due_watches(&self, now_ms: i64) -> Vec<String> {
+        self.open
+            .iter()
+            .filter(|(_, item)| item.file.watching && item.watch_due_ms <= now_ms)
+            .map(|(file_id, _)| file_id.clone())
+            .collect()
+    }
+
+    pub fn checked_watch(&mut self, file_id: &str, now_ms: i64) {
+        if let Some(item) = self.open.get_mut(file_id) {
+            item.watch_due_ms = now_ms.saturating_add(WATCH_INTERVAL_MS);
+        }
+    }
+
+    pub fn defer_save(&mut self, file_id: &str, now_ms: i64) {
+        if let Some(item) = self.open.get_mut(file_id) {
+            item.save_due_ms = Some(now_ms.saturating_add(autosave_ms()));
+        }
     }
 
     pub fn viewport(
@@ -190,6 +364,26 @@ impl Service {
     pub fn remove_pane(&mut self, pane_id: &str) {
         self.open.retain(|_, item| item.file.pane_id != pane_id);
     }
+}
+
+fn autosave_ms() -> i64 {
+    i64::try_from(soyeht_protocol::limits::EDITOR_AUTOSAVE_MS).unwrap_or(i64::MAX)
+}
+
+fn changed_lines(applied: &[soyeht_editor::AppliedEdit]) -> Vec<u32> {
+    let mut lines = BTreeSet::new();
+    for edit in applied {
+        let end = edit.old_end_line.max(edit.new_end_line);
+        for line in edit.start_line..=end {
+            if lines.len() >= soyeht_protocol::limits::EDITOR_VIEWPORT_LINES {
+                return lines.into_iter().collect();
+            }
+            if let Ok(line) = u32::try_from(line) {
+                lines.insert(line);
+            }
+        }
+    }
+    lines.into_iter().collect()
 }
 
 pub fn language(path: &Path) -> EditorLanguage {
@@ -234,12 +428,17 @@ mod tests {
                 .then_some(text)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fixture too large"))
         }
-        fn write_text(&self, path: &Path, text: &str) -> io::Result<()> {
+        fn write_text_if_unchanged(
+            &self,
+            path: &Path,
+            _expected: &str,
+            text: &str,
+        ) -> io::Result<bool> {
             self.writes
                 .lock()
                 .map_err(|_| io::Error::other("fixture lock"))?
                 .push((path.into(), text.into()));
-            Ok(())
+            Ok(true)
         }
     }
 

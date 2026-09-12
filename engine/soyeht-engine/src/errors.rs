@@ -151,6 +151,7 @@ fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
         Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
         Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
         Error::SubitemNotFound => ErrorKind::NotFound,
+        Error::FileVersionNotFound => ErrorKind::NotFound,
         Error::InvalidEngineGeneration
         | Error::InvalidIdempotencyKey
         | Error::EventParametersNotObject
@@ -185,6 +186,7 @@ fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
         | Error::InvalidTranscriptPageLimit
         | Error::TranscriptPageTooLarge
         | Error::ApprovedPairTokenMissing => ErrorKind::InvalidParams,
+        Error::InvalidEditorFile | Error::InvalidFileHistoryLimit => ErrorKind::InvalidParams,
         _ => ErrorKind::InternalError,
     }
 }
@@ -198,6 +200,15 @@ fn supervisor_kind(error: &soyeht_ptyd::Error) -> ErrorKind {
             ErrorKind::HarnessUnavailable
         }
         _ => ErrorKind::PtydUnavailable,
+    }
+}
+
+fn editor_kind(error: &soyeht_editor::Error) -> ErrorKind {
+    match error {
+        soyeht_editor::Error::ParserLanguage | soyeht_editor::Error::ParserStopped => {
+            ErrorKind::InternalError
+        }
+        _ => ErrorKind::InvalidParams,
     }
 }
 
@@ -219,7 +230,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::RateLimited { .. } => ErrorKind::RateLimited,
         Error::IdempotencyConflict(_) => ErrorKind::IdempotencyConflict,
         Error::HarnessUnavailable(_) | Error::Acp(_) => ErrorKind::HarnessUnavailable,
-        Error::Editor(_) => ErrorKind::InvalidParams,
+        Error::Editor(error) => editor_kind(error),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
         Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
