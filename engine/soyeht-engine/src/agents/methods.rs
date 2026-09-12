@@ -112,6 +112,7 @@ fn cancel(
 impl Core {
     pub fn close_agent(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
+        let task_owner_loss = self.task_owner_loss(pane, "returned: the pane closed")?;
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
         let instance = saved.instance_id.clone();
@@ -124,6 +125,7 @@ impl Core {
             clear_attention: true,
             retire_instance: instance.clone().zip(saved.supervisor_id.clone()),
             clear_replay: true,
+            task_owner_loss,
             ..Changes::default()
         };
         for question in self

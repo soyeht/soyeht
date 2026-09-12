@@ -1,6 +1,6 @@
 use super::{
     api::{parameters, task},
-    apply_block, apply_complete, apply_release, apply_request_review,
+    apply_block, apply_complete, apply_owner_loss, apply_release, apply_request_review,
 };
 use crate::{
     core::Core,
@@ -8,9 +8,12 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, Attempt, AttemptResult, BlockingKind, Role, Task, TaskBlockParams, TaskCompleteParams,
-    TaskReleaseParams, TaskRequestReviewParams, TaskState, TaskUnblockParams,
+    Actor, Attempt, AttemptResult, BlockingKind, Comment, Role, Task, TaskBlockParams,
+    TaskCompleteParams, TaskMove, TaskReleaseParams, TaskRequestReviewParams, TaskState,
+    TaskUnblockParams,
 };
+use soyeht_store::database::{Change, Result as StoreResult};
+use uuid::Uuid;
 
 struct ClosingMove {
     current: Task,
@@ -28,7 +31,102 @@ struct ActiveMove {
     reason: String,
 }
 
+pub(crate) struct TaskOwnerLoss {
+    expected_version: u32,
+    task: Task,
+    attempt: Attempt,
+    movement: Option<TaskMove>,
+    comment: Comment,
+}
+
+impl TaskOwnerLoss {
+    pub(crate) fn persist(&self, change: &Change<'_>) -> StoreResult<()> {
+        change.replace_task(&self.task, self.expected_version)?;
+        change.replace_attempt(&self.task.workspace_id, &self.task.task_id, &self.attempt)?;
+        change.insert_comment(&self.task.workspace_id, &self.task.task_id, &self.comment)?;
+        if let Some(movement) = &self.movement {
+            change.insert_move(&self.task.workspace_id, &self.task.task_id, movement)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn events(&self) -> Vec<(String, Value)> {
+        let mut events = Vec::new();
+        if let Some(movement) = &self.movement {
+            events.push((
+                "task.moved".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
+                    "actor":movement.actor,"from":movement.from,"to":movement.to,
+                    "reason":movement.reason}),
+            ));
+        }
+        events.extend([
+            (
+                "task.released".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
+                    "reason":self.comment.text,"attempt":self.attempt.n}),
+            ),
+            (
+                "task.commented".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
+                    "comment":self.comment}),
+            ),
+            (
+                "task.updated".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
+                    "version":self.task.version}),
+            ),
+            (
+                "task.phrase_changed".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
+                    "phrase":self.task.phrase}),
+            ),
+        ]);
+        events
+    }
+}
+
 impl Core {
+    pub(crate) fn task_owner_loss(
+        &self,
+        pane: &str,
+        reason: &str,
+    ) -> Result<Option<TaskOwnerLoss>> {
+        let Some(current) = self
+            .store
+            .active_task_for_pane(pane)
+            .map_err(errors::storage)?
+        else {
+            return Ok(None);
+        };
+        let mut attempt = self.open_attempt(&current)?;
+        let updated = apply_owner_loss(&current)?;
+        let at = self.timestamp();
+        attempt.end = Some(at.clone());
+        attempt.result = Some(AttemptResult::Returned);
+        attempt.summary = Some(reason.into());
+        let movement = (current.state != updated.state).then(|| TaskMove {
+            actor: "system".into(),
+            from: current.state,
+            to: updated.state.clone(),
+            reason: reason.into(),
+            at: at.clone(),
+        });
+        Ok(Some(TaskOwnerLoss {
+            expected_version: current.version,
+            task: updated,
+            attempt,
+            movement,
+            comment: Comment {
+                comment_id: Uuid::new_v4().to_string(),
+                task_id: current.task_id,
+                author: "system".into(),
+                text: reason.into(),
+                at,
+            },
+        }))
+    }
+
     pub(super) fn task_lifecycle(
         &mut self,
         connection: &str,

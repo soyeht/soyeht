@@ -67,6 +67,7 @@ pub struct Changes {
     pub outgoing: Vec<Message>,
     pub probes: Vec<ProbeCapability>,
     pub events: Vec<(String, Value)>,
+    pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
 }
 
 pub fn native_error(error: soyeht_acp::Error) -> errors::Error {
@@ -134,6 +135,10 @@ impl AgentPersistence<'_> {
         }
         if let Some((instance, supervisor)) = &self.changes.retire_instance {
             tx.retire_agent_outbox_process(self.id, instance, supervisor)?;
+        }
+        if let Some(loss) = &self.changes.task_owner_loss {
+            loss.persist(tx)?;
+            events.extend(loss.events());
         }
         write_pane(tx, self.saved)?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;

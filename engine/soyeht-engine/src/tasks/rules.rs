@@ -291,6 +291,25 @@ pub fn apply_release(task: &Task) -> Result<Task> {
     Ok(updated)
 }
 
+pub fn apply_owner_loss(task: &Task) -> Result<Task> {
+    if task.owner_pane_id.is_none()
+        || !matches!(task.state, TaskState::InProgress | TaskState::InReview)
+    {
+        return Err(errors::transition_refused(
+            "Only an owned task can lose its executor",
+        ));
+    }
+    let mut updated = task.clone();
+    if task.state == TaskState::InProgress {
+        updated.state = TaskState::Todo;
+    }
+    updated.owner_pane_id = None;
+    updated.review_badge = review_badge(&updated, false);
+    updated.version = next_version(task)?;
+    updated.phrase = phrase(&updated, &PhraseFacts::default());
+    Ok(updated)
+}
+
 pub fn new_loop_config(params: &LoopSetParams) -> Result<LoopConfig> {
     if params.enabled {
         required_text(&params.prompt, "prompt")?;
@@ -544,6 +563,23 @@ pub(crate) mod tests {
         let released = apply_release(&blocked).unwrap();
         assert_eq!(released.state, TaskState::Todo);
         assert_eq!(released.owner_pane_id, None);
+    }
+
+    #[test]
+    fn owner_loss_returns_active_work_but_keeps_review_waiting_for_a_person() {
+        let active = task_fixture(TaskState::InProgress);
+        let returned = apply_owner_loss(&active).unwrap();
+        assert_eq!(returned.state, TaskState::Todo);
+        assert_eq!(returned.owner_pane_id, None);
+
+        let review = task_fixture(TaskState::InReview);
+        let waiting = apply_owner_loss(&review).unwrap();
+        assert_eq!(waiting.state, TaskState::InReview);
+        assert_eq!(waiting.owner_pane_id, None);
+        assert_eq!(
+            waiting.review_badge,
+            Some(soyeht_protocol::TaskReviewBadge::YourTurn)
+        );
     }
 
     #[test]

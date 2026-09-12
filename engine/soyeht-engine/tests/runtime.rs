@@ -31,6 +31,7 @@ impl Rig {
         let ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&path)
+            .env("ZDOTDIR", &path)
             .stdout(Stdio::null())
             .spawn()
             .expect("build workspace binaries before engine integration tests");
@@ -712,7 +713,20 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
 fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();
-    let pid = client.pane(&pane)["pid"].clone();
+    let initial = client.pane(&pane);
+    let pid = initial["pid"].clone();
+    let workspace = initial["workspaceId"].as_str().unwrap().to_owned();
+    let created = client.call(
+        "task.create",
+        json!({"workspaceId":workspace,"title":"Keep the owner during silence",
+            "mustNotChange":"Keep recovery atomic","idempotencyKey":"silence-task"}),
+    );
+    let task = reserve_task(
+        &rig,
+        &workspace,
+        &pane,
+        created["task"]["taskId"].as_str().unwrap(),
+    );
     let prompt = client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"silent","idempotencyKey":"silent"}),
@@ -737,6 +751,10 @@ fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
     assert_eq!(silent["pid"], pid);
     assert_eq!(silent["agent"]["activePromptId"], prompt["promptId"]);
     assert_eq!(client.section("attention").len(), 1);
+    let store = Store::open(&rig.path).unwrap();
+    let still_owned = store.task(&workspace, &task.task_id).unwrap().unwrap();
+    assert_eq!(still_owned.state, soyeht_protocol::TaskState::InProgress);
+    assert_eq!(still_owned.owner_pane_id.as_deref(), Some(pane.as_str()));
     client.call(
         "pane.cancel",
         json!({"paneId":pane,"idempotencyKey":"cancel-silent"}),
@@ -766,6 +784,14 @@ fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
     assert!(dead["agent"]["activePromptId"].is_null());
     assert!(dead["phrase"].as_str().unwrap().contains("10 seconds"));
     assert_eq!(client.section("attention").len(), 1);
+    let store = Store::open(&rig.path).unwrap();
+    let returned = store.task(&workspace, &task.task_id).unwrap().unwrap();
+    assert_eq!(returned.state, soyeht_protocol::TaskState::Todo);
+    assert_eq!(returned.owner_pane_id, None);
+    assert_eq!(
+        store.task_attempts(&workspace, &task.task_id).unwrap()[0].result,
+        Some(soyeht_protocol::AttemptResult::Returned)
+    );
     rig.kill_engine();
     rig.start();
     assert_eq!(
@@ -2150,6 +2176,81 @@ fn executor_release_is_idempotent_and_closes_the_attempt_as_returned() {
         Some(soyeht_protocol::AttemptResult::Returned)
     );
     assert_eq!(attempts[0].summary.as_deref(), Some("Needs another pass"));
+    assert_eq!(
+        store
+            .task_moves(&lifecycle.workspace, &task.task_id)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn dying_executor_returns_active_work_and_records_one_system_comment() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Recover after death", "reserve-death");
+    lifecycle.human.call(
+        "pane.prompt",
+        json!({"paneId":lifecycle.pane,"text":"die","idempotencyKey":"die-turn"}),
+    );
+    lifecycle.human.wait_state(&lifecycle.pane, "dead");
+
+    let store = Store::open(&lifecycle.rig.path).unwrap();
+    let returned = store
+        .task(&lifecycle.workspace, &task.task_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(returned.state, soyeht_protocol::TaskState::Todo);
+    assert_eq!(returned.owner_pane_id, None);
+    let attempts = store
+        .task_attempts(&lifecycle.workspace, &task.task_id)
+        .unwrap();
+    assert_eq!(
+        attempts[0].result,
+        Some(soyeht_protocol::AttemptResult::Returned)
+    );
+    let comments = store
+        .task_comments(&lifecycle.workspace, &task.task_id, None, 10)
+        .unwrap();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].author, "system");
+    assert_eq!(comments[0].text, "returned: the pane closed");
+}
+
+#[test]
+fn closing_a_review_pane_unbinds_it_without_moving_the_card_back() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Preserve review", "reserve-review-close");
+    let review = lifecycle.executor_request(
+        "task.request_review",
+        &task,
+        json!({"reason":"Ready"}),
+        "review-before-close",
+    );
+    assert_eq!(review["result"]["task"]["state"], "in_review");
+    lifecycle.human.call(
+        "pane.close",
+        json!({"paneId":lifecycle.pane,"idempotencyKey":"close-review-pane"}),
+    );
+
+    let store = Store::open(&lifecycle.rig.path).unwrap();
+    let waiting = store
+        .task(&lifecycle.workspace, &task.task_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(waiting.state, soyeht_protocol::TaskState::InReview);
+    assert_eq!(waiting.owner_pane_id, None);
+    assert_eq!(
+        waiting.review_badge,
+        Some(soyeht_protocol::TaskReviewBadge::YourTurn)
+    );
+    let attempts = store
+        .task_attempts(&lifecycle.workspace, &task.task_id)
+        .unwrap();
+    assert_eq!(
+        attempts[0].result,
+        Some(soyeht_protocol::AttemptResult::Returned)
+    );
     assert_eq!(
         store
             .task_moves(&lifecycle.workspace, &task.task_id)

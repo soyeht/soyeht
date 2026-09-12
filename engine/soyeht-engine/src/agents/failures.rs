@@ -38,6 +38,7 @@ impl Core {
         if state.phase == Phase::Faulted {
             return self.close_agent_processes(pane);
         }
+        let task_owner_loss = self.task_owner_loss(pane, "returned: the pane closed")?;
         let mut reason_end = reason.len().min(512);
         while !reason.is_char_boundary(reason_end) {
             reason_end -= 1;
@@ -47,6 +48,7 @@ impl Core {
         let mut changes = Changes {
             retire_instance: saved.instance_id.clone().zip(saved.supervisor_id.clone()),
             clear_replay: true,
+            task_owner_loss,
             ..Changes::default()
         };
         for request in self
