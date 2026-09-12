@@ -11,6 +11,10 @@ public final class EngineClient {
   public internal(set) var agentPanes: [String: AgentPaneView] = [:]
   public internal(set) var harnesses: [HarnessInfo] = []
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
+  public internal(set) var tasks: [TaskRecord] = []
+  public internal(set) var taskDetails: [String: TaskShowResult] = [:]
+  public internal(set) var attentionByWorkspace: [String: [AttentionItem]] = [:]
+  public internal(set) var paneLoops: [String: LoopConfig] = [:]
   public private(set) var connected = false
   public private(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
@@ -85,6 +89,10 @@ public final class EngineClient {
       panes = []
       workspaces = []
       agentPanes = [:]
+      tasks = []
+      taskDetails = [:]
+      attentionByWorkspace = [:]
+      paneLoops = [:]
       terminalOutput?(Data(), true)
     }
     position = nil
@@ -292,6 +300,27 @@ public final class EngineClient {
       guard params["nextOffset"].string == position?.next.map(String.init) else {
         throw ClientFailure.invalidStream
       }
+    case .devicePairRequested, .devicePaired, .deviceRevoked:
+      try applyDeviceEvent(eventName, params)
+    case .paneUpdate, .panePermissionRequested, .panePermissionAnswered,
+      .paneElicitationRequested, .paneElicitationAnswered, .paneQueued,
+      .paneQueuePaused, .paneQueueResumed, .paneSessionStarted, .paneTurnEnded,
+      .paneSessionLost, .paneNeedsLogin, .paneAuthFinished, .paneConfigFailed:
+      try applyAgentEvent(eventName, params)
+    case .taskCreated, .taskMoved, .taskClaimed, .taskReleased, .taskCommented,
+      .taskSubitemChanged, .taskBlocked, .taskUnblocked, .taskPhraseChanged,
+      .taskUpdated, .taskAttention:
+      try applyTaskEvent(eventName, params)
+    case .attentionChanged: try applyAttentionEvent(params)
+    case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
+    case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
+      .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
+      .paneConfigChanged:
+      break
+    }
+  }
+  private func applyDeviceEvent(_ eventName: EventName, _ params: JsonValue) throws {
+    switch eventName {
     case .devicePairRequested:
       let event = try params.decoded(DevicePairRequestedEvent.self)
       pairRequests.removeAll { $0.requestId == event.requestId }
@@ -302,18 +331,7 @@ public final class EngineClient {
       devices.removeAll { $0.deviceId == device.deviceId }
       if !device.revoked { devices.append(device) }
     case .deviceRevoked: devices.removeAll { $0.deviceId == params["deviceId"].string }
-    case .paneUpdate, .panePermissionRequested, .panePermissionAnswered,
-      .paneElicitationRequested, .paneElicitationAnswered, .paneQueued,
-      .paneQueuePaused, .paneQueueResumed, .paneSessionStarted, .paneTurnEnded,
-      .paneSessionLost, .paneNeedsLogin, .paneAuthFinished, .paneConfigFailed:
-      try applyAgentEvent(eventName, params)
-    case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
-      .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
-      .paneConfigChanged, .attentionChanged, .taskCreated, .taskMoved,
-      .taskClaimed, .taskReleased, .taskCommented, .taskSubitemChanged,
-      .taskBlocked, .taskUnblocked, .taskPhraseChanged, .taskUpdated,
-      .taskAttention, .loopTick, .loopStopped:
-      break
+    default: break
     }
   }
   private func applySnapshot(_ value: JsonValue) throws {
@@ -329,6 +347,7 @@ public final class EngineClient {
     self.panes = panes
     self.workspaces = workspaces
     try applyAgentSnapshot(sections, panes: panes)
+    try applyTaskSnapshot(sections, panes: panes)
     pairRequests = requests
     cursor = UInt64(result.cursor)!
     if !panes.contains(where: { $0.paneId == selectedPaneId }) {
