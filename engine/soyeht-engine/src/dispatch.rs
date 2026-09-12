@@ -288,6 +288,7 @@ impl Core {
             }
             "task.dispatch" => self.task_dispatch(connection, params)?,
             "task.next" => self.task_next(connection, params)?,
+            "task.worktree.clean" => self.task_worktree_clean(connection, params)?,
             "loop.set" => self.loop_set(connection, params)?,
             "task.create"
             | "task.update"

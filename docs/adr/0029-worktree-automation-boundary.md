@@ -16,8 +16,14 @@ worktree, and creates a missing one with `switch --create --no-cd
 --format=json`. Project hooks are disabled for engine-owned operations so a
 repository hook cannot turn an internal retry into a second external effect.
 
-Cleanup uses `remove --no-delete-branch --format=json`. A refusal is returned
-to the client with its bounded reason. The engine never deletes a task branch.
+Cleanup is available only to a local human client. The engine first reads the
+structured listing and refuses when cleanliness is unknown, the worktree is
+dirty, its HEAD is not reachable from another branch, its recorded path does
+not match, or a process has a current directory inside it. It then uses
+`remove --no-delete-branch --foreground --format=json` and verifies that the
+structured result names the same branch and path and reports that the branch
+was not changed. A refusal is returned to the client with its bounded reason.
+The engine never deletes a task branch.
 
 Dispatch records `reserved`, `worktree_created`, `pane_opened`, and
 `prompt_accepted`. Worktree preparation, pane opening, and first-prompt

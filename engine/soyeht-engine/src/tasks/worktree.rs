@@ -3,7 +3,9 @@
 use crate::errors::{self, Result};
 use serde::Deserialize;
 use serde_json::Value;
-use soyeht_protocol::{Comment, Subitem, Task, TaskExecutor};
+use soyeht_protocol::{
+    Comment, Role, Subitem, Task, TaskExecutor, TaskWorktreeCleanParams, TaskWorktreeCleanResult,
+};
 use soyeht_store::{database::Store, tasks::DispatchCheckpoint};
 use std::{path::Path, process::Command};
 
@@ -23,7 +25,7 @@ pub struct CleanOutcome {
 
 pub trait WorktreePort: Send {
     fn prepare(&mut self, repository: &Path, branch: &str) -> Result<PreparedWorktree>;
-    fn clean(&mut self, repository: &Path, branch: &str) -> Result<CleanOutcome>;
+    fn clean(&mut self, repository: &Path, worktree: &Path, branch: &str) -> Result<CleanOutcome>;
 }
 
 pub struct CommandWorktree {
@@ -54,7 +56,7 @@ impl CommandWorktree {
             .map_err(|error| errors::worktree_unavailable(error.to_string()))
     }
 
-    fn list(&self, repository: &Path, branch: &str) -> Result<BranchLocation> {
+    fn list(&self, repository: &Path, branch: &str) -> Result<(Value, BranchLocation)> {
         validate_target(repository, branch)?;
         let output = Command::new(&self.executable)
             .arg("-C")
@@ -63,13 +65,14 @@ impl CommandWorktree {
             .output()
             .map_err(|error| errors::worktree_unavailable(error.to_string()))?;
         let value = checked_json(output)?;
-        Ok(find_branch(&value, branch).unwrap_or(BranchLocation::Missing))
+        let location = find_branch(&value, branch).unwrap_or(BranchLocation::Missing);
+        Ok((value, location))
     }
 }
 
 impl WorktreePort for CommandWorktree {
     fn prepare(&mut self, repository: &Path, branch: &str) -> Result<PreparedWorktree> {
-        let location = self.list(repository, branch)?;
+        let (_, location) = self.list(repository, branch)?;
         if let BranchLocation::Worktree(path) = location {
             return checked_prepared(path, branch);
         }
@@ -89,19 +92,42 @@ impl WorktreePort for CommandWorktree {
         checked_prepared(answer.path, branch)
     }
 
-    fn clean(&mut self, repository: &Path, branch: &str) -> Result<CleanOutcome> {
+    fn clean(&mut self, repository: &Path, worktree: &Path, branch: &str) -> Result<CleanOutcome> {
+        let (listing, location) = self.list(repository, branch)?;
+        match location {
+            BranchLocation::BranchOnly => {
+                return Ok(CleanOutcome {
+                    cleaned: true,
+                    reason: None,
+                });
+            }
+            BranchLocation::Missing => {
+                return refused("Task branch is not registered");
+            }
+            BranchLocation::Worktree(path) if Path::new(&path) != worktree => {
+                return refused("Task branch is checked out in another worktree");
+            }
+            BranchLocation::Worktree(_) => {}
+        }
+        if let Some(reason) = cleanup_refusal(&listing, branch)? {
+            return refused(reason);
+        }
+        if process_uses(worktree)? {
+            return refused("A process is using the worktree");
+        }
         let output = self.run(
             repository,
             &[
                 "remove",
                 "--no-delete-branch",
                 "--no-hooks",
+                "--foreground",
                 "--format=json",
                 branch,
             ],
         )?;
         if output.status.success() {
-            let _ = checked_json(output)?;
+            validate_cleaned(checked_json(output)?, worktree, branch)?;
             return Ok(CleanOutcome {
                 cleaned: true,
                 reason: None,
@@ -164,23 +190,124 @@ fn bounded_reason(bytes: &[u8]) -> String {
 }
 
 fn find_branch(value: &Value, branch: &str) -> Option<BranchLocation> {
-    match value {
-        Value::Object(fields) => {
-            if fields.get("branch").and_then(Value::as_str) == Some(branch) {
-                return Some(
-                    fields
-                        .get("path")
-                        .and_then(Value::as_str)
-                        .map_or(BranchLocation::BranchOnly, |path| {
-                            BranchLocation::Worktree(path.into())
-                        }),
-                );
-            }
-            fields.values().find_map(|value| find_branch(value, branch))
-        }
-        Value::Array(items) => items.iter().find_map(|value| find_branch(value, branch)),
-        _ => None,
+    branch_items(value)
+        .find(|item| item.get("branch").and_then(Value::as_str) == Some(branch))
+        .map(branch_location)
+}
+
+fn branch_items(value: &Value) -> impl Iterator<Item = &Value> {
+    value
+        .get("items")
+        .and_then(Value::as_array)
+        .or_else(|| value.as_array())
+        .into_iter()
+        .flatten()
+}
+
+fn branch_location(item: &Value) -> BranchLocation {
+    item.pointer("/worktree/path")
+        .or_else(|| item.get("path"))
+        .and_then(Value::as_str)
+        .map_or(BranchLocation::BranchOnly, |path| {
+            BranchLocation::Worktree(path.into())
+        })
+}
+
+fn cleanup_refusal(listing: &Value, branch: &str) -> Result<Option<String>> {
+    let item = branch_items(listing)
+        .find(|item| item.get("branch").and_then(Value::as_str) == Some(branch))
+        .ok_or_else(|| errors::worktree_unavailable("Worktree listing lost the task branch"))?;
+    let changes = item
+        .pointer("/worktree/changes")
+        .or_else(|| item.get("working_tree"))
+        .and_then(Value::as_object);
+    let Some(changes) = changes else {
+        return Ok(Some("Worktree cleanliness is unknown".into()));
+    };
+    if ["staged", "modified", "untracked", "renamed", "deleted"]
+        .into_iter()
+        .any(|name| changes.get(name).and_then(Value::as_bool) != Some(false))
+    {
+        return Ok(Some("Worktree has uncommitted changes".into()));
     }
+    if !head_reachable(listing, item, branch) {
+        return Ok(Some(
+            "Worktree HEAD is not reachable from a branch outside the worktree".into(),
+        ));
+    }
+    Ok(None)
+}
+
+fn head_reachable(listing: &Value, target: &Value, branch: &str) -> bool {
+    let integration = target
+        .pointer("/default_branch/integration/reason")
+        .or_else(|| target.get("integration_reason"))
+        .and_then(Value::as_str);
+    if matches!(
+        integration,
+        Some("same_commit" | "same-commit" | "ancestor")
+    ) {
+        return true;
+    }
+    let upstream = target.get("upstream").or_else(|| target.get("remote"));
+    if upstream
+        .and_then(|value| value.get("ahead"))
+        .and_then(Value::as_u64)
+        == Some(0)
+        && upstream
+            .and_then(|value| value.get("branch"))
+            .and_then(Value::as_str)
+            .is_some()
+    {
+        return true;
+    }
+    let head = target
+        .pointer("/head/sha")
+        .or_else(|| target.pointer("/commit/sha"));
+    head.is_some_and(|head| {
+        branch_items(listing).any(|item| {
+            item.get("branch").and_then(Value::as_str) != Some(branch)
+                && item
+                    .pointer("/head/sha")
+                    .or_else(|| item.pointer("/commit/sha"))
+                    == Some(head)
+        })
+    })
+}
+
+fn process_uses(worktree: &Path) -> Result<bool> {
+    let output = Command::new("lsof")
+        .args(["-a", "-d", "cwd", "-Fp", "+D"])
+        .arg(worktree)
+        .output()
+        .map_err(|error| errors::worktree_unavailable(error.to_string()))?;
+    if output.stdout.contains(&b'p') {
+        return Ok(true);
+    }
+    if output.stdout.is_empty() && output.stderr.is_empty() {
+        return Ok(false);
+    }
+    Err(errors::worktree_unavailable(bounded_reason(&output.stderr)))
+}
+
+fn validate_cleaned(value: Value, worktree: &Path, branch: &str) -> Result<()> {
+    if value.get("kind").and_then(Value::as_str) != Some("worktree")
+        || value.get("branch").and_then(Value::as_str) != Some(branch)
+        || value.get("path").and_then(Value::as_str) != worktree.to_str()
+        || value.get("branch_outcome").and_then(Value::as_str) != Some("not_attempted")
+    {
+        return Err(errors::worktree_unavailable(
+            "Worktree cleanup response changed the requested target",
+        ));
+    }
+    Ok(())
+}
+
+fn refused(reason: impl Into<String>) -> Result<CleanOutcome> {
+    Ok(CleanOutcome {
+        cleaned: false,
+        reason: Some(reason.into()),
+    })
 }
 
 fn checked_prepared(path: String, branch: &str) -> Result<PreparedWorktree> {
@@ -193,6 +320,57 @@ fn checked_prepared(path: String, branch: &str) -> Result<PreparedWorktree> {
         path,
         branch: branch.into(),
     })
+}
+
+impl crate::core::Core {
+    pub(crate) fn task_worktree_clean(&mut self, connection: &str, raw: &Value) -> Result<Value> {
+        if let Some(result) = self.repeated_mutation(connection, "task.worktree.clean", raw)? {
+            return Ok(result);
+        }
+        let params: TaskWorktreeCleanParams = crate::tasks::api::parameters(raw)?;
+        let actor = self.task_actor(connection)?;
+        if actor.role != Role::HumanLocal {
+            return Err(errors::forbidden_role(
+                "Worktree cleanup requires the local human client",
+            ));
+        }
+        let task = crate::tasks::api::task(&self.store, &params.workspace_id, &params.task_id)?;
+        let Some(worktree) = task.worktree else {
+            return self.persist_clean_result(
+                connection,
+                raw,
+                CleanOutcome {
+                    cleaned: false,
+                    reason: Some("Task has no worktree".into()),
+                },
+            );
+        };
+        let repository = crate::model::workspace(&self.store, &params.workspace_id)?.path;
+        let outcome = self.worktrees.clean(
+            Path::new(&repository),
+            Path::new(&worktree.path),
+            &worktree.branch,
+        )?;
+        self.persist_clean_result(connection, raw, outcome)
+    }
+
+    fn persist_clean_result(
+        &mut self,
+        connection: &str,
+        raw: &Value,
+        outcome: CleanOutcome,
+    ) -> Result<Value> {
+        let result = serde_json::to_value(TaskWorktreeCleanResult {
+            cleaned: outcome.cleaned,
+            reason: outcome.reason,
+        })
+        .map_err(|_| errors::internal("Worktree cleanup result serialization failed"))?;
+        let stored = result.clone();
+        let mutation = self.mutate(connection, "task.worktree.clean", raw, move |_| {
+            Ok((stored, Vec::new()))
+        })?;
+        Ok(mutation.result)
+    }
 }
 
 pub trait DispatchJournal {
@@ -385,6 +563,7 @@ pub(crate) fn first_prompt(
 mod tests {
     use super::*;
     use crate::tasks::rules::tests::task_fixture;
+    use serde_json::json;
     use soyeht_protocol::{PermissionMode, TaskState};
     use std::{
         collections::BTreeMap,
@@ -451,7 +630,7 @@ mod tests {
             })
         }
 
-        fn clean(&mut self, _: &Path, _: &str) -> Result<CleanOutcome> {
+        fn clean(&mut self, _: &Path, _: &Path, _: &str) -> Result<CleanOutcome> {
             Ok(CleanOutcome {
                 cleaned: true,
                 reason: None,
@@ -577,10 +756,15 @@ mod tests {
         let executable = directory.path().join("fake-wt");
         let worktree = directory.path().join("task-tree");
         let calls = directory.path().join("calls");
+        let state = directory.path().join("created");
         fs::create_dir(&worktree).unwrap();
         let script = format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \" $* \" in\n  *\" list \"*) printf '[]' ;;\n  *\" switch \"*) printf '%s' '{{\"action\":\"created\",\"branch\":\"task/ws-9\",\"path\":\"{}\"}}' ;;\n  *\" remove \"*) printf '%s' '{{\"kind\":\"worktree\",\"branch_outcome\":\"kept\"}}' ;;\nesac\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\ncase \" $* \" in\n  *\" list \"*) if [ -e '{}' ]; then printf '%s' '{{\"schema\":2,\"items\":[{{\"branch\":\"task/ws-9\",\"head\":{{\"sha\":\"abc\"}},\"worktree\":{{\"path\":\"{}\",\"changes\":{{\"staged\":false,\"modified\":false,\"untracked\":false,\"renamed\":false,\"deleted\":false}}}},\"default_branch\":{{\"integration\":{{\"reason\":\"ancestor\"}}}}}}]}}'; else printf '%s' '{{\"schema\":2,\"items\":[]}}'; fi ;;\n  *\" switch \"*) touch '{}'; printf '%s' '{{\"action\":\"created\",\"branch\":\"task/ws-9\",\"path\":\"{}\"}}' ;;\n  *\" remove \"*) printf '%s' '{{\"kind\":\"worktree\",\"branch\":\"task/ws-9\",\"path\":\"{}\",\"branch_outcome\":\"not_attempted\"}}' ;;\nesac\n",
             calls.display(),
+            state.display(),
+            worktree.display(),
+            state.display(),
+            worktree.display(),
             worktree.display(),
         );
         fs::write(&executable, script).unwrap();
@@ -592,12 +776,42 @@ mod tests {
         assert_eq!(prepared.path, worktree.to_string_lossy());
         assert!(
             adapter
-                .clean(directory.path(), "task/ws-9")
+                .clean(directory.path(), &worktree, "task/ws-9")
                 .unwrap()
                 .cleaned
         );
         let calls = fs::read_to_string(calls).unwrap();
         assert!(calls.contains("switch --no-cd --no-hooks --format=json --create task/ws-9"));
-        assert!(calls.contains("remove --no-delete-branch --no-hooks --format=json task/ws-9"));
+        assert!(
+            calls.contains(
+                "remove --no-delete-branch --no-hooks --foreground --format=json task/ws-9"
+            )
+        );
+    }
+
+    #[test]
+    fn cleanup_refuses_dirty_and_unreachable_worktrees_before_removal() {
+        let path = "/tmp/task-ws-9";
+        let dirty = json!({"schema":2,"items":[{
+            "branch":"task/ws-9","head":{"sha":"abc"},
+            "worktree":{"path":path,"changes":{"staged":false,"modified":true,
+                "untracked":false,"renamed":false,"deleted":false}},
+            "default_branch":{"integration":{"reason":"ancestor"}}
+        }]});
+        assert_eq!(
+            cleanup_refusal(&dirty, "task/ws-9").unwrap().as_deref(),
+            Some("Worktree has uncommitted changes")
+        );
+        let unreachable = json!({"schema":2,"items":[{
+            "branch":"task/ws-9","head":{"sha":"abc"},
+            "worktree":{"path":path,"changes":{"staged":false,"modified":false,
+                "untracked":false,"renamed":false,"deleted":false}}
+        }]});
+        assert_eq!(
+            cleanup_refusal(&unreachable, "task/ws-9")
+                .unwrap()
+                .as_deref(),
+            Some("Worktree HEAD is not reachable from a branch outside the worktree")
+        );
     }
 }

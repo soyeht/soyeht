@@ -148,15 +148,37 @@ fn install_fake_worktrunk(root: &std::path::Path) {
 repository="$2"
 command="$3"
 if [ "$command" = "list" ]; then
-  printf '[]\n'
+  printf '{"schema":2,"items":['
+  separator=""
+  for path in "$repository"/.test-worktrees/*; do
+    [ -d "$path" ] || continue
+    branch=$(cat "$path/.soyeht-test-branch")
+    modified=false
+    [ -e "$path/.dirty" ] && modified=true
+    integration=',"default_branch":{"integration":{"reason":"ancestor"}}'
+    [ -e "$path/.unreachable" ] && integration=""
+    printf '%s{"branch":"%s","head":{"sha":"abc"},"worktree":{"path":"%s","changes":{"staged":false,"modified":%s,"untracked":false,"renamed":false,"deleted":false}}%s}' "$separator" "$branch" "$path" "$modified" "$integration"
+    separator=,
+  done
+  printf ']}\n'
   exit 0
 fi
 branch=""
 for argument in "$@"; do branch="$argument"; done
 safe_branch=$(printf '%s' "$branch" | tr '/' '-')
 path="$repository/.test-worktrees/$safe_branch"
-mkdir -p "$path"
-printf '{"path":"%s","branch":"%s"}\n' "$path" "$branch"
+if [ "$command" = "switch" ]; then
+  mkdir -p "$path"
+  printf '%s' "$branch" > "$path/.soyeht-test-branch"
+  printf '{"path":"%s","branch":"%s"}\n' "$path" "$branch"
+  exit 0
+fi
+if [ "$command" = "remove" ]; then
+  rm -rf "$path"
+  printf '{"kind":"worktree","branch":"%s","path":"%s","branch_outcome":"not_attempted"}\n' "$branch" "$path"
+  exit 0
+fi
+exit 2
 "#,
     )
     .unwrap();
@@ -2166,6 +2188,88 @@ fn dispatch_opens_one_task_pane_and_delivers_the_complete_first_prompt() {
         }),
     );
     assert_eq!(second["error"]["data"]["kind"], "task_has_owner");
+}
+
+#[test]
+fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch() {
+    let rig = Rig::new();
+    rig.install_fake_harness();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Cleanup","path":rig.path,"idempotencyKey":"cleanup-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let task = client.call(
+        "task.create",
+        json!({
+            "workspaceId":workspace,"title":"Clean safely","mustNotChange":"Keep the branch",
+            "idempotencyKey":"cleanup-task"
+        }),
+    )["task"]
+        .clone();
+    let dispatched = client.call(
+        "task.dispatch",
+        json!({
+            "workspaceId":workspace,"taskId":task["taskId"],
+            "preset":{"workspaceDefault":false,"harness":"test-agent"},
+            "idempotencyKey":"cleanup-dispatch"
+        }),
+    );
+    let pane = dispatched["paneId"].as_str().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let shown = loop {
+        let shown = client.call(
+            "task.show",
+            json!({"workspaceId":workspace,"taskId":task["taskId"]}),
+        );
+        if shown["task"]["worktree"]["path"].is_string() {
+            break shown;
+        }
+        assert!(Instant::now() < deadline, "worktree was not prepared");
+        thread::sleep(Duration::from_millis(20));
+    };
+    let path = PathBuf::from(shown["task"]["worktree"]["path"].as_str().unwrap());
+    let clean = |client: &mut Client, key: &str| {
+        client.call(
+            "task.worktree.clean",
+            json!({
+                "workspaceId":workspace,"taskId":task["taskId"],"idempotencyKey":key
+            }),
+        )
+    };
+
+    let active = clean(&mut client, "cleanup-active");
+    assert_eq!(active["cleaned"], false);
+    assert!(active["reason"].as_str().unwrap().contains("process"));
+
+    client.call(
+        "pane.close",
+        json!({"paneId":pane,"idempotencyKey":"cleanup-close-pane"}),
+    );
+    fs::write(path.join(".dirty"), "dirty").unwrap();
+    let dirty = clean(&mut client, "cleanup-dirty");
+    assert_eq!(dirty["cleaned"], false);
+    assert!(dirty["reason"].as_str().unwrap().contains("uncommitted"));
+
+    fs::remove_file(path.join(".dirty")).unwrap();
+    fs::write(path.join(".unreachable"), "unreachable").unwrap();
+    let unreachable = clean(&mut client, "cleanup-unreachable");
+    assert_eq!(unreachable["cleaned"], false);
+    assert!(
+        unreachable["reason"]
+            .as_str()
+            .unwrap()
+            .contains("not reachable")
+    );
+
+    fs::remove_file(path.join(".unreachable")).unwrap();
+    let cleaned = clean(&mut client, "cleanup-success");
+    assert_eq!(cleaned["cleaned"], true);
+    assert!(!path.exists());
+    assert_eq!(clean(&mut client, "cleanup-success"), cleaned);
 }
 
 #[test]
