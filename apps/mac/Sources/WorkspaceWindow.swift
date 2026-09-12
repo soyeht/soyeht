@@ -322,6 +322,7 @@ private struct PaneCard: View {
   let tint: Color
   let onClose: (String) -> Void
   let onTasks: () -> Void
+  @State private var showingAutomation = false
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x8) {
@@ -332,6 +333,15 @@ private struct PaneCard: View {
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .simultaneousGesture(TapGesture().onEnded { client.select(pane.paneId) })
     .contextMenu { Button("Close pane", role: .destructive) { onClose(pane.paneId) } }
+    .overlay(alignment: .topTrailing) {
+      if showingAutomation {
+        PaneAutomationPanel(client: client, pane: pane) { showingAutomation = false }
+          .offset(x: -6, y: 38)
+          .transition(.scale(scale: 0.98, anchor: .topTrailing).combined(with: .opacity))
+          .zIndex(20)
+      }
+    }
+    .zIndex(showingAutomation ? 20 : 0)
   }
 
   private var header: some View {
@@ -348,7 +358,7 @@ private struct PaneCard: View {
           .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
           .foregroundStyle(MacTheme.secondary)
       }
-      if pane.mode == .agent { PaneAutomationButton(client: client, pane: pane) }
+      if pane.mode == .agent { PaneAutomationButton(showing: $showingAutomation) }
       Button(action: onTasks) { Image(systemName: "line.3.horizontal.decrease") }
         .help("Open workspace tasks")
       Image(systemName: "rectangle.split.2x1").accessibilityHidden(true)

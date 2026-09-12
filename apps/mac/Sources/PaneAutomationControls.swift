@@ -3,9 +3,7 @@ import SoyehtProtocol
 import SwiftUI
 
 struct PaneAutomationButton: View {
-  @Bindable var client: EngineClient
-  let pane: Pane
-  @State private var showing = false
+  @Binding var showing: Bool
 
   var body: some View {
     Button {
@@ -14,13 +12,10 @@ struct PaneAutomationButton: View {
       Image(systemName: "repeat").padding(6)
     }
     .help("Loop and lead controls")
-    .popover(isPresented: $showing, arrowEdge: .bottom) {
-      PaneAutomationPopover(client: client, pane: pane, dismiss: { showing = false })
-    }
   }
 }
 
-private struct PaneAutomationPopover: View {
+struct PaneAutomationPanel: View {
   @Bindable var client: EngineClient
   let pane: Pane
   let dismiss: () -> Void
@@ -32,36 +27,139 @@ private struct PaneAutomationPopover: View {
   @State private var enabled = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Pane automation").font(.headline)
-      Picker("Role", selection: $role) {
-        Text("Worker").tag(AgentPaneRole.worker)
-        Text("Lead").tag(AgentPaneRole.chief)
-      }.pickerStyle(.segmented)
-      Text("Lead panes can coordinate tasks and cannot complete them.")
-        .font(.caption).foregroundStyle(MacTheme.secondary)
-      Divider()
-      Toggle("Run a task loop", isOn: $enabled)
-      TextField("Loop prompt", text: $prompt, axis: .vertical).lineLimit(2...4)
-      Stepper("Every \(interval) seconds", value: $interval, in: 5...3600, step: 5)
-      Stepper("Up to \(maxRounds) rounds", value: $maxRounds, in: 1...100)
-      Picker("Stop condition", selection: $stopWhen) {
-        Text("Three empty results").tag(LoopStopWhen.three_empty)
-        Text("Round limit").tag(LoopStopWhen.round_limit)
-        Text("Explicit off").tag(LoopStopWhen.explicit_off)
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      header
+      sectionLabel("PROMPT")
+      promptEditor
+      sectionLabel("WHEN")
+      idleTrigger
+      loopOptions
+      rules
+      footer
+    }
+    .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
+    .frame(width: 400).foregroundStyle(MacTheme.ink)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+    .onAppear(perform: load)
+  }
+
+  private var header: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Menu {
+        Button("Worker") { role = .worker }
+        Button("Lead") { role = .chief }
+      } label: {
+        HStack(spacing: MacTheme.Space.x8) {
+          Image(systemName: "repeat").font(.system(size: 15, weight: .medium))
+            .foregroundStyle(MacTheme.accent)
+          Text("Loop this pane")
+            .font(MacTheme.chrome(14, weight: .bold)).foregroundStyle(MacTheme.ink)
+        }
       }
-      if let config = client.paneLoops[pane.paneId] {
-        Text("Rounds \(config.rounds ?? 0) · empty results \(config.emptyResults ?? 0)")
-          .font(.caption).foregroundStyle(MacTheme.secondary)
+      .menuIndicator(.hidden).buttonStyle(.plain)
+      .help("Pane role: \(role == .chief ? "lead" : "worker")")
+      Spacer()
+      Button {
+        enabled.toggle()
+      } label: {
+        LoopToggle(isOn: enabled)
       }
-      HStack {
-        Button("Cancel", action: dismiss)
-        Spacer()
-        Button("Apply", action: apply).buttonStyle(.borderedProminent)
-          .disabled(enabled && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      .buttonStyle(.plain).accessibilityLabel("Run a task loop")
+      .accessibilityValue(enabled ? "On" : "Off")
+    }
+  }
+
+  private var promptEditor: some View {
+    TextEditor(text: $prompt).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .medium))
+      .lineSpacing(4).scrollContentBackground(.hidden).padding(10).frame(height: 88)
+      .neoWell(radius: MacTheme.Radius.control)
+  }
+
+  private var idleTrigger: some View {
+    HStack(spacing: MacTheme.Space.x2) {
+      Text("Every interval").foregroundStyle(MacTheme.muted)
+        .frame(maxWidth: .infinity).padding(.vertical, MacTheme.Space.x6)
+      Text("When idle").foregroundStyle(MacTheme.ink)
+        .frame(maxWidth: .infinity).padding(.vertical, MacTheme.Space.x6)
+        .neoRaised(radius: MacTheme.Radius.pill, elevation: .toggle)
+    }
+    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+    .padding(MacTheme.Space.x3).background(MacTheme.well, in: Capsule())
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("The loop sends only when the pane is idle")
+  }
+
+  private var loopOptions: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Menu {
+        ForEach(intervalChoices, id: \.self) { value in
+          Button(intervalLabel(value)) { interval = value }
+        }
+      } label: {
+        optionLabel(icon: "timer", text: intervalLabel(interval))
       }
-    }.padding(20).frame(width: 360).background(MacTheme.face).foregroundStyle(MacTheme.ink)
-      .onAppear(perform: load)
+      Menu {
+        ForEach(roundChoices, id: \.self) { value in
+          Button(roundLabel(value)) { maxRounds = value }
+        }
+      } label: {
+        optionLabel(icon: "number", text: roundLabel(maxRounds))
+      }
+      Menu {
+        Button("Three empty results") { stopWhen = .three_empty }
+        Button("Round limit") { stopWhen = .round_limit }
+        Button("Until turned off") { stopWhen = .explicit_off }
+      } label: {
+        optionLabel(icon: "calendar", text: stopLabel)
+      }
+    }
+    .menuIndicator(.hidden).buttonStyle(.plain).fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var rules: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x5) {
+      rule("Never sends over your draft.")
+      rule("Busy ticks are skipped and recorded.")
+      rule("Survives an engine restart.")
+    }.padding(EdgeInsets(top: 4, leading: 2, bottom: 0, trailing: 2))
+  }
+
+  private var footer: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Text(loopStatus)
+        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
+        .foregroundStyle(MacTheme.muted).lineLimit(1)
+      Spacer(minLength: 0)
+      Button("Cancel", action: dismiss).buttonStyle(.plain)
+      Button("Apply", action: apply).buttonStyle(.plain)
+        .disabled(enabled && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+    .foregroundStyle(MacTheme.accent).padding(.top, MacTheme.Space.x6)
+  }
+
+  private func sectionLabel(_ value: String) -> some View {
+    Text(value).pickerHeading()
+  }
+
+  private func optionLabel(icon: String, text: String) -> some View {
+    HStack(spacing: MacTheme.Space.x5) {
+      Image(systemName: icon).font(.system(size: 12, weight: .medium))
+      Text(text).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+      Image(systemName: "chevron.down").font(.system(size: 11, weight: .medium))
+        .foregroundStyle(MacTheme.muted)
+    }
+    .foregroundStyle(MacTheme.secondary).padding(.horizontal, 10).padding(.vertical, 6)
+    .neoRaised(radius: MacTheme.Radius.pill, elevation: .chip)
+  }
+
+  private func rule(_ value: String) -> some View {
+    HStack(alignment: .top, spacing: MacTheme.Space.x6) {
+      Image(systemName: "checkmark").font(.system(size: 12, weight: .medium))
+        .foregroundStyle(MacTheme.success)
+      Text(value).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+        .foregroundStyle(MacTheme.secondary)
+    }
   }
 
   private func load() {
@@ -80,5 +178,46 @@ private struct PaneAutomationPopover: View {
       paneId: pane.paneId, prompt: prompt, interval: interval, maxRounds: maxRounds,
       stopWhen: stopWhen, enabled: enabled)
     dismiss()
+  }
+
+  private var intervalChoices: [UInt32] { [5, 10, 30, 60, 300, 600, 1_800, 3_600] }
+  private var roundChoices: [UInt32] { [0, 1, 5, 10, 25, 50, 100] }
+
+  private func intervalLabel(_ seconds: UInt32) -> String {
+    if seconds < 60 { return "\(seconds) sec" }
+    return "\(seconds / 60) min"
+  }
+
+  private func roundLabel(_ rounds: UInt32) -> String {
+    rounds == 0 ? "no limit" : "\(rounds) rounds"
+  }
+
+  private var stopLabel: String {
+    switch stopWhen {
+    case .three_empty: "three empty"
+    case .round_limit: "round limit"
+    case .explicit_off: "until off"
+    }
+  }
+
+  private var loopStatus: String {
+    let rounds = client.paneLoops[pane.paneId]?.rounds ?? 0
+    return enabled ? "next: when \(pane.name) is idle · \(rounds) today" : "off · \(rounds) today"
+  }
+}
+
+private struct LoopToggle: View {
+  let isOn: Bool
+
+  var body: some View {
+    HStack(spacing: 0) {
+      if isOn { Spacer(minLength: 0) }
+      Circle().fill(MacTheme.onAccent).frame(width: 18, height: 18)
+        .shadow(color: MacTheme.shadowLight, radius: 2, x: -2, y: -2)
+        .shadow(color: MacTheme.shadowDark, radius: 2, x: 2, y: 2)
+      if !isOn { Spacer(minLength: 0) }
+    }
+    .padding(MacTheme.Space.x2).frame(width: 40, height: 22)
+    .background(isOn ? MacTheme.accent : MacTheme.well, in: Capsule())
   }
 }
