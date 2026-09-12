@@ -48,8 +48,13 @@ struct TaskWorkspaceView: View {
       NewTaskSheet(
         client: client, workspaceId: workspaceId, isPresented: $showNewTask)
     }
-    .sheet(item: $selectedTask) { selection in
-      TaskDetailSheet(client: client, taskId: selection.id)
+    .overlay(alignment: .topTrailing) {
+      if let selection = selectedTask {
+        TaskDetailSheet(client: client, taskId: selection.id) { selectedTask = nil }
+          .padding(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 12))
+          .offset(y: -48)
+          .transition(.move(edge: .trailing).combined(with: .opacity)).zIndex(10)
+      }
     }
     .onAppear { client.refreshTasks(workspaceId) }
   }
@@ -575,45 +580,49 @@ private struct AttentionPopover: View {
 private struct TaskDetailSheet: View {
   @Bindable var client: EngineClient
   let taskId: String
-  @Environment(\.dismiss) private var dismiss
+  let close: () -> Void
 
   private var detail: TaskShowResult? { client.taskDetails[taskId] }
   private var task: TaskRecord? { detail?.task ?? client.tasks.first { $0.taskId == taskId } }
 
   var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Text(taskId).font(MacTheme.mono(MacTheme.TypeScale.control, weight: .bold))
-        Spacer()
-        Button {
-          dismiss()
-        } label: {
-          Image(systemName: "xmark").padding(6)
-        }
-      }.padding(20)
-      Divider()
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      detailHeader
       if let task {
-        ScrollView { detailContent(task) }
+        ScrollView { detailContent(task) }.scrollIndicators(.never)
+        commentPreview
+        actionPreview
       } else {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-    }.frame(width: 620, height: 760).background(MacTheme.face).foregroundStyle(MacTheme.ink)
+    }
+    .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
+    .frame(width: 460, height: 826, alignment: .topLeading)
+    .foregroundStyle(MacTheme.ink).neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+  }
+
+  private var detailHeader: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Text(taskId).font(MacTheme.mono(MacTheme.TypeScale.control, weight: .bold))
+        .foregroundStyle(MacTheme.muted)
+      Spacer()
+      Image(systemName: "arrow.up.left.and.arrow.down.right")
+        .font(.system(size: 14, weight: .medium)).foregroundStyle(MacTheme.muted)
+      Button(action: close) {
+        Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
+          .foregroundStyle(MacTheme.muted)
+      }.buttonStyle(.plain)
+    }
   }
 
   private func detailContent(_ task: TaskRecord) -> some View {
-    VStack(alignment: .leading, spacing: 20) {
-      VStack(alignment: .leading, spacing: 10) {
-        Text(task.title).font(MacTheme.chrome(23, weight: .semibold))
-        HStack {
-          DetailPill(text: task.state.title, color: task.state.color)
-          DetailPill(text: task.priority.title, color: task.priority.color)
-          if let badge = task.reviewBadge { DetailPill(text: badge.title, color: badge.color) }
-        }
-        Text(task.phrase).font(MacTheme.chrome(MacTheme.TypeScale.control))
-          .foregroundStyle(MacTheme.secondary)
-      }
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      Text(task.title).font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+        .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+      taskFacts(task)
+      runnerFacts(task)
       DetailSection(title: "DESCRIPTION", text: task.description)
-      DetailSection(title: "MUST NOT CHANGE", text: task.mustNotChange)
+      protectedBoundary(task.mustNotChange)
       if let verify = task.howToVerify { DetailSection(title: "HOW TO VERIFY", text: verify) }
       if let blocking = task.blocking {
         DetailSection(
@@ -623,19 +632,75 @@ private struct TaskDetailSheet: View {
       attempts
       summary(task)
       driftReview
-      comments
-      history
-    }.padding(24)
+      timeline
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func taskFacts(_ task: TaskRecord) -> some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      DetailStatePill(state: task.state)
+      TaskPriorityChip(priority: task.priority)
+      if let name = ownerName(task) { TaskOwnerChip(name: name) }
+      if let badge = task.reviewBadge { DetailPill(text: badge.title, color: badge.color) }
+    }
+  }
+
+  private func runnerFacts(_ task: TaskRecord) -> some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Label(runnerName(task), systemImage: "cpu")
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(MacTheme.ink).padding(.horizontal, 10).padding(.vertical, 4)
+        .neoRaised(radius: MacTheme.Radius.pill, elevation: .chip)
+      if let branch = task.worktree?.branch {
+        Label("\(branch) · attempt \(task.currentAttempt)", systemImage: "arrow.triangle.branch")
+          .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
+          .foregroundStyle(MacTheme.muted).lineLimit(1)
+      }
+    }
+  }
+
+  private func runnerName(_ task: TaskRecord) -> String {
+    guard let executor = task.executor, !executor.workspaceDefault else {
+      return "Workspace default"
+    }
+    return [executor.harness, executor.model, executor.effort]
+      .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+  }
+
+  private func ownerName(_ task: TaskRecord) -> String? {
+    guard let owner = task.ownerPaneId else { return nil }
+    return client.panes.first { $0.paneId == owner }?.name ?? owner
+  }
+
+  private func protectedBoundary(_ text: String) -> some View {
+    DetailGroup(title: "MUST NOT CHANGE") {
+      Text(text).font(MacTheme.chrome(MacTheme.TypeScale.control))
+        .textSelection(.enabled).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        .neoWell(radius: MacTheme.Radius.compact)
+    }
   }
 
   private var subitems: some View {
-    DetailGroup(title: "SUBITEMS") {
+    let values = detail?.subitems ?? []
+    let done = values.filter { $0.state == .done }.count
+    return DetailGroup(title: "SUBITEMS · \(done) OF \(values.count)") {
       if detail?.subitems.isEmpty != false {
-        Text("No subitems.").foregroundStyle(MacTheme.secondary)
+        Text("No subitems.").font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.secondary)
       } else {
-        ForEach(detail?.subitems ?? [], id: \.subitemId) { item in
-          Label(item.text, systemImage: item.state == .done ? "checkmark.circle.fill" : "circle")
-            .foregroundStyle(item.state == .done ? MacTheme.success : MacTheme.ink)
+        ForEach(values, id: \.subitemId) { item in
+          HStack(spacing: MacTheme.Space.x8) {
+            Image(systemName: item.state == .done ? "checkmark.circle.fill" : "circle")
+              .font(.system(size: 14)).foregroundStyle(
+                item.state == .done ? MacTheme.success : MacTheme.muted)
+            Text(item.text).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .medium))
+              .foregroundStyle(item.state == .done ? MacTheme.muted : MacTheme.ink)
+            Spacer()
+            if let agent = item.agent {
+              Text(agent).font(MacTheme.chrome(MacTheme.TypeScale.small))
+                .foregroundStyle(MacTheme.muted)
+            }
+          }
         }
       }
     }
@@ -660,16 +725,9 @@ private struct TaskDetailSheet: View {
 
   private func summary(_ task: TaskRecord) -> some View {
     DetailGroup(title: "SUMMARY") {
-      Text(task.summary ?? "No summary yet.").foregroundStyle(
-        task.summary == nil ? MacTheme.secondary : MacTheme.ink)
-      DeclarationList(
-        title: "Contract changes",
-        values: task.contractChanges?.map {
-          "\($0.path)::\($0.name) · \($0.label.rawValue) · \($0.contractRef)"
-        } ?? [])
-      DeclarationList(
-        title: "Out-of-scope edits",
-        values: task.outOfScopeEdits?.map { "\($0.path) · \($0.reason)" } ?? [])
+      Text(task.summary ?? "No summary yet.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(task.summary == nil ? MacTheme.secondary : MacTheme.ink)
     }
   }
 
@@ -678,8 +736,17 @@ private struct TaskDetailSheet: View {
       comment.text.split(separator: "\n").map(String.init).filter { $0.contains("→") }
     }
     return DetailGroup(title: "DRIFT REVIEW") {
+      DeclarationList(
+        title: "Contract changes",
+        values: detail?.task.contractChanges?.map {
+          "\($0.path)::\($0.name) · \($0.label.rawValue) · \($0.contractRef)"
+        } ?? [])
+      DeclarationList(
+        title: "Out-of-scope edits",
+        values: detail?.task.outOfScopeEdits?.map { "\($0.path) · \($0.reason)" } ?? [])
       if lines.isEmpty {
-        Text("No reviewer findings.").foregroundStyle(MacTheme.secondary)
+        Text("No reviewer findings.").font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
           Text(line).font(MacTheme.mono(MacTheme.TypeScale.small)).textSelection(.enabled)
@@ -688,26 +755,99 @@ private struct TaskDetailSheet: View {
     }
   }
 
-  private var comments: some View {
-    DetailGroup(title: "COMMENTS") {
-      ForEach(detail?.comments ?? [], id: \.commentId) { comment in
-        VStack(alignment: .leading, spacing: 3) {
-          Text(comment.author).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
-          Text(comment.text).font(MacTheme.chrome(MacTheme.TypeScale.control))
-            .textSelection(.enabled)
-          Text(comment.at).font(MacTheme.mono(9)).foregroundStyle(MacTheme.secondary)
-        }.padding(.vertical, 4)
+  private var timeline: some View {
+    DetailGroup(title: "HISTORY AND COMMENTS") {
+      ForEach(timelineEntries) { entry in
+        HStack(alignment: .top, spacing: MacTheme.Space.x8) {
+          Image(systemName: entry.author == nil ? "circle.fill" : "person.crop.circle.fill")
+            .font(.system(size: 10)).foregroundStyle(MacTheme.muted).padding(.top, 3)
+          VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+            if let author = entry.author {
+              Text(author).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold))
+                .padding(.horizontal, 8).padding(.vertical, 2)
+                .background(taskOwnerColor(author), in: Capsule())
+            }
+            Text(entry.text).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+              .foregroundStyle(entry.author == nil ? MacTheme.secondary : MacTheme.ink)
+              .textSelection(.enabled)
+            Text(entry.at).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))
+              .foregroundStyle(MacTheme.muted)
+          }.frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(.vertical, 3)
       }
     }
   }
 
-  private var history: some View {
-    DetailGroup(title: "HISTORY") {
-      ForEach(Array((detail?.history ?? []).enumerated()), id: \.offset) { _, move in
-        Text("\(move.actor) · \(move.from.title) → \(move.to.title) · \(move.reason)")
-          .font(MacTheme.chrome(MacTheme.TypeScale.small))
-      }
+  private var timelineEntries: [TaskTimelineEntry] {
+    let moves = (detail?.history ?? []).enumerated().map { index, move in
+      TaskTimelineEntry(
+        id: "move-\(index)-\(move.at)", author: nil,
+        text: "\(move.actor) · \(move.from.title) → \(move.to.title) · \(move.reason)", at: move.at)
     }
+    let comments = (detail?.comments ?? []).map { comment in
+      TaskTimelineEntry(
+        id: "comment-\(comment.commentId)", author: comment.author, text: comment.text,
+        at: comment.at)
+    }
+    return (moves + comments).sorted { $0.at < $1.at }
+  }
+
+  private var commentPreview: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Text("Comment…").font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.muted)
+      Spacer()
+      Image(systemName: "arrow.up").font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(MacTheme.secondary)
+    }.padding(.horizontal, 14).frame(height: 44).neoWell(radius: MacTheme.Radius.control)
+      .accessibilityHidden(true)
+  }
+
+  private var actionPreview: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      PreviewAction(title: "Dispatch to pane", icon: "paperplane", trailing: true)
+      PreviewAction(title: "Send for review", icon: "eye", trailing: false)
+      Spacer()
+      Image(systemName: "ellipsis").font(.system(size: 16, weight: .medium))
+        .foregroundStyle(MacTheme.muted)
+    }.accessibilityHidden(true)
+  }
+}
+
+private struct TaskTimelineEntry: Identifiable {
+  let id: String
+  let author: String?
+  let text: String
+  let at: String
+}
+
+private struct DetailStatePill: View {
+  let state: TaskState
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x5) {
+      Text(state.title).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+      Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
+    }.foregroundStyle(MacTheme.onAccent).padding(.horizontal, 10).padding(.vertical, 4)
+      .background(state.color, in: Capsule())
+  }
+}
+
+private struct PreviewAction: View {
+  let title: String
+  let icon: String
+  let trailing: Bool
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x6) {
+      Image(systemName: icon).font(.system(size: 13, weight: .semibold))
+      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+      if trailing {
+        Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(MacTheme.muted)
+      }
+    }.foregroundStyle(MacTheme.ink).padding(.horizontal, 14).padding(.vertical, 8)
+      .neoRaised(radius: MacTheme.Radius.pill, elevation: .card)
   }
 }
 
