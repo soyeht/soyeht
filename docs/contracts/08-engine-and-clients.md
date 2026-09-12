@@ -151,7 +151,7 @@ for queries). Paginated lists: `{items, nextCursor?}` with `limit`.
 `workspace.rename {workspaceId, name}`, `workspace.close`, `workspace.focus`
 (focus is **per client**, not global: tapping on iPhone does not move the Mac keyboard).
 
-**Panes**: `pane.create {workspaceId, mode: "terminal"|"agent", harness?,
+**Panes**: `pane.create {workspaceId, mode: "terminal"|"agent"|"editor", harness?,
 model?, effort?, permission?, cwd|worktree?, taskId?, name?}` →
 `{paneId, binding?}`; `pane.close`, `pane.rename`, `pane.arrange
 {workspaceId, layout}` (layout is shared and changes only through this request),
@@ -189,6 +189,14 @@ required even when empty), `task.dispatch {taskId, preset}`, `task.unblock`,
 `task.worktree.clean`, **`task.next {}`** (`agent` role only; rules in 03 §5),
 and `loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`.
 Task IDs are always `{workspaceId, taskId}` together.
+
+**Files and editor**: `file.open`, `file.read`, `file.write`, `file.watch`,
+`file.history`, `file.revert`, `file.search`, `file.symbols`,
+`file.definition`, `file.references`, `file.diagnostics`, `file.diff`, and
+`file.format`; `editor.review.accept|reject|comment`; `lsp.status`. Content is
+read through bounded line viewports. Positions are zero-based line and UTF-16
+column pairs. Mutations name a base revision when they change existing text;
+the complete shapes and limits are generated from `contracts/protocol.json`.
 
 **Experiment (contract 05 §4)**: `experiment.record.set {paneId, on}`,
 `experiment.export {from, to}` → `{path, bytes}`, `experiment.metrics`,
@@ -238,6 +246,9 @@ English in every contract (mapping table at the end). All carry
   `task.phrase_changed {phrase}`, `task.updated {version}`,
   `task.attention {workspaceId, n}`
 - `attention.changed {workspaceId, count, items}`
+- `file.changed_on_disk`, `file.saved {by}`, `file.conflict`
+- `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`
+- `usage.changed {provider, state, primary?, secondary?, source, fetchedAt}`
 - `pane.message {fromPaneId, toPaneId, text, state}`
 - `device.pair_requested`, `device.paired`, `device.revoked`
 - `engine.updating`, `engine.restarted {generation}`, `ptyd.reconnected

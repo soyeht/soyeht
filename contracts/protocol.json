@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soyeht.invalid/protocol/v1",
-  "title": "Soyeht terminal and agent protocol",
+  "title": "Soyeht engine and client protocol",
   "description": "Wire schema. x-methods and x-events associate JSON-RPC names with schemas. See README.md for supported vocabulary.",
   "$defs": {
     "JsonValue": {},
@@ -39,7 +39,8 @@
       "type": "string",
       "enum": [
         "terminal",
-        "agent"
+        "agent",
+        "editor"
       ]
     },
     "PaneState": {
@@ -77,7 +78,8 @@
         "loops",
         "devices",
         "capabilities",
-        "streams"
+        "streams",
+        "files"
       ]
     },
     "ErrorKind": {
@@ -6288,6 +6290,1358 @@
         "fetchedAt"
       ],
       "additionalProperties": true
+    },
+    "EditorLanguage": {
+      "type": "string",
+      "enum": [
+        "plain_text",
+        "rust",
+        "swift",
+        "typescript",
+        "python",
+        "json",
+        "markdown",
+        "shell"
+      ]
+    },
+    "EditorContentSource": {
+      "type": "string",
+      "enum": [
+        "buffer",
+        "disk",
+        "draft",
+        "history"
+      ]
+    },
+    "HighlightKind": {
+      "type": "string",
+      "enum": [
+        "keyword",
+        "string",
+        "comment",
+        "number",
+        "type",
+        "function",
+        "property",
+        "operator",
+        "punctuation",
+        "constant",
+        "variable"
+      ]
+    },
+    "DiagnosticSeverity": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warning",
+        "information",
+        "hint"
+      ]
+    },
+    "FileSymbolKind": {
+      "type": "string",
+      "enum": [
+        "function",
+        "type",
+        "method",
+        "property",
+        "variable",
+        "module"
+      ]
+    },
+    "DiffLineKind": {
+      "type": "string",
+      "enum": [
+        "context",
+        "added",
+        "removed"
+      ]
+    },
+    "LspState": {
+      "type": "string",
+      "enum": [
+        "starting",
+        "ready",
+        "restarting",
+        "unavailable"
+      ]
+    },
+    "TextPosition": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "line",
+        "column"
+      ],
+      "additionalProperties": true
+    },
+    "TextRange": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/TextPosition"
+        },
+        "end": {
+          "$ref": "#/$defs/TextPosition"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": true
+    },
+    "TextEdit": {
+      "type": "object",
+      "properties": {
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 262144
+        }
+      },
+      "required": [
+        "range",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "HighlightSpan": {
+      "type": "object",
+      "properties": {
+        "startColumn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "endColumn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "kind": {
+          "$ref": "#/$defs/HighlightKind"
+        }
+      },
+      "required": [
+        "startColumn",
+        "endColumn",
+        "kind"
+      ],
+      "additionalProperties": true
+    },
+    "EditorLine": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "highlights": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HighlightSpan"
+          }
+        }
+      },
+      "required": [
+        "line",
+        "text",
+        "highlights"
+      ],
+      "additionalProperties": true
+    },
+    "FileAuthor": {
+      "type": "object",
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "actor",
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "FileDocument": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "language": {
+          "$ref": "#/$defs/EditorLanguage"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "diskRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "lineCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "byteCount": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "conflicted": {
+          "type": "boolean"
+        },
+        "watching": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fileId",
+        "paneId",
+        "workspaceId",
+        "path",
+        "language",
+        "revision",
+        "diskRevision",
+        "lineCount",
+        "byteCount",
+        "dirty",
+        "conflicted",
+        "watching"
+      ],
+      "additionalProperties": true
+    },
+    "FileOpenParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileOpenResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "pane": {
+          "$ref": "#/$defs/Pane"
+        },
+        "viewport": {
+          "$ref": "#/$defs/FileReadResult"
+        }
+      },
+      "required": [
+        "file",
+        "pane",
+        "viewport"
+      ],
+      "additionalProperties": true
+    },
+    "FileReadParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "source": {
+          "$ref": "#/$defs/EditorContentSource"
+        },
+        "versionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fromLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "lineCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "required": [
+        "fileId",
+        "fromLine",
+        "lineCount"
+      ],
+      "additionalProperties": true
+    },
+    "FileReadResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "source": {
+          "$ref": "#/$defs/EditorContentSource"
+        },
+        "fromLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "toLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EditorLine"
+          }
+        }
+      },
+      "required": [
+        "file",
+        "source",
+        "fromLine",
+        "toLine",
+        "lines"
+      ],
+      "additionalProperties": true
+    },
+    "FileWriteParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextEdit"
+          }
+        },
+        "author": {
+          "$ref": "#/$defs/FileAuthor"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "edits",
+        "author",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileWriteResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "changedLines": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        }
+      },
+      "required": [
+        "file",
+        "changedLines"
+      ],
+      "additionalProperties": true
+    },
+    "FileWatchParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "watch": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "watch",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileWatchResult": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "watching": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fileId",
+        "watching"
+      ],
+      "additionalProperties": true
+    },
+    "FileVersion": {
+      "type": "object",
+      "properties": {
+        "versionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "author": {
+          "$ref": "#/$defs/FileAuthor"
+        },
+        "byteCount": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "versionId",
+        "fileId",
+        "revision",
+        "createdAt",
+        "author",
+        "byteCount"
+      ],
+      "additionalProperties": true
+    },
+    "FileHistoryParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Id"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "fileId",
+        "limit"
+      ],
+      "additionalProperties": true
+    },
+    "FileHistoryResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileVersion"
+          }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "FileRevertParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "versionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "versionId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileRevertResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "additionalProperties": true
+    },
+    "FileSearchMatch": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "preview": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "range",
+        "preview"
+      ],
+      "additionalProperties": true
+    },
+    "FileSearchParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "replacement": {
+          "type": "string",
+          "maxLength": 262144
+        },
+        "caseSensitive": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "query",
+        "caseSensitive",
+        "limit",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileSearchResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileSearchMatch"
+          }
+        },
+        "replaced": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "items",
+        "replaced"
+      ],
+      "additionalProperties": true
+    },
+    "FileSymbol": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kind": {
+          "$ref": "#/$defs/FileSymbolKind"
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "selectionRange": {
+          "$ref": "#/$defs/TextRange"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "range",
+        "selectionRange"
+      ],
+      "additionalProperties": true
+    },
+    "FileSymbolsParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "fileId",
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    "FileSymbolsResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileSymbol"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "FileLocation": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "range"
+      ],
+      "additionalProperties": true
+    },
+    "FilePositionParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "position": {
+          "$ref": "#/$defs/TextPosition"
+        }
+      },
+      "required": [
+        "fileId",
+        "revision",
+        "position"
+      ],
+      "additionalProperties": true
+    },
+    "FileDefinitionResult": {
+      "type": "object",
+      "properties": {
+        "location": {
+          "$ref": "#/$defs/FileLocation"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "FileReferencesResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileLocation"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "FileDiagnostic": {
+      "type": "object",
+      "properties": {
+        "diagnosticId": {
+          "$ref": "#/$defs/Id"
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "severity": {
+          "$ref": "#/$defs/DiagnosticSeverity"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "diagnosticId",
+        "range",
+        "severity",
+        "message",
+        "source"
+      ],
+      "additionalProperties": true
+    },
+    "FileDiagnosticsParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "fileId",
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    "FileDiagnosticsResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileDiagnostic"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "FileBlame": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "author": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "line",
+        "commit",
+        "author",
+        "summary"
+      ],
+      "additionalProperties": true
+    },
+    "DiffLine": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/DiffLineKind"
+        },
+        "oldLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "newLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "author": {
+          "$ref": "#/$defs/FileAuthor"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "DiffHunk": {
+      "type": "object",
+      "properties": {
+        "hunkId": {
+          "$ref": "#/$defs/Id"
+        },
+        "oldStart": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "oldLines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "newStart": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "newLines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DiffLine"
+          }
+        }
+      },
+      "required": [
+        "hunkId",
+        "oldStart",
+        "oldLines",
+        "newStart",
+        "newLines",
+        "lines"
+      ],
+      "additionalProperties": true
+    },
+    "FileDiffParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "fileId",
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    "FileDiffResult": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DiffHunk"
+          }
+        },
+        "blame": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileBlame"
+          }
+        }
+      },
+      "required": [
+        "fileId",
+        "revision",
+        "hunks",
+        "blame"
+      ],
+      "additionalProperties": true
+    },
+    "FileFormatParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileFormatResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "additionalProperties": true
+    },
+    "EditorReviewParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "hunkId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "hunkId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "EditorReviewResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "hunkId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "file",
+        "hunkId"
+      ],
+      "additionalProperties": true
+    },
+    "EditorReviewCommentParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "range",
+        "body",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "EditorReviewCommentResult": {
+      "type": "object",
+      "properties": {
+        "commentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "taskId": {
+          "$ref": "#/$defs/Id"
+        },
+        "delivered": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "commentId",
+        "delivered"
+      ],
+      "additionalProperties": true
+    },
+    "LspServerStatus": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "$ref": "#/$defs/EditorLanguage"
+        },
+        "state": {
+          "$ref": "#/$defs/LspState"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "language",
+        "state",
+        "generation"
+      ],
+      "additionalProperties": true
+    },
+    "LspStatusParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "language": {
+          "$ref": "#/$defs/EditorLanguage"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "LspStatusResult": {
+      "type": "object",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LspServerStatus"
+          }
+        }
+      },
+      "required": [
+        "servers"
+      ],
+      "additionalProperties": true
+    },
+    "FileChangedOnDiskEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "diskRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "changedLines": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "fileId",
+        "diskRevision",
+        "changedLines"
+      ],
+      "additionalProperties": true
+    },
+    "FileSavedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "by": {
+          "$ref": "#/$defs/FileAuthor"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "file",
+        "by"
+      ],
+      "additionalProperties": true
+    },
+    "FileConflictEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "draftRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "diskRevision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "fileId",
+        "baseRevision",
+        "draftRevision",
+        "diskRevision"
+      ],
+      "additionalProperties": true
+    },
+    "LspDiagnosticsEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileDiagnostic"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "fileId",
+        "revision",
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "EditorAgentCursorEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "position": {
+          "$ref": "#/$defs/TextPosition"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "fileId",
+        "paneId",
+        "name",
+        "position"
+      ],
+      "additionalProperties": true
+    },
+    "EditorReviewRequestedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DiffHunk"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "fileId",
+        "revision",
+        "paneId",
+        "hunks"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -6840,6 +8194,159 @@
         "$ref": "#/$defs/UsageRefreshResult"
       },
       "mutation": true
+    },
+    "file.open": {
+      "params": {
+        "$ref": "#/$defs/FileOpenParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileOpenResult"
+      },
+      "mutation": true
+    },
+    "file.read": {
+      "params": {
+        "$ref": "#/$defs/FileReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileReadResult"
+      },
+      "mutation": false
+    },
+    "file.write": {
+      "params": {
+        "$ref": "#/$defs/FileWriteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileWriteResult"
+      },
+      "mutation": true
+    },
+    "file.watch": {
+      "params": {
+        "$ref": "#/$defs/FileWatchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileWatchResult"
+      },
+      "mutation": true
+    },
+    "file.history": {
+      "params": {
+        "$ref": "#/$defs/FileHistoryParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileHistoryResult"
+      },
+      "mutation": false
+    },
+    "file.revert": {
+      "params": {
+        "$ref": "#/$defs/FileRevertParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileRevertResult"
+      },
+      "mutation": true
+    },
+    "file.search": {
+      "params": {
+        "$ref": "#/$defs/FileSearchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileSearchResult"
+      },
+      "mutation": true
+    },
+    "file.symbols": {
+      "params": {
+        "$ref": "#/$defs/FileSymbolsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileSymbolsResult"
+      },
+      "mutation": false
+    },
+    "file.definition": {
+      "params": {
+        "$ref": "#/$defs/FilePositionParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileDefinitionResult"
+      },
+      "mutation": false
+    },
+    "file.references": {
+      "params": {
+        "$ref": "#/$defs/FilePositionParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileReferencesResult"
+      },
+      "mutation": false
+    },
+    "file.diagnostics": {
+      "params": {
+        "$ref": "#/$defs/FileDiagnosticsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileDiagnosticsResult"
+      },
+      "mutation": false
+    },
+    "file.diff": {
+      "params": {
+        "$ref": "#/$defs/FileDiffParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileDiffResult"
+      },
+      "mutation": false
+    },
+    "file.format": {
+      "params": {
+        "$ref": "#/$defs/FileFormatParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileFormatResult"
+      },
+      "mutation": true
+    },
+    "editor.review.accept": {
+      "params": {
+        "$ref": "#/$defs/EditorReviewParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EditorReviewResult"
+      },
+      "mutation": true
+    },
+    "editor.review.reject": {
+      "params": {
+        "$ref": "#/$defs/EditorReviewParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EditorReviewResult"
+      },
+      "mutation": true
+    },
+    "editor.review.comment": {
+      "params": {
+        "$ref": "#/$defs/EditorReviewCommentParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EditorReviewCommentResult"
+      },
+      "mutation": true
+    },
+    "lsp.status": {
+      "params": {
+        "$ref": "#/$defs/LspStatusParams"
+      },
+      "result": {
+        "$ref": "#/$defs/LspStatusResult"
+      },
+      "mutation": false
     }
   },
   "x-events": {
@@ -7160,6 +8667,42 @@
         "$ref": "#/$defs/UsageChangedEvent"
       },
       "durable": true
+    },
+    "file.changed_on_disk": {
+      "params": {
+        "$ref": "#/$defs/FileChangedOnDiskEvent"
+      },
+      "durable": true
+    },
+    "file.saved": {
+      "params": {
+        "$ref": "#/$defs/FileSavedEvent"
+      },
+      "durable": true
+    },
+    "file.conflict": {
+      "params": {
+        "$ref": "#/$defs/FileConflictEvent"
+      },
+      "durable": true
+    },
+    "lsp.diagnostics": {
+      "params": {
+        "$ref": "#/$defs/LspDiagnosticsEvent"
+      },
+      "durable": true
+    },
+    "editor.agent_cursor": {
+      "params": {
+        "$ref": "#/$defs/EditorAgentCursorEvent"
+      },
+      "durable": true
+    },
+    "editor.review_requested": {
+      "params": {
+        "$ref": "#/$defs/EditorReviewRequestedEvent"
+      },
+      "durable": true
     }
   },
   "x-framing": {
@@ -7222,7 +8765,13 @@
     "usageHoverRefreshAfterSec": 60,
     "usageOpenRefreshIntervalSec": 300,
     "usageStaleAfterSec": 900,
-    "usageMaxBackoffSec": 1800
+    "usageMaxBackoffSec": 1800,
+    "editorViewportLines": 2000,
+    "editorEditBytes": 262144,
+    "editorSearchResults": 500,
+    "editorHistoryVersions": 200,
+    "editorHistoryBytes": 52428800,
+    "editorAutosaveMs": 500
   },
   "x-settings": {
     "terminal.defaultCols": {

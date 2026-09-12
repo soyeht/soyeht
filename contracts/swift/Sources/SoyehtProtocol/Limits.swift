@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
+// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
 public enum ProtocolLimits {
     public static let jsonBytes = 1048576
     public static let terminalPayloadBytes = 65536
@@ -28,4 +28,10 @@ public enum ProtocolLimits {
     public static let usageOpenRefreshIntervalSec = 300
     public static let usageStaleAfterSec = 900
     public static let usageMaxBackoffSec = 1800
+    public static let editorViewportLines = 2000
+    public static let editorEditBytes = 262144
+    public static let editorSearchResults = 500
+    public static let editorHistoryVersions = 200
+    public static let editorHistoryBytes = 52428800
+    public static let editorAutosaveMs = 500
 }

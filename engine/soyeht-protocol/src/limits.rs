@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
+// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -28,3 +28,9 @@ pub const USAGE_HOVER_REFRESH_AFTER_SEC: usize = 60;
 pub const USAGE_OPEN_REFRESH_INTERVAL_SEC: usize = 300;
 pub const USAGE_STALE_AFTER_SEC: usize = 900;
 pub const USAGE_MAX_BACKOFF_SEC: usize = 1800;
+pub const EDITOR_VIEWPORT_LINES: usize = 2000;
+pub const EDITOR_EDIT_BYTES: usize = 262144;
+pub const EDITOR_SEARCH_RESULTS: usize = 500;
+pub const EDITOR_HISTORY_VERSIONS: usize = 200;
+pub const EDITOR_HISTORY_BYTES: usize = 52428800;
+pub const EDITOR_AUTOSAVE_MS: usize = 500;

@@ -88,6 +88,45 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_schema(changed)
 
+    def test_editor_surface_is_complete_bounded_and_cursor_safe(self):
+        expected_methods = {
+            "file.open", "file.read", "file.write", "file.watch", "file.history",
+            "file.revert", "file.search", "file.symbols", "file.definition",
+            "file.references", "file.diagnostics", "file.diff", "file.format",
+            "editor.review.accept", "editor.review.reject", "editor.review.comment",
+            "lsp.status",
+        }
+        expected_events = {
+            "file.changed_on_disk", "file.saved", "file.conflict",
+            "lsp.diagnostics", "editor.agent_cursor", "editor.review_requested",
+        }
+        self.assertLessEqual(expected_methods, set(self.schema["x-methods"]))
+        self.assertLessEqual(expected_events, set(self.schema["x-events"]))
+        self.assertIn("editor", self.schema["$defs"]["PaneMode"]["enum"])
+        self.assertIn("files", self.schema["$defs"]["SnapshotSection"]["enum"])
+
+        read = self.schema["$defs"]["FileReadParams"]
+        self.assertEqual(
+            read["properties"]["lineCount"]["maximum"],
+            self.schema["x-limits"]["editorViewportLines"],
+        )
+        self.assertNotIn("content", self.schema["$defs"]["FileOpenResult"]["properties"])
+        self.assertNotIn("content", self.schema["$defs"]["FileConflictEvent"]["properties"])
+        for name in expected_events:
+            self.assertTrue(self.schema["x-events"][name]["durable"], name)
+
+    def test_every_editor_mutation_has_revision_or_is_an_open_or_watch_operation(self):
+        exempt = {"file.open", "file.watch", "file.search", "editor.review.comment"}
+        for name, method in self.schema["x-methods"].items():
+            if not method["mutation"] or not (
+                name.startswith("file.") or name.startswith("editor.review.")
+            ):
+                continue
+            definition = self.schema["$defs"][method["params"]["$ref"].split("/")[-1]]
+            self.assertIn("idempotencyKey", definition["required"], name)
+            if name not in exempt:
+                self.assertIn("baseRevision", definition["required"], name)
+
     def test_swift_task_name_does_not_shadow_concurrency(self):
         outputs = render(self.schema, "test-digest")
         swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]

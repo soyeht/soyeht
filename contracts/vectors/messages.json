@@ -6425,5 +6425,1472 @@
       "source": "cursor_current_period",
       "fetchedAt": "2026-09-12T16:00:00Z"
     }
+  },
+  {
+    "name": "EditorLanguage",
+    "type": "EditorLanguage",
+    "value": "plain_text"
+  },
+  {
+    "name": "EditorContentSource",
+    "type": "EditorContentSource",
+    "value": "buffer"
+  },
+  {
+    "name": "HighlightKind",
+    "type": "HighlightKind",
+    "value": "keyword"
+  },
+  {
+    "name": "DiagnosticSeverity",
+    "type": "DiagnosticSeverity",
+    "value": "error"
+  },
+  {
+    "name": "FileSymbolKind",
+    "type": "FileSymbolKind",
+    "value": "function"
+  },
+  {
+    "name": "DiffLineKind",
+    "type": "DiffLineKind",
+    "value": "context"
+  },
+  {
+    "name": "LspState",
+    "type": "LspState",
+    "value": "starting"
+  },
+  {
+    "name": "TextPosition",
+    "type": "TextPosition",
+    "value": {
+      "line": 0,
+      "column": 0
+    }
+  },
+  {
+    "name": "TextRange",
+    "type": "TextRange",
+    "value": {
+      "start": {
+        "line": 0,
+        "column": 0
+      },
+      "end": {
+        "line": 0,
+        "column": 0
+      }
+    }
+  },
+  {
+    "name": "TextEdit",
+    "type": "TextEdit",
+    "value": {
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      },
+      "text": "x"
+    }
+  },
+  {
+    "name": "HighlightSpan",
+    "type": "HighlightSpan",
+    "value": {
+      "startColumn": 0,
+      "endColumn": 0,
+      "kind": "keyword"
+    }
+  },
+  {
+    "name": "EditorLine",
+    "type": "EditorLine",
+    "value": {
+      "line": 0,
+      "text": "x",
+      "highlights": []
+    }
+  },
+  {
+    "name": "FileAuthor",
+    "type": "FileAuthor",
+    "value": {
+      "actor": {
+        "role": "human_local",
+        "client": "x"
+      },
+      "name": "x"
+    }
+  },
+  {
+    "name": "FileDocument",
+    "type": "FileDocument",
+    "value": {
+      "fileId": "x",
+      "paneId": "x",
+      "workspaceId": "x",
+      "path": "x",
+      "language": "plain_text",
+      "revision": "1",
+      "diskRevision": "1",
+      "lineCount": 0,
+      "byteCount": "1",
+      "dirty": false,
+      "conflicted": false,
+      "watching": false
+    }
+  },
+  {
+    "name": "FileOpenParams",
+    "type": "FileOpenParams",
+    "value": {
+      "workspaceId": "x",
+      "path": "x",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileOpenResult",
+    "type": "FileOpenResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "pane": {
+        "paneId": "x",
+        "workspaceId": "x",
+        "name": "x",
+        "cwd": "x",
+        "mode": "terminal",
+        "state": "starting",
+        "source": "protocol",
+        "confidence": 0.0,
+        "phrase": "x",
+        "generation": 0,
+        "cols": 0,
+        "rows": 0,
+        "record": false
+      },
+      "viewport": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "source": "buffer",
+        "fromLine": 0,
+        "toLine": 0,
+        "lines": []
+      }
+    }
+  },
+  {
+    "name": "FileReadParams",
+    "type": "FileReadParams",
+    "value": {
+      "fileId": "x",
+      "fromLine": 0,
+      "lineCount": 1
+    }
+  },
+  {
+    "name": "FileReadResult",
+    "type": "FileReadResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "source": "buffer",
+      "fromLine": 0,
+      "toLine": 0,
+      "lines": []
+    }
+  },
+  {
+    "name": "FileWriteParams",
+    "type": "FileWriteParams",
+    "value": {
+      "fileId": "x",
+      "baseRevision": "1",
+      "edits": [],
+      "author": {
+        "actor": {
+          "role": "human_local",
+          "client": "x"
+        },
+        "name": "x"
+      },
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileWriteResult",
+    "type": "FileWriteResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "changedLines": []
+    }
+  },
+  {
+    "name": "FileWatchParams",
+    "type": "FileWatchParams",
+    "value": {
+      "fileId": "x",
+      "watch": false,
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileWatchResult",
+    "type": "FileWatchResult",
+    "value": {
+      "fileId": "x",
+      "watching": false
+    }
+  },
+  {
+    "name": "FileVersion",
+    "type": "FileVersion",
+    "value": {
+      "versionId": "x",
+      "fileId": "x",
+      "revision": "1",
+      "createdAt": "x",
+      "author": {
+        "actor": {
+          "role": "human_local",
+          "client": "x"
+        },
+        "name": "x"
+      },
+      "byteCount": "1"
+    }
+  },
+  {
+    "name": "FileHistoryParams",
+    "type": "FileHistoryParams",
+    "value": {
+      "fileId": "x",
+      "limit": 1
+    }
+  },
+  {
+    "name": "FileHistoryResult",
+    "type": "FileHistoryResult",
+    "value": {
+      "items": []
+    }
+  },
+  {
+    "name": "FileRevertParams",
+    "type": "FileRevertParams",
+    "value": {
+      "fileId": "x",
+      "versionId": "x",
+      "baseRevision": "1",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileRevertResult",
+    "type": "FileRevertResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      }
+    }
+  },
+  {
+    "name": "FileSearchMatch",
+    "type": "FileSearchMatch",
+    "value": {
+      "workspaceId": "x",
+      "path": "x",
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      },
+      "preview": "x"
+    }
+  },
+  {
+    "name": "FileSearchParams",
+    "type": "FileSearchParams",
+    "value": {
+      "workspaceId": "x",
+      "query": "x",
+      "caseSensitive": false,
+      "limit": 1,
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileSearchResult",
+    "type": "FileSearchResult",
+    "value": {
+      "items": [],
+      "replaced": 0
+    }
+  },
+  {
+    "name": "FileSymbol",
+    "type": "FileSymbol",
+    "value": {
+      "name": "x",
+      "kind": "function",
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      },
+      "selectionRange": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "FileSymbolsParams",
+    "type": "FileSymbolsParams",
+    "value": {
+      "fileId": "x",
+      "revision": "1"
+    }
+  },
+  {
+    "name": "FileSymbolsResult",
+    "type": "FileSymbolsResult",
+    "value": {
+      "items": []
+    }
+  },
+  {
+    "name": "FileLocation",
+    "type": "FileLocation",
+    "value": {
+      "workspaceId": "x",
+      "path": "x",
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "FilePositionParams",
+    "type": "FilePositionParams",
+    "value": {
+      "fileId": "x",
+      "revision": "1",
+      "position": {
+        "line": 0,
+        "column": 0
+      }
+    }
+  },
+  {
+    "name": "FileDefinitionResult",
+    "type": "FileDefinitionResult",
+    "value": {}
+  },
+  {
+    "name": "FileReferencesResult",
+    "type": "FileReferencesResult",
+    "value": {
+      "items": []
+    }
+  },
+  {
+    "name": "FileDiagnostic",
+    "type": "FileDiagnostic",
+    "value": {
+      "diagnosticId": "x",
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      },
+      "severity": "error",
+      "message": "x",
+      "source": "x"
+    }
+  },
+  {
+    "name": "FileDiagnosticsParams",
+    "type": "FileDiagnosticsParams",
+    "value": {
+      "fileId": "x",
+      "revision": "1"
+    }
+  },
+  {
+    "name": "FileDiagnosticsResult",
+    "type": "FileDiagnosticsResult",
+    "value": {
+      "items": []
+    }
+  },
+  {
+    "name": "FileBlame",
+    "type": "FileBlame",
+    "value": {
+      "line": 0,
+      "commit": "x",
+      "author": "x",
+      "summary": "x"
+    }
+  },
+  {
+    "name": "DiffLine",
+    "type": "DiffLine",
+    "value": {
+      "kind": "context",
+      "text": "x"
+    }
+  },
+  {
+    "name": "DiffHunk",
+    "type": "DiffHunk",
+    "value": {
+      "hunkId": "x",
+      "oldStart": 0,
+      "oldLines": 0,
+      "newStart": 0,
+      "newLines": 0,
+      "lines": []
+    }
+  },
+  {
+    "name": "FileDiffParams",
+    "type": "FileDiffParams",
+    "value": {
+      "fileId": "x",
+      "revision": "1"
+    }
+  },
+  {
+    "name": "FileDiffResult",
+    "type": "FileDiffResult",
+    "value": {
+      "fileId": "x",
+      "revision": "1",
+      "hunks": [],
+      "blame": []
+    }
+  },
+  {
+    "name": "FileFormatParams",
+    "type": "FileFormatParams",
+    "value": {
+      "fileId": "x",
+      "baseRevision": "1",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileFormatResult",
+    "type": "FileFormatResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      }
+    }
+  },
+  {
+    "name": "EditorReviewParams",
+    "type": "EditorReviewParams",
+    "value": {
+      "fileId": "x",
+      "hunkId": "x",
+      "baseRevision": "1",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "EditorReviewResult",
+    "type": "EditorReviewResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "hunkId": "x"
+    }
+  },
+  {
+    "name": "EditorReviewCommentParams",
+    "type": "EditorReviewCommentParams",
+    "value": {
+      "fileId": "x",
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      },
+      "body": "x",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "EditorReviewCommentResult",
+    "type": "EditorReviewCommentResult",
+    "value": {
+      "commentId": "x",
+      "delivered": false
+    }
+  },
+  {
+    "name": "LspServerStatus",
+    "type": "LspServerStatus",
+    "value": {
+      "language": "plain_text",
+      "state": "starting",
+      "generation": 0
+    }
+  },
+  {
+    "name": "LspStatusParams",
+    "type": "LspStatusParams",
+    "value": {}
+  },
+  {
+    "name": "LspStatusResult",
+    "type": "LspStatusResult",
+    "value": {
+      "servers": []
+    }
+  },
+  {
+    "name": "FileChangedOnDiskEvent",
+    "type": "FileChangedOnDiskEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "fileId": "x",
+      "diskRevision": "1",
+      "changedLines": []
+    }
+  },
+  {
+    "name": "FileSavedEvent",
+    "type": "FileSavedEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "by": {
+        "actor": {
+          "role": "human_local",
+          "client": "x"
+        },
+        "name": "x"
+      }
+    }
+  },
+  {
+    "name": "FileConflictEvent",
+    "type": "FileConflictEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "fileId": "x",
+      "baseRevision": "1",
+      "draftRevision": "1",
+      "diskRevision": "1"
+    }
+  },
+  {
+    "name": "LspDiagnosticsEvent",
+    "type": "LspDiagnosticsEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "fileId": "x",
+      "revision": "1",
+      "items": []
+    }
+  },
+  {
+    "name": "EditorAgentCursorEvent",
+    "type": "EditorAgentCursorEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "fileId": "x",
+      "paneId": "x",
+      "name": "x",
+      "position": {
+        "line": 0,
+        "column": 0
+      }
+    }
+  },
+  {
+    "name": "EditorReviewRequestedEvent",
+    "type": "EditorReviewRequestedEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "fileId": "x",
+      "revision": "1",
+      "paneId": "x",
+      "hunks": []
+    }
+  },
+  {
+    "name": "request:file.open",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-1",
+      "method": "file.open",
+      "params": {
+        "workspaceId": "x",
+        "path": "x",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.open",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-1",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "pane": {
+          "paneId": "x",
+          "workspaceId": "x",
+          "name": "x",
+          "cwd": "x",
+          "mode": "terminal",
+          "state": "starting",
+          "source": "protocol",
+          "confidence": 0.0,
+          "phrase": "x",
+          "generation": 0,
+          "cols": 0,
+          "rows": 0,
+          "record": false
+        },
+        "viewport": {
+          "file": {
+            "fileId": "x",
+            "paneId": "x",
+            "workspaceId": "x",
+            "path": "x",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 0,
+            "byteCount": "1",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "source": "buffer",
+          "fromLine": 0,
+          "toLine": 0,
+          "lines": []
+        }
+      }
+    }
+  },
+  {
+    "name": "request:file.read",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-2",
+      "method": "file.read",
+      "params": {
+        "fileId": "x",
+        "fromLine": 0,
+        "lineCount": 1
+      }
+    }
+  },
+  {
+    "name": "response:file.read",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-2",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "source": "buffer",
+        "fromLine": 0,
+        "toLine": 0,
+        "lines": []
+      }
+    }
+  },
+  {
+    "name": "request:file.write",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-3",
+      "method": "file.write",
+      "params": {
+        "fileId": "x",
+        "baseRevision": "1",
+        "edits": [],
+        "author": {
+          "actor": {
+            "role": "human_local",
+            "client": "x"
+          },
+          "name": "x"
+        },
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.write",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-3",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "changedLines": []
+      }
+    }
+  },
+  {
+    "name": "request:file.watch",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-4",
+      "method": "file.watch",
+      "params": {
+        "fileId": "x",
+        "watch": false,
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.watch",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-4",
+      "result": {
+        "fileId": "x",
+        "watching": false
+      }
+    }
+  },
+  {
+    "name": "request:file.history",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-5",
+      "method": "file.history",
+      "params": {
+        "fileId": "x",
+        "limit": 1
+      }
+    }
+  },
+  {
+    "name": "response:file.history",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-5",
+      "result": {
+        "items": []
+      }
+    }
+  },
+  {
+    "name": "request:file.revert",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-6",
+      "method": "file.revert",
+      "params": {
+        "fileId": "x",
+        "versionId": "x",
+        "baseRevision": "1",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.revert",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-6",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        }
+      }
+    }
+  },
+  {
+    "name": "request:file.search",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-7",
+      "method": "file.search",
+      "params": {
+        "workspaceId": "x",
+        "query": "x",
+        "caseSensitive": false,
+        "limit": 1,
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.search",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-7",
+      "result": {
+        "items": [],
+        "replaced": 0
+      }
+    }
+  },
+  {
+    "name": "request:file.symbols",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-8",
+      "method": "file.symbols",
+      "params": {
+        "fileId": "x",
+        "revision": "1"
+      }
+    }
+  },
+  {
+    "name": "response:file.symbols",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-8",
+      "result": {
+        "items": []
+      }
+    }
+  },
+  {
+    "name": "request:file.definition",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-9",
+      "method": "file.definition",
+      "params": {
+        "fileId": "x",
+        "revision": "1",
+        "position": {
+          "line": 0,
+          "column": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "response:file.definition",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-9",
+      "result": {}
+    }
+  },
+  {
+    "name": "request:file.references",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-10",
+      "method": "file.references",
+      "params": {
+        "fileId": "x",
+        "revision": "1",
+        "position": {
+          "line": 0,
+          "column": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "response:file.references",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-10",
+      "result": {
+        "items": []
+      }
+    }
+  },
+  {
+    "name": "request:file.diagnostics",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-11",
+      "method": "file.diagnostics",
+      "params": {
+        "fileId": "x",
+        "revision": "1"
+      }
+    }
+  },
+  {
+    "name": "response:file.diagnostics",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-11",
+      "result": {
+        "items": []
+      }
+    }
+  },
+  {
+    "name": "request:file.diff",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-12",
+      "method": "file.diff",
+      "params": {
+        "fileId": "x",
+        "revision": "1"
+      }
+    }
+  },
+  {
+    "name": "response:file.diff",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-12",
+      "result": {
+        "fileId": "x",
+        "revision": "1",
+        "hunks": [],
+        "blame": []
+      }
+    }
+  },
+  {
+    "name": "request:file.format",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-13",
+      "method": "file.format",
+      "params": {
+        "fileId": "x",
+        "baseRevision": "1",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.format",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-13",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        }
+      }
+    }
+  },
+  {
+    "name": "request:editor.review.accept",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-14",
+      "method": "editor.review.accept",
+      "params": {
+        "fileId": "x",
+        "hunkId": "x",
+        "baseRevision": "1",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:editor.review.accept",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-14",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "hunkId": "x"
+      }
+    }
+  },
+  {
+    "name": "request:editor.review.reject",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-15",
+      "method": "editor.review.reject",
+      "params": {
+        "fileId": "x",
+        "hunkId": "x",
+        "baseRevision": "1",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:editor.review.reject",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-15",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "hunkId": "x"
+      }
+    }
+  },
+  {
+    "name": "request:editor.review.comment",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-16",
+      "method": "editor.review.comment",
+      "params": {
+        "fileId": "x",
+        "range": {
+          "start": {
+            "line": 0,
+            "column": 0
+          },
+          "end": {
+            "line": 0,
+            "column": 0
+          }
+        },
+        "body": "x",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:editor.review.comment",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-16",
+      "result": {
+        "commentId": "x",
+        "delivered": false
+      }
+    }
+  },
+  {
+    "name": "request:lsp.status",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-17",
+      "method": "lsp.status",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:lsp.status",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-17",
+      "result": {
+        "servers": []
+      }
+    }
+  },
+  {
+    "name": "event:file.changed_on_disk",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "file.changed_on_disk",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "fileId": "x",
+        "diskRevision": "1",
+        "changedLines": []
+      }
+    }
+  },
+  {
+    "name": "event:file.saved",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "file.saved",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "by": {
+          "actor": {
+            "role": "human_local",
+            "client": "x"
+          },
+          "name": "x"
+        }
+      }
+    }
+  },
+  {
+    "name": "event:file.conflict",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "file.conflict",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "fileId": "x",
+        "baseRevision": "1",
+        "draftRevision": "1",
+        "diskRevision": "1"
+      }
+    }
+  },
+  {
+    "name": "event:lsp.diagnostics",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "lsp.diagnostics",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "fileId": "x",
+        "revision": "1",
+        "items": []
+      }
+    }
+  },
+  {
+    "name": "event:editor.agent_cursor",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "editor.agent_cursor",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "fileId": "x",
+        "paneId": "x",
+        "name": "x",
+        "position": {
+          "line": 0,
+          "column": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "event:editor.review_requested",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "editor.review_requested",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "fileId": "x",
+        "revision": "1",
+        "paneId": "x",
+        "hunks": []
+      }
+    }
+  },
+  {
+    "name": "PaneMode:editor",
+    "type": "PaneMode",
+    "value": "editor"
+  },
+  {
+    "name": "SnapshotSection:files",
+    "type": "SnapshotSection",
+    "value": "files"
+  },
+  {
+    "name": "editor-unicode-position",
+    "type": "TextPosition",
+    "value": {
+      "line": 12,
+      "column": 7
+    }
+  },
+  {
+    "name": "editor-conflict-identities-only",
+    "type": "FileConflictEvent",
+    "value": {
+      "eventId": "9",
+      "at": "2026-09-12T20:00:00Z",
+      "fileId": "file-1",
+      "baseRevision": "4",
+      "draftRevision": "5",
+      "diskRevision": "6"
+    }
   }
 ]

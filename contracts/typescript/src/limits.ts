@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
+// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,
@@ -27,5 +27,11 @@ export const limits = {
   "usageHoverRefreshAfterSec": 60,
   "usageOpenRefreshIntervalSec": 300,
   "usageStaleAfterSec": 900,
-  "usageMaxBackoffSec": 1800
+  "usageMaxBackoffSec": 1800,
+  "editorViewportLines": 2000,
+  "editorEditBytes": 262144,
+  "editorSearchResults": 500,
+  "editorHistoryVersions": 200,
+  "editorHistoryBytes": 52428800,
+  "editorAutosaveMs": 500
 } as const;

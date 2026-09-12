@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
+// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
 import Foundation
 
 
@@ -24,6 +24,7 @@ public enum AgentPaneRole: String, Codable, Sendable {
 public enum PaneMode: String, Codable, Sendable {
     case `terminal` = "terminal"
     case `agent` = "agent"
+    case `editor` = "editor"
 }
 
 public enum PaneState: String, Codable, Sendable {
@@ -56,6 +57,7 @@ public enum SnapshotSection: String, Codable, Sendable {
     case `devices` = "devices"
     case `capabilities` = "capabilities"
     case `streams` = "streams"
+    case `files` = "files"
 }
 
 public enum ErrorKind: String, Codable, Sendable {
@@ -3494,6 +3496,702 @@ public struct UsageChangedEvent: Codable, Sendable {
     }
 }
 
+public enum EditorLanguage: String, Codable, Sendable {
+    case `plain_text` = "plain_text"
+    case `rust` = "rust"
+    case `swift` = "swift"
+    case `typescript` = "typescript"
+    case `python` = "python"
+    case `json` = "json"
+    case `markdown` = "markdown"
+    case `shell` = "shell"
+}
+
+public enum EditorContentSource: String, Codable, Sendable {
+    case `buffer` = "buffer"
+    case `disk` = "disk"
+    case `draft` = "draft"
+    case `history` = "history"
+}
+
+public enum HighlightKind: String, Codable, Sendable {
+    case `keyword` = "keyword"
+    case `string` = "string"
+    case `comment` = "comment"
+    case `number` = "number"
+    case `type` = "type"
+    case `function` = "function"
+    case `property` = "property"
+    case `operator` = "operator"
+    case `punctuation` = "punctuation"
+    case `constant` = "constant"
+    case `variable` = "variable"
+}
+
+public enum DiagnosticSeverity: String, Codable, Sendable {
+    case `error` = "error"
+    case `warning` = "warning"
+    case `information` = "information"
+    case `hint` = "hint"
+}
+
+public enum FileSymbolKind: String, Codable, Sendable {
+    case `function` = "function"
+    case `type` = "type"
+    case `method` = "method"
+    case `property` = "property"
+    case `variable` = "variable"
+    case `module` = "module"
+}
+
+public enum DiffLineKind: String, Codable, Sendable {
+    case `context` = "context"
+    case `added` = "added"
+    case `removed` = "removed"
+}
+
+public enum LspState: String, Codable, Sendable {
+    case `starting` = "starting"
+    case `ready` = "ready"
+    case `restarting` = "restarting"
+    case `unavailable` = "unavailable"
+}
+
+public struct TextPosition: Codable, Sendable {
+    public var `line`: UInt32
+    public var `column`: UInt32
+    public init(`line`: UInt32, `column`: UInt32) {
+        self.`line` = `line`
+        self.`column` = `column`
+    }
+}
+
+public struct TextRange: Codable, Sendable {
+    public var `start`: TextPosition
+    public var `end`: TextPosition
+    public init(`start`: TextPosition, `end`: TextPosition) {
+        self.`start` = `start`
+        self.`end` = `end`
+    }
+}
+
+public struct TextEdit: Codable, Sendable {
+    public var `range`: TextRange
+    public var `text`: String
+    public init(`range`: TextRange, `text`: String) {
+        self.`range` = `range`
+        self.`text` = `text`
+    }
+}
+
+public struct HighlightSpan: Codable, Sendable {
+    public var `startColumn`: UInt32
+    public var `endColumn`: UInt32
+    public var `kind`: HighlightKind
+    public init(`startColumn`: UInt32, `endColumn`: UInt32, `kind`: HighlightKind) {
+        self.`startColumn` = `startColumn`
+        self.`endColumn` = `endColumn`
+        self.`kind` = `kind`
+    }
+}
+
+public struct EditorLine: Codable, Sendable {
+    public var `line`: UInt32
+    public var `text`: String
+    public var `highlights`: [HighlightSpan]
+    public init(`line`: UInt32, `text`: String, `highlights`: [HighlightSpan]) {
+        self.`line` = `line`
+        self.`text` = `text`
+        self.`highlights` = `highlights`
+    }
+}
+
+public struct FileAuthor: Codable, Sendable {
+    public var `actor`: Actor
+    public var `name`: String
+    public init(`actor`: Actor, `name`: String) {
+        self.`actor` = `actor`
+        self.`name` = `name`
+    }
+}
+
+public struct FileDocument: Codable, Sendable {
+    public var `fileId`: Id
+    public var `paneId`: Id
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `language`: EditorLanguage
+    public var `revision`: Decimal
+    public var `diskRevision`: Decimal
+    public var `lineCount`: UInt32
+    public var `byteCount`: Decimal
+    public var `dirty`: Bool
+    public var `conflicted`: Bool
+    public var `watching`: Bool
+    public init(`fileId`: Id, `paneId`: Id, `workspaceId`: Id, `path`: String, `language`: EditorLanguage, `revision`: Decimal, `diskRevision`: Decimal, `lineCount`: UInt32, `byteCount`: Decimal, `dirty`: Bool, `conflicted`: Bool, `watching`: Bool) {
+        self.`fileId` = `fileId`
+        self.`paneId` = `paneId`
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`language` = `language`
+        self.`revision` = `revision`
+        self.`diskRevision` = `diskRevision`
+        self.`lineCount` = `lineCount`
+        self.`byteCount` = `byteCount`
+        self.`dirty` = `dirty`
+        self.`conflicted` = `conflicted`
+        self.`watching` = `watching`
+    }
+}
+
+public struct FileOpenParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `line`: UInt32?
+    public var `column`: UInt32?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `path`: String, `line`: UInt32? = nil, `column`: UInt32? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`line` = `line`
+        self.`column` = `column`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileOpenResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public var `pane`: Pane
+    public var `viewport`: FileReadResult
+    public init(`file`: FileDocument, `pane`: Pane, `viewport`: FileReadResult) {
+        self.`file` = `file`
+        self.`pane` = `pane`
+        self.`viewport` = `viewport`
+    }
+}
+
+public struct FileReadParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal?
+    public var `source`: EditorContentSource?
+    public var `versionId`: Id?
+    public var `fromLine`: UInt32
+    public var `lineCount`: UInt32
+    public init(`fileId`: Id, `revision`: Decimal? = nil, `source`: EditorContentSource? = nil, `versionId`: Id? = nil, `fromLine`: UInt32, `lineCount`: UInt32) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`source` = `source`
+        self.`versionId` = `versionId`
+        self.`fromLine` = `fromLine`
+        self.`lineCount` = `lineCount`
+    }
+}
+
+public struct FileReadResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public var `source`: EditorContentSource
+    public var `fromLine`: UInt32
+    public var `toLine`: UInt32
+    public var `lines`: [EditorLine]
+    public init(`file`: FileDocument, `source`: EditorContentSource, `fromLine`: UInt32, `toLine`: UInt32, `lines`: [EditorLine]) {
+        self.`file` = `file`
+        self.`source` = `source`
+        self.`fromLine` = `fromLine`
+        self.`toLine` = `toLine`
+        self.`lines` = `lines`
+    }
+}
+
+public struct FileWriteParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `edits`: [TextEdit]
+    public var `author`: FileAuthor
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `edits`: [TextEdit], `author`: FileAuthor, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`edits` = `edits`
+        self.`author` = `author`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileWriteResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public var `changedLines`: [UInt32]
+    public init(`file`: FileDocument, `changedLines`: [UInt32]) {
+        self.`file` = `file`
+        self.`changedLines` = `changedLines`
+    }
+}
+
+public struct FileWatchParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `watch`: Bool
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `watch`: Bool, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`watch` = `watch`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileWatchResult: Codable, Sendable {
+    public var `fileId`: Id
+    public var `watching`: Bool
+    public init(`fileId`: Id, `watching`: Bool) {
+        self.`fileId` = `fileId`
+        self.`watching` = `watching`
+    }
+}
+
+public struct FileVersion: Codable, Sendable {
+    public var `versionId`: Id
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `createdAt`: String
+    public var `author`: FileAuthor
+    public var `byteCount`: Decimal
+    public init(`versionId`: Id, `fileId`: Id, `revision`: Decimal, `createdAt`: String, `author`: FileAuthor, `byteCount`: Decimal) {
+        self.`versionId` = `versionId`
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`createdAt` = `createdAt`
+        self.`author` = `author`
+        self.`byteCount` = `byteCount`
+    }
+}
+
+public struct FileHistoryParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `cursor`: Id?
+    public var `limit`: UInt32
+    public init(`fileId`: Id, `cursor`: Id? = nil, `limit`: UInt32) {
+        self.`fileId` = `fileId`
+        self.`cursor` = `cursor`
+        self.`limit` = `limit`
+    }
+}
+
+public struct FileHistoryResult: Codable, Sendable {
+    public var `items`: [FileVersion]
+    public var `nextCursor`: Id?
+    public init(`items`: [FileVersion], `nextCursor`: Id? = nil) {
+        self.`items` = `items`
+        self.`nextCursor` = `nextCursor`
+    }
+}
+
+public struct FileRevertParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `versionId`: Id
+    public var `baseRevision`: Decimal
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `versionId`: Id, `baseRevision`: Decimal, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`versionId` = `versionId`
+        self.`baseRevision` = `baseRevision`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileRevertResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public init(`file`: FileDocument) {
+        self.`file` = `file`
+    }
+}
+
+public struct FileSearchMatch: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `range`: TextRange
+    public var `preview`: String
+    public init(`workspaceId`: Id, `path`: String, `range`: TextRange, `preview`: String) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`range` = `range`
+        self.`preview` = `preview`
+    }
+}
+
+public struct FileSearchParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `query`: String
+    public var `replacement`: String?
+    public var `caseSensitive`: Bool
+    public var `limit`: UInt32
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `query`: String, `replacement`: String? = nil, `caseSensitive`: Bool, `limit`: UInt32, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`query` = `query`
+        self.`replacement` = `replacement`
+        self.`caseSensitive` = `caseSensitive`
+        self.`limit` = `limit`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileSearchResult: Codable, Sendable {
+    public var `items`: [FileSearchMatch]
+    public var `replaced`: UInt32
+    public init(`items`: [FileSearchMatch], `replaced`: UInt32) {
+        self.`items` = `items`
+        self.`replaced` = `replaced`
+    }
+}
+
+public struct FileSymbol: Codable, Sendable {
+    public var `name`: String
+    public var `kind`: FileSymbolKind
+    public var `range`: TextRange
+    public var `selectionRange`: TextRange
+    public init(`name`: String, `kind`: FileSymbolKind, `range`: TextRange, `selectionRange`: TextRange) {
+        self.`name` = `name`
+        self.`kind` = `kind`
+        self.`range` = `range`
+        self.`selectionRange` = `selectionRange`
+    }
+}
+
+public struct FileSymbolsParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public init(`fileId`: Id, `revision`: Decimal) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+    }
+}
+
+public struct FileSymbolsResult: Codable, Sendable {
+    public var `items`: [FileSymbol]
+    public init(`items`: [FileSymbol]) {
+        self.`items` = `items`
+    }
+}
+
+public struct FileLocation: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `range`: TextRange
+    public init(`workspaceId`: Id, `path`: String, `range`: TextRange) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`range` = `range`
+    }
+}
+
+public struct FilePositionParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `position`: TextPosition
+    public init(`fileId`: Id, `revision`: Decimal, `position`: TextPosition) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`position` = `position`
+    }
+}
+
+public struct FileDefinitionResult: Codable, Sendable {
+    public var `location`: FileLocation?
+    public init(`location`: FileLocation? = nil) {
+        self.`location` = `location`
+    }
+}
+
+public struct FileReferencesResult: Codable, Sendable {
+    public var `items`: [FileLocation]
+    public init(`items`: [FileLocation]) {
+        self.`items` = `items`
+    }
+}
+
+public struct FileDiagnostic: Codable, Sendable {
+    public var `diagnosticId`: Id
+    public var `range`: TextRange
+    public var `severity`: DiagnosticSeverity
+    public var `message`: String
+    public var `source`: String
+    public init(`diagnosticId`: Id, `range`: TextRange, `severity`: DiagnosticSeverity, `message`: String, `source`: String) {
+        self.`diagnosticId` = `diagnosticId`
+        self.`range` = `range`
+        self.`severity` = `severity`
+        self.`message` = `message`
+        self.`source` = `source`
+    }
+}
+
+public struct FileDiagnosticsParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public init(`fileId`: Id, `revision`: Decimal) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+    }
+}
+
+public struct FileDiagnosticsResult: Codable, Sendable {
+    public var `items`: [FileDiagnostic]
+    public init(`items`: [FileDiagnostic]) {
+        self.`items` = `items`
+    }
+}
+
+public struct FileBlame: Codable, Sendable {
+    public var `line`: UInt32
+    public var `commit`: String
+    public var `author`: String
+    public var `summary`: String
+    public init(`line`: UInt32, `commit`: String, `author`: String, `summary`: String) {
+        self.`line` = `line`
+        self.`commit` = `commit`
+        self.`author` = `author`
+        self.`summary` = `summary`
+    }
+}
+
+public struct DiffLine: Codable, Sendable {
+    public var `kind`: DiffLineKind
+    public var `oldLine`: UInt32?
+    public var `newLine`: UInt32?
+    public var `text`: String
+    public var `author`: FileAuthor?
+    public init(`kind`: DiffLineKind, `oldLine`: UInt32? = nil, `newLine`: UInt32? = nil, `text`: String, `author`: FileAuthor? = nil) {
+        self.`kind` = `kind`
+        self.`oldLine` = `oldLine`
+        self.`newLine` = `newLine`
+        self.`text` = `text`
+        self.`author` = `author`
+    }
+}
+
+public struct DiffHunk: Codable, Sendable {
+    public var `hunkId`: Id
+    public var `oldStart`: UInt32
+    public var `oldLines`: UInt32
+    public var `newStart`: UInt32
+    public var `newLines`: UInt32
+    public var `lines`: [DiffLine]
+    public init(`hunkId`: Id, `oldStart`: UInt32, `oldLines`: UInt32, `newStart`: UInt32, `newLines`: UInt32, `lines`: [DiffLine]) {
+        self.`hunkId` = `hunkId`
+        self.`oldStart` = `oldStart`
+        self.`oldLines` = `oldLines`
+        self.`newStart` = `newStart`
+        self.`newLines` = `newLines`
+        self.`lines` = `lines`
+    }
+}
+
+public struct FileDiffParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public init(`fileId`: Id, `revision`: Decimal) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+    }
+}
+
+public struct FileDiffResult: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `hunks`: [DiffHunk]
+    public var `blame`: [FileBlame]
+    public init(`fileId`: Id, `revision`: Decimal, `hunks`: [DiffHunk], `blame`: [FileBlame]) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`hunks` = `hunks`
+        self.`blame` = `blame`
+    }
+}
+
+public struct FileFormatParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileFormatResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public init(`file`: FileDocument) {
+        self.`file` = `file`
+    }
+}
+
+public struct EditorReviewParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `hunkId`: Id
+    public var `baseRevision`: Decimal
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `hunkId`: Id, `baseRevision`: Decimal, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`hunkId` = `hunkId`
+        self.`baseRevision` = `baseRevision`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct EditorReviewResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public var `hunkId`: Id
+    public init(`file`: FileDocument, `hunkId`: Id) {
+        self.`file` = `file`
+        self.`hunkId` = `hunkId`
+    }
+}
+
+public struct EditorReviewCommentParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `range`: TextRange
+    public var `body`: String
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `range`: TextRange, `body`: String, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`range` = `range`
+        self.`body` = `body`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct EditorReviewCommentResult: Codable, Sendable {
+    public var `commentId`: Id
+    public var `taskId`: Id?
+    public var `delivered`: Bool
+    public init(`commentId`: Id, `taskId`: Id? = nil, `delivered`: Bool) {
+        self.`commentId` = `commentId`
+        self.`taskId` = `taskId`
+        self.`delivered` = `delivered`
+    }
+}
+
+public struct LspServerStatus: Codable, Sendable {
+    public var `language`: EditorLanguage
+    public var `state`: LspState
+    public var `generation`: UInt32
+    public var `detail`: String?
+    public init(`language`: EditorLanguage, `state`: LspState, `generation`: UInt32, `detail`: String? = nil) {
+        self.`language` = `language`
+        self.`state` = `state`
+        self.`generation` = `generation`
+        self.`detail` = `detail`
+    }
+}
+
+public struct LspStatusParams: Codable, Sendable {
+    public var `workspaceId`: Id?
+    public var `language`: EditorLanguage?
+    public init(`workspaceId`: Id? = nil, `language`: EditorLanguage? = nil) {
+        self.`workspaceId` = `workspaceId`
+        self.`language` = `language`
+    }
+}
+
+public struct LspStatusResult: Codable, Sendable {
+    public var `servers`: [LspServerStatus]
+    public init(`servers`: [LspServerStatus]) {
+        self.`servers` = `servers`
+    }
+}
+
+public struct FileChangedOnDiskEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `fileId`: Id
+    public var `diskRevision`: Decimal
+    public var `changedLines`: [UInt32]
+    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `diskRevision`: Decimal, `changedLines`: [UInt32]) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`fileId` = `fileId`
+        self.`diskRevision` = `diskRevision`
+        self.`changedLines` = `changedLines`
+    }
+}
+
+public struct FileSavedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `file`: FileDocument
+    public var `by`: FileAuthor
+    public init(`eventId`: Decimal, `at`: String, `file`: FileDocument, `by`: FileAuthor) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`file` = `file`
+        self.`by` = `by`
+    }
+}
+
+public struct FileConflictEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `draftRevision`: Decimal
+    public var `diskRevision`: Decimal
+    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `baseRevision`: Decimal, `draftRevision`: Decimal, `diskRevision`: Decimal) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`draftRevision` = `draftRevision`
+        self.`diskRevision` = `diskRevision`
+    }
+}
+
+public struct LspDiagnosticsEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `items`: [FileDiagnostic]
+    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `revision`: Decimal, `items`: [FileDiagnostic]) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`items` = `items`
+    }
+}
+
+public struct EditorAgentCursorEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `fileId`: Id
+    public var `paneId`: Id
+    public var `name`: String
+    public var `position`: TextPosition
+    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `paneId`: Id, `name`: String, `position`: TextPosition) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`fileId` = `fileId`
+        self.`paneId` = `paneId`
+        self.`name` = `name`
+        self.`position` = `position`
+    }
+}
+
+public struct EditorReviewRequestedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `paneId`: Id
+    public var `hunks`: [DiffHunk]
+    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `revision`: Decimal, `paneId`: Id, `hunks`: [DiffHunk]) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`paneId` = `paneId`
+        self.`hunks` = `hunks`
+    }
+}
+
 public enum EventName: String, Codable, Sendable, CaseIterable {
     case authChallenge = "auth.challenge"
     case stateSnapshotPart = "state.snapshot_part"
@@ -3548,6 +4246,12 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case loopTick = "loop.tick"
     case loopStopped = "loop.stopped"
     case usageChanged = "usage.changed"
+    case fileChangedOnDisk = "file.changed_on_disk"
+    case fileSaved = "file.saved"
+    case fileConflict = "file.conflict"
+    case lspDiagnostics = "lsp.diagnostics"
+    case editorAgentCursor = "editor.agent_cursor"
+    case editorReviewRequested = "editor.review_requested"
 }
 
 public struct EventDescriptor: Sendable {
@@ -3613,4 +4317,10 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .loopTick: EventDescriptor(paramsType: "LoopTickEvent", durable: true),
     .loopStopped: EventDescriptor(paramsType: "LoopStoppedEvent", durable: true),
     .usageChanged: EventDescriptor(paramsType: "UsageChangedEvent", durable: true),
+    .fileChangedOnDisk: EventDescriptor(paramsType: "FileChangedOnDiskEvent", durable: true),
+    .fileSaved: EventDescriptor(paramsType: "FileSavedEvent", durable: true),
+    .fileConflict: EventDescriptor(paramsType: "FileConflictEvent", durable: true),
+    .lspDiagnostics: EventDescriptor(paramsType: "LspDiagnosticsEvent", durable: true),
+    .editorAgentCursor: EventDescriptor(paramsType: "EditorAgentCursorEvent", durable: true),
+    .editorReviewRequested: EventDescriptor(paramsType: "EditorReviewRequestedEvent", durable: true),
 ]

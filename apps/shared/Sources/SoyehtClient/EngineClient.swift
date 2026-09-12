@@ -317,6 +317,9 @@ public final class EngineClient {
     case .attentionChanged: try applyAttentionEvent(params)
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
     case .usageChanged: try applyUsageEvent(params)
+    case .fileChangedOnDisk, .fileSaved, .fileConflict, .lspDiagnostics,
+      .editorAgentCursor, .editorReviewRequested:
+      break
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
       .paneConfigChanged:

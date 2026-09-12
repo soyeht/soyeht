@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
+// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -27,6 +27,8 @@ pub enum PaneMode {
     Terminal,
     #[serde(rename = "agent")]
     Agent,
+    #[serde(rename = "editor")]
+    Editor,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PaneState {
@@ -82,6 +84,8 @@ pub enum SnapshotSection {
     Capabilities,
     #[serde(rename = "streams")]
     Streams,
+    #[serde(rename = "files")]
+    Files,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ErrorKind {
@@ -3124,6 +3128,636 @@ pub struct UsageChangedEvent {
     #[serde(rename = "fetchedAt")]
     pub fetched_at: String,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EditorLanguage {
+    #[serde(rename = "plain_text")]
+    PlainText,
+    #[serde(rename = "rust")]
+    Rust,
+    #[serde(rename = "swift")]
+    Swift,
+    #[serde(rename = "typescript")]
+    Typescript,
+    #[serde(rename = "python")]
+    Python,
+    #[serde(rename = "json")]
+    Json,
+    #[serde(rename = "markdown")]
+    Markdown,
+    #[serde(rename = "shell")]
+    Shell,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EditorContentSource {
+    #[serde(rename = "buffer")]
+    Buffer,
+    #[serde(rename = "disk")]
+    Disk,
+    #[serde(rename = "draft")]
+    Draft,
+    #[serde(rename = "history")]
+    History,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum HighlightKind {
+    #[serde(rename = "keyword")]
+    Keyword,
+    #[serde(rename = "string")]
+    String,
+    #[serde(rename = "comment")]
+    Comment,
+    #[serde(rename = "number")]
+    Number,
+    #[serde(rename = "type")]
+    Type,
+    #[serde(rename = "function")]
+    Function,
+    #[serde(rename = "property")]
+    Property,
+    #[serde(rename = "operator")]
+    Operator,
+    #[serde(rename = "punctuation")]
+    Punctuation,
+    #[serde(rename = "constant")]
+    Constant,
+    #[serde(rename = "variable")]
+    Variable,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum DiagnosticSeverity {
+    #[serde(rename = "error")]
+    Error,
+    #[serde(rename = "warning")]
+    Warning,
+    #[serde(rename = "information")]
+    Information,
+    #[serde(rename = "hint")]
+    Hint,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum FileSymbolKind {
+    #[serde(rename = "function")]
+    Function,
+    #[serde(rename = "type")]
+    Type,
+    #[serde(rename = "method")]
+    Method,
+    #[serde(rename = "property")]
+    Property,
+    #[serde(rename = "variable")]
+    Variable,
+    #[serde(rename = "module")]
+    Module,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum DiffLineKind {
+    #[serde(rename = "context")]
+    Context,
+    #[serde(rename = "added")]
+    Added,
+    #[serde(rename = "removed")]
+    Removed,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum LspState {
+    #[serde(rename = "starting")]
+    Starting,
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "restarting")]
+    Restarting,
+    #[serde(rename = "unavailable")]
+    Unavailable,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TextPosition {
+    #[serde(rename = "line")]
+    pub line: u32,
+    #[serde(rename = "column")]
+    pub column: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TextRange {
+    #[serde(rename = "start")]
+    pub start: TextPosition,
+    #[serde(rename = "end")]
+    pub end: TextPosition,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TextEdit {
+    #[serde(rename = "range")]
+    pub range: TextRange,
+    #[serde(rename = "text")]
+    pub text: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HighlightSpan {
+    #[serde(rename = "startColumn")]
+    pub start_column: u32,
+    #[serde(rename = "endColumn")]
+    pub end_column: u32,
+    #[serde(rename = "kind")]
+    pub kind: HighlightKind,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorLine {
+    #[serde(rename = "line")]
+    pub line: u32,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "highlights")]
+    pub highlights: Vec<HighlightSpan>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileAuthor {
+    #[serde(rename = "actor")]
+    pub actor: Actor,
+    #[serde(rename = "name")]
+    pub name: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileDocument {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "language")]
+    pub language: EditorLanguage,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "diskRevision")]
+    pub disk_revision: Decimal,
+    #[serde(rename = "lineCount")]
+    pub line_count: u32,
+    #[serde(rename = "byteCount")]
+    pub byte_count: Decimal,
+    #[serde(rename = "dirty")]
+    pub dirty: bool,
+    #[serde(rename = "conflicted")]
+    pub conflicted: bool,
+    #[serde(rename = "watching")]
+    pub watching: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileOpenParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "line", skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(rename = "column", skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileOpenResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "pane")]
+    pub pane: Pane,
+    #[serde(rename = "viewport")]
+    pub viewport: FileReadResult,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileReadParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision", skip_serializing_if = "Option::is_none")]
+    pub revision: Option<Decimal>,
+    #[serde(rename = "source", skip_serializing_if = "Option::is_none")]
+    pub source: Option<EditorContentSource>,
+    #[serde(rename = "versionId", skip_serializing_if = "Option::is_none")]
+    pub version_id: Option<Id>,
+    #[serde(rename = "fromLine")]
+    pub from_line: u32,
+    #[serde(rename = "lineCount")]
+    pub line_count: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileReadResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "source")]
+    pub source: EditorContentSource,
+    #[serde(rename = "fromLine")]
+    pub from_line: u32,
+    #[serde(rename = "toLine")]
+    pub to_line: u32,
+    #[serde(rename = "lines")]
+    pub lines: Vec<EditorLine>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileWriteParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "edits")]
+    pub edits: Vec<TextEdit>,
+    #[serde(rename = "author")]
+    pub author: FileAuthor,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileWriteResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "changedLines")]
+    pub changed_lines: Vec<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileWatchParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "watch")]
+    pub watch: bool,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileWatchResult {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "watching")]
+    pub watching: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileVersion {
+    #[serde(rename = "versionId")]
+    pub version_id: Id,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "author")]
+    pub author: FileAuthor,
+    #[serde(rename = "byteCount")]
+    pub byte_count: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileHistoryParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<Id>,
+    #[serde(rename = "limit")]
+    pub limit: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileHistoryResult {
+    #[serde(rename = "items")]
+    pub items: Vec<FileVersion>,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileRevertParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "versionId")]
+    pub version_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileRevertResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSearchMatch {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "range")]
+    pub range: TextRange,
+    #[serde(rename = "preview")]
+    pub preview: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSearchParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "query")]
+    pub query: String,
+    #[serde(rename = "replacement", skip_serializing_if = "Option::is_none")]
+    pub replacement: Option<String>,
+    #[serde(rename = "caseSensitive")]
+    pub case_sensitive: bool,
+    #[serde(rename = "limit")]
+    pub limit: u32,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSearchResult {
+    #[serde(rename = "items")]
+    pub items: Vec<FileSearchMatch>,
+    #[serde(rename = "replaced")]
+    pub replaced: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSymbol {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "kind")]
+    pub kind: FileSymbolKind,
+    #[serde(rename = "range")]
+    pub range: TextRange,
+    #[serde(rename = "selectionRange")]
+    pub selection_range: TextRange,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSymbolsParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSymbolsResult {
+    #[serde(rename = "items")]
+    pub items: Vec<FileSymbol>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileLocation {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "range")]
+    pub range: TextRange,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FilePositionParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "position")]
+    pub position: TextPosition,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileDefinitionResult {
+    #[serde(rename = "location", skip_serializing_if = "Option::is_none")]
+    pub location: Option<FileLocation>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileReferencesResult {
+    #[serde(rename = "items")]
+    pub items: Vec<FileLocation>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileDiagnostic {
+    #[serde(rename = "diagnosticId")]
+    pub diagnostic_id: Id,
+    #[serde(rename = "range")]
+    pub range: TextRange,
+    #[serde(rename = "severity")]
+    pub severity: DiagnosticSeverity,
+    #[serde(rename = "message")]
+    pub message: String,
+    #[serde(rename = "source")]
+    pub source: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileDiagnosticsParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileDiagnosticsResult {
+    #[serde(rename = "items")]
+    pub items: Vec<FileDiagnostic>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileBlame {
+    #[serde(rename = "line")]
+    pub line: u32,
+    #[serde(rename = "commit")]
+    pub commit: String,
+    #[serde(rename = "author")]
+    pub author: String,
+    #[serde(rename = "summary")]
+    pub summary: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DiffLine {
+    #[serde(rename = "kind")]
+    pub kind: DiffLineKind,
+    #[serde(rename = "oldLine", skip_serializing_if = "Option::is_none")]
+    pub old_line: Option<u32>,
+    #[serde(rename = "newLine", skip_serializing_if = "Option::is_none")]
+    pub new_line: Option<u32>,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "author", skip_serializing_if = "Option::is_none")]
+    pub author: Option<FileAuthor>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DiffHunk {
+    #[serde(rename = "hunkId")]
+    pub hunk_id: Id,
+    #[serde(rename = "oldStart")]
+    pub old_start: u32,
+    #[serde(rename = "oldLines")]
+    pub old_lines: u32,
+    #[serde(rename = "newStart")]
+    pub new_start: u32,
+    #[serde(rename = "newLines")]
+    pub new_lines: u32,
+    #[serde(rename = "lines")]
+    pub lines: Vec<DiffLine>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileDiffParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileDiffResult {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "hunks")]
+    pub hunks: Vec<DiffHunk>,
+    #[serde(rename = "blame")]
+    pub blame: Vec<FileBlame>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileFormatParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileFormatResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorReviewParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "hunkId")]
+    pub hunk_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorReviewResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "hunkId")]
+    pub hunk_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorReviewCommentParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "range")]
+    pub range: TextRange,
+    #[serde(rename = "body")]
+    pub body: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorReviewCommentResult {
+    #[serde(rename = "commentId")]
+    pub comment_id: Id,
+    #[serde(rename = "taskId", skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<Id>,
+    #[serde(rename = "delivered")]
+    pub delivered: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LspServerStatus {
+    #[serde(rename = "language")]
+    pub language: EditorLanguage,
+    #[serde(rename = "state")]
+    pub state: LspState,
+    #[serde(rename = "generation")]
+    pub generation: u32,
+    #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LspStatusParams {
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "language", skip_serializing_if = "Option::is_none")]
+    pub language: Option<EditorLanguage>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LspStatusResult {
+    #[serde(rename = "servers")]
+    pub servers: Vec<LspServerStatus>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileChangedOnDiskEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "diskRevision")]
+    pub disk_revision: Decimal,
+    #[serde(rename = "changedLines")]
+    pub changed_lines: Vec<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSavedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "by")]
+    pub by: FileAuthor,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileConflictEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "draftRevision")]
+    pub draft_revision: Decimal,
+    #[serde(rename = "diskRevision")]
+    pub disk_revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LspDiagnosticsEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "items")]
+    pub items: Vec<FileDiagnostic>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorAgentCursorEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "position")]
+    pub position: TextPosition,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorReviewRequestedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "hunks")]
+    pub hunks: Vec<DiffHunk>,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -3249,6 +3883,40 @@ pub enum Request {
     UsageList(UsageListParams),
     #[serde(rename = "usage.refresh")]
     UsageRefresh(UsageRefreshParams),
+    #[serde(rename = "file.open")]
+    FileOpen(FileOpenParams),
+    #[serde(rename = "file.read")]
+    FileRead(FileReadParams),
+    #[serde(rename = "file.write")]
+    FileWrite(FileWriteParams),
+    #[serde(rename = "file.watch")]
+    FileWatch(FileWatchParams),
+    #[serde(rename = "file.history")]
+    FileHistory(FileHistoryParams),
+    #[serde(rename = "file.revert")]
+    FileRevert(FileRevertParams),
+    #[serde(rename = "file.search")]
+    FileSearch(FileSearchParams),
+    #[serde(rename = "file.symbols")]
+    FileSymbols(FileSymbolsParams),
+    #[serde(rename = "file.definition")]
+    FileDefinition(FilePositionParams),
+    #[serde(rename = "file.references")]
+    FileReferences(FilePositionParams),
+    #[serde(rename = "file.diagnostics")]
+    FileDiagnostics(FileDiagnosticsParams),
+    #[serde(rename = "file.diff")]
+    FileDiff(FileDiffParams),
+    #[serde(rename = "file.format")]
+    FileFormat(FileFormatParams),
+    #[serde(rename = "editor.review.accept")]
+    EditorReviewAccept(EditorReviewParams),
+    #[serde(rename = "editor.review.reject")]
+    EditorReviewReject(EditorReviewParams),
+    #[serde(rename = "editor.review.comment")]
+    EditorReviewComment(EditorReviewCommentParams),
+    #[serde(rename = "lsp.status")]
+    LspStatus(LspStatusParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -3497,6 +4165,63 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "UsageRefreshResult",
         true,
     ),
+    ("file.open", "FileOpenParams", "FileOpenResult", true),
+    ("file.read", "FileReadParams", "FileReadResult", false),
+    ("file.write", "FileWriteParams", "FileWriteResult", true),
+    ("file.watch", "FileWatchParams", "FileWatchResult", true),
+    (
+        "file.history",
+        "FileHistoryParams",
+        "FileHistoryResult",
+        false,
+    ),
+    ("file.revert", "FileRevertParams", "FileRevertResult", true),
+    ("file.search", "FileSearchParams", "FileSearchResult", true),
+    (
+        "file.symbols",
+        "FileSymbolsParams",
+        "FileSymbolsResult",
+        false,
+    ),
+    (
+        "file.definition",
+        "FilePositionParams",
+        "FileDefinitionResult",
+        false,
+    ),
+    (
+        "file.references",
+        "FilePositionParams",
+        "FileReferencesResult",
+        false,
+    ),
+    (
+        "file.diagnostics",
+        "FileDiagnosticsParams",
+        "FileDiagnosticsResult",
+        false,
+    ),
+    ("file.diff", "FileDiffParams", "FileDiffResult", false),
+    ("file.format", "FileFormatParams", "FileFormatResult", true),
+    (
+        "editor.review.accept",
+        "EditorReviewParams",
+        "EditorReviewResult",
+        true,
+    ),
+    (
+        "editor.review.reject",
+        "EditorReviewParams",
+        "EditorReviewResult",
+        true,
+    ),
+    (
+        "editor.review.comment",
+        "EditorReviewCommentParams",
+        "EditorReviewCommentResult",
+        true,
+    ),
+    ("lsp.status", "LspStatusParams", "LspStatusResult", false),
 ];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EventName {
@@ -3606,6 +4331,18 @@ pub enum EventName {
     LoopStopped,
     #[serde(rename = "usage.changed")]
     UsageChanged,
+    #[serde(rename = "file.changed_on_disk")]
+    FileChangedOnDisk,
+    #[serde(rename = "file.saved")]
+    FileSaved,
+    #[serde(rename = "file.conflict")]
+    FileConflict,
+    #[serde(rename = "lsp.diagnostics")]
+    LspDiagnostics,
+    #[serde(rename = "editor.agent_cursor")]
+    EditorAgentCursor,
+    #[serde(rename = "editor.review_requested")]
+    EditorReviewRequested,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -3663,6 +4400,12 @@ impl EventName {
             Self::LoopTick => "loop.tick",
             Self::LoopStopped => "loop.stopped",
             Self::UsageChanged => "usage.changed",
+            Self::FileChangedOnDisk => "file.changed_on_disk",
+            Self::FileSaved => "file.saved",
+            Self::FileConflict => "file.conflict",
+            Self::LspDiagnostics => "lsp.diagnostics",
+            Self::EditorAgentCursor => "editor.agent_cursor",
+            Self::EditorReviewRequested => "editor.review_requested",
         }
     }
 }
@@ -3936,6 +4679,36 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::UsageChanged,
         params_type: "UsageChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::FileChangedOnDisk,
+        params_type: "FileChangedOnDiskEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::FileSaved,
+        params_type: "FileSavedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::FileConflict,
+        params_type: "FileConflictEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::LspDiagnostics,
+        params_type: "LspDiagnosticsEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::EditorAgentCursor,
+        params_type: "EditorAgentCursorEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::EditorReviewRequested,
+        params_type: "EditorReviewRequestedEvent",
         durable: true,
     },
 ];

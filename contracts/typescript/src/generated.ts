@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 91794bf4b1eb8414cc101b34d17bd9757b2ac69157ae51a2727c32aab9524c1f). Do not edit.
+// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -11,13 +11,13 @@ export type Role = "human_local" | "human_device" | "agent" | "chief";
 
 export type AgentPaneRole = "worker" | "chief";
 
-export type PaneMode = "terminal" | "agent";
+export type PaneMode = "terminal" | "agent" | "editor";
 
 export type PaneState = "starting" | "working" | "idle" | "waiting_for_you" | "cancelling" | "no_signal" | "recovering" | "dead" | "unknown";
 
 export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
-export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams";
+export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files";
 
 export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited";
 
@@ -1763,6 +1763,364 @@ export interface UsageChangedEvent {
   "fetchedAt": string;
 }
 
+export type EditorLanguage = "plain_text" | "rust" | "swift" | "typescript" | "python" | "json" | "markdown" | "shell";
+
+export type EditorContentSource = "buffer" | "disk" | "draft" | "history";
+
+export type HighlightKind = "keyword" | "string" | "comment" | "number" | "type" | "function" | "property" | "operator" | "punctuation" | "constant" | "variable";
+
+export type DiagnosticSeverity = "error" | "warning" | "information" | "hint";
+
+export type FileSymbolKind = "function" | "type" | "method" | "property" | "variable" | "module";
+
+export type DiffLineKind = "context" | "added" | "removed";
+
+export type LspState = "starting" | "ready" | "restarting" | "unavailable";
+
+export interface TextPosition {
+  "line": number;
+  "column": number;
+}
+
+export interface TextRange {
+  "start": TextPosition;
+  "end": TextPosition;
+}
+
+export interface TextEdit {
+  "range": TextRange;
+  "text": string;
+}
+
+export interface HighlightSpan {
+  "startColumn": number;
+  "endColumn": number;
+  "kind": HighlightKind;
+}
+
+export interface EditorLine {
+  "line": number;
+  "text": string;
+  "highlights": Array<HighlightSpan>;
+}
+
+export interface FileAuthor {
+  "actor": Actor;
+  "name": string;
+}
+
+export interface FileDocument {
+  "fileId": Id;
+  "paneId": Id;
+  "workspaceId": Id;
+  "path": string;
+  "language": EditorLanguage;
+  "revision": Decimal;
+  "diskRevision": Decimal;
+  "lineCount": number;
+  "byteCount": Decimal;
+  "dirty": boolean;
+  "conflicted": boolean;
+  "watching": boolean;
+}
+
+export interface FileOpenParams {
+  "workspaceId": Id;
+  "path": string;
+  "line"?: number;
+  "column"?: number;
+  "idempotencyKey": Id;
+}
+
+export interface FileOpenResult {
+  "file": FileDocument;
+  "pane": Pane;
+  "viewport": FileReadResult;
+}
+
+export interface FileReadParams {
+  "fileId": Id;
+  "revision"?: Decimal;
+  "source"?: EditorContentSource;
+  "versionId"?: Id;
+  "fromLine": number;
+  "lineCount": number;
+}
+
+export interface FileReadResult {
+  "file": FileDocument;
+  "source": EditorContentSource;
+  "fromLine": number;
+  "toLine": number;
+  "lines": Array<EditorLine>;
+}
+
+export interface FileWriteParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "edits": Array<TextEdit>;
+  "author": FileAuthor;
+  "idempotencyKey": Id;
+}
+
+export interface FileWriteResult {
+  "file": FileDocument;
+  "changedLines": Array<number>;
+}
+
+export interface FileWatchParams {
+  "fileId": Id;
+  "watch": boolean;
+  "idempotencyKey": Id;
+}
+
+export interface FileWatchResult {
+  "fileId": Id;
+  "watching": boolean;
+}
+
+export interface FileVersion {
+  "versionId": Id;
+  "fileId": Id;
+  "revision": Decimal;
+  "createdAt": string;
+  "author": FileAuthor;
+  "byteCount": Decimal;
+}
+
+export interface FileHistoryParams {
+  "fileId": Id;
+  "cursor"?: Id;
+  "limit": number;
+}
+
+export interface FileHistoryResult {
+  "items": Array<FileVersion>;
+  "nextCursor"?: Id;
+}
+
+export interface FileRevertParams {
+  "fileId": Id;
+  "versionId": Id;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface FileRevertResult {
+  "file": FileDocument;
+}
+
+export interface FileSearchMatch {
+  "workspaceId": Id;
+  "path": string;
+  "range": TextRange;
+  "preview": string;
+}
+
+export interface FileSearchParams {
+  "workspaceId": Id;
+  "query": string;
+  "replacement"?: string;
+  "caseSensitive": boolean;
+  "limit": number;
+  "idempotencyKey": Id;
+}
+
+export interface FileSearchResult {
+  "items": Array<FileSearchMatch>;
+  "replaced": number;
+}
+
+export interface FileSymbol {
+  "name": string;
+  "kind": FileSymbolKind;
+  "range": TextRange;
+  "selectionRange": TextRange;
+}
+
+export interface FileSymbolsParams {
+  "fileId": Id;
+  "revision": Decimal;
+}
+
+export interface FileSymbolsResult {
+  "items": Array<FileSymbol>;
+}
+
+export interface FileLocation {
+  "workspaceId": Id;
+  "path": string;
+  "range": TextRange;
+}
+
+export interface FilePositionParams {
+  "fileId": Id;
+  "revision": Decimal;
+  "position": TextPosition;
+}
+
+export interface FileDefinitionResult {
+  "location"?: FileLocation;
+}
+
+export interface FileReferencesResult {
+  "items": Array<FileLocation>;
+}
+
+export interface FileDiagnostic {
+  "diagnosticId": Id;
+  "range": TextRange;
+  "severity": DiagnosticSeverity;
+  "message": string;
+  "source": string;
+}
+
+export interface FileDiagnosticsParams {
+  "fileId": Id;
+  "revision": Decimal;
+}
+
+export interface FileDiagnosticsResult {
+  "items": Array<FileDiagnostic>;
+}
+
+export interface FileBlame {
+  "line": number;
+  "commit": string;
+  "author": string;
+  "summary": string;
+}
+
+export interface DiffLine {
+  "kind": DiffLineKind;
+  "oldLine"?: number;
+  "newLine"?: number;
+  "text": string;
+  "author"?: FileAuthor;
+}
+
+export interface DiffHunk {
+  "hunkId": Id;
+  "oldStart": number;
+  "oldLines": number;
+  "newStart": number;
+  "newLines": number;
+  "lines": Array<DiffLine>;
+}
+
+export interface FileDiffParams {
+  "fileId": Id;
+  "revision": Decimal;
+}
+
+export interface FileDiffResult {
+  "fileId": Id;
+  "revision": Decimal;
+  "hunks": Array<DiffHunk>;
+  "blame": Array<FileBlame>;
+}
+
+export interface FileFormatParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface FileFormatResult {
+  "file": FileDocument;
+}
+
+export interface EditorReviewParams {
+  "fileId": Id;
+  "hunkId": Id;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface EditorReviewResult {
+  "file": FileDocument;
+  "hunkId": Id;
+}
+
+export interface EditorReviewCommentParams {
+  "fileId": Id;
+  "range": TextRange;
+  "body": string;
+  "idempotencyKey": Id;
+}
+
+export interface EditorReviewCommentResult {
+  "commentId": Id;
+  "taskId"?: Id;
+  "delivered": boolean;
+}
+
+export interface LspServerStatus {
+  "language": EditorLanguage;
+  "state": LspState;
+  "generation": number;
+  "detail"?: string;
+}
+
+export interface LspStatusParams {
+  "workspaceId"?: Id;
+  "language"?: EditorLanguage;
+}
+
+export interface LspStatusResult {
+  "servers": Array<LspServerStatus>;
+}
+
+export interface FileChangedOnDiskEvent {
+  "eventId": Decimal;
+  "at": string;
+  "fileId": Id;
+  "diskRevision": Decimal;
+  "changedLines": Array<number>;
+}
+
+export interface FileSavedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "file": FileDocument;
+  "by": FileAuthor;
+}
+
+export interface FileConflictEvent {
+  "eventId": Decimal;
+  "at": string;
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "draftRevision": Decimal;
+  "diskRevision": Decimal;
+}
+
+export interface LspDiagnosticsEvent {
+  "eventId": Decimal;
+  "at": string;
+  "fileId": Id;
+  "revision": Decimal;
+  "items": Array<FileDiagnostic>;
+}
+
+export interface EditorAgentCursorEvent {
+  "eventId": Decimal;
+  "at": string;
+  "fileId": Id;
+  "paneId": Id;
+  "name": string;
+  "position": TextPosition;
+}
+
+export interface EditorReviewRequestedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "fileId": Id;
+  "revision": Decimal;
+  "paneId": Id;
+  "hunks": Array<DiffHunk>;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -1825,6 +2183,23 @@ export interface Methods {
   "loop.set": { params: LoopSetParams; result: LoopSetResult };
   "usage.list": { params: UsageListParams; result: UsageListResult };
   "usage.refresh": { params: UsageRefreshParams; result: UsageRefreshResult };
+  "file.open": { params: FileOpenParams; result: FileOpenResult };
+  "file.read": { params: FileReadParams; result: FileReadResult };
+  "file.write": { params: FileWriteParams; result: FileWriteResult };
+  "file.watch": { params: FileWatchParams; result: FileWatchResult };
+  "file.history": { params: FileHistoryParams; result: FileHistoryResult };
+  "file.revert": { params: FileRevertParams; result: FileRevertResult };
+  "file.search": { params: FileSearchParams; result: FileSearchResult };
+  "file.symbols": { params: FileSymbolsParams; result: FileSymbolsResult };
+  "file.definition": { params: FilePositionParams; result: FileDefinitionResult };
+  "file.references": { params: FilePositionParams; result: FileReferencesResult };
+  "file.diagnostics": { params: FileDiagnosticsParams; result: FileDiagnosticsResult };
+  "file.diff": { params: FileDiffParams; result: FileDiffResult };
+  "file.format": { params: FileFormatParams; result: FileFormatResult };
+  "editor.review.accept": { params: EditorReviewParams; result: EditorReviewResult };
+  "editor.review.reject": { params: EditorReviewParams; result: EditorReviewResult };
+  "editor.review.comment": { params: EditorReviewCommentParams; result: EditorReviewCommentResult };
+  "lsp.status": { params: LspStatusParams; result: LspStatusResult };
 }
 
 export interface Events {
@@ -1881,6 +2256,12 @@ export interface Events {
   "loop.tick": LoopTickEvent;
   "loop.stopped": LoopStoppedEvent;
   "usage.changed": UsageChangedEvent;
+  "file.changed_on_disk": FileChangedOnDiskEvent;
+  "file.saved": FileSavedEvent;
+  "file.conflict": FileConflictEvent;
+  "lsp.diagnostics": LspDiagnosticsEvent;
+  "editor.agent_cursor": EditorAgentCursorEvent;
+  "editor.review_requested": EditorReviewRequestedEvent;
 }
 export type EventName = keyof Events;
 export interface EventDescriptor {
@@ -1941,4 +2322,10 @@ export const eventRegistry = {
   "loop.tick": { paramsType: "LoopTickEvent", durable: true },
   "loop.stopped": { paramsType: "LoopStoppedEvent", durable: true },
   "usage.changed": { paramsType: "UsageChangedEvent", durable: true },
+  "file.changed_on_disk": { paramsType: "FileChangedOnDiskEvent", durable: true },
+  "file.saved": { paramsType: "FileSavedEvent", durable: true },
+  "file.conflict": { paramsType: "FileConflictEvent", durable: true },
+  "lsp.diagnostics": { paramsType: "LspDiagnosticsEvent", durable: true },
+  "editor.agent_cursor": { paramsType: "EditorAgentCursorEvent", durable: true },
+  "editor.review_requested": { paramsType: "EditorReviewRequestedEvent", durable: true },
 } as const satisfies Record<EventName, EventDescriptor>;

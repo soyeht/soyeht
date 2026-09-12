@@ -174,6 +174,7 @@ fn snapshot_section_name(section: &SnapshotSection) -> &'static str {
         SnapshotSection::Devices => "devices",
         SnapshotSection::Capabilities => "capabilities",
         SnapshotSection::Streams => "streams",
+        SnapshotSection::Files => "files",
     }
 }
 
