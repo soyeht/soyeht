@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject direct color construction in Mac views."""
+"""Reject direct color construction in Mac and iPhone views."""
 
 from __future__ import annotations
 
@@ -9,11 +9,19 @@ import sys
 
 
 COLOR_CALL = re.compile(r"\bColor\s*\(")
-DIRECT_STYLE = re.compile(
-    r"\.(?:foregroundStyle|background|fill|stroke|tint|border)\s*\(\s*"
-    r"\.(?:black|blue|brown|cyan|gray|green|indigo|mint|orange|pink|purple|red|"
-    r"teal|white|yellow|primary|secondary)\b"
+SYSTEM_COLOR = (
+    r"(?:accentColor|black|blue|brown|cyan|gray|green|indigo|mint|orange|pink|"
+    r"purple|red|teal|white|yellow|primary|secondary|tertiary|quaternary)"
 )
+QUALIFIED_COLOR = re.compile(rf"\bColor\s*\.\s*{SYSTEM_COLOR}\b")
+DIRECT_STYLE = re.compile(
+    rf"\.(?:foregroundStyle|foregroundColor|background|fill|stroke|tint|border)"
+    rf"\s*\(\s*\.{SYSTEM_COLOR}\b"
+)
+DIRECT_SHADOW = re.compile(
+    rf"\.shadow\s*\(\s*(?:\.inner\s*\(\s*)?color\s*:\s*\.{SYSTEM_COLOR}\b"
+)
+SOURCE_ROOTS = (pathlib.Path("apps/mac/Sources"), pathlib.Path("apps/ios/Sources"))
 
 
 def code_only(source: str) -> str:
@@ -68,17 +76,28 @@ def code_only(source: str) -> str:
 def violations(source: str) -> list[int]:
     code = code_only(source)
     offsets = [match.start() for match in COLOR_CALL.finditer(code)]
+    offsets += [match.start() for match in QUALIFIED_COLOR.finditer(code)]
     offsets += [match.start() for match in DIRECT_STYLE.finditer(code)]
+    offsets += [match.start() for match in DIRECT_SHADOW.finditer(code)]
     return sorted({source.count("\n", 0, offset) + 1 for offset in offsets})
 
 
+def swift_source_paths(root: pathlib.Path = pathlib.Path(".")) -> list[pathlib.Path]:
+    return sorted(path for source in SOURCE_ROOTS for path in (root / source).rglob("*.swift"))
+
+
+def scan(root: pathlib.Path = pathlib.Path(".")) -> list[tuple[pathlib.Path, int]]:
+    return [
+        (path, line)
+        for path in swift_source_paths(root)
+        for line in violations(path.read_text(encoding="utf-8"))
+    ]
+
+
 def main() -> int:
-    root = pathlib.Path("apps/mac/Sources")
-    found = False
-    for path in sorted(root.rglob("*.swift")):
-        for line in violations(path.read_text(encoding="utf-8")):
-            print(f"{path}:{line}: Mac view colors must come from MacTheme")
-            found = True
+    found = scan()
+    for path, line in found:
+        print(f"{path}:{line}: view colors must come from the platform theme")
     return 1 if found else 0
 
 

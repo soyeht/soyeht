@@ -119,7 +119,8 @@ struct PhoneHome: View {
           scan()
         } label: {
           Label("Scan Mac QR", systemImage: "qrcode.viewfinder")
-            .font(.headline).foregroundStyle(.white).frame(maxWidth: .infinity).padding(16)
+            .font(.headline).foregroundStyle(PhonePalette.face).frame(maxWidth: .infinity).padding(
+              16)
         }.buttonStyle(.borderedProminent)
         DisclosureGroup("Use a pairing link") {
           VStack(spacing: 12) {
@@ -218,7 +219,7 @@ private struct PhonePane: View {
           PhoneTerminal(client: client)
           if let gap = client.gapText {
             Label(gap, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(
-              .orange
+              PhonePalette.warning
             ).padding(12)
           }
         }
