@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 
 #[derive(Debug)]
 pub enum Error {
@@ -79,6 +79,9 @@ pub enum Error {
     InvalidReviewVersion,
     ReviewVersionConflict,
     InvalidUsageReading,
+    InvalidEditorFile,
+    InvalidFileHistoryLimit,
+    FileVersionNotFound,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -165,6 +168,9 @@ impl fmt::Display for Error {
             Self::InvalidReviewVersion => f.write_str("invalid task review version"),
             Self::ReviewVersionConflict => f.write_str("task review version conflict"),
             Self::InvalidUsageReading => f.write_str("invalid stored usage reading"),
+            Self::InvalidEditorFile => f.write_str("invalid stored editor file"),
+            Self::InvalidFileHistoryLimit => f.write_str("invalid file history page limit"),
+            Self::FileVersionNotFound => f.write_str("file version not found"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -298,6 +304,9 @@ impl Store {
             }
             if version < 11 {
                 tx.execute_batch(include_str!("../migrations/011-usage-readings.sql"))?;
+            }
+            if version < 12 {
+                tx.execute_batch(include_str!("../migrations/012-editor-files.sql"))?;
             }
             tx.commit()?;
         }

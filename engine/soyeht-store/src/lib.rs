@@ -4,6 +4,7 @@ pub mod agents;
 pub mod database;
 pub use database::{Error, Result};
 pub mod domain;
+pub mod editor;
 mod english_values;
 pub mod segments;
 pub mod tasks;
