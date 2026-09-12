@@ -288,7 +288,7 @@ pub fn resume_dispatch(
     Ok(checkpoint)
 }
 
-fn task_branch(task: &str) -> String {
+pub(crate) fn task_branch(task: &str) -> String {
     format!("task/{}", task.to_ascii_lowercase())
 }
 
@@ -326,7 +326,10 @@ fn pane_spec(
     })
 }
 
-fn first_prompt(request: &DispatchRequest<'_>, checkpoint: &DispatchCheckpoint) -> Result<String> {
+pub(crate) fn first_prompt(
+    request: &DispatchRequest<'_>,
+    checkpoint: &DispatchCheckpoint,
+) -> Result<String> {
     let worktree = checkpoint
         .worktree_path
         .as_deref()

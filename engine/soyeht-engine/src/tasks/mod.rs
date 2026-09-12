@@ -2,6 +2,7 @@
 
 mod api;
 pub(crate) mod blocking;
+pub(crate) mod dispatching;
 pub mod drift;
 pub mod feedback;
 mod lifecycle;

@@ -32,6 +32,7 @@ pub struct Core {
     pub ptyd: Option<Box<dyn SupervisorPort>>,
     pub clock: Arc<dyn Clock>,
     pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
+    pub worktrees: Box<dyn crate::tasks::worktree::WorktreePort>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
@@ -53,6 +54,7 @@ impl Core {
             ptyd: None,
             clock: Arc::new(SystemClock),
             revision: Box::new(crate::tasks::revision::GitRevision),
+            worktrees: Box::new(crate::tasks::worktree::CommandWorktree::default()),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
@@ -263,9 +265,22 @@ impl Core {
         let Response::Instances(instances) = self.pty_request(Request::List)? else {
             return Err(errors::ptyd_unavailable("Invalid registry response"));
         };
+        let reserved_panes: std::collections::BTreeSet<_> = self
+            .store
+            .dispatch_checkpoints()
+            .map_err(errors::storage)?
+            .into_iter()
+            .filter(|(_, _, checkpoint)| {
+                matches!(checkpoint.stage.as_str(), "reserved" | "worktree_created")
+            })
+            .filter_map(|(_, _, checkpoint)| checkpoint.pane_id)
+            .collect();
         let ids: Vec<_> = self.panes.keys().cloned().collect();
         for id in ids {
             let saved = self.panes[&id].stored.clone();
+            if saved.instance_id.is_none() && reserved_panes.contains(&id) {
+                continue;
+            }
             let existing = instances
                 .iter()
                 .find(|i| i.spawn.instance_key == saved.instance_key);
@@ -497,7 +512,8 @@ impl Core {
             }
         }
         self.advance_task_reviews()?;
-        self.advance_task_blocking()
+        self.advance_task_blocking()?;
+        self.advance_task_dispatches()
     }
 
     pub fn now_ms(&self) -> i64 {

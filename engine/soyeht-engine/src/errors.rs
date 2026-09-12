@@ -136,6 +136,7 @@ fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
         Error::DiskFull => ErrorKind::DiskFull,
         Error::TaskVersionConflict => ErrorKind::StaleVersion,
         Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
+        Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
         Error::SubitemNotFound => ErrorKind::NotFound,
         Error::InvalidEngineGeneration
         | Error::InvalidIdempotencyKey
@@ -422,6 +423,12 @@ mod tests {
         assert_eq!(
             wire(dependency_open("open")).data.kind,
             ErrorKind::DependencyOpen
+        );
+        assert_eq!(
+            wire(Error::Storage(soyeht_store::Error::TaskReservationConflict))
+                .data
+                .kind,
+            ErrorKind::TaskHasOwner
         );
     }
 }

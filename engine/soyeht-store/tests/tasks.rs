@@ -4,14 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use soyeht_protocol::{
     Attempt, AttemptResult, Comment, LoopConfig, LoopStopWhen, Pane, PaneMode, PaneState,
-    StateSource, Subitem, SubitemState, Task, TaskMove, TaskPriority, TaskState, Workspace,
+    PermissionMode, StateSource, Subitem, SubitemState, Task, TaskExecutor, TaskMove, TaskPriority,
+    TaskState, Workspace,
 };
 use soyeht_store::{
     database::Store,
     domain::PaneRecord,
     tasks::{
-        DispatchCheckpoint, FeedbackState, RestartTaskReview, ReviewStage, TaskReviewRecord,
-        UnresolvedTaskReview,
+        DispatchCheckpoint, FeedbackState, RestartTaskReview, ReviewStage, TaskReservation,
+        TaskReviewRecord, UnresolvedTaskReview,
     },
 };
 use std::{fs, path::PathBuf, sync::Arc, thread};
@@ -861,6 +862,61 @@ fn one_real_database_transaction_reserves_a_task_only_once() {
             .unwrap()
             .is_some()
     );
+}
+
+#[test]
+fn explicit_dispatch_reserves_once_and_records_the_selected_preset() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    insert(&mut store, &task("WS-1", TaskPriority::Medium), "task");
+    let preset = TaskExecutor {
+        workspace_default: false,
+        harness: Some("harness-a".into()),
+        model: Some("model-a".into()),
+        effort: Some("high".into()),
+        permission: Some(PermissionMode::Ask),
+    };
+    let claimed = store
+        .mutate("test", "dispatch", "dispatch", |change| {
+            let claimed = change.reserve_task(
+                "workspace-1",
+                "WS-1",
+                &preset,
+                &TaskReservation {
+                    pane_id: "pane-a",
+                    harness: "harness-a",
+                    model: "model-a",
+                    started_at: "start",
+                },
+            )?;
+            Ok((json!(claimed), vec![]))
+        })
+        .unwrap();
+    assert_eq!(claimed.result["ownerPaneId"], "pane-a");
+    assert_eq!(claimed.result["executor"]["harness"], "harness-a");
+    let error = match store.mutate("test", "second", "second", |change| {
+        change.reserve_task(
+            "workspace-1",
+            "WS-1",
+            &preset,
+            &TaskReservation {
+                pane_id: "pane-b",
+                harness: "harness-a",
+                model: "model-a",
+                started_at: "later",
+            },
+        )?;
+        Ok((json!({}), vec![]))
+    }) {
+        Ok(_) => panic!("a reserved task must reject a second dispatch"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        soyeht_store::Error::TaskReservationConflict
+    ));
+    assert_eq!(store.task_attempts("workspace-1", "WS-1").unwrap().len(), 1);
 }
 
 #[test]

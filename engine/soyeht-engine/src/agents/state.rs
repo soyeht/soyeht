@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
     AgentSession, ConfigOperation, ConfigValue, HarnessLaunch, PaneQueueListResult, PermissionMode,
-    PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, Role, limits,
+    PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, Role, TaskExecutor, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
@@ -170,6 +170,31 @@ impl State {
         self.mcp_enabled = false;
     }
 
+    pub(crate) fn restart_for_task(
+        &self,
+        launch: HarnessLaunch,
+        binary_digest: String,
+        preset: &TaskExecutor,
+    ) -> Result<Self> {
+        let permission = preset
+            .permission
+            .clone()
+            .unwrap_or_else(|| self.permission.clone());
+        let mut state = Self::new(launch, binary_digest, permission)?;
+        state.binding = self.binding.clone();
+        state.mcp_role = self.mcp_role.clone();
+        state.mcp_enabled = self.mcp_enabled;
+        state.next_message_seq = self.next_message_seq;
+        for (name, value) in [("model", &preset.model), ("effort", &preset.effort)] {
+            if let Some(value) = value {
+                state
+                    .requested_options
+                    .insert(name.into(), ConfigValue::V0(value.clone()));
+            }
+        }
+        Ok(state)
+    }
+
     pub fn public(&self, now_ms: i64) -> AgentSession {
         AgentSession {
             harness: self.launch.id.clone(),
@@ -227,6 +252,16 @@ impl State {
         origin: PromptOrigin,
         at: String,
     ) -> Result<PromptItem> {
+        self.enqueue_identified(Uuid::new_v4().to_string(), text, origin, at)
+    }
+
+    pub(crate) fn enqueue_identified(
+        &mut self,
+        prompt_id: String,
+        text: String,
+        origin: PromptOrigin,
+        at: String,
+    ) -> Result<PromptItem> {
         if text.is_empty() || text.len() > limits::PROMPT_BYTES {
             return Err(errors::invalid(
                 "Prompt must contain 1 to 65536 UTF-8 bytes",
@@ -237,7 +272,7 @@ impl State {
         }
         self.changed_queue()?;
         let prompt = PromptItem {
-            prompt_id: Uuid::new_v4().to_string(),
+            prompt_id,
             text,
             origin,
             status: PromptStatus::Queued,
@@ -452,6 +487,41 @@ mod tests {
         let restored: State = serde_json::from_value(serde_json::Value::Object(object)).unwrap();
 
         assert!(restored.mcp_enabled);
+    }
+
+    #[test]
+    fn task_restart_keeps_binding_and_transcript_sequence_but_opens_a_fresh_session() {
+        let mut prior = state();
+        prior.session_id = Some("old-session".into());
+        prior.next_message_seq = 17;
+        let preset = TaskExecutor {
+            workspace_default: false,
+            harness: Some("task-harness".into()),
+            model: Some("task-model".into()),
+            effort: Some("high".into()),
+            permission: Some(PermissionMode::AcceptEdits),
+        };
+        let launch = HarnessLaunch {
+            id: "task-harness".into(),
+            name: "Task harness".into(),
+            command: "/task".into(),
+            args: vec![],
+            version: "2".into(),
+        };
+
+        let restarted = prior
+            .restart_for_task(launch, "task-digest".into(), &preset)
+            .unwrap();
+
+        assert_eq!(restarted.binding, prior.binding);
+        assert_eq!(restarted.next_message_seq, 17);
+        assert!(restarted.session_id.is_none());
+        assert!(restarted.queue.is_empty());
+        assert_eq!(restarted.permission, PermissionMode::AcceptEdits);
+        assert_eq!(
+            restarted.requested_options.get("model"),
+            Some(&ConfigValue::V0("task-model".into()))
+        );
     }
 
     #[test]

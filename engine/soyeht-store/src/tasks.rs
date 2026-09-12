@@ -4,7 +4,7 @@ use crate::database::{Change, Error, Result, Store};
 use rusqlite::{OptionalExtension, Row, params};
 use serde::{Serialize, de::DeserializeOwned};
 use soyeht_protocol::{
-    Attempt, Comment, LoopConfig, Subitem, Task, TaskMove, TaskPriority, TaskState,
+    Attempt, Comment, LoopConfig, Subitem, Task, TaskExecutor, TaskMove, TaskPriority, TaskState,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +20,13 @@ pub struct DispatchCheckpoint {
     pub worktree_path: Option<String>,
     pub branch: Option<String>,
     pub pane_id: Option<String>,
+}
+
+pub struct TaskReservation<'value> {
+    pub pane_id: &'value str,
+    pub harness: &'value str,
+    pub model: &'value str,
+    pub started_at: &'value str,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -515,8 +522,47 @@ impl Change<'_> {
             |row| row.get(0),
         ).optional()?;
         let Some(raw) = raw else { return Ok(None) };
+        let task: Task = serde_json::from_str(&raw)?;
+        self.reserve_task_record(
+            task,
+            &TaskReservation {
+                pane_id,
+                harness,
+                model,
+                started_at,
+            },
+        )
+        .map(Some)
+    }
+
+    pub fn reserve_task(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        preset: &TaskExecutor,
+        reservation: &TaskReservation<'_>,
+    ) -> Result<Task> {
+        let raw: Option<String> = self
+            .transaction
+            .query_row(
+                "SELECT payload FROM tasks WHERE workspace_id=?1 AND task_id=?2 AND state IN ('todo','in_review') AND owner_pane_id IS NULL AND blocking_kind IS NULL",
+                params![workspace_id, task_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let raw = raw.ok_or(Error::TaskReservationConflict)?;
         let mut task: Task = serde_json::from_str(&raw)?;
+        task.executor = Some(preset.clone());
+        self.reserve_task_record(task, reservation)
+    }
+
+    fn reserve_task_record(
+        &self,
+        mut task: Task,
+        reservation: &TaskReservation<'_>,
+    ) -> Result<Task> {
         let expected = task.version;
+        let prior_state = state_name(&task.state);
         task.current_attempt = task
             .current_attempt
             .checked_add(1)
@@ -526,27 +572,27 @@ impl Change<'_> {
             .checked_add(1)
             .ok_or(Error::InvalidTaskVersion)?;
         task.state = TaskState::InProgress;
-        task.owner_pane_id = Some(pane_id.into());
+        task.owner_pane_id = Some(reservation.pane_id.into());
         task.phrase = format!("in progress · attempt {}", task.current_attempt);
         let changed = self.transaction.execute(
-            "UPDATE tasks SET state='in_progress',owner_pane_id=?1,version=?2,payload=?3 WHERE workspace_id=?4 AND task_id=?5 AND state='todo' AND owner_pane_id IS NULL AND blocking_kind IS NULL AND version=?6",
-            params![pane_id, task.version, serde_json::to_string(&task)?, workspace_id, task.task_id, expected],
+            "UPDATE tasks SET state='in_progress',owner_pane_id=?1,version=?2,payload=?3 WHERE workspace_id=?4 AND task_id=?5 AND state=?6 AND owner_pane_id IS NULL AND blocking_kind IS NULL AND version=?7",
+            params![reservation.pane_id, task.version, serde_json::to_string(&task)?, task.workspace_id, task.task_id, prior_state, expected],
         )?;
         if changed != 1 {
             return Err(Error::TaskReservationConflict);
         }
         let attempt = Attempt {
             n: task.current_attempt,
-            pane_id: pane_id.into(),
-            harness: harness.into(),
-            model: model.into(),
-            start: started_at.into(),
+            pane_id: reservation.pane_id.into(),
+            harness: reservation.harness.into(),
+            model: reservation.model.into(),
+            start: reservation.started_at.into(),
             end: None,
             result: None,
             summary: None,
         };
-        self.insert_attempt(workspace_id, &task.task_id, &attempt)?;
-        Ok(Some(task))
+        self.insert_attempt(&task.workspace_id, &task.task_id, &attempt)?;
+        Ok(task)
     }
 
     pub fn insert_subitem(

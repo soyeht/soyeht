@@ -214,6 +214,9 @@ impl Core {
         params: &Value,
         scope: &str,
     ) -> Result<Option<Outcome>> {
+        if matches!(method, "task.dispatch" | "task.next") {
+            return Ok(None);
+        }
         // Look up before state-dependent validation: a repeated close still
         // succeeds after its pane has disappeared, without rerunning effects.
         if let Some(key) = params["idempotencyKey"].as_str() {
@@ -282,6 +285,8 @@ impl Core {
             "task.show" | "task.list" | "task.comments" => {
                 self.task_query(connection, method, params)?
             }
+            "task.dispatch" => self.task_dispatch(connection, params)?,
+            "task.next" => self.task_next(connection, params)?,
             "task.create"
             | "task.update"
             | "task.comment"

@@ -14,7 +14,7 @@ use soyeht_store::{
 };
 use std::{
     fs,
-    os::unix::net::UnixStream,
+    os::unix::{fs::PermissionsExt, net::UnixStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
     thread,
@@ -31,6 +31,7 @@ impl Rig {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
+        install_fake_worktrunk(&path);
         let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"));
         let ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
             .arg("--data-dir")
@@ -48,10 +49,15 @@ impl Rig {
         rig
     }
     fn start(&mut self) {
+        let path = std::env::join_paths(std::iter::once(self.path.join("bin")).chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .unwrap();
         self.engine = Some(
             Command::new(env!("CARGO_BIN_EXE_soyeht-engine"))
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
                 .arg(&self.path)
+                .env("PATH", path)
                 .stdout(Stdio::null())
                 .spawn()
                 .unwrap(),
@@ -130,6 +136,33 @@ impl Rig {
     fn client(&self) -> Client {
         Client::new(self.path.join("engine.sock"))
     }
+}
+
+fn install_fake_worktrunk(root: &std::path::Path) {
+    let bin = root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let executable = bin.join("wt");
+    fs::write(
+        &executable,
+        r#"#!/bin/sh
+repository="$2"
+command="$3"
+if [ "$command" = "list" ]; then
+  printf '[]\n'
+  exit 0
+fi
+branch=""
+for argument in "$@"; do branch="$argument"; done
+safe_branch=$(printf '%s' "$branch" | tr '/' '-')
+path="$repository/.test-worktrees/$safe_branch"
+mkdir -p "$path"
+printf '{"path":"%s","branch":"%s"}\n' "$path" "$branch"
+"#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(executable, permissions).unwrap();
 }
 
 fn binding_hello(path: &std::path::Path, binding: &str) -> (UnixStream, Value) {
@@ -2036,6 +2069,226 @@ fn create_task_fixture(rig: &Rig, client: &mut Client) -> (String, Value, Value)
     assert_eq!(next["items"][0]["taskId"], first["taskId"]);
     assert!(next["nextCursor"].is_null());
     (workspace, first, second)
+}
+
+#[test]
+fn dispatch_opens_one_task_pane_and_delivers_the_complete_first_prompt() {
+    let rig = Rig::new();
+    rig.install_fake_harness();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Dispatch","path":rig.path,"idempotencyKey":"dispatch-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let task = client.call(
+        "task.create",
+        json!({
+            "workspaceId":workspace,"title":"Build dispatch","description":"Wire the route",
+            "howToVerify":"Run the task test","mustNotChange":"Keep prior methods",
+            "idempotencyKey":"dispatch-task"
+        }),
+    )["task"]
+        .clone();
+    let params = json!({
+        "workspaceId":workspace,"taskId":task["taskId"],
+        "preset":{"workspaceDefault":false,"harness":"test-agent","permission":"ask"},
+        "idempotencyKey":"dispatch-once"
+    });
+    let dispatched = client.call("task.dispatch", params.clone());
+    assert_eq!(client.call("task.dispatch", params), dispatched);
+    let pane = dispatched["paneId"].as_str().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let shown = loop {
+        let shown = client.call(
+            "task.show",
+            json!({"workspaceId":workspace,"taskId":task["taskId"]}),
+        );
+        if shown["task"]["worktree"]["path"].is_string()
+            && client.pane(pane)["agent"]["sessionId"].is_string()
+        {
+            break shown;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "dispatch did not finish: {shown}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(shown["task"]["ownerPaneId"], pane);
+    assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
+    let transcript = loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| {
+                message["role"] == "user"
+                    && message["text"]
+                        .as_str()
+                        .is_some_and(|text| text.contains("## Must not change\nKeep prior methods"))
+            })
+        {
+            break transcript;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "first prompt was not delivered: {transcript}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    let text = transcript["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "user")
+        .unwrap()["text"]
+        .as_str()
+        .unwrap();
+    for expected in [
+        "Build dispatch",
+        "Wire the route",
+        "Keep prior methods",
+        "Run the task test",
+        ".test-worktrees/task-ws-1",
+    ] {
+        assert!(text.contains(expected), "missing {expected}: {text}");
+    }
+    let second = client.request(
+        "task.dispatch",
+        json!({
+            "workspaceId":workspace,"taskId":task["taskId"],
+            "preset":{"workspaceDefault":false,"harness":"test-agent"},
+            "idempotencyKey":"dispatch-twice"
+        }),
+    );
+    assert_eq!(second["error"]["data"]["kind"], "task_has_owner");
+}
+
+#[test]
+fn task_next_restarts_the_same_pane_in_the_claimed_worktree() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Pull","path":rig.path,"idempotencyKey":"pull-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (mut client, pane) = rig.open_agent(client, &json!(workspace));
+    let before = client.pane(&pane);
+    let task = client.call(
+        "task.create",
+        json!({
+            "workspaceId":workspace,"title":"Pulled task","description":"Run in a new session",
+            "mustNotChange":"Keep the pane","idempotencyKey":"pull-task"
+        }),
+    )["task"]
+        .clone();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"task-claim","idempotencyKey":"pull-turn"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let shown = client.call(
+            "task.show",
+            json!({"workspaceId":workspace,"taskId":task["taskId"]}),
+        );
+        let current = client.pane(&pane);
+        if shown["task"]["ownerPaneId"] == pane
+            && shown["task"]["worktree"]["path"].is_string()
+            && current["generation"].as_u64().unwrap() > before["generation"].as_u64().unwrap()
+            && current["cwd"] == shown["task"]["worktree"]["path"]
+            && current["agent"]["sessionId"].is_string()
+            && current["agent"]["sessionId"] != before["agent"]["sessionId"]
+        {
+            assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
+            assert_eq!(current["name"], "Pulled task");
+            let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+            if transcript_contains(&transcript, "\"willRestartSession\":true")
+                && transcript_contains(&transcript, "# Pulled task\n\nRun in a new session")
+            {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "task.next did not restart the pane: task={shown} pane={current}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn two_idle_panes_claim_one_task_exactly_once() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Race","path":rig.path,"idempotencyKey":"race-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (client, first_pane) = rig.open_agent(client, &json!(workspace));
+    let (mut client, second_pane) = rig.open_agent(client, &json!(workspace));
+    let task = client.call(
+        "task.create",
+        json!({
+            "workspaceId":workspace,"title":"One owner","description":"Claim once",
+            "mustNotChange":"Keep one attempt","idempotencyKey":"race-task"
+        }),
+    )["task"]
+        .clone();
+    for (pane, key) in [(&first_pane, "race-first"), (&second_pane, "race-second")] {
+        client.call(
+            "pane.prompt",
+            json!({"paneId":pane,"text":"task-claim","idempotencyKey":key}),
+        );
+    }
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let shown = client.call(
+            "task.show",
+            json!({"workspaceId":workspace,"taskId":task["taskId"]}),
+        );
+        let first = client.call("pane.transcript", json!({"paneId":first_pane}));
+        let second = client.call("pane.transcript", json!({"paneId":second_pane}));
+        let restarts = [&first, &second]
+            .iter()
+            .filter(|value| transcript_contains(value, "\"willRestartSession\":true"))
+            .count();
+        let empties = [&first, &second]
+            .iter()
+            .filter(|value| transcript_contains(value, "\"empty\":true"))
+            .count();
+        if restarts == 1 && empties == 1 {
+            assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
+            let owner = shown["task"]["ownerPaneId"].as_str().unwrap();
+            assert!(owner == first_pane || owner == second_pane);
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "task.next race did not settle once: task={shown}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn transcript_contains(transcript: &Value, needle: &str) -> bool {
+    transcript["items"].as_array().is_some_and(|items| {
+        items.iter().any(|item| {
+            item["text"]
+                .as_str()
+                .is_some_and(|text| text.contains(needle))
+        })
+    })
 }
 
 fn assert_task_mutations_and_snapshot(
