@@ -7,12 +7,13 @@ use crate::{
     errors::{self, Result},
     model,
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, Comment, Role, Subitem, SubitemState, Task, TaskCommentParams, TaskCommentsParams,
-    TaskCreateParams, TaskListParams, TaskShowParams, TaskSubitemAddParams, TaskSubitemDoneParams,
-    TaskUpdateParams,
+    TaskCreateParams, TaskCreateResult, TaskDispatchParams, TaskDispatchResult, TaskExecutor,
+    TaskListParams, TaskShowParams, TaskSubitemAddParams, TaskSubitemDoneParams, TaskUpdateParams,
 };
 use soyeht_store::database::Error as StoreError;
 use uuid::Uuid;
@@ -221,11 +222,8 @@ impl Core {
                 "Executor agents cannot create tasks",
             ));
         }
-        if params.dispatch == Some(true) {
-            return Err(errors::invalid(
-                "Create and dispatch is unavailable until the dispatch operation is selected",
-            ));
-        }
+        let should_dispatch = params.dispatch == Some(true);
+        let create_key = params.idempotency_key.clone();
         model::workspace(&self.store, &params.workspace_id)?;
         let actor_name = self.actor_name(&actor)?;
         let template = new_task(&params, "pending".into(), actor_name, self.timestamp())?;
@@ -248,7 +246,44 @@ impl Core {
                 vec![("task.created".into(), json!({"task":created}))],
             ))
         })?;
-        Ok(mutation.result)
+        if !should_dispatch {
+            return Ok(mutation.result);
+        }
+        self.dispatch_created_task(connection, &create_key, mutation.result)
+    }
+
+    fn dispatch_created_task(
+        &mut self,
+        connection: &str,
+        create_key: &str,
+        result: Value,
+    ) -> Result<Value> {
+        let created: TaskCreateResult = serde_json::from_value(result)
+            .map_err(|_| errors::internal("Stored task creation result is invalid"))?;
+        let preset = created.task.executor.clone().unwrap_or(TaskExecutor {
+            workspace_default: true,
+            harness: None,
+            model: None,
+            effort: None,
+            permission: None,
+        });
+        let key = URL_SAFE_NO_PAD.encode(crate::auth::token_hash(create_key));
+        let request = TaskDispatchParams {
+            workspace_id: created.task.workspace_id,
+            task_id: created.task.task_id,
+            preset,
+            idempotency_key: format!("create-dispatch:{key}"),
+        };
+        let raw = serde_json::to_value(request)
+            .map_err(|_| errors::internal("Task dispatch parameters could not be encoded"))?;
+        let dispatched: TaskDispatchResult =
+            serde_json::from_value(self.task_dispatch(connection, &raw)?)
+                .map_err(|_| errors::internal("Stored task dispatch result is invalid"))?;
+        serde_json::to_value(TaskCreateResult {
+            task: dispatched.task,
+            pane_id: Some(dispatched.pane_id),
+        })
+        .map_err(|_| errors::internal("Task creation result could not be encoded"))
     }
 
     fn task_update(

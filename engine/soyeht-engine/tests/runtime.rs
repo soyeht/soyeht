@@ -2191,6 +2191,65 @@ fn dispatch_opens_one_task_pane_and_delivers_the_complete_first_prompt() {
 }
 
 #[test]
+fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
+    let rig = Rig::new();
+    rig.install_fake_harness();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Create dispatch","path":rig.path,"idempotencyKey":"create-dispatch-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let worktrunk = rig.path.join("bin/wt");
+    let healthy_worktrunk = fs::read(&worktrunk).unwrap();
+    fs::write(&worktrunk, "#!/bin/sh\nexit 2\n").unwrap();
+    let params = json!({
+        "workspaceId":workspace,"title":"Create and dispatch","description":"Run both steps",
+        "howToVerify":"Observe one pane","mustNotChange":"Do not duplicate effects",
+        "executor":{"workspaceDefault":false,"harness":"test-agent","permission":"ask"},
+        "createWorktree":true,"dispatch":true,"idempotencyKey":"create-dispatch-once"
+    });
+    let failed = client.request("task.create", params.clone());
+    assert!(failed["error"].is_object(), "{failed}");
+
+    fs::write(&worktrunk, healthy_worktrunk).unwrap();
+    let resumed = client.call("task.create", params.clone());
+    assert_eq!(client.call("task.create", params), resumed);
+    let pane = resumed["paneId"].as_str().unwrap();
+    let task = &resumed["task"];
+    assert_eq!(task["taskId"], "WS-1");
+    assert_eq!(task["state"], "in_progress");
+    assert_eq!(task["ownerPaneId"], pane);
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let shown = loop {
+        let shown = client.call(
+            "task.show",
+            json!({"workspaceId":workspace,"taskId":task["taskId"]}),
+        );
+        if shown["task"]["worktree"]["path"].is_string()
+            && client.pane(pane)["agent"]["sessionId"].is_string()
+        {
+            break shown;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "dispatch did not resume: {shown}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
+    let tasks = client.call("task.list", json!({"workspaceId":workspace,"limit":100}));
+    assert_eq!(tasks["items"].as_array().unwrap().len(), 1);
+    let worktrees = fs::read_dir(rig.path.join(".test-worktrees"))
+        .unwrap()
+        .count();
+    assert_eq!(worktrees, 1);
+}
+
+#[test]
 fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch() {
     let rig = Rig::new();
     rig.install_fake_harness();

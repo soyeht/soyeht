@@ -214,7 +214,9 @@ impl Core {
         params: &Value,
         scope: &str,
     ) -> Result<Option<Outcome>> {
-        if matches!(method, "task.dispatch" | "task.next") {
+        if matches!(method, "task.dispatch" | "task.next")
+            || method == "task.create" && params["dispatch"].as_bool() == Some(true)
+        {
             return Ok(None);
         }
         // Look up before state-dependent validation: a repeated close still
