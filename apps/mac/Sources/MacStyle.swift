@@ -63,7 +63,9 @@ enum MacTheme {
     let blur: CGFloat
 
     static let chip = Elevation(offset: 3, blur: 5)
+    static let toggle = Elevation(offset: 2, blur: 4)
     static let taskCard = Elevation(offset: 3, blur: 6)
+    static let action = Elevation(offset: 4, blur: 8)
     static let card = Elevation(offset: 4, blur: 9)
     static let pane = Elevation(offset: 5, blur: 10)
     static let pill = Elevation(offset: 6, blur: 10)
@@ -169,6 +171,7 @@ extension View {
 
 struct NeoPillButtonStyle: ButtonStyle {
   var accent = false
+  var elevation = MacTheme.Elevation.pill
 
   @ViewBuilder
   func makeBody(configuration: Configuration) -> some View {
@@ -187,7 +190,7 @@ struct NeoPillButtonStyle: ButtonStyle {
         .padding(.horizontal, MacTheme.Space.x14)
         .padding(.vertical, MacTheme.Space.x8)
         .opacity(configuration.isPressed ? 0.78 : 1)
-        .neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
+        .neoRaised(radius: MacTheme.Radius.pill, elevation: elevation)
     }
   }
 }

@@ -44,9 +44,15 @@ struct TaskWorkspaceView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
-    .sheet(isPresented: $showNewTask) {
-      NewTaskSheet(
-        client: client, workspaceId: workspaceId, isPresented: $showNewTask)
+    .overlay(alignment: .top) {
+      if showNewTask {
+        ZStack(alignment: .top) {
+          Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+            .onTapGesture {}
+          NewTaskSheet(client: client, workspaceId: workspaceId, isPresented: $showNewTask)
+            .padding(.top, 47).transition(.scale(scale: 0.98).combined(with: .opacity))
+        }.zIndex(20)
+      }
     }
     .overlay(alignment: .topTrailing) {
       if let selection = selectedTask {
@@ -915,6 +921,7 @@ private struct NewTaskSheet: View {
   @State private var model = ""
   @State private var effort = ""
   @State private var dependencies: Set<String> = []
+  @State private var showHowToVerify = false
 
   private var valid: Bool {
     !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -928,43 +935,37 @@ private struct NewTaskSheet: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      HStack {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x14) {
+      HStack(alignment: .top, spacing: MacTheme.Space.x8) {
         VStack(alignment: .leading, spacing: 3) {
-          Text("New task").font(MacTheme.chrome(24, weight: .semibold))
-          Text("Add it to the workspace list, or create and dispatch it now.")
-            .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
+          Text("New task").font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+          Text("It enters this workspace list. An agent can claim it, or you can dispatch it.")
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
         }
         Spacer()
         Button {
           isPresented = false
         } label: {
-          Image(systemName: "xmark").padding(6)
-        }
+          Image(systemName: "xmark").font(.system(size: 14, weight: .medium))
+            .foregroundStyle(MacTheme.muted)
+        }.buttonStyle(.plain)
       }
-      ScrollView {
-        VStack(alignment: .leading, spacing: 14) {
-          TaskField(title: "TITLE", text: $title)
-          TaskEditor(title: "DESCRIPTION", text: $description)
-          TaskEditor(title: "MUST NOT CHANGE · REQUIRED", text: $mustNotChange)
-          TaskField(title: "HOW TO VERIFY · OPTIONAL", text: $howToVerify)
-          runnerOptions
-          taskOptions
-        }.padding(4)
-      }
-      HStack {
-        Text("⌘↩ creates · ⇧⌘↩ creates and dispatches")
-          .font(MacTheme.chrome(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.secondary)
-        Spacer()
-        Button("Create in list") { create(dispatch: false) }.buttonStyle(.bordered).disabled(!valid)
-          .keyboardShortcut(.return, modifiers: [.command])
-        Button("Create and dispatch") { create(dispatch: true) }.buttonStyle(.borderedProminent)
-          .disabled(!valid).keyboardShortcut(.return, modifiers: [.command, .shift])
-      }
-    }.padding(26).frame(width: 640, height: 760).background(MacTheme.canvas).foregroundStyle(
-      MacTheme.ink
-    )
+      TaskField(title: "TITLE", text: $title)
+      TaskEditor(
+        title: "DESCRIPTION", text: $description, showsAccessories: true,
+        accessoryAction: { showHowToVerify = true }
+      )
+      .popover(isPresented: $showHowToVerify, arrowEdge: .bottom) { verificationEditor }
+      TaskEditor(title: "MUST NOT CHANGE · REQUIRED", text: $mustNotChange, showsAccessories: true)
+      runnerOptions
+      taskOptions
+      actions
+    }
+    .padding(EdgeInsets(top: 18, leading: 22, bottom: 18, trailing: 22))
+    .frame(width: 560).foregroundStyle(MacTheme.ink)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
     .onAppear { client.refreshHarnesses() }
+    .onExitCommand { isPresented = false }
     .onChange(of: harness) { _, value in
       model = ""
       effort = ""
@@ -973,37 +974,41 @@ private struct NewTaskSheet: View {
   }
 
   private var runnerOptions: some View {
-    DetailGroup(title: "WHO WILL RUN") {
-      Toggle("Use workspace default", isOn: $workspaceDefault)
-      if !workspaceDefault {
-        Picker("Agent", selection: $harness) {
-          Text("Choose an agent").tag("")
-          ForEach(client.harnesses.filter(\.available), id: \.id) { Text($0.name).tag($0.id) }
-        }
-        Picker("Model", selection: $model) {
-          Text("Agent default").tag("")
-          ForEach(catalogue?.models ?? [], id: \.id) { Text($0.name).tag($0.id) }
-        }
-        Picker("Effort", selection: $effort) {
-          Text("Agent default").tag("")
-          ForEach(effortOption?.options ?? [], id: \.value) { Text($0.name).tag($0.value) }
-        }
-      }
+    VStack(alignment: .leading, spacing: MacTheme.Space.x14) {
+      DialogFieldLabel(title: "WHO WILL RUN")
+      HStack(spacing: MacTheme.Space.x10) {
+        runnerMenu
+        Spacer()
+        WorkspaceDefaultToggle(isOn: $workspaceDefault)
+      }.padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
     }
   }
 
   private var taskOptions: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Picker("Priority", selection: $priority) {
-        ForEach(TaskPriority.all, id: \.rawValue) { Text($0.title).tag($0) }
+    HStack(spacing: MacTheme.Space.x8) {
+      Menu {
+        ForEach(TaskPriority.all, id: \.rawValue) { value in
+          Button(value.title) { priority = value }
+        }
+      } label: {
+        DialogOptionLabel(title: priority.title.lowercased(), icon: "flag")
       }
-      Toggle("Create a task worktree", isOn: $createWorktree)
-      Picker("Permission", selection: $permission) {
-        Text("Ask every time").tag(PermissionMode.ask)
-        Text("Accept edits").tag(PermissionMode.accept_edits)
-        Text("Allow all actions").tag(PermissionMode.allow_all)
+      Menu {
+        Button(createWorktree ? "Use the workspace directly" : "Create a task worktree") {
+          createWorktree.toggle()
+        }
+      } label: {
+        DialogOptionLabel(
+          title: createWorktree ? "worktree" : "workspace", icon: "arrow.triangle.branch")
       }
-      Menu("Dependencies · \(dependencies.count)") {
+      Menu {
+        Button("Ask every time") { permission = .ask }
+        Button("Accept edits") { permission = .accept_edits }
+        Button("Allow all actions") { permission = .allow_all }
+      } label: {
+        DialogOptionLabel(title: permission.dialogTitle, icon: "checkmark.shield")
+      }
+      Menu {
         ForEach(client.tasks(in: workspaceId), id: \.taskId) { task in
           Button {
             toggleDependency(task.taskId)
@@ -1013,8 +1018,92 @@ private struct NewTaskSheet: View {
               systemImage: dependencies.contains(task.taskId) ? "checkmark" : "circle")
           }
         }
+      } label: {
+        DialogOptionLabel(title: dependencyTitle, icon: "link")
       }
-    }.pickerStyle(.menu)
+    }
+    .menuIndicator(.hidden).buttonStyle(.plain).fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var runnerMenu: some View {
+    Menu {
+      Button("Workspace default") { workspaceDefault = true }
+      Section("Agent") {
+        ForEach(client.harnesses.filter(\.available), id: \.id) { value in
+          Button(value.name) {
+            workspaceDefault = false
+            harness = value.id
+          }
+        }
+      }
+      if !workspaceDefault, !harness.isEmpty {
+        Section("Model") {
+          Button("Agent default") { model = "" }
+          ForEach(catalogue?.models ?? [], id: \.id) { value in
+            Button(value.name) { model = value.id }
+          }
+        }
+        Section("Effort") {
+          Button("Agent default") { effort = "" }
+          ForEach(effortOption?.options ?? [], id: \.value) { value in
+            Button(value.name) { effort = value.value }
+          }
+        }
+      }
+    } label: {
+      HStack(spacing: MacTheme.Space.x6) {
+        Image(systemName: "cpu").font(.system(size: 14, weight: .medium))
+        Text(runnerTitle).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          .lineLimit(1)
+        Image(systemName: "chevron.down").font(.system(size: 12, weight: .medium))
+          .foregroundStyle(MacTheme.muted)
+      }
+      .foregroundStyle(MacTheme.ink).padding(.horizontal, 10).padding(.vertical, 6)
+      .neoRaised(radius: MacTheme.Radius.pill, elevation: .taskCard)
+    }.menuIndicator(.hidden).buttonStyle(.plain)
+  }
+
+  private var runnerTitle: String {
+    guard !workspaceDefault else { return "Workspace default" }
+    let harnessName = client.harnesses.first { $0.id == harness }?.name ?? "Choose an agent"
+    let modelName = catalogue?.models.first { $0.id == model }?.name
+    let effortName = effortOption?.options.first { $0.value == effort }?.name
+    return [harnessName, modelName, effortName].compactMap { $0 }.joined(separator: " · ")
+  }
+
+  private var dependencyTitle: String {
+    guard let first = dependencies.sorted().first else { return "dependencies" }
+    return dependencies.count == 1 ? "after \(first)" : "after \(first) +\(dependencies.count - 1)"
+  }
+
+  private var verificationEditor: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      Text("HOW TO VERIFY · OPTIONAL").font(
+        MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold)
+      ).tracking(1).foregroundStyle(MacTheme.muted)
+      TextEditor(text: $howToVerify).font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .scrollContentBackground(.hidden).padding(10).frame(height: 112)
+        .neoWell(radius: MacTheme.Radius.control)
+    }.padding(18).frame(width: 360).background(MacTheme.face)
+  }
+
+  private var actions: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      Text("⌘↩ create · ⇧⌘↩ create & dispatch")
+        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+        .foregroundStyle(MacTheme.muted)
+      Spacer()
+      Button("Create in list") { create(dispatch: false) }
+        .buttonStyle(NeoPillButtonStyle(elevation: .action)).disabled(!valid)
+        .keyboardShortcut(.return, modifiers: [.command])
+      Button {
+        create(dispatch: true)
+      } label: {
+        Label("Create and dispatch", systemImage: "paperplane")
+      }
+      .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!valid)
+      .keyboardShortcut(.return, modifiers: [.command, .shift])
+    }.padding(.top, MacTheme.Space.x6)
   }
 
   private func toggleDependency(_ taskId: String) {
@@ -1042,12 +1131,13 @@ private struct NewTaskSheet: View {
 private struct TaskField: View {
   let title: String
   @Binding var text: String
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 7) {
-      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold)).tracking(1)
-        .foregroundStyle(MacTheme.secondary)
-      TextField("", text: $text).textFieldStyle(.plain).padding(12).neoWell(
-        radius: MacTheme.Radius.compact)
+    VStack(alignment: .leading, spacing: MacTheme.Space.x14) {
+      DialogFieldLabel(title: title)
+      TextField("", text: $text).font(MacTheme.chrome(14, weight: .semibold))
+        .textFieldStyle(.plain).padding(.horizontal, 14).frame(height: 40)
+        .neoWell(radius: MacTheme.Radius.control)
     }
   }
 }
@@ -1055,13 +1145,83 @@ private struct TaskField: View {
 private struct TaskEditor: View {
   let title: String
   @Binding var text: String
+  var showsAccessories = false
+  var accessoryAction: (() -> Void)? = nil
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 7) {
-      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold)).tracking(1)
-        .foregroundStyle(MacTheme.secondary)
-      TextEditor(text: $text).scrollContentBackground(.hidden).frame(minHeight: 74).padding(9)
-        .neoWell(radius: MacTheme.Radius.compact)
+    VStack(alignment: .leading, spacing: MacTheme.Space.x14) {
+      DialogFieldLabel(title: title)
+      ZStack(alignment: .bottomLeading) {
+        TextEditor(text: $text).font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .scrollContentBackground(.hidden)
+          .padding(
+            EdgeInsets(
+              top: 8, leading: 10, bottom: showsAccessories ? 28 : 8, trailing: 10))
+        if showsAccessories { editorAccessories }
+      }.frame(height: 96).neoWell(radius: MacTheme.Radius.control)
     }
+  }
+
+  private var editorAccessories: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      if let accessoryAction {
+        Button(action: accessoryAction) {
+          Image(systemName: "paperclip").font(.system(size: 14, weight: .medium))
+        }.buttonStyle(.plain).help("Edit verification notes")
+          .accessibilityLabel("Edit verification notes")
+      } else {
+        Image(systemName: "paperclip").font(.system(size: 14, weight: .medium))
+      }
+      Image(systemName: "at").font(.system(size: 14, weight: .medium))
+    }.foregroundStyle(MacTheme.muted).padding(.leading, 14).padding(.bottom, 10)
+      .accessibilityHidden(accessoryAction == nil)
+  }
+}
+
+private struct DialogFieldLabel: View {
+  let title: String
+
+  var body: some View {
+    Text(title).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold)).tracking(1)
+      .foregroundStyle(MacTheme.muted)
+  }
+}
+
+private struct WorkspaceDefaultToggle: View {
+  @Binding var isOn: Bool
+
+  var body: some View {
+    Button {
+      isOn.toggle()
+    } label: {
+      HStack(spacing: MacTheme.Space.x6) {
+        Text("Use workspace default")
+          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+        ZStack {
+          Capsule().fill(MacTheme.well).frame(width: 36, height: 20)
+          Color.clear.frame(width: 16, height: 16)
+            .neoRaised(radius: MacTheme.Radius.pill, elevation: .toggle)
+            .offset(x: isOn ? 8 : -8)
+        }.frame(width: 36, height: 20)
+      }.foregroundStyle(MacTheme.secondary)
+    }
+    .buttonStyle(.plain).accessibilityValue(isOn ? "On" : "Off")
+  }
+}
+
+private struct DialogOptionLabel: View {
+  let title: String
+  let icon: String
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x5) {
+      Image(systemName: icon).font(.system(size: 12, weight: .medium))
+      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+      Image(systemName: "chevron.down").font(.system(size: 11, weight: .medium))
+        .foregroundStyle(MacTheme.muted)
+    }
+    .foregroundStyle(MacTheme.secondary).padding(.horizontal, 10).padding(.vertical, 6)
+    .neoRaised(radius: MacTheme.Radius.pill, elevation: .chip)
   }
 }
 
@@ -1069,6 +1229,16 @@ extension String {
   fileprivate var nilIfEmpty: String? {
     let value = trimmingCharacters(in: .whitespacesAndNewlines)
     return value.isEmpty ? nil : value
+  }
+}
+
+extension PermissionMode {
+  fileprivate var dialogTitle: String {
+    switch self {
+    case .ask: "permission"
+    case .accept_edits: "accept edits"
+    case .allow_all: "allow all"
+    }
   }
 }
 
