@@ -2,7 +2,7 @@
 
 use super::{
     apply_complete, apply_review_return,
-    drift::{DriftDecision, DriftFinding, evaluate_review, reviewer_prompt},
+    drift::{DriftDecision, DriftFinding, evaluate_review, parse_findings, reviewer_prompt},
     revision::RevisionSnapshot,
 };
 use crate::{
@@ -295,10 +295,7 @@ impl Core {
         if text.len() > limits::JSON_BYTES {
             return Ok(vec![malformed_finding()]);
         }
-        match serde_json::from_str(text.trim()) {
-            Ok(findings) => Ok(findings),
-            Err(_) => Ok(vec![malformed_finding()]),
-        }
+        Ok(parse_findings(&text).unwrap_or_else(|| vec![malformed_finding()]))
     }
 
     fn resolve_ready_review(&mut self, workspace: &str, task_id: &str, attempt: u32) -> Result<()> {
