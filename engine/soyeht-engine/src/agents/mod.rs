@@ -225,7 +225,7 @@ impl Core {
             .ok_or_else(|| errors::invalid("Agent pane required"))
     }
 
-    fn replace_agent_state(&mut self, id: &str, state: State) -> Result<()> {
+    pub(crate) fn replace_agent_state(&mut self, id: &str, state: State) -> Result<()> {
         errors::invariant(self.agents.get_mut(id), "Agent runtime disappeared")?.state = state;
         Ok(())
     }

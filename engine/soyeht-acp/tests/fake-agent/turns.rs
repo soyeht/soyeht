@@ -215,12 +215,54 @@ fn ordinary_turn(runtime: &Runtime, session: &str, text: &str, cancelled: &Atomi
     output
 }
 
+fn review_turn(text: &str) -> Option<String> {
+    if !text.starts_with("Run the contract-drift review before any other review.") {
+        return None;
+    }
+    let mut findings = Vec::new();
+    let mut current: Option<(String, String, String, String)> = None;
+    for line in text.lines() {
+        if let Some((identity, kind)) = line.rsplit_once(" [")
+            && let Some(kind) = kind.strip_suffix(']')
+            && let Some((path, name)) = identity.rsplit_once("::")
+        {
+            if let Some(item) = current.take() {
+                findings.push(review_finding(item));
+            }
+            current = Some((path.into(), name.into(), kind.into(), String::new()));
+        } else if let Some((_, _, _, patch)) = current.as_mut() {
+            patch.push_str(line);
+            patch.push('\n');
+        }
+    }
+    if let Some(item) = current {
+        findings.push(review_finding(item));
+    }
+    serde_json::to_string(&findings).ok()
+}
+
+fn review_finding(item: (String, String, String, String)) -> Value {
+    let (path, name, kind, patch) = item;
+    let label = if patch.contains("todo!()") || patch.contains("unimplemented!()") {
+        "incomplete"
+    } else if patch.contains(".unwrap_or_default()") {
+        "silent_fallback"
+    } else {
+        "equivalent"
+    };
+    json!({"path":path,"name":name,"kind":kind,"label":label})
+}
+
 fn execute_turn(
     runtime: &Arc<Runtime>,
     session: &str,
     text: &str,
     cancelled: &AtomicBool,
 ) -> String {
+    if let Some(output) = review_turn(text) {
+        emit(runtime, session, &output);
+        return output;
+    }
     if let Some(output) = crate::mcp::task_turn(runtime, session, text) {
         emit(runtime, session, &output);
         return output;

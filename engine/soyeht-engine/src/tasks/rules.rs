@@ -277,6 +277,24 @@ pub fn apply_complete(task: &Task, params: &TaskCompleteParams) -> Result<Task> 
     Ok(updated)
 }
 
+pub fn apply_review_return(task: &Task, params: &TaskCompleteParams) -> Result<Task> {
+    if task.state != TaskState::InReview || task.owner_pane_id.is_none() {
+        return Err(errors::transition_refused(
+            "Only an owned task in review can be returned",
+        ));
+    }
+    required_text(&params.summary, "summary")?;
+    let mut updated = task.clone();
+    updated.state = TaskState::InProgress;
+    updated.summary = Some(params.summary.clone());
+    updated.contract_changes = Some(params.contract_changes.clone());
+    updated.out_of_scope_edits = Some(params.out_of_scope_edits.clone());
+    updated.review_badge = Some(soyeht_protocol::TaskReviewBadge::YourTurn);
+    updated.version = next_version(task)?;
+    updated.phrase = "review requested changes".into();
+    Ok(updated)
+}
+
 pub fn apply_release(task: &Task) -> Result<Task> {
     if !matches!(task.state, TaskState::InProgress | TaskState::InReview) {
         return Err(errors::transition_refused(
@@ -541,6 +559,35 @@ pub(crate) mod tests {
         assert_eq!(completed.state, TaskState::Completed);
         assert_eq!(completed.contract_changes, Some(Vec::new()));
         assert_eq!(completed.out_of_scope_edits, Some(Vec::new()));
+    }
+
+    #[test]
+    fn returned_review_preserves_the_attempt_owner_and_declared_completion_inputs() {
+        let review = task_fixture(TaskState::InReview);
+        let params = TaskCompleteParams {
+            workspace_id: review.workspace_id.clone(),
+            task_id: review.task_id.clone(),
+            summary: "Review candidate".into(),
+            contract_changes: Vec::new(),
+            out_of_scope_edits: Vec::new(),
+            pane_id: review.owner_pane_id.clone(),
+            session_generation: Some(1),
+            attempt: Some(review.current_attempt),
+            idempotency_key: "complete".into(),
+        };
+
+        let returned = apply_review_return(&review, &params).unwrap();
+
+        assert_eq!(returned.state, TaskState::InProgress);
+        assert_eq!(returned.owner_pane_id, review.owner_pane_id);
+        assert_eq!(returned.current_attempt, review.current_attempt);
+        assert_eq!(returned.summary.as_deref(), Some("Review candidate"));
+        assert_eq!(returned.contract_changes, Some(Vec::new()));
+        assert_eq!(returned.out_of_scope_edits, Some(Vec::new()));
+        assert_eq!(
+            returned.review_badge,
+            Some(soyeht_protocol::TaskReviewBadge::YourTurn)
+        );
     }
 
     #[test]

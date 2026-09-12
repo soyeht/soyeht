@@ -349,7 +349,9 @@ mod tests {
                 "review-1",
             )],
         );
-        let revision = port.inspect("https://example.invalid/change/1").unwrap();
+        let revision = port
+            .inspect(std::path::Path::new("https://example.invalid/change/1"))
+            .unwrap();
         let decision = evaluate(
             &task(),
             &revision,

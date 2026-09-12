@@ -50,7 +50,16 @@ fn open(
     saved: &StoredPane,
     changes: &mut Changes,
 ) -> Result<()> {
-    let server = super::mcp::declaration(store, runtime.data_directory, state, saved)?;
+    let servers = if state.mcp_enabled {
+        vec![super::mcp::declaration(
+            store,
+            runtime.data_directory,
+            state,
+            saved,
+        )?]
+    } else {
+        Vec::new()
+    };
     if let Some(id) = state.session_id.clone() {
         state.phase = Phase::Loading;
         changes.clear_replay = true;
@@ -60,7 +69,7 @@ fn open(
             state,
             changes,
             "session/load",
-            client::load_session_with_mcp(&saved.pane.cwd, &id, &[server]),
+            client::load_session_with_mcp(&saved.pane.cwd, &id, &servers),
             "load",
             runtime.now_ms,
         )
@@ -70,7 +79,7 @@ fn open(
             state,
             changes,
             "session/new",
-            client::new_session_with_mcp(&saved.pane.cwd, &[server]),
+            client::new_session_with_mcp(&saved.pane.cwd, &servers),
             "open",
             runtime.now_ms,
         )

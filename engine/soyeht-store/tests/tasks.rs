@@ -10,7 +10,8 @@ use soyeht_store::{
     database::Store,
     domain::PaneRecord,
     tasks::{
-        DispatchCheckpoint, FeedbackState, ReviewStage, TaskReviewRecord, UnresolvedTaskReview,
+        DispatchCheckpoint, FeedbackState, RestartTaskReview, ReviewStage, TaskReviewRecord,
+        UnresolvedTaskReview,
     },
 };
 use std::{fs, path::PathBuf, sync::Arc, thread};
@@ -672,6 +673,59 @@ fn migration_from_v7_preserves_tasks_and_adds_durable_reviews() {
             .unwrap(),
         None
     );
+}
+
+#[test]
+fn a_resolved_attempt_can_start_one_new_versioned_review_cycle() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    prepare_review(&mut store, "WS-1", "reviewer-a");
+    replace_review(
+        &mut store,
+        "classify-cycle",
+        "WS-1",
+        2,
+        ReviewStage::Classified,
+        None,
+        Some(&["equivalent"]),
+    );
+    replace_review(
+        &mut store,
+        "resolve-cycle",
+        "WS-1",
+        3,
+        ReviewStage::Resolved,
+        Some("summary"),
+        Some(&["equivalent"]),
+    );
+    let payload = ReviewPayload {
+        proposal: None,
+        findings: None,
+    };
+    store
+        .mutate("test", "restart-cycle", "restart-cycle", |change| {
+            change.restart_task_review(RestartTaskReview {
+                workspace_id: "workspace-1",
+                task_id: "WS-1",
+                attempt: 1,
+                expected_version: 4,
+                reviewer_pane_id: "reviewer-b",
+                stage: ReviewStage::PromptAccepted,
+                payload: &payload,
+            })?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+
+    let restarted: TaskReviewRecord<ReviewPayload> = store
+        .task_review("workspace-1", "WS-1", 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(restarted.version, 5);
+    assert_eq!(restarted.stage, ReviewStage::PromptAccepted);
+    assert_eq!(restarted.reviewer_pane_id, "reviewer-b");
+    assert_eq!(restarted.payload, payload);
 }
 
 #[test]

@@ -31,6 +31,7 @@ pub struct Core {
     pub generation: u64,
     pub ptyd: Option<Box<dyn SupervisorPort>>,
     pub clock: Arc<dyn Clock>,
+    pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
@@ -51,6 +52,7 @@ impl Core {
             generation,
             ptyd: None,
             clock: Arc::new(SystemClock),
+            revision: Box::new(crate::tasks::revision::GitRevision),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
@@ -177,6 +179,33 @@ impl Core {
         .map_err(errors::storage)?;
         self.publish(&mutation.events)?;
         Ok(mutation)
+    }
+
+    pub(crate) fn repeated_mutation(
+        &self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Option<Value>> {
+        let client = self
+            .clients
+            .get(connection)
+            .ok_or_else(|| errors::unauthorized("Connection not found"))?;
+        let key = params["idempotencyKey"]
+            .as_str()
+            .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
+        let fingerprint = STANDARD.encode(crate::auth::token_hash(
+            &json!([method, params]).to_string(),
+        ));
+        let receipt = StorePort::idempotency_receipt(&self.store, &client.scope, key)
+            .map_err(errors::storage)?;
+        match receipt {
+            Some(receipt) if receipt.fingerprint == fingerprint => Ok(Some(receipt.result)),
+            Some(_) => Err(errors::idempotency_conflict(
+                "Idempotency key belongs to another mutation",
+            )),
+            None => Ok(None),
+        }
     }
 
     pub fn pty_request(&mut self, request: Request) -> Result<Response> {
@@ -467,7 +496,7 @@ impl Core {
                 self.save_runtime(&id, dead)?;
             }
         }
-        Ok(())
+        self.advance_task_reviews()
     }
 
     pub fn now_ms(&self) -> i64 {

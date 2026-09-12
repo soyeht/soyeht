@@ -47,6 +47,16 @@ pub struct UnresolvedTaskReview<T> {
     pub record: TaskReviewRecord<T>,
 }
 
+pub struct RestartTaskReview<'a, T> {
+    pub workspace_id: &'a str,
+    pub task_id: &'a str,
+    pub attempt: u32,
+    pub expected_version: u32,
+    pub reviewer_pane_id: &'a str,
+    pub stage: ReviewStage,
+    pub payload: &'a T,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommentPage {
     pub items: Vec<Comment>,
@@ -687,6 +697,21 @@ impl Change<'_> {
         let changed = self.transaction.execute(
             "UPDATE task_reviews SET version=?1,stage=?2,payload=?3 WHERE workspace_id=?4 AND task_id=?5 AND attempt=?6 AND version=?7 AND stage<=?2",
             params![version,rank,serde_json::to_string(payload)?,workspace_id,task_id,attempt,expected_version],
+        )?;
+        if changed != 1 {
+            return Err(Error::ReviewVersionConflict);
+        }
+        Ok(())
+    }
+
+    pub fn restart_task_review<T: Serialize>(&self, value: RestartTaskReview<'_, T>) -> Result<()> {
+        let version = value
+            .expected_version
+            .checked_add(1)
+            .ok_or(Error::InvalidReviewVersion)?;
+        let changed = self.transaction.execute(
+            "UPDATE task_reviews SET version=?1,stage=?2,reviewer_pane_id=?3,payload=?4 WHERE workspace_id=?5 AND task_id=?6 AND attempt=?7 AND version=?8 AND stage=?9",
+            params![version,review_stage_rank(value.stage),value.reviewer_pane_id,serde_json::to_string(value.payload)?,value.workspace_id,value.task_id,value.attempt,value.expected_version,review_stage_rank(ReviewStage::Resolved)],
         )?;
         if changed != 1 {
             return Err(Error::ReviewVersionConflict);

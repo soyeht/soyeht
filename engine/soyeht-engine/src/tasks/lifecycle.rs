@@ -1,6 +1,6 @@
 use super::{
     api::{parameters, task},
-    apply_block, apply_complete, apply_owner_loss, apply_release, apply_request_review,
+    apply_block, apply_owner_loss, apply_release, apply_request_review,
 };
 use crate::{
     core::Core,
@@ -22,13 +22,6 @@ struct ClosingMove {
     actor: String,
     reason: String,
     released: Option<Value>,
-}
-
-struct ActiveMove {
-    current: Task,
-    updated: Task,
-    actor: String,
-    reason: String,
 }
 
 pub(crate) struct TaskOwnerLoss {
@@ -133,6 +126,9 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
+        if let Some(result) = self.repeated_mutation(connection, method, params)? {
+            return Ok(result);
+        }
         match method {
             "task.block" => self.task_block(connection, params, parameters(params)?),
             "task.release" => self.task_release(connection, params, parameters(params)?),
@@ -258,17 +254,7 @@ impl Core {
         let updated = apply_request_review(&current, &subitems)?;
         let actor = self.actor_name(&actor)?;
         let reason = params.reason.unwrap_or_else(|| "review requested".into());
-        self.persist_active_move(
-            connection,
-            "task.request_review",
-            raw,
-            ActiveMove {
-                current,
-                updated,
-                actor,
-                reason,
-            },
-        )
+        self.begin_task_review(connection, raw, current, updated, actor, reason)
     }
 
     fn task_complete(
@@ -277,27 +263,9 @@ impl Core {
         raw: &Value,
         params: TaskCompleteParams,
     ) -> Result<Value> {
-        let (actor, current) =
+        let (_, current) =
             self.executor_task(connection, raw, &params.workspace_id, &params.task_id)?;
-        let mut attempt = self.open_attempt(&current)?;
-        let updated = apply_complete(&current, &params)?;
-        attempt.end = Some(self.timestamp());
-        attempt.result = Some(AttemptResult::Completed);
-        attempt.summary = Some(params.summary.clone());
-        let actor = self.actor_name(&actor)?;
-        self.persist_closing_move(
-            connection,
-            "task.complete",
-            raw,
-            ClosingMove {
-                current,
-                updated,
-                attempt,
-                actor,
-                reason: "completed".into(),
-                released: None,
-            },
-        )
+        self.record_completion_proposal(connection, raw, &current, &params)
     }
 
     fn task_release(
@@ -382,45 +350,6 @@ impl Core {
                     (
                         "task.phrase_changed".into(),
                         json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
-                    ),
-                ],
-            ))
-        })?;
-        Ok(mutation.result)
-    }
-
-    fn persist_active_move(
-        &mut self,
-        connection: &str,
-        method: &str,
-        raw: &Value,
-        active: ActiveMove,
-    ) -> Result<Value> {
-        let movement = soyeht_protocol::TaskMove {
-            actor: active.actor,
-            from: active.current.state,
-            to: active.updated.state.clone(),
-            reason: active.reason,
-            at: self.timestamp(),
-        };
-        let workspace = active.updated.workspace_id.clone();
-        let task_id = active.updated.task_id.clone();
-        let expected = active.current.version;
-        let mutation = self.mutate(connection, method, raw, move |change| {
-            change.replace_task(&active.updated, expected)?;
-            change.insert_move(&workspace, &task_id, &movement)?;
-            Ok((
-                json!({"task":active.updated}),
-                vec![
-                    (
-                        "task.moved".into(),
-                        json!({"workspaceId":workspace,"taskId":task_id,
-                            "actor":movement.actor,"from":movement.from,
-                            "to":movement.to,"reason":movement.reason}),
-                    ),
-                    (
-                        "task.phrase_changed".into(),
-                        json!({"workspaceId":workspace,"taskId":task_id,"phrase":active.updated.phrase}),
                     ),
                 ],
             ))

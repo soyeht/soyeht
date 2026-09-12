@@ -55,6 +55,8 @@ pub struct State {
     pub(crate) binding: Binding,
     #[serde(default = "default_mcp_role")]
     pub(crate) mcp_role: Role,
+    #[serde(default = "mcp_enabled")]
+    pub(crate) mcp_enabled: bool,
     pub launch: HarnessLaunch,
     pub binary_digest: String,
     pub fingerprint: String,
@@ -114,6 +116,7 @@ impl State {
         Ok(Self {
             binding: Binding::generate()?,
             mcp_role: default_mcp_role(),
+            mcp_enabled: true,
             launch,
             binary_digest,
             fingerprint: String::new(),
@@ -161,6 +164,10 @@ impl State {
             return Ok(true);
         }
         Ok(false)
+    }
+
+    pub(crate) fn disable_mcp(&mut self) {
+        self.mcp_enabled = false;
     }
 
     pub fn public(&self, now_ms: i64) -> AgentSession {
@@ -345,6 +352,10 @@ impl State {
     }
 }
 
+fn mcp_enabled() -> bool {
+    true
+}
+
 fn default_mcp_role() -> Role {
     Role::Agent
 }
@@ -430,6 +441,17 @@ mod tests {
         assert_eq!(public.auth_methods.len(), 1);
         assert_eq!(public.auth_methods[0].id, "login");
         assert!(public.auth_methods[0].terminal);
+    }
+
+    #[test]
+    fn checkpoints_from_before_reviewer_isolation_keep_the_task_server_enabled() {
+        let serialized = serde_json::to_value(state()).unwrap();
+        let mut object = serialized.as_object().unwrap().clone();
+        object.remove("mcp_enabled");
+
+        let restored: State = serde_json::from_value(serde_json::Value::Object(object)).unwrap();
+
+        assert!(restored.mcp_enabled);
     }
 
     #[test]

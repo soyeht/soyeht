@@ -7,6 +7,7 @@ mod lifecycle;
 mod movement;
 mod phrase;
 pub mod ports;
+mod review;
 pub mod revision;
 mod rules;
 pub mod worktree;
@@ -18,6 +19,6 @@ pub use phrase::{PhraseFacts, phrase, review_badge};
 pub(crate) use rules::tests::task_fixture;
 pub use rules::{
     ExecutorIdentity, apply_block, apply_complete, apply_move, apply_owner_loss, apply_release,
-    apply_request_review, apply_unblock, apply_update, new_loop_config, new_task,
-    validate_dependencies, validate_executor,
+    apply_request_review, apply_review_return, apply_unblock, apply_update, new_loop_config,
+    new_task, validate_dependencies, validate_executor,
 };

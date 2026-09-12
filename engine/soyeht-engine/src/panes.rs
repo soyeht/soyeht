@@ -34,7 +34,7 @@ fn pane_defaults(store: &impl StorePort) -> Result<PaneDefaults> {
     Ok(PaneDefaults { cols, rows, record })
 }
 
-fn persist_new_pane(
+pub(crate) fn persist_new_pane(
     change: &soyeht_store::database::Change<'_>,
     saved: &StoredPane,
     agent: Option<&crate::agents::state::State>,
@@ -51,7 +51,7 @@ fn persist_new_pane(
     Ok(())
 }
 
-fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) {
+pub(crate) fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) {
     (
         json!({"paneId":saved.pane.pane_id}),
         vec![("pane.created".into(), json!({"pane":saved.pane}))],

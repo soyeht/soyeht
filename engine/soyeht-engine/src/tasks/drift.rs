@@ -13,7 +13,7 @@ pub struct DriftFinding {
     pub label: DriftLabel,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DriftLine {
     pub path: String,
     pub name: String,
@@ -22,7 +22,7 @@ pub struct DriftLine {
     pub reason: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DriftDecision {
     pub approved: bool,
     pub lines: Vec<DriftLine>,

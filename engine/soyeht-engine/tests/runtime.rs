@@ -7,7 +7,11 @@ use soyeht_ptyd::{
     client::Client as PtyClient,
     wire::{Request, Response},
 };
-use soyeht_store::{database::Store, test_support::DatabaseProbe};
+use soyeht_store::{
+    database::Store,
+    tasks::{ReviewStage, TaskReviewRecord},
+    test_support::DatabaseProbe,
+};
 use std::{
     fs,
     os::unix::net::UnixStream,
@@ -196,6 +200,7 @@ struct TaskLifecycleRig {
     executor: UnixStream,
     workspace: String,
     pane: String,
+    repository: PathBuf,
     generation: u32,
     next_id: u64,
 }
@@ -203,10 +208,11 @@ struct TaskLifecycleRig {
 impl TaskLifecycleRig {
     fn new() -> Self {
         let rig = Rig::new();
+        let repository = initialize_review_repository(&rig.path);
         let mut human = rig.client();
         let workspace = human.call(
             "workspace.create",
-            json!({"name":"Lifecycle","path":rig.path,"idempotencyKey":"lifecycle-workspace"}),
+            json!({"name":"Lifecycle","path":repository,"idempotencyKey":"lifecycle-workspace"}),
         )["workspace"]["workspaceId"]
             .as_str()
             .unwrap()
@@ -223,6 +229,7 @@ impl TaskLifecycleRig {
             executor,
             workspace,
             pane,
+            repository,
             generation,
             next_id: 10,
         }
@@ -236,7 +243,13 @@ impl TaskLifecycleRig {
                 "idempotencyKey":format!("create-{key}")
             }),
         );
-        reserve_task(&self.rig, &self.workspace, &self.pane, key)
+        let task = reserve_task(&self.rig, &self.workspace, &self.pane, key);
+        fs::write(
+            self.repository.join("src/lib.rs"),
+            "pub fn calculate(value: u32) -> u32 {\n    value + 2\n}\n",
+        )
+        .unwrap();
+        task
     }
 
     fn executor_request(&mut self, method: &str, task: &Task, fields: Value, key: &str) -> Value {
@@ -255,6 +268,87 @@ impl TaskLifecycleRig {
             Value::Object(params),
         )
     }
+
+    fn wait_task_state(&mut self, task: &str, state: &str) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let shown = self.human.call(
+                "task.show",
+                json!({"workspaceId":self.workspace,"taskId":task}),
+            );
+            if shown["task"]["state"] == state {
+                return shown;
+            }
+            assert!(Instant::now() < deadline, "expected task {state}: {shown}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn review(&self, task: &Task) -> TaskReviewRecord<Value> {
+        Store::open(&self.rig.path)
+            .unwrap()
+            .task_review(&self.workspace, &task.task_id, task.current_attempt)
+            .unwrap()
+            .unwrap()
+    }
+
+    fn wait_review_stage(&self, task: &Task, stage: ReviewStage) -> TaskReviewRecord<Value> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let review = self.review(task);
+            if review.stage == stage {
+                return review;
+            }
+            assert!(Instant::now() < deadline, "expected review stage {stage:?}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn reconnect_executor(&mut self) {
+        let binding = self.rig.database_probe().agent_binding(&self.pane).unwrap();
+        let (executor, welcome) = binding_hello(&self.rig.path.join("engine.sock"), &binding);
+        assert_eq!(welcome["result"]["role"], "agent");
+        self.executor = executor;
+        self.generation = self.human.pane(&self.pane)["generation"].as_u64().unwrap() as u32;
+    }
+}
+
+fn initialize_review_repository(root: &std::path::Path) -> PathBuf {
+    let repository = root.join("repository");
+    fs::create_dir_all(repository.join("src")).unwrap();
+    let run = |arguments: &[&str]| {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(&repository)
+            .args(arguments)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    run(&["init", "-b", "main"]);
+    fs::write(
+        repository.join("src/lib.rs"),
+        "pub fn calculate(value: u32) -> u32 {\n    value + 1\n}\n",
+    )
+    .unwrap();
+    run(&["add", "."]);
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(&repository)
+        .args([
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "baseline",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    run(&["switch", "-c", "task/test"]);
+    repository
 }
 impl Drop for Rig {
     fn drop(&mut self) {
@@ -2132,11 +2226,26 @@ fn active_executor_blocks_requests_review_and_completes_one_durable_attempt() {
     let fields = json!({"summary":"Done","contractChanges":[],"outOfScopeEdits":[]});
     let completed =
         lifecycle.executor_request("task.complete", &review_task, fields.clone(), "complete");
-    assert_eq!(completed["result"]["task"]["state"], "completed");
-    assert!(completed["result"]["task"]["ownerPaneId"].is_null());
+    assert_eq!(completed["result"]["task"]["state"], "in_review");
+    let shown = lifecycle.wait_task_state(&task.task_id, "completed");
+    assert!(shown["task"]["ownerPaneId"].is_null());
     let repeated = lifecycle.executor_request("task.complete", &review_task, fields, "complete");
     assert_eq!(repeated["result"], completed["result"]);
     let store = Store::open(&lifecycle.rig.path).unwrap();
+    let review: TaskReviewRecord<Value> = store
+        .task_review(&lifecycle.workspace, &task.task_id, task.current_attempt)
+        .unwrap()
+        .unwrap();
+    assert_eq!(review.stage, ReviewStage::Resolved);
+    assert_eq!(review.payload["decision"]["approved"], true);
+    let reviewer = lifecycle.human.wait_state(&review.reviewer_pane_id, "idle");
+    let session = reviewer["agent"]["sessionId"].as_str().unwrap();
+    assert!(
+        lifecycle.rig.native_session(session)["mcp_servers"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     let attempts = store
         .task_attempts(&lifecycle.workspace, &task.task_id)
         .unwrap();
@@ -2153,6 +2262,160 @@ fn active_executor_blocks_requests_review_and_completes_one_durable_attempt() {
             .len(),
         2
     );
+}
+
+#[test]
+fn undeclared_contract_drift_returns_the_same_attempt_with_a_review_prompt() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Return drift", "reserve-drift");
+    fs::write(
+        lifecycle.repository.join("src/lib.rs"),
+        "pub fn calculate(value: Option<u32>) -> u32 {\n    value.unwrap_or_default()\n}\n",
+    )
+    .unwrap();
+    let review = lifecycle.executor_request(
+        "task.request_review",
+        &task,
+        json!({"reason":"Ready"}),
+        "request-drift-review",
+    );
+    let review_task: Task = serde_json::from_value(review["result"]["task"].clone()).unwrap();
+    lifecycle.executor_request(
+        "task.complete",
+        &review_task,
+        json!({"summary":"Candidate","contractChanges":[],"outOfScopeEdits":[]}),
+        "propose-drift-completion",
+    );
+
+    let shown = lifecycle.wait_task_state(&task.task_id, "in_progress");
+    assert_eq!(shown["task"]["ownerPaneId"], lifecycle.pane);
+    assert_eq!(shown["task"]["reviewBadge"], "your_turn");
+    assert_eq!(shown["task"]["phrase"], "review requested changes");
+    assert_eq!(shown["task"]["summary"], "Candidate");
+    let store = Store::open(&lifecycle.rig.path).unwrap();
+    let attempts = store
+        .task_attempts(&lifecycle.workspace, &task.task_id)
+        .unwrap();
+    assert_eq!(attempts.len(), 1);
+    assert!(attempts[0].end.is_none());
+    assert!(attempts[0].result.is_none());
+    let comments = store
+        .task_comments(&lifecycle.workspace, &task.task_id, None, 10)
+        .unwrap();
+    assert_eq!(comments.len(), 1);
+    assert!(comments[0].text.contains("silent_fallback"));
+    assert!(comments[0].text.contains("returned:"));
+    let review: TaskReviewRecord<Value> = store
+        .task_review(&lifecycle.workspace, &task.task_id, task.current_attempt)
+        .unwrap()
+        .unwrap();
+    assert_eq!(review.stage, ReviewStage::Resolved);
+    assert_eq!(review.payload["decision"]["approved"], false);
+    let transcript_or_queue = soyeht_store::agents::queue(&store, &lifecycle.pane)
+        .unwrap()
+        .iter()
+        .any(|item| item.text.contains("silent_fallback"))
+        || soyeht_store::agents::transcript(&store, &lifecycle.pane, None, 200)
+            .unwrap()
+            .items
+            .iter()
+            .any(|item| item.text.contains("silent_fallback"));
+    assert!(transcript_or_queue);
+    drop(store);
+
+    lifecycle.human.wait_state(&lifecycle.pane, "idle");
+    fs::write(
+        lifecycle.repository.join("src/lib.rs"),
+        "pub fn calculate(value: u32) -> u32 {\n    value + 3\n}\n",
+    )
+    .unwrap();
+    let returned: Task = serde_json::from_value(shown["task"].clone()).unwrap();
+    let second = lifecycle.executor_request(
+        "task.request_review",
+        &returned,
+        json!({"reason":"Corrected"}),
+        "request-corrected-review",
+    );
+    let second: Task = serde_json::from_value(second["result"]["task"].clone()).unwrap();
+    lifecycle.executor_request(
+        "task.complete",
+        &second,
+        json!({"summary":"Corrected","contractChanges":[],"outOfScopeEdits":[]}),
+        "propose-corrected-completion",
+    );
+    let completed = lifecycle.wait_task_state(&task.task_id, "completed");
+    assert_eq!(completed["task"]["summary"], "Corrected");
+    assert!(lifecycle.review(&task).version >= 7);
+}
+
+#[test]
+fn review_proposal_and_reviewer_turn_survive_an_engine_restart() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Restart review", "reserve-restart-review");
+    let review = lifecycle.executor_request(
+        "task.request_review",
+        &task,
+        json!({"reason":"Ready"}),
+        "request-restart-review",
+    );
+    let review_task: Task = serde_json::from_value(review["result"]["task"].clone()).unwrap();
+    lifecycle.executor_request(
+        "task.complete",
+        &review_task,
+        json!({"summary":"Restart-safe","contractChanges":[],"outOfScopeEdits":[]}),
+        "propose-before-restart",
+    );
+    let durable = lifecycle.review(&task);
+    assert_eq!(durable.payload["completion"]["summary"], "Restart-safe");
+    lifecycle.rig.kill_engine();
+    lifecycle.rig.start();
+    lifecycle.human = lifecycle.rig.client();
+
+    let shown = lifecycle.wait_task_state(&task.task_id, "completed");
+    assert_eq!(shown["task"]["summary"], "Restart-safe");
+    let review = lifecycle.wait_review_stage(&task, ReviewStage::Resolved);
+    assert_eq!(review.payload["decision"]["approved"], true);
+    assert_eq!(
+        Store::open(&lifecycle.rig.path)
+            .unwrap()
+            .task_attempts(&lifecycle.workspace, &task.task_id)
+            .unwrap()[0]
+            .result,
+        Some(soyeht_protocol::AttemptResult::Completed)
+    );
+}
+
+#[test]
+fn reviewer_findings_resolve_after_completion_arrives_through_a_restarted_engine() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Findings first", "reserve-findings-first");
+    let review = lifecycle.executor_request(
+        "task.request_review",
+        &task,
+        json!({"reason":"Ready"}),
+        "request-findings-first",
+    );
+    let review_task: Task = serde_json::from_value(review["result"]["task"].clone()).unwrap();
+    let classified = lifecycle.wait_review_stage(&task, ReviewStage::Classified);
+    assert_eq!(classified.payload["completion"], Value::Null);
+    assert_eq!(classified.payload["findings"][0]["label"], "equivalent");
+
+    lifecycle.rig.kill_engine();
+    lifecycle.rig.start();
+    lifecycle.human = lifecycle.rig.client();
+    lifecycle.reconnect_executor();
+    let proposed = lifecycle.executor_request(
+        "task.complete",
+        &review_task,
+        json!({"summary":"Findings survived","contractChanges":[],"outOfScopeEdits":[]}),
+        "complete-after-findings-restart",
+    );
+    assert_eq!(proposed["result"]["task"]["state"], "in_review");
+
+    let shown = lifecycle.wait_task_state(&task.task_id, "completed");
+    assert_eq!(shown["task"]["summary"], "Findings survived");
+    let resolved = lifecycle.wait_review_stage(&task, ReviewStage::Resolved);
+    assert_eq!(resolved.payload["decision"]["approved"], true);
 }
 
 #[test]
