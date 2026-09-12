@@ -96,6 +96,10 @@ struct TaskWorkspaceView: View {
       TaskToolbarLabel(
         "Priority", icon: "arrow.up.arrow.down", trailingIcon: "chevron.down"
       ).accessibilityHidden(true)
+      if mode == .list {
+        TaskToolbarLabel("Group: state", icon: "rectangle.3.group", trailingIcon: "chevron.down")
+          .accessibilityHidden(true)
+      }
       Spacer()
       dispatchMenu
       Button {
@@ -367,29 +371,29 @@ private struct TaskList: View {
   let tasks: [TaskRecord]
   let open: (TaskRecord) -> Void
 
+  private var visibleStates: [TaskState] {
+    var states: [TaskState] = [.in_progress, .in_review, .todo, .completed]
+    if tasks.contains(where: { $0.state == .cancelled }) { states.append(.cancelled) }
+    return states
+  }
+
   var body: some View {
-    ScrollView {
-      LazyVStack(spacing: 10) {
-        ForEach(tasks.sorted(by: taskOrder), id: \.taskId) { task in
-          HStack(spacing: 14) {
-            Circle().fill(task.state.color).frame(width: 8, height: 8)
-            Text(task.taskId).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
-              .frame(width: 62, alignment: .leading)
-            VStack(alignment: .leading, spacing: 3) {
-              Text(task.title).font(.system(size: 13, weight: .semibold))
-              Text(task.phrase).font(.system(size: 10)).foregroundStyle(MacTheme.secondary)
+    GeometryReader { geometry in
+      ScrollView([.horizontal, .vertical]) {
+        LazyVStack(alignment: .leading, spacing: 0) {
+          TaskListHeader()
+          Rectangle().fill(MacTheme.well).frame(height: 1)
+          ForEach(visibleStates, id: \.rawValue) { state in
+            let rows = tasks.filter { $0.state == state }.sorted(by: taskOrder)
+            if !rows.isEmpty {
+              TaskListGroup(
+                client: client, state: state, tasks: rows, open: open)
             }
-            Spacer()
-            Text(task.priority.title).font(.system(size: 10, weight: .bold))
-              .foregroundStyle(task.priority.color)
-            Text(task.state.title).font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
-            if task.state == .todo && task.ownerPaneId == nil {
-              Button("Dispatch") { client.dispatchTask(task) }.buttonStyle(.bordered)
-            }
-            Button("Open") { open(task) }.buttonStyle(.bordered)
-          }.padding(13).neoRaised(radius: MacTheme.Radius.control)
-        }
-      }.padding(20)
+          }
+        }.frame(
+          minWidth: max(960, geometry.size.width), minHeight: geometry.size.height,
+          alignment: .topLeading)
+      }.scrollIndicators(.never)
     }
   }
 
@@ -400,6 +404,150 @@ private struct TaskList: View {
     if leftIndex != rightIndex { return leftIndex < rightIndex }
     return left.taskId < right.taskId
   }
+}
+
+private struct TaskListHeader: View {
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x12) {
+      heading("KEY", width: 70)
+      heading("TASK", fill: true)
+      heading("STATE", width: 120)
+      heading("PRIORITY", width: 90)
+      heading("OWNER", width: 120)
+      heading("WORKTREE", width: 90)
+      heading("", width: 40)
+      heading("UPDATED", width: 90)
+    }.padding(EdgeInsets(top: 2, leading: 12, bottom: 6, trailing: 12))
+  }
+
+  private func heading(_ title: String, width: CGFloat? = nil, fill: Bool = false) -> some View {
+    Text(title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold)).tracking(1)
+      .foregroundStyle(MacTheme.muted)
+      .frame(
+        minWidth: fill ? 220 : nil, maxWidth: fill ? .infinity : width,
+        alignment: .leading
+      )
+      .frame(width: fill ? nil : width, alignment: .leading)
+  }
+}
+
+private struct TaskListGroup: View {
+  @Bindable var client: EngineClient
+  let state: TaskState
+  let tasks: [TaskRecord]
+  let open: (TaskRecord) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: MacTheme.Space.x8) {
+        Image(systemName: "chevron.down").font(.system(size: 13, weight: .semibold))
+        Text(state.title.uppercased())
+          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold)).tracking(0.8)
+        Text("\(tasks.count)").font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+          .padding(.horizontal, MacTheme.Space.x7).padding(.vertical, 1)
+          .background(MacTheme.well, in: Capsule())
+      }.foregroundStyle(MacTheme.muted)
+        .padding(EdgeInsets(top: 8, leading: 8, bottom: 3, trailing: 12))
+      ForEach(tasks, id: \.taskId) { task in
+        TaskListRow(
+          task: task, ownerName: ownerName(task), commentCount: commentCount(task), open: open)
+        Rectangle().fill(MacTheme.well).frame(height: 1).padding(.horizontal, 12)
+      }
+    }
+  }
+
+  private func ownerName(_ task: TaskRecord) -> String? {
+    guard let owner = task.ownerPaneId else { return nil }
+    return client.panes.first { $0.paneId == owner }?.name ?? owner
+  }
+
+  private func commentCount(_ task: TaskRecord) -> Int {
+    client.taskDetails[task.taskId]?.comments.count ?? 0
+  }
+}
+
+private struct TaskListRow: View {
+  let task: TaskRecord
+  let ownerName: String?
+  let commentCount: Int
+  let open: (TaskRecord) -> Void
+  @State private var hovered = false
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x12) {
+      Text(task.taskId).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(MacTheme.muted).frame(width: 70, alignment: .leading)
+      VStack(alignment: .leading, spacing: MacTheme.Space.x3) {
+        Text(task.title).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+          .foregroundStyle(MacTheme.ink).lineLimit(1)
+        HStack(spacing: MacTheme.Space.x5) {
+          Circle().fill(task.state.color).frame(width: 5, height: 5)
+          Text(task.phrase)
+            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+            .foregroundStyle(MacTheme.secondary).lineLimit(1)
+        }
+      }.frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+      TaskStateChip(state: task.state).frame(width: 120, alignment: .leading)
+      TaskPriorityChip(priority: task.priority).frame(width: 90, alignment: .leading)
+      TaskOwnerChip(name: ownerName).frame(width: 120, alignment: .leading)
+      Text(task.worktree?.branch ?? "—")
+        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
+        .foregroundStyle(MacTheme.muted).lineLimit(1).frame(width: 90, alignment: .leading)
+      Label("\(commentCount)", systemImage: "message")
+        .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .semibold))
+        .foregroundStyle(MacTheme.muted).frame(width: 40, alignment: .leading)
+      Text("—").font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
+        .foregroundStyle(MacTheme.muted).frame(width: 90, alignment: .leading)
+    }
+    .padding(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
+    .background(hovered ? MacTheme.well : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+    .contentShape(Rectangle()).onTapGesture { open(task) }
+    .onHover { hovered = $0 }
+  }
+}
+
+private struct TaskStateChip: View {
+  let state: TaskState
+
+  var body: some View {
+    Text(state.title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+      .foregroundStyle(state == .in_progress ? MacTheme.onAccent : state.color)
+      .padding(.horizontal, 9).padding(.vertical, 3)
+      .background(
+        state == .in_progress ? MacTheme.accent : state.color.opacity(0.14), in: Capsule())
+  }
+}
+
+private struct TaskPriorityChip: View {
+  let priority: TaskPriority
+
+  var body: some View {
+    Text(priority.title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+      .foregroundStyle(MacTheme.secondary).padding(.horizontal, 8).padding(.vertical, 2)
+      .background(MacTheme.well, in: Capsule())
+  }
+}
+
+private struct TaskOwnerChip: View {
+  let name: String?
+
+  var body: some View {
+    if let name {
+      HStack(spacing: MacTheme.Space.x5) {
+        Circle().fill(MacTheme.ink.opacity(0.75)).frame(width: 6, height: 6)
+        Text(name).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold)).lineLimit(1)
+      }.foregroundStyle(MacTheme.ink).padding(.leading, 6).padding(.trailing, 8)
+        .padding(.vertical, 3).background(taskOwnerColor(name), in: Capsule())
+    } else {
+      Text("—").font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
+    }
+  }
+}
+
+private func taskOwnerColor(_ name: String) -> Color {
+  let colors = [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand]
+  let value = name.utf8.reduce(0) { ($0 + Int($1)) % colors.count }
+  return colors[value]
 }
 
 private struct AttentionPopover: View {
@@ -414,7 +562,8 @@ private struct AttentionPopover: View {
       } else {
         ForEach(items, id: \.attentionId) { item in
           VStack(alignment: .leading, spacing: 8) {
-            Text(item.message).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+            Text(item.message).font(MacTheme.chrome(MacTheme.TypeScale.control))
+              .fixedSize(horizontal: false, vertical: true)
             Button("Go to pane") { openPane(item.paneId) }.buttonStyle(.bordered)
           }.padding(12).neoWell(radius: MacTheme.Radius.compact)
         }
@@ -454,13 +603,14 @@ private struct TaskDetailSheet: View {
   private func detailContent(_ task: TaskRecord) -> some View {
     VStack(alignment: .leading, spacing: 20) {
       VStack(alignment: .leading, spacing: 10) {
-        Text(task.title).font(.system(size: 23, weight: .semibold, design: .rounded))
+        Text(task.title).font(MacTheme.chrome(23, weight: .semibold))
         HStack {
           DetailPill(text: task.state.title, color: task.state.color)
           DetailPill(text: task.priority.title, color: task.priority.color)
           if let badge = task.reviewBadge { DetailPill(text: badge.title, color: badge.color) }
         }
-        Text(task.phrase).font(.system(size: 12)).foregroundStyle(MacTheme.secondary)
+        Text(task.phrase).font(MacTheme.chrome(MacTheme.TypeScale.control))
+          .foregroundStyle(MacTheme.secondary)
       }
       DetailSection(title: "DESCRIPTION", text: task.description)
       DetailSection(title: "MUST NOT CHANGE", text: task.mustNotChange)
@@ -496,10 +646,13 @@ private struct TaskDetailSheet: View {
       ForEach(detail?.attempts ?? [], id: \.n) { attempt in
         VStack(alignment: .leading, spacing: 3) {
           Text("Attempt \(attempt.n) · \(attempt.harness) · \(attempt.model)").font(
-            .system(size: 12, weight: .semibold))
-          Text(attempt.result?.title ?? "active").font(.system(size: 11)).foregroundStyle(
-            MacTheme.secondary)
-          if let value = attempt.summary { Text(value).font(.system(size: 11)) }
+            MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+          Text(attempt.result?.title ?? "active").font(
+            MacTheme.chrome(MacTheme.TypeScale.small)
+          ).foregroundStyle(MacTheme.secondary)
+          if let value = attempt.summary {
+            Text(value).font(MacTheme.chrome(MacTheme.TypeScale.small))
+          }
         }
       }
     }
@@ -539,9 +692,10 @@ private struct TaskDetailSheet: View {
     DetailGroup(title: "COMMENTS") {
       ForEach(detail?.comments ?? [], id: \.commentId) { comment in
         VStack(alignment: .leading, spacing: 3) {
-          Text(comment.author).font(.system(size: 11, weight: .bold))
-          Text(comment.text).font(.system(size: 12)).textSelection(.enabled)
-          Text(comment.at).font(.system(size: 9)).foregroundStyle(MacTheme.secondary)
+          Text(comment.author).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+          Text(comment.text).font(MacTheme.chrome(MacTheme.TypeScale.control))
+            .textSelection(.enabled)
+          Text(comment.at).font(MacTheme.mono(9)).foregroundStyle(MacTheme.secondary)
         }.padding(.vertical, 4)
       }
     }
@@ -551,7 +705,7 @@ private struct TaskDetailSheet: View {
     DetailGroup(title: "HISTORY") {
       ForEach(Array((detail?.history ?? []).enumerated()), id: \.offset) { _, move in
         Text("\(move.actor) · \(move.from.title) → \(move.to.title) · \(move.reason)")
-          .font(.system(size: 11))
+          .font(MacTheme.chrome(MacTheme.TypeScale.small))
       }
     }
   }
@@ -561,7 +715,8 @@ private struct DetailPill: View {
   let text: String
   let color: Color
   var body: some View {
-    Text(text).font(.system(size: 10, weight: .bold)).padding(.horizontal, 9).padding(.vertical, 5)
+    Text(text).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+      .padding(.horizontal, 9).padding(.vertical, 5)
       .background(color.opacity(0.14), in: Capsule()).foregroundStyle(color)
   }
 }
@@ -570,7 +725,9 @@ private struct DetailSection: View {
   let title: String
   let text: String
   var body: some View {
-    DetailGroup(title: title) { Text(text).font(.system(size: 12)).textSelection(.enabled) }
+    DetailGroup(title: title) {
+      Text(text).font(MacTheme.chrome(MacTheme.TypeScale.control)).textSelection(.enabled)
+    }
   }
 }
 
@@ -579,8 +736,8 @@ private struct DetailGroup<Content: View>: View {
   @ViewBuilder let content: Content
   var body: some View {
     VStack(alignment: .leading, spacing: 9) {
-      Text(title).font(.system(size: 10, weight: .bold)).tracking(1.1).foregroundStyle(
-        MacTheme.secondary)
+      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold)).tracking(1.1)
+        .foregroundStyle(MacTheme.secondary)
       content
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -591,9 +748,10 @@ private struct DeclarationList: View {
   let values: [String]
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
-      Text(title).font(.system(size: 11, weight: .semibold))
+      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
       if values.isEmpty {
-        Text("None declared.").font(.system(size: 11)).foregroundStyle(MacTheme.secondary)
+        Text("None declared.").font(MacTheme.chrome(MacTheme.TypeScale.small))
+          .foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(values, id: \.self) { Text($0).font(MacTheme.mono(MacTheme.TypeScale.small)) }
       }
@@ -633,9 +791,9 @@ private struct NewTaskSheet: View {
     VStack(alignment: .leading, spacing: 18) {
       HStack {
         VStack(alignment: .leading, spacing: 3) {
-          Text("New task").font(.system(size: 24, weight: .semibold, design: .rounded))
+          Text("New task").font(MacTheme.chrome(24, weight: .semibold))
           Text("Add it to the workspace list, or create and dispatch it now.")
-            .font(.system(size: 12)).foregroundStyle(MacTheme.secondary)
+            .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
         }
         Spacer()
         Button {
@@ -656,7 +814,7 @@ private struct NewTaskSheet: View {
       }
       HStack {
         Text("⌘↩ creates · ⇧⌘↩ creates and dispatches")
-          .font(.system(size: 10)).foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.chrome(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.secondary)
         Spacer()
         Button("Create in list") { create(dispatch: false) }.buttonStyle(.bordered).disabled(!valid)
           .keyboardShortcut(.return, modifiers: [.command])
@@ -746,8 +904,8 @@ private struct TaskField: View {
   @Binding var text: String
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
-      Text(title).font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(
-        MacTheme.secondary)
+      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold)).tracking(1)
+        .foregroundStyle(MacTheme.secondary)
       TextField("", text: $text).textFieldStyle(.plain).padding(12).neoWell(
         radius: MacTheme.Radius.compact)
     }
@@ -759,8 +917,8 @@ private struct TaskEditor: View {
   @Binding var text: String
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
-      Text(title).font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(
-        MacTheme.secondary)
+      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold)).tracking(1)
+        .foregroundStyle(MacTheme.secondary)
       TextEditor(text: $text).scrollContentBackground(.hidden).frame(minHeight: 74).padding(9)
         .neoWell(radius: MacTheme.Radius.compact)
     }
