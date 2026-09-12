@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 328945c30e743d42d7a6a305d2eebe01f938280d58bbf0f6f84d9742aefecc6f). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8f54e8df331debb2c3a30f4aeddb689e999d43d97f97312d10864fc229a52a6). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -17,7 +17,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "devices" | "capabilities" | "streams";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed";
 
 export interface RpcError {
   "code": number;
@@ -1247,3 +1247,91 @@ export interface Methods {
   "model.list": { params: ModelListParams; result: ModelListResult };
   "pane.queue.resume": { params: PaneQueueResumeParams; result: PaneQueueResumeResult };
 }
+
+export interface Events {
+  "auth.challenge": AuthChallengeEvent;
+  "state.snapshot_part": StateSnapshotPartEvent;
+  "workspace.created": WorkspaceCreatedEvent;
+  "workspace.renamed": WorkspaceRenamedEvent;
+  "workspace.closed": WorkspaceClosedEvent;
+  "pane.created": PaneCreatedEvent;
+  "pane.renamed": PaneRenamedEvent;
+  "pane.closed": PaneClosedEvent;
+  "pane.state_changed": PaneStateChangedEvent;
+  "stream.replay_start": StreamReplayStartEvent;
+  "stream.replay_done": StreamReplayDoneEvent;
+  "stream.gap": StreamGapEvent;
+  "device.pair_requested": DevicePairRequestedEvent;
+  "device.paired": DevicePairedEvent;
+  "device.revoked": DeviceRevokedEvent;
+  "pair.result": PairResultEvent;
+  "engine.updating": EngineUpdatingEvent;
+  "engine.restarted": EngineRestartedEvent;
+  "ptyd.reconnected": PtydReconnectedEvent;
+  "ptyd.lost": PtydLostEvent;
+  "pane.updated": PaneUpdatedEvent;
+  "settings.changed": SettingsChangedEvent;
+  "pane.session_started": PaneSessionStartedEvent;
+  "pane.turn_ended": PaneTurnEndedEvent;
+  "pane.queued": PaneQueuedEvent;
+  "pane.permission_requested": PanePermissionRequestedEvent;
+  "pane.permission_answered": PanePermissionAnsweredEvent;
+  "pane.elicitation_requested": PaneElicitationRequestedEvent;
+  "pane.elicitation_answered": PaneElicitationAnsweredEvent;
+  "pane.config_changing": PaneConfigChangingEvent;
+  "pane.config_changed": PaneConfigChangedEvent;
+  "pane.config_failed": PaneConfigFailedEvent;
+  "pane.session_lost": PaneSessionLostEvent;
+  "pane.needs_login": PaneNeedsLoginEvent;
+  "pane.auth_finished": PaneAuthFinishedEvent;
+  "pane.update": PaneUpdateEvent;
+  "attention.changed": AttentionChangedEvent;
+  "pane.queue.paused": PaneQueueStateEvent;
+  "pane.queue.resumed": PaneQueueStateEvent;
+}
+export type EventName = keyof Events;
+export interface EventDescriptor {
+  paramsType: string;
+  durable: boolean;
+}
+export const eventRegistry = {
+  "auth.challenge": { paramsType: "AuthChallengeEvent", durable: false },
+  "state.snapshot_part": { paramsType: "StateSnapshotPartEvent", durable: false },
+  "workspace.created": { paramsType: "WorkspaceCreatedEvent", durable: true },
+  "workspace.renamed": { paramsType: "WorkspaceRenamedEvent", durable: true },
+  "workspace.closed": { paramsType: "WorkspaceClosedEvent", durable: true },
+  "pane.created": { paramsType: "PaneCreatedEvent", durable: true },
+  "pane.renamed": { paramsType: "PaneRenamedEvent", durable: true },
+  "pane.closed": { paramsType: "PaneClosedEvent", durable: true },
+  "pane.state_changed": { paramsType: "PaneStateChangedEvent", durable: true },
+  "stream.replay_start": { paramsType: "StreamReplayStartEvent", durable: false },
+  "stream.replay_done": { paramsType: "StreamReplayDoneEvent", durable: false },
+  "stream.gap": { paramsType: "StreamGapEvent", durable: false },
+  "device.pair_requested": { paramsType: "DevicePairRequestedEvent", durable: true },
+  "device.paired": { paramsType: "DevicePairedEvent", durable: true },
+  "device.revoked": { paramsType: "DeviceRevokedEvent", durable: true },
+  "pair.result": { paramsType: "PairResultEvent", durable: false },
+  "engine.updating": { paramsType: "EngineUpdatingEvent", durable: true },
+  "engine.restarted": { paramsType: "EngineRestartedEvent", durable: true },
+  "ptyd.reconnected": { paramsType: "PtydReconnectedEvent", durable: true },
+  "ptyd.lost": { paramsType: "PtydLostEvent", durable: true },
+  "pane.updated": { paramsType: "PaneUpdatedEvent", durable: true },
+  "settings.changed": { paramsType: "SettingsChangedEvent", durable: true },
+  "pane.session_started": { paramsType: "PaneSessionStartedEvent", durable: true },
+  "pane.turn_ended": { paramsType: "PaneTurnEndedEvent", durable: true },
+  "pane.queued": { paramsType: "PaneQueuedEvent", durable: true },
+  "pane.permission_requested": { paramsType: "PanePermissionRequestedEvent", durable: true },
+  "pane.permission_answered": { paramsType: "PanePermissionAnsweredEvent", durable: true },
+  "pane.elicitation_requested": { paramsType: "PaneElicitationRequestedEvent", durable: true },
+  "pane.elicitation_answered": { paramsType: "PaneElicitationAnsweredEvent", durable: true },
+  "pane.config_changing": { paramsType: "PaneConfigChangingEvent", durable: true },
+  "pane.config_changed": { paramsType: "PaneConfigChangedEvent", durable: true },
+  "pane.config_failed": { paramsType: "PaneConfigFailedEvent", durable: true },
+  "pane.session_lost": { paramsType: "PaneSessionLostEvent", durable: true },
+  "pane.needs_login": { paramsType: "PaneNeedsLoginEvent", durable: true },
+  "pane.auth_finished": { paramsType: "PaneAuthFinishedEvent", durable: true },
+  "pane.update": { paramsType: "PaneUpdateEvent", durable: true },
+  "attention.changed": { paramsType: "AttentionChangedEvent", durable: true },
+  "pane.queue.paused": { paramsType: "PaneQueueStateEvent", durable: true },
+  "pane.queue.resumed": { paramsType: "PaneQueueStateEvent", durable: true },
+} as const satisfies Record<EventName, EventDescriptor>;

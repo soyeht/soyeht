@@ -76,61 +76,61 @@ extension EngineClient {
     }
   }
 
-  func applyAgentEvent(_ method: String, _ params: JsonValue) throws {
-    switch method {
-    case "pane.update":
+  func applyAgentEvent(_ eventName: EventName, _ params: JsonValue) throws {
+    switch eventName {
+    case .paneUpdate:
       let update = try params.decoded(PaneUpdateEvent.self)
       let (paneId, message) = transcriptMessage(update)
       agentPanes[paneId, default: AgentPaneView()].merge(message)
-    case "pane.permission_requested":
+    case .panePermissionRequested:
       let event = try params.decoded(PanePermissionRequestedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].permission = PermissionRequest(
         requestId: event.requestId, paneId: event.paneId, generation: event.generation,
         promptId: event.promptId, title: event.title, detail: event.detail,
         options: event.options, expiresAt: event.expiresAt)
-    case "pane.permission_answered":
+    case .panePermissionAnswered:
       let event = try params.decoded(PanePermissionAnsweredEvent.self)
       if agentPanes[event.paneId]?.permission?.requestId == event.requestId {
         agentPanes[event.paneId]?.permission = nil
       }
-    case "pane.elicitation_requested":
+    case .paneElicitationRequested:
       let event = try params.decoded(PaneElicitationRequestedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].elicitation = ElicitationRequest(
         requestId: event.requestId, paneId: event.paneId, generation: event.generation,
         promptId: event.promptId, title: event.title, schema: event.schema,
         expiresAt: event.expiresAt)
-    case "pane.elicitation_answered":
+    case .paneElicitationAnswered:
       let event = try params.decoded(PaneElicitationAnsweredEvent.self)
       if agentPanes[event.paneId]?.elicitation?.requestId == event.requestId {
         agentPanes[event.paneId]?.elicitation = nil
       }
-    case "pane.queued":
+    case .paneQueued:
       let event = try params.decoded(PaneQueuedEvent.self)
       if event.paneId == selectedPaneId { refreshAgentQueue(event.paneId) }
-    case "pane.queue.paused", "pane.queue.resumed":
+    case .paneQueuePaused, .paneQueueResumed:
       let event = try params.decoded(PaneQueueStateEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].queuePaused = event.paused
-    case "pane.session_started":
+    case .paneSessionStarted:
       let event = try params.decoded(PaneSessionStartedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = nil
       refreshAgent(event.paneId, replacing: true)
-    case "pane.turn_ended":
+    case .paneTurnEnded:
       let event = try params.decoded(PaneTurnEndedEvent.self)
       refreshAgent(event.paneId, replacing: false)
-    case "pane.session_lost":
+    case .paneSessionLost:
       let event = try params.decoded(PaneSessionLostEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
-    case "pane.needs_login":
+    case .paneNeedsLogin:
       let event = try params.decoded(PaneNeedsLoginEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].authMethods = event.authMethods
-    case "pane.auth_finished":
+    case .paneAuthFinished:
       let event = try params.decoded(PaneAuthFinishedEvent.self)
       if event.ok {
         agentPanes[event.paneId, default: AgentPaneView()].authMethods = []
       } else {
         agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
       }
-    case "pane.config_failed":
+    case .paneConfigFailed:
       let event = try params.decoded(PaneConfigFailedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
     default: break

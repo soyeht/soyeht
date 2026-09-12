@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 328945c30e743d42d7a6a305d2eebe01f938280d58bbf0f6f84d9742aefecc6f). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8f54e8df331debb2c3a30f4aeddb689e999d43d97f97312d10864fc229a52a6). Do not edit.
 import Foundation
 
 
@@ -73,6 +73,7 @@ public enum ErrorKind: String, Codable, Sendable {
     case `stale_engine_generation` = "stale_engine_generation"
     case `internal_error` = "internal_error"
     case `snapshot_too_large` = "snapshot_too_large"
+    case `engine_identity_changed` = "engine_identity_changed"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -2397,3 +2398,96 @@ public struct PaneQueueStateEvent: Codable, Sendable {
         self.`reason` = `reason`
     }
 }
+
+public enum EventName: String, Codable, Sendable, CaseIterable {
+    case authChallenge = "auth.challenge"
+    case stateSnapshotPart = "state.snapshot_part"
+    case workspaceCreated = "workspace.created"
+    case workspaceRenamed = "workspace.renamed"
+    case workspaceClosed = "workspace.closed"
+    case paneCreated = "pane.created"
+    case paneRenamed = "pane.renamed"
+    case paneClosed = "pane.closed"
+    case paneStateChanged = "pane.state_changed"
+    case streamReplayStart = "stream.replay_start"
+    case streamReplayDone = "stream.replay_done"
+    case streamGap = "stream.gap"
+    case devicePairRequested = "device.pair_requested"
+    case devicePaired = "device.paired"
+    case deviceRevoked = "device.revoked"
+    case pairResult = "pair.result"
+    case engineUpdating = "engine.updating"
+    case engineRestarted = "engine.restarted"
+    case ptydReconnected = "ptyd.reconnected"
+    case ptydLost = "ptyd.lost"
+    case paneUpdated = "pane.updated"
+    case settingsChanged = "settings.changed"
+    case paneSessionStarted = "pane.session_started"
+    case paneTurnEnded = "pane.turn_ended"
+    case paneQueued = "pane.queued"
+    case panePermissionRequested = "pane.permission_requested"
+    case panePermissionAnswered = "pane.permission_answered"
+    case paneElicitationRequested = "pane.elicitation_requested"
+    case paneElicitationAnswered = "pane.elicitation_answered"
+    case paneConfigChanging = "pane.config_changing"
+    case paneConfigChanged = "pane.config_changed"
+    case paneConfigFailed = "pane.config_failed"
+    case paneSessionLost = "pane.session_lost"
+    case paneNeedsLogin = "pane.needs_login"
+    case paneAuthFinished = "pane.auth_finished"
+    case paneUpdate = "pane.update"
+    case attentionChanged = "attention.changed"
+    case paneQueuePaused = "pane.queue.paused"
+    case paneQueueResumed = "pane.queue.resumed"
+}
+
+public struct EventDescriptor: Sendable {
+    public let paramsType: String
+    public let durable: Bool
+    public init(paramsType: String, durable: Bool) {
+        self.paramsType = paramsType
+        self.durable = durable
+    }
+}
+
+public let eventRegistry: [EventName: EventDescriptor] = [
+    .authChallenge: EventDescriptor(paramsType: "AuthChallengeEvent", durable: false),
+    .stateSnapshotPart: EventDescriptor(paramsType: "StateSnapshotPartEvent", durable: false),
+    .workspaceCreated: EventDescriptor(paramsType: "WorkspaceCreatedEvent", durable: true),
+    .workspaceRenamed: EventDescriptor(paramsType: "WorkspaceRenamedEvent", durable: true),
+    .workspaceClosed: EventDescriptor(paramsType: "WorkspaceClosedEvent", durable: true),
+    .paneCreated: EventDescriptor(paramsType: "PaneCreatedEvent", durable: true),
+    .paneRenamed: EventDescriptor(paramsType: "PaneRenamedEvent", durable: true),
+    .paneClosed: EventDescriptor(paramsType: "PaneClosedEvent", durable: true),
+    .paneStateChanged: EventDescriptor(paramsType: "PaneStateChangedEvent", durable: true),
+    .streamReplayStart: EventDescriptor(paramsType: "StreamReplayStartEvent", durable: false),
+    .streamReplayDone: EventDescriptor(paramsType: "StreamReplayDoneEvent", durable: false),
+    .streamGap: EventDescriptor(paramsType: "StreamGapEvent", durable: false),
+    .devicePairRequested: EventDescriptor(paramsType: "DevicePairRequestedEvent", durable: true),
+    .devicePaired: EventDescriptor(paramsType: "DevicePairedEvent", durable: true),
+    .deviceRevoked: EventDescriptor(paramsType: "DeviceRevokedEvent", durable: true),
+    .pairResult: EventDescriptor(paramsType: "PairResultEvent", durable: false),
+    .engineUpdating: EventDescriptor(paramsType: "EngineUpdatingEvent", durable: true),
+    .engineRestarted: EventDescriptor(paramsType: "EngineRestartedEvent", durable: true),
+    .ptydReconnected: EventDescriptor(paramsType: "PtydReconnectedEvent", durable: true),
+    .ptydLost: EventDescriptor(paramsType: "PtydLostEvent", durable: true),
+    .paneUpdated: EventDescriptor(paramsType: "PaneUpdatedEvent", durable: true),
+    .settingsChanged: EventDescriptor(paramsType: "SettingsChangedEvent", durable: true),
+    .paneSessionStarted: EventDescriptor(paramsType: "PaneSessionStartedEvent", durable: true),
+    .paneTurnEnded: EventDescriptor(paramsType: "PaneTurnEndedEvent", durable: true),
+    .paneQueued: EventDescriptor(paramsType: "PaneQueuedEvent", durable: true),
+    .panePermissionRequested: EventDescriptor(paramsType: "PanePermissionRequestedEvent", durable: true),
+    .panePermissionAnswered: EventDescriptor(paramsType: "PanePermissionAnsweredEvent", durable: true),
+    .paneElicitationRequested: EventDescriptor(paramsType: "PaneElicitationRequestedEvent", durable: true),
+    .paneElicitationAnswered: EventDescriptor(paramsType: "PaneElicitationAnsweredEvent", durable: true),
+    .paneConfigChanging: EventDescriptor(paramsType: "PaneConfigChangingEvent", durable: true),
+    .paneConfigChanged: EventDescriptor(paramsType: "PaneConfigChangedEvent", durable: true),
+    .paneConfigFailed: EventDescriptor(paramsType: "PaneConfigFailedEvent", durable: true),
+    .paneSessionLost: EventDescriptor(paramsType: "PaneSessionLostEvent", durable: true),
+    .paneNeedsLogin: EventDescriptor(paramsType: "PaneNeedsLoginEvent", durable: true),
+    .paneAuthFinished: EventDescriptor(paramsType: "PaneAuthFinishedEvent", durable: true),
+    .paneUpdate: EventDescriptor(paramsType: "PaneUpdateEvent", durable: true),
+    .attentionChanged: EventDescriptor(paramsType: "AttentionChangedEvent", durable: true),
+    .paneQueuePaused: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),
+    .paneQueueResumed: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),
+]

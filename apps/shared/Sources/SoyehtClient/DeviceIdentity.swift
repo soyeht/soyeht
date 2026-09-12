@@ -64,7 +64,7 @@ public struct DeviceCredential: Codable, Sendable {
       nonce.count == 32
     else {
       throw ClientFailure.remote(
-        "engine_identity_changed", "The Mac identity changed. Pair again.")
+        ErrorKind.engine_identity_changed.rawValue, "The Mac identity changed. Pair again.")
     }
     let key = try Curve25519.Signing.PrivateKey(rawRepresentation: key)
     let bytes = Data("soyeht-hello-v1".utf8) + nonce + Data(engineId.utf8) + Data(token.utf8)

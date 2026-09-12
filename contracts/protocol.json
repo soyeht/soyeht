@@ -94,7 +94,8 @@
         "ptyd_unavailable",
         "stale_engine_generation",
         "internal_error",
-        "snapshot_too_large"
+        "snapshot_too_large",
+        "engine_identity_changed"
       ]
     },
     "RpcError": {
@@ -4985,6 +4986,7 @@
     "ptyd_unavailable": -32016,
     "stale_engine_generation": -32017,
     "internal_error": -32018,
-    "snapshot_too_large": -32019
+    "snapshot_too_large": -32019,
+    "engine_identity_changed": -32020
   }
 }

@@ -9,7 +9,7 @@ import Testing
   let paneId = "pane-agent"
   func update(text: String, complete: Bool) throws {
     try client.applyAgentEvent(
-      "pane.update",
+      .paneUpdate,
       .encoded(
         PaneUpdateEvent.v0(
           AgentMessageUpdate(
@@ -26,7 +26,7 @@ import Testing
 
   let option = PermissionOption(optionId: "allow", kind: .allow_once, name: "Allow")
   try client.applyAgentEvent(
-    "pane.permission_requested",
+    .panePermissionRequested,
     .encoded(
       PanePermissionRequestedEvent(
         eventId: "2", at: "2026-09-11T00:00:01Z", paneId: paneId,
@@ -36,7 +36,7 @@ import Testing
   #expect(client.agentPanes[paneId]?.permission?.requestId == "request-1")
 
   try client.applyAgentEvent(
-    "pane.queue.paused",
+    .paneQueuePaused,
     .encoded(
       PaneQueueStateEvent(
         eventId: "3", at: "2026-09-11T00:00:02Z", paneId: paneId, paused: true,

@@ -59,7 +59,9 @@ public final class EngineClient {
         do { try await self.session() } catch {
           self.connectionText = error.localizedDescription
           if case ClientFailure.remote(let kind, _) = error,
-            self.readOnly && ["unauthorized", "engine_identity_changed"].contains(kind)
+            self.readOnly
+              && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
+                .contains(kind)
           {
             self.credentialRejected = true
             self.disconnect()
@@ -235,7 +237,7 @@ public final class EngineClient {
     }
     if message["id"] == .null, message["error"] != .null {
       throw ClientFailure.remote(
-        message["error"]["data"]["kind"].string ?? "internal_error",
+        message["error"]["data"]["kind"].string ?? ErrorKind.internal_error.rawValue,
         message["error"]["message"].string ?? "Connection closed")
     }
     guard let method = message["method"].string else { return }
@@ -245,9 +247,10 @@ public final class EngineClient {
       if next <= cursor { return }
       cursor = next
     }
-    switch method {
-    case "state.snapshot_part": try snapshot.append(params.decoded(StateSnapshotPartEvent.self))
-    case "pane.created", "pane.updated", "pane.renamed":
+    guard let eventName = EventName(rawValue: method) else { return }
+    switch eventName {
+    case .stateSnapshotPart: try snapshot.append(params.decoded(StateSnapshotPartEvent.self))
+    case .paneCreated, .paneUpdated, .paneRenamed:
       let pane = try params["pane"].decoded(Pane.self)
       panes.removeAll { $0.paneId == pane.paneId }
       panes.append(pane)
@@ -256,12 +259,12 @@ public final class EngineClient {
         view.queuePaused = pane.agent?.queuePaused ?? false
         agentPanes[pane.paneId] = view
       }
-    case "pane.closed":
+    case .paneClosed:
       let id = params["paneId"].string
       panes.removeAll { $0.paneId == id }
       if let id { agentPanes.removeValue(forKey: id) }
       if selectedPaneId == id { select(panes.first?.paneId) }
-    case "pane.state_changed":
+    case .paneStateChanged:
       let event = try params.decoded(PaneStateChangedEvent.self)
       if let index = panes.firstIndex(where: { $0.paneId == event.paneId }) {
         panes[index].state = event.state
@@ -269,37 +272,45 @@ public final class EngineClient {
         panes[index].confidence = event.confidence
         panes[index].phrase = event.phrase
       }
-    case "workspace.created", "workspace.renamed":
+    case .workspaceCreated, .workspaceRenamed:
       let workspace = try params["workspace"].decoded(Workspace.self)
       workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
       workspaces.append(workspace)
-    case "workspace.closed": workspaces.removeAll { $0.workspaceId == params["workspaceId"].string }
-    case "stream.replay_start":
+    case .workspaceClosed: workspaces.removeAll { $0.workspaceId == params["workspaceId"].string }
+    case .streamReplayStart:
       guard params["streamId"].string == position?.streamId else { return }
       if try position?.start(params.decoded(StreamReplayStartEvent.self)) == true {
         gapText = nil
         terminalOutput?(Data(), true)
       }
-    case "stream.gap":
+    case .streamGap:
       guard params["streamId"].string == position?.streamId else { return }
       try position?.gap(params.decoded(StreamGapEvent.self))
       gapText = "Some output was not recorded. The screen contains a gap."
-    case "stream.replay_done":
+    case .streamReplayDone:
       guard params["streamId"].string == position?.streamId else { return }
       guard params["nextOffset"].string == position?.next.map(String.init) else {
         throw ClientFailure.invalidStream
       }
-    case "device.pair_requested":
+    case .devicePairRequested:
       let event = try params.decoded(DevicePairRequestedEvent.self)
       pairRequests.removeAll { $0.requestId == event.requestId }
       pairRequests.append(PairPrompt(event))
-    case "device.paired":
+    case .devicePaired:
       let device = try params["device"].decoded(Device.self)
       pairRequests.removeAll { $0.fingerprint == device.fingerprint }
       devices.removeAll { $0.deviceId == device.deviceId }
       if !device.revoked { devices.append(device) }
-    case "device.revoked": devices.removeAll { $0.deviceId == params["deviceId"].string }
-    default: try applyAgentEvent(method, params)
+    case .deviceRevoked: devices.removeAll { $0.deviceId == params["deviceId"].string }
+    case .paneUpdate, .panePermissionRequested, .panePermissionAnswered,
+      .paneElicitationRequested, .paneElicitationAnswered, .paneQueued,
+      .paneQueuePaused, .paneQueueResumed, .paneSessionStarted, .paneTurnEnded,
+      .paneSessionLost, .paneNeedsLogin, .paneAuthFinished, .paneConfigFailed:
+      try applyAgentEvent(eventName, params)
+    case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
+      .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
+      .paneConfigChanged, .attentionChanged:
+      break
     }
   }
   private func applySnapshot(_ value: JsonValue) throws {

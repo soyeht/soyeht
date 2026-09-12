@@ -23,6 +23,11 @@ def variant(value):
     return "V" + name if name[0].isdigit() else name
 
 
+def lower_camel(value):
+    name = variant(value)
+    return name[:1].lower() + name[1:]
+
+
 def type_name(schema, lang):
     if "$ref" in schema:
         return schema["$ref"].split("/")[-1]
@@ -130,6 +135,95 @@ def registry_rust(schema):
     return "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"method\", content = \"params\")]\npub enum Request {\n" + "\n".join(cases) + "\n}\npub const METHODS: &[(&str, &str, &str, bool)] = &[\n" + "\n".join(rows) + "\n];"
 
 
+def event_registry_rust(schema):
+    cases = []
+    names = []
+    rows = []
+    for name, event in schema["x-events"].items():
+        case = variant(name)
+        params = type_name(event["params"], "rust")
+        durable = str(event["durable"]).lower()
+        cases.append(f'    #[serde(rename = "{name}")]\n    {case},')
+        names.append(f'            Self::{case} => "{name}",')
+        rows.append(
+            "    EventDescriptor { "
+            f"name: EventName::{case}, params_type: \"{params}\", durable: {durable} "
+            "},"
+        )
+    return f"""#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum EventName {{
+{chr(10).join(cases)}
+}}
+impl EventName {{
+    pub const fn as_str(self) -> &'static str {{
+        match self {{
+{chr(10).join(names)}
+        }}
+    }}
+}}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventDescriptor {{
+    pub name: EventName,
+    pub params_type: &'static str,
+    pub durable: bool,
+}}
+pub const EVENTS: &[EventDescriptor] = &[
+{chr(10).join(rows)}
+];"""
+
+
+def event_registry_swift(schema):
+    cases = []
+    rows = []
+    for name, event in schema["x-events"].items():
+        case = lower_camel(name)
+        params = type_name(event["params"], "swift")
+        durable = str(event["durable"]).lower()
+        cases.append(f'    case {case} = "{name}"')
+        rows.append(
+            f'    .{case}: EventDescriptor(paramsType: "{params}", durable: {durable}),'
+        )
+    return f"""public enum EventName: String, Codable, Sendable, CaseIterable {{
+{chr(10).join(cases)}
+}}
+
+public struct EventDescriptor: Sendable {{
+    public let paramsType: String
+    public let durable: Bool
+    public init(paramsType: String, durable: Bool) {{
+        self.paramsType = paramsType
+        self.durable = durable
+    }}
+}}
+
+public let eventRegistry: [EventName: EventDescriptor] = [
+{chr(10).join(rows)}
+]"""
+
+
+def event_registry_ts(schema):
+    types = []
+    rows = []
+    for name, event in schema["x-events"].items():
+        params = type_name(event["params"], "ts")
+        durable = str(event["durable"]).lower()
+        types.append(f'  "{name}": {params};')
+        rows.append(
+            f'  "{name}": {{ paramsType: "{params}", durable: {durable} }},'
+        )
+    return f"""export interface Events {{
+{chr(10).join(types)}
+}}
+export type EventName = keyof Events;
+export interface EventDescriptor {{
+  paramsType: string;
+  durable: boolean;
+}}
+export const eventRegistry = {{
+{chr(10).join(rows)}
+}} as const satisfies Record<EventName, EventDescriptor>;"""
+
+
 def validate_schema(schema):
     allowed = {"$ref", "type", "properties", "required", "additionalProperties",
                "enum", "oneOf", "items", "minimum", "maximum", "minLength",
@@ -161,6 +255,34 @@ def validate_schema(schema):
     for method in schema["x-methods"].values():
         visit(method["params"])
         visit(method["result"])
+    event_cases = []
+    for name, event in schema["x-events"].items():
+        if set(event) != {"params", "durable"} or type(event["durable"]) is not bool:
+            raise ValueError("Event must have params and a boolean durable flag")
+        if not re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+", name):
+            raise ValueError("Invalid event name")
+        visit(event["params"])
+        event_cases.append(variant(name))
+    if len(event_cases) != len(set(event_cases)):
+        raise ValueError("Event names collide after identifier generation")
+
+    error_kinds = schema["$defs"]["ErrorKind"].get("enum", [])
+    error_codes = schema["x-errorCodes"]
+    if list(error_codes) != error_kinds:
+        raise ValueError("ErrorKind and x-errorCodes must have the same ordered names")
+    if any(type(code) is not int for code in error_codes.values()):
+        raise ValueError("Error codes must be integers")
+    if len(set(error_codes.values())) != len(error_codes):
+        raise ValueError("Error codes must be unique")
+
+    model_source = schema["$defs"].get("ModelListSource", {})
+    model_result_source = schema["$defs"].get("ModelListResult", {}).get(
+        "properties", {}
+    ).get("source")
+    if not model_source.get("enum") or model_result_source != {
+        "$ref": "#/$defs/ModelListSource"
+    }:
+        raise ValueError("ModelListResult.source must use the closed ModelListSource enum")
 
 
 def validate_profiles(document):
@@ -294,14 +416,19 @@ def render(schema, digest):
     outputs = {}
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
     header = f"// Generated from contracts/protocol.json (sha256 {digest}). Do not edit.\n"
-    rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items()) + "\n" + registry_rust(schema) + "\n"
+    rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items())
+    rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n"
     rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items()) + "\n    }\n}\n"
     # Formatting in memory keeps --check read-only and identical across invocations.
     rust = subprocess.run(["rustfmt", "--edition", "2024"], input=rust, text=True, capture_output=True, check=True).stdout
     outputs["engine/soyeht-protocol/src/generated.rs"] = rust
-    outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"] = header + "import Foundation\n\n" + "\n\n".join(swift_definition(n, s) for n, s in schema["$defs"].items()) + "\n"
+    swift = header + "import Foundation\n\n"
+    swift += "\n\n".join(swift_definition(n, s) for n, s in schema["$defs"].items())
+    swift += "\n\n" + event_registry_swift(schema) + "\n"
+    outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"] = swift
     ts = header + "\n\n".join(ts_definition(n, s) for n, s in schema["$defs"].items())
     ts += "\n\nexport interface Methods {\n" + "\n".join(f'  "{n}": {{ params: {type_name(m["params"], "ts")}; result: {type_name(m["result"], "ts")} }};' for n, m in schema["x-methods"].items()) + "\n}\n"
+    ts += "\n" + event_registry_ts(schema) + "\n"
     outputs["contracts/typescript/src/generated.ts"] = ts
     constants = header + f'pub const PROTOCOL_VERSION: u32 = {schema["x-protocolVersion"]};\n'
     constants += "\n".join(f"pub const {snake(k).upper()}: usize = {v};" for k, v in schema["x-limits"].items()) + "\n"

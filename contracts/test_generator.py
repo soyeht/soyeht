@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from generate import validate_profiles, validate_schema
+from generate import lower_camel, render, validate_profiles, validate_schema, variant
 
 ROOT = Path(__file__).resolve().parent
 
@@ -34,6 +34,59 @@ class SchemaTests(unittest.TestCase):
             if method["mutation"]:
                 definition = self.schema["$defs"][method["params"]["$ref"].split("/")[-1]]
                 self.assertIn("idempotencyKey", definition["required"], name)
+
+    def test_event_registry_is_generated_for_every_language(self):
+        outputs = render(self.schema, "test-digest")
+        rust = outputs["engine/soyeht-protocol/src/generated.rs"]
+        swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]
+        typescript = outputs["contracts/typescript/src/generated.ts"]
+        for name, event in self.schema["x-events"].items():
+            params = event["params"]["$ref"].split("/")[-1]
+            durable = str(event["durable"]).lower()
+            with self.subTest(language="rust", event=name):
+                self.assertRegex(
+                    rust,
+                    rf"name: EventName::{variant(name)},\n\s+"
+                    rf'params_type: "{params}",\n\s+durable: {durable}',
+                )
+            with self.subTest(language="swift", event=name):
+                self.assertIn(
+                    f'.{lower_camel(name)}: EventDescriptor('
+                    f'paramsType: "{params}", durable: {durable})',
+                    swift,
+                )
+            with self.subTest(language="typescript", event=name):
+                self.assertIn(
+                    f'"{name}": {{ paramsType: "{params}", durable: {durable} }}',
+                    typescript,
+                )
+
+    def test_event_and_error_registries_fail_closed(self):
+        changes = []
+        invalid_durable = copy.deepcopy(self.schema)
+        invalid_durable["x-events"]["pane.created"]["durable"] = "true"
+        changes.append(("durable", invalid_durable))
+        missing_event_type = copy.deepcopy(self.schema)
+        missing_event_type["x-events"]["pane.created"]["params"] = {
+            "$ref": "#/$defs/Missing"
+        }
+        changes.append(("event type", missing_event_type))
+        missing_error_code = copy.deepcopy(self.schema)
+        del missing_error_code["x-errorCodes"]["not_found"]
+        changes.append(("missing error", missing_error_code))
+        duplicate_error_code = copy.deepcopy(self.schema)
+        duplicate_error_code["x-errorCodes"]["invalid_params"] = -32000
+        changes.append(("duplicate code", duplicate_error_code))
+        for label, changed in changes:
+            with self.subTest(change=label), self.assertRaises(ValueError):
+                validate_schema(changed)
+
+    def test_model_list_source_is_closed(self):
+        validate_schema(self.schema)
+        changed = copy.deepcopy(self.schema)
+        del changed["$defs"]["ModelListSource"]["enum"]
+        with self.assertRaises(ValueError):
+            validate_schema(changed)
 
 
 class ProfileTests(unittest.TestCase):

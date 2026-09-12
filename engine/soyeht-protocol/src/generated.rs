@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 328945c30e743d42d7a6a305d2eebe01f938280d58bbf0f6f84d9742aefecc6f). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8f54e8df331debb2c3a30f4aeddb689e999d43d97f97312d10864fc229a52a6). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -116,6 +116,8 @@ pub enum ErrorKind {
     InternalError,
     #[serde(rename = "snapshot_too_large")]
     SnapshotTooLarge,
+    #[serde(rename = "engine_identity_changed")]
+    EngineIdentityChanged,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -2358,6 +2360,335 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
 ];
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum EventName {
+    #[serde(rename = "auth.challenge")]
+    AuthChallenge,
+    #[serde(rename = "state.snapshot_part")]
+    StateSnapshotPart,
+    #[serde(rename = "workspace.created")]
+    WorkspaceCreated,
+    #[serde(rename = "workspace.renamed")]
+    WorkspaceRenamed,
+    #[serde(rename = "workspace.closed")]
+    WorkspaceClosed,
+    #[serde(rename = "pane.created")]
+    PaneCreated,
+    #[serde(rename = "pane.renamed")]
+    PaneRenamed,
+    #[serde(rename = "pane.closed")]
+    PaneClosed,
+    #[serde(rename = "pane.state_changed")]
+    PaneStateChanged,
+    #[serde(rename = "stream.replay_start")]
+    StreamReplayStart,
+    #[serde(rename = "stream.replay_done")]
+    StreamReplayDone,
+    #[serde(rename = "stream.gap")]
+    StreamGap,
+    #[serde(rename = "device.pair_requested")]
+    DevicePairRequested,
+    #[serde(rename = "device.paired")]
+    DevicePaired,
+    #[serde(rename = "device.revoked")]
+    DeviceRevoked,
+    #[serde(rename = "pair.result")]
+    PairResult,
+    #[serde(rename = "engine.updating")]
+    EngineUpdating,
+    #[serde(rename = "engine.restarted")]
+    EngineRestarted,
+    #[serde(rename = "ptyd.reconnected")]
+    PtydReconnected,
+    #[serde(rename = "ptyd.lost")]
+    PtydLost,
+    #[serde(rename = "pane.updated")]
+    PaneUpdated,
+    #[serde(rename = "settings.changed")]
+    SettingsChanged,
+    #[serde(rename = "pane.session_started")]
+    PaneSessionStarted,
+    #[serde(rename = "pane.turn_ended")]
+    PaneTurnEnded,
+    #[serde(rename = "pane.queued")]
+    PaneQueued,
+    #[serde(rename = "pane.permission_requested")]
+    PanePermissionRequested,
+    #[serde(rename = "pane.permission_answered")]
+    PanePermissionAnswered,
+    #[serde(rename = "pane.elicitation_requested")]
+    PaneElicitationRequested,
+    #[serde(rename = "pane.elicitation_answered")]
+    PaneElicitationAnswered,
+    #[serde(rename = "pane.config_changing")]
+    PaneConfigChanging,
+    #[serde(rename = "pane.config_changed")]
+    PaneConfigChanged,
+    #[serde(rename = "pane.config_failed")]
+    PaneConfigFailed,
+    #[serde(rename = "pane.session_lost")]
+    PaneSessionLost,
+    #[serde(rename = "pane.needs_login")]
+    PaneNeedsLogin,
+    #[serde(rename = "pane.auth_finished")]
+    PaneAuthFinished,
+    #[serde(rename = "pane.update")]
+    PaneUpdate,
+    #[serde(rename = "attention.changed")]
+    AttentionChanged,
+    #[serde(rename = "pane.queue.paused")]
+    PaneQueuePaused,
+    #[serde(rename = "pane.queue.resumed")]
+    PaneQueueResumed,
+}
+impl EventName {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AuthChallenge => "auth.challenge",
+            Self::StateSnapshotPart => "state.snapshot_part",
+            Self::WorkspaceCreated => "workspace.created",
+            Self::WorkspaceRenamed => "workspace.renamed",
+            Self::WorkspaceClosed => "workspace.closed",
+            Self::PaneCreated => "pane.created",
+            Self::PaneRenamed => "pane.renamed",
+            Self::PaneClosed => "pane.closed",
+            Self::PaneStateChanged => "pane.state_changed",
+            Self::StreamReplayStart => "stream.replay_start",
+            Self::StreamReplayDone => "stream.replay_done",
+            Self::StreamGap => "stream.gap",
+            Self::DevicePairRequested => "device.pair_requested",
+            Self::DevicePaired => "device.paired",
+            Self::DeviceRevoked => "device.revoked",
+            Self::PairResult => "pair.result",
+            Self::EngineUpdating => "engine.updating",
+            Self::EngineRestarted => "engine.restarted",
+            Self::PtydReconnected => "ptyd.reconnected",
+            Self::PtydLost => "ptyd.lost",
+            Self::PaneUpdated => "pane.updated",
+            Self::SettingsChanged => "settings.changed",
+            Self::PaneSessionStarted => "pane.session_started",
+            Self::PaneTurnEnded => "pane.turn_ended",
+            Self::PaneQueued => "pane.queued",
+            Self::PanePermissionRequested => "pane.permission_requested",
+            Self::PanePermissionAnswered => "pane.permission_answered",
+            Self::PaneElicitationRequested => "pane.elicitation_requested",
+            Self::PaneElicitationAnswered => "pane.elicitation_answered",
+            Self::PaneConfigChanging => "pane.config_changing",
+            Self::PaneConfigChanged => "pane.config_changed",
+            Self::PaneConfigFailed => "pane.config_failed",
+            Self::PaneSessionLost => "pane.session_lost",
+            Self::PaneNeedsLogin => "pane.needs_login",
+            Self::PaneAuthFinished => "pane.auth_finished",
+            Self::PaneUpdate => "pane.update",
+            Self::AttentionChanged => "attention.changed",
+            Self::PaneQueuePaused => "pane.queue.paused",
+            Self::PaneQueueResumed => "pane.queue.resumed",
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventDescriptor {
+    pub name: EventName,
+    pub params_type: &'static str,
+    pub durable: bool,
+}
+pub const EVENTS: &[EventDescriptor] = &[
+    EventDescriptor {
+        name: EventName::AuthChallenge,
+        params_type: "AuthChallengeEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::StateSnapshotPart,
+        params_type: "StateSnapshotPartEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::WorkspaceCreated,
+        params_type: "WorkspaceCreatedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::WorkspaceRenamed,
+        params_type: "WorkspaceRenamedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::WorkspaceClosed,
+        params_type: "WorkspaceClosedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneCreated,
+        params_type: "PaneCreatedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneRenamed,
+        params_type: "PaneRenamedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneClosed,
+        params_type: "PaneClosedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneStateChanged,
+        params_type: "PaneStateChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::StreamReplayStart,
+        params_type: "StreamReplayStartEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::StreamReplayDone,
+        params_type: "StreamReplayDoneEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::StreamGap,
+        params_type: "StreamGapEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::DevicePairRequested,
+        params_type: "DevicePairRequestedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::DevicePaired,
+        params_type: "DevicePairedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::DeviceRevoked,
+        params_type: "DeviceRevokedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PairResult,
+        params_type: "PairResultEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::EngineUpdating,
+        params_type: "EngineUpdatingEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::EngineRestarted,
+        params_type: "EngineRestartedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PtydReconnected,
+        params_type: "PtydReconnectedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PtydLost,
+        params_type: "PtydLostEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneUpdated,
+        params_type: "PaneUpdatedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::SettingsChanged,
+        params_type: "SettingsChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneSessionStarted,
+        params_type: "PaneSessionStartedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneTurnEnded,
+        params_type: "PaneTurnEndedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneQueued,
+        params_type: "PaneQueuedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PanePermissionRequested,
+        params_type: "PanePermissionRequestedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PanePermissionAnswered,
+        params_type: "PanePermissionAnsweredEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneElicitationRequested,
+        params_type: "PaneElicitationRequestedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneElicitationAnswered,
+        params_type: "PaneElicitationAnsweredEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneConfigChanging,
+        params_type: "PaneConfigChangingEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneConfigChanged,
+        params_type: "PaneConfigChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneConfigFailed,
+        params_type: "PaneConfigFailedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneSessionLost,
+        params_type: "PaneSessionLostEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneNeedsLogin,
+        params_type: "PaneNeedsLoginEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneAuthFinished,
+        params_type: "PaneAuthFinishedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneUpdate,
+        params_type: "PaneUpdateEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::AttentionChanged,
+        params_type: "AttentionChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneQueuePaused,
+        params_type: "PaneQueueStateEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneQueueResumed,
+        params_type: "PaneQueueStateEvent",
+        durable: true,
+    },
+];
 
 pub fn error_code(kind: &ErrorKind) -> i64 {
     match kind {
@@ -2381,5 +2712,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::StaleEngineGeneration => -32017,
         ErrorKind::InternalError => -32018,
         ErrorKind::SnapshotTooLarge => -32019,
+        ErrorKind::EngineIdentityChanged => -32020,
     }
 }
