@@ -19,6 +19,19 @@ struct SoyehtMacApp: App {
     .windowStyle(.hiddenTitleBar)
     .commands {
       CommandGroup(replacing: .newItem) {}
+      CommandGroup(after: .toolbar) {
+        Divider()
+        Button("Toggle App Bar") {
+          NotificationCenter.default.post(name: .toggleSoyehtAppBar, object: nil)
+        }
+        .keyboardShortcut("b", modifiers: [.command, .shift])
+        Divider()
+        workspaceViewCommand("Agents", destination: .agents, key: "1")
+        workspaceViewCommand("Editor", destination: .editor, key: "2")
+        workspaceViewCommand("Tasks", destination: .tasks, key: "3")
+        workspaceViewCommand("Terminal", destination: .terminal, key: "4")
+        workspaceViewCommand("iPhone", destination: .phone, key: "5")
+      }
       CommandGroup(replacing: .appSettings) {
         Button("Preferences…") {
           NotificationCenter.default.post(name: .showSoyehtPreferences, object: nil)
@@ -27,8 +40,19 @@ struct SoyehtMacApp: App {
       }
     }
   }
+
+  private func workspaceViewCommand(
+    _ title: String, destination: WorkspaceDestination, key: KeyEquivalent
+  ) -> some View {
+    Button(title) {
+      NotificationCenter.default.post(name: .selectSoyehtWorkspaceView, object: destination)
+    }
+    .keyboardShortcut(key, modifiers: .command)
+  }
 }
 
 extension Notification.Name {
   static let showSoyehtPreferences = Notification.Name("showSoyehtPreferences")
+  static let toggleSoyehtAppBar = Notification.Name("toggleSoyehtAppBar")
+  static let selectSoyehtWorkspaceView = Notification.Name("selectSoyehtWorkspaceView")
 }

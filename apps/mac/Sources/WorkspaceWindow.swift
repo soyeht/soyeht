@@ -4,18 +4,13 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-private enum WorkspaceSurface: String, CaseIterable {
-  case panes = "Panes"
-  case tasks = "Tasks"
-}
-
 struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
+  @State private var navigation = WorkspaceNavigation()
   @State private var paneToClose: String?
   @State private var showNewPane = false
   @State private var showPairing = false
   @State private var deviceToRevoke: String?
-  @State private var surface = WorkspaceSurface.panes
   @State private var taskWorkspaceId: String?
   @State private var showPreferences = false
   var body: some View {
@@ -23,17 +18,17 @@ struct WorkspaceWindow: View {
       WorkspaceTopBar(
         client: client, workspaceId: selectedTaskWorkspaceId,
         onSelectWorkspace: selectWorkspace, onNewPane: presentNewPane,
-        onTasks: showTasks, onPair: beginPairing)
-      if surface == .tasks, let workspaceId = selectedTaskWorkspaceId {
-        TaskWorkspaceView(client: client, workspaceId: workspaceId, onOpenPane: openPane)
-      } else if showNewPane {
-        NewPaneWorkspace(
-          client: client, isPresented: $showNewPane,
-          onClose: { paneToClose = $0 }, onTasks: showTasks)
-      } else {
-        PaneGrid(
-          client: client, workspaceId: selectedTaskWorkspaceId,
-          onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
+        onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() })
+      HStack(spacing: 0) {
+        if navigation.appBarOpen {
+          AppRail(
+            destination: navigation.destination,
+            onSelect: selectDestination,
+            onSettings: { showPreferences = true }
+          )
+          .transition(.move(edge: .leading).combined(with: .opacity))
+        }
+        workspaceContent
       }
     }
     .padding(EdgeInsets(top: 14, leading: 18, bottom: 18, trailing: 18))
@@ -93,18 +88,55 @@ struct WorkspaceWindow: View {
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtPreferences)) { _ in
       showPreferences = true
     }
+    .onReceive(NotificationCenter.default.publisher(for: .toggleSoyehtAppBar)) { _ in
+      navigation.toggleAppBar()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .selectSoyehtWorkspaceView)) { note in
+      if let destination = note.object as? WorkspaceDestination {
+        selectDestination(destination)
+      }
+    }
     .onExitCommand { showPreferences = false }
   }
+
+  @ViewBuilder private var workspaceContent: some View {
+    switch navigation.destination {
+    case .tasks:
+      if let workspaceId = selectedTaskWorkspaceId {
+        TaskWorkspaceView(client: client, workspaceId: workspaceId, onOpenPane: openPane)
+      } else {
+        EmptyWorkspaceView(icon: "checklist", title: "No workspace selected")
+      }
+    case .agents:
+      if showNewPane {
+        NewPaneWorkspace(
+          client: client, isPresented: $showNewPane,
+          onClose: { paneToClose = $0 }, onTasks: showTasks)
+      } else {
+        PaneGrid(
+          client: client, workspaceId: selectedTaskWorkspaceId, mode: nil,
+          onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
+      }
+    case .terminal:
+      PaneGrid(
+        client: client, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
+        onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
+    case .editor:
+      EmptyWorkspaceView(icon: "doc.text", title: "Open a file to begin")
+    case .phone:
+      phoneWorkspace
+    }
+  }
+
   private func selectWorkspace(_ workspaceId: String) {
     taskWorkspaceId = workspaceId
-    surface = .panes
     if let pane = client.panes.first(where: { $0.workspaceId == workspaceId }) {
       client.select(pane.paneId)
     }
   }
   private func showTasks() {
     taskWorkspaceId = selectedTaskWorkspaceId
-    surface = .tasks
+    selectDestination(.tasks)
   }
   private func beginPairing() {
     client.beginPairing()
@@ -112,6 +144,7 @@ struct WorkspaceWindow: View {
   }
   private func presentNewPane() {
     client.refreshHarnesses()
+    navigation.select(.agents)
     showNewPane = true
   }
   private var selectedTaskWorkspaceId: String? {
@@ -119,7 +152,11 @@ struct WorkspaceWindow: View {
   }
   private func openPane(_ paneId: String) {
     client.select(paneId)
-    surface = .panes
+    navigation.select(.agents)
+  }
+  private func selectDestination(_ destination: WorkspaceDestination) {
+    navigation.select(destination)
+    if destination != .agents { showNewPane = false }
   }
   private var pairing: some View {
     ScrollView { pairingContent }.frame(width: 520, height: 720).background(MacTheme.canvas)
@@ -184,6 +221,50 @@ struct WorkspaceWindow: View {
         Text("Connections will close. Access will require pairing again.")
       }
   }
+
+  private var phoneWorkspace: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x18) {
+      HStack {
+        VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+          Text("iPhone")
+            .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+          Text("Paired devices can continue every workspace.")
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+            .foregroundStyle(MacTheme.secondary)
+        }
+        Spacer()
+        Button("Pair iPhone", action: beginPairing)
+          .buttonStyle(NeoPillButtonStyle(accent: true))
+      }
+      if client.devices.isEmpty {
+        EmptyWorkspaceView(icon: "iphone", title: "No paired iPhone")
+      } else {
+        VStack(spacing: MacTheme.Space.x10) {
+          ForEach(client.devices, id: \.deviceId) { device in
+            HStack(spacing: MacTheme.Space.x12) {
+              Image(systemName: "iphone")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(MacTheme.accent)
+              VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+                Text(device.name)
+                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                Text(device.fingerprint)
+                  .font(MacTheme.mono(MacTheme.TypeScale.small))
+                  .foregroundStyle(MacTheme.secondary)
+              }
+              Spacer()
+              Text(device.revoked ? "Revoked" : "Paired")
+                .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+                .foregroundStyle(device.revoked ? MacTheme.danger : MacTheme.success)
+            }
+            .padding(MacTheme.Space.x14)
+            .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
+          }
+        }
+      }
+    }
+    .padding(EdgeInsets(top: 8, leading: 14, bottom: 6, trailing: 6))
+  }
   private func qr(_ value: String) -> NSImage? {
     let filter = CIFilter.qrCodeGenerator()
     filter.message = Data(value.utf8)
@@ -200,23 +281,18 @@ private struct WorkspaceTopBar: View {
   let onSelectWorkspace: (String) -> Void
   let onNewPane: () -> Void
   let onTasks: () -> Void
-  let onPair: () -> Void
+  let onToggleAppBar: () -> Void
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x10) {
       Color.clear.frame(width: 52, height: 34)
-      Menu {
-        ForEach(client.workspaces, id: \.workspaceId) { workspace in
-          Button(workspace.name) { onSelectWorkspace(workspace.workspaceId) }
-        }
-        Divider()
-        Button("Add iPhone", systemImage: "iphone", action: onPair)
-      } label: {
+      Button(action: onToggleAppBar) {
         Image(systemName: "rectangle.grid.2x2")
           .font(.system(size: 15, weight: .semibold)).frame(width: 34, height: 34)
           .neoRaised(radius: MacTheme.Radius.control)
       }
-      .menuStyle(.borderlessButton).menuIndicator(.hidden)
+      .help("Toggle app bar")
+      .accessibilityIdentifier("toggle-app-bar")
 
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: MacTheme.Space.x10) {
@@ -284,13 +360,16 @@ private struct WorkspaceTabSurface: ViewModifier {
 private struct PaneGrid: View {
   @Bindable var client: EngineClient
   let workspaceId: String?
+  let mode: PaneMode?
   let onClose: (String) -> Void
   let onNewPane: () -> Void
   let onTasks: () -> Void
 
   private var panes: [Pane] {
     guard let workspaceId else { return [] }
-    return client.panes.filter { $0.workspaceId == workspaceId }
+    return client.panes.filter { pane in
+      pane.workspaceId == workspaceId && (mode == nil || pane.mode == mode)
+    }
   }
 
   var body: some View {
@@ -329,6 +408,22 @@ private struct PaneGrid: View {
 
   private func paneTint(_ index: Int) -> Color {
     [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand][index % 4]
+  }
+}
+
+private struct EmptyWorkspaceView: View {
+  let icon: String
+  let title: String
+
+  var body: some View {
+    VStack(spacing: MacTheme.Space.x18) {
+      Image(systemName: icon)
+        .font(.system(size: 42, weight: .light))
+        .foregroundStyle(MacTheme.secondary)
+      Text(title)
+        .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 
