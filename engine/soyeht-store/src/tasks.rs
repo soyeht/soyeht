@@ -2,7 +2,7 @@
 
 use crate::database::{Change, Error, Result, Store};
 use rusqlite::{OptionalExtension, Row, params};
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 use soyeht_protocol::{
     Attempt, Comment, LoopConfig, Subitem, Task, TaskMove, TaskPriority, TaskState,
 };
@@ -20,6 +20,31 @@ pub struct DispatchCheckpoint {
     pub worktree_path: Option<String>,
     pub branch: Option<String>,
     pub pane_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReviewStage {
+    Prepared,
+    PaneOpened,
+    PromptAccepted,
+    Classified,
+    Resolved,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TaskReviewRecord<T> {
+    pub version: u32,
+    pub stage: ReviewStage,
+    pub reviewer_pane_id: String,
+    pub payload: T,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UnresolvedTaskReview<T> {
+    pub workspace_id: String,
+    pub task_id: String,
+    pub attempt: u32,
+    pub record: TaskReviewRecord<T>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,6 +80,30 @@ fn priority_rank(priority: &TaskPriority) -> u32 {
         TaskPriority::High => 1,
         TaskPriority::Medium => 2,
         TaskPriority::Low => 3,
+    }
+}
+
+fn review_stage_rank(stage: ReviewStage) -> u32 {
+    match stage {
+        ReviewStage::Prepared => 0,
+        ReviewStage::PaneOpened => 1,
+        ReviewStage::PromptAccepted => 2,
+        ReviewStage::Classified => 3,
+        ReviewStage::Resolved => 4,
+    }
+}
+
+fn decoded_review_stage(row: &Row<'_>, index: usize) -> rusqlite::Result<ReviewStage> {
+    match row.get::<_, u32>(index)? {
+        0 => Ok(ReviewStage::Prepared),
+        1 => Ok(ReviewStage::PaneOpened),
+        2 => Ok(ReviewStage::PromptAccepted),
+        3 => Ok(ReviewStage::Classified),
+        4 => Ok(ReviewStage::Resolved),
+        value => Err(rusqlite::Error::IntegralValueOutOfRange(
+            index,
+            i64::from(value),
+        )),
     }
 }
 
@@ -263,6 +312,51 @@ impl Store {
                 },
             )
             .optional()?)
+    }
+
+    pub fn task_review<T: DeserializeOwned>(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        attempt: u32,
+    ) -> Result<Option<TaskReviewRecord<T>>> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT version,stage,reviewer_pane_id,payload FROM task_reviews WHERE workspace_id=?1 AND task_id=?2 AND attempt=?3",
+                params![workspace_id, task_id, attempt],
+                |row| {
+                    Ok(TaskReviewRecord {
+                        version: row.get(0)?,
+                        stage: decoded_review_stage(row, 1)?,
+                        reviewer_pane_id: row.get(2)?,
+                        payload: decoded(row, 3)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn unresolved_task_reviews<T: DeserializeOwned>(
+        &self,
+    ) -> Result<Vec<UnresolvedTaskReview<T>>> {
+        let mut statement = self.connection.prepare(
+            "SELECT workspace_id,task_id,attempt,version,stage,reviewer_pane_id,payload FROM task_reviews WHERE stage<?1 ORDER BY workspace_id,task_id,attempt",
+        )?;
+        let rows = statement.query_map([review_stage_rank(ReviewStage::Resolved)], |row| {
+            Ok(UnresolvedTaskReview {
+                workspace_id: row.get(0)?,
+                task_id: row.get(1)?,
+                attempt: row.get(2)?,
+                record: TaskReviewRecord {
+                    version: row.get(3)?,
+                    stage: decoded_review_stage(row, 4)?,
+                    reviewer_pane_id: row.get(5)?,
+                    payload: decoded(row, 6)?,
+                },
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     pub fn dispatch_checkpoints(&self) -> Result<Vec<(String, String, DispatchCheckpoint)>> {
@@ -559,6 +653,44 @@ impl Change<'_> {
             "INSERT INTO task_dispatch(workspace_id,task_id,stage,worktree_path,branch,pane_id) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(workspace_id,task_id) DO UPDATE SET stage=excluded.stage,worktree_path=excluded.worktree_path,branch=excluded.branch,pane_id=excluded.pane_id",
             params![workspace_id,task_id,checkpoint.stage,checkpoint.worktree_path,checkpoint.branch,checkpoint.pane_id],
         )?;
+        Ok(())
+    }
+
+    pub fn insert_task_review<T: Serialize>(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        attempt: u32,
+        reviewer_pane_id: &str,
+        payload: &T,
+    ) -> Result<()> {
+        self.transaction.execute(
+            "INSERT INTO task_reviews(workspace_id,task_id,attempt,version,stage,reviewer_pane_id,payload) VALUES (?1,?2,?3,1,?4,?5,?6)",
+            params![workspace_id,task_id,attempt,review_stage_rank(ReviewStage::Prepared),reviewer_pane_id,serde_json::to_string(payload)?],
+        )?;
+        Ok(())
+    }
+
+    pub fn replace_task_review<T: Serialize>(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        attempt: u32,
+        expected_version: u32,
+        stage: ReviewStage,
+        payload: &T,
+    ) -> Result<()> {
+        let version = expected_version
+            .checked_add(1)
+            .ok_or(Error::InvalidReviewVersion)?;
+        let rank = review_stage_rank(stage);
+        let changed = self.transaction.execute(
+            "UPDATE task_reviews SET version=?1,stage=?2,payload=?3 WHERE workspace_id=?4 AND task_id=?5 AND attempt=?6 AND version=?7 AND stage<=?2",
+            params![version,rank,serde_json::to_string(payload)?,workspace_id,task_id,attempt,expected_version],
+        )?;
+        if changed != 1 {
+            return Err(Error::ReviewVersionConflict);
+        }
         Ok(())
     }
 

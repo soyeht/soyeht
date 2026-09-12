@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug)]
 pub enum Error {
@@ -76,6 +76,8 @@ pub enum Error {
     SubitemNotFound,
     AttemptNotFound,
     TaskReservationConflict,
+    InvalidReviewVersion,
+    ReviewVersionConflict,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -159,6 +161,8 @@ impl fmt::Display for Error {
             Self::SubitemNotFound => f.write_str("task subitem not found"),
             Self::AttemptNotFound => f.write_str("task attempt not found"),
             Self::TaskReservationConflict => f.write_str("task reservation conflict"),
+            Self::InvalidReviewVersion => f.write_str("invalid task review version"),
+            Self::ReviewVersionConflict => f.write_str("task review version conflict"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -280,6 +284,9 @@ impl Store {
             }
             if version < 7 {
                 tx.execute_batch(include_str!("../migrations/007-workspace-tasks.sql"))?;
+            }
+            if version < 8 {
+                tx.execute_batch(include_str!("../migrations/008-task-reviews.sql"))?;
             }
             tx.commit()?;
         }

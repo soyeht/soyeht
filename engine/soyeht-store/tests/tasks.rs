@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use soyeht_protocol::{
     Attempt, AttemptResult, Comment, LoopConfig, LoopStopWhen, Pane, PaneMode, PaneState,
@@ -8,12 +9,20 @@ use soyeht_protocol::{
 use soyeht_store::{
     database::Store,
     domain::PaneRecord,
-    tasks::{DispatchCheckpoint, FeedbackState},
+    tasks::{
+        DispatchCheckpoint, FeedbackState, ReviewStage, TaskReviewRecord, UnresolvedTaskReview,
+    },
 };
 use std::{fs, path::PathBuf, sync::Arc, thread};
 use uuid::Uuid;
 
 struct Profile(PathBuf);
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct ReviewPayload {
+    proposal: Option<String>,
+    findings: Option<Vec<String>>,
+}
 
 impl Profile {
     fn new() -> Self {
@@ -118,6 +127,97 @@ fn insert(store: &mut Store, item: &Task, key: &str) {
             Ok((json!({}), vec![]))
         })
         .unwrap();
+}
+
+fn insert_review_task(store: &mut Store, id: &str, pane_id: &str) {
+    let mut item = task(id, TaskPriority::Medium);
+    item.current_attempt = 1;
+    insert(store, &item, &format!("task-{id}"));
+    let attempt = Attempt {
+        n: 1,
+        pane_id: pane_id.into(),
+        harness: "harness".into(),
+        model: "model".into(),
+        start: "start".into(),
+        end: None,
+        result: None,
+        summary: None,
+    };
+    store
+        .mutate("test", &format!("attempt-{id}"), id, |change| {
+            change.insert_attempt("workspace-1", id, &attempt)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+}
+
+fn prepare_review(store: &mut Store, task_id: &str, reviewer: &str) {
+    insert_review_task(store, task_id, "pane-a");
+    store
+        .mutate("test", &format!("review-{task_id}"), task_id, |change| {
+            change.insert_task_review(
+                "workspace-1",
+                task_id,
+                1,
+                reviewer,
+                &ReviewPayload {
+                    proposal: None,
+                    findings: None,
+                },
+            )?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    replace_review(
+        store,
+        &format!("prompt-{task_id}"),
+        task_id,
+        1,
+        ReviewStage::PromptAccepted,
+        None,
+        None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replace_review(
+    store: &mut Store,
+    key: &str,
+    task_id: &str,
+    expected_version: u32,
+    stage: ReviewStage,
+    proposal: Option<&str>,
+    findings: Option<&[&str]>,
+) {
+    let payload = ReviewPayload {
+        proposal: proposal.map(String::from),
+        findings: findings.map(|items| items.iter().map(|item| String::from(*item)).collect()),
+    };
+    store
+        .mutate("test", key, key, |change| {
+            change.replace_task_review(
+                "workspace-1",
+                task_id,
+                1,
+                expected_version,
+                stage,
+                &payload,
+            )?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+}
+
+fn assert_complete_review(store: &Store, task_id: &str, reviewer: &str) {
+    let record: TaskReviewRecord<ReviewPayload> = store
+        .task_review("workspace-1", task_id, 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.version, 4);
+    assert_eq!(record.stage, ReviewStage::Classified);
+    assert_eq!(record.reviewer_pane_id, reviewer);
+    assert_eq!(record.payload.proposal.as_deref(), Some("summary"));
+    assert_eq!(record.payload.findings, Some(vec!["equivalent".into()]));
 }
 
 #[test]
@@ -441,6 +541,135 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
         .unwrap();
     assert_eq!(
         store.dispatch_checkpoint("workspace-1", "WS-1").unwrap(),
+        None
+    );
+}
+
+#[test]
+fn review_inputs_survive_either_arrival_order_and_reject_stale_writes() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    for (task_id, reviewer) in [("WS-1", "reviewer-a"), ("WS-2", "reviewer-b")] {
+        prepare_review(&mut store, task_id, reviewer);
+    }
+
+    replace_review(
+        &mut store,
+        "proposal-first",
+        "WS-1",
+        2,
+        ReviewStage::PromptAccepted,
+        Some("summary"),
+        None,
+    );
+    replace_review(
+        &mut store,
+        "findings-second",
+        "WS-1",
+        3,
+        ReviewStage::Classified,
+        Some("summary"),
+        Some(&["equivalent"]),
+    );
+    replace_review(
+        &mut store,
+        "findings-first",
+        "WS-2",
+        2,
+        ReviewStage::Classified,
+        None,
+        Some(&["equivalent"]),
+    );
+    replace_review(
+        &mut store,
+        "proposal-second",
+        "WS-2",
+        3,
+        ReviewStage::Classified,
+        Some("summary"),
+        Some(&["equivalent"]),
+    );
+    drop(store);
+
+    let mut store = profile.store();
+    for (task_id, reviewer) in [("WS-1", "reviewer-a"), ("WS-2", "reviewer-b")] {
+        assert_complete_review(&store, task_id, reviewer);
+    }
+    let unresolved: Vec<UnresolvedTaskReview<ReviewPayload>> =
+        store.unresolved_task_reviews().unwrap();
+    assert_eq!(unresolved.len(), 2);
+    assert_eq!(unresolved[0].task_id, "WS-1");
+    assert_eq!(unresolved[1].task_id, "WS-2");
+
+    let stale = store.mutate("test", "stale-review", "stale-review", |change| {
+        change.replace_task_review(
+            "workspace-1",
+            "WS-1",
+            1,
+            2,
+            ReviewStage::PaneOpened,
+            &ReviewPayload {
+                proposal: None,
+                findings: None,
+            },
+        )?;
+        Ok((json!({}), vec![]))
+    });
+    assert!(matches!(
+        stale,
+        Err(soyeht_store::Error::ReviewVersionConflict)
+    ));
+    let record: TaskReviewRecord<ReviewPayload> = store
+        .task_review("workspace-1", "WS-1", 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.version, 4);
+    assert_eq!(record.stage, ReviewStage::Classified);
+}
+
+#[test]
+fn migration_from_v7_preserves_tasks_and_adds_durable_reviews() {
+    let profile = Profile::new();
+    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
+    for migration in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+        include_str!("../migrations/005-native-replay.sql"),
+        include_str!("../migrations/006-agent-auth-snapshot.sql"),
+        include_str!("../migrations/007-workspace-tasks.sql"),
+    ] {
+        connection.execute_batch(migration).unwrap();
+    }
+    connection
+        .execute_batch(
+            "INSERT INTO metadata(key,value) VALUES ('db_id','v7-db'),('engine_generation','0');
+             INSERT INTO workspaces(id,payload) VALUES ('workspace-1','{}');
+             INSERT INTO tasks(workspace_id,task_id,state,priority_rank,version,payload)
+               VALUES ('workspace-1','WS-1','in_review',1,4,'{}');
+             INSERT INTO task_attempts(workspace_id,task_id,attempt,payload)
+               VALUES ('workspace-1','WS-1',1,'{}');",
+        )
+        .unwrap();
+    drop(connection);
+
+    let store = profile.store();
+    let version: u32 = store
+        .connection()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    let tasks: u32 = store
+        .connection()
+        .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, soyeht_store::database::SCHEMA_VERSION);
+    assert_eq!(tasks, 1);
+    assert_eq!(
+        store
+            .task_review::<ReviewPayload>("workspace-1", "WS-1", 1)
+            .unwrap(),
         None
     );
 }
