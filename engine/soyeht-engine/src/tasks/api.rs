@@ -61,6 +61,7 @@ impl Core {
             | "task.request_review"
             | "task.complete"
             | "task.unblock" => self.task_lifecycle(connection, method, params),
+            "task.move" => self.task_move(connection, params, parameters(params)?),
             _ => Err(errors::invalid("Unknown task authoring method")),
         }
     }

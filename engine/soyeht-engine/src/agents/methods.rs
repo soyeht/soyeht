@@ -61,7 +61,7 @@ fn prompt_origin(params: &Value) -> Result<PromptOrigin> {
         .map(|origin| origin.unwrap_or(PromptOrigin::Human))
 }
 
-fn cancel(
+pub(crate) fn cancel(
     store: &impl StorePort,
     pane: &str,
     state: &mut super::state::State,

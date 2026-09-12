@@ -2261,6 +2261,89 @@ fn closing_a_review_pane_unbinds_it_without_moving_the_card_back() {
 }
 
 #[test]
+fn human_cancellation_stops_the_turn_and_closes_the_attempt_before_the_move() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Cancel active work", "reserve-cancel");
+    lifecycle.human.call(
+        "pane.prompt",
+        json!({"paneId":lifecycle.pane,"text":"silent","idempotencyKey":"active-turn"}),
+    );
+    lifecycle.human.wait_state(&lifecycle.pane, "working");
+    let params = json!({"workspaceId":lifecycle.workspace,"taskId":task.task_id,
+        "state":"cancelled","reason":"Stopped by a person","idempotencyKey":"move-cancelled"});
+    let cancelled = lifecycle.human.call("task.move", params.clone());
+    assert_eq!(cancelled["task"]["state"], "cancelled");
+    assert!(cancelled["task"]["ownerPaneId"].is_null());
+    assert_eq!(lifecycle.human.call("task.move", params), cancelled);
+    lifecycle.human.wait_state(&lifecycle.pane, "idle");
+
+    let store = Store::open(&lifecycle.rig.path).unwrap();
+    let attempts = store
+        .task_attempts(&lifecycle.workspace, &task.task_id)
+        .unwrap();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(
+        attempts[0].result,
+        Some(soyeht_protocol::AttemptResult::Cancelled)
+    );
+    assert_eq!(attempts[0].summary.as_deref(), Some("Stopped by a person"));
+    let history = store
+        .task_moves(&lifecycle.workspace, &task.task_id)
+        .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].actor, "you");
+    assert_eq!(history[0].from, soyeht_protocol::TaskState::InProgress);
+    assert_eq!(history[0].to, soyeht_protocol::TaskState::Cancelled);
+    assert_eq!(history[0].reason, "Stopped by a person");
+}
+
+#[test]
+fn human_drag_table_refuses_reserved_targets_and_records_accepted_moves() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Moves","path":rig.path,"idempotencyKey":"move-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let task = client.call(
+        "task.create",
+        json!({"workspaceId":workspace,"title":"Move card","mustNotChange":"Keep history",
+            "idempotencyKey":"move-task"}),
+    )["task"]
+        .clone();
+    for (state, key) in [("in_progress", "move-active"), ("completed", "move-done")] {
+        let refused = client.request(
+            "task.move",
+            json!({"workspaceId":workspace,"taskId":task["taskId"],"state":state,
+                "reason":"Invalid drag","idempotencyKey":key}),
+        );
+        assert_eq!(refused["error"]["data"]["kind"], "transition_refused");
+    }
+    let cancelled = client.call(
+        "task.move",
+        json!({"workspaceId":workspace,"taskId":task["taskId"],"state":"cancelled",
+            "reason":"No longer needed","idempotencyKey":"move-away"}),
+    );
+    assert_eq!(cancelled["task"]["state"], "cancelled");
+    let restored = client.call(
+        "task.move",
+        json!({"workspaceId":workspace,"taskId":task["taskId"],"state":"todo",
+            "reason":"Needed again","idempotencyKey":"move-back"}),
+    );
+    assert_eq!(restored["task"]["state"], "todo");
+    let history = Store::open(&rig.path)
+        .unwrap()
+        .task_moves(&workspace, task["taskId"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].reason, "No longer needed");
+    assert_eq!(history[1].reason, "Needed again");
+}
+
+#[test]
 fn supervisor_overflow_during_engine_outage_produces_an_explicit_replay_gap() {
     let mut rig = Rig::new();
     let mut client = rig.client();

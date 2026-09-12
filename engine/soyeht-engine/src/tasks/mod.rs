@@ -3,6 +3,7 @@
 mod api;
 pub mod feedback;
 mod lifecycle;
+mod movement;
 mod phrase;
 pub mod ports;
 pub mod revision;
@@ -10,6 +11,7 @@ mod rules;
 pub mod worktree;
 
 pub(crate) use lifecycle::TaskOwnerLoss;
+pub(crate) use movement::TaskHumanMove;
 pub use phrase::{PhraseFacts, phrase, review_badge};
 #[cfg(test)]
 pub(crate) use rules::tests::task_fixture;

@@ -177,6 +177,7 @@ pub fn apply_move(
     timestamp: String,
     subitems: &[Subitem],
 ) -> Result<(Task, TaskMove)> {
+    required_text(&reason, "reason")?;
     if to == TaskState::InProgress || !drag_allowed(&task.state, &to) {
         return Err(errors::transition_refused(format!(
             "Cannot drag a task from {:?} to {:?}",

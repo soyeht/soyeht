@@ -164,7 +164,7 @@ impl Core {
         Ok((actor, item))
     }
 
-    fn open_attempt(&self, task: &Task) -> Result<Attempt> {
+    pub(super) fn open_attempt(&self, task: &Task) -> Result<Attempt> {
         self.store
             .task_attempts(&task.workspace_id, &task.task_id)
             .map_err(errors::storage)?
