@@ -46,6 +46,38 @@ impl DatabaseProbe {
         Ok(())
     }
 
+    pub fn agent_binding(&self, pane_id: &str) -> Result<String> {
+        let raw: String = self.connection.query_row(
+            "SELECT payload FROM agent_runtime WHERE pane_id=?1",
+            [pane_id],
+            |row| row.get(0),
+        )?;
+        let state: Value = serde_json::from_str(&raw)?;
+        state["binding"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or(Error::TestFixture("test runtime has no agent binding"))
+    }
+
+    pub fn remove_agent_binding(&self, pane_id: &str) -> Result<()> {
+        let raw: String = self.connection.query_row(
+            "SELECT payload FROM agent_runtime WHERE pane_id=?1",
+            [pane_id],
+            |row| row.get(0),
+        )?;
+        let mut state: Value = serde_json::from_str(&raw)?;
+        state
+            .as_object_mut()
+            .ok_or(Error::TestFixture("test runtime is not an object"))?
+            .remove("binding")
+            .ok_or(Error::TestFixture("test runtime has no agent binding"))?;
+        self.connection.execute(
+            "UPDATE agent_runtime SET payload=?1 WHERE pane_id=?2",
+            params![state.to_string(), pane_id],
+        )?;
+        Ok(())
+    }
+
     pub fn event_count(&self, method: &str) -> Result<u64> {
         let count: i64 = self.connection.query_row(
             "SELECT count(*) FROM events WHERE method=?1",

@@ -7,6 +7,7 @@ use crate::{
     errors::{self, Result},
     model::StoredPane,
     ports::StorePort,
+    tasks::ports::TaskStorePort,
 };
 use serde_json::{Value, json};
 use soyeht_acp::{
@@ -15,8 +16,15 @@ use soyeht_acp::{
     session::{self, Initialization},
 };
 use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole};
+use std::path::Path;
 
 pub const PROBED_METHODS: [&str; 3] = ["session/list", "session/load", "session/set_config_option"];
+
+pub struct Runtime<'runtime> {
+    pub data_directory: &'runtime Path,
+    pub now_ms: i64,
+    pub timestamp: &'runtime str,
+}
 
 pub fn call(
     state: &mut State,
@@ -35,7 +43,14 @@ pub fn call(
     Ok(())
 }
 
-fn open(state: &mut State, saved: &StoredPane, changes: &mut Changes, now_ms: i64) -> Result<()> {
+fn open(
+    store: &(impl StorePort + TaskStorePort),
+    runtime: &Runtime<'_>,
+    state: &mut State,
+    saved: &StoredPane,
+    changes: &mut Changes,
+) -> Result<()> {
+    let server = super::mcp::declaration(store, runtime.data_directory, state, saved)?;
     if let Some(id) = state.session_id.clone() {
         state.phase = Phase::Loading;
         changes.clear_replay = true;
@@ -45,9 +60,9 @@ fn open(state: &mut State, saved: &StoredPane, changes: &mut Changes, now_ms: i6
             state,
             changes,
             "session/load",
-            client::load_session(&saved.pane.cwd, &id),
+            client::load_session_with_mcp(&saved.pane.cwd, &id, &[server]),
             "load",
-            now_ms,
+            runtime.now_ms,
         )
     } else {
         state.phase = Phase::Opening;
@@ -55,9 +70,9 @@ fn open(state: &mut State, saved: &StoredPane, changes: &mut Changes, now_ms: i6
             state,
             changes,
             "session/new",
-            client::new_session(&saved.pane.cwd),
+            client::new_session_with_mcp(&saved.pane.cwd, &[server]),
             "open",
-            now_ms,
+            runtime.now_ms,
         )
     }
 }
@@ -198,12 +213,12 @@ fn auth_response(
 }
 
 fn initialize_response(
-    store: &impl StorePort,
+    store: &(impl StorePort + TaskStorePort),
+    runtime: &Runtime<'_>,
     state: &mut State,
     saved: &StoredPane,
     changes: &mut Changes,
     result: NativeResult,
-    now_ms: i64,
 ) -> Result<()> {
     let value = result.map_err(|error| errors::harness_unavailable(error.message))?;
     let info = Initialization::parse(&value).map_err(native_error)?;
@@ -217,17 +232,17 @@ fn initialize_response(
             .is_some();
     }
     if all_known {
-        return open(state, saved, changes, now_ms);
+        return open(store, runtime, state, saved, changes);
     }
     state.phase = Phase::ProbeNew;
-    state.probe_started_ms = Some(now_ms);
+    state.probe_started_ms = Some(runtime.now_ms);
     call(
         state,
         changes,
         "session/new",
         client::new_session(&saved.pane.cwd),
         "probe:new",
-        now_ms,
+        runtime.now_ms,
     )
 }
 
@@ -352,13 +367,13 @@ fn probe_configuration(
 }
 
 fn session_response(
-    store: &impl StorePort,
+    store: &(impl StorePort + TaskStorePort),
+    runtime: &Runtime<'_>,
     state: &mut State,
     saved: &mut StoredPane,
     context: &str,
     changes: &mut Changes,
     result: NativeResult,
-    now_ms: i64,
 ) -> Result<()> {
     match result {
         Ok(value) => session_opened(store, state, saved, context, changes, &value),
@@ -367,7 +382,7 @@ fn session_response(
             Ok(())
         }
         Err(error) if context == "load" && matches!(error.code, -32601 | -32002) => {
-            session_lost(state, saved, changes, now_ms, error.message)
+            session_lost(store, runtime, state, saved, changes, error.message)
         }
         Err(error) => Err(errors::harness_unavailable(error.message)),
     }
@@ -411,10 +426,11 @@ fn session_opened(
 }
 
 fn session_lost(
+    store: &(impl StorePort + TaskStorePort),
+    runtime: &Runtime<'_>,
     state: &mut State,
     saved: &StoredPane,
     changes: &mut Changes,
-    now_ms: i64,
     reason: String,
 ) -> Result<()> {
     changes.clear_replay = true;
@@ -435,7 +451,7 @@ fn session_lost(
     )?);
     state.session_id = None;
     state.has_finished_turn = false;
-    open(state, saved, changes, now_ms)
+    open(store, runtime, state, saved, changes)
 }
 
 fn prompt_response(
@@ -502,13 +518,12 @@ fn prompt_response(
 }
 
 pub fn response(
-    store: &impl StorePort,
+    store: &(impl StorePort + TaskStorePort),
+    runtime: &Runtime<'_>,
     state: &mut State,
     saved: &mut StoredPane,
     message: Message,
     changes: &mut Changes,
-    now_ms: i64,
-    timestamp: &str,
 ) -> Result<()> {
     let (request, result) = state.client.response(message).map_err(native_error)?;
     if request.context == "auth" {
@@ -516,23 +531,31 @@ pub fn response(
         return Ok(());
     }
     if request.context == "initialize" {
-        return initialize_response(store, state, saved, changes, result, now_ms);
+        return initialize_response(store, runtime, state, saved, changes, result);
     }
     if request.context == "probe:new" {
-        return probe_new_response(state, saved, changes, result, now_ms);
+        return probe_new_response(state, saved, changes, result, runtime.now_ms);
     }
     if request.context.starts_with("probe:") {
-        return probe_response(state, saved, &request, changes, result, now_ms, timestamp);
+        return probe_response(
+            state,
+            saved,
+            &request,
+            changes,
+            result,
+            runtime.now_ms,
+            runtime.timestamp,
+        );
     }
     if request.context == "open" || request.context == "load" {
         return session_response(
             store,
+            runtime,
             state,
             saved,
             &request.context,
             changes,
             result,
-            now_ms,
         );
     }
     if request.method == "session/prompt" {
@@ -543,7 +566,7 @@ pub fn response(
             &request.context,
             changes,
             result,
-            timestamp,
+            runtime.timestamp,
         );
     }
     if let Some(operation) = state

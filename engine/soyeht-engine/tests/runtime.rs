@@ -94,6 +94,12 @@ impl Rig {
     fn database_probe(&self) -> DatabaseProbe {
         DatabaseProbe::open(&self.path).unwrap()
     }
+    fn native_session(&self, session_id: &str) -> Value {
+        serde_json::from_slice(
+            &fs::read(self.path.join("native").join(format!("{session_id}.json"))).unwrap(),
+        )
+        .unwrap()
+    }
     // Shift only a stopped test engine's persisted timestamps. There is no
     // runtime clock override or shortened deadline in the shipped executable.
     fn age_agent(&self, pane: &str, cancel: bool) {
@@ -110,6 +116,32 @@ impl Rig {
     fn client(&self) -> Client {
         Client::new(self.path.join("engine.sock"))
     }
+}
+
+fn binding_hello(path: &std::path::Path, binding: &str) -> (UnixStream, Value) {
+    let mut socket = UnixStream::connect(path).unwrap();
+    let challenge = Frame::read_from(&mut socket).unwrap().unwrap();
+    assert!(matches!(challenge, Frame::Json(_)));
+    Frame::Json(
+        serde_json::to_vec(&json!({
+            "jsonrpc":"2.0",
+            "id":1,
+            "method":"hello",
+            "params":{
+                "client":"binding-test",
+                "clientVersion":"1",
+                "protocolVersion":1,
+                "binding":binding
+            }
+        }))
+        .unwrap(),
+    )
+    .write_to(&mut socket)
+    .unwrap();
+    let Some(Frame::Json(response)) = Frame::read_from(&mut socket).unwrap() else {
+        panic!("binding hello response")
+    };
+    (socket, serde_json::from_slice(&response).unwrap())
 }
 impl Drop for Rig {
     fn drop(&mut self) {
@@ -707,6 +739,136 @@ fn start_agent_case(rig: &Rig) -> (Client, String, Value) {
         thread::sleep(Duration::from_millis(20));
     };
     (client, pane, ready)
+}
+
+#[test]
+fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let ready = client.pane(&pane);
+    let session_id = ready["agent"]["sessionId"].as_str().unwrap();
+    let session = rig.native_session(session_id);
+    let server = &session["mcp_servers"][0];
+    let binding = server["env"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "SOYEHT_MCP_BINDING")
+        .unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let args = server["args"].as_array().unwrap();
+    assert_eq!(
+        server["command"],
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"))
+            .with_file_name("soyeht-mcp")
+            .to_string_lossy()
+            .as_ref()
+    );
+    assert!(
+        args.windows(2)
+            .any(|pair| pair == ["--data-dir", rig.path.to_str().unwrap()])
+    );
+    assert!(
+        args.windows(2)
+            .any(|pair| pair == ["--pane-id", pane.as_str()])
+    );
+    assert!(!args.iter().any(|value| value == &binding));
+    let (_, snapshot) = client.snapshot();
+    assert!(!serde_json::to_string(&snapshot).unwrap().contains(&binding));
+
+    let probe_sessions: Vec<Value> = fs::read_dir(rig.path.join("native"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|value| value == "json")
+        })
+        .filter(|entry| entry.file_name() != format!("{session_id}.json").as_str())
+        .map(|entry| serde_json::from_slice(&fs::read(entry.path()).unwrap()).unwrap())
+        .collect();
+    assert!(!probe_sessions.is_empty());
+    assert!(
+        probe_sessions
+            .iter()
+            .all(|session| session["mcp_servers"].as_array().unwrap().is_empty())
+    );
+
+    let (mut bound_socket, welcome) = binding_hello(&rig.path.join("engine.sock"), &binding);
+    assert_eq!(welcome["result"]["role"], "agent");
+    Frame::Json(
+        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":2,"method":"engine.status","params":{}}))
+            .unwrap(),
+    )
+    .write_to(&mut bound_socket)
+    .unwrap();
+    let Some(Frame::Json(response)) = Frame::read_from(&mut bound_socket).unwrap() else {
+        panic!("bound method response")
+    };
+    assert_eq!(
+        serde_json::from_slice::<Value>(&response).unwrap()["error"]["data"]["kind"],
+        "forbidden_role"
+    );
+    let (_, unknown) = binding_hello(&rig.path.join("engine.sock"), "unknown-binding");
+    assert_eq!(unknown["error"]["data"]["kind"], "unauthorized");
+
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"hello","idempotencyKey":"mcp-restart-turn"}),
+    );
+    let before = client.wait_state(&pane, "idle");
+    rig.ptyd.kill().unwrap();
+    rig.ptyd.wait().unwrap();
+    rig.ptyd = Command::new(
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-ptyd"),
+    )
+    .arg("--data-dir")
+    .arg(&rig.path)
+    .stdout(Stdio::null())
+    .spawn()
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let restored = loop {
+        let view = client.pane(&pane);
+        if view["generation"].as_u64().unwrap() > before["generation"].as_u64().unwrap()
+            && view["state"] == "idle"
+        {
+            break view;
+        }
+        assert!(Instant::now() < deadline, "agent did not reload: {view}");
+        thread::sleep(Duration::from_millis(20));
+    };
+    let reloaded = rig.native_session(session_id);
+    let reloaded_server = &reloaded["mcp_servers"][0];
+    assert_eq!(reloaded_server["env"], server["env"]);
+    let restored_generation = restored["generation"].as_u64().unwrap().to_string();
+    assert!(
+        reloaded_server["args"]
+            .as_array()
+            .unwrap()
+            .windows(2)
+            .any(|pair| pair == ["--session-generation", restored_generation.as_str()])
+    );
+}
+
+#[test]
+fn a_legacy_agent_checkpoint_gets_one_binding_that_survives_the_next_restart() {
+    let mut rig = Rig::new();
+    let (_, pane) = rig.agent();
+    let original = rig.database_probe().agent_binding(&pane).unwrap();
+    assert!(!original.is_empty());
+    rig.kill_engine();
+    rig.database_probe().remove_agent_binding(&pane).unwrap();
+    rig.start();
+    let repaired = rig.database_probe().agent_binding(&pane).unwrap();
+    assert!(!repaired.is_empty());
+    assert_ne!(repaired, original);
+    rig.kill_engine();
+    rig.start();
+    assert_eq!(rig.database_probe().agent_binding(&pane).unwrap(), repaired);
 }
 
 fn configure_and_run_first_turn(

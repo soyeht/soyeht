@@ -73,7 +73,7 @@ fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::s
         .transpose()
         .map_err(|_| errors::invalid("Invalid permission mode"))?
         .unwrap_or(soyeht_protocol::PermissionMode::Ask);
-    let mut agent = crate::agents::state::State::new(launch, digest, permission);
+    let mut agent = crate::agents::state::State::new(launch, digest, permission)?;
     for name in ["model", "effort"] {
         if let Some(value) = params[name].as_str() {
             agent

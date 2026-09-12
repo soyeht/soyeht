@@ -40,6 +40,24 @@ class InstallGuardTests(unittest.TestCase):
                     )
                 )
 
+    def test_engine_install_requires_the_sibling_mcp_binary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            data = root / "new-dev"
+            binary = root / "engine/target/debug/soyeht-engine"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"engine")
+            results = [
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess([], 1),
+            ]
+            with patch.object(install_dev, "ROOT", root), patch.object(
+                install_dev, "DATA", data
+            ), patch.object(install_dev.subprocess, "run", side_effect=results):
+                with self.assertRaisesRegex(SystemExit, "Build soyeht-mcp first"):
+                    install_dev.install_components(["engine"])
+                self.assertFalse(data.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -152,7 +152,7 @@ class Services:
         (shell_config/".zshrc").write_text("PROMPT='E2E_READY> '\nRPROMPT=''\nHISTFILE=''\nSAVEHIST=0\n")
         self.binaries=self.data / "bin"
         self.binaries.mkdir(mode=0o700)
-        for name in ("soyeht","soyeht-engine","soyeht-ptyd"):
+        for name in ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd"):
             shutil.copy2(binaries/name,self.binaries/name)
             (self.binaries/name).chmod(0o700)
         self.ptyd_version = int(subprocess.check_output(
@@ -357,7 +357,8 @@ def main():
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     binaries = args.bin_dir.resolve()
-    require(all((binaries / name).is_file() for name in ("soyeht", "soyeht-engine", "soyeht-ptyd")),
+    require(all((binaries / name).is_file() for name in
+                ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")),
             "build workspace binaries before running acceptances")
     services = Services(binaries)
     started = time.monotonic()

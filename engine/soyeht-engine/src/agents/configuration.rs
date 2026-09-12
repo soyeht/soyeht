@@ -314,7 +314,8 @@ mod tests {
             },
             "digest".into(),
             PermissionMode::AllowAll,
-        );
+        )
+        .unwrap();
         state.effective_mode = Some("bypassPermissions".into());
         state.yolo = true;
         state.previous_permission = Some(PermissionMode::Ask);

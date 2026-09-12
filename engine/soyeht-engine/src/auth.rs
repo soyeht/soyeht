@@ -20,6 +20,16 @@ pub fn token_hash(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 
+pub fn same_token(left: &str, right: &str) -> bool {
+    token_hash(left)
+        .iter()
+        .zip(token_hash(right))
+        .fold(0_u8, |difference, (left, right)| {
+            difference | (left ^ right)
+        })
+        == 0
+}
+
 pub fn public_key(text: &str) -> Result<VerifyingKey> {
     let raw: [u8; 32] = STANDARD
         .decode(text)
@@ -169,5 +179,12 @@ mod tests {
             "Telefone",
             &proof
         ));
+    }
+
+    #[test]
+    fn token_comparison_checks_the_complete_digest() {
+        assert!(same_token("binding", "binding"));
+        assert!(!same_token("binding", "binding-2"));
+        assert!(!same_token("", "binding"));
     }
 }

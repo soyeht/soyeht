@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
     AgentSession, ConfigOperation, ConfigValue, HarnessLaunch, PaneQueueListResult, PermissionMode,
-    PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, limits,
+    PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, Role, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
@@ -24,8 +24,37 @@ pub enum Phase {
     Faulted,
 }
 
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Binding(String);
+
+impl std::fmt::Debug for Binding {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Binding([redacted])")
+    }
+}
+
+impl Binding {
+    fn generate() -> Result<Self> {
+        Ok(Self(crate::auth::token()?))
+    }
+
+    pub(crate) fn matches(&self, candidate: &str) -> bool {
+        !self.0.is_empty()
+            && self.0.len() == candidate.len()
+            && crate::auth::same_token(&self.0, candidate)
+    }
+
+    pub(crate) fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
+    #[serde(default)]
+    pub(crate) binding: Binding,
+    #[serde(default = "default_mcp_role")]
+    pub(crate) mcp_role: Role,
     pub launch: HarnessLaunch,
     pub binary_digest: String,
     pub fingerprint: String,
@@ -71,14 +100,20 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(launch: HarnessLaunch, binary_digest: String, permission: PermissionMode) -> Self {
+    pub fn new(
+        launch: HarnessLaunch,
+        binary_digest: String,
+        permission: PermissionMode,
+    ) -> Result<Self> {
         let policy = match &permission {
             PermissionMode::Ask => "ask",
             PermissionMode::AcceptEdits => "accept_edits",
             PermissionMode::AllowAll => "allow_all",
         }
         .to_owned();
-        Self {
+        Ok(Self {
+            binding: Binding::generate()?,
+            mcp_role: default_mcp_role(),
             launch,
             binary_digest,
             fingerprint: String::new(),
@@ -117,7 +152,15 @@ impl State {
             has_finished_turn: false,
             permission_rules: BTreeMap::new(),
             terminals: BTreeMap::new(),
+        })
+    }
+
+    pub(crate) fn ensure_binding(&mut self) -> Result<bool> {
+        if self.binding.0.is_empty() {
+            self.binding = Binding::generate()?;
+            return Ok(true);
         }
+        Ok(false)
     }
 
     pub fn public(&self, now_ms: i64) -> AgentSession {
@@ -302,6 +345,10 @@ impl State {
     }
 }
 
+fn default_mcp_role() -> Role {
+    Role::Agent
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,6 +365,7 @@ mod tests {
             "digest".into(),
             PermissionMode::Ask,
         )
+        .unwrap()
     }
 
     #[test]

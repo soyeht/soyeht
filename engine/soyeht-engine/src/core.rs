@@ -59,16 +59,7 @@ impl Core {
         };
         for stored in model::panes(&core.store)? {
             if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
-                let mut state: crate::agents::state::State = core
-                    .store
-                    .agent_runtime(&stored.pane.pane_id)
-                    .map_err(errors::storage)?
-                    .ok_or_else(|| errors::internal("Agent pane has no checkpoint"))?;
-                state.queue = core
-                    .store
-                    .agent_queue(&stored.pane.pane_id)
-                    .map_err(errors::storage)?
-                    .into();
+                let state = core.restore_agent(&stored)?;
                 core.agents.insert(
                     stored.pane.pane_id.clone(),
                     crate::agents::Running::new(state),
@@ -86,6 +77,39 @@ impl Core {
         let _ = core.connect_supervisor();
         core.system_event("engine.restarted", json!({"generation":generation}))?;
         Ok(core)
+    }
+
+    fn restore_agent(&mut self, stored: &StoredPane) -> Result<crate::agents::state::State> {
+        let pane = &stored.pane.pane_id;
+        let mut state: crate::agents::state::State = self
+            .store
+            .agent_runtime(pane)
+            .map_err(errors::storage)?
+            .ok_or_else(|| errors::internal("Agent pane has no checkpoint"))?;
+        if state.ensure_binding()? {
+            StorePort::mutate(
+                &mut self.store,
+                "engine-agent",
+                &Uuid::new_v4().to_string(),
+                "agent.binding.repair",
+                |change| {
+                    soyeht_store::agents::save_runtime(
+                        change,
+                        pane,
+                        stored.pane.generation,
+                        &state,
+                    )?;
+                    Ok((json!({}), Vec::new()))
+                },
+            )
+            .map_err(errors::storage)?;
+        }
+        state.queue = self
+            .store
+            .agent_queue(pane)
+            .map_err(errors::storage)?
+            .into();
+        Ok(state)
     }
 
     fn system_event(&mut self, method: &str, params: Value) -> Result<()> {

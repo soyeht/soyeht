@@ -8,6 +8,8 @@ mod rules;
 pub mod worktree;
 
 pub use phrase::{PhraseFacts, phrase, review_badge};
+#[cfg(test)]
+pub(crate) use rules::tests::task_fixture;
 pub use rules::{
     ExecutorIdentity, apply_block, apply_complete, apply_move, apply_release, apply_request_review,
     apply_unblock, apply_update, new_loop_config, new_task, validate_dependencies,

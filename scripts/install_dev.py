@@ -18,6 +18,7 @@ from generated_profile import (
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path.home() / DEV_DATA_DIRECTORY_FROM_HOME
 COMPONENTS = ("ptyd", "engine")
+ENGINE_SUPPORT = ("mcp",)
 
 
 def install_components(components, domain="gui"):
@@ -35,6 +36,10 @@ def install_components(components, domain="gui"):
             raise SystemExit(f"Stop the new Dev {component} job before replacing its binary")
         if not (ROOT / f"engine/target/debug/soyeht-{component}").is_file():
             raise SystemExit(f"Build soyeht-{component} first")
+    support = ENGINE_SUPPORT if "engine" in components else ()
+    for component in support:
+        if not (ROOT / f"engine/target/debug/soyeht-{component}").is_file():
+            raise SystemExit(f"Build soyeht-{component} first")
     DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
     DATA.chmod(0o700)
     for folder in (DATA / "bin", DATA / "logs"):
@@ -42,6 +47,14 @@ def install_components(components, domain="gui"):
             raise SystemExit("Dev folders must not be symlinks")
         folder.mkdir(exist_ok=True, mode=0o700)
         folder.chmod(0o700)
+    for component in support:
+        installed = DATA / f"bin/soyeht-{component}"
+        temporary = installed.with_suffix(".new")
+        if temporary.is_symlink():
+            raise SystemExit("Dev temporary binary must not be a symlink")
+        shutil.copy2(ROOT / f"engine/target/debug/soyeht-{component}", temporary)
+        temporary.chmod(0o700)
+        temporary.replace(installed)
     agents = Path.home() / "Library/LaunchAgents"
     agents.mkdir(parents=True, exist_ok=True)
     for component in components:

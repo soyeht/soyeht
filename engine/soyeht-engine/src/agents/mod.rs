@@ -8,6 +8,7 @@ pub mod failures;
 pub mod filesystem;
 pub mod forms;
 pub mod lifecycle;
+pub mod mcp;
 pub mod methods;
 pub mod pending;
 pub mod questions;

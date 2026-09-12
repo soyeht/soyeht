@@ -56,17 +56,23 @@ impl Core {
                 "Unsupported protocol version",
             ));
         }
-        if hello.binding.is_some() {
-            return Err(errors::unauthorized(
-                "This engine has not issued an agent binding",
-            ));
-        }
-        let (role, device_id, scope) = if client.local {
+        let local = client.local;
+        let nonce = client.nonce;
+        let (role, device_id, pane_id, scope) = if let Some(binding) = hello.binding.as_deref() {
+            if !local {
+                return Err(errors::unauthorized(
+                    "Agent bindings are accepted only on the local socket",
+                ));
+            }
+            let (role, pane) = self.agent_identity(binding)?;
+            (role, None, Some(pane.clone()), format!("agent:{pane}"))
+        } else if local {
             // The listener has already verified the connecting operating-system uid.
             // SAFETY: geteuid has no arguments or memory preconditions.
             let uid = unsafe { libc::geteuid() };
             (
                 Role::HumanLocal,
+                None,
                 None,
                 format!("local:{uid}:{}", hello.client),
             )
@@ -84,7 +90,7 @@ impl Core {
             let key = auth::public_key(&STANDARD.encode(record.public_key))
                 .map_err(|error| errors::unauthorized(error.to_string()))?;
             if !hello.proof.as_ref().is_some_and(|proof| {
-                auth::hello_proof(&key, &client.nonce, &self.store.db_id, token, proof)
+                auth::hello_proof(&key, &nonce, &self.store.db_id, token, proof)
             }) {
                 return Err(errors::unauthorized("Invalid connection signature"));
             }
@@ -97,13 +103,18 @@ impl Core {
             {
                 return Err(errors::unauthorized("Device connection limit reached"));
             }
-            (Role::HumanDevice, Some(id.clone()), format!("device:{id}"))
+            (
+                Role::HumanDevice,
+                Some(id.clone()),
+                None,
+                format!("device:{id}"),
+            )
         };
         let actor = Actor {
             role: role.clone(),
             client: hello.client,
             device_id,
-            pane_id: None,
+            pane_id,
         };
         let client = errors::invariant(
             self.clients.get_mut(connection),
@@ -120,6 +131,28 @@ impl Core {
             db_id: self.store.db_id.clone(),
         })
         .map_err(|_| errors::internal("Welcome response serialization failed"))
+    }
+
+    fn agent_identity(&self, candidate: &str) -> Result<(Role, String)> {
+        let mut found = None;
+        for (pane, running) in &self.agents {
+            let active = self
+                .panes
+                .get(pane)
+                .is_some_and(|saved| !saved.stored.closed);
+            if active && running.state.binding.matches(candidate) {
+                if found.is_some() {
+                    return Err(errors::internal("Agent binding is not unique"));
+                }
+                let role = match running.state.mcp_role {
+                    Role::Agent => Role::Agent,
+                    Role::Chief => Role::Chief,
+                    _ => return Err(errors::internal("Agent checkpoint has an invalid role")),
+                };
+                found = Some((role, pane.clone()));
+            }
+        }
+        found.ok_or_else(|| errors::unauthorized("Unknown agent binding"))
     }
 
     fn subscribe_events(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -153,6 +186,14 @@ impl Core {
             .actor
             .as_ref()
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
+        if matches!(actor.role, Role::Agent | Role::Chief)
+            && !method.starts_with("task.")
+            && method != "loop.set"
+        {
+            return Err(errors::forbidden_role(
+                "Agent bindings may call only task and loop methods",
+            ));
+        }
         if actor.role == Role::HumanDevice
             && (method == "pane.input"
                 || method == "settings.set"

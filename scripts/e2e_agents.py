@@ -359,7 +359,7 @@ def main():
     args = parser.parse_args()
     binaries = args.bin_dir.resolve()
     require(all((binaries / name).is_file() for name in
-                ("soyeht", "soyeht-engine", "soyeht-ptyd", "soyeht-fake-acp")),
+                ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd", "soyeht-fake-acp")),
             "build workspace binaries before running agent acceptances")
     services = AgentServices(binaries)
     started, results, failure = time.monotonic(), [], None

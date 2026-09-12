@@ -63,12 +63,15 @@ impl Core {
         match message {
             response @ Message::Response { .. } => responses::response(
                 &self.store,
+                &responses::Runtime {
+                    data_directory: &self.directory,
+                    now_ms,
+                    timestamp,
+                },
                 state,
                 saved,
                 response,
                 &mut changes,
-                now_ms,
-                timestamp,
             )?,
             Message::Notification { method, params } => {
                 if method == "session/update" {
@@ -541,7 +544,8 @@ mod tests {
             },
             "digest".into(),
             PermissionMode::Ask,
-        );
+        )
+        .unwrap();
         state.phase = Phase::Ready;
         state.session_id = Some("session".into());
         state.requested_options.clear();
