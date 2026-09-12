@@ -4,18 +4,22 @@ import SoyehtProtocol
 import SwiftUI
 import VisionKit
 
-private enum PhonePalette {
+enum PhonePalette {
   static let canvas = Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255)
   static let face = Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255)
   static let ink = Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255)
   static let secondary = Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255)
   static let accent = Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255)
+  static let success = Color(red: 50 / 255, green: 172 / 255, blue: 113 / 255)
+  static let warning = Color(red: 236 / 255, green: 165 / 255, blue: 55 / 255)
+  static let danger = Color(red: 224 / 255, green: 88 / 255, blue: 96 / 255)
 }
 struct PhoneHome: View {
   @Bindable var model: PhoneModel
   @State private var scanning = false
   @State private var uri = ""
   @State private var forget = false
+  @State private var showingSettings = false
   var body: some View {
     NavigationStack {
       Group {
@@ -51,6 +55,11 @@ struct PhoneHome: View {
         if model.client != nil {
           ToolbarItem(placement: .topBarTrailing) {
             Menu {
+              Button {
+                showingSettings = true
+              } label: {
+                Label("Settings", systemImage: "gearshape")
+              }
               Button("Forget this Mac", role: .destructive) { forget = true }
             } label: {
               Image(systemName: "ellipsis.circle")
@@ -61,6 +70,11 @@ struct PhoneHome: View {
       }
     }
     .tint(PhonePalette.accent)
+    .sheet(isPresented: $showingSettings) {
+      if let client = model.client {
+        PhoneSettings(client: client)
+      }
+    }
     .sheet(isPresented: $scanning) {
       QRScanner { value in
         scanning = false
