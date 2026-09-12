@@ -1,9 +1,11 @@
 //! Pull request status and repository-diff boundary for task rules.
 
 use crate::errors::Result;
+use serde::{Deserialize, Serialize};
 use soyeht_protocol::{TaskCheckState, TaskReviewState};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SurfaceKind {
     PublicFunction,
     Handler,
@@ -26,6 +28,7 @@ pub struct RevisionSnapshot {
     pub summary: String,
     pub log_tail: String,
     pub fingerprint: String,
+    pub changed_paths: Vec<String>,
     pub changed_surfaces: Vec<ChangedSurface>,
 }
 
@@ -70,6 +73,7 @@ pub(crate) mod testing {
             summary: "A scripted result".into(),
             log_tail: "last line".into(),
             fingerprint: fingerprint.into(),
+            changed_paths: Vec::new(),
             changed_surfaces: Vec::new(),
         };
         port.script(

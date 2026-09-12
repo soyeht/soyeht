@@ -173,6 +173,7 @@ mod tests {
             summary: "Required check failed".into(),
             log_tail: "last failure line".into(),
             fingerprint: fingerprint.into(),
+            changed_paths: Vec::new(),
             changed_surfaces: Vec::new(),
         }
     }

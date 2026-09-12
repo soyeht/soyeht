@@ -1,6 +1,7 @@
 //! Workspace task rules and their persistence boundary.
 
 mod api;
+pub mod drift;
 pub mod feedback;
 mod lifecycle;
 mod movement;
