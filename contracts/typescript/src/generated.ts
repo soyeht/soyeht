@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
+// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -1767,6 +1767,8 @@ export type EditorLanguage = "plain_text" | "rust" | "swift" | "typescript" | "p
 
 export type EditorContentSource = "buffer" | "disk" | "draft" | "history";
 
+export type FileSearchScope = "content" | "path";
+
 export type HighlightKind = "keyword" | "string" | "comment" | "number" | "type" | "function" | "property" | "operator" | "punctuation" | "constant" | "variable";
 
 export type DiagnosticSeverity = "error" | "warning" | "information" | "hint";
@@ -1919,6 +1921,7 @@ export interface FileSearchMatch {
 
 export interface FileSearchParams {
   "workspaceId": Id;
+  "scope"?: FileSearchScope;
   "query": string;
   "replacement"?: string;
   "caseSensitive": boolean;

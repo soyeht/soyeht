@@ -6313,6 +6313,13 @@
         "history"
       ]
     },
+    "FileSearchScope": {
+      "type": "string",
+      "enum": [
+        "content",
+        "path"
+      ]
+    },
     "HighlightKind": {
       "type": "string",
       "enum": [
@@ -6895,6 +6902,9 @@
       "properties": {
         "workspaceId": {
           "$ref": "#/$defs/Id"
+        },
+        "scope": {
+          "$ref": "#/$defs/FileSearchScope"
         },
         "query": {
           "type": "string",

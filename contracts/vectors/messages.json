@@ -6437,6 +6437,11 @@
     "value": "buffer"
   },
   {
+    "name": "FileSearchScope",
+    "type": "FileSearchScope",
+    "value": "content"
+  },
+  {
     "name": "HighlightKind",
     "type": "HighlightKind",
     "value": "keyword"
@@ -6789,7 +6794,8 @@
       "query": "x",
       "caseSensitive": false,
       "limit": 1,
-      "idempotencyKey": "x"
+      "idempotencyKey": "x",
+      "scope": "content"
     }
   },
   {
@@ -7429,7 +7435,8 @@
         "query": "x",
         "caseSensitive": false,
         "limit": 1,
-        "idempotencyKey": "x"
+        "idempotencyKey": "x",
+        "scope": "content"
       }
     }
   },

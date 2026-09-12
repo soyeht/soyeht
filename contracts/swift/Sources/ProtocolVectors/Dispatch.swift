@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
+// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -298,6 +298,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "UsageChangedEvent": return try codec(SoyehtProtocol.UsageChangedEvent.self, data)
         case "EditorLanguage": return try codec(SoyehtProtocol.EditorLanguage.self, data)
         case "EditorContentSource": return try codec(SoyehtProtocol.EditorContentSource.self, data)
+        case "FileSearchScope": return try codec(SoyehtProtocol.FileSearchScope.self, data)
         case "HighlightKind": return try codec(SoyehtProtocol.HighlightKind.self, data)
         case "DiagnosticSeverity": return try codec(SoyehtProtocol.DiagnosticSeverity.self, data)
         case "FileSymbolKind": return try codec(SoyehtProtocol.FileSymbolKind.self, data)

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
+// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
 import Foundation
 
 
@@ -3514,6 +3514,11 @@ public enum EditorContentSource: String, Codable, Sendable {
     case `history` = "history"
 }
 
+public enum FileSearchScope: String, Codable, Sendable {
+    case `content` = "content"
+    case `path` = "path"
+}
+
 public enum HighlightKind: String, Codable, Sendable {
     case `keyword` = "keyword"
     case `string` = "string"
@@ -3818,13 +3823,15 @@ public struct FileSearchMatch: Codable, Sendable {
 
 public struct FileSearchParams: Codable, Sendable {
     public var `workspaceId`: Id
+    public var `scope`: FileSearchScope?
     public var `query`: String
     public var `replacement`: String?
     public var `caseSensitive`: Bool
     public var `limit`: UInt32
     public var `idempotencyKey`: Id
-    public init(`workspaceId`: Id, `query`: String, `replacement`: String? = nil, `caseSensitive`: Bool, `limit`: UInt32, `idempotencyKey`: Id) {
+    public init(`workspaceId`: Id, `scope`: FileSearchScope? = nil, `query`: String, `replacement`: String? = nil, `caseSensitive`: Bool, `limit`: UInt32, `idempotencyKey`: Id) {
         self.`workspaceId` = `workspaceId`
+        self.`scope` = `scope`
         self.`query` = `query`
         self.`replacement` = `replacement`
         self.`caseSensitive` = `caseSensitive`

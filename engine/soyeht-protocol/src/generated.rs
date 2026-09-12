@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4645455dfb128d7b666c0ff307ad3695bc86ea23aa9aa1540c789075549c88f6). Do not edit.
+// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -3159,6 +3159,13 @@ pub enum EditorContentSource {
     History,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum FileSearchScope {
+    #[serde(rename = "content")]
+    Content,
+    #[serde(rename = "path")]
+    Path,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HighlightKind {
     #[serde(rename = "keyword")]
     Keyword,
@@ -3450,6 +3457,8 @@ pub struct FileSearchMatch {
 pub struct FileSearchParams {
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
+    #[serde(rename = "scope", skip_serializing_if = "Option::is_none")]
+    pub scope: Option<FileSearchScope>,
     #[serde(rename = "query")]
     pub query: String,
     #[serde(rename = "replacement", skip_serializing_if = "Option::is_none")]
