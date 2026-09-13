@@ -11,6 +11,7 @@ class EditorPerformanceGateTests(unittest.TestCase):
             "scroll_frame_p95_ms": 16.666,
             "search_1gb_ms": 999.999,
             "scroll_frames": 60,
+            "editor_render_ink_pixels": 500,
         }
         self.assertEqual(gate.failures(measurements), [])
 
@@ -21,6 +22,7 @@ class EditorPerformanceGateTests(unittest.TestCase):
             "scroll_frame_p95_ms": 1000.0 / 60.0,
             "search_1gb_ms": 1000.0,
             "scroll_frames": 59,
+            "editor_render_ink_pixels": 499,
         }
         self.assertEqual(
             gate.failures(measurements),
@@ -30,6 +32,7 @@ class EditorPerformanceGateTests(unittest.TestCase):
                 "scroll_frame_p95_ms",
                 "search_1gb_ms",
                 "scroll_frames",
+                "editor_render_ink_pixels",
             ],
         )
 

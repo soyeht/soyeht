@@ -58,7 +58,7 @@ the font and color gates prevent platform drift.
 | 7 · Vim | passed | The preference is off by default; pure normal/insert/visual rules and the four bounded ex commands are covered. |
 | 8 · usage | passed | Five reader states, stored stale readings, per-provider refresh policy, rings, threshold colors, missing-state treatment, detail views, and real-source adapters are covered. |
 | 9 · app bar | passed | Client-only view selection, five shortcuts, rail toggle, per-client visibility persistence, and no engine pane side effect are covered. |
-| 10 · design fidelity | passed | The implementation PRs were compared directly with Screens 11, 12, and 12b; the final image pairs appear below. |
+| 10 · design fidelity | passed after render correction | The final framebuffer captures were compared directly with Screens 11, 12, and 12b; the image pairs appear below. |
 | 11 · regression and structure | passed | 390 tests, 28 automated acceptances, 33 gate steps, generated files, restricted vocabulary, shared fonts/colors, and all four hardening ratchets passed. |
 | 12 · real Mac procedure | passed with recorded risk | Real readers, Swift language server, editing, autosave, diagnostics, diff, history, Markdown, and manual hunk review ran in the Dev profile. The production ACP session risk is recorded below. |
 
@@ -79,6 +79,7 @@ red and green controls prove the thresholds discriminate at their boundary.
 | Scroll frame, p95 | 5.096 ms | less than 16.667 ms |
 | Scroll sample count | 240 frames | at least 60 frames |
 | Logical 1 GiB search | 58.649 ms | less than 1,000 ms |
+| Native editor source ink | 914 pixels | at least 500 pixels |
 
 ## Usage reader result
 
@@ -99,10 +100,14 @@ theme pixels remain unchanged.
 | --- | --- |
 | ![Approved editor frame](slice-4/reference/l6h9Cw.png) | ![Running native editor](slice-4/app/editor.png) |
 
-**Pass.** The file tree, breadcrumb, editor and companion split, viewport,
-gutter geometry, status bar, type families, syntax palette, surfaces, radii,
-spacing, and elevation follow the approved frame. The running capture uses the
-real native viewport and language-backed file.
+**Pass after render correction.** The file tree, breadcrumb, editor and agent
+split, viewport, diff marker, status bar, type families, syntax palette,
+surfaces, radii, spacing, and elevation follow the approved frame. The running
+image is a real framebuffer crop from the signed Dev app. It replaced a blank
+closing artifact after review found that the native scroll view and ruler did
+not composite their siblings and document pixels reliably. The corrected
+viewport owns a clipped host and draws its gutter as a sibling. A measured
+render gate now requires source pixels from the production viewport.
 
 ### App bar and usage rings · Screen 12
 
@@ -248,5 +253,7 @@ resolve that state and retry rather than receive a partial overwrite.
 51. [#159 · user-installed CLI path](https://github.com/soyeht/soyeht/pull/159)
 52. [#160 · installed Rust tool path](https://github.com/soyeht/soyeht/pull/160)
 53. [#161 · live supervisor inventory](https://github.com/soyeht/soyeht/pull/161)
+54. [#162 · slice 4 report](https://github.com/soyeht/soyeht/pull/162)
+55. [#163 · native editor render correction](https://github.com/soyeht/soyeht/pull/163)
 
-The PR containing this report records the final gate and closes slice 4.
+The report and its post-review render correction record the final gates for slice 4.

@@ -73,6 +73,7 @@ struct EditorPaneView: View {
     }
     .task(id: languageStatusKey) { await pollLanguageStatus() }
     .task(id: diffKey) { await loadDiff() }
+    .task(id: viewportLoadKey) { await loadViewportIfNeeded() }
   }
 
   private var branch: String? {
@@ -89,6 +90,23 @@ struct EditorPaneView: View {
   private var diffKey: String {
     guard let file = view?.file else { return "none:\(client.connectionRevision)" }
     return "\(file.fileId):\(file.revision):\(client.connectionRevision)"
+  }
+
+  private var viewportLoadKey: String {
+    guard let view else { return "none:\(client.connectionRevision)" }
+    return
+      "\(view.file.fileId):\(view.file.revision):\(view.viewport == nil):\(client.connectionRevision)"
+  }
+
+  private func loadViewportIfNeeded() async {
+    guard let view, view.viewport == nil else { return }
+    do {
+      try await client.loadEditorViewport(fileId: view.file.fileId, fromLine: 0)
+    } catch is CancellationError {
+      return
+    } catch {
+      client.problem = error.localizedDescription
+    }
   }
 
   private func pollLanguageStatus() async {

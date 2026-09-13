@@ -35,12 +35,13 @@ struct EditorNativeViewport: NSViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-  func makeNSView(context: Context) -> NSScrollView {
-    context.coordinator.makeScrollView()
+  func makeNSView(context: Context) -> EditorViewportHostView {
+    context.coordinator.makeHostView()
   }
 
-  func updateNSView(_ scrollView: NSScrollView, context: Context) {
+  func updateNSView(_ hostView: EditorViewportHostView, context: Context) {
     context.coordinator.parent = self
+    hostView.layoutSubtreeIfNeeded()
     context.coordinator.update(view)
   }
 
@@ -49,7 +50,7 @@ struct EditorNativeViewport: NSViewRepresentable {
     var parent: EditorNativeViewport
     private let textView = EditorTextView()
     private weak var scrollView: NSScrollView?
-    private var ruler: EditorLineRuler?
+    private var gutter: EditorLineGutter?
     private var renderedIdentity: String?
     private var appliedNavigationId: String?
     private var viewportStart: UInt32 = 0
@@ -62,7 +63,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       self.parent = parent
     }
 
-    func makeScrollView() -> NSScrollView {
+    func makeHostView() -> EditorViewportHostView {
       let scroll = NSScrollView()
       scroll.drawsBackground = true
       scroll.backgroundColor = NSColor(MacTheme.face)
@@ -75,14 +76,18 @@ struct EditorNativeViewport: NSViewRepresentable {
       NotificationCenter.default.addObserver(
         self, selector: #selector(visibleBoundsChanged(_:)),
         name: NSView.boundsDidChangeNotification, object: scroll.contentView)
-      scroll.hasVerticalRuler = true
-      scroll.rulersVisible = true
       configureTextView()
-      let ruler = EditorLineRuler(scrollView: scroll, textView: textView)
-      scroll.verticalRulerView = ruler
-      self.ruler = ruler
+      // A separate clipped gutter keeps the scroll view from covering sibling SwiftUI content.
+      let gutter = EditorLineGutter(scrollView: scroll, textView: textView)
+      self.gutter = gutter
       scrollView = scroll
-      return scroll
+      let host = EditorViewportHostView(scrollView: scroll, gutter: gutter)
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.renderedIdentity = nil
+        self.update(self.parent.view)
+      }
+      return host
     }
 
     func update(_ view: EditorFileView) {
@@ -95,7 +100,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       if wasVimEnabled, !parent.vimEnabled { vim.reset() }
       wasVimEnabled = parent.vimEnabled
       publishVimState()
-      ruler?.update(
+      gutter?.update(
         startLine: viewport.fromLine, lineCount: viewport.lines.count,
         markers: parent.diffMarkers, agentReviewLines: parent.agentReviewLines,
         agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line)
@@ -103,14 +108,15 @@ struct EditorNativeViewport: NSViewRepresentable {
       let identity =
         "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics))"
       if renderedIdentity != identity {
-        renderedIdentity = identity
         let selection = textView.selectedRanges
-        textView.textStorage?.setAttributedString(
-          attributed(viewport, diagnostics: view.diagnostics))
+        guard let storage = textView.textStorage else { return }
+        storage.setAttributedString(attributed(viewport, diagnostics: view.diagnostics))
+        renderedIdentity = identity
+        updateVirtualGeometry(viewport)
         textView.selectedRanges = selections(
           afterLoading: viewport, previousStart: previousViewportStart, previous: selection)
         textView.needsDisplay = true
-        ruler?.needsDisplay = true
+        gutter?.needsDisplay = true
       }
       applyNavigation(viewport)
       requestViewportIfNeeded()
@@ -283,7 +289,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       }
       textView.selectedRanges = plan.selections.map(NSValue.init(range:))
       selectionChanged()
-      ruler?.setLineCount(textView.string.components(separatedBy: "\n").count)
+      gutter?.setLineCount(textView.string.components(separatedBy: "\n").count)
       if !plan.edits.isEmpty {
         parent.client.enqueueEditorEdits(fileId: parent.view.file.fileId, edits: plan.edits)
       }
@@ -389,8 +395,8 @@ struct EditorNativeViewport: NSViewRepresentable {
     private func selectionChanged() {
       let location = textView.selectedRange().location
       parent.selectedPosition = position(at: location)
-      ruler?.selectedLine = parent.selectedPosition?.line
-      ruler?.needsDisplay = true
+      gutter?.selectedLine = parent.selectedPosition?.line
+      gutter?.needsDisplay = true
     }
 
     private func publishVimState() {
@@ -431,6 +437,37 @@ struct EditorNativeViewport: NSViewRepresentable {
       EditorEditing.textPosition(
         text: textView.string, viewportStartLine: viewportStart, utf16Offset: offset)
     }
+  }
+}
+
+@MainActor final class EditorViewportHostView: NSView {
+  let scrollView: NSScrollView
+  let gutter: EditorLineGutter
+
+  init(scrollView: NSScrollView, gutter: EditorLineGutter) {
+    self.scrollView = scrollView
+    self.gutter = gutter
+    super.init(frame: .zero)
+    wantsLayer = true
+    layer?.masksToBounds = true
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    gutter.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(gutter)
+    addSubview(scrollView)
+    NSLayoutConstraint.activate([
+      gutter.leadingAnchor.constraint(equalTo: leadingAnchor),
+      gutter.topAnchor.constraint(equalTo: topAnchor),
+      gutter.bottomAnchor.constraint(equalTo: bottomAnchor),
+      gutter.widthAnchor.constraint(equalToConstant: EditorLineGutter.width),
+      scrollView.leadingAnchor.constraint(equalTo: gutter.trailingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      scrollView.topAnchor.constraint(equalTo: topAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+    ])
+  }
+
+  required init?(coder: NSCoder) {
+    nil
   }
 }
 
@@ -554,8 +591,11 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 }
 
-@MainActor private final class EditorLineRuler: NSRulerView {
+@MainActor final class EditorLineGutter: NSView {
+  static let width: CGFloat = 44
+  override var isFlipped: Bool { true }
   private weak var textView: NSTextView?
+  private weak var scrollView: NSScrollView?
   private var startLine: UInt32 = 0
   private var lineCount = 0
   private var diffMarkers: [UInt32: Set<EditorDiffMarker>] = [:]
@@ -564,13 +604,13 @@ struct EditorNativeViewport: NSViewRepresentable {
   var selectedLine: UInt32?
 
   init(scrollView: NSScrollView, textView: NSTextView) {
+    self.scrollView = scrollView
     self.textView = textView
-    super.init(scrollView: scrollView, orientation: .verticalRuler)
-    clientView = textView
-    ruleThickness = 44
+    super.init(frame: .zero)
+    wantsLayer = true
   }
 
-  required init(coder: NSCoder) {
+  required init?(coder: NSCoder) {
     super.init(coder: coder)
   }
 
@@ -593,7 +633,8 @@ struct EditorNativeViewport: NSViewRepresentable {
     needsDisplay = true
   }
 
-  override func drawHashMarksAndLabels(in rect: NSRect) {
+  override func draw(_ rect: NSRect) {
+    super.draw(rect)
     NSColor(MacTheme.face).setFill()
     rect.fill()
     guard let textView, let scrollView else { return }
@@ -611,14 +652,14 @@ struct EditorNativeViewport: NSViewRepresentable {
       guard y + 19 >= rect.minY, y <= rect.maxY else { continue }
       if selectedLine == line {
         NSColor(MacTheme.well).setFill()
-        NSRect(x: 0, y: y, width: ruleThickness, height: 19).fill()
+        NSRect(x: 0, y: y, width: Self.width, height: 19).fill()
       }
       drawMarkers(diffMarkers[line] ?? [], y: y)
       drawAgentFacts(line: line, y: y)
       let label = "\(UInt64(line) + 1)" as NSString
       let size = label.size(withAttributes: attributes)
       label.draw(
-        at: NSPoint(x: ruleThickness - size.width - 10, y: y + 2), withAttributes: attributes)
+        at: NSPoint(x: Self.width - size.width - 10, y: y + 2), withAttributes: attributes)
     }
   }
 
@@ -685,13 +726,74 @@ struct EditorNativeViewport: NSViewRepresentable {
       let scrolling = stableP95 {
         scrollSamples(scroll: scroll, textView: textView, bitmap: bitmap)
       }
+      let renderInk = try renderSurfaceInkPixels()
       let report: [String: Any] = [
+        "editor_render_ink_pixels": renderInk,
         "keystroke_to_pixel_p95_ms": keystroke,
         "scroll_frame_p95_ms": scrolling,
         "scroll_frames": samples * 3,
       ]
       return try JSONSerialization.data(
         withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    private static func renderSurfaceInkPixels() throws -> Int {
+      let file = FileDocument(
+        fileId: "render-file", paneId: "render-pane", workspaceId: "render-workspace",
+        path: "Sources/render.swift", language: .swift, revision: "1", diskRevision: "1",
+        lineCount: 3, byteCount: "48", dirty: false, conflicted: false, watching: true)
+      let viewport = FileReadResult(
+        file: file, source: .buffer, fromLine: 0, toLine: 3,
+        lines: [
+          EditorLine(line: 0, text: "struct RenderProbe {", highlights: []),
+          EditorLine(line: 1, text: "  let visible = true", highlights: []),
+          EditorLine(line: 2, text: "}", highlights: []),
+        ])
+      let editor = EditorNativeViewport(
+        client: EngineClient(), view: EditorFileView(file: file, viewport: viewport),
+        selectedPosition: .constant(nil), navigationTarget: nil, diffMarkers: [:],
+        agentReviewLines: [], agentCursors: [], vimEnabled: false,
+        vimMode: .constant(.normal), vimCommandLine: .constant(nil),
+        onDefinition: { _ in }, onReferences: { _ in })
+      let root = HStack(spacing: 0) {
+        Text("FILES\nrender.swift")
+          .font(MacTheme.mono(11))
+          .frame(width: 212)
+          .frame(maxHeight: .infinity, alignment: .topLeading)
+        editor
+      }
+      .frame(width: viewportSize.width, height: viewportSize.height)
+      .background(MacTheme.face)
+      let hosting = NSHostingView(rootView: root)
+      hosting.frame = NSRect(origin: .zero, size: viewportSize)
+      let window = NSWindow(
+        contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+      window.contentView = hosting
+      window.layoutIfNeeded()
+      RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+      hosting.layoutSubtreeIfNeeded()
+      let bitmap = try bitmap(for: hosting)
+      hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+      return inkPixels(
+        bitmap, xRange: Int(212 + EditorLineGutter.width + 8)..<Int(viewportSize.width - 8))
+    }
+
+    private static func inkPixels(_ bitmap: NSBitmapImageRep, xRange: Range<Int>) -> Int {
+      guard let face = NSColor(MacTheme.face).usingColorSpace(.deviceRGB) else { return 0 }
+      let upperX = min(bitmap.pixelsWide, xRange.upperBound)
+      let upperY = min(bitmap.pixelsHigh, Int(viewportSize.height))
+      return (0..<upperY).reduce(into: 0) { count, y in
+        for x in max(0, xRange.lowerBound)..<upperX {
+          guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+            continue
+          }
+          let distance =
+            abs(color.redComponent - face.redComponent)
+            + abs(color.greenComponent - face.greenComponent)
+            + abs(color.blueComponent - face.blueComponent)
+          if color.alphaComponent > 0.5, distance > 0.22 { count += 1 }
+        }
+      }
     }
 
     private static func makeSurface() -> (NSScrollView, NSTextView) {

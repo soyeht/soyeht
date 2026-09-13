@@ -20,6 +20,7 @@ LIMITS = {
     "scroll_frame_p95_ms": 1000.0 / 60.0,
     "search_1gb_ms": 1000.0,
 }
+MINIMUMS = {"editor_render_ink_pixels": 500}
 
 
 def run() -> dict[str, float | int]:
@@ -50,6 +51,10 @@ def failures(measurements: dict[str, float | int]) -> list[str]:
     ]
     if int(measurements["scroll_frames"]) < 60:
         failed.append("scroll_frames")
+    failed.extend(
+        name for name, minimum in MINIMUMS.items()
+        if int(measurements[name]) < minimum
+    )
     return failed
 
 
@@ -59,6 +64,9 @@ def main() -> int:
         for name, limit in LIMITS.items():
             value = float(measurements[name])
             print(f"editor-performance: {name}={value:.3f} limit={limit:.3f}")
+        for name, minimum in MINIMUMS.items():
+            value = int(measurements[name])
+            print(f"editor-performance: {name}={value} minimum={minimum}")
         failed = failures(measurements)
         if failed:
             print("editor-performance: failed " + ", ".join(failed), file=sys.stderr)
