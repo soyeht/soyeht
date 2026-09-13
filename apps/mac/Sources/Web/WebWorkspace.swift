@@ -1,0 +1,132 @@
+import SoyehtClient
+import SoyehtProtocol
+import SwiftUI
+
+struct WebWorkspace: View {
+  @Bindable var client: EngineClient
+  let webHost: MacWebHost
+  let workspaceId: String?
+  let onClose: (String) -> Void
+  let onTasks: () -> Void
+
+  private var panes: [Pane] {
+    guard let workspaceId else { return [] }
+    return client.panes.filter { $0.workspaceId == workspaceId && $0.mode == .web }
+  }
+
+  var body: some View {
+    if panes.isEmpty {
+      WebEmptyState(client: client, workspaceId: workspaceId)
+        .padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
+    } else {
+      PaneGrid(
+        client: client, webHost: webHost, workspaceId: workspaceId, mode: .web,
+        onClose: onClose, onNewPane: {}, onTasks: onTasks)
+    }
+  }
+}
+
+private struct WebEmptyState: View {
+  @Bindable var client: EngineClient
+  let workspaceId: String?
+  @State private var address = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+      Text("Open a local server")
+        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+      Text("Choose a server detected on this Mac, or enter an address.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
+      serverList
+      addressField
+    }
+    .padding(MacTheme.Space.x14)
+    .frame(width: 420)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .task { await refreshWhileVisible() }
+  }
+
+  @ViewBuilder private var serverList: some View {
+    if client.localServers.isEmpty {
+      HStack(spacing: MacTheme.Space.x10) {
+        ProgressView().controlSize(.small)
+        Text("Looking for local servers…")
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.muted)
+      }
+      .padding(.horizontal, MacTheme.Space.x10)
+      .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+      .neoWell(radius: MacTheme.Radius.compact)
+    } else {
+      ForEach(client.localServers, id: \.port) { server in
+        Button {
+          open("http://127.0.0.1:\(server.port)")
+        } label: {
+          LocalServerRow(server: server)
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  private var addressField: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Image(systemName: "globe")
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(MacTheme.secondary)
+      TextField("localhost:3000 or example.com", text: $address)
+        .textFieldStyle(.plain)
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .onSubmit { open(address) }
+    }
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: 28)
+    .neoWell(radius: MacTheme.Radius.pill)
+  }
+
+  private func refreshWhileVisible() async {
+    client.refreshLocalServers()
+    while !Task.isCancelled {
+      do { try await Task.sleep(for: .seconds(5)) } catch { return }
+      client.refreshLocalServers()
+    }
+  }
+
+  private func open(_ url: String) {
+    guard let workspaceId, !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return
+    }
+    Task {
+      do { _ = try await client.openWeb(workspaceId: workspaceId, url: url) } catch {
+        client.problem = error.localizedDescription
+      }
+    }
+  }
+}
+
+private struct LocalServerRow: View {
+  let server: LocalServer
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+        Text(server.title ?? server.command)
+          .font(MacTheme.mono(MacTheme.TypeScale.caption, weight: .bold))
+          .lineLimit(1)
+        Text("\(server.cwd) · port \(server.port) · pid \(server.pid)")
+          .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+          .foregroundStyle(MacTheme.secondary)
+          .lineLimit(1)
+      }
+      Spacer(minLength: 0)
+      Image(systemName: "arrow.right")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(MacTheme.accent)
+    }
+    .padding(.horizontal, MacTheme.Space.x10)
+    .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+    .neoWell(radius: MacTheme.Radius.compact)
+  }
+}

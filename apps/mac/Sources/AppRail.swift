@@ -49,6 +49,7 @@ struct AppRail: View {
     [
       AppRailItem(destination: .agents, icon: "cpu", label: "Agents"),
       AppRailItem(destination: .editor, icon: "doc.text", label: "Editor"),
+      AppRailItem(destination: .web, icon: "globe", label: "Web"),
       AppRailItem(destination: .tasks, icon: "checklist", label: "Tasks"),
       AppRailItem(destination: .terminal, icon: "terminal", label: "Terminal"),
       AppRailItem(destination: .phone, icon: "iphone", label: "iPhone"),

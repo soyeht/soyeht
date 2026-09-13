@@ -59,9 +59,10 @@ struct SoyehtMacApp: App {
         Divider()
         workspaceViewCommand("Agents", destination: .agents, key: "1")
         workspaceViewCommand("Editor", destination: .editor, key: "2")
-        workspaceViewCommand("Tasks", destination: .tasks, key: "3")
-        workspaceViewCommand("Terminal", destination: .terminal, key: "4")
-        workspaceViewCommand("iPhone", destination: .phone, key: "5")
+        workspaceViewCommand("Web", destination: .web, key: "3")
+        workspaceViewCommand("Tasks", destination: .tasks, key: "4")
+        workspaceViewCommand("Terminal", destination: .terminal, key: "5")
+        workspaceViewCommand("iPhone", destination: .phone, key: "6")
       }
       CommandGroup(replacing: .appSettings) {
         Button("Preferences…") {

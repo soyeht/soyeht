@@ -4,6 +4,7 @@ import Observation
 public enum WorkspaceDestination: String, CaseIterable, Sendable {
   case agents
   case editor
+  case web
   case tasks
   case terminal
   case phone

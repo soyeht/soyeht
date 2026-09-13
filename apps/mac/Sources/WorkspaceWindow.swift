@@ -170,6 +170,10 @@ struct WorkspaceWindow: View {
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .editor,
         onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
+    case .web:
+      WebWorkspace(
+        client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
+        onClose: { paneToClose = $0 }, onTasks: showTasks)
     case .phone:
       phoneWorkspace
     }
@@ -415,7 +419,7 @@ private struct WorkspaceTabSurface: ViewModifier {
   }
 }
 
-private struct PaneGrid: View {
+struct PaneGrid: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   let workspaceId: String?

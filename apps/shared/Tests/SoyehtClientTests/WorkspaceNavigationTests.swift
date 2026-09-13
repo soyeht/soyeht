@@ -24,10 +24,10 @@ func appBarVisibilityPersistsWithoutPersistingTheSelectedView() {
   #expect(navigation.destination == .agents)
 
   navigation.toggleAppBar()
-  navigation.select(.tasks)
+  navigation.select(.web)
 
   #expect(navigation.appBarOpen)
-  #expect(navigation.destination == .tasks)
+  #expect(navigation.destination == .web)
 
   let restored = WorkspaceNavigation(preferences: preferences)
   #expect(restored.appBarOpen)
