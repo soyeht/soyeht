@@ -1,6 +1,7 @@
 //! Browser composition owned by the engine.
 
 mod host;
+mod navigation;
 mod panes;
 mod system;
 

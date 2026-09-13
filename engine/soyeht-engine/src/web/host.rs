@@ -2,10 +2,13 @@ use crate::{
     core::Core,
     errors::{self, Result},
     model,
+    ports::StorePort,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    ErrorKind, RpcError, WebCommandKind, WebCommandParams, WebCommandResult, error_code,
+    ErrorKind, RpcError, WebCommandKind, WebCommandParams, WebCommandResult, WebNavigateResult,
+    error_code,
 };
 use soyeht_web::{command_response_budget, validate_command};
 use uuid::Uuid;
@@ -14,11 +17,15 @@ const WEB_WAITER_LIMIT: usize = 128;
 
 pub struct WebWaiter {
     host: String,
-    caller: String,
-    caller_request: Value,
+    callers: Vec<(String, Value)>,
     pane_id: String,
     command: WebCommandKind,
     deadline_ms: i64,
+    method: String,
+    scope: String,
+    key: String,
+    fingerprint: String,
+    actor: Value,
 }
 
 impl Core {
@@ -26,15 +33,57 @@ impl Core {
         &mut self,
         caller: &str,
         caller_request: Value,
+        method: &str,
+        raw_params: &Value,
         params: WebCommandParams,
     ) -> Result<String> {
         validate_command(&params, soyeht_protocol::WebInteractionMode::Structured)?;
-        let caller_live = self
+        let client = self
             .clients
             .get(caller)
-            .is_some_and(|client| client.actor.is_some() && !client.outbox.is_closed());
-        if !caller_live {
-            return Err(errors::unauthorized("Web command caller is disconnected"));
+            .filter(|client| client.actor.is_some() && !client.outbox.is_closed())
+            .ok_or_else(|| errors::unauthorized("Web command caller is disconnected"))?;
+        let scope = client.scope.clone();
+        let actor = serde_json::to_value(
+            client
+                .actor
+                .as_ref()
+                .ok_or_else(|| errors::unauthorized("Web command caller is disconnected"))?,
+        )
+        .map_err(|_| errors::internal("Web command actor serialization failed"))?;
+        let key = raw_params["idempotencyKey"]
+            .as_str()
+            .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
+        if params.operation_key != key {
+            return Err(errors::invalid("Web operation identity changed"));
+        }
+        let fingerprint = STANDARD.encode(crate::auth::token_hash(
+            &json!([method, raw_params]).to_string(),
+        ));
+        if let Some((id, waiter)) = self
+            .web_waiters
+            .iter_mut()
+            .find(|(_, waiter)| waiter.scope == scope && waiter.key == key)
+        {
+            if waiter.fingerprint != fingerprint {
+                return Err(errors::idempotency_conflict(
+                    "Web operation key belongs to another mutation",
+                ));
+            }
+            if !waiter
+                .callers
+                .iter()
+                .any(|(owner, request)| owner == caller && request == &caller_request)
+            {
+                if waiter.callers.len() >= WEB_WAITER_LIMIT {
+                    return Err(errors::pane_busy("Web operation waiter limit reached"));
+                }
+                waiter.callers.push((caller.into(), caller_request));
+            }
+            return Ok(id.clone());
+        }
+        if method != "web.navigate" {
+            return Err(errors::internal("Unsupported routed web method"));
         }
         let pane_live = self.panes.get(&params.pane_id).is_some_and(|running| {
             !running.stored.closed && running.stored.pane.mode == soyeht_protocol::PaneMode::Web
@@ -64,11 +113,15 @@ impl Core {
             reverse_id.clone(),
             WebWaiter {
                 host: host.clone(),
-                caller: caller.into(),
-                caller_request,
+                callers: vec![(caller.into(), caller_request)],
                 pane_id,
                 command,
                 deadline_ms,
+                method: method.into(),
+                scope,
+                key: key.into(),
+                fingerprint,
+                actor,
             },
         );
         let sent = self
@@ -93,7 +146,7 @@ impl Core {
                 "Web command response belongs to another host",
             ));
         }
-        let frame = if response.get("result").is_some() {
+        let result = if response.get("result").is_some() {
             let result: WebCommandResult = serde_json::from_value(response["result"].clone())
                 .map_err(|_| errors::invalid("Invalid web command result"))?;
             if result.pane_id != waiter.pane_id {
@@ -106,19 +159,42 @@ impl Core {
                     "Web command result exceeds its byte budget",
                 ));
             }
-            model::response(waiter.caller_request.clone(), response["result"].clone())?
+            Ok(public_result(waiter, &result)?)
         } else {
             let error: RpcError = serde_json::from_value(response["error"].clone())
                 .map_err(|_| errors::invalid("Invalid web command error"))?;
             validate_host_error(&error)?;
-            model::failure(waiter.caller_request.clone(), error)?
+            Err(error)
         };
         let waiter = errors::invariant(
             self.web_waiters.remove(id),
             "Web command waiter disappeared",
         )?;
-        if let Some(client) = self.clients.get(&waiter.caller) {
-            client.outbox.send(frame);
+        let result = match result {
+            Ok(result) => {
+                let mutation = StorePort::mutate_as(
+                    &mut self.store,
+                    &waiter.scope,
+                    &waiter.key,
+                    &waiter.fingerprint,
+                    Some(&waiter.actor),
+                    |_| Ok((result, Vec::new())),
+                );
+                match mutation {
+                    Ok(mutation) => Ok(mutation.result),
+                    Err(error) => Err(errors::wire(errors::storage(error))),
+                }
+            }
+            Err(error) => Err(error),
+        };
+        for (caller, request) in waiter.callers {
+            if let Some(client) = self.clients.get(&caller) {
+                let frame = match &result {
+                    Ok(value) => model::response(request, value.clone())?,
+                    Err(error) => model::failure(request, error.clone())?,
+                };
+                client.outbox.send(frame);
+            }
         }
         Ok(())
     }
@@ -155,12 +231,23 @@ impl Core {
             return Ok(());
         };
         let error = errors::wire(errors::web_host_unavailable(message));
-        if let Some(client) = self.clients.get(&waiter.caller) {
-            client
-                .outbox
-                .send(model::failure(waiter.caller_request, error)?);
+        for (caller, request) in waiter.callers {
+            if let Some(client) = self.clients.get(&caller) {
+                client.outbox.send(model::failure(request, error.clone())?);
+            }
         }
         Ok(())
+    }
+}
+
+fn public_result(waiter: &WebWaiter, _result: &WebCommandResult) -> Result<Value> {
+    match waiter.method.as_str() {
+        "web.navigate" => serde_json::to_value(WebNavigateResult {
+            pane_id: waiter.pane_id.clone(),
+            accepted: true,
+        })
+        .map_err(|_| errors::internal("Web navigation result serialization failed")),
+        _ => Err(errors::internal("Unsupported routed web result")),
     }
 }
 
@@ -223,6 +310,18 @@ mod tests {
         root
     }
 
+    fn command_params(pane_id: &str, key: &str) -> WebCommandParams {
+        serde_json::from_value(json!({
+            "paneId":pane_id,"command":"navigate","args":{"action":"reload"},
+            "timeoutMs":100,"operationKey":key
+        }))
+        .unwrap()
+    }
+
+    fn navigate_params(pane_id: &str, key: &str) -> Value {
+        json!({"paneId":pane_id,"action":"reload","idempotencyKey":key})
+    }
+
     async fn connect(core: &mut Core, capabilities: Value) -> (String, outbox::Receiver) {
         let (sender, mut receiver) = outbox::channel();
         let connection = core.connect(true, sender).unwrap();
@@ -275,14 +374,15 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let params: WebCommandParams = serde_json::from_value(json!({
-            "paneId":pane,"command":"snapshot","args":{},"timeoutMs":100,
-            "operationKey":"operation"
-        }))
-        .unwrap();
+        let raw = navigate_params(&pane, "operation");
+        let params = command_params(&pane, "operation");
         let command_id = core
-            .queue_web_command(&caller, json!(44), params.clone())
+            .queue_web_command(&caller, json!(44), "web.navigate", &raw, params.clone())
             .unwrap();
+        let repeated_id = core
+            .queue_web_command(&caller, json!(440), "web.navigate", &raw, params)
+            .unwrap();
+        assert_eq!(repeated_id, command_id);
         let command = next_json(&mut host_receiver).await;
         assert_eq!(command["id"], command_id);
         assert_eq!(command["method"], "web.command");
@@ -301,10 +401,30 @@ mod tests {
         .unwrap();
         let response = next_json(&mut caller_receiver).await;
         assert_eq!(response["id"], 44);
-        assert_eq!(response["result"]["paneId"], pane);
+        assert_eq!(response["result"], json!({"paneId":pane,"accepted":true}));
+        let repeated = next_json(&mut caller_receiver).await;
+        assert_eq!(repeated["id"], 440);
+        assert_eq!(repeated["result"], response["result"]);
+        let Outcome::Reply(stored) = core
+            .dispatch(
+                &caller,
+                request(441, "web.navigate", navigate_params(&pane, "operation")),
+            )
+            .unwrap()
+        else {
+            panic!("stored web navigation should reply immediately")
+        };
+        assert_eq!(stored, response["result"]);
 
-        core.queue_web_command(&caller, json!(45), params.clone())
-            .unwrap();
+        let raw = navigate_params(&pane, "timeout");
+        core.queue_web_command(
+            &caller,
+            json!(45),
+            "web.navigate",
+            &raw,
+            command_params(&pane, "timeout"),
+        )
+        .unwrap();
         let _ = next_json(&mut host_receiver).await;
         core.clock = Arc::new(FixedClock(111));
         core.advance_web_commands().unwrap();
@@ -313,7 +433,15 @@ mod tests {
         assert_eq!(timeout["error"]["data"]["kind"], "web_host_unavailable");
 
         core.clock = Arc::new(FixedClock(200));
-        core.queue_web_command(&caller, json!(46), params).unwrap();
+        let raw = navigate_params(&pane, "disconnect");
+        core.queue_web_command(
+            &caller,
+            json!(46),
+            "web.navigate",
+            &raw,
+            command_params(&pane, "disconnect"),
+        )
+        .unwrap();
         let _ = next_json(&mut host_receiver).await;
         core.disconnect_web_host(&host).unwrap();
         let disconnected = next_json(&mut caller_receiver).await;

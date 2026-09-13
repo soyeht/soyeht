@@ -321,6 +321,8 @@ impl Core {
             "usage.list" => self.usage_list()?,
             "usage.refresh" => self.usage_refresh(connection, params)?,
             "servers.local.list" => self.local_servers_list()?,
+            "web.open" => self.web_open(connection, params)?,
+            "web.navigate" => return self.web_navigate(connection, request_id, params),
             "lsp.status" => self.lsp_status(params)?,
             "file.symbols" | "file.definition" | "file.references" => {
                 return self.language_request(connection, request_id, method, params);

@@ -5,10 +5,10 @@ use crate::{
     panes::{pane_created, persist_new_pane},
     screen::Screen,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneCreateParams, PaneMode, PaneState, StateSource, WebSessionState, WebViewportPreset,
-    limits,
+    Pane, PaneCreateParams, PaneMode, PaneState, StateSource, WebOpenResult, WebSessionState,
+    WebViewportPreset, limits,
 };
 use soyeht_web::{DEFAULT_ZOOM_PERCENT, NormalizedUrl, viewport};
 use uuid::Uuid;
@@ -16,18 +16,45 @@ use uuid::Uuid;
 const DEFAULT_VIEWPORT_WIDTH: u32 = 1_280;
 const DEFAULT_VIEWPORT_HEIGHT: u32 = 720;
 
+pub(crate) struct NewWebPane<'a> {
+    pub workspace: &'a soyeht_protocol::Workspace,
+    pub name: Option<&'a str>,
+    pub url: Option<&'a NormalizedUrl>,
+    pub incognito: bool,
+}
+
 impl Core {
     pub(crate) fn web_pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let request: PaneCreateParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid web pane parameters"))?;
         let workspace = model::workspace(&self.store, &request.workspace_id)?;
-        self.ensure_web_pane_capacity(&workspace.workspace_id)?;
         let url = request
             .url
             .as_deref()
             .map(NormalizedUrl::parse)
             .transpose()?;
-        let pane = web_pane(&workspace, &request, url.as_ref())?;
+        self.persist_web_pane(
+            connection,
+            "pane.create",
+            params,
+            NewWebPane {
+                workspace: &workspace,
+                name: request.name.as_deref(),
+                url: url.as_ref(),
+                incognito: request.incognito.unwrap_or(false),
+            },
+        )
+    }
+
+    pub(crate) fn persist_web_pane(
+        &mut self,
+        connection: &str,
+        method: &str,
+        raw_params: &Value,
+        intent: NewWebPane<'_>,
+    ) -> Result<Value> {
+        self.ensure_web_pane_capacity(&intent.workspace.workspace_id)?;
+        let pane = web_pane(intent.workspace, intent.name, intent.url, intent.incognito)?;
         let saved = StoredPane {
             pane: pane.clone(),
             closed: false,
@@ -40,9 +67,17 @@ impl Core {
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             false,
         )?;
-        let mutation = self.mutate(connection, "pane.create", params, |change| {
+        let mutation = self.mutate(connection, method, raw_params, |change| {
             persist_new_pane(change, &saved, None)?;
-            Ok(pane_created(&saved))
+            let (_, events) = pane_created(&saved);
+            let result = if method == "web.open" {
+                serde_json::to_value(WebOpenResult {
+                    pane_id: saved.pane.pane_id.clone(),
+                })?
+            } else {
+                json!({"paneId":saved.pane.pane_id})
+            };
+            Ok((result, events))
         })?;
         if !mutation.repeated {
             self.panes.insert(
@@ -76,14 +111,14 @@ impl Core {
 
 fn web_pane(
     workspace: &soyeht_protocol::Workspace,
-    request: &PaneCreateParams,
+    name: Option<&str>,
     url: Option<&NormalizedUrl>,
+    incognito: bool,
 ) -> Result<Pane> {
-    let incognito = request.incognito.unwrap_or(false);
     Ok(Pane {
         pane_id: Uuid::new_v4().to_string(),
         workspace_id: workspace.workspace_id.clone(),
-        name: request.name.clone().unwrap_or_else(|| "Web".into()),
+        name: name.unwrap_or("Web").into(),
         cwd: workspace.path.clone(),
         mode: PaneMode::Web,
         state: PaneState::Idle,
@@ -137,7 +172,13 @@ mod tests {
         }))
         .unwrap();
         let url = NormalizedUrl::parse(request.url.as_deref().unwrap()).unwrap();
-        let pane = web_pane(&workspace, &request, Some(&url)).unwrap();
+        let pane = web_pane(
+            &workspace,
+            request.name.as_deref(),
+            Some(&url),
+            request.incognito.unwrap_or(false),
+        )
+        .unwrap();
         assert_eq!(pane.url.as_deref(), Some("http://localhost:5173/"));
         assert_eq!(pane.web_session, Some(WebSessionState::Incognito));
         assert_eq!(pane.viewport.unwrap().width, DEFAULT_VIEWPORT_WIDTH);
