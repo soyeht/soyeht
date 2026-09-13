@@ -421,15 +421,21 @@ private struct EditorCodeViewport: View {
   let findReferences: (TextPosition) -> Void
 
   var body: some View {
-    EditorNativeViewport(
-      client: client, view: view, selectedPosition: $selectedPosition,
-      navigationTarget: navigationTarget,
-      diffMarkers: diff?.gutterMarkers(lineCount: view.file.lineCount) ?? [:],
-      agentReviewLines: reviewPresentation?.lines ?? [],
-      agentCursors: Array(view.agentCursors.values),
-      onDefinition: definition, onReferences: findReferences
-    )
-    .background(MacTheme.face)
+    HStack(spacing: 0) {
+      EditorNativeViewport(
+        client: client, view: view, selectedPosition: $selectedPosition,
+        navigationTarget: navigationTarget,
+        diffMarkers: diff?.gutterMarkers(lineCount: view.file.lineCount) ?? [:],
+        agentReviewLines: reviewPresentation?.lines ?? [],
+        agentCursors: Array(view.agentCursors.values),
+        onDefinition: definition, onReferences: findReferences
+      )
+      .background(MacTheme.face)
+      if view.file.language == .markdown, let viewport = view.viewport {
+        Rectangle().fill(MacTheme.well).frame(width: 1)
+        EditorMarkdownPreview(viewport: viewport)
+      }
+    }
   }
 
   private var reviewPresentation: EditorAgentReviewPresentation? {
