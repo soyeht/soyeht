@@ -7,9 +7,10 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    ErrorKind, RpcError, WebActionResult, WebCloseResult, WebCommandKind, WebCommandParams,
-    WebCommandResult, WebConsoleResult, WebEvaluateResult, WebNavigateResult, WebNetworkResult,
-    WebResizeResult, WebScreenshotResult, WebSnapshotResult, WebWaitResult, error_code,
+    AttachmentRef, ErrorKind, RpcError, WebActionResult, WebCloseResult, WebCommandKind,
+    WebCommandParams, WebCommandResult, WebConsoleResult, WebEvaluateResult, WebNavigateResult,
+    WebNetworkResult, WebResizeResult, WebScreenshotResult, WebSnapshotResult, WebWaitResult,
+    attachment::attachment_frames, error_code, frame::Frame,
 };
 use soyeht_web::{command_response_budget, validate_command};
 use uuid::Uuid;
@@ -36,6 +37,29 @@ pub(super) struct WebMutation {
 }
 
 impl Core {
+    pub(crate) fn web_attachment_chunk(
+        &mut self,
+        connection: &str,
+        header: [u8; 16],
+        bytes: &[u8],
+    ) -> Result<()> {
+        let client = self
+            .clients
+            .get_mut(connection)
+            .filter(|client| client.actor.is_some() && client.web_host)
+            .ok_or_else(|| errors::unauthorized("Attachment sender is not the web host"))?;
+        client.attachments.push(header, bytes)?;
+        Ok(())
+    }
+
+    pub(crate) fn web_attachment_pending(&self, connection: &str) -> Result<bool> {
+        let client = self
+            .clients
+            .get(connection)
+            .ok_or_else(|| errors::unauthorized("Attachment connection is unknown"))?;
+        Ok(client.attachments.is_pending())
+    }
+
     pub fn queue_web_command(
         &mut self,
         caller: &str,
@@ -135,6 +159,7 @@ impl Core {
                 "Web command response belongs to another host",
             ));
         }
+        let mut attachment = None;
         let result = if response.get("result").is_some() {
             let result: WebCommandResult = serde_json::from_value(response["result"].clone())
                 .map_err(|_| errors::invalid("Invalid web command result"))?;
@@ -151,8 +176,16 @@ impl Core {
             if result.cookies_present == Some(true) {
                 return self.web_session_required(id);
             }
-            Ok(public_result(waiter, &result)?)
+            let reference = web_attachment_reference(waiter, &result)?;
+            let public = public_result(waiter, &result)?;
+            attachment = self.commit_web_attachment(host, reference)?;
+            Ok(public)
         } else {
+            if self.web_attachment_pending(host)? {
+                return Err(errors::invalid(
+                    "Web host error followed an uncommitted attachment",
+                ));
+            }
             let error: RpcError = serde_json::from_value(response["error"].clone())
                 .map_err(|_| errors::invalid("Invalid web command error"))?;
             validate_host_error(&error)?;
@@ -190,10 +223,32 @@ impl Core {
                     Ok(value) => model::response(request, value.clone())?,
                     Err(error) => model::failure(request, error.clone())?,
                 };
-                client.outbox.send(frame);
+                send_web_response(&client.outbox, attachment.as_ref(), frame)?;
             }
         }
         Ok(())
+    }
+
+    fn commit_web_attachment(
+        &mut self,
+        host: &str,
+        reference: Option<AttachmentRef>,
+    ) -> Result<Option<(AttachmentRef, Vec<u8>)>> {
+        let client = self
+            .clients
+            .get_mut(host)
+            .ok_or_else(|| errors::unauthorized("Web host disconnected"))?;
+        match reference {
+            Some(reference) => {
+                validate_web_attachment(&reference)?;
+                let bytes = client.attachments.commit(&reference)?;
+                Ok(Some((reference, bytes)))
+            }
+            None if client.attachments.is_pending() => Err(errors::invalid(
+                "Web host result did not commit its pending attachment",
+            )),
+            None => Ok(None),
+        }
     }
 
     pub(crate) fn disconnect_web_host(&mut self, host: &str) -> Result<()> {
@@ -315,6 +370,57 @@ fn typed_public_result<T: serde::de::DeserializeOwned + serde::Serialize>(
     soyeht_protocol::validate::result(&waiter.method, &canonical)
         .map_err(|_| errors::invalid("Invalid typed web command result"))?;
     Ok(canonical)
+}
+
+fn web_attachment_reference(
+    waiter: &WebWaiter,
+    result: &WebCommandResult,
+) -> Result<Option<AttachmentRef>> {
+    let field = match waiter.method.as_str() {
+        "web.screenshot" => Some("image"),
+        "web.snapshot" => Some("screenshot"),
+        _ => None,
+    };
+    let Some(field) = field else {
+        return Ok(None);
+    };
+    let Some(value) = result.value.as_ref().and_then(|value| value.get(field)) else {
+        return if waiter.method == "web.screenshot" {
+            Err(errors::invalid("Web screenshot result omitted its image"))
+        } else {
+            Ok(None)
+        };
+    };
+    serde_json::from_value(value.clone())
+        .map(Some)
+        .map_err(|_| errors::invalid("Invalid web screenshot attachment reference"))
+}
+
+fn validate_web_attachment(reference: &AttachmentRef) -> Result<()> {
+    if reference.mime_type != "image/png" || reference.name != "screenshot.png" {
+        return Err(errors::invalid(
+            "Web screenshot attachment must be a named PNG image",
+        ));
+    }
+    Ok(())
+}
+
+fn send_web_response(
+    outbox: &crate::outbox::Outbox,
+    attachment: Option<&(AttachmentRef, Vec<u8>)>,
+    response: Frame,
+) -> Result<()> {
+    let Some((reference, bytes)) = attachment else {
+        outbox.send(response);
+        return Ok(());
+    };
+    for frame in attachment_frames(reference, bytes)? {
+        if !outbox.send_ordered(frame) {
+            return Ok(());
+        }
+    }
+    outbox.send_ordered(response);
+    Ok(())
 }
 
 fn command_mutation(
@@ -715,6 +821,85 @@ mod tests {
             panic!("completed mutation should use its durable receipt")
         };
         assert_eq!(repeated, clicked["result"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn screenshot_bytes_commit_exactly_and_precede_the_json_response() {
+        let root = temp_root();
+        let mut core = Core::open(&root).unwrap();
+        let (host, mut host_receiver) = connect(&mut core, json!(["web_host"])).await;
+        let (caller, mut caller_receiver) = connect(&mut core, json!([])).await;
+        let workspace = reply(
+            &mut core,
+            &caller,
+            request(
+                2,
+                "workspace.create",
+                json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
+            ),
+        )["workspace"]["workspaceId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let pane = reply(
+            &mut core,
+            &caller,
+            request(
+                3,
+                "pane.create",
+                json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"pane"}),
+            ),
+        )["paneId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let Outcome::Queued = core
+            .dispatch(
+                &caller,
+                request(4, "web.screenshot", json!({"paneId":pane})),
+            )
+            .unwrap()
+        else {
+            panic!("screenshot should wait for the host")
+        };
+        let command = next_json(&mut host_receiver).await;
+        let attachment_id = "00112233-4455-4677-8899-aabbccddeeff";
+        let image = b"bounded-png";
+        let reference = json!({
+            "attachmentId":attachment_id,
+            "mimeType":"image/png",
+            "name":"screenshot.png",
+            "bytes":image.len().to_string()
+        });
+        core.web_attachment_chunk(
+            &host,
+            soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+            image,
+        )
+        .unwrap();
+        core.web_host_response(
+            &host,
+            json!({"jsonrpc":"2.0","id":command["id"],"result":{
+                "paneId":pane,"value":{"image":reference}
+            }}),
+        )
+        .unwrap();
+
+        let Frame::Attachment { header, bytes } =
+            caller_receiver.next().await.unwrap().unwrap().frame
+        else {
+            panic!("attachment must precede its response")
+        };
+        assert_eq!(
+            header,
+            soyeht_protocol::attachment::attachment_header(attachment_id).unwrap()
+        );
+        assert_eq!(bytes, image);
+        let response = next_json(&mut caller_receiver).await;
+        assert_eq!(response["id"], 4);
+        assert_eq!(response["result"]["image"], reference);
+
         fs::remove_dir_all(root).unwrap();
     }
 }

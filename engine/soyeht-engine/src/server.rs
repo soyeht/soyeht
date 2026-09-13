@@ -313,7 +313,17 @@ async fn read_requests(
     loop {
         let frame = match next_frame(&core, id, reader).await {
             Ok(Frame::Json(bytes)) => bytes,
-            Ok(_) => return CloseReason::InvalidFrame,
+            Ok(Frame::Attachment { header, bytes }) => {
+                let accepted = core
+                    .lock()
+                    .map_err(|_| Error::EngineStatePoisoned)
+                    .and_then(|mut state| state.web_attachment_chunk(id, header, &bytes));
+                if accepted.is_err() {
+                    return CloseReason::InvalidFrame;
+                }
+                continue;
+            }
+            Ok(Frame::Terminal { .. }) => return CloseReason::InvalidFrame,
             Err(reason) => return reason,
         };
         let Ok(request) = serde_json::from_slice::<Value>(&frame) else {
@@ -328,6 +338,14 @@ async fn read_requests(
                 return CloseReason::InvalidFrame;
             }
             continue;
+        }
+        let pending_attachment = core
+            .lock()
+            .map_err(|_| Error::EngineStatePoisoned)
+            .and_then(|state| state.web_attachment_pending(id));
+        match pending_attachment {
+            Ok(false) => (),
+            Ok(true) | Err(_) => return CloseReason::InvalidFrame,
         }
         let started = Instant::now();
         let operation_id = uuid::Uuid::new_v4().to_string();

@@ -449,6 +449,73 @@ struct Client {
 }
 
 #[test]
+fn web_host_attachment_frames_are_accepted_and_forwarded_before_the_response() {
+    let rig = Rig::new();
+    let mut caller = rig.client();
+    let workspace = caller.call(
+        "workspace.create",
+        json!({"name":"Web","path":rig.path,"idempotencyKey":"web-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let pane = caller.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"web-pane"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut host = Client::new_with_capabilities(rig.path.join("engine.sock"), json!(["web_host"]));
+    Frame::Json(
+        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":700,"method":"web.screenshot",
+            "params":{"paneId":pane}}))
+        .unwrap(),
+    )
+    .write_to(&mut caller.socket)
+    .unwrap();
+    let Some(Frame::Json(command_bytes)) = Frame::read_from(&mut host.socket).unwrap() else {
+        panic!("web command expected")
+    };
+    let command: Value = serde_json::from_slice(&command_bytes).unwrap();
+    assert_eq!(command["method"], "web.command");
+
+    let attachment_id = "00112233-4455-4677-8899-aabbccddeeff";
+    let image = b"real-image-bytes";
+    Frame::Attachment {
+        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+        bytes: image.to_vec(),
+    }
+    .write_to(&mut host.socket)
+    .unwrap();
+    Frame::Json(
+        serde_json::to_vec(&json!({"jsonrpc":"2.0","id":command["id"],"result":{
+        "paneId":pane,"value":{"image":{
+            "attachmentId":attachment_id,"mimeType":"image/png",
+            "name":"screenshot.png","bytes":image.len().to_string()
+        }}}}))
+        .unwrap(),
+    )
+    .write_to(&mut host.socket)
+    .unwrap();
+
+    let Some(Frame::Attachment { bytes, .. }) = Frame::read_from(&mut caller.socket).unwrap()
+    else {
+        panic!("attachment must be forwarded first")
+    };
+    assert_eq!(bytes, image);
+    let Some(Frame::Json(response_bytes)) = Frame::read_from(&mut caller.socket).unwrap() else {
+        panic!("response must follow its attachment")
+    };
+    let response: Value = serde_json::from_slice(&response_bytes).unwrap();
+    assert_eq!(response["id"], 700);
+    assert_eq!(
+        response["result"]["image"]["bytes"],
+        image.len().to_string()
+    );
+}
+
+#[test]
 fn configuration_timeout_preserves_late_confirmation_without_retrying_or_restarting() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();
@@ -2707,6 +2774,9 @@ impl Client {
             .collect()
     }
     fn new(path: PathBuf) -> Self {
+        Self::new_with_capabilities(path, json!([]))
+    }
+    fn new_with_capabilities(path: PathBuf, capabilities: Value) -> Self {
         let socket = UnixStream::connect(path).unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -2728,7 +2798,8 @@ impl Client {
         );
         let welcome = client.call(
             "hello",
-            json!({"client":"runtime-test","clientVersion":"1","protocolVersion":1}),
+            json!({"client":"runtime-test","clientVersion":"1","protocolVersion":1,
+                "capabilities":capabilities}),
         );
         assert_eq!(welcome["role"], "human_local");
         client

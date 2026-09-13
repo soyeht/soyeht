@@ -8,7 +8,10 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::{Actor, ClientCapability, HelloParams, Role, Welcome, frame::Frame};
+use soyeht_protocol::{
+    Actor, ClientCapability, HelloParams, Role, Welcome, attachment::AttachmentAssembler,
+    frame::Frame, limits,
+};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -39,6 +42,7 @@ impl Core {
                 next_binary_ref: 1,
                 pair_request: None,
                 web_host: false,
+                attachments: AttachmentAssembler::new(limits::WEB_SCREENSHOT_BYTES)?,
             },
         );
         Ok(id)

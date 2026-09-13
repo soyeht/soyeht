@@ -5,7 +5,7 @@ use crate::{
     screen::Screen,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{Actor, Workspace, frame::Frame};
+use soyeht_protocol::{Actor, Workspace, attachment::AttachmentAssembler, frame::Frame};
 use std::collections::BTreeMap;
 
 pub use soyeht_store::domain::PaneRecord as StoredPane;
@@ -42,6 +42,7 @@ pub struct Connected {
     pub next_binary_ref: u32,
     pub pair_request: Option<String>,
     pub web_host: bool,
+    pub attachments: AttachmentAssembler,
 }
 
 pub fn notification(method: &str, params: Value) -> Result<Frame> {
