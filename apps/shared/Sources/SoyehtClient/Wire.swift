@@ -140,6 +140,36 @@ final class Wire {
     }
   }
 
+  func send(_ response: WebHostResponse) async throws {
+    guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
+    let frames = try response.frames()
+    if let webSocket {
+      for frame in frames {
+        if frame.kind == 1 {
+          try await webSocket.send(.string(String(decoding: frame.payload, as: UTF8.self)))
+        } else {
+          try await webSocket.send(.data(try frame.encode()))
+        }
+      }
+      return
+    }
+    guard let connection else { throw ClientFailure.disconnected }
+    var data = Data()
+    for frame in frames { data.append(try frame.encode()) }
+    try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<Void, Error>) in
+      connection.send(
+        content: data,
+        completion: .contentProcessed { error in
+          if error != nil {
+            continuation.resume(throwing: ClientFailure.disconnected)
+          } else {
+            continuation.resume()
+          }
+        })
+    }
+  }
+
   private func exact(_ count: Int) async throws -> Data {
     guard let connection else { throw ClientFailure.disconnected }
     var result = Data()
@@ -216,5 +246,40 @@ final class Wire {
     }
     guard range.contains(size) else { throw ClientFailure.invalidFrame }
     return try Frame.decode(prefix + (try await exact(size)))
+  }
+}
+
+struct WebHostResponse: Sendable {
+  let message: JsonValue
+  let attachments: [WebHostAttachment]
+
+  init(message: JsonValue, attachments: [WebHostAttachment] = []) {
+    self.message = message
+    self.attachments = attachments
+  }
+
+  func frames() throws -> [Frame] {
+    guard attachments.count <= 1 else { throw ClientFailure.invalidFrame }
+    var frames: [Frame] = []
+    for attachment in attachments {
+      guard !attachment.bytes.isEmpty,
+        attachment.reference.bytes == String(attachment.bytes.count),
+        attachment.bytes.count <= ProtocolLimits.webScreenshotBytes,
+        let uuid = UUID(uuidString: attachment.reference.attachmentId),
+        uuid.uuidString.lowercased() == attachment.reference.attachmentId
+      else { throw ClientFailure.invalidFrame }
+      let header = withUnsafeBytes(of: uuid.uuid) { Data($0) }
+      var offset = 0
+      repeat {
+        let end = min(offset + ProtocolLimits.attachmentPayloadBytes, attachment.bytes.count)
+        frames.append(
+          Frame(kind: 3, header: header, payload: attachment.bytes.subdata(in: offset..<end)))
+        offset = end
+      } while offset < attachment.bytes.count
+    }
+    let json = try JSONEncoder().encode(message)
+    guard json.count <= ProtocolLimits.jsonBytes else { throw ClientFailure.invalidFrame }
+    frames.append(Frame(kind: 1, payload: json))
+    return frames
   }
 }

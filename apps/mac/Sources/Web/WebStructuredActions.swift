@@ -36,10 +36,7 @@ private struct ActionOutcome: Decodable {
     acceptedGeneration = nil
   }
 
-  func snapshot(generation: UInt64, includeScreenshot: Bool) async throws -> JsonValue {
-    guard !includeScreenshot else {
-      throw ClientFailure.webHost(.internal_error, "Snapshot images are not available yet.")
-    }
+  func snapshot(generation: UInt64) async throws -> JsonValue {
     let capture: SnapshotCapture = try await decoded(
       script: Self.snapshotScript, arguments: ["generation": String(generation)])
     acceptedGeneration = generation

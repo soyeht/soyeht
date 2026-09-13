@@ -258,23 +258,25 @@ public final class EngineClient {
   }
   static func webHostResponse(
     id: String, command: WebCommandParams, host: (any WebHostPort)?
-  ) async -> JsonValue {
+  ) async -> WebHostResponse {
     do {
       guard let host else {
         throw ClientFailure.webHost(.internal_error, "The web host is not ready.")
       }
-      let result = try await host.execute(command)
-      guard result.paneId == command.paneId else {
+      let output = try await host.execute(command)
+      guard output.result.paneId == command.paneId else {
         throw ClientFailure.webHost(.internal_error, "The web host changed pane identity.")
       }
-      return .object([
-        "jsonrpc": .string("2.0"), "id": .string(id),
-        "result": try .encoded(result),
-      ])
+      return WebHostResponse(
+        message: .object([
+          "jsonrpc": .string("2.0"), "id": .string(id),
+          "result": try .encoded(output.result),
+        ]), attachments: output.attachments)
     } catch let ClientFailure.webHost(kind, message) {
-      return webHostError(id: id, kind: kind, message: message)
+      return WebHostResponse(message: webHostError(id: id, kind: kind, message: message))
     } catch {
-      return webHostError(id: id, kind: .internal_error, message: "The web command failed.")
+      return WebHostResponse(
+        message: webHostError(id: id, kind: .internal_error, message: "The web command failed."))
     }
   }
   private static func webHostError(id: String, kind: ErrorKind, message: String) -> JsonValue {

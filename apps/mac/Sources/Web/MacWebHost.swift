@@ -43,7 +43,7 @@ import WebKit
     for session in sessions.values { session.reportCurrentNavigation() }
   }
 
-  func execute(_ command: WebCommandParams) async throws -> WebCommandResult {
+  func execute(_ command: WebCommandParams) async throws -> WebHostOutput {
     guard
       let pane = client?.panes.first(where: {
         $0.paneId == command.paneId && $0.mode == .web
@@ -136,7 +136,7 @@ import WebKit
     navigationGeneration = max(navigationGeneration, UInt64(generation))
   }
 
-  func execute(_ command: WebCommandParams) async throws -> WebCommandResult {
+  func execute(_ command: WebCommandParams) async throws -> WebHostOutput {
     guard command.paneId == paneId else {
       throw ClientFailure.webHost(.internal_error, "The web pane identity changed.")
     }
@@ -148,48 +148,68 @@ import WebKit
     }
     if access == "probe" {
       if await cookiesPresent(for: targetHost(command.args)) {
-        return WebCommandResult(paneId: paneId, cookiesPresent: true)
+        return WebHostOutput(result: WebCommandResult(paneId: paneId, cookiesPresent: true))
       }
-      var result = try await perform(command)
-      result.cookiesPresent = false
-      return result
+      var output = try await perform(command)
+      output.result.cookiesPresent = false
+      return output
     }
     return try await perform(command)
   }
 
-  private func perform(_ command: WebCommandParams) async throws -> WebCommandResult {
+  private func perform(_ command: WebCommandParams) async throws -> WebHostOutput {
     switch command.command {
     case .navigate:
       try navigate(command.args)
-      return WebCommandResult(paneId: paneId, value: .object(["accepted": .bool(true)]))
+      return output(.object(["accepted": .bool(true)]))
     case .resize:
       let resized = try resize(command.args)
-      return WebCommandResult(paneId: paneId, value: viewportValue(resized))
+      return output(viewportValue(resized))
     case .snapshot:
-      let value = try await structuredActions.snapshot(
-        generation: navigationGeneration,
-        includeScreenshot: boolean(command.args, "screenshot") == true)
-      return WebCommandResult(paneId: paneId, value: value)
+      var value = try await structuredActions.snapshot(generation: navigationGeneration)
+      guard boolean(command.args, "screenshot") == true else { return output(value) }
+      let attachment = try await WebScreenshotCapture.capture(webView: webView, fullPage: false)
+      value = setting(value, "screenshot", to: try encoded(attachment.reference))
+      return output(value, attachments: [attachment])
+    case .screenshot:
+      let attachment = try await WebScreenshotCapture.capture(
+        webView: webView, fullPage: boolean(command.args, "fullPage") == true)
+      return output(
+        .object(["image": try encoded(attachment.reference)]), attachments: [attachment])
     case .click, .type, .press, .hover, .select, .scroll:
       try await structuredActions.perform(
         command.command, args: command.args, generation: navigationGeneration)
-      return WebCommandResult(paneId: paneId, value: .object(["completed": .bool(true)]))
+      return output(.object(["completed": .bool(true)]))
     case .evaluate:
       let value = try await structuredActions.evaluate(command.args)
-      return WebCommandResult(paneId: paneId, value: .object(["value": .string(value)]))
+      return output(.object(["value": .string(value)]))
     case .wait:
       let matched = try await pageObservation.wait(
         args: command.args, timeoutMs: command.timeoutMs)
-      return WebCommandResult(paneId: paneId, value: .object(["matched": .bool(matched)]))
+      return output(.object(["matched": .bool(matched)]))
     case .console:
-      return WebCommandResult(
-        paneId: paneId, value: try pageObservation.consolePage(since: value(command.args, "since")))
+      return output(try pageObservation.consolePage(since: value(command.args, "since")))
     case .network:
-      return WebCommandResult(
-        paneId: paneId, value: try pageObservation.networkPage(since: value(command.args, "since")))
+      return output(try pageObservation.networkPage(since: value(command.args, "since")))
     default:
       throw ClientFailure.webHost(.internal_error, "The web command is not implemented.")
     }
+  }
+
+  private func output(
+    _ value: JsonValue, attachments: [WebHostAttachment] = []
+  ) -> WebHostOutput {
+    WebHostOutput(result: WebCommandResult(paneId: paneId, value: value), attachments: attachments)
+  }
+
+  private func encoded<T: Encodable>(_ value: T) throws -> JsonValue {
+    try JSONDecoder().decode(JsonValue.self, from: JSONEncoder().encode(value))
+  }
+
+  private func setting(_ value: JsonValue, _ key: String, to replacement: JsonValue) -> JsonValue {
+    guard case .object(var fields) = value else { return value }
+    fields[key] = replacement
+    return .object(fields)
   }
 
   func stop() {

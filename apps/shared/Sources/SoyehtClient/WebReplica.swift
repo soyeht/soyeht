@@ -22,7 +22,27 @@ public struct WebPaneView: Sendable {
 
 @MainActor
 public protocol WebHostPort: AnyObject {
-  func execute(_ command: WebCommandParams) async throws -> WebCommandResult
+  func execute(_ command: WebCommandParams) async throws -> WebHostOutput
+}
+
+public struct WebHostAttachment: Sendable {
+  public let reference: AttachmentRef
+  public let bytes: Data
+
+  public init(reference: AttachmentRef, bytes: Data) {
+    self.reference = reference
+    self.bytes = bytes
+  }
+}
+
+public struct WebHostOutput: Sendable {
+  public var result: WebCommandResult
+  public var attachments: [WebHostAttachment]
+
+  public init(result: WebCommandResult, attachments: [WebHostAttachment] = []) {
+    self.result = result
+    self.attachments = attachments
+  }
 }
 
 extension EngineClient {

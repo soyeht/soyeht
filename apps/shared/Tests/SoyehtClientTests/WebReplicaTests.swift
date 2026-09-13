@@ -1,3 +1,4 @@
+import Foundation
 import SoyehtProtocol
 import Testing
 
@@ -62,20 +63,20 @@ import Testing
   let success = await EngineClient.webHostResponse(
     id: "request-1", command: command,
     host: FakeWebHost(result: WebCommandResult(paneId: "web-1", cookiesPresent: false)))
-  #expect(success["id"].string == "request-1")
-  #expect(try success["result"].decoded(WebCommandResult.self).paneId == "web-1")
+  #expect(success.message["id"].string == "request-1")
+  #expect(try success.message["result"].decoded(WebCommandResult.self).paneId == "web-1")
 
   let stale = await EngineClient.webHostResponse(
     id: "request-2", command: command,
     host: FakeWebHost(error: .webHost(.stale_reference, "Take a new snapshot.")))
-  let staleError = try stale["error"].decoded(RpcError.self)
+  let staleError = try stale.message["error"].decoded(RpcError.self)
   #expect(staleError.code == -32025)
   #expect(staleError.data.kind == .stale_reference)
 
   let changed = await EngineClient.webHostResponse(
     id: "request-3", command: command,
     host: FakeWebHost(result: WebCommandResult(paneId: "another-pane")))
-  let changedError = try changed["error"].decoded(RpcError.self)
+  let changedError = try changed.message["error"].decoded(RpcError.self)
   #expect(changedError.code == -32018)
   #expect(changedError.data.kind == .internal_error)
 }
@@ -95,11 +96,29 @@ private final class FakeWebHost: WebHostPort {
     self.error = error
   }
 
-  func execute(_ command: WebCommandParams) async throws -> WebCommandResult {
+  func execute(_ command: WebCommandParams) async throws -> WebHostOutput {
     if let error { throw error }
     guard let result else { throw ClientFailure.invalidFrame }
-    return result
+    return WebHostOutput(result: result)
   }
+}
+
+@Test func webHostAttachmentsAreChunkedBeforeTheJsonResponse() throws {
+  let id = "01234567-89ab-cdef-0123-456789abcdef"
+  let bytes = Data(repeating: 0x5a, count: ProtocolLimits.attachmentPayloadBytes + 3)
+  let reference = AttachmentRef(
+    attachmentId: id, mimeType: "image/png", name: "screenshot.png",
+    bytes: String(bytes.count))
+  let response = WebHostResponse(
+    message: .object(["jsonrpc": .string("2.0"), "id": .string("request-1")]),
+    attachments: [WebHostAttachment(reference: reference, bytes: bytes)])
+  let frames = try response.frames()
+  #expect(frames.map(\.kind) == [3, 3, 1])
+  #expect(frames[0].payload.count == ProtocolLimits.attachmentPayloadBytes)
+  #expect(frames[1].payload == Data(repeating: 0x5a, count: 3))
+  #expect(frames[0].header == frames[1].header)
+  #expect(
+    try JSONDecoder().decode(JsonValue.self, from: frames[2].payload)["id"].string == "request-1")
 }
 
 private func webPane() -> Pane {

@@ -118,22 +118,24 @@
   @MainActor private final class IntegrationWebHost: WebHostPort {
     var commands: [WebCommandParams] = []
 
-    func execute(_ command: WebCommandParams) async throws -> WebCommandResult {
+    func execute(_ command: WebCommandParams) async throws -> WebHostOutput {
       commands.append(command)
       switch command.command {
       case .navigate:
-        return WebCommandResult(
-          paneId: command.paneId, value: .object(["accepted": .bool(true)]),
-          cookiesPresent: false)
+        return WebHostOutput(
+          result: WebCommandResult(
+            paneId: command.paneId, value: .object(["accepted": .bool(true)]),
+            cookiesPresent: false))
       case .resize:
-        return WebCommandResult(
-          paneId: command.paneId,
-          value: .object([
-            "viewport": .object([
-              "width": .integer(393), "height": .integer(852),
-              "preset": .string("iphone_15_pro"), "zoomPercent": .integer(100),
-            ])
-          ]), cookiesPresent: false)
+        return WebHostOutput(
+          result: WebCommandResult(
+            paneId: command.paneId,
+            value: .object([
+              "viewport": .object([
+                "width": .integer(393), "height": .integer(852),
+                "preset": .string("iphone_15_pro"), "zoomPercent": .integer(100),
+              ])
+            ]), cookiesPresent: false))
       default:
         throw ClientFailure.webHost(.internal_error, "Unexpected integration command.")
       }
