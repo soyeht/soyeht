@@ -7,6 +7,7 @@ struct EditorNativeViewport: NSViewRepresentable {
   @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var selectedPosition: TextPosition?
+  let diffMarkers: [UInt32: Set<EditorDiffMarker>]
   let onDefinition: (TextPosition) -> Void
   let onReferences: (TextPosition) -> Void
 
@@ -58,7 +59,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       textView.inputDelegate = self
       ruler?.update(
         startLine: viewport.fromLine, lineCount: viewport.lines.count,
-        changedLines: Set(view.changedLines), selectedLine: parent.selectedPosition?.line)
+        markers: parent.diffMarkers, selectedLine: parent.selectedPosition?.line)
       let identity =
         "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics))"
       guard renderedIdentity != identity else { return }
@@ -381,7 +382,7 @@ struct EditorNativeViewport: NSViewRepresentable {
   private weak var textView: NSTextView?
   private var startLine: UInt32 = 0
   private var lineCount = 0
-  private var changedLines: Set<UInt32> = []
+  private var diffMarkers: [UInt32: Set<EditorDiffMarker>] = [:]
   var selectedLine: UInt32?
 
   init(scrollView: NSScrollView, textView: NSTextView) {
@@ -396,11 +397,12 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 
   func update(
-    startLine: UInt32, lineCount: Int, changedLines: Set<UInt32>, selectedLine: UInt32?
+    startLine: UInt32, lineCount: Int, markers: [UInt32: Set<EditorDiffMarker>],
+    selectedLine: UInt32?
   ) {
     self.startLine = startLine
     self.lineCount = lineCount
-    self.changedLines = changedLines
+    diffMarkers = markers
     self.selectedLine = selectedLine
     needsDisplay = true
   }
@@ -430,14 +432,29 @@ struct EditorNativeViewport: NSViewRepresentable {
         NSColor(MacTheme.well).setFill()
         NSRect(x: 0, y: y, width: ruleThickness, height: 19).fill()
       }
-      if changedLines.contains(line) {
-        NSColor(MacTheme.diffAdded).setFill()
-        NSRect(x: 0, y: y, width: 3, height: 19).fill()
-      }
+      drawMarkers(diffMarkers[line] ?? [], y: y)
       let label = "\(UInt64(line) + 1)" as NSString
       let size = label.size(withAttributes: attributes)
       label.draw(
         at: NSPoint(x: ruleThickness - size.width - 10, y: y + 2), withAttributes: attributes)
+    }
+  }
+
+  private func drawMarkers(_ markers: Set<EditorDiffMarker>, y: CGFloat) {
+    let ordered = markers.sorted { $0.rawValue < $1.rawValue }
+    guard !ordered.isEmpty else { return }
+    let height = 19 / CGFloat(ordered.count)
+    for (index, marker) in ordered.enumerated() {
+      markerColor(marker).setFill()
+      NSRect(x: 0, y: y + CGFloat(index) * height, width: 3, height: height).fill()
+    }
+  }
+
+  private func markerColor(_ marker: EditorDiffMarker) -> NSColor {
+    switch marker {
+    case .added: NSColor(MacTheme.diffAdded)
+    case .modified: NSColor(MacTheme.warning)
+    case .deleted: NSColor(MacTheme.danger)
     }
   }
 }

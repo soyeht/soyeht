@@ -266,6 +266,12 @@ extension EngineClient {
     ).decoded(FileDiagnosticsResult.self)
   }
 
+  public func editorDiff(fileId: String, revision: String) async throws -> FileDiffResult {
+    try await request(
+      "file.diff", .encoded(FileDiffParams(fileId: fileId, revision: revision))
+    ).decoded(FileDiffResult.self)
+  }
+
   public func languageServerStatus(
     workspaceId: String? = nil, language: EditorLanguage? = nil
   ) async throws -> LspStatusResult {

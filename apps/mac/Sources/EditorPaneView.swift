@@ -11,23 +11,35 @@ struct EditorPaneView: View {
   @State private var references: [FileLocation] = []
   @State private var showReferences = false
   @State private var languageStatus: LspServerStatus?
+  @State private var diff: FileDiffResult?
+  @State private var diffProblem: String?
+  @State private var showDiff = false
 
   private var view: EditorFileView? {
     client.editorFiles.values.first { $0.file.paneId == pane.paneId }
+  }
+
+  private var currentDiff: FileDiffResult? {
+    guard let file = view?.file, let diff,
+      file.fileId == diff.fileId, file.revision == diff.revision
+    else { return nil }
+    return diff
   }
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x8) {
       EditorPaneHeader(
         file: view?.file, branch: branch, showHistory: { showHistory = true },
-        showConflict: { showConflict = true })
+        showConflict: { showConflict = true }, showDiff: { showDiff = true },
+        diffReady: currentDiff != nil, diffProblem: diffProblem)
       if let view {
         if view.file.conflicted {
           EditorConflictBanner(showConflict: { showConflict = true })
         }
         EditorPaneBody(
           client: client, view: view, selectedPosition: $selectedPosition,
-          languageStatus: languageStatus, definition: openDefinition, findReferences: findReferences
+          languageStatus: languageStatus, diff: currentDiff.map(EditorDiffPresentation.init),
+          definition: openDefinition, findReferences: findReferences
         )
       } else {
         editorLoading
@@ -48,7 +60,13 @@ struct EditorPaneView: View {
     .sheet(isPresented: $showReferences) {
       EditorReferencesSheet(client: client, items: references, isPresented: $showReferences)
     }
+    .sheet(isPresented: $showDiff) {
+      if let file = view?.file, let diff = currentDiff {
+        EditorDiffSheet(file: file, result: diff, isPresented: $showDiff)
+      }
+    }
     .task(id: languageStatusKey) { await pollLanguageStatus() }
+    .task(id: diffKey) { await loadDiff() }
   }
 
   private var branch: String? {
@@ -62,6 +80,11 @@ struct EditorPaneView: View {
     return "\(file.workspaceId):\(file.language.rawValue):\(client.connectionRevision)"
   }
 
+  private var diffKey: String {
+    guard let file = view?.file else { return "none:\(client.connectionRevision)" }
+    return "\(file.fileId):\(file.revision):\(client.connectionRevision)"
+  }
+
   private func pollLanguageStatus() async {
     guard let file = view?.file else { return }
     while !Task.isCancelled {
@@ -73,6 +96,26 @@ struct EditorPaneView: View {
         languageStatus = nil
       }
       do { try await Task.sleep(for: .seconds(2)) } catch { return }
+    }
+  }
+
+  private func loadDiff() async {
+    diff = nil
+    diffProblem = nil
+    guard let file = view?.file else { return }
+    do {
+      try await Task.sleep(for: .milliseconds(120))
+      let result = try await client.editorDiff(fileId: file.fileId, revision: file.revision)
+      guard !Task.isCancelled,
+        view?.file.fileId == result.fileId,
+        view?.file.revision == result.revision
+      else { return }
+      diff = result
+    } catch is CancellationError {
+      return
+    } catch {
+      guard !Task.isCancelled else { return }
+      diffProblem = error.localizedDescription
     }
   }
 
@@ -120,6 +163,9 @@ private struct EditorPaneHeader: View {
   let branch: String?
   let showHistory: () -> Void
   let showConflict: () -> Void
+  let showDiff: () -> Void
+  let diffReady: Bool
+  let diffProblem: String?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x7) {
@@ -140,6 +186,14 @@ private struct EditorPaneHeader: View {
           .font(.system(size: 11, weight: .medium))
       }
       .buttonStyle(.plain).foregroundStyle(MacTheme.secondary).help("File history")
+      Button(action: showDiff) {
+        Image(systemName: "rectangle.split.2x1")
+          .font(.system(size: 11, weight: .medium))
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(diffProblem == nil ? MacTheme.secondary : MacTheme.danger)
+      .disabled(!diffReady)
+      .help(diffProblem ?? "Compare the current buffer with HEAD")
       if file?.conflicted == true {
         Button(action: showConflict) {
           Text(statusLabel).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
@@ -197,6 +251,7 @@ private struct EditorPaneBody: View {
   let view: EditorFileView
   @Binding var selectedPosition: TextPosition?
   let languageStatus: LspServerStatus?
+  let diff: EditorDiffPresentation?
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
 
@@ -207,8 +262,9 @@ private struct EditorPaneBody: View {
         EditorTabs(client: client, selected: view.file)
         EditorCodeViewport(
           client: client, view: view, selectedPosition: $selectedPosition,
-          definition: definition, findReferences: findReferences)
-        EditorStatusBar(view: view, selectedPosition: selectedPosition, lsp: languageStatus)
+          diff: diff, definition: definition, findReferences: findReferences)
+        EditorStatusBar(
+          view: view, selectedPosition: selectedPosition, lsp: languageStatus, diff: diff)
       }
     }
     .background(MacTheme.face)
@@ -350,12 +406,14 @@ private struct EditorCodeViewport: View {
   @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var selectedPosition: TextPosition?
+  let diff: EditorDiffPresentation?
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
 
   var body: some View {
     EditorNativeViewport(
       client: client, view: view, selectedPosition: $selectedPosition,
+      diffMarkers: diff?.gutterMarkers(lineCount: view.file.lineCount) ?? [:],
       onDefinition: definition, onReferences: findReferences
     )
     .background(MacTheme.face)
@@ -366,6 +424,7 @@ private struct EditorStatusBar: View {
   let view: EditorFileView
   let selectedPosition: TextPosition?
   let lsp: LspServerStatus?
+  let diff: EditorDiffPresentation?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -377,14 +436,19 @@ private struct EditorStatusBar: View {
       )
       .font(MacTheme.chrome(MacTheme.TypeScale.small))
       Spacer(minLength: 0)
+      if let blame = selectedBlame {
+        Text("\(blame.author) · \(blame.summary)")
+          .font(MacTheme.chrome(MacTheme.TypeScale.small)).lineLimit(1)
+          .help("\(blame.commit) · line \(UInt64(blame.line) + 1)")
+      }
       if !view.diagnostics.isEmpty {
         Circle().fill(MacTheme.warning).frame(width: 6, height: 6)
         Text("\(view.diagnostics.count) issues")
           .font(MacTheme.chrome(MacTheme.TypeScale.small))
       }
-      if !view.changedLines.isEmpty {
+      if let diff, !diff.markers.isEmpty {
         Circle().fill(MacTheme.diffAdded).frame(width: 6, height: 6)
-        Text("+\(view.changedLines.count) changed lines")
+        Text("\(diff.markers.count) changed lines")
           .font(MacTheme.chrome(MacTheme.TypeScale.small))
       }
     }
@@ -396,10 +460,161 @@ private struct EditorStatusBar: View {
     view.file.language.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
   }
 
+  private var selectedBlame: FileBlame? {
+    guard let line = selectedPosition?.line else { return nil }
+    return diff?.blameByLine[line]
+  }
+
   private var languageHelp: String {
     guard let lsp else { return "No language server is active" }
     return lsp.detail.map { "Language server: \(lsp.state.rawValue) · \($0)" }
       ?? "Language server: \(lsp.state.rawValue)"
+  }
+}
+
+private struct EditorDiffSheet: View {
+  let file: SoyehtProtocol.FileDocument
+  let result: FileDiffResult
+  @Binding var isPresented: Bool
+
+  private var presentation: EditorDiffPresentation { EditorDiffPresentation(result) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      header
+      columnLabels
+      if presentation.rows.isEmpty {
+        emptyState
+      } else {
+        diffRows
+      }
+    }
+    .padding(MacTheme.Space.x14).frame(width: 980, height: 620)
+    .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
+  }
+
+  private var header: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x3) {
+        Text("Changes against HEAD")
+          .font(MacTheme.chrome(MacTheme.TypeScale.title, weight: .bold))
+        Text(file.path)
+          .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
+      }
+      Spacer()
+      Text(changeSummary)
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(MacTheme.secondary)
+      Button("Done") { isPresented = false }.buttonStyle(NeoPillButtonStyle())
+    }
+  }
+
+  private var columnLabels: some View {
+    HStack(spacing: 1) {
+      diffColumnLabel("HEAD")
+      diffColumnLabel("CURRENT BUFFER")
+    }
+  }
+
+  private var diffRows: some View {
+    ScrollView([.horizontal, .vertical]) {
+      LazyVStack(spacing: 1) {
+        ForEach(presentation.rows) { row in
+          HStack(spacing: 1) {
+            EditorDiffCell(side: row.old, kind: row.kind, current: false, blame: nil)
+            EditorDiffCell(
+              side: row.new, kind: row.kind, current: true,
+              blame: row.new.line.flatMap { presentation.blameByLine[$0] })
+          }
+        }
+      }
+    }
+    .neoWell(radius: MacTheme.Radius.control)
+  }
+
+  private var emptyState: some View {
+    VStack(spacing: MacTheme.Space.x8) {
+      Image(systemName: "checkmark.circle")
+        .font(.system(size: 24, weight: .medium)).foregroundStyle(MacTheme.success)
+      Text("The current buffer matches HEAD")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        .foregroundStyle(MacTheme.secondary)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .neoWell(radius: MacTheme.Radius.control)
+  }
+
+  private func diffColumnLabel(_ label: String) -> some View {
+    Text(label).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+      .tracking(0.8).foregroundStyle(MacTheme.secondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, MacTheme.Space.x10).frame(height: 22)
+  }
+
+  private var changeSummary: String {
+    let changed = presentation.rows.filter { $0.kind != .context }.count
+    return "\(changed) changed \(changed == 1 ? "line" : "lines")"
+  }
+}
+
+private struct EditorDiffCell: View {
+  let side: EditorDiffSide
+  let kind: EditorDiffRowKind
+  let current: Bool
+  let blame: FileBlame?
+
+  var body: some View {
+    HStack(spacing: 0) {
+      Text(side.line.map { "\(UInt64($0) + 1)" } ?? "")
+        .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
+        .frame(width: 38, alignment: .trailing).padding(.trailing, MacTheme.Space.x6)
+      Text(prefix)
+        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(markerColor).frame(width: 14)
+      Text(side.text ?? "")
+        .font(MacTheme.mono(11.5)).foregroundStyle(MacTheme.ink)
+        .frame(minWidth: 390, maxWidth: .infinity, alignment: .leading)
+      if let author = side.author {
+        Text(author.name).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+          .foregroundStyle(MacTheme.secondary).padding(.horizontal, MacTheme.Space.x6)
+      }
+    }
+    .frame(height: 20).background(cellBackground)
+    .help(blameHelp)
+  }
+
+  private var prefix: String {
+    switch (kind, current) {
+    case (.added, true): "+"
+    case (.removed, false): "−"
+    case (.modified, true): "+"
+    case (.modified, false): "−"
+    default: " "
+    }
+  }
+
+  private var markerColor: Color {
+    switch kind {
+    case .added: MacTheme.diffAdded
+    case .removed: MacTheme.danger
+    case .modified: MacTheme.warning
+    case .context: MacTheme.muted
+    }
+  }
+
+  private var cellBackground: Color {
+    guard side.text != nil else { return MacTheme.well.opacity(0.45) }
+    switch kind {
+    case .added: return current ? MacTheme.diffAdded.opacity(0.12) : MacTheme.face
+    case .removed: return current ? MacTheme.face : MacTheme.danger.opacity(0.10)
+    case .modified: return MacTheme.warning.opacity(0.10)
+    case .context: return MacTheme.face
+    }
+  }
+
+  private var blameHelp: String {
+    guard let blame else { return "" }
+    return "\(blame.author) · \(blame.summary) · \(blame.commit)"
   }
 }
 
