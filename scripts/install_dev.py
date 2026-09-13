@@ -19,6 +19,24 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = Path.home() / DEV_DATA_DIRECTORY_FROM_HOME
 COMPONENTS = ("ptyd", "engine")
 ENGINE_SUPPORT = ("mcp",)
+SYSTEM_PATHS = (
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+)
+
+
+def service_environment():
+    home = Path.home()
+    command_paths = (*SYSTEM_PATHS, str(home / ".local/bin"))
+    return {
+        "HOME": str(home),
+        "USER": os.environ.get("USER", ""),
+        "PATH": os.pathsep.join(command_paths),
+    }
 
 
 def install_components(components, domain="gui"):
@@ -70,10 +88,7 @@ def install_components(components, domain="gui"):
             (ROOT / f"engine/soyeht-{component}/launchd/dev.plist").read_bytes()
         )
         values["ProgramArguments"] = [str(installed), "--data-dir", str(DATA)]
-        values["EnvironmentVariables"] = {
-            "HOME": str(Path.home()), "USER": os.environ.get("USER", ""),
-            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        }
+        values["EnvironmentVariables"] = service_environment()
         log = DATA / f"logs/{component}.log"
         if log.is_symlink():
             raise SystemExit("Dev log must not be a symlink")
