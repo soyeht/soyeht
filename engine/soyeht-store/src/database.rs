@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 16;
 
 #[derive(Debug)]
 pub enum Error {
@@ -87,6 +87,7 @@ pub enum Error {
     FileReplacementIncomplete,
     InvalidLanguageServerCheckpoint,
     InvalidEditorAgentReview,
+    InvalidWebSessionGrant,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -183,6 +184,7 @@ impl fmt::Display for Error {
                 f.write_str("invalid language server checkpoint")
             }
             Self::InvalidEditorAgentReview => f.write_str("invalid editor agent review"),
+            Self::InvalidWebSessionGrant => f.write_str("invalid web session grant"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -330,6 +332,9 @@ impl Store {
             }
             if version < 15 {
                 tx.execute_batch(include_str!("../migrations/015-editor-agent-reviews.sql"))?;
+            }
+            if version < 16 {
+                tx.execute_batch(include_str!("../migrations/016-web-session-grants.sql"))?;
             }
             tx.commit()?;
         }

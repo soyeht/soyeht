@@ -12,3 +12,4 @@ pub mod tasks;
 #[cfg(feature = "test-support")]
 pub mod test_support;
 pub mod usage;
+pub mod web;
