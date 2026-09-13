@@ -8,7 +8,10 @@ use soyeht_protocol::{
 use soyeht_store::{
     database::Store,
     domain::PaneRecord,
-    editor::{EditorFile, ProjectReplacement, ProjectReplacementItem, StoredFileVersion},
+    editor::{
+        EditorAgentReview, EditorFile, ProjectReplacement, ProjectReplacementItem,
+        StoredFileVersion,
+    },
 };
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
@@ -42,6 +45,29 @@ fn author(name: &str) -> FileAuthor {
             pane_id: None,
         },
         name: name.into(),
+    }
+}
+
+fn agent_author(pane_id: &str, name: &str) -> FileAuthor {
+    FileAuthor {
+        actor: Actor {
+            role: Role::Agent,
+            client: "engine".into(),
+            device_id: None,
+            pane_id: Some(pane_id.into()),
+        },
+        name: name.into(),
+    }
+}
+
+fn agent_review() -> EditorAgentReview {
+    EditorAgentReview {
+        file_id: "file-1".into(),
+        revision: 2,
+        pane_id: "pane-1".into(),
+        author: agent_author("pane-1", "Builder"),
+        baseline_text: "fn main() {}\n".into(),
+        updated_ms: 100,
     }
 }
 
@@ -198,6 +224,61 @@ fn an_unsaved_draft_and_conflict_survive_reopen_without_losing_the_disk_base() {
         Some(conflicted)
     );
     assert_eq!(store.editor_files().unwrap().len(), 1);
+}
+
+#[test]
+fn one_agent_review_per_file_replaces_atomically_survives_reopen_and_clears() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let first = agent_review();
+    store
+        .mutate("test", "review-1", "review-1", |change| {
+            change.save_editor_agent_review(&first)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+
+    let mut store = profile.store();
+    assert_eq!(store.editor_agent_review("file-1").unwrap(), Some(first));
+    let mut updated = agent_review();
+    updated.revision = 3;
+    updated.baseline_text = "fn main() { accepted(); }\n".into();
+    updated.updated_ms = 200;
+    store
+        .mutate("test", "review-2", "review-2", |change| {
+            change.save_editor_agent_review(&updated)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert_eq!(store.editor_agent_review("file-1").unwrap(), Some(updated));
+    store
+        .mutate("test", "review-clear", "review-clear", |change| {
+            assert!(change.clear_editor_agent_review("file-1")?);
+            assert!(!change.clear_editor_agent_review("file-1")?);
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert!(store.editor_agent_review("file-1").unwrap().is_none());
+}
+
+#[test]
+fn invalid_agent_review_is_rejected_before_sql() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let mut invalid = agent_review();
+    invalid.author.actor.pane_id = Some("another-pane".into());
+    let result = store.mutate("test", "invalid-review", "invalid-review", |change| {
+        change.save_editor_agent_review(&invalid)?;
+        Ok((json!({}), vec![]))
+    });
+    assert!(matches!(
+        result,
+        Err(soyeht_store::Error::InvalidEditorAgentReview)
+    ));
+    assert!(store.editor_agent_review("file-1").unwrap().is_none());
 }
 
 #[test]
@@ -506,6 +587,65 @@ fn migration_from_populated_v12_preserves_open_files_and_history() {
         store.file_history("file-1", None, 10).unwrap().items.len(),
         2
     );
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        soyeht_store::database::SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn migration_from_populated_v14_preserves_files_and_adds_agent_reviews() {
+    let profile = Profile::new();
+    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
+    for migration in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+        include_str!("../migrations/005-native-replay.sql"),
+        include_str!("../migrations/006-agent-auth-snapshot.sql"),
+        include_str!("../migrations/007-workspace-tasks.sql"),
+        include_str!("../migrations/008-task-reviews.sql"),
+        include_str!("../migrations/009-task-block-retries.sql"),
+        include_str!("../migrations/010-agent-pane-role.sql"),
+        include_str!("../migrations/011-usage-readings.sql"),
+        include_str!("../migrations/012-editor-files.sql"),
+        include_str!("../migrations/013-editor-project-replacements.sql"),
+        include_str!("../migrations/014-language-servers.sql"),
+    ] {
+        connection.execute_batch(migration).unwrap();
+    }
+    connection
+        .execute_batch(
+            r#"INSERT INTO metadata(key,value) VALUES ('db_id','v14-db'),('engine_generation','0');
+               INSERT INTO workspaces(id,payload,closed) VALUES ('workspace-1','{"workspaceId":"workspace-1","name":"Editor","path":"/tmp/editor","layout":{}}',0);
+               INSERT INTO panes(id,workspace_id,payload,closed,instance_key,sequence_base) VALUES ('pane-1','workspace-1','{"paneId":"pane-1","workspaceId":"workspace-1","name":"main.rs","cwd":"/tmp/editor","mode":"editor","state":"idle","source":"protocol","confidence":1.0,"phrase":"","generation":1,"cols":80,"rows":24,"record":false}',0,'editor-pane-1','0');"#,
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO editor_files(file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms) VALUES ('file-1','pane-1','workspace-1','src/main.rs','rust',2,2,?1,NULL,NULL,NULL,1,200)",
+            ["saved\n"],
+        )
+        .unwrap();
+    drop(connection);
+
+    let mut store = profile.store();
+    assert_eq!(
+        store.editor_file("file-1").unwrap().unwrap().disk_text,
+        "saved\n"
+    );
+    let review = agent_review();
+    store
+        .mutate("test", "review", "review", |change| {
+            change.save_editor_agent_review(&review)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert_eq!(store.editor_agent_review("file-1").unwrap(), Some(review));
     assert_eq!(
         store
             .connection()

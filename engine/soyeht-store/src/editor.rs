@@ -2,7 +2,9 @@
 
 use crate::database::{Change, Error, Result, Store};
 use rusqlite::{OptionalExtension, params};
-use soyeht_protocol::{EditorLanguage, FileAuthor, FileDocument, FileSearchMatch, FileVersion};
+use soyeht_protocol::{
+    EditorLanguage, FileAuthor, FileDocument, FileSearchMatch, FileVersion, Role,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EditorFile {
@@ -31,6 +33,25 @@ pub struct StoredFileVersion {
 pub struct FileHistoryPage {
     pub items: Vec<FileVersion>,
     pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EditorAgentReview {
+    pub file_id: String,
+    pub revision: u64,
+    pub pane_id: String,
+    pub author: FileAuthor,
+    pub baseline_text: String,
+    pub updated_ms: i64,
+}
+
+struct RawEditorAgentReview {
+    file_id: String,
+    revision: i64,
+    pane_id: String,
+    author: String,
+    baseline_text: String,
+    updated_ms: i64,
 }
 
 struct RawEditorFile {
@@ -78,6 +99,18 @@ pub struct ProjectReplacementItem {
 }
 
 impl Store {
+    pub fn editor_agent_review(&self, file_id: &str) -> Result<Option<EditorAgentReview>> {
+        let raw = self
+            .connection
+            .query_row(
+                "SELECT file_id,revision,pane_id,author,baseline_text,updated_ms FROM editor_agent_reviews WHERE file_id=?1",
+                [file_id],
+                decode_agent_review,
+            )
+            .optional()?;
+        raw.map(validate_agent_review).transpose()
+    }
+
     pub fn editor_file(&self, file_id: &str) -> Result<Option<EditorFile>> {
         let raw = self
             .connection
@@ -261,6 +294,30 @@ pub fn document(file: EditorFile) -> Result<FileDocument> {
 }
 
 impl Change<'_> {
+    pub fn save_editor_agent_review(&self, review: &EditorAgentReview) -> Result<()> {
+        validate_agent_review_record(review)?;
+        self.transaction.execute(
+            "INSERT INTO editor_agent_reviews(file_id,revision,pane_id,author,baseline_text,updated_ms) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(file_id) DO UPDATE SET revision=excluded.revision,pane_id=excluded.pane_id,author=excluded.author,baseline_text=excluded.baseline_text,updated_ms=excluded.updated_ms",
+            params![
+                review.file_id,
+                to_i64(review.revision)?,
+                review.pane_id,
+                serde_json::to_string(&review.author)?,
+                review.baseline_text,
+                review.updated_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_editor_agent_review(&self, file_id: &str) -> Result<bool> {
+        let removed = self.transaction.execute(
+            "DELETE FROM editor_agent_reviews WHERE file_id=?1",
+            [file_id],
+        )?;
+        Ok(removed == 1)
+    }
+
     pub fn save_editor_file(&self, file: &EditorFile) -> Result<()> {
         validate_file_record(file)?;
         self.transaction.execute(
@@ -435,6 +492,51 @@ fn decode_file(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawEditorFile> {
         watching: row.get(11)?,
         updated_ms: row.get(12)?,
     })
+}
+
+fn decode_agent_review(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawEditorAgentReview> {
+    Ok(RawEditorAgentReview {
+        file_id: row.get(0)?,
+        revision: row.get(1)?,
+        pane_id: row.get(2)?,
+        author: row.get(3)?,
+        baseline_text: row.get(4)?,
+        updated_ms: row.get(5)?,
+    })
+}
+
+fn validate_agent_review(raw: RawEditorAgentReview) -> Result<EditorAgentReview> {
+    let review = EditorAgentReview {
+        file_id: raw.file_id,
+        revision: u64::try_from(raw.revision).map_err(|_| Error::InvalidEditorAgentReview)?,
+        pane_id: raw.pane_id,
+        author: serde_json::from_str(&raw.author)?,
+        baseline_text: raw.baseline_text,
+        updated_ms: raw.updated_ms,
+    };
+    validate_agent_review_record(&review)?;
+    Ok(review)
+}
+
+fn validate_agent_review_record(review: &EditorAgentReview) -> Result<()> {
+    let actor = &review.author.actor;
+    let valid_role = matches!(actor.role, Role::Agent | Role::Chief);
+    if review.file_id.is_empty()
+        || review.file_id.len() > 128
+        || review.pane_id.is_empty()
+        || review.pane_id.len() > 128
+        || review.author.name.is_empty()
+        || review.author.name.len() > 128
+        || actor.client.is_empty()
+        || actor.client.len() > 128
+        || actor.pane_id.as_deref() != Some(review.pane_id.as_str())
+        || !valid_role
+        || review.baseline_text.len() > soyeht_protocol::limits::EDITOR_HISTORY_BYTES
+        || review.updated_ms < 0
+    {
+        return Err(Error::InvalidEditorAgentReview);
+    }
+    Ok(())
 }
 
 fn validate_file(raw: RawEditorFile) -> Result<EditorFile> {
