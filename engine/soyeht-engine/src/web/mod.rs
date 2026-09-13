@@ -1,6 +1,7 @@
 //! Browser composition owned by the engine.
 
 mod host;
+mod host_state;
 mod navigation;
 mod panes;
 mod system;
@@ -18,6 +19,10 @@ use soyeht_protocol::{LocalServer, ServersLocalListResult};
 use soyeht_web::LocalServerScan;
 
 const REFRESH_INTERVAL_MS: i64 = 5_000;
+
+pub(crate) fn handles_host_update(method: &str) -> bool {
+    matches!(method, "web.host.navigated" | "web.host.console_counts")
+}
 
 pub struct Service {
     scan: Box<dyn PortScanPort>,

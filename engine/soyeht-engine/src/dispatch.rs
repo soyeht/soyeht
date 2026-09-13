@@ -286,15 +286,7 @@ impl Core {
         let result = match method {
             "state.snapshot" => return self.snapshot_parts(connection),
             "events.subscribe" => self.subscribe_events(connection, params)?,
-            "workspace.list" => {
-                let snapshot = self.store.snapshot().map_err(errors::storage)?;
-                let (_, workspaces) = snapshot
-                    .sections
-                    .into_iter()
-                    .find(|(name, _)| name == "workspaces")
-                    .ok_or_else(|| errors::internal("Snapshot has no workspaces section"))?;
-                json!({"items":workspaces})
-            }
+            "workspace.list" => json!({"items":self.snapshot_section("workspaces")?}),
             "workspace.create" => self.workspace_create(connection, params)?,
             "workspace.rename" | "workspace.close" | "workspace.focus" => {
                 self.workspace_edit(connection, method, params)?
@@ -323,6 +315,9 @@ impl Core {
             "servers.local.list" => self.local_servers_list()?,
             "web.open" => self.web_open(connection, params)?,
             "web.navigate" => return self.web_navigate(connection, request_id, params),
+            method if crate::web::handles_host_update(method) => {
+                self.web_host_update(connection, method, params)?
+            }
             "lsp.status" => self.lsp_status(params)?,
             "file.symbols" | "file.definition" | "file.references" => {
                 return self.language_request(connection, request_id, method, params);
@@ -369,15 +364,7 @@ impl Core {
                 json!({"key":params["key"],"value":self.setting(key)?})
             }
             "settings.set" => self.setting_set(connection, params)?,
-            "device.list" => {
-                let snapshot = self.store.snapshot().map_err(errors::storage)?;
-                let (_, devices) = snapshot
-                    .sections
-                    .into_iter()
-                    .find(|(name, _)| name == "devices")
-                    .ok_or_else(|| errors::internal("Snapshot has no devices section"))?;
-                json!({"items":devices})
-            }
+            "device.list" => json!({"items":self.snapshot_section("devices")?}),
             "device.pair.start" | "device.pair.decide" | "device.revoke" => {
                 self.device_request(connection, method, params)?
             }
@@ -394,6 +381,17 @@ impl Core {
             );
         }
         Ok(Outcome::Reply(result))
+    }
+
+    fn snapshot_section(&mut self, section: &str) -> Result<Value> {
+        self.store
+            .snapshot()
+            .map_err(errors::storage)?
+            .sections
+            .into_iter()
+            .find(|(name, _)| name == section)
+            .map(|(_, value)| value)
+            .ok_or_else(|| errors::internal(format!("Snapshot has no {section} section")))
     }
 
     pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
