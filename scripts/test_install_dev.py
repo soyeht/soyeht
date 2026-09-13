@@ -9,11 +9,14 @@ from generated_profile import DEV_ENGINE_LAUNCHD_LABEL
 
 
 class InstallGuardTests(unittest.TestCase):
-    def test_service_path_includes_system_and_user_local_commands(self):
+    def test_service_path_includes_system_and_user_tool_commands(self):
         environment = install_dev.service_environment()
         paths = environment["PATH"].split(":")
-        self.assertEqual(paths[:-1], list(install_dev.SYSTEM_PATHS))
-        self.assertEqual(paths[-1], str(Path.home() / ".local/bin"))
+        self.assertEqual(paths[:-2], list(install_dev.SYSTEM_PATHS))
+        self.assertEqual(
+            paths[-2:],
+            [str(Path.home() / ".local/bin"), str(Path.home() / ".cargo/bin")],
+        )
 
     def test_unknown_service_or_domain_cannot_reach_launchctl(self):
         with patch.object(install_dev.subprocess, "run") as run:

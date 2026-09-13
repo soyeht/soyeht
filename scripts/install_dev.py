@@ -31,7 +31,11 @@ SYSTEM_PATHS = (
 
 def service_environment():
     home = Path.home()
-    command_paths = (*SYSTEM_PATHS, str(home / ".local/bin"))
+    command_paths = (
+        *SYSTEM_PATHS,
+        str(home / ".local/bin"),
+        str(home / ".cargo/bin"),
+    )
     return {
         "HOME": str(home),
         "USER": os.environ.get("USER", ""),
