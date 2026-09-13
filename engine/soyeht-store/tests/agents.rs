@@ -3,8 +3,8 @@
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneMode, PaneState, ProbeCapability, ProbeResult, StateSource, TranscriptMessage,
-    Workspace, limits,
+    AttachmentRef, Pane, PaneMode, PaneState, ProbeCapability, ProbeResult, PromptItem,
+    PromptOrigin, PromptStatus, StateSource, TranscriptMessage, Workspace, limits,
 };
 use soyeht_store::{
     agents::{self, NativeRequest, Outgoing},
@@ -305,6 +305,164 @@ fn full_prompt_queue_retains_escaped_text_and_changes_atomically_with_the_checkp
         agents::runtime::<Value>(&store, "p").unwrap().unwrap()["queueRevision"],
         64
     );
+}
+
+fn prompt_with_image() -> (PromptItem, agents::PromptAttachment) {
+    let reference = AttachmentRef {
+        attachment_id: "00112233-4455-4677-8899-aabbccddeeff".into(),
+        mime_type: "image/png".into(),
+        name: "element.png".into(),
+        bytes: "4".into(),
+    };
+    (
+        PromptItem {
+            prompt_id: "prompt-image".into(),
+            text: "Inspect this element".into(),
+            origin: PromptOrigin::Human,
+            status: PromptStatus::Queued,
+            queued_at: "fixed".into(),
+            generation: None,
+            attachments: Some(vec![reference.clone()]),
+        },
+        agents::PromptAttachment {
+            reference,
+            bytes: vec![137, 80, 78, 71],
+        },
+    )
+}
+
+#[test]
+fn prompt_images_commit_with_the_queue_survive_reopen_and_cascade_on_remove() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let (prompt, attachment) = prompt_with_image();
+    store
+        .mutate("test", "image", "image", |tx| {
+            agents::enqueue_prompt_with_attachments(
+                tx,
+                "p",
+                &prompt,
+                std::slice::from_ref(&attachment),
+            )?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+
+    let mut store = profile.store();
+    assert_eq!(agents::queue(&store, "p").unwrap(), vec![prompt.clone()]);
+    assert_eq!(
+        agents::prompt_attachments(&store, &prompt.prompt_id).unwrap(),
+        vec![attachment.clone()]
+    );
+    store
+        .mutate("test", "remove-image", "remove-image", |tx| {
+            assert!(agents::remove_prompt(tx, "p", &prompt.prompt_id)?);
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert!(
+        agents::prompt_attachments(&store, &prompt.prompt_id)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn prompt_images_fail_closed_on_metadata_bytes_and_idempotency_mismatch() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    let (prompt, attachment) = prompt_with_image();
+    let mut wrong = attachment.clone();
+    wrong.bytes.push(0);
+    assert!(
+        store
+            .mutate("test", "wrong", "wrong", |tx| {
+                agents::enqueue_prompt_with_attachments(tx, "p", &prompt, &[wrong])?;
+                Ok((json!({}), vec![]))
+            })
+            .is_err()
+    );
+    store
+        .mutate("test", "right", "right", |tx| {
+            agents::enqueue_prompt_with_attachments(
+                tx,
+                "p",
+                &prompt,
+                std::slice::from_ref(&attachment),
+            )?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let mut changed = attachment;
+    changed.bytes[3] = 70;
+    assert!(
+        store
+            .mutate("test", "changed", "changed", |tx| {
+                agents::enqueue_prompt_with_attachments(tx, "p", &prompt, &[changed])?;
+                Ok((json!({}), vec![]))
+            })
+            .is_err()
+    );
+}
+
+#[test]
+fn migration_from_populated_v18_preserves_the_queue_and_adds_prompt_images() {
+    let profile = Profile::new();
+    let connection = Connection::open(profile.0.join("soyeht.db")).unwrap();
+    connection.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+    for migration in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+        include_str!("../migrations/005-native-replay.sql"),
+        include_str!("../migrations/006-agent-auth-snapshot.sql"),
+        include_str!("../migrations/007-workspace-tasks.sql"),
+        include_str!("../migrations/008-task-reviews.sql"),
+        include_str!("../migrations/009-task-block-retries.sql"),
+        include_str!("../migrations/010-agent-pane-role.sql"),
+        include_str!("../migrations/011-usage-readings.sql"),
+        include_str!("../migrations/012-editor-files.sql"),
+        include_str!("../migrations/013-editor-project-replacements.sql"),
+        include_str!("../migrations/014-language-servers.sql"),
+        include_str!("../migrations/015-editor-agent-reviews.sql"),
+        include_str!("../migrations/016-web-session-grants.sql"),
+        include_str!("../migrations/017-web-permissions.sql"),
+        include_str!("../migrations/018-web-permission-operations.sql"),
+    ] {
+        connection.execute_batch(migration).unwrap();
+    }
+    connection
+        .execute_batch(
+            "INSERT INTO metadata(key,value) VALUES ('db_id','old'),('engine_generation','1');
+             INSERT INTO workspaces(id,payload) VALUES ('w','{}');
+             INSERT INTO panes(id,workspace_id,payload,instance_key) VALUES ('p','w','{}','process');
+             INSERT INTO agent_runtime(pane_id,generation,payload) VALUES ('p',1,'{}');
+             INSERT INTO agent_prompt_queue(prompt_id,pane_id,payload) VALUES
+               ('old-prompt','p','{\"promptId\":\"old-prompt\",\"text\":\"keep\",\"origin\":\"human\",\"status\":\"queued\",\"queuedAt\":\"fixed\"}');",
+        )
+        .unwrap();
+    drop(connection);
+
+    let mut store = profile.store();
+    assert_eq!(agents::queue(&store, "p").unwrap()[0].text, "keep");
+    assert_eq!(
+        store
+            .connection()
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        19
+    );
+    let (prompt, attachment) = prompt_with_image();
+    store
+        .mutate("test", "new-image", "new-image", |tx| {
+            agents::enqueue_prompt_with_attachments(tx, "p", &prompt, &[attachment])?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
 }
 
 #[test]

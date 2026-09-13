@@ -656,7 +656,7 @@ fn migration_from_populated_v17_preserves_permissions_and_adds_operation_identit
             .connection()
             .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
-        18
+        19
     );
     assert!(
         store
