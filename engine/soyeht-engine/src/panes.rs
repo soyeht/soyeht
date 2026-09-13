@@ -89,6 +89,9 @@ impl Core {
         if params["mode"] == "editor" {
             return self.editor_pane_create(connection, params);
         }
+        if params["mode"] == "web" {
+            return self.web_pane_create(connection, params);
+        }
         let defaults = pane_defaults(&self.store)?;
         let agent_mode = params["mode"] == "agent";
         let agent = new_agent(&self.directory, params)?;
@@ -285,6 +288,9 @@ impl Core {
             client.streams.remove(id);
         }
         let saved = &errors::invariant(self.panes.get(id), "Closing pane disappeared")?.stored;
+        if matches!(saved.pane.mode, PaneMode::Editor | PaneMode::Web) {
+            return Ok(());
+        }
         let mut instance_id = saved.instance_id.clone();
         let key = saved.instance_key.clone();
         if instance_id.is_none()

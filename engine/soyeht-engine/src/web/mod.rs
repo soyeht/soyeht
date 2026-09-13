@@ -1,5 +1,6 @@
 //! Browser composition owned by the engine.
 
+mod panes;
 mod system;
 
 pub use system::SystemPortScan;

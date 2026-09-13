@@ -2875,6 +2875,75 @@ fn creation_retries_and_close_survive_engine_restart_without_resurrection() {
 }
 
 #[test]
+fn web_panes_are_bounded_durable_and_never_enter_the_process_registry() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Web","path":rig.path,"idempotencyKey":"web-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let first_request = json!({
+        "workspaceId":workspace,"mode":"web","url":"localhost:5173",
+        "incognito":true,"idempotencyKey":"web-pane-0"
+    });
+    let first = client.call("pane.create", first_request.clone())["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(client.call("pane.create", first_request)["paneId"], first);
+    let pane = client.pane(&first);
+    assert_eq!(pane["mode"], "web");
+    assert_eq!(pane["url"], "http://localhost:5173/");
+    assert_eq!(pane["webSession"], "incognito");
+    assert!(pane["pid"].is_null() && pane["streamId"].is_null());
+    for index in 1..10 {
+        client.call(
+            "pane.create",
+            json!({
+                "workspaceId":workspace,"mode":"web",
+                "idempotencyKey":format!("web-pane-{index}")
+            }),
+        );
+    }
+    let overflow = client.request(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"web-pane-10"}),
+    );
+    assert_eq!(overflow["error"]["data"]["kind"], "invalid_params");
+    assert!(process_instances(&rig).is_empty());
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut client = rig.client();
+    assert_eq!(client.pane(&first)["url"], "http://localhost:5173/");
+    assert!(process_instances(&rig).is_empty());
+    client.call(
+        "pane.close",
+        json!({"paneId":first,"idempotencyKey":"close-web-pane"}),
+    );
+    assert!(
+        !client
+            .section("panes")
+            .iter()
+            .any(|pane| pane["paneId"] == first)
+    );
+}
+
+fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
+    let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), u64::MAX).unwrap();
+    let Response::Instances(instances) = supervisor.request(Request::List).unwrap() else {
+        panic!("process registry")
+    };
+    instances
+        .into_iter()
+        .filter(|instance| !instance.closed)
+        .collect()
+}
+
+#[test]
 fn snapshot_cursor_replays_changes_exactly_once_before_live_events() {
     let rig = Rig::new();
     let mut observer = rig.client();
