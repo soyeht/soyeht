@@ -85,7 +85,12 @@ import WebKit
     super.init()
     webView.navigationDelegate = self
     webView.allowsMagnification = true
+    webView.isInspectable = true
   }
+
+  var canGoBack: Bool { webView.canGoBack }
+
+  var canGoForward: Bool { webView.canGoForward }
 
   func loadIfNeeded(_ rawURL: String?) {
     guard webView.url == nil, requestedURL == nil, let rawURL,

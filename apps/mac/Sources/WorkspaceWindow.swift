@@ -620,7 +620,7 @@ private struct PaneCard: View {
 
   @ViewBuilder private var paneBody: some View {
     if pane.mode == .web {
-      WebPaneSurface(host: webHost, pane: pane)
+      WebPaneSurface(client: client, host: webHost, pane: pane)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if pane.mode == .agent {
       VStack(spacing: MacTheme.Space.x12) {
