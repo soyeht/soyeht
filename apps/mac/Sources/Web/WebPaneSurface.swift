@@ -22,12 +22,30 @@ struct WebPaneSurface: View {
     VStack(spacing: MacTheme.Space.x8) {
       WebNavigationBar(
         address: $address, pane: pane, session: session,
-        navigate: navigate)
-      HostedWebView(session: session, url: pane.url)
-        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control, style: .continuous))
-      WebStatusBar(pane: pane, view: client.webPanes[pane.paneId], servers: client.localServers)
+        navigate: navigate, resize: resize)
+      viewportBody(session, viewport: session.viewport ?? pane.viewport)
+      WebStatusBar(
+        pane: pane, viewport: session.viewport ?? pane.viewport,
+        view: client.webPanes[pane.paneId],
+        servers: client.localServers)
     }
     .onChange(of: pane.url) { _, value in address = value ?? "" }
+  }
+
+  @ViewBuilder private func viewportBody(_ session: MacWebSession, viewport: WebViewport?)
+    -> some View
+  {
+    if let viewport, viewport.preset != .responsive {
+      ScrollView([.horizontal, .vertical]) {
+        HostedWebView(session: session, url: pane.url)
+          .frame(width: CGFloat(viewport.width), height: CGFloat(viewport.height))
+      }
+      .background(MacTheme.face)
+      .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control, style: .continuous))
+    } else {
+      HostedWebView(session: session, url: pane.url)
+        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control, style: .continuous))
+    }
   }
 
   private func navigate(url: String?, action: WebNavigationAction?) {
@@ -39,6 +57,19 @@ struct WebPaneSurface: View {
       }
     }
   }
+
+  private func resize(_ preset: WebViewportPreset, rotate: Bool) {
+    Task {
+      do {
+        let bounds = host.session(for: pane).webView.bounds
+        let width = preset == .responsive ? UInt32(max(1, bounds.width.rounded())) : nil
+        let height = preset == .responsive ? UInt32(max(1, bounds.height.rounded())) : nil
+        _ = try await client.resizeWeb(
+          paneId: pane.paneId, preset: preset == .responsive ? nil : preset, width: width,
+          height: height, rotate: rotate)
+      } catch { client.problem = error.localizedDescription }
+    }
+  }
 }
 
 private struct WebNavigationBar: View {
@@ -46,6 +77,7 @@ private struct WebNavigationBar: View {
   let pane: Pane
   let session: MacWebSession
   let navigate: (String?, WebNavigationAction?) -> Void
+  let resize: (WebViewportPreset, Bool) -> Void
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x8) {
@@ -59,11 +91,36 @@ private struct WebNavigationBar: View {
         navigate(nil, NSEvent.modifierFlags.contains(.shift) ? .reload_ignoring_cache : .reload)
       }
       addressField
+      viewportMenu
       navigationButton("arrow.up.right.square", "Open in system browser") { openExternally() }
     }
     .padding(.horizontal, MacTheme.Space.x10)
     .frame(height: 27)
     .neoWell(radius: MacTheme.Radius.pill)
+  }
+
+  private var viewportMenu: some View {
+    Menu {
+      viewportButton("Responsive", .responsive)
+      viewportButton("iPhone SE", .iphone_se)
+      viewportButton("iPhone 15 Pro", .iphone15_pro)
+      viewportButton("iPad", .ipad)
+      Divider()
+      Button("Rotate") { resize(session.viewport?.preset ?? .responsive, true) }
+    } label: {
+      Image(systemName: "rectangle.on.rectangle")
+        .frame(width: 12, height: 12)
+        .foregroundStyle(MacTheme.ink)
+    }
+    .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .help("Viewport")
+    .accessibilityLabel("Viewport")
+  }
+
+  private func viewportButton(_ label: String, _ preset: WebViewportPreset) -> some View {
+    Button(label) { resize(preset, false) }
   }
 
   private var addressField: some View {
@@ -118,6 +175,7 @@ private struct WebNavigationBar: View {
 
 private struct WebStatusBar: View {
   let pane: Pane
+  let viewport: WebViewport?
   let view: WebPaneView?
   let servers: [LocalServer]
 
@@ -127,7 +185,7 @@ private struct WebStatusBar: View {
         Text("Local server · port \(server.port) · pid \(server.pid)")
           .font(MacTheme.mono(MacTheme.TypeScale.micro))
       }
-      if let viewport = pane.viewport {
+      if let viewport {
         Text("\(viewport.width) × \(viewport.height)")
           .font(MacTheme.mono(MacTheme.TypeScale.micro))
       }

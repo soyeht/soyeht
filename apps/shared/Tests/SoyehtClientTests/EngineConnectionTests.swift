@@ -105,7 +105,10 @@
     let web = try await client.openWeb(workspaceId: workspaceId, url: "localhost:4173")
     let navigation = try await client.navigateWeb(paneId: web.paneId, action: .reload)
     #expect(navigation.accepted)
-    #expect(webHost.commands.map(\.command) == [.navigate])
+    let resized = try await client.resizeWeb(paneId: web.paneId, preset: .iphone15_pro)
+    #expect(resized.viewport.width == 393)
+    #expect(resized.viewport.height == 852)
+    #expect(webHost.commands.map(\.command) == [.navigate, .resize])
     client.closePane(web.paneId)
     try await until { !client.panes.contains { $0.paneId == web.paneId } }
     client.closePane(paneId)
@@ -117,12 +120,23 @@
 
     func execute(_ command: WebCommandParams) async throws -> WebCommandResult {
       commands.append(command)
-      guard command.command == .navigate else {
+      switch command.command {
+      case .navigate:
+        return WebCommandResult(
+          paneId: command.paneId, value: .object(["accepted": .bool(true)]),
+          cookiesPresent: false)
+      case .resize:
+        return WebCommandResult(
+          paneId: command.paneId,
+          value: .object([
+            "viewport": .object([
+              "width": .integer(393), "height": .integer(852),
+              "preset": .string("iphone_15_pro"), "zoomPercent": .integer(100),
+            ])
+          ]), cookiesPresent: false)
+      default:
         throw ClientFailure.webHost(.internal_error, "Unexpected integration command.")
       }
-      return WebCommandResult(
-        paneId: command.paneId, value: .object(["accepted": .bool(true)]),
-        cookiesPresent: false)
     }
   }
 

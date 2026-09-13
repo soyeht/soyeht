@@ -113,6 +113,19 @@ extension EngineClient {
     .decoded(WebNavigateResult.self)
   }
 
+  public func resizeWeb(
+    paneId: String, preset: WebViewportPreset? = nil, width: UInt32? = nil,
+    height: UInt32? = nil, rotate: Bool = false
+  ) async throws -> WebResizeResult {
+    try await mutation(
+      "web.resize",
+      WebResizeParams(
+        paneId: paneId, preset: preset, width: width, height: height, rotate: rotate,
+        idempotencyKey: UUID().uuidString)
+    )
+    .decoded(WebResizeResult.self)
+  }
+
   public func reportWebNavigation(
     paneId: String, navigationGeneration: String, url: String, title: String,
     idempotencyKey: String

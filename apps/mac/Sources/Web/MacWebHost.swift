@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SoyehtClient
 import SoyehtProtocol
 import WebKit
@@ -17,7 +18,7 @@ import WebKit
     }
     let session = MacWebSession(
       paneId: pane.paneId, incognito: pane.incognito == true,
-      navigationGeneration: pane.generation,
+      navigationGeneration: pane.generation, viewport: pane.viewport,
       onNavigated: { [weak self] generation, url, title in
         await self?.reportNavigation(
           paneId: pane.paneId, generation: generation, url: url, title: title)
@@ -63,21 +64,26 @@ import WebKit
   }
 }
 
-@MainActor final class MacWebSession: NSObject, WKNavigationDelegate {
+@MainActor @Observable final class MacWebSession: NSObject, WKNavigationDelegate {
   let paneId: String
   let incognito: Bool
+  @ObservationIgnored
   let webView: WKWebView
+  @ObservationIgnored
   private let onNavigated: (UInt64, String, String) async -> Void
   private var requestedURL: URL?
   private var navigationGeneration: UInt64 = 0
+  private(set) var viewport: WebViewport?
 
   init(
     paneId: String, incognito: Bool, navigationGeneration: UInt32,
+    viewport: WebViewport?,
     onNavigated: @escaping (UInt64, String, String) async -> Void
   ) {
     self.paneId = paneId
     self.incognito = incognito
     self.navigationGeneration = UInt64(navigationGeneration)
+    self.viewport = viewport
     self.onNavigated = onNavigated
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = incognito ? .nonPersistent() : .default()
@@ -126,11 +132,16 @@ import WebKit
   }
 
   private func perform(_ command: WebCommandParams) throws -> WebCommandResult {
-    guard command.command == .navigate else {
+    switch command.command {
+    case .navigate:
+      try navigate(command.args)
+      return WebCommandResult(paneId: paneId, value: .object(["accepted": .bool(true)]))
+    case .resize:
+      let resized = try resize(command.args)
+      return WebCommandResult(paneId: paneId, value: viewportValue(resized))
+    default:
       throw ClientFailure.webHost(.internal_error, "The web command is not implemented.")
     }
-    try navigate(command.args)
-    return WebCommandResult(paneId: paneId, value: .object(["accepted": .bool(true)]))
   }
 
   func stop() {
@@ -191,6 +202,46 @@ import WebKit
     }
   }
 
+  private func resize(_ args: JsonValue) throws -> WebViewport {
+    let preset = value(args, "preset").flatMap(WebViewportPreset.init(rawValue:)) ?? .responsive
+    var size = try viewportSize(args, preset: preset)
+    if boolean(args, "rotate") == true { size = (size.1, size.0) }
+    let resized = WebViewport(
+      width: size.0, height: size.1, preset: preset, zoomPercent: viewport?.zoomPercent ?? 100)
+    viewport = resized
+    return resized
+  }
+
+  private func viewportSize(_ args: JsonValue, preset: WebViewportPreset) throws -> (UInt32, UInt32)
+  {
+    let size: (UInt32, UInt32) =
+      switch preset {
+      case .iphone_se: (375, 667)
+      case .iphone15_pro: (393, 852)
+      case .ipad: (768, 1_024)
+      case .responsive:
+        try (
+          unsigned(args, "width").requiredViewportValue(),
+          unsigned(args, "height").requiredViewportValue()
+        )
+      }
+    guard size.0 <= 16_384, size.1 <= 16_384 else {
+      throw ClientFailure.webHost(.internal_error, "The web viewport is invalid.")
+    }
+    return size
+  }
+
+  private func viewportValue(_ viewport: WebViewport) -> JsonValue {
+    .object([
+      "viewport": .object([
+        "width": .integer(Int64(viewport.width)),
+        "height": .integer(Int64(viewport.height)),
+        "preset": .string(viewport.preset.rawValue),
+        "zoomPercent": .integer(Int64(viewport.zoomPercent)),
+      ])
+    ])
+  }
+
   private func cookiesPresent(for host: String?) async -> Bool {
     guard let host else { return false }
     let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
@@ -222,11 +273,34 @@ import WebKit
     return value
   }
 
+  private func unsigned(_ args: JsonValue, _ key: String) -> UInt32? {
+    guard case .object(let values) = args, case .integer(let value)? = values[key] else {
+      return nil
+    }
+    return UInt32(exactly: value)
+  }
+
+  private func boolean(_ args: JsonValue, _ key: String) -> Bool? {
+    guard case .object(let values) = args, case .bool(let value)? = values[key] else {
+      return nil
+    }
+    return value
+  }
+
   private func allowedURL(_ raw: String) -> URL? {
     guard let components = URLComponents(string: raw),
       let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
       components.host?.isEmpty == false
     else { return nil }
     return components.url
+  }
+}
+
+extension UInt32? {
+  fileprivate func requiredViewportValue() throws -> UInt32 {
+    guard let self, self > 0 else {
+      throw ClientFailure.webHost(.internal_error, "The web viewport is invalid.")
+    }
+    return self
   }
 }
