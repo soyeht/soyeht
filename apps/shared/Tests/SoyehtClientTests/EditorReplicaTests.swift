@@ -110,6 +110,36 @@ import Testing
         revision: "2", paneId: "agent-1", hunks: [])))
   #expect(client.editorFiles[file.fileId]?.review == nil)
 
+  let hunk = DiffHunk(
+    hunkId: "agent-change", oldStart: 0, oldLines: 1, newStart: 0, newLines: 1,
+    lines: [DiffLine(kind: .added, newLine: 0, text: "let value = 2", author: author)])
+  try client.applyEditorEvent(
+    .editorReviewRequested,
+    .encoded(
+      EditorReviewRequestedEvent(
+        eventId: "9", at: "2026-09-12T20:00:08Z", fileId: file.fileId,
+        revision: "2", paneId: "agent-1", hunks: [hunk])))
+  #expect(client.editorFiles[file.fileId]?.review == nil)
+
+  saved.revision = "3"
+  client.editorFiles[file.fileId] = EditorFileView(file: saved)
+  try client.applyEditorEvent(
+    .editorReviewRequested,
+    .encoded(
+      EditorReviewRequestedEvent(
+        eventId: "10", at: "2026-09-12T20:00:09Z", fileId: file.fileId,
+        revision: "3", paneId: "agent-1", hunks: [hunk])))
+  #expect(client.editorFiles[file.fileId]?.review?.hunks.first?.hunkId == "agent-change")
+
+  var next = saved
+  next.revision = "4"
+  try client.applyEditorEvent(
+    .fileSaved,
+    .encoded(
+      FileSavedEvent(
+        eventId: "11", at: "2026-09-12T20:00:10Z", file: next, by: author)))
+  #expect(client.editorFiles[file.fileId]?.review == nil)
+
   client.discardEditorPane(file.paneId)
   #expect(client.editorFiles.isEmpty)
 }

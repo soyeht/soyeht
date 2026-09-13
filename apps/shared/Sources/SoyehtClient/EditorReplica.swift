@@ -79,7 +79,10 @@ extension EngineClient {
       updateEditor(event.fileId) { $0.agentCursors[event.paneId] = event }
     case .editorReviewRequested:
       let event = try params.decoded(EditorReviewRequestedEvent.self)
-      updateEditor(event.fileId) { $0.review = event.hunks.isEmpty ? nil : event }
+      updateEditor(event.fileId) {
+        guard $0.file.revision == event.revision else { return }
+        $0.review = event.hunks.isEmpty ? nil : event
+      }
     default: break
     }
   }
@@ -272,6 +275,34 @@ extension EngineClient {
     ).decoded(FileDiffResult.self)
   }
 
+  @discardableResult
+  public func acceptEditorReview(
+    fileId: String, hunkId: String, baseRevision: String
+  ) async throws -> EditorReviewResult {
+    try await resolveEditorReview(
+      method: "editor.review.accept", fileId: fileId, hunkId: hunkId,
+      baseRevision: baseRevision)
+  }
+
+  @discardableResult
+  public func rejectEditorReview(
+    fileId: String, hunkId: String, baseRevision: String
+  ) async throws -> EditorReviewResult {
+    try await resolveEditorReview(
+      method: "editor.review.reject", fileId: fileId, hunkId: hunkId,
+      baseRevision: baseRevision)
+  }
+
+  public func commentOnEditorReview(
+    fileId: String, range: SoyehtProtocol.TextRange, body: String
+  ) async throws -> EditorReviewCommentResult {
+    try await mutation(
+      "editor.review.comment",
+      EditorReviewCommentParams(
+        fileId: fileId, range: range, body: body, idempotencyKey: UUID().uuidString)
+    ).decoded(EditorReviewCommentResult.self)
+  }
+
   public func languageServerStatus(
     workspaceId: String? = nil, language: EditorLanguage? = nil
   ) async throws -> LspStatusResult {
@@ -349,6 +380,7 @@ extension EngineClient {
       view.diagnostics = []
       view.diagnosticRevision = nil
     }
+    if view.review?.revision != file.revision { view.review = nil }
     view.file = file
     update(&view)
     editorFiles[file.fileId] = view
@@ -358,5 +390,19 @@ extension EngineClient {
     guard var view = editorFiles[fileId] else { return }
     update(&view)
     editorFiles[fileId] = view
+  }
+
+  private func resolveEditorReview(
+    method: String, fileId: String, hunkId: String, baseRevision: String
+  ) async throws -> EditorReviewResult {
+    let result = try await mutation(
+      method,
+      EditorReviewParams(
+        fileId: fileId, hunkId: hunkId, baseRevision: baseRevision,
+        idempotencyKey: UUID().uuidString)
+    ).decoded(EditorReviewResult.self)
+    upsertEditor(result.file)
+    try await refreshEditorFile(fileId)
+    return result
   }
 }

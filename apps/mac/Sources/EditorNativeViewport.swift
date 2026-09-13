@@ -8,6 +8,8 @@ struct EditorNativeViewport: NSViewRepresentable {
   let view: EditorFileView
   @Binding var selectedPosition: TextPosition?
   let diffMarkers: [UInt32: Set<EditorDiffMarker>]
+  let agentReviewLines: Set<UInt32>
+  let agentCursors: [EditorAgentCursorEvent]
   let onDefinition: (TextPosition) -> Void
   let onReferences: (TextPosition) -> Void
 
@@ -59,7 +61,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       textView.inputDelegate = self
       ruler?.update(
         startLine: viewport.fromLine, lineCount: viewport.lines.count,
-        markers: parent.diffMarkers, selectedLine: parent.selectedPosition?.line)
+        markers: parent.diffMarkers, agentReviewLines: parent.agentReviewLines,
+        agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line)
       let identity =
         "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics))"
       guard renderedIdentity != identity else { return }
@@ -383,6 +386,8 @@ struct EditorNativeViewport: NSViewRepresentable {
   private var startLine: UInt32 = 0
   private var lineCount = 0
   private var diffMarkers: [UInt32: Set<EditorDiffMarker>] = [:]
+  private var agentReviewLines: Set<UInt32> = []
+  private var agentCursors: [UInt32: String] = [:]
   var selectedLine: UInt32?
 
   init(scrollView: NSScrollView, textView: NSTextView) {
@@ -398,11 +403,14 @@ struct EditorNativeViewport: NSViewRepresentable {
 
   func update(
     startLine: UInt32, lineCount: Int, markers: [UInt32: Set<EditorDiffMarker>],
-    selectedLine: UInt32?
+    agentReviewLines: Set<UInt32>, agentCursors: [EditorAgentCursorEvent], selectedLine: UInt32?
   ) {
     self.startLine = startLine
     self.lineCount = lineCount
     diffMarkers = markers
+    self.agentReviewLines = agentReviewLines
+    self.agentCursors = Dictionary(
+      agentCursors.map { ($0.position.line, $0.name) }, uniquingKeysWith: { first, _ in first })
     self.selectedLine = selectedLine
     needsDisplay = true
   }
@@ -433,11 +441,23 @@ struct EditorNativeViewport: NSViewRepresentable {
         NSRect(x: 0, y: y, width: ruleThickness, height: 19).fill()
       }
       drawMarkers(diffMarkers[line] ?? [], y: y)
+      drawAgentFacts(line: line, y: y)
       let label = "\(UInt64(line) + 1)" as NSString
       let size = label.size(withAttributes: attributes)
       label.draw(
         at: NSPoint(x: ruleThickness - size.width - 10, y: y + 2), withAttributes: attributes)
     }
+  }
+
+  private func drawAgentFacts(line: UInt32, y: CGFloat) {
+    if agentReviewLines.contains(line) {
+      NSColor(MacTheme.agentBlue).setFill()
+      NSRect(x: 4, y: y, width: 3, height: 19).fill()
+    }
+    guard let name = agentCursors[line] else { return }
+    NSColor(MacTheme.accent).setFill()
+    NSBezierPath(ovalIn: NSRect(x: 9, y: y + 7, width: 6, height: 6)).fill()
+    toolTip = "\(name) is editing line \(UInt64(line) + 1)"
   }
 
   private func drawMarkers(_ markers: Set<EditorDiffMarker>, y: CGFloat) {

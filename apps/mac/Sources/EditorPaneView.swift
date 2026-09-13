@@ -263,6 +263,10 @@ private struct EditorPaneBody: View {
         EditorCodeViewport(
           client: client, view: view, selectedPosition: $selectedPosition,
           diff: diff, definition: definition, findReferences: findReferences)
+        if view.review != nil {
+          EditorAgentReviewBar(
+            client: client, view: view, selectedPosition: selectedPosition)
+        }
         EditorStatusBar(
           view: view, selectedPosition: selectedPosition, lsp: languageStatus, diff: diff)
       }
@@ -377,8 +381,10 @@ private struct EditorTabs: View {
       if let cursor = agentCursor {
         HStack(spacing: MacTheme.Space.x6) {
           Circle().fill(MacTheme.ink).frame(width: 6, height: 6)
-          Text("\(cursor.name) · editing")
-            .font(MacTheme.mono(10.5, weight: .bold)).foregroundStyle(MacTheme.ink)
+          Text(
+            "\(cursor.name) · \(UInt64(cursor.position.line) + 1):\(UInt64(cursor.position.column) + 1)"
+          )
+          .font(MacTheme.mono(10.5, weight: .bold)).foregroundStyle(MacTheme.ink)
         }
         .padding(.horizontal, MacTheme.Space.x10).frame(height: 22)
         .background(MacTheme.agentBlue, in: Capsule())
@@ -414,9 +420,172 @@ private struct EditorCodeViewport: View {
     EditorNativeViewport(
       client: client, view: view, selectedPosition: $selectedPosition,
       diffMarkers: diff?.gutterMarkers(lineCount: view.file.lineCount) ?? [:],
+      agentReviewLines: reviewPresentation?.lines ?? [],
+      agentCursors: Array(view.agentCursors.values),
       onDefinition: definition, onReferences: findReferences
     )
     .background(MacTheme.face)
+  }
+
+  private var reviewPresentation: EditorAgentReviewPresentation? {
+    view.review.map {
+      EditorAgentReviewPresentation(
+        $0, fallbackName: view.agentCursors[$0.paneId]?.name ?? "Agent")
+    }
+  }
+}
+
+private struct EditorAgentReviewBar: View {
+  @Bindable var client: EngineClient
+  let view: EditorFileView
+  let selectedPosition: TextPosition?
+  @State private var resolvingHunkId: String?
+  @State private var showComment = false
+  @State private var commentBody = ""
+
+  private var presentation: EditorAgentReviewPresentation? {
+    view.review.map {
+      EditorAgentReviewPresentation(
+        $0, fallbackName: view.agentCursors[$0.paneId]?.name ?? "Agent")
+    }
+  }
+
+  var body: some View {
+    if let presentation {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x6) {
+        HStack(spacing: MacTheme.Space.x8) {
+          Image(systemName: "person.crop.circle.badge.checkmark")
+            .font(.system(size: 12, weight: .semibold)).foregroundStyle(MacTheme.accent)
+          Text(
+            "Review \(presentation.hunks.count) agent \(presentation.hunks.count == 1 ? "change" : "changes")"
+          )
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          Spacer(minLength: 0)
+          Button(commentLabel) { showComment = true }
+            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+            .buttonStyle(NeoPillButtonStyle())
+            .disabled(selectedPosition == nil)
+        }
+        ScrollView(.horizontal) {
+          HStack(spacing: MacTheme.Space.x8) {
+            ForEach(presentation.hunks) { hunk in
+              EditorAgentReviewHunkCard(
+                hunk: hunk, busy: resolvingHunkId != nil,
+                accept: { resolve(hunk, accept: true) },
+                reject: { resolve(hunk, accept: false) })
+            }
+          }
+        }
+        .scrollIndicators(.hidden)
+      }
+      .padding(.horizontal, MacTheme.Space.x10).padding(.vertical, MacTheme.Space.x8)
+      .background(MacTheme.canvas)
+      .sheet(isPresented: $showComment) {
+        EditorReviewCommentSheet(
+          line: selectedPosition?.line, comment: $commentBody, isPresented: $showComment,
+          submit: submitComment)
+      }
+    }
+  }
+
+  private var commentLabel: String {
+    selectedPosition.map { "Comment on line \(UInt64($0.line) + 1)" } ?? "Select a line"
+  }
+
+  private func resolve(_ hunk: EditorAgentReviewHunk, accept: Bool) {
+    guard let review = view.review else { return }
+    resolvingHunkId = hunk.id
+    Task { @MainActor in
+      defer { resolvingHunkId = nil }
+      do {
+        if accept {
+          _ = try await client.acceptEditorReview(
+            fileId: view.file.fileId, hunkId: hunk.id, baseRevision: review.revision)
+        } else {
+          _ = try await client.rejectEditorReview(
+            fileId: view.file.fileId, hunkId: hunk.id, baseRevision: review.revision)
+        }
+      } catch { client.problem = error.localizedDescription }
+    }
+  }
+
+  private func submitComment() {
+    guard let position = selectedPosition else { return }
+    let body = commentBody.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !body.isEmpty else { return }
+    Task { @MainActor in
+      do {
+        let range = SoyehtProtocol.TextRange(start: position, end: position)
+        let result = try await client.commentOnEditorReview(
+          fileId: view.file.fileId, range: range, body: body)
+        commentBody = ""
+        showComment = false
+        if !result.delivered { client.problem = "The author pane is no longer available." }
+      } catch { client.problem = error.localizedDescription }
+    }
+  }
+}
+
+private struct EditorAgentReviewHunkCard: View {
+  let hunk: EditorAgentReviewHunk
+  let busy: Bool
+  let accept: () -> Void
+  let reject: () -> Void
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+        Text("\(hunk.authorName) · line \(UInt64(hunk.line) + 1)")
+          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+          .foregroundStyle(MacTheme.ink)
+        Text(hunk.summary.isEmpty ? "Agent change" : hunk.summary)
+          .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
+          .lineLimit(1).frame(maxWidth: 210, alignment: .leading)
+      }
+      Text("\(hunk.changedLineCount)")
+        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(MacTheme.accent)
+      Button("Accept", action: accept)
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(busy)
+      Button("Reject", action: reject)
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .buttonStyle(NeoPillButtonStyle()).disabled(busy)
+    }
+    .padding(.horizontal, MacTheme.Space.x10).frame(height: 42)
+    .background(MacTheme.agentBlue, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+  }
+}
+
+private struct EditorReviewCommentSheet: View {
+  let line: UInt32?
+  @Binding var comment: String
+  @Binding var isPresented: Bool
+  let submit: () -> Void
+
+  private var contentReady: Bool {
+    !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      Text("Request a change on line \(UInt64(line ?? 0) + 1)")
+        .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+      Text("The request goes to the agent that authored the pending change.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+      TextEditor(text: $comment)
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption)).scrollContentBackground(.hidden)
+        .padding(MacTheme.Space.x8).frame(minHeight: 120)
+        .neoWell(radius: MacTheme.Radius.control)
+      HStack {
+        Spacer()
+        Button("Cancel") { isPresented = false }.buttonStyle(NeoPillButtonStyle())
+        Button("Send request", action: submit)
+          .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!contentReady)
+      }
+    }
+    .padding(MacTheme.Space.x16).frame(width: 480)
+    .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
   }
 }
 
