@@ -866,6 +866,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "similar"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f66ca1f7aca2474dc10c942eb22feffc897735f54cd1db90138c2fddb490987"
+dependencies = [
+ "bstr",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1015,6 +1024,14 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "soyeht-protocol",
+]
+
+[[package]]
+name = "soyeht-vcs"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+ "similar",
 ]
 
 [[package]]
