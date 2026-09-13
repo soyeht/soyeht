@@ -9,6 +9,8 @@ pub enum Error {
     InvalidUtf8,
     OutputTooLarge,
     MalformedBlame,
+    HunkNotFound,
+    InvalidHunkRange,
     NumericOverflow,
 }
 
@@ -22,6 +24,8 @@ impl fmt::Display for Error {
             Self::InvalidUtf8 => "source-control output is not UTF-8",
             Self::OutputTooLarge => "source-control result exceeds its byte budget",
             Self::MalformedBlame => "source-control blame output is malformed",
+            Self::HunkNotFound => "source-control hunk is unavailable",
+            Self::InvalidHunkRange => "source-control hunk range is invalid",
             Self::NumericOverflow => "source-control line number exceeds the supported range",
         };
         formatter.write_str(message)

@@ -19,6 +19,18 @@ impl Service {
         let blame = parse_blame(&self.commands.blame(&root, &path)?)?;
         diff::build(current, &baseline, blame)
     }
+
+    pub fn review(&self, current: &str, baseline: &str) -> Result<Diff> {
+        diff::build(current, baseline, Vec::new())
+    }
+
+    pub fn accept_hunk(&self, current: &str, baseline: &str, hunk_id: &str) -> Result<String> {
+        diff::accept(current, baseline, hunk_id)
+    }
+
+    pub fn reject_hunk(&self, current: &str, baseline: &str, hunk_id: &str) -> Result<String> {
+        diff::reject(current, baseline, hunk_id)
+    }
 }
 
 fn repository_path(repository: &Path, workspace: &Path, file: &Path) -> Result<PathBuf> {

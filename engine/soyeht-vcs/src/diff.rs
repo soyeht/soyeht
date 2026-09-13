@@ -17,6 +17,69 @@ pub(crate) fn build(current: &str, baseline: &str, blame: Vec<Blame>) -> Result<
     Ok(Diff { hunks, blame })
 }
 
+pub(crate) fn accept(current: &str, baseline: &str, hunk_id: &str) -> Result<String> {
+    resolve(current, baseline, hunk_id, Resolution::Accept)
+}
+
+pub(crate) fn reject(current: &str, baseline: &str, hunk_id: &str) -> Result<String> {
+    resolve(current, baseline, hunk_id, Resolution::Reject)
+}
+
+enum Resolution {
+    Accept,
+    Reject,
+}
+
+fn resolve(current: &str, baseline: &str, hunk_id: &str, choice: Resolution) -> Result<String> {
+    let review = build(current, baseline, Vec::new())?;
+    let hunk = review
+        .hunks
+        .iter()
+        .find(|hunk| hunk.hunk_id == hunk_id)
+        .ok_or(Error::HunkNotFound)?;
+    let (target, target_start, target_lines, source, source_start, source_lines) = match choice {
+        Resolution::Accept => (
+            baseline,
+            hunk.old_start,
+            hunk.old_lines,
+            current,
+            hunk.new_start,
+            hunk.new_lines,
+        ),
+        Resolution::Reject => (
+            current,
+            hunk.new_start,
+            hunk.new_lines,
+            baseline,
+            hunk.old_start,
+            hunk.old_lines,
+        ),
+    };
+    let target_range = line_range(target, target_start, target_lines)?;
+    let source_range = line_range(source, source_start, source_lines)?;
+    let mut resolved = target.to_owned();
+    resolved.replace_range(target_range, &source[source_range]);
+    Ok(resolved)
+}
+
+fn line_range(text: &str, start: u32, count: u32) -> Result<Range<usize>> {
+    let mut offsets = vec![0];
+    offsets.extend(
+        text.match_indices('\n')
+            .map(|(index, _)| index.saturating_add(1)),
+    );
+    if offsets.last().copied() != Some(text.len()) {
+        offsets.push(text.len());
+    }
+    let start = usize::try_from(start).map_err(|_| Error::InvalidHunkRange)?;
+    let end = start
+        .checked_add(usize::try_from(count).map_err(|_| Error::InvalidHunkRange)?)
+        .ok_or(Error::InvalidHunkRange)?;
+    let from = offsets.get(start).copied().ok_or(Error::InvalidHunkRange)?;
+    let to = offsets.get(end).copied().ok_or(Error::InvalidHunkRange)?;
+    Ok(from..to)
+}
+
 fn unchanged_lines(diff: &TextDiff<'_, '_, str>) -> Result<BTreeMap<u32, u32>> {
     let mut lines = BTreeMap::new();
     for change in diff.iter_all_changes() {
@@ -206,5 +269,55 @@ mod tests {
     fn bounded_result_fails_instead_of_returning_an_incomplete_diff() {
         let current = format!("{}\n", "x".repeat(RESULT_BYTES));
         assert_eq!(build(&current, "", vec![]), Err(Error::OutputTooLarge));
+    }
+
+    #[test]
+    fn one_hunk_can_be_accepted_or_rejected_without_touching_the_other() {
+        let baseline =
+            "zero\none\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n";
+        let current =
+            "zero\nONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\neleven\ntwelve\n";
+        let review = build(current, baseline, vec![]).unwrap();
+        assert_eq!(review.hunks.len(), 2);
+        let first = &review.hunks[0].hunk_id;
+
+        let accepted_base = accept(current, baseline, first).unwrap();
+        assert!(accepted_base.contains("ONE"));
+        assert!(accepted_base.contains("ten"));
+        let accepted_pending = build(current, &accepted_base, vec![]).unwrap();
+        assert_eq!(accepted_pending.hunks.len(), 1);
+        assert!(
+            accepted_pending.hunks[0]
+                .lines
+                .iter()
+                .any(|line| line.text == "TEN")
+        );
+
+        let rejected_current = reject(current, baseline, first).unwrap();
+        assert!(rejected_current.contains("one"));
+        assert!(rejected_current.contains("TEN"));
+        let rejected_pending = build(&rejected_current, baseline, vec![]).unwrap();
+        assert_eq!(rejected_pending.hunks.len(), 1);
+        assert!(
+            rejected_pending.hunks[0]
+                .lines
+                .iter()
+                .any(|line| line.text == "TEN")
+        );
+    }
+
+    #[test]
+    fn insertion_deletion_eof_and_missing_hunks_are_resolved_fail_closed() {
+        let inserted = build("one\ntwo", "one\n", vec![]).unwrap();
+        assert_eq!(
+            reject("one\ntwo", "one\n", &inserted.hunks[0].hunk_id).unwrap(),
+            "one\n"
+        );
+        let deleted = build("one\n", "one\ntwo", vec![]).unwrap();
+        assert_eq!(
+            reject("one\n", "one\ntwo", &deleted.hunks[0].hunk_id).unwrap(),
+            "one\ntwo"
+        );
+        assert_eq!(reject("one", "two", "missing"), Err(Error::HunkNotFound));
     }
 }
