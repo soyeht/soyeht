@@ -61,6 +61,7 @@ impl Client {
             device_token: None,
             proof: None,
             binding: binding.map(str::to_owned),
+            capabilities: None,
         })?;
         let welcome: Welcome = client.request("hello", hello)?;
         let expected_role = if binding.is_some() {

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
+// Generated from contracts/protocol.json (sha256 6f3d38e0d17f9c340e0125984915062a0e0e30f72acba05a7be26fcd7827cef5). Do not edit.
 public enum ProtocolLimits {
     public static let jsonBytes = 1048576
     public static let terminalPayloadBytes = 65536
@@ -34,4 +34,17 @@ public enum ProtocolLimits {
     public static let editorHistoryVersions = 200
     public static let editorHistoryBytes = 52428800
     public static let editorAutosaveMs = 500
+    public static let webPanesPerWorkspace = 10
+    public static let webSnapshotBytes = 204800
+    public static let webScreenshotBytes = 2097152
+    public static let webEvaluateBytes = 65536
+    public static let webConsoleEntries = 500
+    public static let webNetworkEntries = 300
+    public static let webWaitTimeoutMs = 60000
+    public static let localServerEntries = 50
+    public static let webPickedElements = 20
+    public static let webOuterHtmlBytes = 2048
+    public static let webPickCropWidth = 640
+    public static let webCommandWaiters = 64
+    public static let portScanBytes = 1048576
 }

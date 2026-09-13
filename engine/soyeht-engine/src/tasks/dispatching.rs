@@ -598,6 +598,11 @@ fn prepare_new_pane(
         pid: None,
         stream_id: None,
         agent: Some(state.public(core.now_ms())),
+        url: None,
+        title: None,
+        viewport: None,
+        incognito: None,
+        web_session: None,
     };
     let saved = StoredPane {
         pane,

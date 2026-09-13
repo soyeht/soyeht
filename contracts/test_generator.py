@@ -127,6 +127,79 @@ class SchemaTests(unittest.TestCase):
             if name not in exempt:
                 self.assertIn("baseRevision", definition["required"], name)
 
+    def test_browser_surface_is_complete_additive_and_bounded(self):
+        expected_methods = {
+            "servers.local.list",
+            "web.open", "web.navigate", "web.snapshot", "web.click", "web.type",
+            "web.press", "web.hover", "web.select", "web.scroll", "web.wait",
+            "web.evaluate", "web.screenshot", "web.console", "web.network",
+            "web.resize", "web.close", "web.command", "web.host.navigated",
+            "web.host.console_counts",
+        }
+        expected_events = {
+            "servers.local.changed", "web.navigated", "web.console_counts",
+            "web.agent_driving",
+        }
+        expected_errors = {
+            "stale_reference", "human_took_over", "web_host_unavailable",
+            "navigation_refused",
+        }
+        self.assertLessEqual(expected_methods, set(self.schema["x-methods"]))
+        self.assertLessEqual(expected_events, set(self.schema["x-events"]))
+        self.assertLessEqual(expected_errors, set(self.schema["x-errorCodes"]))
+        self.assertIn("web", self.schema["$defs"]["PaneMode"]["enum"])
+        self.assertEqual(
+            self.schema["$defs"]["HelloParams"]["properties"]["capabilities"],
+            {"type": "array", "items": {"$ref": "#/$defs/ClientCapability"}},
+        )
+        self.assertNotIn(
+            "capabilities", self.schema["$defs"]["HelloParams"]["required"]
+        )
+
+        limits = self.schema["x-limits"]
+        self.assertEqual(limits["webPanesPerWorkspace"], 10)
+        self.assertEqual(limits["webSnapshotBytes"], 200 * 1024)
+        self.assertEqual(limits["webScreenshotBytes"], 2 * 1024 * 1024)
+        self.assertEqual(limits["webEvaluateBytes"], 64 * 1024)
+        self.assertEqual(limits["webConsoleEntries"], 500)
+        self.assertEqual(limits["webNetworkEntries"], 300)
+        self.assertEqual(limits["webWaitTimeoutMs"], 60_000)
+        self.assertEqual(limits["localServerEntries"], 50)
+        self.assertEqual(limits["webPickedElements"], 20)
+
+        for name in ("WebConsoleEntry", "WebNetworkEntry"):
+            properties = set(self.schema["$defs"][name]["properties"])
+            self.assertNotIn("headers", properties)
+            self.assertNotIn("body", properties)
+        self.assertEqual(
+            self.schema["$defs"]["WebPickedElement"]["properties"]["outerHtml"][
+                "maxLength"
+            ],
+            limits["webOuterHtmlBytes"],
+        )
+        self.assertFalse(self.schema["x-events"]["servers.local.changed"]["durable"])
+        self.assertFalse(self.schema["x-events"]["web.console_counts"]["durable"])
+        self.assertFalse(self.schema["x-events"]["web.agent_driving"]["durable"])
+
+    def test_browser_mutations_require_idempotency_but_reverse_commands_use_operation_keys(self):
+        for name, method in self.schema["x-methods"].items():
+            if not name.startswith("web.") or not method["mutation"]:
+                continue
+            definition = self.schema["$defs"][method["params"]["$ref"].split("/")[-1]]
+            self.assertIn("idempotencyKey", definition["required"], name)
+        command = self.schema["$defs"]["WebCommandParams"]
+        self.assertIn("operationKey", command["required"])
+        self.assertNotIn("idempotencyKey", command["properties"])
+        self.assertFalse(self.schema["x-methods"]["web.command"]["mutation"])
+
+    def test_web_session_permission_is_explicit_and_yolo_independent(self):
+        kinds = self.schema["$defs"]["PermissionRequestKind"]["enum"]
+        self.assertEqual(kinds, ["agent", "web_session", "web_evaluate"])
+        for name in ("PermissionRequest", "PanePermissionRequestedEvent"):
+            properties = self.schema["$defs"][name]["properties"]
+            self.assertEqual(properties["kind"], {"$ref": "#/$defs/PermissionRequestKind"})
+            self.assertIn("domain", properties)
+
     def test_swift_task_name_does_not_shadow_concurrency(self):
         outputs = render(self.schema, "test-digest")
         swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]

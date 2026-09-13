@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
+// Generated from contracts/protocol.json (sha256 6f3d38e0d17f9c340e0125984915062a0e0e30f72acba05a7be26fcd7827cef5). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -11,7 +11,7 @@ export type Role = "human_local" | "human_device" | "agent" | "chief";
 
 export type AgentPaneRole = "worker" | "chief";
 
-export type PaneMode = "terminal" | "agent" | "editor";
+export type PaneMode = "terminal" | "agent" | "editor" | "web";
 
 export type PaneState = "starting" | "working" | "idle" | "waiting_for_you" | "cancelling" | "no_signal" | "recovering" | "dead" | "unknown";
 
@@ -19,7 +19,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused";
 
 export interface RpcError {
   "code": number;
@@ -64,6 +64,11 @@ export interface Pane {
   "pid"?: number;
   "streamId"?: Id;
   "agent"?: AgentSession;
+  "url"?: string;
+  "title"?: string;
+  "viewport"?: WebViewport;
+  "incognito"?: boolean;
+  "webSession"?: WebSessionState;
 }
 
 export interface Device {
@@ -120,6 +125,7 @@ export interface HelloParams {
   "deviceToken"?: string;
   "proof"?: ByteString;
   "binding"?: string;
+  "capabilities"?: Array<ClientCapability>;
 }
 
 export interface StateSnapshotParams {
@@ -200,6 +206,8 @@ export interface PaneCreateParams {
   "model"?: string;
   "effort"?: string;
   "permission"?: PermissionMode;
+  "url"?: string;
+  "incognito"?: boolean;
 }
 
 export interface PaneCreateResult {
@@ -642,6 +650,8 @@ export interface PermissionRequest {
   "detail": string;
   "options": Array<PermissionOption>;
   "expiresAt": string;
+  "kind"?: PermissionRequestKind;
+  "domain"?: string;
 }
 
 export interface ElicitationRequest {
@@ -969,6 +979,8 @@ export interface PanePermissionRequestedEvent {
   "detail": string;
   "options": Array<PermissionOption>;
   "expiresAt": string;
+  "kind"?: PermissionRequestKind;
+  "domain"?: string;
 }
 
 export interface PanePermissionAnsweredEvent {
@@ -2124,6 +2136,357 @@ export interface EditorReviewRequestedEvent {
   "hunks": Array<DiffHunk>;
 }
 
+export type ClientCapability = "web_host";
+
+export type WebInteractionMode = "structured" | "human";
+
+export type WebNavigationAction = "back" | "forward" | "reload" | "reload_ignoring_cache";
+
+export type WebViewportPreset = "iphone_se" | "iphone_15_pro" | "ipad" | "responsive";
+
+export type WebConsoleLevel = "debug" | "info" | "warning" | "error";
+
+export type WebSessionState = "anonymous" | "permission_required" | "granted" | "incognito";
+
+export type WebCommandKind = "navigate" | "snapshot" | "click" | "type" | "press" | "hover" | "select" | "scroll" | "wait" | "evaluate" | "screenshot" | "console" | "network" | "resize" | "close";
+
+export interface WebViewport {
+  "width": number;
+  "height": number;
+  "preset": WebViewportPreset;
+  "zoomPercent": number;
+}
+
+export interface WebRect {
+  "x": number;
+  "y": number;
+  "width": number;
+  "height": number;
+}
+
+export interface WebSnapshotNode {
+  "ref": Id;
+  "role": string;
+  "name": string;
+  "state": string;
+  "value"?: string;
+  "rect": WebRect;
+  "parentRef"?: Id;
+}
+
+export interface WebConsoleEntry {
+  "sequence": Decimal;
+  "level": WebConsoleLevel;
+  "text": string;
+  "source": string;
+  "at": string;
+}
+
+export interface WebNetworkEntry {
+  "sequence": Decimal;
+  "method": string;
+  "url": string;
+  "status": number;
+  "durationMs": number;
+  "bytes": Decimal;
+  "at": string;
+}
+
+export interface LocalServer {
+  "port": number;
+  "pid": number;
+  "command": string;
+  "cwd": string;
+  "title"?: string;
+}
+
+export interface WebComputedStyles {
+  "boxSizing": string;
+  "color": string;
+  "background": string;
+  "font": string;
+  "border": string;
+  "borderRadius": string;
+  "display": string;
+  "position": string;
+}
+
+export interface WebAccessibility {
+  "role": string;
+  "name": string;
+  "state": string;
+}
+
+export interface WebComponentSource {
+  "framework": string;
+  "component": string;
+  "sourceFile"?: string;
+  "line"?: number;
+}
+
+export interface WebPickedElement {
+  "selector": string;
+  "path": Array<string>;
+  "outerHtml": string;
+  "styles": WebComputedStyles;
+  "accessibility": WebAccessibility;
+  "viewportRect": WebRect;
+  "pageRect": WebRect;
+  "image": AttachmentRef;
+  "component"?: WebComponentSource;
+}
+
+export interface WebElementPackage {
+  "url": string;
+  "title": string;
+  "elements": Array<WebPickedElement>;
+}
+
+export interface WebOpenParams {
+  "url": string;
+  "workspaceId"?: Id;
+  "newPane"?: boolean;
+  "incognito"?: boolean;
+  "mode"?: WebInteractionMode;
+  "idempotencyKey": Id;
+}
+
+export interface WebOpenResult {
+  "paneId": Id;
+}
+
+export interface WebNavigateParams {
+  "paneId": Id;
+  "url"?: string;
+  "action"?: WebNavigationAction;
+  "idempotencyKey": Id;
+}
+
+export interface WebNavigateResult {
+  "paneId": Id;
+  "accepted": boolean;
+}
+
+export interface WebSnapshotParams {
+  "paneId": Id;
+  "screenshot"?: boolean;
+}
+
+export interface WebSnapshotResult {
+  "paneId": Id;
+  "navigationGeneration": Decimal;
+  "title": string;
+  "url": string;
+  "nodes": Array<WebSnapshotNode>;
+  "truncated": boolean;
+  "screenshot"?: AttachmentRef;
+}
+
+export interface WebActionResult {
+  "paneId": Id;
+  "completed": boolean;
+}
+
+export interface WebClickParams {
+  "paneId": Id;
+  "ref": Id;
+  "idempotencyKey": Id;
+}
+
+export interface WebTypeParams {
+  "paneId": Id;
+  "ref": Id;
+  "text": string;
+  "submit"?: boolean;
+  "idempotencyKey": Id;
+}
+
+export interface WebPressParams {
+  "paneId": Id;
+  "key": string;
+  "idempotencyKey": Id;
+}
+
+export interface WebHoverParams {
+  "paneId": Id;
+  "ref": Id;
+  "idempotencyKey": Id;
+}
+
+export interface WebSelectParams {
+  "paneId": Id;
+  "ref": Id;
+  "value": string;
+  "idempotencyKey": Id;
+}
+
+export interface WebScrollParams {
+  "paneId": Id;
+  "ref"?: Id;
+  "dx": number;
+  "dy": number;
+  "idempotencyKey": Id;
+}
+
+export interface WebWaitParams {
+  "paneId": Id;
+  "text"?: string;
+  "selector"?: string;
+  "networkIdle"?: boolean;
+  "timeoutMs": number;
+}
+
+export interface WebWaitResult {
+  "paneId": Id;
+  "matched": boolean;
+}
+
+export interface WebEvaluateParams {
+  "paneId": Id;
+  "js": string;
+  "idempotencyKey": Id;
+}
+
+export interface WebEvaluateResult {
+  "paneId": Id;
+  "value": string;
+}
+
+export interface WebScreenshotParams {
+  "paneId": Id;
+  "fullPage"?: boolean;
+}
+
+export interface WebScreenshotResult {
+  "paneId": Id;
+  "image": AttachmentRef;
+}
+
+export interface WebConsoleParams {
+  "paneId": Id;
+  "since"?: Decimal;
+}
+
+export interface WebConsoleResult {
+  "paneId": Id;
+  "entries": Array<WebConsoleEntry>;
+  "next": Decimal;
+  "truncated": boolean;
+}
+
+export interface WebNetworkParams {
+  "paneId": Id;
+  "since"?: Decimal;
+}
+
+export interface WebNetworkResult {
+  "paneId": Id;
+  "entries": Array<WebNetworkEntry>;
+  "next": Decimal;
+  "truncated": boolean;
+}
+
+export interface WebResizeParams {
+  "paneId": Id;
+  "preset"?: WebViewportPreset;
+  "width"?: number;
+  "height"?: number;
+  "rotate"?: boolean;
+  "idempotencyKey": Id;
+}
+
+export interface WebResizeResult {
+  "paneId": Id;
+  "viewport": WebViewport;
+}
+
+export interface WebCloseParams {
+  "paneId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface WebCloseResult {
+  "paneId": Id;
+}
+
+export interface WebCommandParams {
+  "paneId": Id;
+  "command": WebCommandKind;
+  "args": JsonValue;
+  "timeoutMs": number;
+  "operationKey": Id;
+}
+
+export interface WebCommandResult {
+  "paneId": Id;
+  "value"?: JsonValue;
+  "cookiesPresent"?: boolean;
+}
+
+export interface ServersLocalListParams {
+
+}
+
+export interface ServersLocalListResult {
+  "servers": Array<LocalServer>;
+}
+
+export interface WebHostNavigatedParams {
+  "paneId": Id;
+  "navigationGeneration": Decimal;
+  "url": string;
+  "title": string;
+  "idempotencyKey": Id;
+}
+
+export interface WebHostNavigatedResult {
+  "accepted": boolean;
+}
+
+export interface WebHostConsoleCountsParams {
+  "paneId": Id;
+  "warnings": number;
+  "errors": number;
+  "idempotencyKey": Id;
+}
+
+export interface WebHostConsoleCountsResult {
+  "accepted": boolean;
+}
+
+export interface WebNavigatedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "navigationGeneration": Decimal;
+  "url": string;
+  "title": string;
+}
+
+export interface WebConsoleCountsEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "warnings": number;
+  "errors": number;
+}
+
+export interface WebAgentDrivingEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "on": boolean;
+  "domain"?: string;
+}
+
+export interface ServersLocalChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "servers": Array<LocalServer>;
+}
+
+export type PermissionRequestKind = "agent" | "web_session" | "web_evaluate";
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -2203,6 +2566,26 @@ export interface Methods {
   "editor.review.reject": { params: EditorReviewParams; result: EditorReviewResult };
   "editor.review.comment": { params: EditorReviewCommentParams; result: EditorReviewCommentResult };
   "lsp.status": { params: LspStatusParams; result: LspStatusResult };
+  "servers.local.list": { params: ServersLocalListParams; result: ServersLocalListResult };
+  "web.open": { params: WebOpenParams; result: WebOpenResult };
+  "web.navigate": { params: WebNavigateParams; result: WebNavigateResult };
+  "web.snapshot": { params: WebSnapshotParams; result: WebSnapshotResult };
+  "web.click": { params: WebClickParams; result: WebActionResult };
+  "web.type": { params: WebTypeParams; result: WebActionResult };
+  "web.press": { params: WebPressParams; result: WebActionResult };
+  "web.hover": { params: WebHoverParams; result: WebActionResult };
+  "web.select": { params: WebSelectParams; result: WebActionResult };
+  "web.scroll": { params: WebScrollParams; result: WebActionResult };
+  "web.wait": { params: WebWaitParams; result: WebWaitResult };
+  "web.evaluate": { params: WebEvaluateParams; result: WebEvaluateResult };
+  "web.screenshot": { params: WebScreenshotParams; result: WebScreenshotResult };
+  "web.console": { params: WebConsoleParams; result: WebConsoleResult };
+  "web.network": { params: WebNetworkParams; result: WebNetworkResult };
+  "web.resize": { params: WebResizeParams; result: WebResizeResult };
+  "web.close": { params: WebCloseParams; result: WebCloseResult };
+  "web.command": { params: WebCommandParams; result: WebCommandResult };
+  "web.host.navigated": { params: WebHostNavigatedParams; result: WebHostNavigatedResult };
+  "web.host.console_counts": { params: WebHostConsoleCountsParams; result: WebHostConsoleCountsResult };
 }
 
 export interface Events {
@@ -2265,6 +2648,10 @@ export interface Events {
   "lsp.diagnostics": LspDiagnosticsEvent;
   "editor.agent_cursor": EditorAgentCursorEvent;
   "editor.review_requested": EditorReviewRequestedEvent;
+  "servers.local.changed": ServersLocalChangedEvent;
+  "web.navigated": WebNavigatedEvent;
+  "web.console_counts": WebConsoleCountsEvent;
+  "web.agent_driving": WebAgentDrivingEvent;
 }
 export type EventName = keyof Events;
 export interface EventDescriptor {
@@ -2331,4 +2718,8 @@ export const eventRegistry = {
   "lsp.diagnostics": { paramsType: "LspDiagnosticsEvent", durable: true },
   "editor.agent_cursor": { paramsType: "EditorAgentCursorEvent", durable: true },
   "editor.review_requested": { paramsType: "EditorReviewRequestedEvent", durable: true },
+  "servers.local.changed": { paramsType: "ServersLocalChangedEvent", durable: false },
+  "web.navigated": { paramsType: "WebNavigatedEvent", durable: true },
+  "web.console_counts": { paramsType: "WebConsoleCountsEvent", durable: false },
+  "web.agent_driving": { paramsType: "WebAgentDrivingEvent", durable: false },
 } as const satisfies Record<EventName, EventDescriptor>;

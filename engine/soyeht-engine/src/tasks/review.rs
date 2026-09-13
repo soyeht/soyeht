@@ -661,6 +661,11 @@ fn reviewer_pane(core: &Core, task: &Task, state: &State, repository: &Path) -> 
         pid: None,
         stream_id: None,
         agent: Some(state.public(core.now_ms())),
+        url: None,
+        title: None,
+        viewport: None,
+        incognito: None,
+        web_session: None,
     };
     Ok(StoredPane {
         pane,

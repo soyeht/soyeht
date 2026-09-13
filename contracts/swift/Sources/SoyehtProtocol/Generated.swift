@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
+// Generated from contracts/protocol.json (sha256 6f3d38e0d17f9c340e0125984915062a0e0e30f72acba05a7be26fcd7827cef5). Do not edit.
 import Foundation
 
 
@@ -25,6 +25,7 @@ public enum PaneMode: String, Codable, Sendable {
     case `terminal` = "terminal"
     case `agent` = "agent"
     case `editor` = "editor"
+    case `web` = "web"
 }
 
 public enum PaneState: String, Codable, Sendable {
@@ -86,6 +87,10 @@ public enum ErrorKind: String, Codable, Sendable {
     case `dependency_cycle` = "dependency_cycle"
     case `dependency_open` = "dependency_open"
     case `rate_limited` = "rate_limited"
+    case `stale_reference` = "stale_reference"
+    case `human_took_over` = "human_took_over"
+    case `web_host_unavailable` = "web_host_unavailable"
+    case `navigation_refused` = "navigation_refused"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -153,7 +158,12 @@ public struct Pane: Codable, Sendable {
     public var `pid`: UInt32?
     public var `streamId`: Id?
     public var `agent`: AgentSession?
-    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `pid`: UInt32? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil) {
+    public var `url`: String?
+    public var `title`: String?
+    public var `viewport`: WebViewport?
+    public var `incognito`: Bool?
+    public var `webSession`: WebSessionState?
+    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `pid`: UInt32? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil) {
         self.`paneId` = `paneId`
         self.`workspaceId` = `workspaceId`
         self.`name` = `name`
@@ -170,6 +180,11 @@ public struct Pane: Codable, Sendable {
         self.`pid` = `pid`
         self.`streamId` = `streamId`
         self.`agent` = `agent`
+        self.`url` = `url`
+        self.`title` = `title`
+        self.`viewport` = `viewport`
+        self.`incognito` = `incognito`
+        self.`webSession` = `webSession`
     }
 }
 
@@ -281,13 +296,15 @@ public struct HelloParams: Codable, Sendable {
     public var `deviceToken`: String?
     public var `proof`: ByteString?
     public var `binding`: String?
-    public init(`client`: String, `clientVersion`: String, `protocolVersion`: UInt32, `deviceToken`: String? = nil, `proof`: ByteString? = nil, `binding`: String? = nil) {
+    public var `capabilities`: [ClientCapability]?
+    public init(`client`: String, `clientVersion`: String, `protocolVersion`: UInt32, `deviceToken`: String? = nil, `proof`: ByteString? = nil, `binding`: String? = nil, `capabilities`: [ClientCapability]? = nil) {
         self.`client` = `client`
         self.`clientVersion` = `clientVersion`
         self.`protocolVersion` = `protocolVersion`
         self.`deviceToken` = `deviceToken`
         self.`proof` = `proof`
         self.`binding` = `binding`
+        self.`capabilities` = `capabilities`
     }
 }
 
@@ -421,7 +438,9 @@ public struct PaneCreateParams: Codable, Sendable {
     public var `model`: String?
     public var `effort`: String?
     public var `permission`: PermissionMode?
-    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil) {
+    public var `url`: String?
+    public var `incognito`: Bool?
+    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil, `url`: String? = nil, `incognito`: Bool? = nil) {
         self.`workspaceId` = `workspaceId`
         self.`mode` = `mode`
         self.`cwd` = `cwd`
@@ -433,6 +452,8 @@ public struct PaneCreateParams: Codable, Sendable {
         self.`model` = `model`
         self.`effort` = `effort`
         self.`permission` = `permission`
+        self.`url` = `url`
+        self.`incognito` = `incognito`
     }
 }
 
@@ -1304,7 +1325,9 @@ public struct PermissionRequest: Codable, Sendable {
     public var `detail`: String
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
-    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String) {
+    public var `kind`: PermissionRequestKind?
+    public var `domain`: String?
+    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`requestId` = `requestId`
         self.`paneId` = `paneId`
         self.`generation` = `generation`
@@ -1313,6 +1336,8 @@ public struct PermissionRequest: Codable, Sendable {
         self.`detail` = `detail`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
+        self.`kind` = `kind`
+        self.`domain` = `domain`
     }
 }
 
@@ -1911,7 +1936,9 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
     public var `detail`: String
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String) {
+    public var `kind`: PermissionRequestKind?
+    public var `domain`: String?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -1922,6 +1949,8 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
         self.`detail` = `detail`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
+        self.`kind` = `kind`
+        self.`domain` = `domain`
     }
 }
 
@@ -4199,6 +4228,687 @@ public struct EditorReviewRequestedEvent: Codable, Sendable {
     }
 }
 
+public enum ClientCapability: String, Codable, Sendable {
+    case `web_host` = "web_host"
+}
+
+public enum WebInteractionMode: String, Codable, Sendable {
+    case `structured` = "structured"
+    case `human` = "human"
+}
+
+public enum WebNavigationAction: String, Codable, Sendable {
+    case `back` = "back"
+    case `forward` = "forward"
+    case `reload` = "reload"
+    case `reload_ignoring_cache` = "reload_ignoring_cache"
+}
+
+public enum WebViewportPreset: String, Codable, Sendable {
+    case `iphone_se` = "iphone_se"
+    case `iphone15_pro` = "iphone_15_pro"
+    case `ipad` = "ipad"
+    case `responsive` = "responsive"
+}
+
+public enum WebConsoleLevel: String, Codable, Sendable {
+    case `debug` = "debug"
+    case `info` = "info"
+    case `warning` = "warning"
+    case `error` = "error"
+}
+
+public enum WebSessionState: String, Codable, Sendable {
+    case `anonymous` = "anonymous"
+    case `permission_required` = "permission_required"
+    case `granted` = "granted"
+    case `incognito` = "incognito"
+}
+
+public enum WebCommandKind: String, Codable, Sendable {
+    case `navigate` = "navigate"
+    case `snapshot` = "snapshot"
+    case `click` = "click"
+    case `type` = "type"
+    case `press` = "press"
+    case `hover` = "hover"
+    case `select` = "select"
+    case `scroll` = "scroll"
+    case `wait` = "wait"
+    case `evaluate` = "evaluate"
+    case `screenshot` = "screenshot"
+    case `console` = "console"
+    case `network` = "network"
+    case `resize` = "resize"
+    case `close` = "close"
+}
+
+public struct WebViewport: Codable, Sendable {
+    public var `width`: UInt32
+    public var `height`: UInt32
+    public var `preset`: WebViewportPreset
+    public var `zoomPercent`: UInt32
+    public init(`width`: UInt32, `height`: UInt32, `preset`: WebViewportPreset, `zoomPercent`: UInt32) {
+        self.`width` = `width`
+        self.`height` = `height`
+        self.`preset` = `preset`
+        self.`zoomPercent` = `zoomPercent`
+    }
+}
+
+public struct WebRect: Codable, Sendable {
+    public var `x`: Int64
+    public var `y`: Int64
+    public var `width`: UInt32
+    public var `height`: UInt32
+    public init(`x`: Int64, `y`: Int64, `width`: UInt32, `height`: UInt32) {
+        self.`x` = `x`
+        self.`y` = `y`
+        self.`width` = `width`
+        self.`height` = `height`
+    }
+}
+
+public struct WebSnapshotNode: Codable, Sendable {
+    public var `ref`: Id
+    public var `role`: String
+    public var `name`: String
+    public var `state`: String
+    public var `value`: String?
+    public var `rect`: WebRect
+    public var `parentRef`: Id?
+    public init(`ref`: Id, `role`: String, `name`: String, `state`: String, `value`: String? = nil, `rect`: WebRect, `parentRef`: Id? = nil) {
+        self.`ref` = `ref`
+        self.`role` = `role`
+        self.`name` = `name`
+        self.`state` = `state`
+        self.`value` = `value`
+        self.`rect` = `rect`
+        self.`parentRef` = `parentRef`
+    }
+}
+
+public struct WebConsoleEntry: Codable, Sendable {
+    public var `sequence`: Decimal
+    public var `level`: WebConsoleLevel
+    public var `text`: String
+    public var `source`: String
+    public var `at`: String
+    public init(`sequence`: Decimal, `level`: WebConsoleLevel, `text`: String, `source`: String, `at`: String) {
+        self.`sequence` = `sequence`
+        self.`level` = `level`
+        self.`text` = `text`
+        self.`source` = `source`
+        self.`at` = `at`
+    }
+}
+
+public struct WebNetworkEntry: Codable, Sendable {
+    public var `sequence`: Decimal
+    public var `method`: String
+    public var `url`: String
+    public var `status`: UInt32
+    public var `durationMs`: UInt32
+    public var `bytes`: Decimal
+    public var `at`: String
+    public init(`sequence`: Decimal, `method`: String, `url`: String, `status`: UInt32, `durationMs`: UInt32, `bytes`: Decimal, `at`: String) {
+        self.`sequence` = `sequence`
+        self.`method` = `method`
+        self.`url` = `url`
+        self.`status` = `status`
+        self.`durationMs` = `durationMs`
+        self.`bytes` = `bytes`
+        self.`at` = `at`
+    }
+}
+
+public struct LocalServer: Codable, Sendable {
+    public var `port`: UInt32
+    public var `pid`: UInt32
+    public var `command`: String
+    public var `cwd`: String
+    public var `title`: String?
+    public init(`port`: UInt32, `pid`: UInt32, `command`: String, `cwd`: String, `title`: String? = nil) {
+        self.`port` = `port`
+        self.`pid` = `pid`
+        self.`command` = `command`
+        self.`cwd` = `cwd`
+        self.`title` = `title`
+    }
+}
+
+public struct WebComputedStyles: Codable, Sendable {
+    public var `boxSizing`: String
+    public var `color`: String
+    public var `background`: String
+    public var `font`: String
+    public var `border`: String
+    public var `borderRadius`: String
+    public var `display`: String
+    public var `position`: String
+    public init(`boxSizing`: String, `color`: String, `background`: String, `font`: String, `border`: String, `borderRadius`: String, `display`: String, `position`: String) {
+        self.`boxSizing` = `boxSizing`
+        self.`color` = `color`
+        self.`background` = `background`
+        self.`font` = `font`
+        self.`border` = `border`
+        self.`borderRadius` = `borderRadius`
+        self.`display` = `display`
+        self.`position` = `position`
+    }
+}
+
+public struct WebAccessibility: Codable, Sendable {
+    public var `role`: String
+    public var `name`: String
+    public var `state`: String
+    public init(`role`: String, `name`: String, `state`: String) {
+        self.`role` = `role`
+        self.`name` = `name`
+        self.`state` = `state`
+    }
+}
+
+public struct WebComponentSource: Codable, Sendable {
+    public var `framework`: String
+    public var `component`: String
+    public var `sourceFile`: String?
+    public var `line`: UInt32?
+    public init(`framework`: String, `component`: String, `sourceFile`: String? = nil, `line`: UInt32? = nil) {
+        self.`framework` = `framework`
+        self.`component` = `component`
+        self.`sourceFile` = `sourceFile`
+        self.`line` = `line`
+    }
+}
+
+public struct WebPickedElement: Codable, Sendable {
+    public var `selector`: String
+    public var `path`: [String]
+    public var `outerHtml`: String
+    public var `styles`: WebComputedStyles
+    public var `accessibility`: WebAccessibility
+    public var `viewportRect`: WebRect
+    public var `pageRect`: WebRect
+    public var `image`: AttachmentRef
+    public var `component`: WebComponentSource?
+    public init(`selector`: String, `path`: [String], `outerHtml`: String, `styles`: WebComputedStyles, `accessibility`: WebAccessibility, `viewportRect`: WebRect, `pageRect`: WebRect, `image`: AttachmentRef, `component`: WebComponentSource? = nil) {
+        self.`selector` = `selector`
+        self.`path` = `path`
+        self.`outerHtml` = `outerHtml`
+        self.`styles` = `styles`
+        self.`accessibility` = `accessibility`
+        self.`viewportRect` = `viewportRect`
+        self.`pageRect` = `pageRect`
+        self.`image` = `image`
+        self.`component` = `component`
+    }
+}
+
+public struct WebElementPackage: Codable, Sendable {
+    public var `url`: String
+    public var `title`: String
+    public var `elements`: [WebPickedElement]
+    public init(`url`: String, `title`: String, `elements`: [WebPickedElement]) {
+        self.`url` = `url`
+        self.`title` = `title`
+        self.`elements` = `elements`
+    }
+}
+
+public struct WebOpenParams: Codable, Sendable {
+    public var `url`: String
+    public var `workspaceId`: Id?
+    public var `newPane`: Bool?
+    public var `incognito`: Bool?
+    public var `mode`: WebInteractionMode?
+    public var `idempotencyKey`: Id
+    public init(`url`: String, `workspaceId`: Id? = nil, `newPane`: Bool? = nil, `incognito`: Bool? = nil, `mode`: WebInteractionMode? = nil, `idempotencyKey`: Id) {
+        self.`url` = `url`
+        self.`workspaceId` = `workspaceId`
+        self.`newPane` = `newPane`
+        self.`incognito` = `incognito`
+        self.`mode` = `mode`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebOpenResult: Codable, Sendable {
+    public var `paneId`: Id
+    public init(`paneId`: Id) {
+        self.`paneId` = `paneId`
+    }
+}
+
+public struct WebNavigateParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `url`: String?
+    public var `action`: WebNavigationAction?
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `url`: String? = nil, `action`: WebNavigationAction? = nil, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`url` = `url`
+        self.`action` = `action`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebNavigateResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `accepted`: Bool
+    public init(`paneId`: Id, `accepted`: Bool) {
+        self.`paneId` = `paneId`
+        self.`accepted` = `accepted`
+    }
+}
+
+public struct WebSnapshotParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `screenshot`: Bool?
+    public init(`paneId`: Id, `screenshot`: Bool? = nil) {
+        self.`paneId` = `paneId`
+        self.`screenshot` = `screenshot`
+    }
+}
+
+public struct WebSnapshotResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `navigationGeneration`: Decimal
+    public var `title`: String
+    public var `url`: String
+    public var `nodes`: [WebSnapshotNode]
+    public var `truncated`: Bool
+    public var `screenshot`: AttachmentRef?
+    public init(`paneId`: Id, `navigationGeneration`: Decimal, `title`: String, `url`: String, `nodes`: [WebSnapshotNode], `truncated`: Bool, `screenshot`: AttachmentRef? = nil) {
+        self.`paneId` = `paneId`
+        self.`navigationGeneration` = `navigationGeneration`
+        self.`title` = `title`
+        self.`url` = `url`
+        self.`nodes` = `nodes`
+        self.`truncated` = `truncated`
+        self.`screenshot` = `screenshot`
+    }
+}
+
+public struct WebActionResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `completed`: Bool
+    public init(`paneId`: Id, `completed`: Bool) {
+        self.`paneId` = `paneId`
+        self.`completed` = `completed`
+    }
+}
+
+public struct WebClickParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `ref`: Id
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `ref`: Id, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`ref` = `ref`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebTypeParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `ref`: Id
+    public var `text`: String
+    public var `submit`: Bool?
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `ref`: Id, `text`: String, `submit`: Bool? = nil, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`ref` = `ref`
+        self.`text` = `text`
+        self.`submit` = `submit`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebPressParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `key`: String
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `key`: String, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`key` = `key`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebHoverParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `ref`: Id
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `ref`: Id, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`ref` = `ref`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebSelectParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `ref`: Id
+    public var `value`: String
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `ref`: Id, `value`: String, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`ref` = `ref`
+        self.`value` = `value`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebScrollParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `ref`: Id?
+    public var `dx`: Int64
+    public var `dy`: Int64
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `ref`: Id? = nil, `dx`: Int64, `dy`: Int64, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`ref` = `ref`
+        self.`dx` = `dx`
+        self.`dy` = `dy`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebWaitParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `text`: String?
+    public var `selector`: String?
+    public var `networkIdle`: Bool?
+    public var `timeoutMs`: UInt32
+    public init(`paneId`: Id, `text`: String? = nil, `selector`: String? = nil, `networkIdle`: Bool? = nil, `timeoutMs`: UInt32) {
+        self.`paneId` = `paneId`
+        self.`text` = `text`
+        self.`selector` = `selector`
+        self.`networkIdle` = `networkIdle`
+        self.`timeoutMs` = `timeoutMs`
+    }
+}
+
+public struct WebWaitResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `matched`: Bool
+    public init(`paneId`: Id, `matched`: Bool) {
+        self.`paneId` = `paneId`
+        self.`matched` = `matched`
+    }
+}
+
+public struct WebEvaluateParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `js`: String
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `js`: String, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`js` = `js`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebEvaluateResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `value`: String
+    public init(`paneId`: Id, `value`: String) {
+        self.`paneId` = `paneId`
+        self.`value` = `value`
+    }
+}
+
+public struct WebScreenshotParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `fullPage`: Bool?
+    public init(`paneId`: Id, `fullPage`: Bool? = nil) {
+        self.`paneId` = `paneId`
+        self.`fullPage` = `fullPage`
+    }
+}
+
+public struct WebScreenshotResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `image`: AttachmentRef
+    public init(`paneId`: Id, `image`: AttachmentRef) {
+        self.`paneId` = `paneId`
+        self.`image` = `image`
+    }
+}
+
+public struct WebConsoleParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `since`: Decimal?
+    public init(`paneId`: Id, `since`: Decimal? = nil) {
+        self.`paneId` = `paneId`
+        self.`since` = `since`
+    }
+}
+
+public struct WebConsoleResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `entries`: [WebConsoleEntry]
+    public var `next`: Decimal
+    public var `truncated`: Bool
+    public init(`paneId`: Id, `entries`: [WebConsoleEntry], `next`: Decimal, `truncated`: Bool) {
+        self.`paneId` = `paneId`
+        self.`entries` = `entries`
+        self.`next` = `next`
+        self.`truncated` = `truncated`
+    }
+}
+
+public struct WebNetworkParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `since`: Decimal?
+    public init(`paneId`: Id, `since`: Decimal? = nil) {
+        self.`paneId` = `paneId`
+        self.`since` = `since`
+    }
+}
+
+public struct WebNetworkResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `entries`: [WebNetworkEntry]
+    public var `next`: Decimal
+    public var `truncated`: Bool
+    public init(`paneId`: Id, `entries`: [WebNetworkEntry], `next`: Decimal, `truncated`: Bool) {
+        self.`paneId` = `paneId`
+        self.`entries` = `entries`
+        self.`next` = `next`
+        self.`truncated` = `truncated`
+    }
+}
+
+public struct WebResizeParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `preset`: WebViewportPreset?
+    public var `width`: UInt32?
+    public var `height`: UInt32?
+    public var `rotate`: Bool?
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `preset`: WebViewportPreset? = nil, `width`: UInt32? = nil, `height`: UInt32? = nil, `rotate`: Bool? = nil, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`preset` = `preset`
+        self.`width` = `width`
+        self.`height` = `height`
+        self.`rotate` = `rotate`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebResizeResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `viewport`: WebViewport
+    public init(`paneId`: Id, `viewport`: WebViewport) {
+        self.`paneId` = `paneId`
+        self.`viewport` = `viewport`
+    }
+}
+
+public struct WebCloseParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebCloseResult: Codable, Sendable {
+    public var `paneId`: Id
+    public init(`paneId`: Id) {
+        self.`paneId` = `paneId`
+    }
+}
+
+public struct WebCommandParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `command`: WebCommandKind
+    public var `args`: JsonValue
+    public var `timeoutMs`: UInt32
+    public var `operationKey`: Id
+    public init(`paneId`: Id, `command`: WebCommandKind, `args`: JsonValue, `timeoutMs`: UInt32, `operationKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`command` = `command`
+        self.`args` = `args`
+        self.`timeoutMs` = `timeoutMs`
+        self.`operationKey` = `operationKey`
+    }
+}
+
+public struct WebCommandResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `value`: JsonValue?
+    public var `cookiesPresent`: Bool?
+    public init(`paneId`: Id, `value`: JsonValue? = nil, `cookiesPresent`: Bool? = nil) {
+        self.`paneId` = `paneId`
+        self.`value` = `value`
+        self.`cookiesPresent` = `cookiesPresent`
+    }
+}
+
+public struct ServersLocalListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct ServersLocalListResult: Codable, Sendable {
+    public var `servers`: [LocalServer]
+    public init(`servers`: [LocalServer]) {
+        self.`servers` = `servers`
+    }
+}
+
+public struct WebHostNavigatedParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `navigationGeneration`: Decimal
+    public var `url`: String
+    public var `title`: String
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `navigationGeneration`: Decimal, `url`: String, `title`: String, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`navigationGeneration` = `navigationGeneration`
+        self.`url` = `url`
+        self.`title` = `title`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebHostNavigatedResult: Codable, Sendable {
+    public var `accepted`: Bool
+    public init(`accepted`: Bool) {
+        self.`accepted` = `accepted`
+    }
+}
+
+public struct WebHostConsoleCountsParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `warnings`: UInt32
+    public var `errors`: UInt32
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `warnings`: UInt32, `errors`: UInt32, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`warnings` = `warnings`
+        self.`errors` = `errors`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WebHostConsoleCountsResult: Codable, Sendable {
+    public var `accepted`: Bool
+    public init(`accepted`: Bool) {
+        self.`accepted` = `accepted`
+    }
+}
+
+public struct WebNavigatedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `navigationGeneration`: Decimal
+    public var `url`: String
+    public var `title`: String
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `navigationGeneration`: Decimal, `url`: String, `title`: String) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`navigationGeneration` = `navigationGeneration`
+        self.`url` = `url`
+        self.`title` = `title`
+    }
+}
+
+public struct WebConsoleCountsEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `warnings`: UInt32
+    public var `errors`: UInt32
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `warnings`: UInt32, `errors`: UInt32) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`warnings` = `warnings`
+        self.`errors` = `errors`
+    }
+}
+
+public struct WebAgentDrivingEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `on`: Bool
+    public var `domain`: String?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `on`: Bool, `domain`: String? = nil) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`on` = `on`
+        self.`domain` = `domain`
+    }
+}
+
+public struct ServersLocalChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `servers`: [LocalServer]
+    public init(`eventId`: Decimal, `at`: String, `servers`: [LocalServer]) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`servers` = `servers`
+    }
+}
+
+public enum PermissionRequestKind: String, Codable, Sendable {
+    case `agent` = "agent"
+    case `web_session` = "web_session"
+    case `web_evaluate` = "web_evaluate"
+}
+
 public enum EventName: String, Codable, Sendable, CaseIterable {
     case authChallenge = "auth.challenge"
     case stateSnapshotPart = "state.snapshot_part"
@@ -4259,6 +4969,10 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case lspDiagnostics = "lsp.diagnostics"
     case editorAgentCursor = "editor.agent_cursor"
     case editorReviewRequested = "editor.review_requested"
+    case serversLocalChanged = "servers.local.changed"
+    case webNavigated = "web.navigated"
+    case webConsoleCounts = "web.console_counts"
+    case webAgentDriving = "web.agent_driving"
 }
 
 public struct EventDescriptor: Sendable {
@@ -4330,4 +5044,8 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .lspDiagnostics: EventDescriptor(paramsType: "LspDiagnosticsEvent", durable: true),
     .editorAgentCursor: EventDescriptor(paramsType: "EditorAgentCursorEvent", durable: true),
     .editorReviewRequested: EventDescriptor(paramsType: "EditorReviewRequestedEvent", durable: true),
+    .serversLocalChanged: EventDescriptor(paramsType: "ServersLocalChangedEvent", durable: false),
+    .webNavigated: EventDescriptor(paramsType: "WebNavigatedEvent", durable: true),
+    .webConsoleCounts: EventDescriptor(paramsType: "WebConsoleCountsEvent", durable: false),
+    .webAgentDriving: EventDescriptor(paramsType: "WebAgentDrivingEvent", durable: false),
 ]

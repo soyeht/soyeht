@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
+// Generated from contracts/protocol.json (sha256 6f3d38e0d17f9c340e0125984915062a0e0e30f72acba05a7be26fcd7827cef5). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -29,6 +29,8 @@ pub enum PaneMode {
     Agent,
     #[serde(rename = "editor")]
     Editor,
+    #[serde(rename = "web")]
+    Web,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PaneState {
@@ -139,6 +141,14 @@ pub enum ErrorKind {
     DependencyOpen,
     #[serde(rename = "rate_limited")]
     RateLimited,
+    #[serde(rename = "stale_reference")]
+    StaleReference,
+    #[serde(rename = "human_took_over")]
+    HumanTookOver,
+    #[serde(rename = "web_host_unavailable")]
+    WebHostUnavailable,
+    #[serde(rename = "navigation_refused")]
+    NavigationRefused,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -214,6 +224,16 @@ pub struct Pane {
     pub stream_id: Option<Id>,
     #[serde(rename = "agent", skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentSession>,
+    #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "viewport", skip_serializing_if = "Option::is_none")]
+    pub viewport: Option<WebViewport>,
+    #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
+    pub incognito: Option<bool>,
+    #[serde(rename = "webSession", skip_serializing_if = "Option::is_none")]
+    pub web_session: Option<WebSessionState>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Device {
@@ -301,6 +321,8 @@ pub struct HelloParams {
     pub proof: Option<ByteString>,
     #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
     pub binding: Option<String>,
+    #[serde(rename = "capabilities", skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<ClientCapability>>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StateSnapshotParams {}
@@ -410,6 +432,10 @@ pub struct PaneCreateParams {
     pub effort: Option<String>,
     #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
     pub permission: Option<PermissionMode>,
+    #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
+    pub incognito: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneCreateResult {
@@ -1177,6 +1203,10 @@ pub struct PermissionRequest {
     pub options: Vec<PermissionOption>,
     #[serde(rename = "expiresAt")]
     pub expires_at: String,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<PermissionRequestKind>,
+    #[serde(rename = "domain", skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ElicitationRequest {
@@ -1699,6 +1729,10 @@ pub struct PanePermissionRequestedEvent {
     pub options: Vec<PermissionOption>,
     #[serde(rename = "expiresAt")]
     pub expires_at: String,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<PermissionRequestKind>,
+    #[serde(rename = "domain", skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PanePermissionAnsweredEvent {
@@ -3767,6 +3801,621 @@ pub struct EditorReviewRequestedEvent {
     #[serde(rename = "hunks")]
     pub hunks: Vec<DiffHunk>,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ClientCapability {
+    #[serde(rename = "web_host")]
+    WebHost,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WebInteractionMode {
+    #[serde(rename = "structured")]
+    Structured,
+    #[serde(rename = "human")]
+    Human,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WebNavigationAction {
+    #[serde(rename = "back")]
+    Back,
+    #[serde(rename = "forward")]
+    Forward,
+    #[serde(rename = "reload")]
+    Reload,
+    #[serde(rename = "reload_ignoring_cache")]
+    ReloadIgnoringCache,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WebViewportPreset {
+    #[serde(rename = "iphone_se")]
+    IphoneSe,
+    #[serde(rename = "iphone_15_pro")]
+    Iphone15Pro,
+    #[serde(rename = "ipad")]
+    Ipad,
+    #[serde(rename = "responsive")]
+    Responsive,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WebConsoleLevel {
+    #[serde(rename = "debug")]
+    Debug,
+    #[serde(rename = "info")]
+    Info,
+    #[serde(rename = "warning")]
+    Warning,
+    #[serde(rename = "error")]
+    Error,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WebSessionState {
+    #[serde(rename = "anonymous")]
+    Anonymous,
+    #[serde(rename = "permission_required")]
+    PermissionRequired,
+    #[serde(rename = "granted")]
+    Granted,
+    #[serde(rename = "incognito")]
+    Incognito,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WebCommandKind {
+    #[serde(rename = "navigate")]
+    Navigate,
+    #[serde(rename = "snapshot")]
+    Snapshot,
+    #[serde(rename = "click")]
+    Click,
+    #[serde(rename = "type")]
+    Type,
+    #[serde(rename = "press")]
+    Press,
+    #[serde(rename = "hover")]
+    Hover,
+    #[serde(rename = "select")]
+    Select,
+    #[serde(rename = "scroll")]
+    Scroll,
+    #[serde(rename = "wait")]
+    Wait,
+    #[serde(rename = "evaluate")]
+    Evaluate,
+    #[serde(rename = "screenshot")]
+    Screenshot,
+    #[serde(rename = "console")]
+    Console,
+    #[serde(rename = "network")]
+    Network,
+    #[serde(rename = "resize")]
+    Resize,
+    #[serde(rename = "close")]
+    Close,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebViewport {
+    #[serde(rename = "width")]
+    pub width: u32,
+    #[serde(rename = "height")]
+    pub height: u32,
+    #[serde(rename = "preset")]
+    pub preset: WebViewportPreset,
+    #[serde(rename = "zoomPercent")]
+    pub zoom_percent: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebRect {
+    #[serde(rename = "x")]
+    pub x: i64,
+    #[serde(rename = "y")]
+    pub y: i64,
+    #[serde(rename = "width")]
+    pub width: u32,
+    #[serde(rename = "height")]
+    pub height: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebSnapshotNode {
+    #[serde(rename = "ref")]
+    pub r#ref: Id,
+    #[serde(rename = "role")]
+    pub role: String,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "state")]
+    pub state: String,
+    #[serde(rename = "value", skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(rename = "rect")]
+    pub rect: WebRect,
+    #[serde(rename = "parentRef", skip_serializing_if = "Option::is_none")]
+    pub parent_ref: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebConsoleEntry {
+    #[serde(rename = "sequence")]
+    pub sequence: Decimal,
+    #[serde(rename = "level")]
+    pub level: WebConsoleLevel,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "source")]
+    pub source: String,
+    #[serde(rename = "at")]
+    pub at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebNetworkEntry {
+    #[serde(rename = "sequence")]
+    pub sequence: Decimal,
+    #[serde(rename = "method")]
+    pub method: String,
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "status")]
+    pub status: u32,
+    #[serde(rename = "durationMs")]
+    pub duration_ms: u32,
+    #[serde(rename = "bytes")]
+    pub bytes: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LocalServer {
+    #[serde(rename = "port")]
+    pub port: u32,
+    #[serde(rename = "pid")]
+    pub pid: u32,
+    #[serde(rename = "command")]
+    pub command: String,
+    #[serde(rename = "cwd")]
+    pub cwd: String,
+    #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebComputedStyles {
+    #[serde(rename = "boxSizing")]
+    pub box_sizing: String,
+    #[serde(rename = "color")]
+    pub color: String,
+    #[serde(rename = "background")]
+    pub background: String,
+    #[serde(rename = "font")]
+    pub font: String,
+    #[serde(rename = "border")]
+    pub border: String,
+    #[serde(rename = "borderRadius")]
+    pub border_radius: String,
+    #[serde(rename = "display")]
+    pub display: String,
+    #[serde(rename = "position")]
+    pub position: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebAccessibility {
+    #[serde(rename = "role")]
+    pub role: String,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "state")]
+    pub state: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebComponentSource {
+    #[serde(rename = "framework")]
+    pub framework: String,
+    #[serde(rename = "component")]
+    pub component: String,
+    #[serde(rename = "sourceFile", skip_serializing_if = "Option::is_none")]
+    pub source_file: Option<String>,
+    #[serde(rename = "line", skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebPickedElement {
+    #[serde(rename = "selector")]
+    pub selector: String,
+    #[serde(rename = "path")]
+    pub path: Vec<String>,
+    #[serde(rename = "outerHtml")]
+    pub outer_html: String,
+    #[serde(rename = "styles")]
+    pub styles: WebComputedStyles,
+    #[serde(rename = "accessibility")]
+    pub accessibility: WebAccessibility,
+    #[serde(rename = "viewportRect")]
+    pub viewport_rect: WebRect,
+    #[serde(rename = "pageRect")]
+    pub page_rect: WebRect,
+    #[serde(rename = "image")]
+    pub image: AttachmentRef,
+    #[serde(rename = "component", skip_serializing_if = "Option::is_none")]
+    pub component: Option<WebComponentSource>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebElementPackage {
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "elements")]
+    pub elements: Vec<WebPickedElement>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebOpenParams {
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "newPane", skip_serializing_if = "Option::is_none")]
+    pub new_pane: Option<bool>,
+    #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
+    pub incognito: Option<bool>,
+    #[serde(rename = "mode", skip_serializing_if = "Option::is_none")]
+    pub mode: Option<WebInteractionMode>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebOpenResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebNavigateParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(rename = "action", skip_serializing_if = "Option::is_none")]
+    pub action: Option<WebNavigationAction>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebNavigateResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "accepted")]
+    pub accepted: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebSnapshotParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "screenshot", skip_serializing_if = "Option::is_none")]
+    pub screenshot: Option<bool>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebSnapshotResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "navigationGeneration")]
+    pub navigation_generation: Decimal,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "nodes")]
+    pub nodes: Vec<WebSnapshotNode>,
+    #[serde(rename = "truncated")]
+    pub truncated: bool,
+    #[serde(rename = "screenshot", skip_serializing_if = "Option::is_none")]
+    pub screenshot: Option<AttachmentRef>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebActionResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "completed")]
+    pub completed: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebClickParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "ref")]
+    pub r#ref: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebTypeParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "ref")]
+    pub r#ref: Id,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "submit", skip_serializing_if = "Option::is_none")]
+    pub submit: Option<bool>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebPressParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "key")]
+    pub key: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebHoverParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "ref")]
+    pub r#ref: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebSelectParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "ref")]
+    pub r#ref: Id,
+    #[serde(rename = "value")]
+    pub value: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebScrollParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub r#ref: Option<Id>,
+    #[serde(rename = "dx")]
+    pub dx: i64,
+    #[serde(rename = "dy")]
+    pub dy: i64,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebWaitParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "text", skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(rename = "selector", skip_serializing_if = "Option::is_none")]
+    pub selector: Option<String>,
+    #[serde(rename = "networkIdle", skip_serializing_if = "Option::is_none")]
+    pub network_idle: Option<bool>,
+    #[serde(rename = "timeoutMs")]
+    pub timeout_ms: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebWaitResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "matched")]
+    pub matched: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebEvaluateParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "js")]
+    pub js: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebEvaluateResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "value")]
+    pub value: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebScreenshotParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fullPage", skip_serializing_if = "Option::is_none")]
+    pub full_page: Option<bool>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebScreenshotResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "image")]
+    pub image: AttachmentRef,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebConsoleParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "since", skip_serializing_if = "Option::is_none")]
+    pub since: Option<Decimal>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebConsoleResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "entries")]
+    pub entries: Vec<WebConsoleEntry>,
+    #[serde(rename = "next")]
+    pub next: Decimal,
+    #[serde(rename = "truncated")]
+    pub truncated: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebNetworkParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "since", skip_serializing_if = "Option::is_none")]
+    pub since: Option<Decimal>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebNetworkResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "entries")]
+    pub entries: Vec<WebNetworkEntry>,
+    #[serde(rename = "next")]
+    pub next: Decimal,
+    #[serde(rename = "truncated")]
+    pub truncated: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebResizeParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "preset", skip_serializing_if = "Option::is_none")]
+    pub preset: Option<WebViewportPreset>,
+    #[serde(rename = "width", skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(rename = "height", skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    #[serde(rename = "rotate", skip_serializing_if = "Option::is_none")]
+    pub rotate: Option<bool>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebResizeResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "viewport")]
+    pub viewport: WebViewport,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebCloseParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebCloseResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebCommandParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "command")]
+    pub command: WebCommandKind,
+    #[serde(rename = "args")]
+    pub args: JsonValue,
+    #[serde(rename = "timeoutMs")]
+    pub timeout_ms: u32,
+    #[serde(rename = "operationKey")]
+    pub operation_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebCommandResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "value", skip_serializing_if = "Option::is_none")]
+    pub value: Option<JsonValue>,
+    #[serde(rename = "cookiesPresent", skip_serializing_if = "Option::is_none")]
+    pub cookies_present: Option<bool>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ServersLocalListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ServersLocalListResult {
+    #[serde(rename = "servers")]
+    pub servers: Vec<LocalServer>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebHostNavigatedParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "navigationGeneration")]
+    pub navigation_generation: Decimal,
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebHostNavigatedResult {
+    #[serde(rename = "accepted")]
+    pub accepted: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebHostConsoleCountsParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "warnings")]
+    pub warnings: u32,
+    #[serde(rename = "errors")]
+    pub errors: u32,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebHostConsoleCountsResult {
+    #[serde(rename = "accepted")]
+    pub accepted: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebNavigatedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "navigationGeneration")]
+    pub navigation_generation: Decimal,
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "title")]
+    pub title: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebConsoleCountsEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "warnings")]
+    pub warnings: u32,
+    #[serde(rename = "errors")]
+    pub errors: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebAgentDrivingEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "on")]
+    pub on: bool,
+    #[serde(rename = "domain", skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ServersLocalChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "servers")]
+    pub servers: Vec<LocalServer>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PermissionRequestKind {
+    #[serde(rename = "agent")]
+    Agent,
+    #[serde(rename = "web_session")]
+    WebSession,
+    #[serde(rename = "web_evaluate")]
+    WebEvaluate,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -3926,6 +4575,46 @@ pub enum Request {
     EditorReviewComment(EditorReviewCommentParams),
     #[serde(rename = "lsp.status")]
     LspStatus(LspStatusParams),
+    #[serde(rename = "servers.local.list")]
+    ServersLocalList(ServersLocalListParams),
+    #[serde(rename = "web.open")]
+    WebOpen(WebOpenParams),
+    #[serde(rename = "web.navigate")]
+    WebNavigate(WebNavigateParams),
+    #[serde(rename = "web.snapshot")]
+    WebSnapshot(WebSnapshotParams),
+    #[serde(rename = "web.click")]
+    WebClick(WebClickParams),
+    #[serde(rename = "web.type")]
+    WebType(WebTypeParams),
+    #[serde(rename = "web.press")]
+    WebPress(WebPressParams),
+    #[serde(rename = "web.hover")]
+    WebHover(WebHoverParams),
+    #[serde(rename = "web.select")]
+    WebSelect(WebSelectParams),
+    #[serde(rename = "web.scroll")]
+    WebScroll(WebScrollParams),
+    #[serde(rename = "web.wait")]
+    WebWait(WebWaitParams),
+    #[serde(rename = "web.evaluate")]
+    WebEvaluate(WebEvaluateParams),
+    #[serde(rename = "web.screenshot")]
+    WebScreenshot(WebScreenshotParams),
+    #[serde(rename = "web.console")]
+    WebConsole(WebConsoleParams),
+    #[serde(rename = "web.network")]
+    WebNetwork(WebNetworkParams),
+    #[serde(rename = "web.resize")]
+    WebResize(WebResizeParams),
+    #[serde(rename = "web.close")]
+    WebClose(WebCloseParams),
+    #[serde(rename = "web.command")]
+    WebCommand(WebCommandParams),
+    #[serde(rename = "web.host.navigated")]
+    WebHostNavigated(WebHostNavigatedParams),
+    #[serde(rename = "web.host.console_counts")]
+    WebHostConsoleCounts(WebHostConsoleCountsParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -4231,6 +4920,61 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     ("lsp.status", "LspStatusParams", "LspStatusResult", false),
+    (
+        "servers.local.list",
+        "ServersLocalListParams",
+        "ServersLocalListResult",
+        false,
+    ),
+    ("web.open", "WebOpenParams", "WebOpenResult", true),
+    (
+        "web.navigate",
+        "WebNavigateParams",
+        "WebNavigateResult",
+        true,
+    ),
+    (
+        "web.snapshot",
+        "WebSnapshotParams",
+        "WebSnapshotResult",
+        false,
+    ),
+    ("web.click", "WebClickParams", "WebActionResult", true),
+    ("web.type", "WebTypeParams", "WebActionResult", true),
+    ("web.press", "WebPressParams", "WebActionResult", true),
+    ("web.hover", "WebHoverParams", "WebActionResult", true),
+    ("web.select", "WebSelectParams", "WebActionResult", true),
+    ("web.scroll", "WebScrollParams", "WebActionResult", true),
+    ("web.wait", "WebWaitParams", "WebWaitResult", false),
+    (
+        "web.evaluate",
+        "WebEvaluateParams",
+        "WebEvaluateResult",
+        true,
+    ),
+    (
+        "web.screenshot",
+        "WebScreenshotParams",
+        "WebScreenshotResult",
+        false,
+    ),
+    ("web.console", "WebConsoleParams", "WebConsoleResult", false),
+    ("web.network", "WebNetworkParams", "WebNetworkResult", false),
+    ("web.resize", "WebResizeParams", "WebResizeResult", true),
+    ("web.close", "WebCloseParams", "WebCloseResult", true),
+    ("web.command", "WebCommandParams", "WebCommandResult", false),
+    (
+        "web.host.navigated",
+        "WebHostNavigatedParams",
+        "WebHostNavigatedResult",
+        true,
+    ),
+    (
+        "web.host.console_counts",
+        "WebHostConsoleCountsParams",
+        "WebHostConsoleCountsResult",
+        true,
+    ),
 ];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EventName {
@@ -4352,6 +5096,14 @@ pub enum EventName {
     EditorAgentCursor,
     #[serde(rename = "editor.review_requested")]
     EditorReviewRequested,
+    #[serde(rename = "servers.local.changed")]
+    ServersLocalChanged,
+    #[serde(rename = "web.navigated")]
+    WebNavigated,
+    #[serde(rename = "web.console_counts")]
+    WebConsoleCounts,
+    #[serde(rename = "web.agent_driving")]
+    WebAgentDriving,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -4415,6 +5167,10 @@ impl EventName {
             Self::LspDiagnostics => "lsp.diagnostics",
             Self::EditorAgentCursor => "editor.agent_cursor",
             Self::EditorReviewRequested => "editor.review_requested",
+            Self::ServersLocalChanged => "servers.local.changed",
+            Self::WebNavigated => "web.navigated",
+            Self::WebConsoleCounts => "web.console_counts",
+            Self::WebAgentDriving => "web.agent_driving",
         }
     }
 }
@@ -4720,6 +5476,26 @@ pub const EVENTS: &[EventDescriptor] = &[
         params_type: "EditorReviewRequestedEvent",
         durable: true,
     },
+    EventDescriptor {
+        name: EventName::ServersLocalChanged,
+        params_type: "ServersLocalChangedEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::WebNavigated,
+        params_type: "WebNavigatedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::WebConsoleCounts,
+        params_type: "WebConsoleCountsEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::WebAgentDriving,
+        params_type: "WebAgentDrivingEvent",
+        durable: false,
+    },
 ];
 
 pub fn error_code(kind: &ErrorKind) -> i64 {
@@ -4749,5 +5525,9 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::DependencyCycle => -32022,
         ErrorKind::DependencyOpen => -32023,
         ErrorKind::RateLimited => -32024,
+        ErrorKind::StaleReference => -32025,
+        ErrorKind::HumanTookOver => -32026,
+        ErrorKind::WebHostUnavailable => -32027,
+        ErrorKind::NavigationRefused => -32028,
     }
 }

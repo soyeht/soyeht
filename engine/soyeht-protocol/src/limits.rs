@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 897a6e2b205c330eec62070159d775fd594ae636d770be136c1c3fe2312e24cc). Do not edit.
+// Generated from contracts/protocol.json (sha256 6f3d38e0d17f9c340e0125984915062a0e0e30f72acba05a7be26fcd7827cef5). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -34,3 +34,16 @@ pub const EDITOR_SEARCH_RESULTS: usize = 500;
 pub const EDITOR_HISTORY_VERSIONS: usize = 200;
 pub const EDITOR_HISTORY_BYTES: usize = 52428800;
 pub const EDITOR_AUTOSAVE_MS: usize = 500;
+pub const WEB_PANES_PER_WORKSPACE: usize = 10;
+pub const WEB_SNAPSHOT_BYTES: usize = 204800;
+pub const WEB_SCREENSHOT_BYTES: usize = 2097152;
+pub const WEB_EVALUATE_BYTES: usize = 65536;
+pub const WEB_CONSOLE_ENTRIES: usize = 500;
+pub const WEB_NETWORK_ENTRIES: usize = 300;
+pub const WEB_WAIT_TIMEOUT_MS: usize = 60000;
+pub const LOCAL_SERVER_ENTRIES: usize = 50;
+pub const WEB_PICKED_ELEMENTS: usize = 20;
+pub const WEB_OUTER_HTML_BYTES: usize = 2048;
+pub const WEB_PICK_CROP_WIDTH: usize = 640;
+pub const WEB_COMMAND_WAITERS: usize = 64;
+pub const PORT_SCAN_BYTES: usize = 1048576;

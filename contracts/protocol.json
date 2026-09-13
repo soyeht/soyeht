@@ -40,7 +40,8 @@
       "enum": [
         "terminal",
         "agent",
-        "editor"
+        "editor",
+        "web"
       ]
     },
     "PaneState": {
@@ -109,7 +110,11 @@
         "stale_attempt",
         "dependency_cycle",
         "dependency_open",
-        "rate_limited"
+        "rate_limited",
+        "stale_reference",
+        "human_took_over",
+        "web_host_unavailable",
+        "navigation_refused"
       ]
     },
     "RpcError": {
@@ -258,6 +263,23 @@
         },
         "agent": {
           "$ref": "#/$defs/AgentSession"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "viewport": {
+          "$ref": "#/$defs/WebViewport"
+        },
+        "incognito": {
+          "type": "boolean"
+        },
+        "webSession": {
+          "$ref": "#/$defs/WebSessionState"
         }
       },
       "required": [
@@ -470,6 +492,12 @@
         },
         "binding": {
           "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClientCapability"
+          }
         }
       },
       "required": [
@@ -718,6 +746,13 @@
         },
         "permission": {
           "$ref": "#/$defs/PermissionMode"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "incognito": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -2229,6 +2264,13 @@
         },
         "expiresAt": {
           "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/PermissionRequestKind"
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 255
         }
       },
       "required": [
@@ -3385,6 +3427,13 @@
         },
         "expiresAt": {
           "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/PermissionRequestKind"
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 255
         }
       },
       "required": [
@@ -7652,6 +7701,1315 @@
         "hunks"
       ],
       "additionalProperties": true
+    },
+    "ClientCapability": {
+      "type": "string",
+      "enum": [
+        "web_host"
+      ]
+    },
+    "WebInteractionMode": {
+      "type": "string",
+      "enum": [
+        "structured",
+        "human"
+      ]
+    },
+    "WebNavigationAction": {
+      "type": "string",
+      "enum": [
+        "back",
+        "forward",
+        "reload",
+        "reload_ignoring_cache"
+      ]
+    },
+    "WebViewportPreset": {
+      "type": "string",
+      "enum": [
+        "iphone_se",
+        "iphone_15_pro",
+        "ipad",
+        "responsive"
+      ]
+    },
+    "WebConsoleLevel": {
+      "type": "string",
+      "enum": [
+        "debug",
+        "info",
+        "warning",
+        "error"
+      ]
+    },
+    "WebSessionState": {
+      "type": "string",
+      "enum": [
+        "anonymous",
+        "permission_required",
+        "granted",
+        "incognito"
+      ]
+    },
+    "WebCommandKind": {
+      "type": "string",
+      "enum": [
+        "navigate",
+        "snapshot",
+        "click",
+        "type",
+        "press",
+        "hover",
+        "select",
+        "scroll",
+        "wait",
+        "evaluate",
+        "screenshot",
+        "console",
+        "network",
+        "resize",
+        "close"
+      ]
+    },
+    "WebViewport": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "preset": {
+          "$ref": "#/$defs/WebViewportPreset"
+        },
+        "zoomPercent": {
+          "type": "integer",
+          "minimum": 25,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "preset",
+        "zoomPercent"
+      ],
+      "additionalProperties": true
+    },
+    "WebRect": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16384
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16384
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": true
+    },
+    "WebSnapshotNode": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "role": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "state": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "rect": {
+          "$ref": "#/$defs/WebRect"
+        },
+        "parentRef": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "ref",
+        "role",
+        "name",
+        "state",
+        "rect"
+      ],
+      "additionalProperties": true
+    },
+    "WebConsoleEntry": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "level": {
+          "$ref": "#/$defs/WebConsoleLevel"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "sequence",
+        "level",
+        "text",
+        "source",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "WebNetworkEntry": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "bytes": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "sequence",
+        "method",
+        "url",
+        "status",
+        "durationMs",
+        "bytes",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "LocalServer": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "port",
+        "pid",
+        "command",
+        "cwd"
+      ],
+      "additionalProperties": true
+    },
+    "WebComputedStyles": {
+      "type": "object",
+      "properties": {
+        "boxSizing": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "color": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "background": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "font": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "border": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "borderRadius": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "display": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "position": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "boxSizing",
+        "color",
+        "background",
+        "font",
+        "border",
+        "borderRadius",
+        "display",
+        "position"
+      ],
+      "additionalProperties": true
+    },
+    "WebAccessibility": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "state": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "role",
+        "name",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "WebComponentSource": {
+      "type": "object",
+      "properties": {
+        "framework": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "component": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "sourceFile": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "framework",
+        "component"
+      ],
+      "additionalProperties": true
+    },
+    "WebPickedElement": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "outerHtml": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "styles": {
+          "$ref": "#/$defs/WebComputedStyles"
+        },
+        "accessibility": {
+          "$ref": "#/$defs/WebAccessibility"
+        },
+        "viewportRect": {
+          "$ref": "#/$defs/WebRect"
+        },
+        "pageRect": {
+          "$ref": "#/$defs/WebRect"
+        },
+        "image": {
+          "$ref": "#/$defs/AttachmentRef"
+        },
+        "component": {
+          "$ref": "#/$defs/WebComponentSource"
+        }
+      },
+      "required": [
+        "selector",
+        "path",
+        "outerHtml",
+        "styles",
+        "accessibility",
+        "viewportRect",
+        "pageRect",
+        "image"
+      ],
+      "additionalProperties": true
+    },
+    "WebElementPackage": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebPickedElement"
+          }
+        }
+      },
+      "required": [
+        "url",
+        "title",
+        "elements"
+      ],
+      "additionalProperties": true
+    },
+    "WebOpenParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "newPane": {
+          "type": "boolean"
+        },
+        "incognito": {
+          "type": "boolean"
+        },
+        "mode": {
+          "$ref": "#/$defs/WebInteractionMode"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "url",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebOpenResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "WebNavigateParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "action": {
+          "$ref": "#/$defs/WebNavigationAction"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebNavigateResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId",
+        "accepted"
+      ],
+      "additionalProperties": true
+    },
+    "WebSnapshotParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "screenshot": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "WebSnapshotResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "navigationGeneration": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebSnapshotNode"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "screenshot": {
+          "$ref": "#/$defs/AttachmentRef"
+        }
+      },
+      "required": [
+        "paneId",
+        "navigationGeneration",
+        "title",
+        "url",
+        "nodes",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "WebActionResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "completed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId",
+        "completed"
+      ],
+      "additionalProperties": true
+    },
+    "WebClickParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "ref",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebTypeParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "submit": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "ref",
+        "text",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebPressParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "key",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebHoverParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "ref",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebSelectParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "ref",
+        "value",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebScrollParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "dx": {
+          "type": "integer",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "dy": {
+          "type": "integer",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "dx",
+        "dy",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebWaitParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "selector": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "networkIdle": {
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        }
+      },
+      "required": [
+        "paneId",
+        "timeoutMs"
+      ],
+      "additionalProperties": true
+    },
+    "WebWaitResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "matched": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId",
+        "matched"
+      ],
+      "additionalProperties": true
+    },
+    "WebEvaluateParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "js": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "js",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebEvaluateResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "paneId",
+        "value"
+      ],
+      "additionalProperties": true
+    },
+    "WebScreenshotParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fullPage": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "WebScreenshotResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "image": {
+          "$ref": "#/$defs/AttachmentRef"
+        }
+      },
+      "required": [
+        "paneId",
+        "image"
+      ],
+      "additionalProperties": true
+    },
+    "WebConsoleParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "since": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "WebConsoleResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebConsoleEntry"
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId",
+        "entries",
+        "next",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "WebNetworkParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "since": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "WebNetworkResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebNetworkEntry"
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId",
+        "entries",
+        "next",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "WebResizeParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "preset": {
+          "$ref": "#/$defs/WebViewportPreset"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "rotate": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebResizeResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "viewport": {
+          "$ref": "#/$defs/WebViewport"
+        }
+      },
+      "required": [
+        "paneId",
+        "viewport"
+      ],
+      "additionalProperties": true
+    },
+    "WebCloseParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebCloseResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "WebCommandParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "command": {
+          "$ref": "#/$defs/WebCommandKind"
+        },
+        "args": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "operationKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "command",
+        "args",
+        "timeoutMs",
+        "operationKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebCommandResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "cookiesPresent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "ServersLocalListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "ServersLocalListResult": {
+      "type": "object",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalServer"
+          }
+        }
+      },
+      "required": [
+        "servers"
+      ],
+      "additionalProperties": true
+    },
+    "WebHostNavigatedParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "navigationGeneration": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "navigationGeneration",
+        "url",
+        "title",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebHostNavigatedResult": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "additionalProperties": true
+    },
+    "WebHostConsoleCountsParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "warnings": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "warnings",
+        "errors",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WebHostConsoleCountsResult": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted"
+      ],
+      "additionalProperties": true
+    },
+    "WebNavigatedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "navigationGeneration": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "navigationGeneration",
+        "url",
+        "title"
+      ],
+      "additionalProperties": true
+    },
+    "WebConsoleCountsEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "warnings": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "warnings",
+        "errors"
+      ],
+      "additionalProperties": true
+    },
+    "WebAgentDrivingEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "on": {
+          "type": "boolean"
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 255
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "on"
+      ],
+      "additionalProperties": true
+    },
+    "ServersLocalChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LocalServer"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "servers"
+      ],
+      "additionalProperties": true
+    },
+    "PermissionRequestKind": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "web_session",
+        "web_evaluate"
+      ]
     }
   },
   "x-protocolVersion": 1,
@@ -8357,6 +9715,186 @@
         "$ref": "#/$defs/LspStatusResult"
       },
       "mutation": false
+    },
+    "servers.local.list": {
+      "params": {
+        "$ref": "#/$defs/ServersLocalListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ServersLocalListResult"
+      },
+      "mutation": false
+    },
+    "web.open": {
+      "params": {
+        "$ref": "#/$defs/WebOpenParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebOpenResult"
+      },
+      "mutation": true
+    },
+    "web.navigate": {
+      "params": {
+        "$ref": "#/$defs/WebNavigateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebNavigateResult"
+      },
+      "mutation": true
+    },
+    "web.snapshot": {
+      "params": {
+        "$ref": "#/$defs/WebSnapshotParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebSnapshotResult"
+      },
+      "mutation": false
+    },
+    "web.click": {
+      "params": {
+        "$ref": "#/$defs/WebClickParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebActionResult"
+      },
+      "mutation": true
+    },
+    "web.type": {
+      "params": {
+        "$ref": "#/$defs/WebTypeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebActionResult"
+      },
+      "mutation": true
+    },
+    "web.press": {
+      "params": {
+        "$ref": "#/$defs/WebPressParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebActionResult"
+      },
+      "mutation": true
+    },
+    "web.hover": {
+      "params": {
+        "$ref": "#/$defs/WebHoverParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebActionResult"
+      },
+      "mutation": true
+    },
+    "web.select": {
+      "params": {
+        "$ref": "#/$defs/WebSelectParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebActionResult"
+      },
+      "mutation": true
+    },
+    "web.scroll": {
+      "params": {
+        "$ref": "#/$defs/WebScrollParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebActionResult"
+      },
+      "mutation": true
+    },
+    "web.wait": {
+      "params": {
+        "$ref": "#/$defs/WebWaitParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebWaitResult"
+      },
+      "mutation": false
+    },
+    "web.evaluate": {
+      "params": {
+        "$ref": "#/$defs/WebEvaluateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebEvaluateResult"
+      },
+      "mutation": true
+    },
+    "web.screenshot": {
+      "params": {
+        "$ref": "#/$defs/WebScreenshotParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebScreenshotResult"
+      },
+      "mutation": false
+    },
+    "web.console": {
+      "params": {
+        "$ref": "#/$defs/WebConsoleParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebConsoleResult"
+      },
+      "mutation": false
+    },
+    "web.network": {
+      "params": {
+        "$ref": "#/$defs/WebNetworkParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebNetworkResult"
+      },
+      "mutation": false
+    },
+    "web.resize": {
+      "params": {
+        "$ref": "#/$defs/WebResizeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebResizeResult"
+      },
+      "mutation": true
+    },
+    "web.close": {
+      "params": {
+        "$ref": "#/$defs/WebCloseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebCloseResult"
+      },
+      "mutation": true
+    },
+    "web.command": {
+      "params": {
+        "$ref": "#/$defs/WebCommandParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebCommandResult"
+      },
+      "mutation": false
+    },
+    "web.host.navigated": {
+      "params": {
+        "$ref": "#/$defs/WebHostNavigatedParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebHostNavigatedResult"
+      },
+      "mutation": true
+    },
+    "web.host.console_counts": {
+      "params": {
+        "$ref": "#/$defs/WebHostConsoleCountsParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebHostConsoleCountsResult"
+      },
+      "mutation": true
     }
   },
   "x-events": {
@@ -8713,6 +10251,30 @@
         "$ref": "#/$defs/EditorReviewRequestedEvent"
       },
       "durable": true
+    },
+    "servers.local.changed": {
+      "params": {
+        "$ref": "#/$defs/ServersLocalChangedEvent"
+      },
+      "durable": false
+    },
+    "web.navigated": {
+      "params": {
+        "$ref": "#/$defs/WebNavigatedEvent"
+      },
+      "durable": true
+    },
+    "web.console_counts": {
+      "params": {
+        "$ref": "#/$defs/WebConsoleCountsEvent"
+      },
+      "durable": false
+    },
+    "web.agent_driving": {
+      "params": {
+        "$ref": "#/$defs/WebAgentDrivingEvent"
+      },
+      "durable": false
     }
   },
   "x-framing": {
@@ -8781,7 +10343,20 @@
     "editorSearchResults": 500,
     "editorHistoryVersions": 200,
     "editorHistoryBytes": 52428800,
-    "editorAutosaveMs": 500
+    "editorAutosaveMs": 500,
+    "webPanesPerWorkspace": 10,
+    "webSnapshotBytes": 204800,
+    "webScreenshotBytes": 2097152,
+    "webEvaluateBytes": 65536,
+    "webConsoleEntries": 500,
+    "webNetworkEntries": 300,
+    "webWaitTimeoutMs": 60000,
+    "localServerEntries": 50,
+    "webPickedElements": 20,
+    "webOuterHtmlBytes": 2048,
+    "webPickCropWidth": 640,
+    "webCommandWaiters": 64,
+    "portScanBytes": 1048576
   },
   "x-settings": {
     "terminal.defaultCols": {
@@ -8799,6 +10374,14 @@
     "record.default": {
       "type": "boolean",
       "default": true
+    },
+    "web.openLocalLinksInSoyeht": {
+      "type": "boolean",
+      "default": true
+    },
+    "web.openRemoteLinksInSoyeht": {
+      "type": "boolean",
+      "default": false
     }
   },
   "anyOf": [
@@ -8840,6 +10423,10 @@
     "stale_attempt": -32021,
     "dependency_cycle": -32022,
     "dependency_open": -32023,
-    "rate_limited": -32024
+    "rate_limited": -32024,
+    "stale_reference": -32025,
+    "human_took_over": -32026,
+    "web_host_unavailable": -32027,
+    "navigation_refused": -32028
   }
 }

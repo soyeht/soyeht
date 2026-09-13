@@ -384,5 +384,10 @@ fn editor_pane(workspace: &soyeht_protocol::Workspace, relative_path: &str) -> P
         pid: None,
         stream_id: None,
         agent: None,
+        url: None,
+        title: None,
+        viewport: None,
+        incognito: None,
+        web_session: None,
     }
 }

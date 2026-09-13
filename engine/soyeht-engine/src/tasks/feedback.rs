@@ -785,6 +785,11 @@ mod tests {
             pid: None,
             stream_id: None,
             agent: Some(state.public(10_000)),
+            url: None,
+            title: None,
+            viewport: None,
+            incognito: None,
+            web_session: None,
         };
         let saved = StoredPane {
             pane,
