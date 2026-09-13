@@ -1652,6 +1652,57 @@ fn assert_language_queries(client: &mut Client, workspace: &str, file_id: &str) 
     assert_eq!(diagnostics["items"][0]["message"], "deterministic warning");
 }
 
+#[test]
+fn language_format_is_revision_checked_durable_and_idempotent() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("format-repository");
+    fs::create_dir_all(&repository).unwrap();
+    fs::write(repository.join("main.rs"), "fn main() {}\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Format","path":repository,"idempotencyKey":"format-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let file_id = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"format-open"}),
+    )["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    wait_lsp_ready(&mut client, &workspace, 1);
+    let params = json!({
+        "fileId":file_id,"baseRevision":"1","idempotencyKey":"format-once"
+    });
+    let formatted = client.call("file.format", params.clone());
+    assert_eq!(formatted["file"]["revision"], "2");
+    assert_eq!(client.call("file.format", params)["file"]["revision"], "2");
+    let read = client.call(
+        "file.read",
+        json!({"fileId":file_id,"fromLine":0,"lineCount":1}),
+    );
+    assert_eq!(read["lines"][0]["text"], "// formatted");
+    let stale = client.request(
+        "file.format",
+        json!({"fileId":file_id,"baseRevision":"1","idempotencyKey":"format-stale"}),
+    );
+    assert_eq!(stale["error"]["data"]["kind"], "stale_version");
+
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let repeated = restored.call(
+        "file.format",
+        json!({"fileId":file_id,"baseRevision":"1","idempotencyKey":"format-once"}),
+    );
+    assert_eq!(repeated["file"]["revision"], "2");
+    let files = restored.section("files");
+    assert_eq!(files[0]["revision"], "2");
+}
+
 fn wait_lsp_ready(client: &mut Client, workspace: &str, generation: u64) -> Value {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {

@@ -62,9 +62,25 @@ impl Core {
     }
 
     pub(crate) fn publish_language_completions(&mut self, key: &str) -> Result<()> {
-        let contexts: Vec<_> = self.language_waiters.keys().cloned().collect();
+        let contexts = self
+            .languages
+            .get(key)
+            .map(|server| server.completed_contexts())
+            .unwrap_or_default();
         for context in contexts {
-            let result = match self.language_result(key, &context) {
+            let query = self
+                .languages
+                .get(key)
+                .and_then(|server| server.query(&context))
+                .cloned();
+            let formatting = query
+                .as_ref()
+                .is_some_and(|query| query.kind == RequestKind::Formatting);
+            let result = match if formatting {
+                self.complete_language_format(key, &context)
+            } else {
+                self.language_result(key, &context)
+            } {
                 Ok(Some(result)) => Ok(result),
                 Ok(None) => continue,
                 Err(error) => Err(errors::wire(error)),
@@ -82,6 +98,17 @@ impl Core {
                     };
                     client.outbox.send(frame);
                 }
+            }
+            if formatting
+                && result.is_ok()
+                && let Some(file_id) = query.map(|query| query.file_id)
+            {
+                if let Some(server) = self.languages.get_mut(key) {
+                    server.remove_request(&context);
+                }
+                self.persist_language_server(key, Vec::new())?;
+                let file = self.editor.stored(&file_id)?.clone();
+                self.track_language_file(&file);
             }
         }
         Ok(())
@@ -140,12 +167,13 @@ impl Core {
                 revision,
                 uri,
                 position: lsp_position,
+                mutation: None,
             },
             context,
         ))
     }
 
-    fn current_language_file(&self, file_id: &str, revision: u64) -> Result<EditorFile> {
+    pub(super) fn current_language_file(&self, file_id: &str, revision: u64) -> Result<EditorFile> {
         let file = self.editor.stored(file_id)?.clone();
         if file.revision != revision {
             return Err(errors::stale_version("File revision changed"));
@@ -153,7 +181,7 @@ impl Core {
         Ok(file)
     }
 
-    fn add_language_waiter(
+    pub(super) fn add_language_waiter(
         &mut self,
         context: &str,
         connection: &str,
@@ -173,7 +201,7 @@ impl Core {
         Ok(())
     }
 
-    fn language_result(&self, key: &str, context: &str) -> Result<Option<Value>> {
+    pub(super) fn language_result(&self, key: &str, context: &str) -> Result<Option<Value>> {
         let Some(server) = self.languages.get(key) else {
             return Ok(None);
         };
@@ -197,6 +225,7 @@ impl Core {
             RequestKind::References => self
                 .location_result(&query, &completed.result, false)
                 .map(Some),
+            RequestKind::Formatting => Ok(completed.public_result),
             _ => Err(errors::internal(
                 "Language response cannot serve this method",
             )),

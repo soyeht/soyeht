@@ -278,7 +278,7 @@ impl Core {
         self.publish(&mutation.events)
     }
 
-    pub(super) fn file_author(&self, connection: &str) -> Result<FileAuthor> {
+    pub(crate) fn file_author(&self, connection: &str) -> Result<FileAuthor> {
         let actor = self
             .clients
             .get(connection)

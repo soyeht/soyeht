@@ -151,6 +151,7 @@ impl Core {
                 language_mut(&mut self.languages, &key)?.adopt(instance)?;
                 self.persist_language_server(&key, Vec::new())?;
                 self.resume_language_writes(&key)?;
+                self.publish_language_completions(&key)?;
             } else {
                 self.restart_language_server(&key, "Language server process was lost")?;
             }

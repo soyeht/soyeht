@@ -294,6 +294,7 @@ impl Core {
             "file.symbols" | "file.definition" | "file.references" => {
                 return self.language_request(connection, request_id, method, params);
             }
+            "file.format" => return self.language_format(connection, request_id, params),
             "file.diagnostics" => self.file_diagnostics(params)?,
             "file.open" => self.file_open(connection, params)?,
             "file.read" => self.file_read(params)?,

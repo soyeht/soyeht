@@ -2,7 +2,7 @@ use crate::{errors, errors::Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use soyeht_lsp::{Client, Decoder, Incoming, PositionValue, RequestKind};
-use soyeht_protocol::{EditorLanguage, FileDiagnostic, LspServerStatus, LspState};
+use soyeht_protocol::{EditorLanguage, FileAuthor, FileDiagnostic, LspServerStatus, LspState};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Spawn};
 use soyeht_store::languages::LanguageServerCheckpoint;
 use std::collections::{BTreeMap, VecDeque};
@@ -42,13 +42,23 @@ pub struct Server {
     pub completed_order: VecDeque<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Query {
     pub kind: RequestKind,
     pub file_id: String,
     pub revision: u64,
     pub uri: String,
     pub position: Option<PositionValue>,
+    #[serde(default)]
+    pub mutation: Option<MutationIntent>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MutationIntent {
+    pub scope: String,
+    pub key: String,
+    pub fingerprint: String,
+    pub author: FileAuthor,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -57,6 +67,8 @@ pub struct Completed {
     pub result: Value,
     #[serde(default)]
     pub error: Option<String>,
+    #[serde(default)]
+    pub public_result: Option<Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -294,6 +306,25 @@ impl Server {
         self.completed.get(context)
     }
 
+    pub fn set_public_result(&mut self, context: &str, result: Option<Value>) -> Result<()> {
+        let completed = self
+            .completed
+            .get_mut(context)
+            .ok_or_else(|| errors::internal("Language response disappeared"))?;
+        completed.public_result = result;
+        Ok(())
+    }
+
+    pub fn completed_contexts(&self) -> Vec<String> {
+        self.completed.keys().cloned().collect()
+    }
+
+    pub fn remove_request(&mut self, context: &str) {
+        self.requests.remove(context);
+        self.completed.remove(context);
+        self.completed_order.retain(|item| item != context);
+    }
+
     fn save_completed(
         &mut self,
         context: String,
@@ -309,6 +340,7 @@ impl Server {
                     kind,
                     result,
                     error,
+                    public_result: None,
                 },
             )
             .is_none()
@@ -500,6 +532,7 @@ mod tests {
                 kind: RequestKind::Symbols,
                 result: json!([{"name":"main"}]),
                 error: None,
+                public_result: None,
             },
         );
         server.requests.insert(
@@ -510,6 +543,7 @@ mod tests {
                 revision: 7,
                 uri: "file:///tmp/workspace-1/main.rs".into(),
                 position: None,
+                mutation: None,
             },
         );
         let key = service.insert(server.clone()).unwrap();
@@ -544,6 +578,7 @@ mod tests {
                     revision: 1,
                     uri: "file:///tmp/workspace-1/main.rs".into(),
                     position: None,
+                    mutation: None,
                 },
             )
             .unwrap();
@@ -570,6 +605,57 @@ mod tests {
                 .unwrap()
                 .completed
                 .contains_key("symbols:file-1:1")
+        );
+    }
+
+    #[test]
+    fn formatting_mutation_and_public_result_survive_a_checkpoint() {
+        let mut service = Service::default();
+        let mut server = rust_server();
+        server.state = LspState::Ready;
+        let context = "format:file-1:1:fingerprint";
+        let intent = MutationIntent {
+            scope: "client-scope".into(),
+            key: "format-once".into(),
+            fingerprint: "fingerprint".into(),
+            author: FileAuthor {
+                actor: soyeht_protocol::Actor {
+                    role: soyeht_protocol::Role::HumanLocal,
+                    client: "mac".into(),
+                    device_id: None,
+                    pane_id: None,
+                },
+                name: "you".into(),
+            },
+        };
+        let request = server
+            .queue(
+                context,
+                Query {
+                    kind: RequestKind::Formatting,
+                    file_id: "file-1".into(),
+                    revision: 1,
+                    uri: "file:///tmp/workspace-1/main.rs".into(),
+                    position: None,
+                    mutation: Some(intent.clone()),
+                },
+            )
+            .unwrap()
+            .unwrap();
+        let id = request["id"].as_u64().unwrap();
+        let response = encode(&json!({"jsonrpc":"2.0","id":id,"result":[]})).unwrap();
+        server.accept(&response).unwrap();
+        server
+            .set_public_result(context, Some(json!({"file":{"revision":"2"}})))
+            .unwrap();
+        let key = service.insert(server).unwrap();
+
+        let restored = Service::restore(vec![service.checkpoint(&key).unwrap()]).unwrap();
+        let server = restored.get(&key).unwrap();
+        assert_eq!(server.query(context).unwrap().mutation, Some(intent));
+        assert_eq!(
+            server.completed(context).unwrap().public_result,
+            Some(json!({"file":{"revision":"2"}}))
         );
     }
 
@@ -613,6 +699,7 @@ mod tests {
             revision: 7,
             uri: "file:///tmp/workspace-1/main.rs".into(),
             position: None,
+            mutation: None,
         };
         assert!(
             server
@@ -647,6 +734,7 @@ mod tests {
                 revision: 1,
                 uri: format!("file:///tmp/workspace-1/{index}.rs"),
                 position: None,
+                mutation: None,
             };
             assert!(server.queue(&context, query).unwrap().is_none());
         }
@@ -656,6 +744,7 @@ mod tests {
             revision: 1,
             uri: "file:///tmp/workspace-1/overflow.rs".into(),
             position: None,
+            mutation: None,
         };
         assert!(matches!(
             server.queue("symbols:overflow:1", overflow),
