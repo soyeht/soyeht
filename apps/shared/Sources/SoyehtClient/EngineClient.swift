@@ -18,6 +18,8 @@ public final class EngineClient {
   public internal(set) var usageReadings: [UsageReading] = []
   public internal(set) var editorFiles: [String: EditorFileView] = [:]
   public internal(set) var editorNavigationTarget: EditorNavigationTarget?
+  public internal(set) var webPanes: [String: WebPaneView] = [:]
+  public internal(set) var localServers: [LocalServer] = []
   public private(set) var connected = false
   public private(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
@@ -38,10 +40,12 @@ public final class EngineClient {
   @ObservationIgnored private var inputQueue: [(String, Data)] = []
   @ObservationIgnored private var queuedInputBytes = 0
   @ObservationIgnored private var resizeTask: Task<Void, Never>?
+  @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
+  @ObservationIgnored private let webHost: (any WebHostPort)?
   public var readOnly: Bool { credential != nil }
 
   private struct Pending {
@@ -51,13 +55,15 @@ public final class EngineClient {
     var timeout: Task<Void, Never>
   }
 
-  public init(socket: String = DevProfile.socketPath) {
+  public init(socket: String = DevProfile.socketPath, webHost: (any WebHostPort)? = nil) {
     self.socket = socket
     credential = nil
+    self.webHost = webHost
   }
   public init(credential: DeviceCredential) {
     self.credential = credential
     socket = ""
+    webHost = nil
   }
   public var selectedPane: Pane? { panes.first { $0.paneId == selectedPaneId } }
 
@@ -94,6 +100,8 @@ public final class EngineClient {
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
     editorWriteQueues.removeAll()
+    for task in webHostTasks.values { task.cancel() }
+    webHostTasks.removeAll()
     if readOnly {
       panes = []
       workspaces = []
@@ -104,6 +112,8 @@ public final class EngineClient {
       paneLoops = [:]
       usageReadings = []
       editorFiles = [:]
+      webPanes = [:]
+      localServers = []
       terminalOutput?(Data(), true)
     }
     connectionActor = nil
@@ -148,7 +158,9 @@ public final class EngineClient {
     if let credential {
       hello = try credential.hello(challenge: first["params"].decoded(AuthChallengeEvent.self))
     } else {
-      hello = HelloParams(client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1)
+      hello = HelloParams(
+        client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1,
+        capabilities: webHost == nil ? nil : [.web_host])
     }
     let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
     guard welcome.role == (readOnly ? .human_device : .human_local), welcome.protocolVersion == 1
@@ -160,6 +172,7 @@ public final class EngineClient {
     _ = try await request("state.snapshot", .object([:]))
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
     try await loadUsage()
+    if !readOnly { try await loadLocalServers() }
     connectionRevision &+= 1
     connected = true
     connectionText = "Dev profile · connected"
@@ -222,6 +235,63 @@ public final class EngineClient {
     }
     throw ClientFailure.disconnected
   }
+  private func acceptWebHostRequest(_ message: JsonValue) throws -> Bool {
+    guard let method = message["method"].string, let id = message["id"].string else {
+      return false
+    }
+    guard method == "web.command", webHostTasks[id] == nil else {
+      throw ClientFailure.invalidFrame
+    }
+    let command = try message["params"].decoded(WebCommandParams.self)
+    guard webHostTasks.count < ProtocolLimits.webCommandWaiters else {
+      throw ClientFailure.invalidFrame
+    }
+    let activeWire = wire
+    let host = webHost
+    webHostTasks[id] = Task { [weak self] in
+      let response = await Self.webHostResponse(id: id, command: command, host: host)
+      guard let self, self.wire === activeWire else { return }
+      do { try await activeWire?.send(response) } catch { activeWire?.close() }
+      self.webHostTasks.removeValue(forKey: id)
+    }
+    return true
+  }
+  static func webHostResponse(
+    id: String, command: WebCommandParams, host: (any WebHostPort)?
+  ) async -> JsonValue {
+    do {
+      guard let host else {
+        throw ClientFailure.webHost(.internal_error, "The web host is not ready.")
+      }
+      let result = try await host.execute(command)
+      guard result.paneId == command.paneId else {
+        throw ClientFailure.webHost(.internal_error, "The web host changed pane identity.")
+      }
+      return .object([
+        "jsonrpc": .string("2.0"), "id": .string(id),
+        "result": try .encoded(result),
+      ])
+    } catch let ClientFailure.webHost(kind, message) {
+      return webHostError(id: id, kind: kind, message: message)
+    } catch {
+      return webHostError(id: id, kind: .internal_error, message: "The web command failed.")
+    }
+  }
+  private static func webHostError(id: String, kind: ErrorKind, message: String) -> JsonValue {
+    let safe: (ErrorKind, Int64) =
+      switch kind {
+      case .stale_reference: (.stale_reference, -32025)
+      case .human_took_over: (.human_took_over, -32026)
+      case .navigation_refused: (.navigation_refused, -32028)
+      default: (.internal_error, -32018)
+      }
+    let (safeKind, code) = safe
+    let error = RpcError(code: code, message: message, data: ErrorData(kind: safeKind))
+    return .object([
+      "jsonrpc": .string("2.0"), "id": .string(id),
+      "error": (try? .encoded(error)) ?? .null,
+    ])
+  }
   private func receive(_ frame: Frame) throws {
     if frame.kind == 2 {
       guard position != nil else { return }
@@ -259,6 +329,7 @@ public final class EngineClient {
       }
       return
     }
+    if try acceptWebHostRequest(message) { return }
     if message["id"] == .null, message["error"] != .null {
       throw ClientFailure.remote(
         message["error"]["data"]["kind"].string ?? ErrorKind.internal_error.rawValue,
@@ -274,28 +345,8 @@ public final class EngineClient {
     guard let eventName = EventName(rawValue: method) else { return }
     switch eventName {
     case .stateSnapshotPart: try snapshot.append(params.decoded(StateSnapshotPartEvent.self))
-    case .paneCreated, .paneUpdated, .paneRenamed:
-      let pane = try params["pane"].decoded(Pane.self)
-      upsertPane(pane)
-      if pane.mode == .agent {
-        var view = agentPanes[pane.paneId] ?? AgentPaneView()
-        view.queuePaused = pane.agent?.queuePaused ?? false
-        agentPanes[pane.paneId] = view
-      }
-    case .paneClosed:
-      let id = params["paneId"].string
-      panes.removeAll { $0.paneId == id }
-      if let id { agentPanes.removeValue(forKey: id) }
-      if let id { discardEditorPane(id) }
-      if selectedPaneId == id { select(panes.first?.paneId) }
-    case .paneStateChanged:
-      let event = try params.decoded(PaneStateChangedEvent.self)
-      if let index = panes.firstIndex(where: { $0.paneId == event.paneId }) {
-        panes[index].state = event.state
-        panes[index].source = event.source
-        panes[index].confidence = event.confidence
-        panes[index].phrase = event.phrase
-      }
+    case .paneCreated, .paneUpdated, .paneRenamed, .paneClosed, .paneStateChanged:
+      try applyPaneEvent(eventName, params)
     case .workspaceCreated, .workspaceRenamed:
       let workspace = try params["workspace"].decoded(Workspace.self)
       workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
@@ -333,11 +384,41 @@ public final class EngineClient {
     case .fileChangedOnDisk, .fileSaved, .fileConflict, .lspDiagnostics,
       .editorAgentCursor, .editorReviewRequested:
       try applyEditorEvent(eventName, params)
+    case .serversLocalChanged, .webNavigated, .webConsoleCounts, .webAgentDriving:
+      try applyWebEvent(eventName, params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
-      .paneConfigChanged, .serversLocalChanged, .webNavigated, .webConsoleCounts,
-      .webAgentDriving:
+      .paneConfigChanged:
       break
+    }
+  }
+  private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
+    switch eventName {
+    case .paneCreated, .paneUpdated, .paneRenamed:
+      let pane = try params["pane"].decoded(Pane.self)
+      upsertPane(pane)
+      if pane.mode == .agent {
+        var view = agentPanes[pane.paneId] ?? AgentPaneView()
+        view.queuePaused = pane.agent?.queuePaused ?? false
+        agentPanes[pane.paneId] = view
+      }
+      upsertWebPane(pane)
+    case .paneClosed:
+      let id = params["paneId"].string
+      panes.removeAll { $0.paneId == id }
+      if let id { agentPanes.removeValue(forKey: id) }
+      if let id { discardEditorPane(id) }
+      if let id { discardWebPane(id) }
+      if selectedPaneId == id { select(panes.first?.paneId) }
+    case .paneStateChanged:
+      let event = try params.decoded(PaneStateChangedEvent.self)
+      if let index = panes.firstIndex(where: { $0.paneId == event.paneId }) {
+        panes[index].state = event.state
+        panes[index].source = event.source
+        panes[index].confidence = event.confidence
+        panes[index].phrase = event.phrase
+      }
+    default: break
     }
   }
   private func applyDeviceEvent(_ eventName: EventName, _ params: JsonValue) throws {
@@ -370,6 +451,7 @@ public final class EngineClient {
     try applyAgentSnapshot(sections, panes: panes)
     try applyTaskSnapshot(sections, panes: panes)
     try applyEditorSnapshot(sections, panes: panes)
+    applyWebSnapshot(panes: panes)
     pairRequests = requests
     cursor = UInt64(result.cursor)!
     if !panes.contains(where: { $0.paneId == selectedPaneId }) {

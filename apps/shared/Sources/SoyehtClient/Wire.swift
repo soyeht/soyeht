@@ -5,6 +5,7 @@ import SoyehtProtocol
 public enum ClientFailure: Error, LocalizedError, Sendable {
   case disconnected, invalidFrame, invalidSnapshot, invalidStream, timeout
   case editorCommand(String)
+  case webHost(ErrorKind, String)
   case remote(String, String)
   var canRetry: Bool {
     switch self {
@@ -20,6 +21,7 @@ public enum ClientFailure: Error, LocalizedError, Sendable {
     case .invalidStream: "The screen needs to synchronize again."
     case .timeout: "The engine did not respond in time."
     case .editorCommand(let message): message
+    case .webHost(_, let message): message
     case .remote(let kind, let message): "\(message) (\(kind))"
     }
   }

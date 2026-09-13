@@ -42,7 +42,9 @@
     }
     let supervisor = try launch("soyeht-ptyd")
     var engine: Process?
-    let client = EngineClient(socket: directory.appendingPathComponent("engine.sock").path)
+    let webHost = IntegrationWebHost()
+    let client = EngineClient(
+      socket: directory.appendingPathComponent("engine.sock").path, webHost: webHost)
     defer {
       if engine?.isRunning == true {
         for pane in client.panes {
@@ -99,8 +101,29 @@
     client.start()
     try await until { client.connected && client.selectedPane?.pid == pid }
     try await exerciseEditor(client, directory: directory)
+    let workspaceId = try #require(client.panes.first?.workspaceId)
+    let web = try await client.openWeb(workspaceId: workspaceId, url: "localhost:4173")
+    let navigation = try await client.navigateWeb(paneId: web.paneId, action: .reload)
+    #expect(navigation.accepted)
+    #expect(webHost.commands.map(\.command) == [.navigate])
+    client.closePane(web.paneId)
+    try await until { !client.panes.contains { $0.paneId == web.paneId } }
     client.closePane(paneId)
     try await until { client.panes.isEmpty }
+  }
+
+  @MainActor private final class IntegrationWebHost: WebHostPort {
+    var commands: [WebCommandParams] = []
+
+    func execute(_ command: WebCommandParams) async throws -> WebCommandResult {
+      commands.append(command)
+      guard command.command == .navigate else {
+        throw ClientFailure.webHost(.internal_error, "Unexpected integration command.")
+      }
+      return WebCommandResult(
+        paneId: command.paneId, value: .object(["accepted": .bool(true)]),
+        cookiesPresent: false)
+    }
   }
 
   @MainActor private func exerciseEditor(_ client: EngineClient, directory: URL) async throws {
