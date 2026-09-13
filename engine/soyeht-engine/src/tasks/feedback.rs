@@ -11,7 +11,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttentionItem, PaneState, Task, TaskCheckState, TaskPullRequest, TaskReviewState,
+    AttentionItem, Comment, PaneState, Task, TaskCheckState, TaskPullRequest, TaskReviewBadge,
+    TaskReviewState,
 };
 use soyeht_store::{agents, database::Change, tasks::FeedbackState};
 use uuid::Uuid;
@@ -57,7 +58,76 @@ impl TaskFeedbackChange {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct TaskEditorFeedbackChange {
+    expected_version: u32,
+    task: Task,
+    comment: Comment,
+}
+
+impl TaskEditorFeedbackChange {
+    pub(crate) fn persist(&self, change: &Change<'_>) -> soyeht_store::Result<()> {
+        change.replace_task(&self.task, self.expected_version)?;
+        change.insert_comment(&self.task.workspace_id, &self.task.task_id, &self.comment)
+    }
+
+    pub(crate) fn task_id(&self) -> &str {
+        &self.task.task_id
+    }
+
+    pub(crate) fn events(&self) -> Vec<(String, Value)> {
+        vec![
+            (
+                "task.commented".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"comment":self.comment}),
+            ),
+            (
+                "task.updated".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"version":self.task.version}),
+            ),
+            (
+                "task.phrase_changed".into(),
+                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"phrase":self.task.phrase}),
+            ),
+        ]
+    }
+}
+
 impl Core {
+    pub(crate) fn prepare_editor_change_request(
+        &self,
+        pane_id: &str,
+        comment_id: &str,
+        text: &str,
+    ) -> Result<Option<TaskEditorFeedbackChange>> {
+        let Some(current) = self
+            .store
+            .active_task_for_pane(pane_id)
+            .map_err(errors::storage)?
+        else {
+            return Ok(None);
+        };
+        let mut task = current.clone();
+        task.version = task
+            .version
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("Task version exhausted"))?;
+        task.phrase = "review requested changes".into();
+        task.review_badge = Some(TaskReviewBadge::SystemTurn);
+        let comment = Comment {
+            comment_id: comment_id.into(),
+            task_id: task.task_id.clone(),
+            author: "you".into(),
+            text: text.into(),
+            at: self.timestamp(),
+        };
+        Ok(Some(TaskEditorFeedbackChange {
+            expected_version: current.version,
+            task,
+            comment,
+        }))
+    }
+
     pub(crate) fn advance_task_feedback(&mut self) -> Result<()> {
         let now = self.now_ms();
         let tasks = self

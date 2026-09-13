@@ -72,6 +72,7 @@ pub struct Changes {
     pub(crate) task_blocking: Option<crate::tasks::blocking::TaskBlockingChange>,
     pub(crate) task_dispatch: Option<crate::tasks::dispatching::TaskDispatchChange>,
     pub(crate) task_feedback: Option<crate::tasks::feedback::TaskFeedbackChange>,
+    pub(crate) task_editor_feedback: Option<crate::tasks::feedback::TaskEditorFeedbackChange>,
     pub(crate) task_loop: Option<crate::tasks::looping::TaskLoopChange>,
     pub(crate) editor_agent_write: Option<crate::editor::agent_review::AgentWriteChange>,
 }
@@ -157,6 +158,9 @@ impl AgentPersistence<'_> {
             dispatch.persist(tx)?;
         }
         if let Some(feedback) = &self.changes.task_feedback {
+            feedback.persist(tx)?;
+        }
+        if let Some(feedback) = &self.changes.task_editor_feedback {
             feedback.persist(tx)?;
         }
         if let Some(task_loop) = &self.changes.task_loop {

@@ -23,6 +23,7 @@ pub fn handles(method: &str) -> bool {
             | "file.search"
             | "editor.review.accept"
             | "editor.review.reject"
+            | "editor.review.comment"
     )
 }
 
@@ -44,6 +45,7 @@ impl Core {
             "editor.review.accept" | "editor.review.reject" => {
                 self.editor_review(connection, method, params)
             }
+            "editor.review.comment" => self.editor_review_comment(connection, params),
             _ => Err(errors::internal("Unknown editor method")),
         }
     }

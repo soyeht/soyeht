@@ -6,13 +6,15 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, DiffHunk, EditorReviewParams, EditorReviewResult, FileAuthor, Role, TextPosition,
+    Actor, DiffHunk, EditorReviewCommentParams, EditorReviewCommentResult, EditorReviewParams,
+    EditorReviewResult, FileAuthor, PaneState, Role, TextPosition, TextRange,
 };
 use soyeht_store::{
     database::Change,
     editor::{EditorAgentReview, EditorFile, StoredFileVersion, document},
 };
 use std::path::Path;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub(crate) struct AgentWriteChange {
@@ -192,6 +194,111 @@ impl Core {
         Ok(mutation.result)
     }
 
+    pub fn editor_review_comment(&mut self, connection: &str, params: &Value) -> Result<Value> {
+        if let Some(result) = self.repeated_mutation(connection, "editor.review.comment", params)? {
+            return Ok(result);
+        }
+        let request: EditorReviewCommentParams = serde_json::from_value(params.clone())
+            .map_err(|_| errors::invalid("Invalid editor review comment parameters"))?;
+        let (pane_id, text) = self.review_comment_context(connection, &request)?;
+        let comment_id = Uuid::new_v4().to_string();
+        if !self.review_author_is_live(&pane_id) {
+            return self.finish_undelivered_comment(connection, params, comment_id);
+        }
+        let task_feedback = self.prepare_editor_change_request(&pane_id, &comment_id, &text)?;
+        let task_id = task_feedback
+            .as_ref()
+            .map(|feedback| feedback.task_id().to_owned());
+        let mut state = self.agent_state(&pane_id)?;
+        let prompt = state.enqueue_feedback(
+            format!("task-feedback:editor:{comment_id}"),
+            text,
+            self.timestamp(),
+        )?;
+        let mut events = task_feedback
+            .as_ref()
+            .map_or_else(Vec::new, |feedback| feedback.events());
+        events.push((
+            "pane.queued".into(),
+            json!({"paneId":pane_id,"n":state.queue.len(),"promptIds":[prompt.prompt_id],"draft":false}),
+        ));
+        let result = review_comment_result(comment_id, task_id, true)?;
+        let saved = self.panes[&pane_id].stored.clone();
+        let changes = crate::agents::Changes {
+            events,
+            task_editor_feedback: task_feedback,
+            ..crate::agents::Changes::default()
+        };
+        Ok(self
+            .commit_agent(
+                saved,
+                state,
+                changes,
+                Some((connection, "editor.review.comment", params)),
+                result,
+            )?
+            .result)
+    }
+
+    fn review_comment_context(
+        &self,
+        connection: &str,
+        request: &EditorReviewCommentParams,
+    ) -> Result<(String, String)> {
+        let author = self.file_author(connection)?;
+        if !matches!(author.actor.role, Role::HumanLocal | Role::HumanDevice) {
+            return Err(errors::forbidden_role(
+                "Only a person may request an editor review change",
+            ));
+        }
+        let body = request.body.trim();
+        if body.is_empty() {
+            return Err(errors::invalid("Review comment must not be empty"));
+        }
+        let file = self.editor.stored(&request.file_id)?;
+        let review = self
+            .store
+            .editor_agent_review(&request.file_id)
+            .map_err(errors::storage)?
+            .ok_or_else(|| errors::not_found("Agent review not found"))?;
+        if review.revision != file.revision {
+            return Err(errors::stale_version("Agent review revision changed"));
+        }
+        if file.draft_text.is_some() || file.conflict_text.is_some() {
+            return Err(errors::stale_version("Agent review file is not clean"));
+        }
+        validate_comment_range(&file.disk_text, &request.range)?;
+        let location = line_location(&file.relative_path, &request.range.start)?;
+        let text = format!("Change request at {location}\n\n{body}");
+        if text.len() > soyeht_protocol::limits::PROMPT_BYTES {
+            return Err(errors::invalid(
+                "Review comment and location exceed the prompt limit",
+            ));
+        }
+        Ok((review.pane_id, text))
+    }
+
+    fn review_author_is_live(&self, pane_id: &str) -> bool {
+        self.agents.contains_key(pane_id)
+            && self.panes.get(pane_id).is_some_and(|pane| {
+                !pane.stored.closed && pane.stored.pane.state != PaneState::Dead
+            })
+    }
+
+    fn finish_undelivered_comment(
+        &mut self,
+        connection: &str,
+        params: &Value,
+        comment_id: String,
+    ) -> Result<Value> {
+        let result = review_comment_result(comment_id, None, false)?;
+        Ok(self
+            .mutate(connection, "editor.review.comment", params, |_| {
+                Ok((result, Vec::new()))
+            })?
+            .result)
+    }
+
     fn resolve_review(
         &self,
         method: &str,
@@ -344,4 +451,39 @@ fn parse_revision(value: &str) -> Result<u64> {
     value
         .parse()
         .map_err(|_| errors::invalid("Invalid editor review revision"))
+}
+
+fn validate_comment_range(text: &str, range: &TextRange) -> Result<()> {
+    let buffer = soyeht_editor::TextBuffer::new(text);
+    let start = buffer.byte_at(&range.start)?;
+    let end = buffer.byte_at(&range.end)?;
+    if start > end {
+        return Err(errors::invalid("Review comment range is reversed"));
+    }
+    Ok(())
+}
+
+fn line_location(path: &str, position: &TextPosition) -> Result<String> {
+    let line = position
+        .line
+        .checked_add(1)
+        .ok_or_else(|| errors::invalid("Review comment line exceeds its range"))?;
+    let column = position
+        .column
+        .checked_add(1)
+        .ok_or_else(|| errors::invalid("Review comment column exceeds its range"))?;
+    Ok(format!("{path}:{line}:{column}"))
+}
+
+fn review_comment_result(
+    comment_id: String,
+    task_id: Option<String>,
+    delivered: bool,
+) -> Result<Value> {
+    serde_json::to_value(EditorReviewCommentResult {
+        comment_id,
+        task_id,
+        delivered,
+    })
+    .map_err(|_| errors::internal("Editor review comment result serialization failed"))
 }

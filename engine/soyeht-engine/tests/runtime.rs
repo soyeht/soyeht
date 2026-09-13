@@ -1733,6 +1733,75 @@ fn agent_writes_are_attributed_and_each_review_hunk_resolves_once() {
 }
 
 #[test]
+fn editor_line_comment_is_one_durable_task_change_request() {
+    let mut lifecycle = TaskLifecycleRig::new();
+    let task = lifecycle.create_and_reserve("Review agent edit", "reserve-editor-comment");
+    let path = lifecycle.repository.join("agent-review.txt");
+    fs::write(
+        &path,
+        "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n",
+    )
+    .unwrap();
+    let opened = lifecycle.human.call(
+        "file.open",
+        json!({"workspaceId":lifecycle.workspace,"path":"agent-review.txt","idempotencyKey":"open-comment-review"}),
+    );
+    let file_id = opened["file"]["fileId"].as_str().unwrap().to_owned();
+    lifecycle.human.call(
+        "pane.prompt",
+        json!({"paneId":lifecycle.pane,"text":"editor-review","idempotencyKey":"write-comment-review"}),
+    );
+    lifecycle.human.wait_state(&lifecycle.pane, "idle");
+    let request = json!({
+        "fileId":file_id,
+        "range":{"start":{"line":1,"column":0},"end":{"line":1,"column":9}},
+        "body":"Keep the original name here.",
+        "idempotencyKey":"editor-line-comment"
+    });
+    let result = lifecycle
+        .human
+        .call("editor.review.comment", request.clone());
+    assert_eq!(
+        lifecycle.human.call("editor.review.comment", request),
+        result
+    );
+    assert_eq!(result["taskId"], task.task_id);
+    assert_eq!(result["delivered"], true);
+
+    let shown = lifecycle.human.call(
+        "task.show",
+        json!({"workspaceId":lifecycle.workspace,"taskId":task.task_id}),
+    );
+    assert_eq!(shown["task"]["reviewBadge"], "system_turn");
+    assert_eq!(shown["task"]["phrase"], "review requested changes");
+    let expected = "Change request at agent-review.txt:2:1\n\nKeep the original name here.";
+    let store = Store::open(&lifecycle.rig.path).unwrap();
+    let comments = store
+        .task_comments(&lifecycle.workspace, &task.task_id, None, 10)
+        .unwrap();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].comment_id, result["commentId"]);
+    assert_eq!(comments[0].author, "you");
+    assert_eq!(comments[0].text, expected);
+    drop(store);
+
+    let session = lifecycle.human.pane(&lifecycle.pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while native_prompt_count(&lifecycle.rig, &session, expected) != 1 {
+        assert!(
+            Instant::now() < deadline,
+            "change request was not delivered"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    lifecycle.human.wait_state(&lifecycle.pane, "idle");
+    assert_eq!(native_prompt_count(&lifecycle.rig, &session, expected), 1);
+}
+
+#[test]
 fn agent_write_refuses_a_dirty_editor_file_without_touching_disk() {
     let rig = Rig::new();
     let repository = rig.path.join("agent-editor-dirty");
