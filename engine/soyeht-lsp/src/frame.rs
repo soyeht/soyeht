@@ -1,14 +1,37 @@
 use crate::{Error, Result};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use soyeht_protocol::limits;
 
 const HEADER_BYTES: usize = 8192;
 const SEPARATOR: &[u8] = b"\r\n\r\n";
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Decoder {
+    #[serde(with = "base64_bytes")]
     bytes: Vec<u8>,
     body_len: Option<usize>,
+}
+
+mod base64_bytes {
+    use super::*;
+    use serde::{Deserializer, Serializer, de::Error as _};
+
+    pub fn serialize<S>(bytes: &[u8], serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&STANDARD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> std::result::Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = String::deserialize(deserializer)?;
+        STANDARD.decode(encoded).map_err(D::Error::custom)
+    }
 }
 
 impl Decoder {
@@ -118,5 +141,21 @@ mod tests {
             Decoder::default().push(header.as_bytes()),
             Err(Error::MessageTooLarge)
         ));
+    }
+
+    #[test]
+    fn a_partial_frame_survives_compact_checkpoint_serialization() {
+        let message = encode(&json!({"jsonrpc":"2.0","id":1,"result":{"text":"å"}})).unwrap();
+        let split = message.len() - 2;
+        let mut decoder = Decoder::default();
+        assert!(decoder.push(&message[..split]).unwrap().is_empty());
+        let checkpoint = serde_json::to_string(&decoder).unwrap();
+        assert!(!checkpoint.contains("[67,111,110"));
+        let mut restored: Decoder = serde_json::from_str(&checkpoint).unwrap();
+        let values = restored.push(&message[split..]).unwrap();
+        assert_eq!(
+            values,
+            [json!({"jsonrpc":"2.0","id":1,"result":{"text":"å"}})]
+        );
     }
 }

@@ -34,10 +34,12 @@ impl Rig {
         let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         install_fake_worktrunk(&path);
+        install_fake_lsp(&path);
         let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"));
         let ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&path)
+            .env("PATH", test_path(&path))
             .env("ZDOTDIR", &path)
             .stdout(Stdio::null())
             .spawn()
@@ -51,15 +53,11 @@ impl Rig {
         rig
     }
     fn start(&mut self) {
-        let path = std::env::join_paths(std::iter::once(self.path.join("bin")).chain(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-        ))
-        .unwrap();
         self.engine = Some(
             Command::new(env!("CARGO_BIN_EXE_soyeht-engine"))
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
                 .arg(&self.path)
-                .env("PATH", path)
+                .env("PATH", test_path(&self.path))
                 .stdout(Stdio::null())
                 .spawn()
                 .unwrap(),
@@ -138,6 +136,23 @@ impl Rig {
     fn client(&self) -> Client {
         Client::new(self.path.join("engine.sock"))
     }
+}
+
+fn test_path(root: &std::path::Path) -> std::ffi::OsString {
+    std::env::join_paths(
+        std::iter::once(root.join("bin")).chain(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        )),
+    )
+    .unwrap()
+}
+
+fn install_fake_lsp(root: &std::path::Path) {
+    let bin = root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let binary =
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-lsp");
+    symlink(binary, bin.join("rust-analyzer")).unwrap();
 }
 
 fn install_fake_worktrunk(root: &std::path::Path) {
@@ -1554,6 +1569,85 @@ fn editor_open_owns_one_bounded_workspace_file_and_restores_it_in_the_snapshot()
         json!({"fileId":file_id,"fromLine":1,"lineCount":1}),
     );
     assert_eq!(read["lines"][0]["text"], "    println!(\"ready\");");
+}
+
+#[test]
+fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("language-repository");
+    fs::create_dir_all(&repository).unwrap();
+    fs::write(repository.join("main.rs"), "fn main() {\n    ready();\n}\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Language","path":repository,"idempotencyKey":"language-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"language-open"}),
+    );
+
+    let ready = wait_lsp_ready(&mut client, &workspace, 1);
+    assert_eq!(ready["language"], "rust");
+    let first = language_registry_instance(&rig);
+    assert_eq!(first["spawn"]["cwd"], repository.to_str().unwrap());
+    assert_eq!(first["spawn"]["argv"], json!(["rust-analyzer"]));
+    assert_eq!(first["spawn"]["kind"], "pipes_lsp");
+    let instance_id = first["instance_id"].clone();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rig.database_probe().event_count("lsp.diagnostics").unwrap() == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "diagnostic event was not published"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let status = wait_lsp_ready(&mut restored, &workspace, 1);
+    assert_eq!(status["generation"], 1);
+    assert_eq!(language_registry_instance(&rig)["instance_id"], instance_id);
+}
+
+fn wait_lsp_ready(client: &mut Client, workspace: &str, generation: u64) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let result = client.call(
+            "lsp.status",
+            json!({"workspaceId":workspace,"language":"rust"}),
+        );
+        let servers = result["servers"].as_array().unwrap();
+        if servers.len() == 1
+            && servers[0]["state"] == "ready"
+            && servers[0]["generation"] == generation
+        {
+            return servers[0].clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "language server did not become ready: {result}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn language_registry_instance(rig: &Rig) -> Value {
+    let registry: Value =
+        serde_json::from_slice(&fs::read(rig.path.join("ptyd-registry.json")).unwrap()).unwrap();
+    let instances: Vec<_> = registry["instances"]
+        .as_object()
+        .unwrap()
+        .values()
+        .filter(|instance| instance["spawn"]["kind"] == "pipes_lsp" && instance["closed"] == false)
+        .cloned()
+        .collect();
+    assert_eq!(instances.len(), 1);
+    instances[0].clone()
 }
 
 #[test]

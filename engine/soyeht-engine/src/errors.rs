@@ -37,6 +37,7 @@ pub enum Error {
     Io(io::Error),
     Acp(soyeht_acp::Error),
     Editor(soyeht_editor::Error),
+    Lsp(soyeht_lsp::Error),
     Usage(soyeht_usage::Error),
     Supervisor(soyeht_ptyd::Error),
     Protocol(soyeht_protocol::Error),
@@ -141,6 +142,10 @@ pub fn io(error: io::Error) -> Error {
     Error::Io(error)
 }
 
+pub fn lsp(error: soyeht_lsp::Error) -> Error {
+    Error::Lsp(error)
+}
+
 fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
     use soyeht_store::Error;
     match error {
@@ -232,7 +237,9 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::DependencyOpen(_) => ErrorKind::DependencyOpen,
         Error::RateLimited { .. } => ErrorKind::RateLimited,
         Error::IdempotencyConflict(_) => ErrorKind::IdempotencyConflict,
-        Error::HarnessUnavailable(_) | Error::Acp(_) => ErrorKind::HarnessUnavailable,
+        Error::HarnessUnavailable(_) | Error::Acp(_) | Error::Lsp(_) => {
+            ErrorKind::HarnessUnavailable
+        }
         Error::Editor(error) => editor_kind(error),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
@@ -316,6 +323,7 @@ fn message(error: &Error) -> String {
         Error::Io(_) => "I/O operation failed".into(),
         Error::Acp(error) => error.to_string(),
         Error::Editor(error) => error.to_string(),
+        Error::Lsp(error) => error.to_string(),
         Error::Usage(_) => "Usage operation failed".into(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
         Error::Supervisor(_) => "Supervisor unavailable".into(),

@@ -290,6 +290,7 @@ impl Core {
             }
             "usage.list" => self.usage_list()?,
             "usage.refresh" => self.usage_refresh(connection, params)?,
+            "lsp.status" => self.lsp_status(params)?,
             "file.open" => self.file_open(connection, params)?,
             "file.read" => self.file_read(params)?,
             "file.write" => self.file_write(connection, params)?,

@@ -7,6 +7,7 @@ pub mod dispatch;
 pub mod editor;
 pub mod errors;
 pub mod input;
+pub mod languages;
 pub mod model;
 pub mod network;
 pub mod outbox;

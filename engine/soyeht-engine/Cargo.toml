@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 soyeht-acp = { path = "../soyeht-acp" }
 soyeht-editor = { path = "../soyeht-editor" }
+soyeht-lsp = { path = "../soyeht-lsp" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 soyeht-ptyd = { path = "../soyeht-ptyd" }
 soyeht-store = { path = "../soyeht-store" }

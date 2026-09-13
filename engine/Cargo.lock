@@ -944,6 +944,7 @@ dependencies = [
  "sha2",
  "soyeht-acp",
  "soyeht-editor",
+ "soyeht-lsp",
  "soyeht-protocol",
  "soyeht-ptyd",
  "soyeht-store",
@@ -957,6 +958,7 @@ dependencies = [
 name = "soyeht-lsp"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "serde",
  "serde_json",
  "soyeht-protocol",

@@ -35,6 +35,7 @@ pub struct Core {
     pub worktrees: Box<dyn crate::tasks::worktree::WorktreePort>,
     pub usage: crate::usage::Service,
     pub editor: crate::editor::Service,
+    pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
@@ -52,6 +53,9 @@ impl Core {
         }
         let usage_readings = store.usage_readings().map_err(errors::storage)?;
         let editor_files = store.editor_files().map_err(errors::storage)?;
+        let language_servers = store
+            .language_server_checkpoints()
+            .map_err(errors::storage)?;
         let mut core = Self {
             store,
             directory: directory.into(),
@@ -65,6 +69,7 @@ impl Core {
                 Box::new(crate::usage::SystemSources::default()),
             ),
             editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),
+            languages: crate::languages::Service::restore(language_servers)?,
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
@@ -269,7 +274,10 @@ impl Core {
         for operation_key in receipts {
             let pending = StorePort::input_intent_operation_pending(&self.store, &operation_key)
                 .map_err(errors::storage)?;
-            if !pending && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)? {
+            if !pending
+                && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)?
+                && !self.languages.has_pending_write(&operation_key)
+            {
                 self.pty_request(Request::ConfirmInput { operation_key })?;
             }
         }
@@ -363,7 +371,7 @@ impl Core {
                 self.spawn(&id)?;
             }
         }
-        Ok(())
+        self.reconcile_language_servers(&instances)
     }
 
     pub fn spawn(&mut self, id: &str) -> Result<()> {
@@ -523,6 +531,7 @@ impl Core {
                 self.save_runtime(&id, dead)?;
             }
         }
+        self.advance_language_servers();
         self.advance_task_reviews()?;
         self.advance_task_feedback()?;
         self.advance_task_blocking()?;
