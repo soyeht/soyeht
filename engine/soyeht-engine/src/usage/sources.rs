@@ -42,13 +42,26 @@ enum Line {
 impl Default for SystemSources {
     fn default() -> Self {
         Self {
-            commands: Commands {
-                first_cli: "claude".into(),
-                second_cli: "codex".into(),
-                keychain: "/usr/bin/security".into(),
-                http: "/usr/bin/curl".into(),
-            },
+            commands: default_commands(),
         }
+    }
+}
+
+fn default_commands() -> Commands {
+    #[cfg(debug_assertions)]
+    if let Some(directory) = std::env::var_os("SOYEHT_TEST_USAGE_READER_DIR").map(PathBuf::from) {
+        return Commands {
+            first_cli: directory.join("first-source"),
+            second_cli: directory.join("second-source"),
+            keychain: directory.join("keychain-source"),
+            http: directory.join("http-source"),
+        };
+    }
+    Commands {
+        first_cli: "claude".into(),
+        second_cli: "codex".into(),
+        keychain: "/usr/bin/security".into(),
+        http: "/usr/bin/curl".into(),
     }
 }
 

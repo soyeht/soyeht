@@ -301,6 +301,9 @@ impl Core {
         let ids: Vec<_> = self.panes.keys().cloned().collect();
         for id in ids {
             let saved = self.panes[&id].stored.clone();
+            if saved.pane.mode == soyeht_protocol::PaneMode::Editor {
+                continue;
+            }
             if saved.instance_id.is_none() && reserved_panes.contains(&id) {
                 continue;
             }
