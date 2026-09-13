@@ -5,11 +5,11 @@ use soyeht_protocol::*;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::task_commands;
+use crate::{editor_commands, task_commands};
 
 pub const USAGE: &str = "soyeht --profile dev [--data-dir PATH] [--bound] COMMAND\n\
 status\n\
-pane create --shell|--agent HARNESS [--cwd PATH] [--model MODEL] [--effort EFFORT] [--permission ask|accept_edits|allow_all]\n\
+pane create --shell|--agent HARNESS|--editor FILE [--cwd PATH] [--model MODEL] [--effort EFFORT] [--permission ask|accept_edits|allow_all]\n\
 pane list | pane close ID | pane prompt ID TEXT | pane cancel ID\n\
 pane permission ID allow|deny [--request REQUEST_ID]\n\
 pane config ID KEY VALUE | pane yolo ID on|off | pane auth ID METHOD\n\
@@ -26,6 +26,9 @@ task release WORKSPACE TASK [OPTIONS] | task request-review WORKSPACE TASK [OPTI
 task complete WORKSPACE TASK SUMMARY [OPTIONS] | task move WORKSPACE TASK STATE REASON\n\
 task unblock WORKSPACE TASK [OPTIONS] | task worktree-clean WORKSPACE TASK\n\
 loop set PANE PROMPT INTERVAL_SECONDS MAX_ROUNDS STOP_WHEN ENABLED\n\
+file open WORKSPACE PATH [OPTIONS] | file read FILE [OPTIONS] | file write FILE REVISION START_LINE START_COLUMN END_LINE END_COLUMN TEXT\n\
+file history FILE [OPTIONS] | file revert FILE VERSION REVISION | file search WORKSPACE QUERY [OPTIONS]\n\
+file symbols FILE REVISION | file diff FILE REVISION | usage list | usage refresh [PROVIDER]\n\
 Task create options: --description, --how-to-verify, --harness, --model, --effort,\n\
   --priority, --create-worktree true|false, --permission, --dependencies WS-1,WS-2.\n\
 Task update uses the same editable text, priority and dependency options.\n\
@@ -184,6 +187,8 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
         ["device", "pair-start"] => {
             rpc::<DevicePairStartResult>(client, "device.pair.start", json!({"idempotencyKey":key}))
         }
+        ["file", rest @ ..] => editor_commands::execute_file(client, rest, &key),
+        ["usage", rest @ ..] => editor_commands::execute_usage(client, rest, &key),
         ["task", rest @ ..] => task_commands::execute_task(client, rest, &key),
         ["loop", rest @ ..] => task_commands::execute_loop(client, rest, &key),
         _ => Err(invalid(USAGE)),
@@ -191,10 +196,11 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
 }
 
 fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
-    let (mode, harness, rest) = match args {
-        ["--shell", rest @ ..] => ("terminal", None, rest),
-        ["--agent", harness, rest @ ..] => ("agent", Some(*harness), rest),
-        _ => return Err(invalid("Choose --shell or --agent HARNESS")),
+    let (mode, harness, editor, rest) = match args {
+        ["--shell", rest @ ..] => ("terminal", None, None, rest),
+        ["--agent", harness, rest @ ..] => ("agent", Some(*harness), None, rest),
+        ["--editor", path, rest @ ..] => ("editor", None, Some(*path), rest),
+        _ => return Err(invalid("Choose --shell, --agent HARNESS or --editor FILE")),
     };
     let allowed = if harness.is_some() {
         &[
@@ -234,6 +240,9 @@ fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
     params["idempotencyKey"] = json!(key);
     if let Some(harness) = harness {
         params["harness"] = json!(harness);
+    }
+    if let Some(path) = editor {
+        params["path"] = json!(path);
     }
     rpc::<PaneCreateResult>(client, "pane.create", params)
 }

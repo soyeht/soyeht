@@ -212,6 +212,84 @@ fn cli_creates_lists_and_closes_a_real_shell_and_starts_pairing() {
 }
 
 #[test]
+fn cli_opens_edits_searches_and_reads_history_from_a_real_editor_pane() {
+    let rig = Rig::start();
+    fs::write(rig.path.join("note.txt"), "one\n").unwrap();
+    let created = rig.command(&[
+        "pane",
+        "create",
+        "--editor",
+        "note.txt",
+        "--idempotency-key",
+        "editor-pane",
+    ]);
+    let panes = rig.command(&["pane", "list"]);
+    let pane = &panes["items"][0];
+    assert_eq!(pane["paneId"], created["paneId"]);
+    assert_eq!(pane["mode"], "editor");
+    let workspace = pane["workspaceId"].as_str().unwrap();
+    let opened = rig.command(&[
+        "file",
+        "open",
+        workspace,
+        "note.txt",
+        "--line",
+        "0",
+        "--column",
+        "0",
+        "--idempotency-key",
+        "file-open",
+    ]);
+    let file = opened["file"]["fileId"].as_str().unwrap();
+    assert_eq!(
+        rig.command(&["file", "read", file, "--lines", "1"])["lines"][0]["text"],
+        "one"
+    );
+    let written = rig.command(&[
+        "file",
+        "write",
+        file,
+        "1",
+        "0",
+        "0",
+        "0",
+        "0",
+        "two ",
+        "--idempotency-key",
+        "file-write",
+    ]);
+    assert_eq!(written["file"]["revision"], "2");
+    assert_eq!(
+        rig.command(&["file", "search", workspace, "two"])["items"][0]["path"],
+        "note.txt"
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let history = loop {
+        let history = rig.command(&["file", "history", file]);
+        if !history["items"].as_array().unwrap().is_empty() {
+            break history;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "editor autosave did not reach history"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    let version = history["items"][0]["versionId"].as_str().unwrap();
+    assert_eq!(
+        rig.command(&["file", "revert", file, version, "2"])["file"]["revision"],
+        "3"
+    );
+    assert_eq!(
+        rig.command(&["usage", "list"])["providers"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+#[test]
 fn another_profile_is_refused_before_connecting() {
     let output = Command::new(env!("CARGO_BIN_EXE_soyeht"))
         .args(["--profile", "other", "status"])

@@ -60,3 +60,35 @@ resume explicitly when ready. Queue and catalog pages expose `nextCursor`, passe
 back with `--cursor`. Transcript pages expose `nextCursor`, passed with `--before`
 to read older messages. Sign-in method IDs come from the harness catalog. A
 terminal sign-in method opens a separate visible terminal pane.
+
+Editor commands use the workspace-relative path only when opening a file. Every
+later operation uses the opaque file ID and a revision where the operation must
+reject stale input. Lines and UTF-16 columns are zero-based.
+
+```sh
+soyeht --profile dev pane create --editor src/main.rs --cwd /absolute/worktree
+soyeht --profile dev file open WORKSPACE_ID src/main.rs --line 41 --column 3
+soyeht --profile dev file read FILE_ID --revision 7 --from 0 --lines 200
+soyeht --profile dev file write FILE_ID 7 41 3 41 3 'inserted text'
+soyeht --profile dev file history FILE_ID --limit 100
+soyeht --profile dev file revert FILE_ID VERSION_ID 8
+soyeht --profile dev file search WORKSPACE_ID needle --scope content --case-sensitive false
+soyeht --profile dev file search WORKSPACE_ID old --replacement new
+soyeht --profile dev file symbols FILE_ID 9
+soyeht --profile dev file diff FILE_ID 9
+```
+
+`file write` takes one edit as `START_LINE START_COLUMN END_LINE END_COLUMN
+TEXT`. Project replacement uses the same conditional, recoverable engine path
+as the Mac client. Add the final `--idempotency-key` suffix when a script may
+retry a mutation.
+
+Usage commands return the normalized provider readings. Refresh accepts no
+provider for the complete eligible set, or one of the provider IDs returned by
+`usage list`.
+
+```sh
+soyeht --profile dev usage list
+soyeht --profile dev usage refresh
+soyeht --profile dev usage refresh codex --idempotency-key usage-refresh-1
+```
