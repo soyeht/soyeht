@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>Human mode spike</title>
+<style>body{font:18px system-ui;padding:60px} button,input{font:inherit;margin:20px;padding:16px}</style>
+<button id="target">Activate</button><input id="typing" aria-label="Typing test"><video id="video" muted playsinline src="/test.mp4" width="32" height="32"></video>
+<script>
+window.spike={events:[],trusted:false,activation:false,popup:false,video:false,keyTimes:[]};
+for(const kind of ['pointermove','mousedown','mouseup','click']) target.addEventListener(kind,e=>{
+ spike.events.push(kind); if(kind==='click') { spike.trusted=e.isTrusted; spike.activation=!!navigator.userActivation?.isActive; const p=window.open('about:blank','spike-popup','width=80,height=80'); spike.popup=!!p; video.play().then(()=>spike.video=!video.paused).catch(()=>spike.video=false); }
+});
+typing.addEventListener('keydown',e=>spike.keyTimes.push(performance.now()));
+window.result=()=>({events:spike.events,trusted:spike.trusted,activation:spike.activation,popup:spike.popup,video:spike.video,keyTimes:spike.keyTimes,value:typing.value,userAgent:navigator.userAgent,webdriver:String(navigator.webdriver),automationProperty:Object.prototype.hasOwnProperty.call(navigator,'webdriver')});
+</script>
