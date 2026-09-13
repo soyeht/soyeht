@@ -17,16 +17,18 @@ use uuid::Uuid;
 const WEB_WAITER_LIMIT: usize = 128;
 
 pub struct WebWaiter {
-    host: String,
-    callers: Vec<(String, Value)>,
-    pane_id: String,
-    command: WebCommandKind,
-    deadline_ms: i64,
-    method: String,
-    mutation: Option<WebMutation>,
+    pub(super) host: String,
+    pub(super) callers: Vec<(String, Value)>,
+    pub(super) pane_id: String,
+    pub(super) command: WebCommandKind,
+    pub(super) deadline_ms: i64,
+    pub(super) method: String,
+    pub(super) mutation: Option<WebMutation>,
+    pub(super) params: WebCommandParams,
+    pub(super) permission: super::permissions::WebPermission,
 }
 
-struct WebMutation {
+pub(super) struct WebMutation {
     scope: String,
     key: String,
     fingerprint: String,
@@ -80,6 +82,7 @@ impl Core {
             }
             return Ok(id.clone());
         }
+        let permission = self.web_permission_plan(caller, method, &params)?;
         let pane_live = self.panes.get(&params.pane_id).is_some_and(|running| {
             !running.stored.closed && running.stored.pane.mode == soyeht_protocol::PaneMode::Web
         });
@@ -89,40 +92,34 @@ impl Core {
         if self.web_waiters.len() >= WEB_WAITER_LIMIT {
             return Err(errors::pane_busy("Web command waiter limit reached"));
         }
-        let host = self
-            .clients
-            .iter()
-            .find(|(_, client)| {
-                client.web_host && client.actor.is_some() && !client.outbox.is_closed()
-            })
-            .map(|(id, _)| id.clone())
-            .ok_or_else(|| errors::web_host_unavailable("No web host is connected"))?;
         let reverse_id = Uuid::new_v4().to_string();
-        let deadline_ms = self.now_ms().saturating_add(i64::from(params.timeout_ms));
+        let deadline_ms = permission
+            .expires_ms
+            .unwrap_or_else(|| self.now_ms().saturating_add(i64::from(params.timeout_ms)));
         let pane_id = params.pane_id.clone();
         let command = params.command.clone();
-        let payload = serde_json::to_value(params)
-            .map_err(|_| errors::internal("Web command serialization failed"))?;
-        let frame = model::request(json!(reverse_id), "web.command", payload)?;
         self.web_waiters.insert(
             reverse_id.clone(),
             WebWaiter {
-                host: host.clone(),
+                host: String::new(),
                 callers: vec![(caller.into(), caller_request)],
                 pane_id,
                 command,
                 deadline_ms,
                 method: method.into(),
                 mutation,
+                params,
+                permission,
             },
         );
-        let sent = self
-            .clients
-            .get(&host)
-            .is_some_and(|client| client.outbox.send(frame));
-        if !sent {
+        if self.web_waiters[&reverse_id]
+            .permission
+            .request_id
+            .is_none()
+            && let Err(error) = self.send_web_waiter(&reverse_id)
+        {
             self.web_waiters.remove(&reverse_id);
-            return Err(errors::web_host_unavailable("Web host disconnected"));
+            return Err(error);
         }
         Ok(reverse_id)
     }
@@ -150,6 +147,9 @@ impl Core {
                 return Err(errors::invalid(
                     "Web command result exceeds its byte budget",
                 ));
+            }
+            if result.cookies_present == Some(true) {
+                return self.web_session_required(id);
             }
             Ok(public_result(waiter, &result)?)
         } else {
@@ -210,11 +210,14 @@ impl Core {
     }
 
     pub(crate) fn advance_web_commands(&mut self) -> Result<()> {
+        self.advance_web_permissions()?;
         let now = self.now_ms();
         let expired: Vec<_> = self
             .web_waiters
             .iter()
-            .filter(|(_, waiter)| waiter.deadline_ms <= now)
+            .filter(|(_, waiter)| {
+                waiter.permission.request_id.is_none() && waiter.deadline_ms <= now
+            })
             .map(|(id, _)| id.clone())
             .collect();
         for id in expired {
@@ -223,7 +226,7 @@ impl Core {
         Ok(())
     }
 
-    fn fail_web_waiter(&mut self, id: &str, message: &str) -> Result<()> {
+    pub(super) fn fail_web_waiter(&mut self, id: &str, message: &str) -> Result<()> {
         let Some(waiter) = self.web_waiters.remove(id) else {
             return Ok(());
         };
@@ -232,6 +235,34 @@ impl Core {
             if let Some(client) = self.clients.get(&caller) {
                 client.outbox.send(model::failure(request, error.clone())?);
             }
+        }
+        Ok(())
+    }
+
+    pub(super) fn send_web_waiter(&mut self, id: &str) -> Result<()> {
+        let host = self
+            .clients
+            .iter()
+            .find(|(_, client)| {
+                client.web_host && client.actor.is_some() && !client.outbox.is_closed()
+            })
+            .map(|(id, _)| id.clone())
+            .ok_or_else(|| errors::web_host_unavailable("No web host is connected"))?;
+        let waiter = self
+            .web_waiters
+            .get_mut(id)
+            .ok_or_else(|| errors::internal("Web command waiter disappeared"))?;
+        waiter.host.clone_from(&host);
+        waiter.permission.apply_to(&mut waiter.params)?;
+        let payload = serde_json::to_value(&waiter.params)
+            .map_err(|_| errors::internal("Web command serialization failed"))?;
+        let frame = model::request(json!(id), "web.command", payload)?;
+        let sent = self
+            .clients
+            .get(&host)
+            .is_some_and(|client| client.outbox.send(frame));
+        if !sent {
+            return Err(errors::web_host_unavailable("Web host disconnected"));
         }
         Ok(())
     }
@@ -384,6 +415,19 @@ mod tests {
 
     fn navigate_params(pane_id: &str, key: &str) -> Value {
         json!({"paneId":pane_id,"action":"reload","idempotencyKey":key})
+    }
+
+    fn human_args(args: Value) -> Value {
+        let mut args = args.as_object().unwrap().clone();
+        args.insert(
+            "_soyehtAccess".into(),
+            json!({"session":"human","evaluation":false}),
+        );
+        Value::Object(args)
+    }
+
+    fn assert_human_args(command: &Value, args: Value) {
+        assert_eq!(command["params"]["args"], human_args(args));
     }
 
     async fn connect(core: &mut Core, capabilities: Value) -> (String, outbox::Receiver) {
@@ -598,10 +642,7 @@ mod tests {
         };
         let snapshot_command = next_json(&mut host_receiver).await;
         assert_eq!(snapshot_command["params"]["command"], "snapshot");
-        assert_eq!(
-            snapshot_command["params"]["args"],
-            json!({"screenshot":true})
-        );
+        assert_human_args(&snapshot_command, json!({"screenshot":true}));
         assert!(snapshot_command["params"]["operationKey"].is_string());
         let oversized = "x".repeat(soyeht_protocol::limits::WEB_SNAPSHOT_BYTES);
         assert!(
@@ -658,7 +699,7 @@ mod tests {
             Outcome::Queued
         ));
         let click_command = next_json(&mut host_receiver).await;
-        assert_eq!(click_command["params"]["args"], json!({"ref":"e1"}));
+        assert_human_args(&click_command, json!({"ref":"e1"}));
         core.web_host_response(
             &host,
             json!({"jsonrpc":"2.0","id":click_command["id"],"result":{

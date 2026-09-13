@@ -121,19 +121,57 @@ impl Store {
         pane_id: &str,
         kind: &PermissionRequestKind,
         domain: &str,
+        task_id: Option<&str>,
     ) -> Result<Option<WebPermissionRequest>> {
         validate_id(pane_id)?;
         validate_domain(domain)?;
+        if let Some(task_id) = task_id {
+            validate_id(task_id)?;
+        }
         let kind = encode_permission_kind(kind)?;
         self.connection
             .query_row(
-                "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE pane_id=?1 AND kind=?2 AND domain=?3 AND result IS NULL",
-                params![pane_id, kind, domain],
+                "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE pane_id=?1 AND kind=?2 AND domain=?3 AND task_id IS ?4 AND result IS NULL",
+                params![pane_id, kind, domain, task_id],
                 permission_row,
             )
             .optional()?
             .map(valid_permission)
             .transpose()
+    }
+
+    pub fn web_permission_for_operation(
+        &self,
+        pane_id: &str,
+        kind: &PermissionRequestKind,
+        operation_key: &str,
+    ) -> Result<Option<WebPermissionRequest>> {
+        validate_id(pane_id).map_err(|_| Error::InvalidWebPermission)?;
+        validate_id(operation_key).map_err(|_| Error::InvalidWebPermission)?;
+        let kind = encode_permission_kind(kind)?;
+        self.connection
+            .query_row(
+                "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE pane_id=?1 AND kind=?2 AND json_extract(public,'$.promptId')=?3",
+                params![pane_id, kind, operation_key],
+                permission_row,
+            )
+            .optional()?
+            .map(valid_permission)
+            .transpose()
+    }
+
+    pub fn expired_web_permissions(&self, now_ms: i64) -> Result<Vec<WebPermissionRequest>> {
+        if now_ms < 0 {
+            return Err(Error::InvalidWebPermission);
+        }
+        let mut statement = self.connection.prepare(
+            "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE result IS NULL AND expires_ms<=?1 ORDER BY expires_ms,request_id",
+        )?;
+        statement
+            .query_map([now_ms], permission_row)?
+            .map(|row| row.and_then(|request| valid_permission(request).map_err(to_sql_error)))
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
     }
 }
 

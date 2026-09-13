@@ -2,9 +2,10 @@ use crate::{core::Core, dispatch::Outcome, errors, errors::Result};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::{
-    WebClickParams, WebCommandKind, WebCommandParams, WebConsoleParams, WebHoverParams,
-    WebNetworkParams, WebPressParams, WebResizeParams, WebScreenshotParams, WebScrollParams,
-    WebSelectParams, WebSnapshotParams, WebTypeParams, WebViewportPreset, WebWaitParams,
+    WebClickParams, WebCommandKind, WebCommandParams, WebConsoleParams, WebEvaluateParams,
+    WebHoverParams, WebNetworkParams, WebPressParams, WebResizeParams, WebScreenshotParams,
+    WebScrollParams, WebSelectParams, WebSnapshotParams, WebTypeParams, WebViewportPreset,
+    WebWaitParams,
 };
 use soyeht_web::{DEFAULT_ZOOM_PERCENT, viewport};
 use uuid::Uuid;
@@ -22,6 +23,7 @@ pub(crate) fn handles(method: &str) -> bool {
             | "web.select"
             | "web.scroll"
             | "web.wait"
+            | "web.evaluate"
             | "web.screenshot"
             | "web.console"
             | "web.network"
@@ -75,6 +77,7 @@ fn canonical_params(method: &str, params: &Value) -> Result<Value> {
         "web.select" => canonical::<WebSelectParams>(params),
         "web.scroll" => canonical::<WebScrollParams>(params),
         "web.wait" => canonical::<WebWaitParams>(params),
+        "web.evaluate" => canonical::<WebEvaluateParams>(params),
         "web.screenshot" => canonical::<WebScreenshotParams>(params),
         "web.console" => canonical::<WebConsoleParams>(params),
         "web.network" => canonical::<WebNetworkParams>(params),
@@ -111,6 +114,7 @@ fn command_kind(method: &str) -> Result<WebCommandKind> {
         "web.select" => Ok(WebCommandKind::Select),
         "web.scroll" => Ok(WebCommandKind::Scroll),
         "web.wait" => Ok(WebCommandKind::Wait),
+        "web.evaluate" => Ok(WebCommandKind::Evaluate),
         "web.screenshot" => Ok(WebCommandKind::Screenshot),
         "web.console" => Ok(WebCommandKind::Console),
         "web.network" => Ok(WebCommandKind::Network),

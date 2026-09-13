@@ -267,7 +267,8 @@ fn pending_web_permission_survives_reopen_enters_snapshot_and_accepts_one_answer
             .open_web_permission(
                 "web-pane-1",
                 &PermissionRequestKind::WebSession,
-                "example.test"
+                "example.test",
+                Some("WS-1"),
             )
             .unwrap()
             .unwrap()
@@ -312,6 +313,67 @@ fn pending_web_permission_survives_reopen_enters_snapshot_and_accepts_one_answer
 }
 
 #[test]
+fn permission_operation_identity_and_expiry_are_durable_and_bounded() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed_workspace(&mut store);
+    seed_task(&store);
+    store
+        .mutate("test", "pane", "pane", |change| {
+            change.insert_pane(&web_pane())?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let pending = permission("operation-request");
+    store
+        .mutate("test", "permission", "permission", |change| {
+            change.save_web_permission_request(&pending)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+
+    let store = profile.store();
+    let restored = store
+        .web_permission_for_operation(
+            "web-pane-1",
+            &PermissionRequestKind::WebSession,
+            "web-operation-1",
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored.request_id, "operation-request");
+    assert!(
+        store
+            .open_web_permission(
+                "web-pane-1",
+                &PermissionRequestKind::WebSession,
+                "example.test",
+                Some("WS-1"),
+            )
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        store
+            .open_web_permission(
+                "web-pane-1",
+                &PermissionRequestKind::WebSession,
+                "example.test",
+                None,
+            )
+            .unwrap()
+            .is_none()
+    );
+    assert!(store.expired_web_permissions(999).unwrap().is_empty());
+    assert_eq!(store.expired_web_permissions(1_000).unwrap().len(), 1);
+    assert!(matches!(
+        store.expired_web_permissions(-1),
+        Err(Error::InvalidWebPermission)
+    ));
+}
+
+#[test]
 fn web_permission_identity_is_validated_before_sql() {
     let profile = Profile::new();
     let mut store = profile.store();
@@ -351,7 +413,8 @@ fn web_permission_identity_is_validated_before_sql() {
             .open_web_permission(
                 "web-pane-1",
                 &PermissionRequestKind::WebSession,
-                "example.test"
+                "example.test",
+                None,
             )
             .unwrap()
             .is_none()
@@ -524,5 +587,85 @@ fn migration_from_populated_v16_preserves_web_state_and_adds_pending_permissions
             .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
             .unwrap(),
         soyeht_store::database::SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn migration_from_populated_v17_preserves_permissions_and_adds_operation_identity() {
+    let profile = Profile::new();
+    let database = profile.0.join("soyeht.db");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .unwrap();
+    for migration in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+        include_str!("../migrations/005-native-replay.sql"),
+        include_str!("../migrations/006-agent-auth-snapshot.sql"),
+        include_str!("../migrations/007-workspace-tasks.sql"),
+        include_str!("../migrations/008-task-reviews.sql"),
+        include_str!("../migrations/009-task-block-retries.sql"),
+        include_str!("../migrations/010-agent-pane-role.sql"),
+        include_str!("../migrations/011-usage-readings.sql"),
+        include_str!("../migrations/012-editor-files.sql"),
+        include_str!("../migrations/013-editor-project-replacements.sql"),
+        include_str!("../migrations/014-language-servers.sql"),
+        include_str!("../migrations/015-editor-agent-reviews.sql"),
+        include_str!("../migrations/016-web-session-grants.sql"),
+        include_str!("../migrations/017-web-permissions.sql"),
+    ] {
+        connection.execute_batch(migration).unwrap();
+    }
+    connection
+        .execute(
+            "INSERT INTO metadata(key,value) VALUES ('db_id','v17-db')",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO workspaces(id,payload,closed) VALUES ('workspace-1',?1,0)",
+            [serde_json::to_string(&workspace()).unwrap()],
+        )
+        .unwrap();
+    let pane = web_pane();
+    connection
+        .execute(
+            "INSERT INTO panes(id,workspace_id,payload,closed,instance_key,sequence_base) VALUES (?1,?2,?3,0,?4,'0')",
+            rusqlite::params![pane.pane.pane_id, pane.pane.workspace_id,
+                serde_json::to_string(&pane.pane).unwrap(), pane.instance_key],
+        )
+        .unwrap();
+    let pending = permission("v17-request");
+    connection
+        .execute(
+            "INSERT INTO web_permission_requests(request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result) VALUES (?1,?2,?3,?4,NULL,'web_session',?5,?6,?7,NULL)",
+            rusqlite::params![pending.request_id, pending.pane_id, pending.workspace_id,
+                pending.generation, pending.domain,
+                serde_json::to_string(&pending.public).unwrap(), pending.expires_ms],
+        )
+        .unwrap();
+    drop(connection);
+
+    let store = profile.store();
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        18
+    );
+    assert!(
+        store
+            .web_permission_for_operation(
+                "web-pane-1",
+                &PermissionRequestKind::WebSession,
+                "web-operation-1"
+            )
+            .unwrap()
+            .is_some()
     );
 }

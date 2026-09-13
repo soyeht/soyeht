@@ -4,6 +4,7 @@ use crate::{
     errors::{self, Result},
     model::{self, Connected},
     outbox::Outbox,
+    ports::StorePort,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -218,6 +219,7 @@ impl Core {
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method.starts_with("task.")
+            && !method.starts_with("web.")
             && method != "loop.set"
         {
             return Err(errors::forbidden_role(
@@ -304,9 +306,18 @@ impl Core {
             | "pane.cancel" | "pane.config.set" | "pane.transcript" | "pane.draft" => {
                 self.agent_method(connection, method, params)?
             }
-            "pane.permission.answer" | "pane.elicitation.answer" => {
-                self.agent_answer(connection, method, params)?
+            "pane.permission.answer" => {
+                let request_id = errors::param_str(params, "requestId")?;
+                if StorePort::web_permission_request(&self.store, request_id)
+                    .map_err(errors::storage)?
+                    .is_some()
+                {
+                    self.web_permission_answer(connection, params)?
+                } else {
+                    self.agent_answer(connection, method, params)?
+                }
             }
+            "pane.elicitation.answer" => self.agent_answer(connection, method, params)?,
             "task.show" | "task.list" | "task.comments" => {
                 self.task_query(connection, method, params)?
             }

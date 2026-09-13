@@ -14,6 +14,7 @@ use soyeht_ptyd::{
     client::Client as SupervisorClient,
     wire::{Request, Response, Spawn},
 };
+use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
     agents::{NativeRequest, Outgoing},
     database::{Change, Mutation, Result as StoreResult, Store},
@@ -164,6 +165,28 @@ pub trait StorePort {
         limit: usize,
     ) -> StoreResult<PaneTranscriptResult>;
     fn agent_probe(&self, fingerprint: &str, method: &str) -> StoreResult<Option<ProbeCapability>>;
+    fn web_session_grant(
+        &self,
+        workspace_id: &str,
+        domain: &str,
+        task_id: Option<&str>,
+    ) -> StoreResult<Option<WebSessionGrant>>;
+    fn open_web_permission(
+        &self,
+        pane_id: &str,
+        kind: &soyeht_protocol::PermissionRequestKind,
+        domain: &str,
+        task_id: Option<&str>,
+    ) -> StoreResult<Option<WebPermissionRequest>>;
+    fn web_permission_request(&self, request_id: &str)
+    -> StoreResult<Option<WebPermissionRequest>>;
+    fn web_permission_for_operation(
+        &self,
+        pane_id: &str,
+        kind: &soyeht_protocol::PermissionRequestKind,
+        operation_key: &str,
+    ) -> StoreResult<Option<WebPermissionRequest>>;
+    fn expired_web_permissions(&self, now_ms: i64) -> StoreResult<Vec<WebPermissionRequest>>;
 }
 
 impl StorePort for Store {
@@ -323,6 +346,45 @@ impl StorePort for Store {
 
     fn agent_probe(&self, fingerprint: &str, method: &str) -> StoreResult<Option<ProbeCapability>> {
         soyeht_store::agents::probe(self, fingerprint, method)
+    }
+
+    fn web_session_grant(
+        &self,
+        workspace_id: &str,
+        domain: &str,
+        task_id: Option<&str>,
+    ) -> StoreResult<Option<WebSessionGrant>> {
+        Store::web_session_grant(self, workspace_id, domain, task_id)
+    }
+
+    fn open_web_permission(
+        &self,
+        pane_id: &str,
+        kind: &soyeht_protocol::PermissionRequestKind,
+        domain: &str,
+        task_id: Option<&str>,
+    ) -> StoreResult<Option<WebPermissionRequest>> {
+        Store::open_web_permission(self, pane_id, kind, domain, task_id)
+    }
+
+    fn web_permission_request(
+        &self,
+        request_id: &str,
+    ) -> StoreResult<Option<WebPermissionRequest>> {
+        Store::web_permission_request(self, request_id)
+    }
+
+    fn web_permission_for_operation(
+        &self,
+        pane_id: &str,
+        kind: &soyeht_protocol::PermissionRequestKind,
+        operation_key: &str,
+    ) -> StoreResult<Option<WebPermissionRequest>> {
+        Store::web_permission_for_operation(self, pane_id, kind, operation_key)
+    }
+
+    fn expired_web_permissions(&self, now_ms: i64) -> StoreResult<Vec<WebPermissionRequest>> {
+        Store::expired_web_permissions(self, now_ms)
     }
 }
 
@@ -590,6 +652,45 @@ pub(crate) mod testing {
                 .probes
                 .get(&(fingerprint.into(), method.into()))
                 .cloned())
+        }
+
+        fn web_session_grant(
+            &self,
+            _workspace_id: &str,
+            _domain: &str,
+            _task_id: Option<&str>,
+        ) -> StoreResult<Option<WebSessionGrant>> {
+            Ok(None)
+        }
+
+        fn open_web_permission(
+            &self,
+            _pane_id: &str,
+            _kind: &soyeht_protocol::PermissionRequestKind,
+            _domain: &str,
+            _task_id: Option<&str>,
+        ) -> StoreResult<Option<WebPermissionRequest>> {
+            Ok(None)
+        }
+
+        fn web_permission_request(
+            &self,
+            _request_id: &str,
+        ) -> StoreResult<Option<WebPermissionRequest>> {
+            Ok(None)
+        }
+
+        fn web_permission_for_operation(
+            &self,
+            _pane_id: &str,
+            _kind: &soyeht_protocol::PermissionRequestKind,
+            _operation_key: &str,
+        ) -> StoreResult<Option<WebPermissionRequest>> {
+            Ok(None)
+        }
+
+        fn expired_web_permissions(&self, _now_ms: i64) -> StoreResult<Vec<WebPermissionRequest>> {
+            Ok(Vec::new())
         }
     }
 }

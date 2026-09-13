@@ -5,6 +5,7 @@ mod host;
 mod host_state;
 mod navigation;
 mod panes;
+mod permissions;
 mod system;
 
 pub use host::WebWaiter;
