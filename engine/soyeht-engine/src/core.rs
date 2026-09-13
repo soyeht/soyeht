@@ -34,6 +34,7 @@ pub struct Core {
     pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
     pub worktrees: Box<dyn crate::tasks::worktree::WorktreePort>,
     pub usage: crate::usage::Service,
+    pub web: crate::web::Service,
     pub vcs: soyeht_vcs::Service,
     pub editor: crate::editor::Service,
     pub languages: crate::languages::Service,
@@ -70,6 +71,7 @@ impl Core {
                 usage_readings,
                 Box::new(crate::usage::SystemSources::default()),
             ),
+            web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),
             languages: crate::languages::Service::restore(language_servers)?,
@@ -136,7 +138,7 @@ impl Core {
         Ok(state)
     }
 
-    fn system_event(&mut self, method: &str, params: Value) -> Result<()> {
+    pub(crate) fn system_event(&mut self, method: &str, params: Value) -> Result<()> {
         let mutation = StorePort::mutate(
             &mut self.store,
             "engine",
@@ -465,6 +467,7 @@ impl Core {
 
     pub fn poll_output(&mut self) -> Result<()> {
         self.advance_editor()?;
+        self.advance_local_servers()?;
         if self.ptyd.is_none() {
             self.connect_supervisor()?;
         }

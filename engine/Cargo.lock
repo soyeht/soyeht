@@ -1104,6 +1104,7 @@ dependencies = [
  "soyeht-store",
  "soyeht-usage",
  "soyeht-vcs",
+ "soyeht-web",
  "tokio",
  "tokio-tungstenite",
  "uuid",

@@ -93,6 +93,16 @@ fn local_server_scan_is_machine_parsed_sorted_deduplicated_and_bounded() {
 }
 
 #[test]
+fn lsof_listener_and_cwd_records_are_parsed_by_the_pure_core() {
+    let listeners = b"p20\0cnode\0f7\0n127.0.0.1:5173\0\np10\0cpython\0f8\0n*:3000\0\n";
+    let directories = b"p10\0fcwd\0n/tmp/site-a\0\np20\0fcwd\0n/tmp/site-b\0\n";
+    assert_eq!(LocalServerScan::listener_pids(listeners).unwrap(), [10, 20]);
+    let scan = LocalServerScan::parse_lsof(listeners, directories, &[]).unwrap();
+    assert_eq!(scan.servers()[0].cwd, "/tmp/site-a");
+    assert_eq!(scan.servers()[1].cwd, "/tmp/site-b");
+}
+
+#[test]
 fn local_server_scan_rejects_unbounded_or_malformed_observations() {
     assert_eq!(
         LocalServerScan::parse(&vec![b'x'; limits::PORT_SCAN_BYTES + 1], &[], &[]),

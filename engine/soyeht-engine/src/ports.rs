@@ -19,6 +19,7 @@ use soyeht_store::{
     database::{Change, Mutation, Result as StoreResult, Store},
     domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
+use std::io;
 
 pub trait Clock: Send + Sync {
     fn now_ms(&self) -> i64;
@@ -47,6 +48,16 @@ pub trait SupervisorPort: Send {
     fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response>;
     fn supervisor_id(&self) -> &str;
     fn supervisor_generation(&self) -> u32;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortScanObservation {
+    pub listeners: Vec<u8>,
+    pub directories: Vec<u8>,
+}
+
+pub trait PortScanPort: Send {
+    fn scan(&mut self) -> io::Result<PortScanObservation>;
 }
 
 impl SupervisorPort for SupervisorClient {

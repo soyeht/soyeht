@@ -40,6 +40,7 @@ pub enum Error {
     Lsp(soyeht_lsp::Error),
     Usage(soyeht_usage::Error),
     Vcs(soyeht_vcs::Error),
+    Web(soyeht_web::Error),
     Supervisor(soyeht_ptyd::Error),
     Protocol(soyeht_protocol::Error),
     WebSocket(tokio_tungstenite::tungstenite::Error),
@@ -230,6 +231,21 @@ fn vcs_kind(error: &soyeht_vcs::Error) -> ErrorKind {
     }
 }
 
+fn web_kind(error: &soyeht_web::Error) -> ErrorKind {
+    match error {
+        soyeht_web::Error::EmptyUrl
+        | soyeht_web::Error::InvalidUrl
+        | soyeht_web::Error::UnsupportedScheme
+        | soyeht_web::Error::MissingHost
+        | soyeht_web::Error::InvalidViewport
+        | soyeht_web::Error::InvalidWait
+        | soyeht_web::Error::InvalidCommand => ErrorKind::NavigationRefused,
+        soyeht_web::Error::StaleReference => ErrorKind::StaleReference,
+        soyeht_web::Error::HumanModeUnavailable => ErrorKind::WebHostUnavailable,
+        _ => ErrorKind::InternalError,
+    }
+}
+
 /// The single translation from engine failures to the public protocol.
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
@@ -252,6 +268,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         }
         Error::Editor(error) => editor_kind(error),
         Error::Vcs(error) => vcs_kind(error),
+        Error::Web(error) => web_kind(error),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
         Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
@@ -337,6 +354,7 @@ fn message(error: &Error) -> String {
         Error::Lsp(error) => error.to_string(),
         Error::Usage(_) => "Usage operation failed".into(),
         Error::Vcs(error) => error.to_string(),
+        Error::Web(error) => error.to_string(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
         Error::Supervisor(_) => "Supervisor unavailable".into(),
         Error::Protocol(_) => "Protocol operation failed".into(),
@@ -401,6 +419,7 @@ impl std::error::Error for Error {
             Self::Editor(error) => Some(error),
             Self::Usage(error) => Some(error),
             Self::Vcs(error) => Some(error),
+            Self::Web(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
             Self::WebSocket(error) => Some(error),
@@ -439,6 +458,12 @@ impl From<soyeht_usage::Error> for Error {
 impl From<soyeht_vcs::Error> for Error {
     fn from(error: soyeht_vcs::Error) -> Self {
         Self::Vcs(error)
+    }
+}
+
+impl From<soyeht_web::Error> for Error {
+    fn from(error: soyeht_web::Error) -> Self {
+        Self::Web(error)
     }
 }
 

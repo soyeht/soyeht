@@ -22,4 +22,5 @@ pub mod tasks;
 pub mod transport;
 pub mod usage;
 pub mod vcs;
+pub mod web;
 pub mod workspaces;

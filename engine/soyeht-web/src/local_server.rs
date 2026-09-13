@@ -30,6 +30,28 @@ pub struct LocalServerScan {
 }
 
 impl LocalServerScan {
+    pub fn parse_lsof(
+        listener_output: &[u8],
+        cwd_output: &[u8],
+        titles: &[ServerTitle],
+    ) -> Result<Self> {
+        let cwd_observations = parse_cwds(cwd_output)?;
+        Self::parse(listener_output, &cwd_observations, titles)
+    }
+
+    pub fn listener_pids(listener_output: &[u8]) -> Result<Vec<u32>> {
+        let mut listeners = parse_listeners(listener_output)?;
+        listeners.sort_by_key(|listener| (listener.port, listener.pid));
+        let mut pids = BTreeSet::new();
+        for listener in listeners {
+            pids.insert(listener.pid);
+            if pids.len() == limits::LOCAL_SERVER_ENTRIES {
+                break;
+            }
+        }
+        Ok(pids.into_iter().collect())
+    }
+
     pub fn parse(
         listener_output: &[u8],
         cwd_observations: &[CwdObservation],
@@ -90,6 +112,26 @@ impl LocalServerScan {
     pub fn into_servers(self) -> Vec<LocalServer> {
         self.servers
     }
+}
+
+fn parse_cwds(output: &[u8]) -> Result<Vec<CwdObservation>> {
+    if output.len() > limits::PORT_SCAN_BYTES {
+        return Err(Error::PortScanTooLarge);
+    }
+    let text = std::str::from_utf8(output).map_err(|_| Error::InvalidPortRecord)?;
+    let mut pid = None;
+    let mut observations = Vec::new();
+    for field in text.split(['\0', '\n']).filter(|field| !field.is_empty()) {
+        match field.as_bytes().first() {
+            Some(b'p') => pid = Some(parse_u32(&field[1..])?),
+            Some(b'n') => observations.push(CwdObservation {
+                pid: pid.ok_or(Error::InvalidPortRecord)?,
+                cwd: checked_text(&field[1..])?,
+            }),
+            _ => {}
+        }
+    }
+    Ok(observations)
 }
 
 fn parse_listeners(output: &[u8]) -> Result<Vec<Listener>> {
