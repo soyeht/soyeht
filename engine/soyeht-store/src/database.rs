@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 #[derive(Debug)]
 pub enum Error {
@@ -85,6 +85,7 @@ pub enum Error {
     InvalidFileReplacement,
     FileReplacementBusy,
     FileReplacementIncomplete,
+    InvalidLanguageServerCheckpoint,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -177,6 +178,9 @@ impl fmt::Display for Error {
             Self::InvalidFileReplacement => f.write_str("invalid file replacement"),
             Self::FileReplacementBusy => f.write_str("workspace already has a file replacement"),
             Self::FileReplacementIncomplete => f.write_str("file replacement is incomplete"),
+            Self::InvalidLanguageServerCheckpoint => {
+                f.write_str("invalid language server checkpoint")
+            }
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -318,6 +322,9 @@ impl Store {
                 tx.execute_batch(include_str!(
                     "../migrations/013-editor-project-replacements.sql"
                 ))?;
+            }
+            if version < 14 {
+                tx.execute_batch(include_str!("../migrations/014-language-servers.sql"))?;
             }
             tx.commit()?;
         }

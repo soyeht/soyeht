@@ -6,6 +6,7 @@ pub use database::{Error, Result};
 pub mod domain;
 pub mod editor;
 mod english_values;
+pub mod languages;
 pub mod segments;
 pub mod tasks;
 #[cfg(feature = "test-support")]
