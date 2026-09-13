@@ -39,6 +39,7 @@ pub enum Error {
     Editor(soyeht_editor::Error),
     Lsp(soyeht_lsp::Error),
     Usage(soyeht_usage::Error),
+    Vcs(soyeht_vcs::Error),
     Supervisor(soyeht_ptyd::Error),
     Protocol(soyeht_protocol::Error),
     WebSocket(tokio_tungstenite::tungstenite::Error),
@@ -220,6 +221,15 @@ fn editor_kind(error: &soyeht_editor::Error) -> ErrorKind {
     }
 }
 
+fn vcs_kind(error: &soyeht_vcs::Error) -> ErrorKind {
+    match error {
+        soyeht_vcs::Error::InvalidRepository | soyeht_vcs::Error::InvalidPath => {
+            ErrorKind::InvalidParams
+        }
+        _ => ErrorKind::InternalError,
+    }
+}
+
 /// The single translation from engine failures to the public protocol.
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
@@ -241,6 +251,7 @@ pub fn kind(error: &Error) -> ErrorKind {
             ErrorKind::HarnessUnavailable
         }
         Error::Editor(error) => editor_kind(error),
+        Error::Vcs(error) => vcs_kind(error),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
         Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
@@ -325,6 +336,7 @@ fn message(error: &Error) -> String {
         Error::Editor(error) => error.to_string(),
         Error::Lsp(error) => error.to_string(),
         Error::Usage(_) => "Usage operation failed".into(),
+        Error::Vcs(error) => error.to_string(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
         Error::Supervisor(_) => "Supervisor unavailable".into(),
         Error::Protocol(_) => "Protocol operation failed".into(),
@@ -388,6 +400,7 @@ impl std::error::Error for Error {
             Self::Acp(error) => Some(error),
             Self::Editor(error) => Some(error),
             Self::Usage(error) => Some(error),
+            Self::Vcs(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
             Self::WebSocket(error) => Some(error),
@@ -420,6 +433,12 @@ impl From<soyeht_acp::Error> for Error {
 impl From<soyeht_usage::Error> for Error {
     fn from(error: soyeht_usage::Error) -> Self {
         Self::Usage(error)
+    }
+}
+
+impl From<soyeht_vcs::Error> for Error {
+    fn from(error: soyeht_vcs::Error) -> Self {
+        Self::Vcs(error)
     }
 }
 

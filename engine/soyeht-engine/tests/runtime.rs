@@ -1572,6 +1572,90 @@ fn editor_open_owns_one_bounded_workspace_file_and_restores_it_in_the_snapshot()
 }
 
 #[test]
+fn file_diff_uses_the_current_buffer_revalidates_scope_and_rejects_stale_revisions() {
+    let rig = Rig::new();
+    let repository = rig.path.join("diff-repository");
+    fs::create_dir_all(repository.join("src")).unwrap();
+    let source = repository.join("src/main.rs");
+    fs::write(&source, "fn main() {\n    before();\n}\n").unwrap();
+    git(&repository, &["init", "-q"]);
+    git(&repository, &["add", "."]);
+    git(
+        &repository,
+        &[
+            "-c",
+            "user.name=Writer",
+            "-c",
+            "user.email=writer@example.invalid",
+            "commit",
+            "-qm",
+            "baseline",
+        ],
+    );
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Diff","path":repository,"idempotencyKey":"diff-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let file_id = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"src/main.rs","idempotencyKey":"diff-open"}),
+    )["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let written = client.call(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"1","author":local_file_author(),
+            "edits":[{"range":{"start":{"line":1,"column":4},"end":{"line":1,"column":10}},"text":"after"}],
+            "idempotencyKey":"diff-write"
+        }),
+    );
+    assert_eq!(written["file"]["revision"], "2");
+    let diff = client.call("file.diff", json!({"fileId":file_id,"revision":"2"}));
+    let lines = diff["hunks"][0]["lines"].as_array().unwrap();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line["kind"] == "removed"
+                && line["text"].as_str().unwrap().contains("before"))
+    );
+    assert!(lines.iter().any(|line| line["kind"] == "added" && line["text"].as_str().unwrap().contains("after")));
+    assert_eq!(diff["blame"].as_array().unwrap().len(), 2);
+    assert!(
+        diff["blame"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["author"] == "Writer")
+    );
+    assert!(serde_json::to_vec(&diff).unwrap().len() < soyeht_protocol::limits::JSON_BYTES);
+    let stale = client.request("file.diff", json!({"fileId":file_id,"revision":"1"}));
+    assert_eq!(stale["error"]["data"]["kind"], "stale_version");
+
+    let outside = rig.path.join("outside-diff.rs");
+    fs::write(&outside, "outside\n").unwrap();
+    fs::remove_file(&source).unwrap();
+    symlink(&outside, &source).unwrap();
+    let escaped = client.request("file.diff", json!({"fileId":file_id,"revision":"2"}));
+    assert_eq!(escaped["error"]["data"]["kind"], "invalid_params");
+}
+
+fn git(repository: &std::path::Path, arguments: &[&str]) {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(repository)
+        .args(arguments)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
 fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart() {
     let mut rig = Rig::new();
     let repository = rig.path.join("language-repository");

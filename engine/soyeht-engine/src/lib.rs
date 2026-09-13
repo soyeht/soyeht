@@ -21,4 +21,5 @@ pub mod streams;
 pub mod tasks;
 pub mod transport;
 pub mod usage;
+pub mod vcs;
 pub mod workspaces;

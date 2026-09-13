@@ -958,6 +958,7 @@ dependencies = [
  "soyeht-ptyd",
  "soyeht-store",
  "soyeht-usage",
+ "soyeht-vcs",
  "tokio",
  "tokio-tungstenite",
  "uuid",
