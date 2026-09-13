@@ -6,6 +6,8 @@ struct EditorPaneView: View {
   @Bindable var client: EngineClient
   let pane: Pane
   @State private var selectedLine: UInt32?
+  @State private var showHistory = false
+  @State private var showConflict = false
 
   private var view: EditorFileView? {
     client.editorFiles.values.first { $0.file.paneId == pane.paneId }
@@ -13,8 +15,13 @@ struct EditorPaneView: View {
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x8) {
-      EditorPaneHeader(file: view?.file, branch: branch)
+      EditorPaneHeader(
+        file: view?.file, branch: branch, showHistory: { showHistory = true },
+        showConflict: { showConflict = true })
       if let view {
+        if view.file.conflicted {
+          EditorConflictBanner(showConflict: { showConflict = true })
+        }
         EditorPaneBody(client: client, view: view, selectedLine: $selectedLine)
       } else {
         editorLoading
@@ -24,6 +31,14 @@ struct EditorPaneView: View {
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .frame(minWidth: 620, maxWidth: .infinity, maxHeight: .infinity)
     .accessibilityIdentifier("editor-pane")
+    .sheet(isPresented: $showHistory) {
+      if let file = view?.file { EditorHistorySheet(client: client, file: file) }
+    }
+    .sheet(isPresented: $showConflict) {
+      if let file = view?.file, file.conflicted {
+        EditorConflictSheet(client: client, file: file)
+      }
+    }
   }
 
   private var branch: String? {
@@ -47,6 +62,8 @@ struct EditorPaneView: View {
 private struct EditorPaneHeader: View {
   let file: SoyehtProtocol.FileDocument?
   let branch: String?
+  let showHistory: () -> Void
+  let showConflict: () -> Void
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x7) {
@@ -62,8 +79,20 @@ private struct EditorPaneHeader: View {
           .font(.system(size: 11, weight: .medium)).foregroundStyle(MacTheme.muted)
         Text(branch).font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
       }
-      Text(statusLabel).font(MacTheme.chrome(MacTheme.TypeScale.small))
-        .foregroundStyle(statusColor)
+      Button(action: showHistory) {
+        Image(systemName: "clock.arrow.circlepath")
+          .font(.system(size: 11, weight: .medium))
+      }
+      .buttonStyle(.plain).foregroundStyle(MacTheme.secondary).help("File history")
+      if file?.conflicted == true {
+        Button(action: showConflict) {
+          Text(statusLabel).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        }
+        .buttonStyle(.plain).foregroundStyle(statusColor).help("Compare conflicting versions")
+      } else {
+        Text(statusLabel).font(MacTheme.chrome(MacTheme.TypeScale.small))
+          .foregroundStyle(statusColor)
+      }
     }
     .padding(.horizontal, MacTheme.Space.x12).frame(height: 27)
     .background(MacTheme.well, in: Capsule())
@@ -84,6 +113,26 @@ private struct EditorPaneHeader: View {
     if file?.conflicted == true { return MacTheme.danger }
     if file?.dirty == true { return MacTheme.warning }
     return MacTheme.muted
+  }
+}
+
+private struct EditorConflictBanner: View {
+  let showConflict: () -> Void
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .font(.system(size: 12, weight: .semibold)).foregroundStyle(MacTheme.danger)
+      Text("The file changed on disk while this draft was open.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .foregroundStyle(MacTheme.ink)
+      Spacer(minLength: 0)
+      Button("Compare versions", action: showConflict)
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .buttonStyle(NeoPillButtonStyle())
+    }
+    .padding(.horizontal, MacTheme.Space.x10).frame(height: 34)
+    .background(MacTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
   }
 }
 

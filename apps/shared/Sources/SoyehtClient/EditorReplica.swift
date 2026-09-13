@@ -173,6 +173,30 @@ extension EngineClient {
     .decoded(FileHistoryResult.self)
   }
 
+  public func previewEditorFile(
+    fileId: String, source: EditorContentSource, versionId: String? = nil,
+    fromLine: UInt32 = 0, lineCount: UInt32 = UInt32(ProtocolLimits.editorViewportLines)
+  ) async throws -> FileReadResult {
+    try await request(
+      "file.read",
+      .encoded(
+        FileReadParams(
+          fileId: fileId, source: source, versionId: versionId, fromLine: fromLine,
+          lineCount: min(lineCount, UInt32(ProtocolLimits.editorViewportLines))))
+    )
+    .decoded(FileReadResult.self)
+  }
+
+  @discardableResult
+  public func keepEditorDraft(fileId: String, baseRevision: String) async throws
+    -> FileWriteResult
+  {
+    let origin = TextPosition(line: 0, column: 0)
+    return try await writeEditorFile(
+      fileId: fileId, baseRevision: baseRevision,
+      edits: [TextEdit(range: TextRange(start: origin, end: origin), text: "")])
+  }
+
   @discardableResult
   public func revertEditorFile(
     _ fileId: String, versionId: String, baseRevision: String

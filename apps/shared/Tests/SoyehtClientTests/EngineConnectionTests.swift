@@ -143,6 +143,50 @@
     let queued = try await client.readEditorFile(
       fileId: opened.file.fileId, fromLine: 0, lineCount: 1)
     #expect(queued.lines.first?.text == "let value = 4")
+    try await until { client.editorFiles[opened.file.fileId]?.file.dirty == false }
+    let firstHistory = try await client.editorHistory(opened.file.fileId)
+    let savedFour = try #require(firstHistory.items.first)
+    let historical = try await client.previewEditorFile(
+      fileId: opened.file.fileId, source: .history, versionId: savedFour.versionId)
+    #expect(historical.lines.first?.text == "let value = 4")
+    _ = try await client.writeEditorFile(
+      fileId: opened.file.fileId,
+      baseRevision: try #require(client.editorFiles[opened.file.fileId]?.file.revision),
+      edits: [
+        TextEdit(
+          range: TextRange(
+            start: TextPosition(line: 0, column: 12),
+            end: TextPosition(line: 0, column: 13)),
+          text: "5")
+      ])
+    try await until { client.editorFiles[opened.file.fileId]?.file.dirty == false }
+    _ = try await client.revertEditorFile(
+      opened.file.fileId, versionId: savedFour.versionId,
+      baseRevision: try #require(client.editorFiles[opened.file.fileId]?.file.revision))
+    try await until { client.editorFiles[opened.file.fileId]?.file.dirty == false }
+    #expect(try String(contentsOf: source, encoding: .utf8) == "let value = 4\n")
+
+    _ = try await client.writeEditorFile(
+      fileId: opened.file.fileId,
+      baseRevision: try #require(client.editorFiles[opened.file.fileId]?.file.revision),
+      edits: [
+        TextEdit(
+          range: TextRange(
+            start: TextPosition(line: 0, column: 12),
+            end: TextPosition(line: 0, column: 13)),
+          text: "6")
+      ])
+    try "let value = 7\n".write(to: source, atomically: true, encoding: .utf8)
+    try await until { client.editorFiles[opened.file.fileId]?.file.conflicted == true }
+    let draft = try await client.previewEditorFile(fileId: opened.file.fileId, source: .draft)
+    let disk = try await client.previewEditorFile(fileId: opened.file.fileId, source: .disk)
+    #expect(draft.lines.first?.text == "let value = 6")
+    #expect(disk.lines.first?.text == "let value = 7")
+    _ = try await client.keepEditorDraft(
+      fileId: opened.file.fileId,
+      baseRevision: try #require(client.editorFiles[opened.file.fileId]?.file.revision))
+    try await until { client.editorFiles[opened.file.fileId]?.file.dirty == false }
+    #expect(try String(contentsOf: source, encoding: .utf8) == "let value = 6\n")
     client.closePane(opened.pane.paneId)
     try await until { !client.panes.contains { $0.paneId == opened.pane.paneId } }
   }
