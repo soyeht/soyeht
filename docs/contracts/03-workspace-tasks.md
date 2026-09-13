@@ -176,6 +176,13 @@ contractChanges, outOfScopeEdits}` (fields defined in the 2026-09-11 addendum),
 `task_dispatch` (lead only), `task_unblock` (lead only), `loop_set`.
 A pane may modify only its own task, except for the lead.
 
+Contract 11 adds the workspace-scoped browser tools `web_open`,
+`web_navigate`, `web_snapshot`, `web_click`, `web_type`, `web_press`,
+`web_hover`, `web_select`, `web_scroll`, `web_wait`, `web_evaluate`,
+`web_screenshot`, `web_console`, `web_network`, `web_resize`, and `web_close`.
+Both worker and lead panes receive them. The engine rejects a web pane from a
+different workspace even when the caller supplies its identifier directly.
+
 ## 12. Client events (Mac, Linux/Windows, iPhone)
 
 `task.created`, `task.moved {actor, from, to, reason}`, `task.claimed {pane}`,
@@ -293,4 +300,3 @@ directly caused 20.6 % of the failures; complexity and size metrics
 explained nothing. The ten labels and their severity order are the
 study's own judge taxonomy (CodeThread, arXiv 2606.21804, p. 6–7, 14, 18).
 The outcomes in step 3 are our rule, not the study's.
-

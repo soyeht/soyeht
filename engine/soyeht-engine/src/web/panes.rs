@@ -7,8 +7,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneCreateParams, PaneMode, PaneState, StateSource, WebOpenResult, WebSessionState,
-    WebViewportPreset, limits,
+    Pane, PaneCreateParams, PaneMode, PaneState, Role, StateSource, WebCloseParams, WebOpenResult,
+    WebSessionState, WebViewportPreset, limits,
 };
 use soyeht_web::{DEFAULT_ZOOM_PERCENT, NormalizedUrl, viewport};
 use uuid::Uuid;
@@ -24,6 +24,28 @@ pub(crate) struct NewWebPane<'a> {
 }
 
 impl Core {
+    pub(crate) fn web_close(&mut self, connection: &str, params: &Value) -> Result<Value> {
+        let request: WebCloseParams = serde_json::from_value(params.clone())
+            .map_err(|_| errors::invalid("Invalid web close parameters"))?;
+        let actor = self
+            .clients
+            .get(connection)
+            .and_then(|client| client.actor.clone())
+            .ok_or_else(|| errors::unauthorized("Web close connection is unavailable"))?;
+        let pane = self
+            .panes
+            .get(&request.pane_id)
+            .filter(|pane| !pane.stored.closed && pane.stored.pane.mode == PaneMode::Web)
+            .ok_or_else(|| errors::not_found("Web pane not found"))?;
+        self.authorize_web_workspace(&actor, &pane.stored.pane.workspace_id)?;
+        if !matches!(actor.role, Role::Agent | Role::Chief | Role::HumanLocal) {
+            return Err(errors::forbidden_role(
+                "Web panes may be closed only by their local owner or a bound agent",
+            ));
+        }
+        self.pane_edit(connection, "pane.close", params)
+    }
+
     pub(crate) fn web_pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let request: PaneCreateParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid web pane parameters"))?;

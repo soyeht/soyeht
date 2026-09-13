@@ -326,6 +326,7 @@ impl Core {
             "servers.local.list" => self.local_servers_list()?,
             "web.open" => self.web_open(connection, params)?,
             "web.navigate" => return self.web_navigate(connection, request_id, params),
+            "web.close" => self.web_close(connection, params)?,
             method if crate::web::handles_command(method) => {
                 return self.web_command(connection, request_id, method, params);
             }

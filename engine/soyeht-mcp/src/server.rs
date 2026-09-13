@@ -90,7 +90,7 @@ fn dispatch<P: EnginePort>(
             | Error::TaskContextRequired
             | Error::InvalidArguments(_),
         ) => failure(id, -32602, "Invalid tool request"),
-        Err(_) => failure(id, -32603, "Task service unavailable"),
+        Err(_) => failure(id, -32603, "Soyeht service unavailable"),
     }))
 }
 

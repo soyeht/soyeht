@@ -27,7 +27,7 @@ struct Tool {
     schema: fn() -> Value,
 }
 
-const TOOLS: [Tool; 15] = [
+const TOOLS: [Tool; 31] = [
     Tool {
         name: "task_create",
         method: "task.create",
@@ -133,6 +133,118 @@ const TOOLS: [Tool; 15] = [
         description: "Configure the loop for this pane.",
         schema: loop_schema,
     },
+    Tool {
+        name: "web_open",
+        method: "web.open",
+        audience: Audience::Both,
+        description: "Open or focus a web pane in the bound workspace.",
+        schema: web_open_schema,
+    },
+    Tool {
+        name: "web_navigate",
+        method: "web.navigate",
+        audience: Audience::Both,
+        description: "Navigate a web pane to a URL or through its local history.",
+        schema: web_navigate_schema,
+    },
+    Tool {
+        name: "web_snapshot",
+        method: "web.snapshot",
+        audience: Audience::Both,
+        description: "Read a bounded accessibility snapshot from a visible web pane.",
+        schema: web_snapshot_schema,
+    },
+    Tool {
+        name: "web_click",
+        method: "web.click",
+        audience: Audience::Both,
+        description: "Click an element reference from the latest web snapshot.",
+        schema: web_ref_schema,
+    },
+    Tool {
+        name: "web_type",
+        method: "web.type",
+        audience: Audience::Both,
+        description: "Type bounded text into an element reference.",
+        schema: web_type_schema,
+    },
+    Tool {
+        name: "web_press",
+        method: "web.press",
+        audience: Audience::Both,
+        description: "Send one bounded key name to a web pane.",
+        schema: web_press_schema,
+    },
+    Tool {
+        name: "web_hover",
+        method: "web.hover",
+        audience: Audience::Both,
+        description: "Hover an element reference from the latest web snapshot.",
+        schema: web_ref_schema,
+    },
+    Tool {
+        name: "web_select",
+        method: "web.select",
+        audience: Audience::Both,
+        description: "Select a bounded value in a referenced web control.",
+        schema: web_select_schema,
+    },
+    Tool {
+        name: "web_scroll",
+        method: "web.scroll",
+        audience: Audience::Both,
+        description: "Scroll a web pane or a referenced element by bounded deltas.",
+        schema: web_scroll_schema,
+    },
+    Tool {
+        name: "web_wait",
+        method: "web.wait",
+        audience: Audience::Both,
+        description: "Wait for bounded text, selector, or network-idle conditions.",
+        schema: web_wait_schema,
+    },
+    Tool {
+        name: "web_evaluate",
+        method: "web.evaluate",
+        audience: Audience::Both,
+        description: "Evaluate bounded page code after a separate human permission.",
+        schema: web_evaluate_schema,
+    },
+    Tool {
+        name: "web_screenshot",
+        method: "web.screenshot",
+        audience: Audience::Both,
+        description: "Capture a bounded screenshot from a visible web pane.",
+        schema: web_screenshot_schema,
+    },
+    Tool {
+        name: "web_console",
+        method: "web.console",
+        audience: Audience::Both,
+        description: "Read bounded console metadata without page or transport bodies.",
+        schema: web_since_schema,
+    },
+    Tool {
+        name: "web_network",
+        method: "web.network",
+        audience: Audience::Both,
+        description: "Read bounded network metadata without headers or bodies.",
+        schema: web_since_schema,
+    },
+    Tool {
+        name: "web_resize",
+        method: "web.resize",
+        audience: Audience::Both,
+        description: "Resize a visible web pane using a preset or explicit dimensions.",
+        schema: web_resize_schema,
+    },
+    Tool {
+        name: "web_close",
+        method: "web.close",
+        audience: Audience::Both,
+        description: "Close a visible web pane.",
+        schema: web_pane_schema,
+    },
 ];
 
 pub struct Service<P> {
@@ -187,6 +299,9 @@ impl<P: EnginePort> Service<P> {
             return Err(Error::InvalidArguments("unknown tool argument"));
         }
         if tool.method.starts_with("task.") {
+            params.insert("workspaceId".into(), json!(self.context.workspace_id));
+        }
+        if tool.name == "web_open" {
             params.insert("workspaceId".into(), json!(self.context.workspace_id));
         }
         if mutating(tool.method) {
@@ -268,7 +383,16 @@ fn requires_task(name: &str) -> bool {
 }
 
 fn mutating(method: &str) -> bool {
-    !matches!(method, "task.show" | "task.list")
+    !matches!(
+        method,
+        "task.show"
+            | "task.list"
+            | "web.snapshot"
+            | "web.wait"
+            | "web.screenshot"
+            | "web.console"
+            | "web.network"
+    )
 }
 
 fn object(properties: Map<String, Value>, required: &[&str]) -> Value {
@@ -287,6 +411,18 @@ fn string() -> Value {
 }
 fn id() -> Value {
     json!({"type":"string","minLength":1,"maxLength":128})
+}
+fn bounded_string(max: usize) -> Value {
+    json!({"type":"string","maxLength":max})
+}
+fn boolean() -> Value {
+    json!({"type":"boolean"})
+}
+fn integer(minimum: i64, maximum: i64) -> Value {
+    json!({"type":"integer","minimum":minimum,"maximum":maximum})
+}
+fn decimal() -> Value {
+    json!({"type":"string","pattern":"^(0|[1-9][0-9]*)$","maxLength":20})
 }
 fn strings() -> Value {
     json!({"type":"array","items":{"type":"string"}})
@@ -441,6 +577,155 @@ fn loop_schema() -> Value {
     )
 }
 
+fn web_open_schema() -> Value {
+    object(
+        fields(&[
+            (
+                "url",
+                json!({"type":"string","minLength":1,"maxLength":4096}),
+            ),
+            ("workspaceId", id()),
+            ("newPane", boolean()),
+            ("incognito", boolean()),
+            ("mode", json!({"type":"string","enum":["structured"]})),
+        ]),
+        &["url"],
+    )
+}
+
+fn web_navigate_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            (
+                "url",
+                json!({"type":"string","minLength":1,"maxLength":4096}),
+            ),
+            (
+                "action",
+                json!({"type":"string","enum":["back","forward","reload"]}),
+            ),
+        ]),
+        &["paneId"],
+    )
+}
+
+fn web_pane_schema() -> Value {
+    object(fields(&[("paneId", id())]), &["paneId"])
+}
+
+fn web_snapshot_schema() -> Value {
+    object(
+        fields(&[("paneId", id()), ("screenshot", boolean())]),
+        &["paneId"],
+    )
+}
+
+fn web_ref_schema() -> Value {
+    object(
+        fields(&[("paneId", id()), ("ref", id())]),
+        &["paneId", "ref"],
+    )
+}
+
+fn web_type_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            ("ref", id()),
+            ("text", bounded_string(65_536)),
+            ("submit", boolean()),
+        ]),
+        &["paneId", "ref", "text"],
+    )
+}
+
+fn web_press_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            (
+                "key",
+                json!({"type":"string","minLength":1,"maxLength":128}),
+            ),
+        ]),
+        &["paneId", "key"],
+    )
+}
+
+fn web_select_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            ("ref", id()),
+            ("value", bounded_string(4096)),
+        ]),
+        &["paneId", "ref", "value"],
+    )
+}
+
+fn web_scroll_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            ("ref", id()),
+            ("dx", integer(-1_000_000, 1_000_000)),
+            ("dy", integer(-1_000_000, 1_000_000)),
+        ]),
+        &["paneId", "dx", "dy"],
+    )
+}
+
+fn web_wait_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            ("text", bounded_string(4096)),
+            ("selector", bounded_string(4096)),
+            ("networkIdle", boolean()),
+            ("timeoutMs", integer(0, 60_000)),
+        ]),
+        &["paneId", "timeoutMs"],
+    )
+}
+
+fn web_evaluate_schema() -> Value {
+    object(
+        fields(&[("paneId", id()), ("js", bounded_string(65_536))]),
+        &["paneId", "js"],
+    )
+}
+
+fn web_screenshot_schema() -> Value {
+    object(
+        fields(&[("paneId", id()), ("fullPage", boolean())]),
+        &["paneId"],
+    )
+}
+
+fn web_since_schema() -> Value {
+    object(
+        fields(&[("paneId", id()), ("since", decimal())]),
+        &["paneId"],
+    )
+}
+
+fn web_resize_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            (
+                "preset",
+                json!({"type":"string","enum":["iphone_se","iphone_15_pro","ipad","responsive"]}),
+            ),
+            ("width", integer(1, 16_384)),
+            ("height", integer(1, 16_384)),
+            ("rotate", boolean()),
+        ]),
+        &["paneId"],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,6 +823,27 @@ mod tests {
         assert!(chief_names.contains(&"task_dispatch".into()));
         assert!(chief_names.contains(&"task_list".into()));
         assert!(!chief_names.contains(&"task_complete".into()));
+        for name in [
+            "web_open",
+            "web_navigate",
+            "web_snapshot",
+            "web_click",
+            "web_type",
+            "web_press",
+            "web_hover",
+            "web_select",
+            "web_scroll",
+            "web_wait",
+            "web_evaluate",
+            "web_screenshot",
+            "web_console",
+            "web_network",
+            "web_resize",
+            "web_close",
+        ] {
+            assert!(agent_names.contains(&name.into()));
+            assert!(chief_names.contains(&name.into()));
+        }
         let agent_tools = agent.list();
         let comment = agent_tools["tools"]
             .as_array()
@@ -592,8 +898,29 @@ mod tests {
                 json!({"prompt":"Continue","interval":5,"maxRounds":10,"stopWhen":"round_limit","enabled":true}),
             ),
         ] {
-            assert!(service_call_succeeded(&mut agent, name, arguments));
+            assert!(
+                service_call_succeeded(&mut agent, name, arguments),
+                "{name} did not produce protocol-valid parameters"
+            );
         }
+        assert_web_tools(&mut agent);
+        let web_open = agent
+            .engine
+            .calls
+            .iter()
+            .find(|(method, _)| method == "web.open")
+            .map(|(_, params)| params)
+            .unwrap();
+        assert_eq!(web_open["workspaceId"], "workspace");
+        assert!(web_open["idempotencyKey"].as_str().is_some());
+        let snapshot = agent
+            .engine
+            .calls
+            .iter()
+            .find(|(method, _)| method == "web.snapshot")
+            .map(|(_, params)| params)
+            .unwrap();
+        assert!(snapshot.get("idempotencyKey").is_none());
 
         let mut chief = Service::new(
             FakeEngine {
@@ -627,7 +954,54 @@ mod tests {
                 json!({"prompt":"Coordinate","interval":5,"maxRounds":10,"stopWhen":"three_empty","enabled":true}),
             ),
         ] {
-            assert!(service_call_succeeded(&mut chief, name, arguments));
+            assert!(
+                service_call_succeeded(&mut chief, name, arguments),
+                "{name} did not produce protocol-valid parameters"
+            );
+        }
+    }
+
+    fn assert_web_tools(service: &mut Service<FakeEngine>) {
+        for (name, arguments) in [
+            (
+                "web_open",
+                json!({"url":"localhost:3000","workspaceId":"spoofed"}),
+            ),
+            ("web_navigate", json!({"paneId":"web","action":"reload"})),
+            ("web_snapshot", json!({"paneId":"web","screenshot":true})),
+            ("web_click", json!({"paneId":"web","ref":"e1"})),
+            (
+                "web_type",
+                json!({"paneId":"web","ref":"e1","text":"Hello","submit":true}),
+            ),
+            ("web_press", json!({"paneId":"web","key":"Enter"})),
+            ("web_hover", json!({"paneId":"web","ref":"e2"})),
+            (
+                "web_select",
+                json!({"paneId":"web","ref":"e3","value":"one"}),
+            ),
+            (
+                "web_scroll",
+                json!({"paneId":"web","ref":"e4","dx":0,"dy":600}),
+            ),
+            (
+                "web_wait",
+                json!({"paneId":"web","text":"Ready","timeoutMs":5000}),
+            ),
+            (
+                "web_evaluate",
+                json!({"paneId":"web","js":"document.title"}),
+            ),
+            ("web_screenshot", json!({"paneId":"web","fullPage":false})),
+            ("web_console", json!({"paneId":"web","since":"0"})),
+            ("web_network", json!({"paneId":"web","since":"0"})),
+            ("web_resize", json!({"paneId":"web","preset":"responsive"})),
+            ("web_close", json!({"paneId":"web"})),
+        ] {
+            assert!(
+                service_call_succeeded(service, name, arguments),
+                "{name} did not produce protocol-valid parameters"
+            );
         }
     }
 

@@ -8,9 +8,9 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    DecisionBy, PanePermissionAnswerParams, PanePermissionAnswerResult, PermissionOption,
-    PermissionOptionKind, PermissionRequest, PermissionRequestKind, PermissionResult, Role,
-    WebCommandParams, WebSessionState,
+    Actor, DecisionBy, PaneMode, PanePermissionAnswerParams, PanePermissionAnswerResult,
+    PermissionOption, PermissionOptionKind, PermissionRequest, PermissionRequestKind,
+    PermissionResult, Role, WebCommandParams, WebSessionState,
 };
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant, WebSessionGrantScope};
 use soyeht_web::NormalizedUrl;
@@ -64,6 +64,34 @@ impl WebPermission {
 }
 
 impl Core {
+    pub(super) fn bound_web_workspace(&self, actor: &Actor) -> Result<Option<String>> {
+        if !matches!(actor.role, Role::Agent | Role::Chief) {
+            return Ok(None);
+        }
+        let pane_id = actor
+            .pane_id
+            .as_deref()
+            .ok_or_else(|| errors::unauthorized("Agent binding has no pane identity"))?;
+        let pane = self
+            .panes
+            .get(pane_id)
+            .filter(|pane| !pane.stored.closed && pane.stored.pane.mode == PaneMode::Agent)
+            .ok_or_else(|| errors::unauthorized("Bound agent pane is unavailable"))?;
+        Ok(Some(pane.stored.pane.workspace_id.clone()))
+    }
+
+    pub(super) fn authorize_web_workspace(&self, actor: &Actor, workspace_id: &str) -> Result<()> {
+        if self
+            .bound_web_workspace(actor)?
+            .is_some_and(|bound| bound != workspace_id)
+        {
+            return Err(errors::forbidden_role(
+                "Bound agents may use web panes only in their workspace",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn web_permission_plan(
         &mut self,
         caller: &str,
@@ -80,6 +108,7 @@ impl Core {
             .get(&params.pane_id)
             .filter(|running| !running.stored.closed)
             .ok_or_else(|| errors::not_found("Web pane not found"))?;
+        self.authorize_web_workspace(&actor, &pane.stored.pane.workspace_id)?;
         let agent = matches!(actor.role, Role::Agent | Role::Chief);
         let domain = if agent {
             let url = pane
@@ -652,7 +681,9 @@ fn decision_by_text(by: &DecisionBy) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{dispatch::Outcome, outbox, ports::testing::FixedClock};
+    use crate::{
+        dispatch::Outcome, model::RunningPane, outbox, ports::testing::FixedClock, screen::Screen,
+    };
     use serde_json::json;
     use soyeht_protocol::{Actor, ErrorKind, WebCommandKind, frame::Frame};
     use std::{fs, path::PathBuf, sync::Arc};
@@ -738,6 +769,22 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
+        let mut agent = core.panes[&pane].stored.clone();
+        agent.pane.pane_id = "agent-pane".into();
+        agent.pane.mode = PaneMode::Agent;
+        agent.pane.url = None;
+        agent.pane.title = None;
+        agent.pane.viewport = None;
+        agent.pane.incognito = None;
+        agent.pane.web_session = None;
+        let agent_screen = Screen::open(&root.join("sessions/agent-pane"), false).unwrap();
+        core.panes.insert(
+            agent.pane.pane_id.clone(),
+            RunningPane {
+                stored: agent,
+                screen: agent_screen,
+            },
+        );
         core.clients.get_mut(&caller).unwrap().actor = Some(Actor {
             role: Role::Agent,
             client: "bound-agent".into(),
@@ -996,6 +1043,33 @@ mod tests {
                 .result
                 .is_some()
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn bound_agents_cannot_open_or_control_web_panes_in_another_workspace() {
+        let (mut core, _host, _host_rx, caller, _caller_rx, pane, root) = setup().await;
+        let open = core.dispatch(
+            &caller,
+            request(
+                50,
+                "web.open",
+                json!({"workspaceId":"another-workspace","url":"example.test",
+                    "idempotencyKey":"cross-open"}),
+            ),
+        );
+        assert!(open.is_err_and(|error| errors::kind(&error) == ErrorKind::ForbiddenRole));
+
+        core.panes.get_mut(&pane).unwrap().stored.pane.workspace_id = "another-workspace".into();
+        let command = core.dispatch(
+            &caller,
+            request(
+                51,
+                "web.click",
+                json!({"paneId":pane,"ref":"e1","idempotencyKey":"cross-click"}),
+            ),
+        );
+        assert!(command.is_err_and(|error| errors::kind(&error) == ErrorKind::ForbiddenRole));
         fs::remove_dir_all(root).unwrap();
     }
 }

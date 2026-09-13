@@ -85,6 +85,22 @@ impl Core {
             .get(connection)
             .filter(|client| client.actor.is_some() && !client.outbox.is_closed())
             .ok_or_else(|| errors::unauthorized("Web open connection is unavailable"))?;
+        let actor = client
+            .actor
+            .as_ref()
+            .ok_or_else(|| errors::unauthorized("Web open connection is unavailable"))?;
+        let scope = client.scope.clone();
+        if let Some(bound) = self.bound_web_workspace(actor)? {
+            if requested_workspace
+                .as_deref()
+                .is_some_and(|requested| requested != bound)
+            {
+                return Err(errors::forbidden_role(
+                    "Bound agents may open web panes only in their workspace",
+                ));
+            }
+            return Ok((scope, bound));
+        }
         let workspace_id = if let Some(id) = requested_workspace {
             id
         } else {
@@ -94,7 +110,7 @@ impl Core {
                 .and_then(|focus| focus.workspace_id)
                 .ok_or_else(|| errors::invalid("Web open requires a focused workspace"))?
         };
-        Ok((client.scope.clone(), workspace_id))
+        Ok((scope, workspace_id))
     }
 
     fn matching_web_pane(&self, workspace_id: &str, url: &str, incognito: bool) -> Option<String> {
@@ -263,6 +279,17 @@ mod tests {
             core.panes[&second].stored.pane.url.as_deref(),
             Some("https://example.com/")
         );
+        let closed = reply(
+            &mut core,
+            &connection,
+            request(
+                7,
+                "web.close",
+                json!({"paneId":second,"idempotencyKey":"close"}),
+            ),
+        );
+        assert_eq!(closed["paneId"], second);
+        assert!(core.panes[&second].stored.closed);
         fs::remove_dir_all(root).unwrap();
     }
 
