@@ -4,6 +4,7 @@
 mod generated;
 pub mod limits;
 pub use generated::*;
+pub mod attachment;
 mod error;
 pub use error::{Error, Result};
 pub mod frame;

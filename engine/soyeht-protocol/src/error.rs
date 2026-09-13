@@ -11,6 +11,14 @@ pub enum Error {
     MalformedTerminalHeader,
     MissingAttachmentHeader,
     MalformedAttachmentHeader,
+    InvalidAttachmentLimit,
+    InvalidAttachmentId,
+    InvalidAttachmentSize,
+    AttachmentTooLarge,
+    InterleavedAttachment,
+    UnknownAttachment,
+    DuplicateAttachment,
+    IncompleteAttachment,
     JsonFrameRequired,
     NdjsonStreamDiscontinuity { expected: u64, actual: u64 },
     NdjsonOffsetExhausted,
@@ -34,6 +42,16 @@ impl fmt::Display for Error {
             Self::MissingAttachmentHeader => formatter.write_str("attachment header is missing"),
             Self::MalformedAttachmentHeader => {
                 formatter.write_str("attachment header is malformed")
+            }
+            Self::InvalidAttachmentLimit => formatter.write_str("attachment limit is invalid"),
+            Self::InvalidAttachmentId => formatter.write_str("attachment id is invalid"),
+            Self::InvalidAttachmentSize => formatter.write_str("attachment size is invalid"),
+            Self::AttachmentTooLarge => formatter.write_str("attachment exceeds its byte limit"),
+            Self::InterleavedAttachment => formatter.write_str("attachment chunks are interleaved"),
+            Self::UnknownAttachment => formatter.write_str("attachment reference is unknown"),
+            Self::DuplicateAttachment => formatter.write_str("attachment is duplicated"),
+            Self::IncompleteAttachment => {
+                formatter.write_str("attachment byte count is incomplete")
             }
             Self::JsonFrameRequired => formatter.write_str("JSON frame required"),
             Self::NdjsonStreamDiscontinuity { expected, actual } => write!(
