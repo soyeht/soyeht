@@ -40,6 +40,7 @@ pub struct Core {
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
+    pub language_waiters: BTreeMap<String, Vec<(String, Value)>>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
 }
@@ -74,6 +75,7 @@ impl Core {
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
+            language_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
             pair_address: format!("127.0.0.1:{DEV_TCP_PORT}"),
         };

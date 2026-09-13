@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 const PENDING_LIMIT: usize = 128;
+const RESULT_LIMIT: usize = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestKind {
@@ -27,6 +28,11 @@ pub enum Incoming {
     Response {
         call: Call,
         result: Value,
+    },
+    Failure {
+        call: Call,
+        code: i64,
+        message: String,
     },
     Diagnostics {
         uri: String,
@@ -134,7 +140,8 @@ impl Client {
             .ok_or(Error::InvalidResponseId)?;
         let call = self.pending.remove(&id).ok_or(Error::UnmatchedResponse)?;
         if let Some(error) = value.get("error") {
-            return Err(Error::Remote {
+            return Ok(Incoming::Failure {
+                call,
                 code: error
                     .get("code")
                     .and_then(Value::as_i64)
@@ -142,6 +149,7 @@ impl Client {
                 message: error
                     .get("message")
                     .and_then(Value::as_str)
+                    .filter(|message| message.len() <= 4096)
                     .ok_or(Error::InvalidMessage)?
                     .to_owned(),
             });
@@ -153,9 +161,13 @@ impl Client {
     pub fn pending(&self) -> usize {
         self.pending.len()
     }
+
+    pub fn has_context(&self, context: &str) -> bool {
+        self.pending.values().any(|call| call.context == context)
+    }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PositionValue {
     pub line: u32,
     pub character: u32,
@@ -218,10 +230,14 @@ fn array_or_null(value: &Value) -> Result<&[Value]> {
     if value.is_null() {
         return Ok(&[]);
     }
-    value
+    let values = value
         .as_array()
         .map(Vec::as_slice)
-        .ok_or(Error::InvalidPayload("result"))
+        .ok_or(Error::InvalidPayload("result"))?;
+    if values.len() > RESULT_LIMIT {
+        return Err(Error::InvalidPayload("result"));
+    }
+    Ok(values)
 }
 
 fn document(uri: &str) -> Value {
@@ -294,5 +310,38 @@ mod tests {
             edits(&json!([{"range":range,"newText":"formatted"}])).unwrap()[0].text,
             "formatted"
         );
+    }
+
+    #[test]
+    fn result_collections_and_pending_contexts_are_bounded() {
+        let mut client = Client::default();
+        client
+            .symbols("file:///workspace/main.rs", "symbols:file-1:1")
+            .unwrap();
+        assert!(client.has_context("symbols:file-1:1"));
+        assert!(!client.has_context("symbols:file-2:1"));
+        assert!(matches!(
+            symbols(&json!(vec![Value::Null; RESULT_LIMIT + 1])),
+            Err(Error::InvalidPayload("result"))
+        ));
+    }
+
+    #[test]
+    fn remote_failure_keeps_request_identity_for_the_caller() {
+        let mut client = Client::default();
+        let request = client
+            .symbols("file:///workspace/main.rs", "symbols:file-1:1")
+            .unwrap();
+        let incoming = client
+            .accept(json!({
+                "jsonrpc":"2.0","id":request["id"],
+                "error":{"code":-32001,"message":"index unavailable"}
+            }))
+            .unwrap();
+        assert!(matches!(
+            incoming,
+            Incoming::Failure { call, code: -32001, message }
+                if call.context == "symbols:file-1:1" && message == "index unavailable"
+        ));
     }
 }

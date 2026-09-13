@@ -1576,7 +1576,11 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
     let mut rig = Rig::new();
     let repository = rig.path.join("language-repository");
     fs::create_dir_all(&repository).unwrap();
-    fs::write(repository.join("main.rs"), "fn main() {\n    ready();\n}\n").unwrap();
+    fs::write(
+        repository.join("main.rs"),
+        "// 😀\nfn main() {\n    ready();\n}\n",
+    )
+    .unwrap();
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",
@@ -1585,10 +1589,13 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
         .as_str()
         .unwrap()
         .to_owned();
-    client.call(
+    let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"language-open"}),
-    );
+    )["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
 
     let ready = wait_lsp_ready(&mut client, &workspace, 1);
     assert_eq!(ready["language"], "rust");
@@ -1605,6 +1612,12 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
         );
         thread::sleep(Duration::from_millis(10));
     }
+    assert_language_queries(&mut client, &workspace, &file_id);
+    let invalid = client.request(
+        "file.definition",
+        json!({"fileId":file_id,"revision":"1","position":{"line":0,"column":4}}),
+    );
+    assert_eq!(invalid["error"]["data"]["kind"], "invalid_params");
 
     rig.kill_engine();
     rig.start();
@@ -1612,6 +1625,31 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
     let status = wait_lsp_ready(&mut restored, &workspace, 1);
     assert_eq!(status["generation"], 1);
     assert_eq!(language_registry_instance(&rig)["instance_id"], instance_id);
+    assert_eq!(
+        restored.call("file.symbols", json!({"fileId":file_id,"revision":"1"}))["items"][0]["name"],
+        "main"
+    );
+}
+
+fn assert_language_queries(client: &mut Client, workspace: &str, file_id: &str) {
+    let symbols = client.call("file.symbols", json!({"fileId":file_id,"revision":"1"}));
+    assert_eq!(symbols["items"][0]["name"], "main");
+    let position = json!({"line":1,"column":3});
+    let definition = client.call(
+        "file.definition",
+        json!({"fileId":file_id,"revision":"1","position":position}),
+    );
+    assert_eq!(definition["location"]["workspaceId"], workspace);
+    assert_eq!(definition["location"]["path"], "main.rs");
+    let references = client.call(
+        "file.references",
+        json!({"fileId":file_id,"revision":"1","position":position}),
+    );
+    assert_eq!(references["items"].as_array().unwrap().len(), 1);
+    assert_eq!(references["items"][0]["path"], "main.rs");
+    let diagnostics = client.call("file.diagnostics", json!({"fileId":file_id,"revision":"1"}));
+    assert_eq!(diagnostics["items"].as_array().unwrap().len(), 1);
+    assert_eq!(diagnostics["items"][0]["message"], "deterministic warning");
 }
 
 fn wait_lsp_ready(client: &mut Client, workspace: &str, generation: u64) -> Value {

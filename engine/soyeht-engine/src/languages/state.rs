@@ -1,12 +1,15 @@
 use crate::{errors, errors::Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use soyeht_lsp::{Client, Decoder, Incoming, RequestKind};
+use soyeht_lsp::{Client, Decoder, Incoming, PositionValue, RequestKind};
 use soyeht_protocol::{EditorLanguage, FileDiagnostic, LspServerStatus, LspState};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Spawn};
 use soyeht_store::languages::LanguageServerCheckpoint;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
+
+const COMPLETED_LIMIT: usize = 128;
+const REQUEST_LIMIT: usize = 128;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenDocument {
@@ -32,13 +35,28 @@ pub struct Server {
     pub documents: BTreeMap<String, OpenDocument>,
     pub diagnostics: BTreeMap<String, Vec<FileDiagnostic>>,
     pub pending_writes: BTreeMap<String, String>,
+    #[serde(default)]
+    pub requests: BTreeMap<String, Query>,
     pub completed: BTreeMap<String, Completed>,
+    #[serde(default)]
+    pub completed_order: VecDeque<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Query {
+    pub kind: RequestKind,
+    pub file_id: String,
+    pub revision: u64,
+    pub uri: String,
+    pub position: Option<PositionValue>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Completed {
     pub kind: RequestKind,
     pub result: Value,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -74,7 +92,9 @@ impl Server {
             documents: BTreeMap::new(),
             diagnostics: BTreeMap::new(),
             pending_writes: BTreeMap::new(),
+            requests: BTreeMap::new(),
             completed: BTreeMap::new(),
+            completed_order: VecDeque::new(),
         })
     }
 
@@ -120,7 +140,6 @@ impl Server {
         self.client = Client::default();
         self.decoder = Decoder::default();
         self.pending_writes.clear();
-        self.completed.clear();
         Ok(())
     }
 
@@ -142,13 +161,21 @@ impl Server {
                     if call.kind == RequestKind::Initialize {
                         self.state = LspState::Ready;
                         self.detail = None;
-                    } else {
-                        self.completed.insert(
+                    } else if self.requests.contains_key(&call.context) {
+                        self.save_completed(call.context, call.kind, result, None);
+                    }
+                }
+                Incoming::Failure {
+                    call,
+                    code,
+                    message,
+                } => {
+                    if self.requests.contains_key(&call.context) {
+                        self.save_completed(
                             call.context,
-                            Completed {
-                                kind: call.kind,
-                                result,
-                            },
+                            call.kind,
+                            Value::Null,
+                            Some(format!("Language server error {code}: {message}")),
                         );
                     }
                 }
@@ -158,6 +185,21 @@ impl Server {
                             .into_iter()
                             .map(super::runtime::wire_diagnostic)
                             .collect();
+                        let (items, omitted) = super::runtime::bounded_diagnostics(
+                            &document.file_id,
+                            document.revision,
+                            items,
+                        )?;
+                        if omitted > 0 {
+                            eprintln!(
+                                "{}",
+                                serde_json::json!({
+                                    "event":"engine.lsp_diagnostics_truncated",
+                                    "fileId":document.file_id,
+                                    "omitted":omitted
+                                })
+                            );
+                        }
                         self.diagnostics
                             .insert(document.file_id.clone(), items.clone());
                         updates.push(DiagnosticUpdate {
@@ -172,13 +214,157 @@ impl Server {
         }
         Ok(updates)
     }
+
+    pub fn queue(&mut self, context: &str, query: Query) -> Result<Option<Value>> {
+        if let Some(existing) = self.requests.get(context) {
+            if existing != &query {
+                return Err(errors::internal("Language request context collided"));
+            }
+        } else {
+            self.make_request_room()?;
+            self.requests.insert(context.into(), query);
+        }
+        if self.completed.contains_key(context)
+            || self.state != LspState::Ready
+            || self.client.has_context(context)
+        {
+            return Ok(None);
+        }
+        let query = self
+            .requests
+            .get(context)
+            .cloned()
+            .ok_or_else(|| errors::internal("Language request disappeared"))?;
+        let value = match query.kind {
+            RequestKind::Symbols => self.client.symbols(&query.uri, context),
+            RequestKind::Definition => {
+                self.client
+                    .definition(&query.uri, required_position(&query)?, context)
+            }
+            RequestKind::References => {
+                self.client
+                    .references(&query.uri, required_position(&query)?, context)
+            }
+            RequestKind::Formatting => self.client.formatting(&query.uri, context),
+            RequestKind::Initialize | RequestKind::Shutdown => {
+                return Err(errors::internal("Invalid queued language request"));
+            }
+        }
+        .map_err(errors::lsp)?;
+        Ok(Some(value))
+    }
+
+    pub fn waiting_contexts(&self) -> Vec<String> {
+        self.requests
+            .keys()
+            .filter(|context| {
+                !self.completed.contains_key(*context) && !self.client.has_context(context)
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn retain_current_revision(&mut self, file_id: &str, revision: u64) -> Vec<String> {
+        let changed = self
+            .documents
+            .values()
+            .any(|document| document.file_id == file_id && document.revision != revision);
+        let stale: Vec<_> = self
+            .requests
+            .iter()
+            .filter(|(_, query)| query.file_id == file_id && query.revision != revision)
+            .map(|(context, _)| context.clone())
+            .collect();
+        self.requests.retain(|context, _| !stale.contains(context));
+        self.completed
+            .retain(|context, _| self.requests.contains_key(context));
+        self.completed_order
+            .retain(|context| self.completed.contains_key(context));
+        if changed {
+            self.diagnostics.remove(file_id);
+        }
+        stale
+    }
+
+    pub fn query(&self, context: &str) -> Option<&Query> {
+        self.requests.get(context)
+    }
+
+    pub fn completed(&self, context: &str) -> Option<&Completed> {
+        self.completed.get(context)
+    }
+
+    fn save_completed(
+        &mut self,
+        context: String,
+        kind: RequestKind,
+        result: Value,
+        error: Option<String>,
+    ) {
+        if self
+            .completed
+            .insert(
+                context.clone(),
+                Completed {
+                    kind,
+                    result,
+                    error,
+                },
+            )
+            .is_none()
+        {
+            self.completed_order.push_back(context);
+        }
+        while self.completed_order.len() > COMPLETED_LIMIT {
+            if let Some(oldest) = self.completed_order.pop_front() {
+                self.completed.remove(&oldest);
+                self.requests.remove(&oldest);
+            }
+        }
+    }
+
+    fn make_request_room(&mut self) -> Result<()> {
+        while self.requests.len() >= REQUEST_LIMIT {
+            let oldest = self
+                .completed_order
+                .pop_front()
+                .ok_or_else(|| errors::pane_busy("Language request limit reached"))?;
+            self.completed.remove(&oldest);
+            self.requests.remove(&oldest);
+        }
+        Ok(())
+    }
+
+    fn normalize_cache(&mut self) {
+        self.completed
+            .retain(|context, _| self.requests.contains_key(context));
+        self.completed_order
+            .retain(|context| self.completed.contains_key(context));
+        for context in self.completed.keys() {
+            if !self.completed_order.contains(context) {
+                self.completed_order.push_back(context.clone());
+            }
+        }
+        while self.completed_order.len() > COMPLETED_LIMIT {
+            if let Some(oldest) = self.completed_order.pop_front() {
+                self.completed.remove(&oldest);
+                self.requests.remove(&oldest);
+            }
+        }
+    }
+}
+
+fn required_position(query: &Query) -> Result<PositionValue> {
+    query
+        .position
+        .ok_or_else(|| errors::internal("Language request has no position"))
 }
 
 impl Service {
     pub fn restore(checkpoints: Vec<LanguageServerCheckpoint>) -> Result<Self> {
         let mut service = Self::default();
         for checkpoint in checkpoints {
-            let server: Server = serde_json::from_value(checkpoint.payload)
+            let mut server: Server = serde_json::from_value(checkpoint.payload)
                 .map_err(|_| errors::internal("Stored language server checkpoint is invalid"))?;
             if server.workspace_id != checkpoint.workspace_id
                 || server.language != checkpoint.language
@@ -188,6 +374,7 @@ impl Service {
                     "Stored language server identity is invalid",
                 ));
             }
+            server.normalize_cache();
             let key = key(&server.workspace_id, &server.language)?;
             if service.servers.insert(key, server).is_some() {
                 return Err(errors::internal(
@@ -312,6 +499,17 @@ mod tests {
             Completed {
                 kind: RequestKind::Symbols,
                 result: json!([{"name":"main"}]),
+                error: None,
+            },
+        );
+        server.requests.insert(
+            "symbols:file-1:7".into(),
+            Query {
+                kind: RequestKind::Symbols,
+                file_id: "file-1".into(),
+                revision: 7,
+                uri: "file:///tmp/workspace-1/main.rs".into(),
+                position: None,
             },
         );
         let key = service.insert(server.clone()).unwrap();
@@ -336,10 +534,20 @@ mod tests {
     fn partial_frame_and_request_correlation_survive_a_checkpoint() {
         let mut service = Service::default();
         let mut server = rust_server();
+        server.state = LspState::Ready;
         let request = server
-            .client
-            .symbols("file:///tmp/workspace-1/main.rs", "symbols:file-1:1")
+            .queue(
+                "symbols:file-1:1",
+                Query {
+                    kind: RequestKind::Symbols,
+                    file_id: "file-1".into(),
+                    revision: 1,
+                    uri: "file:///tmp/workspace-1/main.rs".into(),
+                    position: None,
+                },
+            )
             .unwrap();
+        let request = request.unwrap();
         let id = request["id"].as_u64().unwrap();
         let response = encode(&json!({"jsonrpc":"2.0","id":id,"result":[]})).unwrap();
         let split = response.len() - 1;
@@ -384,5 +592,74 @@ mod tests {
         assert_eq!(server.documents.len(), 1);
         assert!(server.pending_writes.is_empty());
         assert_eq!(server.state, LspState::Restarting);
+    }
+
+    #[test]
+    fn queued_queries_survive_restart_and_cached_facts_survive_same_revision_sync() {
+        let mut server = rust_server();
+        server.state = LspState::Ready;
+        server.documents.insert(
+            "file:///tmp/workspace-1/main.rs".into(),
+            OpenDocument {
+                file_id: "file-1".into(),
+                revision: 7,
+                generation: 1,
+            },
+        );
+        server.diagnostics.insert("file-1".into(), Vec::new());
+        let query = Query {
+            kind: RequestKind::Symbols,
+            file_id: "file-1".into(),
+            revision: 7,
+            uri: "file:///tmp/workspace-1/main.rs".into(),
+            position: None,
+        };
+        assert!(
+            server
+                .queue("symbols:file-1:7", query.clone())
+                .unwrap()
+                .is_some()
+        );
+        assert!(server.retain_current_revision("file-1", 7).is_empty());
+        assert!(server.diagnostics.contains_key("file-1"));
+
+        server.restart("lost").unwrap();
+        assert!(server.query("symbols:file-1:7").is_some());
+        server.state = LspState::Ready;
+        assert!(server.queue("symbols:file-1:7", query).unwrap().is_some());
+
+        assert_eq!(
+            server.retain_current_revision("file-1", 8),
+            ["symbols:file-1:7"]
+        );
+        assert!(server.query("symbols:file-1:7").is_none());
+        assert!(!server.diagnostics.contains_key("file-1"));
+    }
+
+    #[test]
+    fn requests_are_bounded_before_the_server_is_ready() {
+        let mut server = rust_server();
+        for index in 0..REQUEST_LIMIT {
+            let context = format!("symbols:file-{index}:1");
+            let query = Query {
+                kind: RequestKind::Symbols,
+                file_id: format!("file-{index}"),
+                revision: 1,
+                uri: format!("file:///tmp/workspace-1/{index}.rs"),
+                position: None,
+            };
+            assert!(server.queue(&context, query).unwrap().is_none());
+        }
+        let overflow = Query {
+            kind: RequestKind::Symbols,
+            file_id: "overflow".into(),
+            revision: 1,
+            uri: "file:///tmp/workspace-1/overflow.rs".into(),
+            position: None,
+        };
+        assert!(matches!(
+            server.queue("symbols:overflow:1", overflow),
+            Err(errors::Error::PaneBusy(_))
+        ));
     }
 }

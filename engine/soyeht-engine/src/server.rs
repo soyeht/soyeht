@@ -214,6 +214,10 @@ async fn connection(
             waiters.retain(|(connection, _)| connection != &id);
             !waiters.is_empty()
         });
+        state.language_waiters.retain(|_, waiters| {
+            waiters.retain(|(connection, _)| connection != &id);
+            !waiters.is_empty()
+        });
     }
     eprintln!("{}", connection_close_record(&id, local, reason));
 }

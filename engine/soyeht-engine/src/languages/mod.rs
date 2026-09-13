@@ -1,5 +1,6 @@
 //! Durable language-server lifecycle and protocol routing.
 
+mod api;
 mod runtime;
 mod state;
 

@@ -126,6 +126,7 @@ impl Core {
             instance_id,
             seq: output.next_seq,
         })?;
+        self.publish_language_completions(key)?;
         if output.exited {
             self.restart_language_server(key, "Language server exited")?;
             return Ok(());
@@ -168,6 +169,10 @@ impl Core {
             }
             if let Err(error) = self.poll_language_server(&key) {
                 let _ = self.mark_language_unavailable(&key, &error.to_string());
+                let _ = self.fail_language_waiters(
+                    &key,
+                    errors::harness_unavailable("Language server became unavailable"),
+                );
                 eprintln!(
                     "{}",
                     json!({"event":"engine.lsp_failed","kind":errors::kind(&error)})
@@ -204,6 +209,7 @@ impl Core {
             let file = self.editor.stored(&file_id)?.clone();
             self.sync_language_document(key, &file)?;
         }
+        self.start_language_queries(key)?;
         Ok(())
     }
 
@@ -211,6 +217,12 @@ impl Core {
         let uri = file_uri(
             Path::new(&language(&self.languages, key)?.root),
             &file.relative_path,
+        )?;
+        let stale = language_mut(&mut self.languages, key)?
+            .retain_current_revision(&file.file_id, file.revision);
+        self.fail_language_contexts(
+            &stale,
+            errors::stale_version("File revision changed during language request"),
         )?;
         let current = language(&self.languages, key)?.documents.get(&uri).cloned();
         let ready = language(&self.languages, key)?.state == soyeht_protocol::LspState::Ready;
@@ -278,7 +290,11 @@ impl Core {
         self.deliver_language_write(key, operation_key, encoded, bytes.len())
     }
 
-    fn persist_language_server(&mut self, key: &str, events: Vec<(String, Value)>) -> Result<()> {
+    pub(crate) fn persist_language_server(
+        &mut self,
+        key: &str,
+        events: Vec<(String, Value)>,
+    ) -> Result<()> {
         let checkpoint = self.languages.checkpoint(key)?;
         let mutation = StorePort::mutate(
             &mut self.store,
@@ -305,6 +321,48 @@ impl Core {
                 .decode(&bytes)
                 .map_err(|_| errors::internal("Stored language server write is invalid"))?;
             self.deliver_language_write(key, operation_key, bytes, decoded.len())?;
+        }
+        Ok(())
+    }
+
+    fn start_language_queries(&mut self, key: &str) -> Result<()> {
+        let contexts = language(&self.languages, key)?.waiting_contexts();
+        for context in contexts {
+            let query = language(&self.languages, key)?
+                .query(&context)
+                .cloned()
+                .ok_or_else(|| errors::internal("Language request disappeared"))?;
+            if let Some(value) = language_mut(&mut self.languages, key)?.queue(&context, query)? {
+                self.send_language_value(key, &value)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn fail_language_waiters(&mut self, key: &str, error: crate::errors::Error) -> Result<()> {
+        let contexts: Vec<_> = language(&self.languages, key)?
+            .requests
+            .keys()
+            .cloned()
+            .collect();
+        self.fail_language_contexts(&contexts, error)
+    }
+
+    fn fail_language_contexts(
+        &mut self,
+        contexts: &[String],
+        error: crate::errors::Error,
+    ) -> Result<()> {
+        let error = errors::wire(error);
+        for context in contexts {
+            let waiters = self.language_waiters.remove(context).unwrap_or_default();
+            for (connection, id) in waiters {
+                if let Some(client) = self.clients.get(&connection) {
+                    client
+                        .outbox
+                        .send(crate::model::failure(id, error.clone())?);
+                }
+            }
         }
         Ok(())
     }
@@ -430,6 +488,35 @@ fn diagnostic_events(updates: Vec<DiagnosticUpdate>) -> Vec<(String, Value)> {
         .collect()
 }
 
+pub(super) fn bounded_diagnostics(
+    file_id: &str,
+    revision: u64,
+    items: Vec<FileDiagnostic>,
+) -> Result<(Vec<FileDiagnostic>, usize)> {
+    let total = items.len();
+    let mut bounded = Vec::new();
+    let mut bytes = serde_json::to_vec(&json!({
+        "fileId":file_id,
+        "revision":revision.to_string(),
+        "items":[]
+    }))
+    .map_err(|_| errors::internal("Language diagnostics serialization failed"))?
+    .len();
+    for item in items {
+        let size = serde_json::to_vec(&item)
+            .map_err(|_| errors::internal("Language diagnostics serialization failed"))?
+            .len()
+            .saturating_add(1);
+        if bytes.saturating_add(size) > soyeht_protocol::limits::JSON_BYTES.saturating_sub(1024) {
+            break;
+        }
+        bytes = bytes.saturating_add(size);
+        bounded.push(item);
+    }
+    let omitted = total.saturating_sub(bounded.len());
+    Ok((bounded, omitted))
+}
+
 fn language<'a>(service: &'a Service, key: &str) -> Result<&'a Server> {
     service
         .get(key)
@@ -471,4 +558,30 @@ fn percent_encode(bytes: &[u8]) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soyeht_protocol::{DiagnosticSeverity, TextPosition, TextRange};
+
+    #[test]
+    fn diagnostic_publication_is_bounded_after_wire_expansion() {
+        let item = FileDiagnostic {
+            diagnostic_id: "d".repeat(36),
+            range: TextRange {
+                start: TextPosition { line: 0, column: 0 },
+                end: TextPosition { line: 0, column: 1 },
+            },
+            severity: DiagnosticSeverity::Warning,
+            message: "x".repeat(4096),
+            source: "server".into(),
+        };
+        let (items, omitted) = bounded_diagnostics("file-1", 7, vec![item; 500]).unwrap();
+        let event = json!({"fileId":"file-1","revision":"7","items":items});
+        assert!(
+            serde_json::to_vec(&event).unwrap().len() <= soyeht_protocol::limits::JSON_BYTES - 1024
+        );
+        assert!(omitted > 0);
+    }
 }

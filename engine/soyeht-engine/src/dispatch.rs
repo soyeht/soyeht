@@ -291,6 +291,10 @@ impl Core {
             "usage.list" => self.usage_list()?,
             "usage.refresh" => self.usage_refresh(connection, params)?,
             "lsp.status" => self.lsp_status(params)?,
+            "file.symbols" | "file.definition" | "file.references" => {
+                return self.language_request(connection, request_id, method, params);
+            }
+            "file.diagnostics" => self.file_diagnostics(params)?,
             "file.open" => self.file_open(connection, params)?,
             "file.read" => self.file_read(params)?,
             "file.write" => self.file_write(connection, params)?,

@@ -49,7 +49,8 @@ fn respond(message: &Value) -> Vec<Value> {
         ("textDocument/references", Some(id)) => vec![reply(
             id,
             json!([{
-            "uri":uri(message),"range":range(1,4,1,8)}]),
+            "uri":uri(message),"range":range(1,4,1,8)}, {
+            "uri":"file:///outside/private.rs","range":range(0,0,0,1)}]),
         )],
         ("textDocument/formatting", Some(id)) => vec![reply(
             id,

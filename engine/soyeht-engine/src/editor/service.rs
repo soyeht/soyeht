@@ -149,19 +149,23 @@ impl Service {
             .files
             .canonicalize(&root.join(requested_path))
             .map_err(errors::io)?;
-        if target == root || !target.starts_with(&root) {
-            return Err(errors::invalid("File path escapes the workspace"));
+        contained_path(&root, target)
+    }
+
+    pub fn resolve_absolute(
+        &self,
+        workspace_root: &Path,
+        requested: &Path,
+    ) -> Result<ResolvedPath> {
+        if !requested.is_absolute() {
+            return Err(errors::invalid("Language result path must be absolute"));
         }
-        let relative = target
-            .strip_prefix(&root)
-            .map_err(|_| errors::invalid("File path escapes the workspace"))?
-            .to_str()
-            .ok_or_else(|| errors::invalid("File path must be UTF-8"))?
-            .to_owned();
-        Ok(ResolvedPath {
-            canonical: target,
-            relative,
-        })
+        let root = self
+            .files
+            .canonicalize(workspace_root)
+            .map_err(errors::io)?;
+        let target = self.files.canonicalize(requested).map_err(errors::io)?;
+        contained_path(&root, target)
     }
 
     pub fn read_disk(&self, path: &Path) -> Result<String> {
@@ -428,6 +432,22 @@ fn autosave_ms() -> i64 {
     i64::try_from(soyeht_protocol::limits::EDITOR_AUTOSAVE_MS).unwrap_or(i64::MAX)
 }
 
+fn contained_path(root: &Path, target: PathBuf) -> Result<ResolvedPath> {
+    if target == root || !target.starts_with(root) {
+        return Err(errors::invalid("File path escapes the workspace"));
+    }
+    let relative = target
+        .strip_prefix(root)
+        .map_err(|_| errors::invalid("File path escapes the workspace"))?
+        .to_str()
+        .ok_or_else(|| errors::invalid("File path must be UTF-8"))?
+        .to_owned();
+    Ok(ResolvedPath {
+        canonical: target,
+        relative,
+    })
+}
+
 fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile>> {
     let root = fs::canonicalize(root)?;
     let mut builder = ignore::WalkBuilder::new(&root);
@@ -617,9 +637,23 @@ mod tests {
         let resolved = service.resolve(&root, "src/main.rs").unwrap();
         assert_eq!(resolved.canonical, root.join("src/main.rs"));
         assert_eq!(resolved.relative, "src/main.rs");
+        let absolute = service
+            .resolve_absolute(&root, &root.join("src/main.rs"))
+            .unwrap();
+        assert_eq!(absolute.relative, "src/main.rs");
         assert!(service.resolve(&root, "/outside/secret.rs").is_err());
         assert!(service.resolve(&root, "../secret.rs").is_err());
         assert!(service.resolve(&root, "link.rs").is_err());
+        assert!(
+            service
+                .resolve_absolute(&root, &PathBuf::from("/outside/secret.rs"))
+                .is_err()
+        );
+        assert!(
+            service
+                .resolve_absolute(&root, &root.join("link.rs"))
+                .is_err()
+        );
     }
 
     #[test]
