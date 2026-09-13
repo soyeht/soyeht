@@ -20,7 +20,7 @@ Installation registers only `com.soyeht.next.dev.ptyd`, with KeepAlive.
 It refuses to replace an already loaded job. The installed binary stays
 in the profile's `bin` directory, separate from the binary being built.
 
-The internal channel uses typed requests in `wire.rs`, version 3.
+The internal channel uses typed requests in `wire.rs`, version 5.
 `pipes_acp` uses separate stdin and stdout, without echo or newline conversion.
 Stderr goes to `harness-logs/<instanceId>.stderr.log`, with permission 0600.
 Diagnostic log rotation follows the operational work in
@@ -46,3 +46,9 @@ at 1 MiB. Overflow, an invalid message or concurrent reuse of a native ID
 marks `recovery_gap`; the engine must report the gap. Only a complete
 JSON-RPC response actually written to stdin removes the request. Repeated
 writes use the `operation_key` receipt, as with the terminal.
+
+`pipes_lsp` uses the same guarded pipe ownership and raw byte retention, but
+does not parse application messages or retain native requests. The engine owns
+language-server framing and correlation. Reconnecting the engine adopts a live
+language server by instance identity; an exited instance remains inspectable
+until the engine closes it and asks the supervisor to start its replacement.

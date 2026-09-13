@@ -529,6 +529,48 @@ fn pipes_recover_native_requests_after_ack_and_reconnect_without_echoing_stdin()
 }
 
 #[test]
+fn lsp_pipes_preserve_framed_bytes_and_do_not_apply_acp_request_tracking() {
+    let (daemon, mut client) = Daemon::start();
+    let mut config = daemon.shell();
+    config.kind = ProcessKind::PipesLsp;
+    config.argv = vec!["/bin/cat".into()];
+    let instance = spawn(&mut client, config.clone());
+    let framed = "Content-Length: 36\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}";
+    input(&mut client, &instance.instance_id, framed);
+    let mut cursor = 0;
+    let output = wait_text(
+        &mut client,
+        &instance.instance_id,
+        &mut cursor,
+        "Content-Length: 36",
+    );
+    assert_eq!(output, framed);
+    drop(client);
+    let mut client = daemon.connect(2);
+    let adopted = spawn(&mut client, config);
+    assert_eq!(adopted.instance_id, instance.instance_id);
+    assert_eq!(adopted.pid, instance.pid);
+    assert!(matches!(
+        client
+            .request(Request::PendingRequests {
+                instance_id: instance.instance_id.clone()
+            })
+            .unwrap(),
+        Response::Error { kind, .. } if kind == "wrong_process_kind"
+    ));
+    assert!(matches!(
+        client
+            .request(Request::Resize {
+                instance_id: instance.instance_id,
+                cols: 80,
+                rows: 24
+            })
+            .unwrap(),
+        Response::Error { kind, .. } if kind == "wrong_process_kind"
+    ));
+}
+
+#[test]
 fn killing_ptyd_kills_a_pipe_harness_that_ignores_stdin_eof() {
     let (mut daemon, mut client) = Daemon::start();
     let mut config = daemon.shell();

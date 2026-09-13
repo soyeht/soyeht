@@ -1,13 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessKind {
     Pty,
     PipesAcp,
+    PipesLsp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

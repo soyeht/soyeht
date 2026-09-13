@@ -27,7 +27,7 @@ pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> Result<Spaw
     {
         return Err(Error::InvalidSpawnParameters);
     }
-    if config.kind == ProcessKind::PipesAcp {
+    if matches!(config.kind, ProcessKind::PipesAcp | ProcessKind::PipesLsp) {
         return crate::pipe_guard::spawn(config, directory, instance_id);
     }
     let mut master = -1;
