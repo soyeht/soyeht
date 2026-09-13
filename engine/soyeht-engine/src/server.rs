@@ -209,6 +209,7 @@ async fn connection(
     outbox.close(reason);
     write_task.abort();
     if let Ok(mut state) = core.lock() {
+        let web_result = state.disconnect_web_host(&id);
         state.clients.remove(&id);
         state.native_waiters.retain(|_, waiters| {
             waiters.retain(|(connection, _)| connection != &id);
@@ -218,6 +219,15 @@ async fn connection(
             waiters.retain(|(connection, _)| connection != &id);
             !waiters.is_empty()
         });
+        if let Err(error) = web_result {
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "event":"engine.storage_or_supervisor_error",
+                    "kind":errors::kind(&error)
+                })
+            );
+        }
     }
     eprintln!("{}", connection_close_record(&id, local, reason));
 }
@@ -309,6 +319,16 @@ async fn read_requests(
         let Ok(request) = serde_json::from_slice::<Value>(&frame) else {
             return CloseReason::InvalidJson;
         };
+        if request.get("method").is_none() {
+            let accepted = core
+                .lock()
+                .map_err(|_| Error::EngineStatePoisoned)
+                .and_then(|mut state| state.web_host_response(id, request));
+            if accepted.is_err() {
+                return CloseReason::InvalidFrame;
+            }
+            continue;
+        }
         let started = Instant::now();
         let operation_id = uuid::Uuid::new_v4().to_string();
         let method = request["method"]

@@ -1,8 +1,10 @@
 //! Browser composition owned by the engine.
 
+mod host;
 mod panes;
 mod system;
 
+pub use host::WebWaiter;
 pub use system::SystemPortScan;
 
 use crate::{

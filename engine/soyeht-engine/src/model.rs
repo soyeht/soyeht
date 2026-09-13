@@ -41,6 +41,7 @@ pub struct Connected {
     pub streams: BTreeMap<String, Subscription>,
     pub next_binary_ref: u32,
     pub pair_request: Option<String>,
+    pub web_host: bool,
 }
 
 pub fn notification(method: &str, params: Value) -> Result<Frame> {
@@ -51,6 +52,11 @@ pub fn notification(method: &str, params: Value) -> Result<Frame> {
 pub fn response(id: Value, result: Value) -> Result<Frame> {
     Ok(Frame::Json(errors::json_bytes(
         &json!({"jsonrpc":"2.0","id":id,"result":result}),
+    )?))
+}
+pub fn request(id: Value, method: &str, params: Value) -> Result<Frame> {
+    Ok(Frame::Json(errors::json_bytes(
+        &json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}),
     )?))
 }
 pub fn failure(id: Value, error: soyeht_protocol::RpcError) -> Result<Frame> {

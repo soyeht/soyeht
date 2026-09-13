@@ -7,7 +7,7 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::{Actor, HelloParams, Role, Welcome, frame::Frame};
+use soyeht_protocol::{Actor, ClientCapability, HelloParams, Role, Welcome, frame::Frame};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -37,6 +37,7 @@ impl Core {
                 streams: BTreeMap::new(),
                 next_binary_ref: 1,
                 pair_request: None,
+                web_host: false,
             },
         );
         Ok(id)
@@ -56,7 +57,23 @@ impl Core {
                 "Unsupported protocol version",
             ));
         }
+        let web_host_claims = hello
+            .capabilities
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .filter(|capability| **capability == ClientCapability::WebHost)
+            .count();
+        if web_host_claims > 1 {
+            return Err(errors::invalid("Duplicate client capability"));
+        }
+        let wants_web_host = web_host_claims == 1;
         let local = client.local;
+        if wants_web_host && !local {
+            return Err(errors::unauthorized(
+                "Web host capability requires a local human connection",
+            ));
+        }
         let nonce = client.nonce;
         let (role, device_id, pane_id, scope) = if let Some(binding) = hello.binding.as_deref() {
             if !local {
@@ -116,12 +133,25 @@ impl Core {
             device_id,
             pane_id,
         };
+        if wants_web_host {
+            if actor.role != Role::HumanLocal {
+                return Err(errors::unauthorized(
+                    "Web host capability requires a local human connection",
+                ));
+            }
+            if self.clients.iter().any(|(id, client)| {
+                id != connection && client.web_host && !client.outbox.is_closed()
+            }) {
+                return Err(errors::unauthorized("A web host is already connected"));
+            }
+        }
         let client = errors::invariant(
             self.clients.get_mut(connection),
             "Handshake connection disappeared",
         )?;
         client.scope = scope;
         client.actor = Some(actor);
+        client.web_host = wants_web_host;
         serde_json::to_value(Welcome {
             engine_version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: 1,

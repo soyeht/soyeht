@@ -43,6 +43,7 @@ pub struct Core {
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
     pub language_waiters: BTreeMap<String, Vec<(String, Value)>>,
+    pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
 }
@@ -80,6 +81,7 @@ impl Core {
             agents: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
             language_waiters: BTreeMap::new(),
+            web_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
             pair_address: format!("127.0.0.1:{DEV_TCP_PORT}"),
         };
@@ -471,6 +473,7 @@ impl Core {
     pub fn poll_output(&mut self) -> Result<()> {
         self.advance_editor()?;
         self.advance_local_servers()?;
+        self.advance_web_commands()?;
         if self.ptyd.is_none() {
             self.connect_supervisor()?;
         }

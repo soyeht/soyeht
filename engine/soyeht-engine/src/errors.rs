@@ -31,6 +31,7 @@ pub enum Error {
     PtydUnavailable(String),
     StaleEngineGeneration(String),
     WorktreeUnavailable(String),
+    WebHostUnavailable(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -96,6 +97,7 @@ constructor!(disk_full, DiskFull);
 constructor!(ptyd_unavailable, PtydUnavailable);
 constructor!(stale_engine_generation, StaleEngineGeneration);
 constructor!(worktree_unavailable, WorktreeUnavailable);
+constructor!(web_host_unavailable, WebHostUnavailable);
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -278,6 +280,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::PtydUnavailable(_) => ErrorKind::PtydUnavailable,
         Error::StaleEngineGeneration(_) => ErrorKind::StaleEngineGeneration,
         Error::WorktreeUnavailable(_) => ErrorKind::InternalError,
+        Error::WebHostUnavailable(_) => ErrorKind::WebHostUnavailable,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -337,6 +340,7 @@ fn message(error: &Error) -> String {
         | Error::PtydUnavailable(message)
         | Error::StaleEngineGeneration(message)
         | Error::WorktreeUnavailable(message)
+        | Error::WebHostUnavailable(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),
