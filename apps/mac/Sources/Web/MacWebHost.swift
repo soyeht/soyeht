@@ -22,6 +22,10 @@ import WebKit
       onNavigated: { [weak self] generation, url, title in
         await self?.reportNavigation(
           paneId: pane.paneId, generation: generation, url: url, title: title)
+      },
+      onConsoleCounts: { [weak self] warnings, errors in
+        await self?.reportConsoleCounts(
+          paneId: pane.paneId, warnings: warnings, errors: errors)
       })
     sessions[pane.paneId] = session
     session.loadIfNeeded(pane.url)
@@ -62,6 +66,17 @@ import WebKit
       return
     }
   }
+
+  private func reportConsoleCounts(paneId: String, warnings: UInt32, errors: UInt32) async {
+    guard let client else { return }
+    do {
+      try await client.reportWebConsoleCounts(
+        paneId: paneId, warnings: warnings, errors: errors,
+        idempotencyKey: UUID().uuidString)
+    } catch {
+      return
+    }
+  }
 }
 
 @MainActor @Observable final class MacWebSession: NSObject, WKNavigationDelegate {
@@ -76,11 +91,14 @@ import WebKit
   private(set) var viewport: WebViewport?
   @ObservationIgnored
   private let structuredActions: WebStructuredActions
+  @ObservationIgnored
+  private let pageObservation: WebPageObservation
 
   init(
     paneId: String, incognito: Bool, navigationGeneration: UInt32,
     viewport: WebViewport?,
-    onNavigated: @escaping (UInt64, String, String) async -> Void
+    onNavigated: @escaping (UInt64, String, String) async -> Void,
+    onConsoleCounts: @escaping (UInt32, UInt32) async -> Void
   ) {
     self.paneId = paneId
     self.incognito = incognito
@@ -89,10 +107,14 @@ import WebKit
     self.onNavigated = onNavigated
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = incognito ? .nonPersistent() : .default()
+    let observation = WebPageObservation(onCountsChanged: onConsoleCounts)
+    observation.install(in: configuration)
     let view = WKWebView(frame: .zero, configuration: configuration)
     webView = view
     structuredActions = WebStructuredActions(webView: view)
+    pageObservation = observation
     super.init()
+    pageObservation.bind(view)
     webView.navigationDelegate = self
     webView.allowsMagnification = true
     webView.isInspectable = true
@@ -155,6 +177,16 @@ import WebKit
     case .evaluate:
       let value = try await structuredActions.evaluate(command.args)
       return WebCommandResult(paneId: paneId, value: .object(["value": .string(value)]))
+    case .wait:
+      let matched = try await pageObservation.wait(
+        args: command.args, timeoutMs: command.timeoutMs)
+      return WebCommandResult(paneId: paneId, value: .object(["matched": .bool(matched)]))
+    case .console:
+      return WebCommandResult(
+        paneId: paneId, value: try pageObservation.consolePage(since: value(command.args, "since")))
+    case .network:
+      return WebCommandResult(
+        paneId: paneId, value: try pageObservation.networkPage(since: value(command.args, "since")))
     default:
       throw ClientFailure.webHost(.internal_error, "The web command is not implemented.")
     }
@@ -163,6 +195,7 @@ import WebKit
   func stop() {
     webView.stopLoading()
     webView.navigationDelegate = nil
+    pageObservation.stop()
   }
 
   func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
