@@ -68,6 +68,24 @@ private struct ActionOutcome: Decodable {
     }
   }
 
+  func evaluate(_ args: JsonValue) async throws -> String {
+    guard let source = string(args, "js"), !source.isEmpty,
+      source.utf8.count <= ProtocolLimits.webEvaluateBytes
+    else {
+      throw ClientFailure.webHost(.internal_error, "The evaluation source is invalid.")
+    }
+    let raw = try await webView.callAsyncJavaScript(
+      Self.evaluateScript,
+      arguments: ["source": source, "maxBytes": ProtocolLimits.webEvaluateBytes],
+      in: nil, contentWorld: .page)
+    guard let value = raw as? String,
+      value.utf8.count <= ProtocolLimits.webEvaluateBytes
+    else {
+      throw ClientFailure.webHost(.internal_error, "The evaluation result exceeds its limit.")
+    }
+    return value
+  }
+
   private func boundedSnapshot(_ capture: SnapshotCapture, generation: UInt64) throws -> JsonValue {
     var encodedNodes: [JsonValue] = []
     var accepted: Set<String> = []
@@ -134,6 +152,22 @@ private struct ActionOutcome: Decodable {
 }
 
 extension WebStructuredActions {
+  fileprivate static let evaluateScript = #"""
+    const result = await (0, eval)(source);
+    let output;
+    if (typeof result === "string") output = result;
+    else if (typeof result === "undefined") output = "undefined";
+    else {
+      try {
+        const encoded = JSON.stringify(result);
+        output = encoded === undefined ? String(result) : encoded;
+      } catch (_) { output = String(result); }
+    }
+    if (new TextEncoder().encode(output).byteLength > maxBytes)
+      throw new Error("evaluation result exceeds limit");
+    return output;
+    """#
+
   fileprivate static let snapshotScript = #"""
     const visible = element => {
       const style = getComputedStyle(element);

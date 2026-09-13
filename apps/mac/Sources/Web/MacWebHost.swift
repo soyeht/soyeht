@@ -152,6 +152,9 @@ import WebKit
       try await structuredActions.perform(
         command.command, args: command.args, generation: navigationGeneration)
       return WebCommandResult(paneId: paneId, value: .object(["completed": .bool(true)]))
+    case .evaluate:
+      let value = try await structuredActions.evaluate(command.args)
+      return WebCommandResult(paneId: paneId, value: .object(["value": .string(value)]))
     default:
       throw ClientFailure.webHost(.internal_error, "The web command is not implemented.")
     }
