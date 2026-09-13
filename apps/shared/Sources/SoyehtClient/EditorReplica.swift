@@ -210,17 +210,74 @@ extension EngineClient {
   }
 
   public func previewEditorFile(
-    fileId: String, source: EditorContentSource, versionId: String? = nil,
+    fileId: String, revision: String? = nil, source: EditorContentSource,
+    versionId: String? = nil,
     fromLine: UInt32 = 0, lineCount: UInt32 = UInt32(ProtocolLimits.editorViewportLines)
   ) async throws -> FileReadResult {
     try await request(
       "file.read",
       .encoded(
         FileReadParams(
-          fileId: fileId, source: source, versionId: versionId, fromLine: fromLine,
+          fileId: fileId, revision: revision, source: source, versionId: versionId,
+          fromLine: fromLine,
           lineCount: min(lineCount, UInt32(ProtocolLimits.editorViewportLines))))
     )
     .decoded(FileReadResult.self)
+  }
+
+  public func saveEditorFile(_ fileId: String) async throws {
+    if let task = editorWriteTasks[fileId] { await task.value }
+    for _ in 0..<30 {
+      try await refreshEditorFile(fileId)
+      guard editorFiles[fileId]?.file.dirty == true else { return }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    throw ClientFailure.editorCommand("The file did not finish saving before the deadline.")
+  }
+
+  public func reloadEditorFile(_ fileId: String) async throws {
+    if let task = editorWriteTasks[fileId] { await task.value }
+    try await refreshEditorFile(fileId)
+  }
+
+  @discardableResult
+  public func substituteEditorFile(
+    fileId: String, baseRevision: String, pattern: String, replacement: String,
+    everyMatch: Bool
+  ) async throws -> FileWriteResult? {
+    guard !pattern.isEmpty else {
+      throw ClientFailure.editorCommand("The substitution pattern cannot be empty.")
+    }
+    var fromLine: UInt32 = 0
+    var edits: [TextEdit] = []
+    while true {
+      let page = try await previewEditorFile(
+        fileId: fileId, revision: baseRevision, source: .buffer, fromLine: fromLine)
+      guard page.file.revision == baseRevision else {
+        throw ClientFailure.editorCommand("The file changed before substitution completed.")
+      }
+      guard
+        let pageEdits = EditorVimSubstitution.edits(
+          lines: page.lines, pattern: pattern, replacement: replacement,
+          everyMatch: everyMatch, remainingLimit: 4096 - edits.count)
+      else {
+        throw ClientFailure.editorCommand("The substitution exceeds the bounded edit budget.")
+      }
+      edits.append(contentsOf: pageEdits)
+      if page.toLine >= page.file.lineCount { break }
+      guard page.toLine > fromLine else {
+        throw ClientFailure.editorCommand("The engine returned an incomplete editor page.")
+      }
+      fromLine = page.toLine
+    }
+    guard !edits.isEmpty else { return nil }
+    guard try JSONEncoder().encode(edits).count <= ProtocolLimits.editorEditBytes else {
+      throw ClientFailure.editorCommand("The substitution exceeds the bounded edit budget.")
+    }
+    let result = try await writeEditorFile(
+      fileId: fileId, baseRevision: baseRevision, edits: edits)
+    try await refreshEditorFile(fileId)
+    return result
   }
 
   @discardableResult

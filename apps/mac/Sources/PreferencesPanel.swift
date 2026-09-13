@@ -5,6 +5,7 @@ import SwiftUI
 private enum PreferencesSection {
   case harnesses
   case usage
+  case editor
 }
 
 struct PreferencesPanel: View {
@@ -25,6 +26,7 @@ struct PreferencesPanel: View {
       case .harnesses: PreferencesHarnesses(client: client)
       case .usage:
         UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
+      case .editor: EditorInputPreferencesPanel()
       }
     }
     .padding(MacTheme.Space.x10)
@@ -60,7 +62,7 @@ private struct PreferencesSidebar: View {
       sidebarRow("Engine", icon: "memorychip")
       sidebarRow("Phone", icon: "iphone")
       sidebarRow("Tasks & loops", icon: "list.bullet.clipboard")
-      sidebarRow("Shortcuts", icon: "keyboard")
+      sidebarButton("Shortcuts", icon: "keyboard", section: .editor)
       Spacer()
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
         Text("Soyeht \(appVersion) · Dev profile")
@@ -112,6 +114,43 @@ private struct PreferencesSidebar: View {
 
   private var appVersion: String {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Dev"
+  }
+}
+
+private struct EditorInputPreferencesPanel: View {
+  @Environment(EditorInputPreferences.self) private var preferences
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
+      Text("Editor shortcuts").font(MacTheme.chrome(18, weight: .bold))
+      Text("Choose how the editor interprets unmodified keys. This setting applies only to you.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
+      Button {
+        preferences.setVimEnabled(!preferences.vimEnabled)
+      } label: {
+        HStack(spacing: MacTheme.Space.x14) {
+          VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+            Text("Vim mode").font(MacTheme.chrome(14, weight: .bold))
+            Text("Normal, insert and visual modes with bounded Ex commands")
+              .font(MacTheme.chrome(MacTheme.TypeScale.control))
+              .foregroundStyle(MacTheme.secondary)
+          }
+          Spacer()
+          PreferenceToggle(isOn: preferences.vimEnabled)
+        }
+        .padding(.horizontal, MacTheme.Space.x16).frame(height: 64)
+        .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+      }
+      .buttonStyle(.plain)
+      Text("Off restores the standard editor bindings immediately.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.small))
+        .foregroundStyle(MacTheme.muted)
+      Spacer()
+    }
+    .padding(.vertical, MacTheme.Space.x16).padding(.horizontal, 22)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 }
 

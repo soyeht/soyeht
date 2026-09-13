@@ -4,6 +4,7 @@ import SwiftUI
 
 struct EditorPaneView: View {
   @Bindable var client: EngineClient
+  @Environment(EditorInputPreferences.self) private var inputPreferences
   let pane: Pane
   @State private var selectedPosition: TextPosition?
   @State private var showHistory = false
@@ -14,6 +15,8 @@ struct EditorPaneView: View {
   @State private var diff: FileDiffResult?
   @State private var diffProblem: String?
   @State private var showDiff = false
+  @State private var vimMode = EditorVimMode.normal
+  @State private var vimCommandLine: String?
 
   private var view: EditorFileView? {
     client.editorFiles.values.first { $0.file.paneId == pane.paneId }
@@ -40,6 +43,8 @@ struct EditorPaneView: View {
           client: client, view: view, selectedPosition: $selectedPosition,
           navigationTarget: client.editorNavigationTarget,
           languageStatus: languageStatus, diff: currentDiff.map(EditorDiffPresentation.init),
+          vimEnabled: inputPreferences.vimEnabled, vimMode: $vimMode,
+          vimCommandLine: $vimCommandLine,
           definition: openDefinition, findReferences: findReferences
         )
       } else {
@@ -254,6 +259,9 @@ private struct EditorPaneBody: View {
   let navigationTarget: EditorNavigationTarget?
   let languageStatus: LspServerStatus?
   let diff: EditorDiffPresentation?
+  let vimEnabled: Bool
+  @Binding var vimMode: EditorVimMode
+  @Binding var vimCommandLine: String?
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
 
@@ -265,13 +273,16 @@ private struct EditorPaneBody: View {
         EditorCodeViewport(
           client: client, view: view, selectedPosition: $selectedPosition,
           navigationTarget: navigationTarget,
-          diff: diff, definition: definition, findReferences: findReferences)
+          diff: diff, vimEnabled: vimEnabled, vimMode: $vimMode,
+          vimCommandLine: $vimCommandLine, definition: definition,
+          findReferences: findReferences)
         if view.review != nil {
           EditorAgentReviewBar(
             client: client, view: view, selectedPosition: selectedPosition)
         }
         EditorStatusBar(
-          view: view, selectedPosition: selectedPosition, lsp: languageStatus, diff: diff)
+          view: view, selectedPosition: selectedPosition, lsp: languageStatus, diff: diff,
+          vimEnabled: vimEnabled, vimMode: vimMode, vimCommandLine: vimCommandLine)
       }
     }
     .background(MacTheme.face)
@@ -417,6 +428,9 @@ private struct EditorCodeViewport: View {
   @Binding var selectedPosition: TextPosition?
   let navigationTarget: EditorNavigationTarget?
   let diff: EditorDiffPresentation?
+  let vimEnabled: Bool
+  @Binding var vimMode: EditorVimMode
+  @Binding var vimCommandLine: String?
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
 
@@ -428,6 +442,7 @@ private struct EditorCodeViewport: View {
         diffMarkers: diff?.gutterMarkers(lineCount: view.file.lineCount) ?? [:],
         agentReviewLines: reviewPresentation?.lines ?? [],
         agentCursors: Array(view.agentCursors.values),
+        vimEnabled: vimEnabled, vimMode: $vimMode, vimCommandLine: $vimCommandLine,
         onDefinition: definition, onReferences: findReferences
       )
       .background(MacTheme.face)
@@ -605,12 +620,20 @@ private struct EditorStatusBar: View {
   let selectedPosition: TextPosition?
   let lsp: LspServerStatus?
   let diff: EditorDiffPresentation?
+  let vimEnabled: Bool
+  let vimMode: EditorVimMode
+  let vimCommandLine: String?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
       Text(language).font(MacTheme.chrome(MacTheme.TypeScale.small)).help(languageHelp)
       Text("UTF-8").font(MacTheme.chrome(MacTheme.TypeScale.small))
       Text("LF").font(MacTheme.chrome(MacTheme.TypeScale.small))
+      if vimEnabled {
+        Text(vimCommandLine ?? "-- \(vimMode.rawValue.uppercased()) --")
+          .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+          .foregroundStyle(MacTheme.accent)
+      }
       Text(
         "Ln \(UInt64(selectedPosition?.line ?? view.viewport?.fromLine ?? 0) + 1), Col \(UInt64(selectedPosition?.column ?? 0) + 1)"
       )

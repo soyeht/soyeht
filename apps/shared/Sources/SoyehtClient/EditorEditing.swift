@@ -157,6 +157,25 @@ public enum EditorEditing {
     return result as String
   }
 
+  public static func replacementPlan(
+    text: String, viewportStartLine: UInt32, replacements: [EditorLocalReplacement],
+    selections: [NSRange]
+  ) -> EditorInputPlan? {
+    let source = text as NSString
+    guard validRanges(replacements.map(\.range), length: source.length) != nil else { return nil }
+    let resultLength = replacements.reduce(source.length) {
+      $0 - $1.range.length + $1.text.utf16.count
+    }
+    guard
+      selections.allSatisfy({
+        $0.location != NSNotFound && $0.location >= 0 && NSMaxRange($0) <= resultLength
+      }),
+      let edits = protocolEdits(
+        source: source, viewportStartLine: viewportStartLine, replacements: replacements)
+    else { return nil }
+    return EditorInputPlan(replacements: replacements, selections: selections, edits: edits)
+  }
+
   public static func textPosition(
     text: String, viewportStartLine: UInt32, utf16Offset: Int
   ) -> TextPosition? {

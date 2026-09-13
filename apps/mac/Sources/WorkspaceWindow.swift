@@ -7,6 +7,7 @@ import SwiftUI
 struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
   @State private var navigation = WorkspaceNavigation()
+  @State private var editorInputPreferences = EditorInputPreferences()
   @State private var paneToClose: String?
   @State private var showNewPane = false
   @State private var showPairing = false
@@ -44,6 +45,7 @@ struct WorkspaceWindow: View {
     }
     .padding(EdgeInsets(top: 14, leading: 18, bottom: 18, trailing: 18))
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
+    .environment(editorInputPreferences)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
     .alert(
       "Close pane?",

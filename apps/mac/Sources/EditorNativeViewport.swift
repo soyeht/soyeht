@@ -11,6 +11,9 @@ struct EditorNativeViewport: NSViewRepresentable {
   let diffMarkers: [UInt32: Set<EditorDiffMarker>]
   let agentReviewLines: Set<UInt32>
   let agentCursors: [EditorAgentCursorEvent]
+  let vimEnabled: Bool
+  @Binding var vimMode: EditorVimMode
+  @Binding var vimCommandLine: String?
   let onDefinition: (TextPosition) -> Void
   let onReferences: (TextPosition) -> Void
 
@@ -25,7 +28,7 @@ struct EditorNativeViewport: NSViewRepresentable {
     context.coordinator.update(view)
   }
 
-  @MainActor final class Coordinator: NSObject, NSTextViewDelegate, EditorTextInputDelegate {
+  @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: EditorNativeViewport
     private let textView = EditorTextView()
     private var ruler: EditorLineRuler?
@@ -33,6 +36,8 @@ struct EditorNativeViewport: NSViewRepresentable {
     private var appliedNavigationId: String?
     private var viewportStart: UInt32 = 0
     private var language = EditorLanguage.plain_text
+    private var vim = EditorVimMachine()
+    private var wasVimEnabled = false
 
     init(_ parent: EditorNativeViewport) {
       self.parent = parent
@@ -61,6 +66,10 @@ struct EditorNativeViewport: NSViewRepresentable {
       viewportStart = viewport.fromLine
       language = view.file.language
       textView.inputDelegate = self
+      textView.vimEnabled = parent.vimEnabled
+      if wasVimEnabled, !parent.vimEnabled { vim.reset() }
+      wasVimEnabled = parent.vimEnabled
+      publishVimState()
       ruler?.update(
         startLine: viewport.fromLine, lineCount: viewport.lines.count,
         markers: parent.diffMarkers, agentReviewLines: parent.agentReviewLines,
@@ -139,6 +148,21 @@ struct EditorNativeViewport: NSViewRepresentable {
     func findReferences(at offset: Int) {
       guard let position = position(at: offset) else { return }
       parent.onReferences(position)
+    }
+
+    func handleVim(_ key: EditorVimKey, ranges: [NSRange]) -> Bool {
+      guard parent.vimEnabled else { return false }
+      let result = vim.handle(
+        key, text: textView.string, viewportStartLine: viewportStart,
+        selections: ranges, language: language)
+      if let plan = result.plan { apply(plan) }
+      if let selections = result.selections {
+        textView.selectedRanges = selections.map(NSValue.init(range:))
+        selectionChanged()
+      }
+      if let effect = result.effect { perform(effect) }
+      publishVimState()
+      return result.handled
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -293,6 +317,40 @@ struct EditorNativeViewport: NSViewRepresentable {
       ruler?.needsDisplay = true
     }
 
+    private func publishVimState() {
+      parent.vimMode = vim.mode
+      parent.vimCommandLine = vim.commandLine
+    }
+
+    private func perform(_ effect: EditorVimEffect) {
+      let fileId = parent.view.file.fileId
+      switch effect {
+      case .close:
+        parent.client.closePane(parent.view.file.paneId)
+      case .save:
+        Task { @MainActor in await report { try await self.parent.client.saveEditorFile(fileId) } }
+      case .reload:
+        Task { @MainActor in await report { try await self.parent.client.reloadEditorFile(fileId) }
+        }
+      case .substitute(let pattern, let replacement, let everyMatch):
+        Task { @MainActor in
+          await report {
+            try await self.parent.client.reloadEditorFile(fileId)
+            guard let revision = self.parent.client.editorFiles[fileId]?.file.revision else {
+              throw ClientFailure.invalidSnapshot
+            }
+            _ = try await self.parent.client.substituteEditorFile(
+              fileId: fileId, baseRevision: revision, pattern: pattern,
+              replacement: replacement, everyMatch: everyMatch)
+          }
+        }
+      }
+    }
+
+    private func report(_ operation: () async throws -> Void) async {
+      do { try await operation() } catch { parent.client.problem = error.localizedDescription }
+    }
+
     private func position(at offset: Int) -> TextPosition? {
       EditorEditing.textPosition(
         text: textView.string, viewportStartLine: viewportStart, utf16Offset: offset)
@@ -300,18 +358,9 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 }
 
-@MainActor private protocol EditorTextInputDelegate: AnyObject {
-  func insert(_ inserted: String, ranges: [NSRange]) -> Bool
-  func delete(_ ranges: [NSRange], backward: Bool) -> Bool
-  func toggleComment(_ ranges: [NSRange])
-  func selectNextOccurrence(_ ranges: [NSRange])
-  func addCursor(at offset: Int)
-  func goToDefinition(at offset: Int)
-  func findReferences(at offset: Int)
-}
-
 @MainActor private final class EditorTextView: NSTextView {
-  weak var inputDelegate: EditorTextInputDelegate?
+  weak var inputDelegate: EditorNativeViewport.Coordinator?
+  var vimEnabled = false
   private var contextOffset = 0
 
   override func insertText(_ insertString: Any, replacementRange: NSRange) {
@@ -350,6 +399,17 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
     if flags.contains(.command), key == "s" { return true }
     return super.performKeyEquivalent(with: event)
+  }
+
+  override func keyDown(with event: NSEvent) {
+    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard vimEnabled, !flags.contains(.command), !flags.contains(.control),
+      !flags.contains(.option), let key = vimKey(event),
+      inputDelegate?.handleVim(key, ranges: selectedRanges.map(\.rangeValue)) == true
+    else {
+      super.keyDown(with: event)
+      return
+    }
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -404,6 +464,17 @@ struct EditorNativeViewport: NSViewRepresentable {
   private func ranges(_ replacement: NSRange) -> [NSRange] {
     if replacement.location != NSNotFound { return [replacement] }
     return selectedRanges.map(\.rangeValue)
+  }
+
+  private func vimKey(_ event: NSEvent) -> EditorVimKey? {
+    switch event.keyCode {
+    case 36, 76: return .enter
+    case 51: return .backspace
+    case 53: return .escape
+    default:
+      guard let characters = event.characters, !characters.isEmpty else { return nil }
+      return .character(characters)
+    }
   }
 }
 
