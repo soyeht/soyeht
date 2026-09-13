@@ -38,6 +38,7 @@ struct EditorNavigationPalette: View {
   @State private var query = ""
   @State private var replacement = ""
   @State private var matches: [FileSearchMatch] = []
+  @State private var symbols: [FileSymbol] = []
   @State private var status: String?
   @FocusState private var queryFocused: Bool
 
@@ -97,10 +98,13 @@ struct EditorNavigationPalette: View {
             commandRow(command)
           }
         }
+        ForEach(Array(symbols.enumerated()), id: \.offset) { _, symbol in
+          symbolRow(symbol)
+        }
         ForEach(matches, id: \.paletteId) { match in
           matchRow(match)
         }
-        if filteredCommands.isEmpty && matches.isEmpty && !query.isEmpty {
+        if filteredCommands.isEmpty && symbols.isEmpty && matches.isEmpty && !query.isEmpty {
           Text("No matches")
             .font(MacTheme.chrome(MacTheme.TypeScale.caption))
             .foregroundStyle(MacTheme.secondary).padding(.vertical, MacTheme.Space.x18)
@@ -155,6 +159,27 @@ struct EditorNavigationPalette: View {
     }
   }
 
+  private func symbolRow(_ symbol: FileSymbol) -> some View {
+    Button {
+      open(symbol)
+    } label: {
+      HStack(spacing: MacTheme.Space.x10) {
+        Image(systemName: symbolIcon(symbol.kind)).font(.system(size: 13, weight: .medium))
+          .frame(width: 20).foregroundStyle(MacTheme.accent)
+        VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+          Text(symbol.name).font(MacTheme.mono(MacTheme.TypeScale.caption, weight: .semibold))
+          Text("Symbol · \(symbol.kind.rawValue)")
+            .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
+        }
+        Spacer()
+        Text("\(UInt64(symbol.selectionRange.start.line) + 1)")
+          .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
+      }
+      .padding(.horizontal, MacTheme.Space.x10).frame(height: 46)
+      .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    }
+  }
+
   private var activeMode: EditorPaletteMode { mode ?? .commands }
   private var searchKey: String { "\(activeMode.rawValue):\(query)" }
 
@@ -166,6 +191,7 @@ struct EditorNavigationPalette: View {
 
   private func updateResults() async {
     matches = []
+    symbols = []
     status = nil
     guard let workspaceId, !query.isEmpty else { return }
     do {
@@ -180,6 +206,7 @@ struct EditorNavigationPalette: View {
         let pathMatches = try await search(workspaceId, scope: .path)
         let contentMatches = try await search(workspaceId, scope: .content)
         matches = Array((pathMatches + contentMatches).prefix(ProtocolLimits.editorSearchResults))
+        symbols = await matchingSymbols()
       case .commands, .line: return
       }
     } catch is CancellationError {
@@ -187,6 +214,13 @@ struct EditorNavigationPalette: View {
     } catch {
       status = error.localizedDescription
     }
+  }
+
+  private func matchingSymbols() async -> [FileSymbol] {
+    guard let file = client.selectedEditorFile?.file,
+      let result = try? await client.editorSymbols(fileId: file.fileId, revision: file.revision)
+    else { return [] }
+    return result.items.filter { fuzzyContains($0.name, query) }
   }
 
   private func search(_ workspaceId: String, scope: FileSearchScope) async throws
@@ -198,8 +232,10 @@ struct EditorNavigationPalette: View {
   }
 
   private func submitPrimary() {
-    if let command = filteredCommands.first, matches.isEmpty {
+    if let command = filteredCommands.first, symbols.isEmpty, matches.isEmpty {
       run(command)
+    } else if let symbol = symbols.first {
+      open(symbol)
     } else if let match = matches.first {
       open(match)
     } else if activeMode == .line {
@@ -213,6 +249,7 @@ struct EditorNavigationPalette: View {
     case .searchProject: reset(to: .project)
     case .searchEverywhere: reset(to: .everywhere)
     case .goToLine: reset(to: .line)
+    case .formatDocument: formatDocument()
     case .settings:
       mode = nil
       NotificationCenter.default.post(name: .showSoyehtPreferences, object: nil)
@@ -226,6 +263,7 @@ struct EditorNavigationPalette: View {
     query = ""
     replacement = ""
     matches = []
+    symbols = []
     status = nil
     mode = nextMode
     queryFocused = true
@@ -239,6 +277,25 @@ struct EditorNavigationPalette: View {
           column: match.range.start.column)
         mode = nil
       } catch { status = error.localizedDescription }
+    }
+  }
+
+  private func open(_ symbol: FileSymbol) {
+    guard let file = client.selectedEditorFile?.file else { return }
+    Task { @MainActor in
+      do {
+        _ = try await client.readEditorFile(
+          fileId: file.fileId, fromLine: symbol.selectionRange.start.line, lineCount: 200)
+        mode = nil
+      } catch { status = error.localizedDescription }
+    }
+  }
+
+  private func symbolIcon(_ kind: FileSymbolKind) -> String {
+    switch kind {
+    case .function, .method: "function"
+    case .type, .module: "shippingbox"
+    case .property, .variable: "textformat"
     }
   }
 
@@ -267,6 +324,19 @@ struct EditorNavigationPalette: View {
       } catch { status = error.localizedDescription }
     }
   }
+
+  private func formatDocument() {
+    guard let file = client.selectedEditorFile?.file else {
+      status = "Open an editor file before formatting"
+      return
+    }
+    Task { @MainActor in
+      do {
+        _ = try await client.formatEditorFile(fileId: file.fileId, baseRevision: file.revision)
+        mode = nil
+      } catch { status = error.localizedDescription }
+    }
+  }
 }
 
 private enum EditorCommand: String, CaseIterable, Identifiable {
@@ -274,6 +344,7 @@ private enum EditorCommand: String, CaseIterable, Identifiable {
   case searchProject
   case searchEverywhere
   case goToLine
+  case formatDocument
   case settings
   case toggleAppBar
 
@@ -284,6 +355,7 @@ private enum EditorCommand: String, CaseIterable, Identifiable {
     case .searchProject: "Search Project"
     case .searchEverywhere: "Search Everywhere"
     case .goToLine: "Go to Line"
+    case .formatDocument: "Format Document"
     case .settings: "Open Settings"
     case .toggleAppBar: "Toggle App Bar"
     }
@@ -294,6 +366,7 @@ private enum EditorCommand: String, CaseIterable, Identifiable {
     case .searchProject: "Find or replace text across the workspace"
     case .searchEverywhere: "Find files, code, commands, and settings"
     case .goToLine: "Move the visible viewport to a line"
+    case .formatDocument: "Format the open file with its language server"
     case .settings: "Open app preferences"
     case .toggleAppBar: "Show or hide workspace navigation"
     }
@@ -303,6 +376,7 @@ private enum EditorCommand: String, CaseIterable, Identifiable {
     case .openFile: "doc.text.magnifyingglass"
     case .searchProject, .searchEverywhere: "magnifyingglass"
     case .goToLine: "number"
+    case .formatDocument: "text.alignleft"
     case .settings: "gearshape"
     case .toggleAppBar: "sidebar.left"
     }
@@ -313,6 +387,7 @@ private enum EditorCommand: String, CaseIterable, Identifiable {
     case .searchProject: "⌘⇧F"
     case .searchEverywhere: "⇧⇧"
     case .goToLine: "⌃G"
+    case .formatDocument: "⌥⇧F"
     case .settings: "⌘,"
     case .toggleAppBar: "⌘⇧B"
     }

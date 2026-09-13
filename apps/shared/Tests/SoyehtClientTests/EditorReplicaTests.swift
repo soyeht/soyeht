@@ -72,12 +72,33 @@ import Testing
         eventId: "4", at: "2026-09-12T20:00:03Z", fileId: file.fileId,
         revision: "2", items: [diagnostic])))
   #expect(client.editorFiles[file.fileId]?.diagnostics.first?.diagnosticId == "diagnostic-1")
+  #expect(client.editorFiles[file.fileId]?.diagnosticRevision == "2")
+
+  let stale = FileDiagnostic(
+    diagnosticId: "stale", range: textRange(), severity: .error,
+    message: "Old position", source: "fixture")
+  try client.applyEditorEvent(
+    .lspDiagnostics,
+    .encoded(
+      LspDiagnosticsEvent(
+        eventId: "5", at: "2026-09-12T20:00:04Z", fileId: file.fileId,
+        revision: "1", items: [stale])))
+  #expect(client.editorFiles[file.fileId]?.diagnostics.first?.diagnosticId == "diagnostic-1")
+
+  saved.revision = "3"
+  try client.applyEditorEvent(
+    .fileSaved,
+    .encoded(
+      FileSavedEvent(
+        eventId: "6", at: "2026-09-12T20:00:05Z", file: saved, by: author)))
+  #expect(client.editorFiles[file.fileId]?.diagnostics.isEmpty == true)
+  #expect(client.editorFiles[file.fileId]?.diagnosticRevision == nil)
 
   try client.applyEditorEvent(
     .editorAgentCursor,
     .encoded(
       EditorAgentCursorEvent(
-        eventId: "5", at: "2026-09-12T20:00:04Z", fileId: file.fileId,
+        eventId: "7", at: "2026-09-12T20:00:06Z", fileId: file.fileId,
         paneId: "agent-1", name: "Worker", position: TextPosition(line: 4, column: 2))))
   #expect(client.editorFiles[file.fileId]?.agentCursors["agent-1"]?.position.line == 4)
 
@@ -85,7 +106,7 @@ import Testing
     .editorReviewRequested,
     .encoded(
       EditorReviewRequestedEvent(
-        eventId: "6", at: "2026-09-12T20:00:05Z", fileId: file.fileId,
+        eventId: "8", at: "2026-09-12T20:00:07Z", fileId: file.fileId,
         revision: "2", paneId: "agent-1", hunks: [])))
   #expect(client.editorFiles[file.fileId]?.review?.paneId == "agent-1")
 

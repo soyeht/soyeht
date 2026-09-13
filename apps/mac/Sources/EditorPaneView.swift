@@ -5,9 +5,12 @@ import SwiftUI
 struct EditorPaneView: View {
   @Bindable var client: EngineClient
   let pane: Pane
-  @State private var selectedLine: UInt32?
+  @State private var selectedPosition: TextPosition?
   @State private var showHistory = false
   @State private var showConflict = false
+  @State private var references: [FileLocation] = []
+  @State private var showReferences = false
+  @State private var languageStatus: LspServerStatus?
 
   private var view: EditorFileView? {
     client.editorFiles.values.first { $0.file.paneId == pane.paneId }
@@ -22,7 +25,10 @@ struct EditorPaneView: View {
         if view.file.conflicted {
           EditorConflictBanner(showConflict: { showConflict = true })
         }
-        EditorPaneBody(client: client, view: view, selectedLine: $selectedLine)
+        EditorPaneBody(
+          client: client, view: view, selectedPosition: $selectedPosition,
+          languageStatus: languageStatus, definition: openDefinition, findReferences: findReferences
+        )
       } else {
         editorLoading
       }
@@ -39,12 +45,62 @@ struct EditorPaneView: View {
         EditorConflictSheet(client: client, file: file)
       }
     }
+    .sheet(isPresented: $showReferences) {
+      EditorReferencesSheet(client: client, items: references, isPresented: $showReferences)
+    }
+    .task(id: languageStatusKey) { await pollLanguageStatus() }
   }
 
   private var branch: String? {
     client.tasks.first {
       $0.workspaceId == pane.workspaceId && $0.worktree?.path == pane.cwd
     }?.worktree?.branch
+  }
+
+  private var languageStatusKey: String {
+    guard let file = view?.file else { return "none:\(client.connectionRevision)" }
+    return "\(file.workspaceId):\(file.language.rawValue):\(client.connectionRevision)"
+  }
+
+  private func pollLanguageStatus() async {
+    guard let file = view?.file else { return }
+    while !Task.isCancelled {
+      do {
+        let result = try await client.languageServerStatus(
+          workspaceId: file.workspaceId, language: file.language)
+        languageStatus = result.servers.first { $0.language == file.language }
+      } catch {
+        languageStatus = nil
+      }
+      do { try await Task.sleep(for: .seconds(2)) } catch { return }
+    }
+  }
+
+  private func openDefinition(_ position: TextPosition) {
+    guard let file = view?.file else { return }
+    Task { @MainActor in
+      do {
+        let result = try await client.editorDefinition(
+          fileId: file.fileId, revision: file.revision, position: position)
+        guard let location = result.location else {
+          client.problem = "No definition was found at this position."
+          return
+        }
+        _ = try await client.openEditorLocation(location)
+      } catch { client.problem = error.localizedDescription }
+    }
+  }
+
+  private func findReferences(_ position: TextPosition) {
+    guard let file = view?.file else { return }
+    Task { @MainActor in
+      do {
+        references = try await client.editorReferences(
+          fileId: file.fileId, revision: file.revision, position: position
+        ).items
+        showReferences = true
+      } catch { client.problem = error.localizedDescription }
+    }
   }
 
   private var editorLoading: some View {
@@ -139,15 +195,20 @@ private struct EditorConflictBanner: View {
 private struct EditorPaneBody: View {
   @Bindable var client: EngineClient
   let view: EditorFileView
-  @Binding var selectedLine: UInt32?
+  @Binding var selectedPosition: TextPosition?
+  let languageStatus: LspServerStatus?
+  let definition: (TextPosition) -> Void
+  let findReferences: (TextPosition) -> Void
 
   var body: some View {
     HStack(spacing: 0) {
       EditorFileTree(client: client, selected: view.file)
       VStack(spacing: 0) {
         EditorTabs(client: client, selected: view.file)
-        EditorCodeViewport(client: client, view: view, selectedLine: $selectedLine)
-        EditorStatusBar(view: view, selectedLine: selectedLine)
+        EditorCodeViewport(
+          client: client, view: view, selectedPosition: $selectedPosition,
+          definition: definition, findReferences: findReferences)
+        EditorStatusBar(view: view, selectedPosition: selectedPosition, lsp: languageStatus)
       }
     }
     .background(MacTheme.face)
@@ -288,25 +349,33 @@ private struct EditorTabs: View {
 private struct EditorCodeViewport: View {
   @Bindable var client: EngineClient
   let view: EditorFileView
-  @Binding var selectedLine: UInt32?
+  @Binding var selectedPosition: TextPosition?
+  let definition: (TextPosition) -> Void
+  let findReferences: (TextPosition) -> Void
 
   var body: some View {
-    EditorNativeViewport(client: client, view: view, selectedLine: $selectedLine)
-      .background(MacTheme.face)
+    EditorNativeViewport(
+      client: client, view: view, selectedPosition: $selectedPosition,
+      onDefinition: definition, onReferences: findReferences
+    )
+    .background(MacTheme.face)
   }
 }
 
 private struct EditorStatusBar: View {
   let view: EditorFileView
-  let selectedLine: UInt32?
+  let selectedPosition: TextPosition?
+  let lsp: LspServerStatus?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
-      Text(language).font(MacTheme.chrome(MacTheme.TypeScale.small))
+      Text(language).font(MacTheme.chrome(MacTheme.TypeScale.small)).help(languageHelp)
       Text("UTF-8").font(MacTheme.chrome(MacTheme.TypeScale.small))
       Text("LF").font(MacTheme.chrome(MacTheme.TypeScale.small))
-      Text("Ln \(UInt64(selectedLine ?? view.viewport?.fromLine ?? 0) + 1), Col 1")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small))
+      Text(
+        "Ln \(UInt64(selectedPosition?.line ?? view.viewport?.fromLine ?? 0) + 1), Col \(UInt64(selectedPosition?.column ?? 0) + 1)"
+      )
+      .font(MacTheme.chrome(MacTheme.TypeScale.small))
       Spacer(minLength: 0)
       if !view.diagnostics.isEmpty {
         Circle().fill(MacTheme.warning).frame(width: 6, height: 6)
@@ -325,5 +394,66 @@ private struct EditorStatusBar: View {
 
   private var language: String {
     view.file.language.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+  }
+
+  private var languageHelp: String {
+    guard let lsp else { return "No language server is active" }
+    return lsp.detail.map { "Language server: \(lsp.state.rawValue) · \($0)" }
+      ?? "Language server: \(lsp.state.rawValue)"
+  }
+}
+
+private struct EditorReferencesSheet: View {
+  @Bindable var client: EngineClient
+  let items: [FileLocation]
+  @Binding var isPresented: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      HStack {
+        Text("References")
+          .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+        Spacer()
+        Button("Done") { isPresented = false }.buttonStyle(NeoPillButtonStyle())
+      }
+      if items.isEmpty {
+        Text("No references found")
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ScrollView {
+          LazyVStack(spacing: MacTheme.Space.x6) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+              Button {
+                open(item)
+              } label: {
+                HStack {
+                  Text(item.path).font(MacTheme.mono(MacTheme.TypeScale.caption))
+                  Spacer()
+                  Text(
+                    "\(UInt64(item.range.start.line) + 1):\(UInt64(item.range.start.column) + 1)"
+                  )
+                  .font(MacTheme.mono(MacTheme.TypeScale.small))
+                  .foregroundStyle(MacTheme.secondary)
+                }
+                .padding(.horizontal, MacTheme.Space.x10).frame(height: 38)
+                .background(MacTheme.face, in: RoundedRectangle(cornerRadius: 8))
+              }
+            }
+          }
+        }
+      }
+    }
+    .padding(MacTheme.Space.x16).frame(width: 560, height: 420)
+    .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
+  }
+
+  private func open(_ location: FileLocation) {
+    Task { @MainActor in
+      do {
+        _ = try await client.openEditorLocation(location)
+        isPresented = false
+      } catch { client.problem = error.localizedDescription }
+    }
   }
 }

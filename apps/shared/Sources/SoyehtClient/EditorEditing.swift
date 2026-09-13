@@ -157,6 +157,12 @@ public enum EditorEditing {
     return result as String
   }
 
+  public static func textPosition(
+    text: String, viewportStartLine: UInt32, utf16Offset: Int
+  ) -> TextPosition? {
+    position(source: text as NSString, offset: utf16Offset, base: viewportStartLine)
+  }
+
   private static func makePlan(
     source: NSString, viewportStartLine: UInt32,
     changes: [(EditorLocalReplacement, Int)]

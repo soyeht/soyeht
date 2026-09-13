@@ -6,7 +6,9 @@ import SwiftUI
 struct EditorNativeViewport: NSViewRepresentable {
   @Bindable var client: EngineClient
   let view: EditorFileView
-  @Binding var selectedLine: UInt32?
+  @Binding var selectedPosition: TextPosition?
+  let onDefinition: (TextPosition) -> Void
+  let onReferences: (TextPosition) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -56,13 +58,13 @@ struct EditorNativeViewport: NSViewRepresentable {
       textView.inputDelegate = self
       ruler?.update(
         startLine: viewport.fromLine, lineCount: viewport.lines.count,
-        changedLines: Set(view.changedLines), selectedLine: parent.selectedLine)
+        changedLines: Set(view.changedLines), selectedLine: parent.selectedPosition?.line)
       let identity =
-        "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine)"
+        "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics))"
       guard renderedIdentity != identity else { return }
       renderedIdentity = identity
       let selection = textView.selectedRanges
-      textView.textStorage?.setAttributedString(attributed(viewport))
+      textView.textStorage?.setAttributedString(attributed(viewport, diagnostics: view.diagnostics))
       textView.selectedRanges = validSelections(selection, length: textView.string.utf16.count)
       textView.needsDisplay = true
       ruler?.needsDisplay = true
@@ -120,6 +122,16 @@ struct EditorNativeViewport: NSViewRepresentable {
       selectionChanged()
     }
 
+    func goToDefinition(at offset: Int) {
+      guard let position = position(at: offset) else { return }
+      parent.onDefinition(position)
+    }
+
+    func findReferences(at offset: Int) {
+      guard let position = position(at: offset) else { return }
+      parent.onReferences(position)
+    }
+
     func textViewDidChangeSelection(_ notification: Notification) {
       selectionChanged()
     }
@@ -172,7 +184,9 @@ struct EditorNativeViewport: NSViewRepresentable {
       }
     }
 
-    private func attributed(_ viewport: FileReadResult) -> NSAttributedString {
+    private func attributed(
+      _ viewport: FileReadResult, diagnostics: [FileDiagnostic]
+    ) -> NSAttributedString {
       let text = EditorEditing.viewportText(viewport.lines)
       let result = NSMutableAttributedString(string: text, attributes: baseAttributes())
       var offset = 0
@@ -187,7 +201,31 @@ struct EditorNativeViewport: NSViewRepresentable {
         }
         offset += length + 1
       }
+      for diagnostic in diagnostics {
+        guard let range = EditorDiagnostics.localRange(diagnostic, in: viewport) else { continue }
+        result.addAttributes(
+          [
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .underlineColor: diagnosticColor(diagnostic.severity),
+            .toolTip: "\(diagnostic.source) · \(diagnostic.message)",
+          ], range: range)
+      }
       return result
+    }
+
+    private func diagnosticIdentity(_ diagnostics: [FileDiagnostic]) -> String {
+      diagnostics.map {
+        "\($0.diagnosticId):\($0.range.start.line):\($0.range.start.column):\($0.range.end.line):\($0.range.end.column):\($0.severity.rawValue):\($0.message)"
+      }.joined(separator: "|")
+    }
+
+    private func diagnosticColor(_ severity: DiagnosticSeverity) -> NSColor {
+      switch severity {
+      case .error: NSColor(MacTheme.danger)
+      case .warning: NSColor(MacTheme.warning)
+      case .information: NSColor(MacTheme.accent)
+      case .hint: NSColor(MacTheme.muted)
+      }
     }
 
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
@@ -220,12 +258,14 @@ struct EditorNativeViewport: NSViewRepresentable {
 
     private func selectionChanged() {
       let location = textView.selectedRange().location
-      let prefix = (textView.string as NSString).substring(
-        with: NSRange(location: 0, length: min(location, textView.string.utf16.count)))
-      let delta = UInt32(clamping: prefix.filter { $0 == "\n" }.count)
-      parent.selectedLine = viewportStart.addingReportingOverflow(delta).partialValue
-      ruler?.selectedLine = parent.selectedLine
+      parent.selectedPosition = position(at: location)
+      ruler?.selectedLine = parent.selectedPosition?.line
       ruler?.needsDisplay = true
+    }
+
+    private func position(at offset: Int) -> TextPosition? {
+      EditorEditing.textPosition(
+        text: textView.string, viewportStartLine: viewportStart, utf16Offset: offset)
     }
   }
 }
@@ -236,10 +276,13 @@ struct EditorNativeViewport: NSViewRepresentable {
   func toggleComment(_ ranges: [NSRange])
   func selectNextOccurrence(_ ranges: [NSRange])
   func addCursor(at offset: Int)
+  func goToDefinition(at offset: Int)
+  func findReferences(at offset: Int)
 }
 
 @MainActor private final class EditorTextView: NSTextView {
   weak var inputDelegate: EditorTextInputDelegate?
+  private var contextOffset = 0
 
   override func insertText(_ insertString: Any, replacementRange: NSRange) {
     guard let inserted = insertString as? String,
@@ -280,6 +323,10 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 
   override func mouseDown(with event: NSEvent) {
+    if event.modifierFlags.contains(.command) {
+      inputDelegate?.goToDefinition(at: characterOffset(for: event))
+      return
+    }
     guard event.modifierFlags.contains(.option), let layoutManager, let textContainer else {
       super.mouseDown(with: event)
       return
@@ -290,6 +337,38 @@ struct EditorNativeViewport: NSViewRepresentable {
     let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
     let offset = min(layoutManager.characterIndexForGlyph(at: glyph), string.utf16.count)
     inputDelegate?.addCursor(at: offset)
+  }
+
+  override func menu(for event: NSEvent) -> NSMenu? {
+    contextOffset = characterOffset(for: event)
+    let menu = (super.menu(for: event)?.copy() as? NSMenu) ?? NSMenu()
+    if !menu.items.isEmpty { menu.addItem(.separator()) }
+    let definition = NSMenuItem(
+      title: "Go to Definition", action: #selector(openDefinitionFromMenu), keyEquivalent: "")
+    definition.target = self
+    menu.addItem(definition)
+    let references = NSMenuItem(
+      title: "Find References", action: #selector(findReferencesFromMenu), keyEquivalent: "")
+    references.target = self
+    menu.addItem(references)
+    return menu
+  }
+
+  @objc private func openDefinitionFromMenu() {
+    inputDelegate?.goToDefinition(at: contextOffset)
+  }
+
+  @objc private func findReferencesFromMenu() {
+    inputDelegate?.findReferences(at: contextOffset)
+  }
+
+  private func characterOffset(for event: NSEvent) -> Int {
+    guard let layoutManager, let textContainer else { return selectedRange().location }
+    var point = convert(event.locationInWindow, from: nil)
+    point.x -= textContainerOrigin.x
+    point.y -= textContainerOrigin.y
+    let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
+    return min(layoutManager.characterIndexForGlyph(at: glyph), string.utf16.count)
   }
 
   private func ranges(_ replacement: NSRange) -> [NSRange] {

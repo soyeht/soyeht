@@ -8,6 +8,7 @@ public struct EditorFileView: Sendable {
   public var lastSavedBy: FileAuthor?
   public var conflict: FileConflictEvent?
   public var diagnostics: [FileDiagnostic]
+  public var diagnosticRevision: String?
   public var agentCursors: [String: EditorAgentCursorEvent]
   public var review: EditorReviewRequestedEvent?
 
@@ -18,6 +19,7 @@ public struct EditorFileView: Sendable {
     lastSavedBy = nil
     conflict = nil
     diagnostics = []
+    diagnosticRevision = nil
     agentCursors = [:]
     review = nil
   }
@@ -67,7 +69,11 @@ extension EngineClient {
       }
     case .lspDiagnostics:
       let event = try params.decoded(LspDiagnosticsEvent.self)
-      updateEditor(event.fileId) { $0.diagnostics = event.items }
+      updateEditor(event.fileId) {
+        guard $0.file.revision == event.revision else { return }
+        $0.diagnostics = event.items
+        $0.diagnosticRevision = event.revision
+      }
     case .editorAgentCursor:
       let event = try params.decoded(EditorAgentCursorEvent.self)
       updateEditor(event.fileId) { $0.agentCursors[event.paneId] = event }
@@ -228,6 +234,67 @@ extension EngineClient {
     .decoded(FileSearchResult.self)
   }
 
+  public func editorSymbols(fileId: String, revision: String) async throws -> FileSymbolsResult {
+    try await request(
+      "file.symbols", .encoded(FileSymbolsParams(fileId: fileId, revision: revision))
+    ).decoded(FileSymbolsResult.self)
+  }
+
+  public func editorDefinition(
+    fileId: String, revision: String, position: TextPosition
+  ) async throws -> FileDefinitionResult {
+    try await request(
+      "file.definition",
+      .encoded(FilePositionParams(fileId: fileId, revision: revision, position: position))
+    ).decoded(FileDefinitionResult.self)
+  }
+
+  public func editorReferences(
+    fileId: String, revision: String, position: TextPosition
+  ) async throws -> FileReferencesResult {
+    try await request(
+      "file.references",
+      .encoded(FilePositionParams(fileId: fileId, revision: revision, position: position))
+    ).decoded(FileReferencesResult.self)
+  }
+
+  public func editorDiagnostics(
+    fileId: String, revision: String
+  ) async throws -> FileDiagnosticsResult {
+    try await request(
+      "file.diagnostics", .encoded(FileDiagnosticsParams(fileId: fileId, revision: revision))
+    ).decoded(FileDiagnosticsResult.self)
+  }
+
+  public func languageServerStatus(
+    workspaceId: String? = nil, language: EditorLanguage? = nil
+  ) async throws -> LspStatusResult {
+    try await request(
+      "lsp.status", .encoded(LspStatusParams(workspaceId: workspaceId, language: language))
+    ).decoded(LspStatusResult.self)
+  }
+
+  @discardableResult
+  public func formatEditorFile(fileId: String, baseRevision: String) async throws
+    -> FileFormatResult
+  {
+    let result = try await mutation(
+      "file.format",
+      FileFormatParams(
+        fileId: fileId, baseRevision: baseRevision, idempotencyKey: UUID().uuidString)
+    ).decoded(FileFormatResult.self)
+    upsertEditor(result.file)
+    try await refreshEditorFile(fileId)
+    return result
+  }
+
+  @discardableResult
+  public func openEditorLocation(_ location: FileLocation) async throws -> FileOpenResult {
+    try await openEditorFile(
+      workspaceId: location.workspaceId, path: location.path, line: location.range.start.line,
+      column: location.range.start.column)
+  }
+
   private func refreshEditorFile(_ fileId: String) async throws {
     guard let viewport = editorFiles[fileId]?.viewport else { return }
     _ = try await readEditorFile(
@@ -272,6 +339,10 @@ extension EngineClient {
     _ file: FileDocument, update: (inout EditorFileView) -> Void = { _ in }
   ) {
     var view = editorFiles[file.fileId] ?? EditorFileView(file: file)
+    if view.diagnosticRevision != file.revision {
+      view.diagnostics = []
+      view.diagnosticRevision = nil
+    }
     view.file = file
     update(&view)
     editorFiles[file.fileId] = view

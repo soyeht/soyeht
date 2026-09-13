@@ -64,3 +64,34 @@ import Testing
       == NSRange(location: 12, length: 3))
   #expect(EditorEditing.wordRange(text: "one value", at: 6) == NSRange(location: 4, length: 5))
 }
+
+@Test func diagnosticRangesProjectUtf16CoordinatesIntoOnlyTheVisibleViewport() throws {
+  let file = FileDocument(
+    fileId: "file-1", paneId: "pane-1", workspaceId: "workspace-1", path: "main.swift",
+    language: .swift, revision: "1", diskRevision: "1", lineCount: 20, byteCount: "100",
+    dirty: false, conflicted: false, watching: true)
+  let viewport = FileReadResult(
+    file: file, source: .buffer, fromLine: 8, toLine: 11,
+    lines: [
+      EditorLine(line: 8, text: "let 😀 = value", highlights: []),
+      EditorLine(line: 9, text: "return value", highlights: []),
+      EditorLine(line: 10, text: "}", highlights: []),
+    ])
+  let diagnostic = FileDiagnostic(
+    diagnosticId: "d1",
+    range: TextRange(
+      start: TextPosition(line: 8, column: 4), end: TextPosition(line: 9, column: 6)),
+    severity: .warning, message: "Check value", source: "fixture")
+
+  #expect(
+    EditorDiagnostics.localRange(diagnostic, in: viewport)
+      == NSRange(location: 4, length: 17))
+  var outside = diagnostic
+  outside.range = TextRange(
+    start: TextPosition(line: 2, column: 0), end: TextPosition(line: 3, column: 1))
+  #expect(EditorDiagnostics.localRange(outside, in: viewport) == nil)
+  var splitScalar = diagnostic
+  splitScalar.range = TextRange(
+    start: TextPosition(line: 8, column: 99), end: TextPosition(line: 9, column: 1))
+  #expect(EditorDiagnostics.localRange(splitScalar, in: viewport) == nil)
+}
