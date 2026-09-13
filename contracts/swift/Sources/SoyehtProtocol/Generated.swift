@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 457be0072c7d437efadbf7b0e48c6db9cc7b23a9f048db751a3bd3a3b640bebd). Do not edit.
+// Generated from contracts/protocol.json (sha256 6e36ed94149695bac6694bf3d4201eb951cc7d0fedd3fa6e47e970f9799bbc64). Do not edit.
 import Foundation
 
 
@@ -1295,13 +1295,15 @@ public struct PromptItem: Codable, Sendable {
     public var `status`: PromptStatus
     public var `queuedAt`: String
     public var `generation`: UInt32?
-    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil) {
+    public var `attachments`: [AttachmentRef]?
+    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil) {
         self.`promptId` = `promptId`
         self.`text` = `text`
         self.`origin` = `origin`
         self.`status` = `status`
         self.`queuedAt` = `queuedAt`
         self.`generation` = `generation`
+        self.`attachments` = `attachments`
     }
 }
 

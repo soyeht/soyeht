@@ -2202,6 +2202,12 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AttachmentRef"
+          }
         }
       },
       "required": [
@@ -10274,6 +10280,12 @@
       {
         "name": "offset",
         "bytes": 8
+      }
+    ],
+    "attachmentHeader": [
+      {
+        "name": "attachmentIdUuid",
+        "bytes": 16
       }
     ],
     "types": {

@@ -284,6 +284,7 @@ impl State {
             status: PromptStatus::Queued,
             queued_at: at,
             generation: None,
+            attachments: None,
         };
         self.queue.push_back(prompt.clone());
         self.prioritize_queue();
@@ -653,6 +654,7 @@ mod tests {
                 status: PromptStatus::Queued,
                 queued_at: "now".into(),
                 generation: None,
+                attachments: None,
             });
         }
         let restored = state.queue.drain(..).collect();

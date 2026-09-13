@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 457be0072c7d437efadbf7b0e48c6db9cc7b23a9f048db751a3bd3a3b640bebd). Do not edit.
+// Generated from contracts/protocol.json (sha256 6e36ed94149695bac6694bf3d4201eb951cc7d0fedd3fa6e47e970f9799bbc64). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -633,6 +633,7 @@ export interface PromptItem {
   "status": PromptStatus;
   "queuedAt": string;
   "generation"?: number;
+  "attachments"?: Array<AttachmentRef>;
 }
 
 export interface PermissionOption {

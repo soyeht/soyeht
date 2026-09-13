@@ -310,6 +310,17 @@ executable schema carry no state cursor and never enter replay.
 | connections per device | 8 |
 | `tail` replay | 2 MiB |
 
+**Attachment chunks.** The type 3 subheader is the 16 raw bytes of the UUID
+written in `attachmentId`. Chunks for one attachment are contiguous and arrive
+in order on the same connection. Their payloads are concatenated. The first
+following JSON message that contains the matching `AttachmentRef` completes
+the transfer and declares its MIME type, display name and total byte count.
+The receiver accepts the reference only when the accumulated byte count equals
+the declared decimal `bytes`; an unknown, duplicated, interleaved, oversized or
+incomplete attachment fails closed. Unreferenced bytes are connection-scoped
+and are discarded when the connection closes. When a response contains an
+attachment, its type 3 chunks precede that JSON response on the wire.
+
 **Multipart snapshot (without a `slow_consumer` cycle).** `state.snapshot`
 does not return the snapshot in its response. The engine opens ONE read
 transaction, sends the snapshot in `state.snapshot_part {snapshotId, index,
