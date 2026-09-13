@@ -74,6 +74,8 @@ import WebKit
   private var requestedURL: URL?
   private var navigationGeneration: UInt64 = 0
   private(set) var viewport: WebViewport?
+  @ObservationIgnored
+  private let structuredActions: WebStructuredActions
 
   init(
     paneId: String, incognito: Bool, navigationGeneration: UInt32,
@@ -87,7 +89,9 @@ import WebKit
     self.onNavigated = onNavigated
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = incognito ? .nonPersistent() : .default()
-    webView = WKWebView(frame: .zero, configuration: configuration)
+    let view = WKWebView(frame: .zero, configuration: configuration)
+    webView = view
+    structuredActions = WebStructuredActions(webView: view)
     super.init()
     webView.navigationDelegate = self
     webView.allowsMagnification = true
@@ -124,14 +128,14 @@ import WebKit
       if await cookiesPresent(for: targetHost(command.args)) {
         return WebCommandResult(paneId: paneId, cookiesPresent: true)
       }
-      var result = try perform(command)
+      var result = try await perform(command)
       result.cookiesPresent = false
       return result
     }
-    return try perform(command)
+    return try await perform(command)
   }
 
-  private func perform(_ command: WebCommandParams) throws -> WebCommandResult {
+  private func perform(_ command: WebCommandParams) async throws -> WebCommandResult {
     switch command.command {
     case .navigate:
       try navigate(command.args)
@@ -139,6 +143,15 @@ import WebKit
     case .resize:
       let resized = try resize(command.args)
       return WebCommandResult(paneId: paneId, value: viewportValue(resized))
+    case .snapshot:
+      let value = try await structuredActions.snapshot(
+        generation: navigationGeneration,
+        includeScreenshot: boolean(command.args, "screenshot") == true)
+      return WebCommandResult(paneId: paneId, value: value)
+    case .click, .type, .press, .hover, .select, .scroll:
+      try await structuredActions.perform(
+        command.command, args: command.args, generation: navigationGeneration)
+      return WebCommandResult(paneId: paneId, value: .object(["completed": .bool(true)]))
     default:
       throw ClientFailure.webHost(.internal_error, "The web command is not implemented.")
     }
@@ -151,6 +164,7 @@ import WebKit
 
   func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
     navigationGeneration &+= 1
+    structuredActions.navigationStarted()
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
