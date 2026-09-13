@@ -42,6 +42,8 @@ python3 scripts/check_mac_view_colors.py
 swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources
 swift test --package-path apps/shared
 bash scripts/check_mac.sh
+python3 -m unittest discover -s scripts -p 'test_check_editor_performance.py'
+python3 scripts/check_editor_performance.py
 bash scripts/check_ios.sh
 
 (

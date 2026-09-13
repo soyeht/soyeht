@@ -7,6 +7,11 @@ struct SoyehtMacApp: App {
 
   init() {
     MacTheme.registerFonts()
+    #if DEBUG
+      if let report = EditorPerformanceProbe.requestedReportURL() {
+        EditorPerformanceProbe.runAndExit(report: report)
+      }
+    #endif
   }
 
   var body: some Scene {

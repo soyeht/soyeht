@@ -3,6 +3,22 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
+@MainActor enum EditorTextMetrics {
+  static let lineHeight: CGFloat = 19
+
+  static func attributes() -> [NSAttributedString.Key: Any] {
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.minimumLineHeight = lineHeight
+    paragraph.maximumLineHeight = lineHeight
+    return [
+      .font: NSFont(name: "JetBrains Mono", size: 11.5)
+        ?? NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular),
+      .foregroundColor: NSColor(MacTheme.ink),
+      .paragraphStyle: paragraph,
+    ]
+  }
+}
+
 struct EditorNativeViewport: NSViewRepresentable {
   @Bindable var client: EngineClient
   let view: EditorFileView
@@ -29,7 +45,7 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
-    private static let lineHeight: CGFloat = 19
+    private static let lineHeight = EditorTextMetrics.lineHeight
     var parent: EditorNativeViewport
     private let textView = EditorTextView()
     private weak var scrollView: NSScrollView?
@@ -318,15 +334,7 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
 
     private func baseAttributes() -> [NSAttributedString.Key: Any] {
-      let paragraph = NSMutableParagraphStyle()
-      paragraph.minimumLineHeight = 19
-      paragraph.maximumLineHeight = 19
-      return [
-        .font: NSFont(name: "JetBrains Mono", size: 11.5)
-          ?? NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular),
-        .foregroundColor: NSColor(MacTheme.ink),
-        .paragraphStyle: paragraph,
-      ]
+      EditorTextMetrics.attributes()
     }
 
     private func highlightColor(_ kind: HighlightKind) -> NSColor {
@@ -643,3 +651,136 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
   }
 }
+
+#if DEBUG
+  @MainActor enum EditorPerformanceProbe {
+    private static let viewportSize = NSSize(width: 1000, height: 720)
+    private static let samples = 80
+
+    static func requestedReportURL() -> URL? {
+      let arguments = CommandLine.arguments
+      guard let flag = arguments.firstIndex(of: "--editor-performance-report"),
+        arguments.indices.contains(flag + 1)
+      else { return nil }
+      return URL(fileURLWithPath: arguments[flag + 1])
+    }
+
+    static func runAndExit(report: URL) -> Never {
+      do {
+        try measure().write(to: report, options: .atomic)
+        Foundation.exit(EXIT_SUCCESS)
+      } catch {
+        FileHandle.standardError.write(Data("editor performance: \(error)\n".utf8))
+        Foundation.exit(EXIT_FAILURE)
+      }
+    }
+
+    private static func measure() throws -> Data {
+      let (scroll, textView) = makeSurface()
+      let bitmap = try bitmap(for: scroll)
+      warm(scroll: scroll, textView: textView, bitmap: bitmap)
+      let keystroke = stableP95 {
+        keystrokeSamples(scroll: scroll, textView: textView, bitmap: bitmap)
+      }
+      let scrolling = stableP95 {
+        scrollSamples(scroll: scroll, textView: textView, bitmap: bitmap)
+      }
+      let report: [String: Any] = [
+        "keystroke_to_pixel_p95_ms": keystroke,
+        "scroll_frame_p95_ms": scrolling,
+        "scroll_frames": samples * 3,
+      ]
+      return try JSONSerialization.data(
+        withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    private static func makeSurface() -> (NSScrollView, NSTextView) {
+      let textView = NSTextView(frame: NSRect(origin: .zero, size: viewportSize))
+      textView.isRichText = false
+      textView.drawsBackground = true
+      textView.backgroundColor = NSColor(MacTheme.face)
+      textView.textContainerInset = NSSize(width: 10, height: 10)
+      textView.textContainer?.widthTracksTextView = true
+      textView.textStorage?.setAttributedString(
+        NSAttributedString(string: source(), attributes: EditorTextMetrics.attributes()))
+      let height = CGFloat(ProtocolLimits.editorViewportLines) * EditorTextMetrics.lineHeight + 20
+      textView.setFrameSize(NSSize(width: viewportSize.width, height: height))
+      let scroll = NSScrollView(frame: NSRect(origin: .zero, size: viewportSize))
+      scroll.documentView = textView
+      scroll.hasVerticalScroller = true
+      scroll.layoutSubtreeIfNeeded()
+      return (scroll, textView)
+    }
+
+    private static func source() -> String {
+      (0..<ProtocolLimits.editorViewportLines)
+        .map { "let line_\($0) = \($0) // viewport" }
+        .joined(separator: "\n")
+    }
+
+    private static func bitmap(for view: NSView) throws -> NSBitmapImageRep {
+      guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+        throw CocoaError(.coderInvalidValue)
+      }
+      return bitmap
+    }
+
+    private static func warm(
+      scroll: NSScrollView, textView: NSTextView, bitmap: NSBitmapImageRep
+    ) {
+      if let container = textView.textContainer {
+        textView.layoutManager?.ensureLayout(for: container)
+      }
+      scroll.cacheDisplay(in: scroll.bounds, to: bitmap)
+    }
+
+    private static func keystrokeSamples(
+      scroll: NSScrollView, textView: NSTextView, bitmap: NSBitmapImageRep
+    ) -> [Double] {
+      (0..<samples).map { sample in
+        let range = NSRange(location: 4, length: 1)
+        let value = sample.isMultiple(of: 2) ? "x" : "y"
+        let start = ContinuousClock.now
+        textView.textStorage?.replaceCharacters(in: range, with: value)
+        textView.layoutManager?.ensureLayout(forCharacterRange: range)
+        scroll.cacheDisplay(in: scroll.bounds, to: bitmap)
+        return milliseconds(since: start)
+      }
+    }
+
+    private static func scrollSamples(
+      scroll: NSScrollView, textView: NSTextView, bitmap: NSBitmapImageRep
+    ) -> [Double] {
+      let maximum = max(0, textView.frame.height - scroll.contentSize.height)
+      return (0..<samples).map { sample in
+        let fraction = CGFloat(sample + 1) / CGFloat(samples)
+        let start = ContinuousClock.now
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: maximum * fraction))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        if let container = textView.textContainer {
+          textView.layoutManager?.ensureLayout(
+            forBoundingRect: scroll.documentVisibleRect, in: container)
+        }
+        scroll.cacheDisplay(in: scroll.bounds, to: bitmap)
+        return milliseconds(since: start)
+      }
+    }
+
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Double {
+      let duration = start.duration(to: .now)
+      return Double(duration.components.seconds) * 1000
+        + Double(duration.components.attoseconds) / 1_000_000_000_000_000
+    }
+
+    private static func percentile95(_ values: [Double]) -> Double {
+      let ordered = values.sorted()
+      let rank = Int((Double(ordered.count) * 0.95).rounded(.up))
+      return ordered[min(ordered.count - 1, max(0, rank - 1))]
+    }
+
+    private static func stableP95(_ sample: () -> [Double]) -> Double {
+      let batches = (0..<3).map { _ in percentile95(sample()) }.sorted()
+      return batches[1]
+    }
+  }
+#endif
