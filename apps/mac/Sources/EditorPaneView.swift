@@ -97,7 +97,7 @@ private struct EditorPaneBody: View {
       EditorFileTree(client: client, selected: view.file)
       VStack(spacing: 0) {
         EditorTabs(client: client, selected: view.file)
-        EditorCodeViewport(view: view, selectedLine: $selectedLine)
+        EditorCodeViewport(client: client, view: view, selectedLine: $selectedLine)
         EditorStatusBar(view: view, selectedLine: selectedLine)
       }
     }
@@ -237,97 +237,13 @@ private struct EditorTabs: View {
 }
 
 private struct EditorCodeViewport: View {
+  @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var selectedLine: UInt32?
 
   var body: some View {
-    GeometryReader { geometry in
-      ScrollView([.horizontal, .vertical]) {
-        LazyVStack(alignment: .leading, spacing: 0) {
-          ForEach(view.viewport?.lines ?? [], id: \.line) { line in
-            EditorCodeLine(
-              line: line, changed: view.changedLines.contains(line.line),
-              selected: selectedLine == line.line,
-              hasAgentCursor: view.agentCursors.values.contains { $0.position.line == line.line }
-            )
-            .onTapGesture { selectedLine = line.line }
-          }
-        }
-        .frame(minWidth: geometry.size.width, alignment: .leading)
-        .padding(.top, MacTheme.Space.x10)
-      }
+    EditorNativeViewport(client: client, view: view, selectedLine: $selectedLine)
       .background(MacTheme.face)
-    }
-  }
-}
-
-private struct EditorCodeLine: View {
-  let line: EditorLine
-  let changed: Bool
-  let selected: Bool
-  let hasAgentCursor: Bool
-
-  var body: some View {
-    HStack(spacing: 0) {
-      RoundedRectangle(cornerRadius: 2).fill(changed ? MacTheme.diffAdded : MacTheme.face)
-        .frame(width: 3, height: 19)
-      Text("\(UInt64(line.line) + 1)")
-        .font(MacTheme.mono(MacTheme.TypeScale.small))
-        .foregroundStyle(selected ? MacTheme.ink : MacTheme.muted)
-        .frame(width: 41, alignment: .trailing).padding(.trailing, MacTheme.Space.x10)
-      EditorHighlightedText(line: line)
-        .frame(minWidth: 760, alignment: .leading).padding(.horizontal, MacTheme.Space.x10)
-    }
-    .frame(height: 19)
-    .background(selected || hasAgentCursor ? MacTheme.well : Color.clear)
-  }
-}
-
-private struct EditorHighlightedText: View {
-  let line: EditorLine
-
-  var body: some View {
-    rendered.font(MacTheme.mono(11.5)).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-  }
-
-  private var rendered: Text {
-    let source = line.text as NSString
-    let count = source.length
-    var cursor = 0
-    var result = Text("")
-    for span in line.highlights.sorted(by: { $0.startColumn < $1.startColumn }) {
-      let start = min(Int(span.startColumn), count)
-      let end = min(max(Int(span.endColumn), start), count)
-      guard start >= cursor else { continue }
-      if start > cursor {
-        result =
-          result
-          + Text(source.substring(with: NSRange(location: cursor, length: start - cursor)))
-          .foregroundColor(MacTheme.ink)
-      }
-      if end > start {
-        result =
-          result
-          + Text(source.substring(with: NSRange(location: start, length: end - start)))
-          .foregroundColor(color(span.kind))
-      }
-      cursor = end
-    }
-    if cursor < count {
-      result = result + Text(source.substring(from: cursor)).foregroundColor(MacTheme.ink)
-    }
-    return result
-  }
-
-  private func color(_ kind: HighlightKind) -> Color {
-    switch kind {
-    case .keyword, .function, .operator: MacTheme.accent
-    case .type: MacTheme.syntaxType
-    case .number, .constant: MacTheme.warning
-    case .comment: MacTheme.muted
-    case .string: MacTheme.success
-    case .property, .punctuation, .variable: MacTheme.ink
-    }
   }
 }
 

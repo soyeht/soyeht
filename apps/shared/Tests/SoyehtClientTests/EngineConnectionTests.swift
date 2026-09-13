@@ -98,6 +98,12 @@
     client.stop()
     client.start()
     try await until { client.connected && client.selectedPane?.pid == pid }
+    try await exerciseEditor(client, directory: directory)
+    client.closePane(paneId)
+    try await until { client.panes.isEmpty }
+  }
+
+  @MainActor private func exerciseEditor(_ client: EngineClient, directory: URL) async throws {
     let source = directory.appendingPathComponent("sample.swift")
     try "let value = 1\n".write(to: source, atomically: true, encoding: .utf8)
     let workspaceId = try #require(client.selectedPane?.workspaceId)
@@ -115,10 +121,30 @@
     let edited = try await client.readEditorFile(
       fileId: opened.file.fileId, fromLine: 0, lineCount: 1)
     #expect(edited.lines.first?.text == "let value = 2")
+    client.enqueueEditorEdits(
+      fileId: opened.file.fileId,
+      edits: [
+        TextEdit(
+          range: TextRange(
+            start: TextPosition(line: 0, column: 12),
+            end: TextPosition(line: 0, column: 13)),
+          text: "3")
+      ])
+    client.enqueueEditorEdits(
+      fileId: opened.file.fileId,
+      edits: [
+        TextEdit(
+          range: TextRange(
+            start: TextPosition(line: 0, column: 12),
+            end: TextPosition(line: 0, column: 13)),
+          text: "4")
+      ])
+    try await until { client.editorFiles[opened.file.fileId]?.file.revision == "4" }
+    let queued = try await client.readEditorFile(
+      fileId: opened.file.fileId, fromLine: 0, lineCount: 1)
+    #expect(queued.lines.first?.text == "let value = 4")
     client.closePane(opened.pane.paneId)
     try await until { !client.panes.contains { $0.paneId == opened.pane.paneId } }
-    client.closePane(paneId)
-    try await until { client.panes.isEmpty }
   }
 
   @MainActor private func until(_ condition: () -> Bool) async throws {

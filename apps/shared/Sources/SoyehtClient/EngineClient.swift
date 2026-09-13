@@ -37,6 +37,8 @@ public final class EngineClient {
   @ObservationIgnored private var inputQueue: [(String, Data)] = []
   @ObservationIgnored private var queuedInputBytes = 0
   @ObservationIgnored private var resizeTask: Task<Void, Never>?
+  @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
+  @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   public var readOnly: Bool { credential != nil }
@@ -88,6 +90,9 @@ public final class EngineClient {
   }
   private func disconnect() {
     connected = false
+    for task in editorWriteTasks.values { task.cancel() }
+    editorWriteTasks.removeAll()
+    editorWriteQueues.removeAll()
     if readOnly {
       panes = []
       workspaces = []

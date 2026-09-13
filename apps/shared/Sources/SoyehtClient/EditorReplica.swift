@@ -136,8 +136,21 @@ extension EngineClient {
         fileId: fileId, baseRevision: baseRevision, edits: edits,
         author: FileAuthor(actor: actor, name: "you"), idempotencyKey: UUID().uuidString)
     ).decoded(FileWriteResult.self)
-    upsertEditor(result.file)
+    upsertEditor(result.file) { $0.changedLines = result.changedLines }
     return result
+  }
+
+  public func enqueueEditorEdits(fileId: String, edits: [TextEdit]) {
+    guard !edits.isEmpty else { return }
+    editorWriteQueues[fileId, default: []].append(edits)
+    startEditorWriteTask(fileId)
+  }
+
+  private func startEditorWriteTask(_ fileId: String) {
+    guard editorWriteTasks[fileId] == nil else { return }
+    editorWriteTasks[fileId] = Task { [weak self] in
+      await self?.drainEditorEdits(fileId)
+    }
   }
 
   @discardableResult
@@ -196,6 +209,30 @@ extension EngineClient {
     _ = try await readEditorFile(
       fileId: fileId, fromLine: viewport.fromLine,
       lineCount: max(1, viewport.toLine - viewport.fromLine))
+  }
+
+  private func drainEditorEdits(_ fileId: String) async {
+    defer {
+      editorWriteTasks[fileId] = nil
+      if editorWriteQueues[fileId]?.isEmpty == false { startEditorWriteTask(fileId) }
+    }
+    while !Task.isCancelled, let edits = editorWriteQueues[fileId]?.first {
+      guard let revision = editorFiles[fileId]?.file.revision else {
+        editorWriteQueues[fileId] = nil
+        return
+      }
+      do {
+        _ = try await writeEditorFile(fileId: fileId, baseRevision: revision, edits: edits)
+        editorWriteQueues[fileId]?.removeFirst()
+      } catch {
+        editorWriteQueues[fileId] = nil
+        problem = error.localizedDescription
+        try? await refreshEditorFile(fileId)
+        return
+      }
+    }
+    editorWriteQueues[fileId] = nil
+    try? await refreshEditorFile(fileId)
   }
 
   private func scheduleEditorReload(_ fileId: String) {
