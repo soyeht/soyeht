@@ -108,11 +108,37 @@ impl DatabaseProbe {
         u64::try_from(count).map_err(|_| Error::TestFixture("negative test event count"))
     }
 
+    pub fn latest_event(&self, method: &str) -> Result<Option<Value>> {
+        let raw: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT params FROM events WHERE method=?1 ORDER BY id DESC LIMIT 1",
+                [method],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.map(|value| Ok(serde_json::from_str(&value)?))
+            .transpose()
+    }
+
     pub fn request_result(&self, method: &str, pane_id: &str) -> Result<Option<Value>> {
         let raw: Option<String> = self
             .connection
             .query_row(
                 "SELECT result FROM agent_requests WHERE method=?1 AND pane_id=?2",
+                params![method, pane_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.map(|value| Ok(serde_json::from_str(&value)?))
+            .transpose()
+    }
+
+    pub fn latest_request_result(&self, method: &str, pane_id: &str) -> Result<Option<Value>> {
+        let raw: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT result FROM agent_requests WHERE method=?1 AND pane_id=?2 ORDER BY source_seq DESC LIMIT 1",
                 params![method, pane_id],
                 |row| row.get(0),
             )

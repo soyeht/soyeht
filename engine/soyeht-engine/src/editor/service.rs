@@ -168,6 +168,29 @@ impl Service {
         contained_path(&root, target)
     }
 
+    pub fn resolve_absolute_if_contained(
+        &self,
+        workspace_root: &Path,
+        requested: &Path,
+    ) -> Result<Option<ResolvedPath>> {
+        if !requested.is_absolute() {
+            return Err(errors::invalid("Agent file path must be absolute"));
+        }
+        let root = self
+            .files
+            .canonicalize(workspace_root)
+            .map_err(errors::io)?;
+        let target = match self.files.canonicalize(requested) {
+            Ok(target) => target,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(errors::io(error)),
+        };
+        if target == root || !target.starts_with(&root) {
+            return Ok(None);
+        }
+        contained_path(&root, target).map(Some)
+    }
+
     pub fn read_disk(&self, path: &Path) -> Result<String> {
         self.files
             .read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)

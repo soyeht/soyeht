@@ -44,7 +44,11 @@ impl Core {
         let result = FileDiffResult {
             file_id: file.file_id,
             revision: file.revision.to_string(),
-            hunks: diff.hunks.into_iter().map(wire_hunk).collect(),
+            hunks: diff
+                .hunks
+                .into_iter()
+                .map(|hunk| wire_hunk(hunk, None))
+                .collect(),
             blame: diff.blame.into_iter().map(wire_blame).collect(),
         };
         let value = serde_json::to_value(result)
@@ -60,18 +64,26 @@ impl Core {
     }
 }
 
-fn wire_hunk(hunk: soyeht_vcs::Hunk) -> DiffHunk {
+pub(crate) fn wire_hunk(
+    hunk: soyeht_vcs::Hunk,
+    author: Option<&soyeht_protocol::FileAuthor>,
+) -> DiffHunk {
     DiffHunk {
         hunk_id: hunk.hunk_id,
         old_start: hunk.old_start,
         old_lines: hunk.old_lines,
         new_start: hunk.new_start,
         new_lines: hunk.new_lines,
-        lines: hunk.lines.into_iter().map(wire_line).collect(),
+        lines: hunk
+            .lines
+            .into_iter()
+            .map(|line| wire_line(line, author))
+            .collect(),
     }
 }
 
-fn wire_line(line: soyeht_vcs::Line) -> DiffLine {
+fn wire_line(line: soyeht_vcs::Line, author: Option<&soyeht_protocol::FileAuthor>) -> DiffLine {
+    let changed = line.kind != soyeht_vcs::LineKind::Context;
     DiffLine {
         kind: match line.kind {
             soyeht_vcs::LineKind::Context => DiffLineKind::Context,
@@ -81,7 +93,7 @@ fn wire_line(line: soyeht_vcs::Line) -> DiffLine {
         old_line: line.old_line,
         new_line: line.new_line,
         text: line.text,
-        author: None,
+        author: changed.then(|| author.cloned()).flatten(),
     }
 }
 

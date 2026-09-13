@@ -191,6 +191,24 @@ fn tools_turn(runtime: &Runtime, session: &str, cancelled: &AtomicBool) -> Strin
     output
 }
 
+fn editor_review_turn(runtime: &Runtime, session: &str, cancelled: &AtomicBool) -> String {
+    let cwd = runtime.sessions.lock().unwrap()[session].cwd.clone();
+    let path = std::path::Path::new(&cwd).join("agent-review.txt");
+    let content =
+        "one\nagent two\nthree\nfour\nfive\nsix\nseven\neight\nnine\nagent ten\neleven\ntwelve\n";
+    let result = call(
+        runtime,
+        session,
+        "fs/write_text_file",
+        json!({"path":path,"content":content}),
+        cancelled,
+        false,
+    );
+    let output = format!("Editor write: {}", result.unwrap_or(Value::Null));
+    emit(runtime, session, &output);
+    output
+}
+
 fn ordinary_turn(runtime: &Runtime, session: &str, text: &str, cancelled: &AtomicBool) -> String {
     if matches!(text, "silent" | "ignore-cancel") {
         while text == "ignore-cancel" || !cancelled.load(Ordering::SeqCst) {
@@ -274,6 +292,7 @@ fn execute_turn(
             "elicitation" => elicitation_turn(runtime, session, cancelled),
             "terminal-missing" => missing_terminal_turn(runtime, session, cancelled),
             "tools" => tools_turn(runtime, session, cancelled),
+            "editor-review" => editor_review_turn(runtime, session, cancelled),
             _ => ordinary_turn(runtime, session, text, cancelled),
         }
     }

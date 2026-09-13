@@ -79,7 +79,7 @@ extension EngineClient {
       updateEditor(event.fileId) { $0.agentCursors[event.paneId] = event }
     case .editorReviewRequested:
       let event = try params.decoded(EditorReviewRequestedEvent.self)
-      updateEditor(event.fileId) { $0.review = event }
+      updateEditor(event.fileId) { $0.review = event.hunks.isEmpty ? nil : event }
     default: break
     }
   }

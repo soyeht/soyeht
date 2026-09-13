@@ -108,7 +108,7 @@ import Testing
       EditorReviewRequestedEvent(
         eventId: "8", at: "2026-09-12T20:00:07Z", fileId: file.fileId,
         revision: "2", paneId: "agent-1", hunks: [])))
-  #expect(client.editorFiles[file.fileId]?.review?.paneId == "agent-1")
+  #expect(client.editorFiles[file.fileId]?.review == nil)
 
   client.discardEditorPane(file.paneId)
   #expect(client.editorFiles.isEmpty)

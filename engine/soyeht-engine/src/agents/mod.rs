@@ -73,6 +73,7 @@ pub struct Changes {
     pub(crate) task_dispatch: Option<crate::tasks::dispatching::TaskDispatchChange>,
     pub(crate) task_feedback: Option<crate::tasks::feedback::TaskFeedbackChange>,
     pub(crate) task_loop: Option<crate::tasks::looping::TaskLoopChange>,
+    pub(crate) editor_agent_write: Option<crate::editor::agent_review::AgentWriteChange>,
 }
 
 pub fn native_error(error: soyeht_acp::Error) -> errors::Error {
@@ -160,6 +161,9 @@ impl AgentPersistence<'_> {
         }
         if let Some(task_loop) = &self.changes.task_loop {
             task_loop.persist(tx)?;
+        }
+        if let Some(write) = &self.changes.editor_agent_write {
+            write.persist(tx)?;
         }
         write_pane(tx, self.saved)?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;
@@ -325,6 +329,9 @@ impl Core {
                 self.publish_native_completion(completion)?;
             }
             self.install_committed_agent(&id, saved, state)?;
+            if let Some(write) = changes.editor_agent_write {
+                self.install_agent_write(write);
+            }
         }
         Ok(mutation)
     }

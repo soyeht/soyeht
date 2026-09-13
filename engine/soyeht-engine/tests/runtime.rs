@@ -1645,6 +1645,142 @@ fn file_diff_uses_the_current_buffer_revalidates_scope_and_rejects_stale_revisio
     assert_eq!(escaped["error"]["data"]["kind"], "invalid_params");
 }
 
+#[test]
+fn agent_writes_are_attributed_and_each_review_hunk_resolves_once() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("agent-editor");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("agent-review.txt");
+    let baseline = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n";
+    fs::write(&path, baseline).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Agent editor","path":repository,"idempotencyKey":"agent-editor-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"agent-review.txt","idempotencyKey":"open-agent-review"}),
+    );
+    let file_id = opened["file"]["fileId"].as_str().unwrap().to_owned();
+    let (mut client, pane) = rig.open_agent(client, &json!(workspace));
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"editor-review","idempotencyKey":"agent-editor-write"}),
+    );
+    client.wait_state(&pane, "idle");
+    let agent_name = client.pane(&pane)["name"].as_str().unwrap().to_owned();
+
+    let first = rig
+        .database_probe()
+        .latest_event("editor.review_requested")
+        .unwrap()
+        .unwrap();
+    assert_eq!(first["paneId"], pane);
+    assert_eq!(first["fileId"], file_id);
+    assert_eq!(first["hunks"].as_array().unwrap().len(), 2);
+    assert!(first["hunks"].as_array().unwrap().iter().all(|hunk| {
+        hunk["lines"].as_array().unwrap().iter().any(|line| {
+            line["kind"] != "context"
+                && line["author"]["actor"]["paneId"] == pane
+                && line["author"]["name"] == agent_name
+        })
+    }));
+    let history = client.call("file.history", json!({"fileId":file_id,"limit":1}));
+    assert_eq!(history["items"][0]["author"]["actor"]["paneId"], pane);
+    assert_eq!(history["items"][0]["author"]["name"], agent_name);
+    rig.kill_engine();
+    rig.start();
+    let mut client = rig.client();
+    let revision = first["revision"].as_str().unwrap();
+    let first_hunk = first["hunks"][0]["hunkId"].as_str().unwrap();
+    let accept = json!({"fileId":file_id,"hunkId":first_hunk,"baseRevision":revision,"idempotencyKey":"accept-first-agent-hunk"});
+    let accepted = client.call("editor.review.accept", accept.clone());
+    assert_eq!(client.call("editor.review.accept", accept), accepted);
+    let remaining = rig
+        .database_probe()
+        .latest_event("editor.review_requested")
+        .unwrap()
+        .unwrap();
+    assert_eq!(remaining["hunks"].as_array().unwrap().len(), 1);
+    let second_hunk = remaining["hunks"][0]["hunkId"].as_str().unwrap();
+    let reject = json!({"fileId":file_id,"hunkId":second_hunk,"baseRevision":revision,"idempotencyKey":"reject-second-agent-hunk"});
+    let rejected = client.call("editor.review.reject", reject.clone());
+    assert_eq!(client.call("editor.review.reject", reject), rejected);
+    assert_eq!(rejected["file"]["revision"], "3");
+    let final_review = rig
+        .database_probe()
+        .latest_event("editor.review_requested")
+        .unwrap()
+        .unwrap();
+    assert!(final_review["hunks"].as_array().unwrap().is_empty());
+    let content = client.call(
+        "file.read",
+        json!({"fileId":file_id,"fromLine":0,"lineCount":20}),
+    )["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|line| format!("{}\n", line["text"].as_str().unwrap()))
+        .collect::<String>();
+    assert_eq!(
+        content,
+        "one\nagent two\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n\n"
+    );
+}
+
+#[test]
+fn agent_write_refuses_a_dirty_editor_file_without_touching_disk() {
+    let rig = Rig::new();
+    let repository = rig.path.join("agent-editor-dirty");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("agent-review.txt");
+    let baseline = "one\ntwo\nthree\n";
+    fs::write(&path, baseline).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Dirty editor","path":repository,"idempotencyKey":"dirty-editor-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let file_id = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"agent-review.txt","idempotencyKey":"open-dirty-review"}),
+    )["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (mut client, pane) = rig.open_agent(client, &json!(workspace));
+    client.call(
+        "file.write",
+        json!({"fileId":file_id,"baseRevision":"1","author":local_file_author(),"edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":3}},"text":"human"}],"idempotencyKey":"human-draft-before-agent"}),
+    );
+    fs::write(&path, "external\n").unwrap();
+    wait_for_editor_file(&mut client, &file_id, |file| file["conflicted"] == true);
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"editor-review","idempotencyKey":"agent-write-refused"}),
+    );
+    client.wait_state(&pane, "idle");
+    assert_eq!(fs::read_to_string(path).unwrap(), "external\n");
+    let result = rig
+        .database_probe()
+        .latest_request_result("fs/write_text_file", &pane)
+        .unwrap()
+        .unwrap();
+    assert!(
+        result["native"]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("clean editor file")
+    );
+}
+
 fn git(repository: &std::path::Path, arguments: &[&str]) {
     let status = Command::new("git")
         .arg("-C")

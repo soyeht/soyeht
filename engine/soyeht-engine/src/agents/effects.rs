@@ -10,6 +10,14 @@ use soyeht_store::agents::{self, NativeRequest};
 use std::path::Path;
 use uuid::Uuid;
 
+type NativeWriteResult = std::result::Result<
+    (
+        Value,
+        Option<crate::editor::agent_review::PreparedAgentWrite>,
+    ),
+    RpcError,
+>;
+
 pub fn finish(
     request: &NativeRequest,
     result: std::result::Result<Value, RpcError>,
@@ -47,6 +55,7 @@ impl Core {
             let state = self.agent_state(pane)?;
             let saved = self.panes[pane].stored.clone();
             let root = Path::new(&saved.pane.cwd);
+            let mut editor_write = None;
             let result = if request.generation != saved.pane.generation
                 || request.params["sessionId"].as_str() != state.session_id.as_deref()
             {
@@ -87,43 +96,12 @@ impl Core {
                             Ok(json!({"content":content}))
                         }),
                     "fs/write_text_file" => {
-                        if let Some(content) = request.params["content"].as_str() {
-                            if request.public.get("started").is_some() {
-                                // An interrupted write is never blindly repeated. A
-                                // matching target proves its intended final value;
-                                // another value needs a new explicit agent request.
-                                if filesystem::read(root, path)
-                                    .is_ok_and(|actual| actual == content)
-                                {
-                                    Ok(json!({}))
-                                } else {
-                                    Err(failure(
-                                        "Interrupted file write could not be reconciled; inspect the file before retrying",
-                                    ))
-                                }
-                            } else {
-                                let now_ms = self.now_ms();
-                                StorePort::mutate(
-                                    &mut self.store,
-                                    "native-effect",
-                                    &Uuid::new_v4().to_string(),
-                                    "start",
-                                    |tx| {
-                                        agents::start_effect(
-                                            tx,
-                                            &request.request_id,
-                                            &json!({"at":now_ms}),
-                                        )?;
-                                        Ok((json!({}), vec![]))
-                                    },
-                                )
-                                .map_err(errors::storage)?;
-                                filesystem::write_with_key(root, path, content, &request.request_id)
-                                    .map(|()| json!({}))
-                                    .map_err(|error| failure(error.to_string()))
+                        match self.native_file_write(pane, root, path, &request) {
+                            Ok((value, write)) => {
+                                editor_write = write;
+                                Ok(value)
                             }
-                        } else {
-                            Err(failure("Text content is required"))
+                            Err(error) => Err(error),
                         }
                     }
                     _ => Err(RpcError {
@@ -147,9 +125,65 @@ impl Core {
                 result
             };
             let mut changes = Changes::default();
+            if result.is_ok()
+                && let Some(write) = editor_write
+            {
+                changes.editor_agent_write = Some(write.change);
+                changes.events.extend(write.events);
+            }
             finish(&request, result, &mut changes);
             self.commit_agent(saved, state, changes, None, json!({}))?;
         }
+        Ok(())
+    }
+
+    fn native_file_write(
+        &mut self,
+        pane: &str,
+        root: &Path,
+        path: &Path,
+        request: &NativeRequest,
+    ) -> NativeWriteResult {
+        let content = request.params["content"]
+            .as_str()
+            .ok_or_else(|| failure("Text content is required"))?;
+        let recovering = request.public.get("started").is_some();
+        let tracked = self
+            .prepare_agent_write(pane, path, content, recovering)
+            .map_err(|error| failure(error.to_string()))?;
+        if recovering {
+            if !filesystem::read(root, path).is_ok_and(|actual| actual == content) {
+                return Err(failure(
+                    "Interrupted file write could not be reconciled; inspect the file before retrying",
+                ));
+            }
+        } else {
+            self.start_native_file_effect(request)
+                .map_err(|error| failure(error.to_string()))?;
+            if let Some(write) = &tracked {
+                self.write_prepared_agent_file(&write.change, &write.current_disk, content)
+                    .map_err(|error| failure(error.to_string()))?;
+            } else {
+                filesystem::write_with_key(root, path, content, &request.request_id)
+                    .map_err(|error| failure(error.to_string()))?;
+            }
+        }
+        Ok((json!({}), tracked))
+    }
+
+    fn start_native_file_effect(&mut self, request: &NativeRequest) -> Result<()> {
+        let now_ms = self.now_ms();
+        StorePort::mutate(
+            &mut self.store,
+            "native-effect",
+            &Uuid::new_v4().to_string(),
+            "start",
+            |tx| {
+                agents::start_effect(tx, &request.request_id, &json!({"at":now_ms}))?;
+                Ok((json!({}), vec![]))
+            },
+        )
+        .map_err(errors::storage)?;
         Ok(())
     }
 }
