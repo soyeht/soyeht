@@ -5,7 +5,7 @@ use crate::{
     ports::{Clock, StorePort},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde_json::json;
+use serde_json::{Value, json};
 use soyeht_acp::{
     Message, RpcError, client,
     rpc::{Record as NativeRecord, decode},
@@ -25,6 +25,19 @@ fn next_prompt<S: StorePort, C: Clock + ?Sized>(
     let open = store.agent_open_requests(pane).map_err(errors::storage)?;
     let next = state.take_next(generation, clock.now_ms(), !open.is_empty())?;
     Ok((open, next))
+}
+
+fn prompt_payload(store: &impl StorePort, session: &str, prompt: &PromptItem) -> Result<Value> {
+    let attachments =
+        StorePort::agent_prompt_attachments(store, &prompt.prompt_id).map_err(errors::storage)?;
+    let images: Vec<_> = attachments
+        .iter()
+        .map(|attachment| client::PromptImage {
+            mime_type: &attachment.reference.mime_type,
+            bytes: &attachment.bytes,
+        })
+        .collect();
+    Ok(client::prompt_with_images(session, &prompt.text, &images))
 }
 
 struct NativeContext<'a> {
@@ -514,7 +527,7 @@ impl Core {
             &mut state,
             &mut changes,
             "session/prompt",
-            client::prompt(&session, &prompt.text),
+            prompt_payload(&self.store, &session, &prompt)?,
             &prompt.prompt_id,
             self.now_ms(),
         )?;

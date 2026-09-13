@@ -317,7 +317,7 @@ async fn read_requests(
                 let accepted = core
                     .lock()
                     .map_err(|_| Error::EngineStatePoisoned)
-                    .and_then(|mut state| state.web_attachment_chunk(id, header, &bytes));
+                    .and_then(|mut state| state.attachment_chunk(id, header, &bytes));
                 if accepted.is_err() {
                     return CloseReason::InvalidFrame;
                 }
@@ -338,14 +338,6 @@ async fn read_requests(
                 return CloseReason::InvalidFrame;
             }
             continue;
-        }
-        let pending_attachment = core
-            .lock()
-            .map_err(|_| Error::EngineStatePoisoned)
-            .and_then(|state| state.web_attachment_pending(id));
-        match pending_attachment {
-            Ok(false) => (),
-            Ok(true) | Err(_) => return CloseReason::InvalidFrame,
         }
         let started = Instant::now();
         let operation_id = uuid::Uuid::new_v4().to_string();

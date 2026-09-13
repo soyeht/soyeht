@@ -516,6 +516,154 @@ fn web_host_attachment_frames_are_accepted_and_forwarded_before_the_response() {
 }
 
 #[test]
+fn prompt_images_commit_with_the_queue_and_reach_acp_in_exact_order() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let attachment_id = "10213243-5465-4768-99aa-bbccddeeff00";
+    let image = b"selected-element";
+    Frame::Attachment {
+        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+        bytes: image.to_vec(),
+    }
+    .write_to(&mut client.socket)
+    .unwrap();
+    let params = json!({"paneId":pane,"text":"report-images","attachments":[{
+            "attachmentId":attachment_id,"mimeType":"image/png",
+            "name":"selected-element.png","bytes":image.len().to_string()
+        }],"idempotencyKey":"prompt-with-image"});
+    let first = client.call("pane.prompt", params.clone());
+    let expected = format!(
+        "image-report:[{{\"data\":\"{}\",\"hasUri\":false,\"mimeType\":\"image/png\"}}]",
+        STANDARD.encode(image)
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let history = rig.native_session(&session)["history"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if history.iter().any(|turn| turn[0] == expected) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "prompt image did not reach ACP: {history:?}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut retry = rig.client();
+    Frame::Attachment {
+        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+        bytes: image.to_vec(),
+    }
+    .write_to(&mut retry.socket)
+    .unwrap();
+    assert_eq!(retry.call("pane.prompt", params.clone()), first);
+
+    let mut changed = rig.client();
+    let mut changed_image = image.to_vec();
+    *changed_image.last_mut().unwrap() = b'x';
+    Frame::Attachment {
+        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+        bytes: changed_image,
+    }
+    .write_to(&mut changed.socket)
+    .unwrap();
+    assert_eq!(
+        changed.request("pane.prompt", params)["error"]["data"]["kind"],
+        "idempotency_conflict"
+    );
+    assert_eq!(
+        rig.native_session(&session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|turn| turn[0] == expected)
+            .count(),
+        1
+    );
+    assert!(
+        soyeht_store::agents::queue(&Store::open(&rig.path).unwrap(), &pane)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn queued_prompt_image_survives_engine_restart_before_delivery() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"slow","idempotencyKey":"hold-image"}),
+    );
+    client.wait_state(&pane, "working");
+    let attachment_id = "20314253-6475-4869-aabb-ccddeeff0011";
+    let image = b"durable-image";
+    Frame::Attachment {
+        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+        bytes: image.to_vec(),
+    }
+    .write_to(&mut client.socket)
+    .unwrap();
+    let queued = client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"report-images","attachments":[{
+            "attachmentId":attachment_id,"mimeType":"image/png",
+            "name":"durable.png","bytes":image.len().to_string()
+        }],"idempotencyKey":"durable-prompt-image"}),
+    );
+    rig.kill_engine();
+    let store = Store::open(&rig.path).unwrap();
+    let prompt_id = queued["promptId"].as_str().unwrap();
+    assert_eq!(
+        soyeht_store::agents::prompt_attachments(&store, prompt_id)
+            .unwrap()
+            .first()
+            .unwrap()
+            .bytes,
+        image
+    );
+    drop(store);
+    rig.start();
+    let mut restored = rig.client();
+    let expected = format!(
+        "image-report:[{{\"data\":\"{}\",\"hasUri\":false,\"mimeType\":\"image/png\"}}]",
+        STANDARD.encode(image)
+    );
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        if rig.native_session(&session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| turn[0] == expected)
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "restored prompt image was not delivered"
+        );
+        let _ = restored.pane(&pane);
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        soyeht_store::agents::prompt_attachments(&Store::open(&rig.path).unwrap(), prompt_id)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn configuration_timeout_preserves_late_confirmation_without_retrying_or_restarting() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();

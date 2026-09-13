@@ -37,7 +37,7 @@ pub(super) struct WebMutation {
 }
 
 impl Core {
-    pub(crate) fn web_attachment_chunk(
+    pub(crate) fn attachment_chunk(
         &mut self,
         connection: &str,
         header: [u8; 16],
@@ -46,8 +46,8 @@ impl Core {
         let client = self
             .clients
             .get_mut(connection)
-            .filter(|client| client.actor.is_some() && client.web_host)
-            .ok_or_else(|| errors::unauthorized("Attachment sender is not the web host"))?;
+            .filter(|client| client.actor.is_some())
+            .ok_or_else(|| errors::unauthorized("Attachment sender is not authenticated"))?;
         client.attachments.push(header, bytes)?;
         Ok(())
     }
@@ -872,7 +872,7 @@ mod tests {
             "name":"screenshot.png",
             "bytes":image.len().to_string()
         });
-        core.web_attachment_chunk(
+        core.attachment_chunk(
             &host,
             soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
             image,

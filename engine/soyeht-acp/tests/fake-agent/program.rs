@@ -215,11 +215,22 @@ impl Runtime {
             self.error(id, -32602, "Prompt blocks required");
             return;
         };
-        let text = prompt
+        let mut text = prompt
             .iter()
             .filter_map(|block| block["text"].as_str())
             .collect::<Vec<_>>()
             .join("\n");
+        if text == "report-images" {
+            let images: Vec<_> = prompt
+                .iter()
+                .filter(|block| block["type"] == "image")
+                .map(|block| {
+                    json!({"mimeType":block["mimeType"],"data":block["data"],
+                        "hasUri":block.get("uri").is_some()})
+                })
+                .collect();
+            text = format!("image-report:{}", Value::Array(images));
+        }
         let mut active = self.active.lock().unwrap();
         if active.contains_key(&session) {
             self.error(id, -32600, "Session already has an active turn");

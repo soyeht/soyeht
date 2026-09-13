@@ -7,6 +7,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{PaneState, PromptOrigin};
+use soyeht_store::agents::PromptAttachment;
 
 fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
     (
@@ -200,6 +201,7 @@ impl Core {
         connection: &str,
         method: &str,
         params: &Value,
+        prompt_attachments: Vec<PromptAttachment>,
     ) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
@@ -213,20 +215,24 @@ impl Core {
         let result = match method {
             "pane.prompt" => {
                 changes.clear_attention = true;
-                if params["attachments"]
-                    .as_array()
-                    .is_some_and(|items| !items.is_empty())
-                {
-                    return Err(errors::invalid(
-                        "Attachment upload is not available in this slice",
-                    ));
-                }
                 let origin = prompt_origin(params)?;
-                let prompt = state.enqueue(
+                let references = (!prompt_attachments.is_empty()).then(|| {
+                    prompt_attachments
+                        .iter()
+                        .map(|attachment| attachment.reference.clone())
+                        .collect()
+                });
+                let prompt = state.enqueue_with_attachments(
                     errors::param_str(params, "text")?.into(),
                     origin,
                     timestamp.clone(),
+                    references,
                 )?;
+                if !prompt_attachments.is_empty() {
+                    changes
+                        .prompt_attachments
+                        .insert(prompt.prompt_id.clone(), prompt_attachments);
+                }
                 changes.events.push(queued(pane, &state, now_ms));
                 json!({"promptId":prompt.prompt_id,"queued":true})
             }

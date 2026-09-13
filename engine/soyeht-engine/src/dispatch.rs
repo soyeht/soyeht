@@ -288,6 +288,7 @@ impl Core {
         request_id: Value,
         method: &str,
         params: &Value,
+        prompt_attachments: Vec<soyeht_store::agents::PromptAttachment>,
     ) -> Result<Outcome> {
         let result = match method {
             "state.snapshot" => return self.snapshot_parts(connection),
@@ -308,7 +309,7 @@ impl Core {
             "harness.list" | "model.list" => self.agent_catalog(method, params)?,
             "pane.prompt" | "pane.queue.list" | "pane.queue.remove" | "pane.queue.resume"
             | "pane.cancel" | "pane.config.set" | "pane.transcript" | "pane.draft" => {
-                self.agent_method(connection, method, params)?
+                self.agent_method(connection, method, params, prompt_attachments)?
             }
             "pane.permission.answer" => {
                 let request_id = errors::param_str(params, "requestId")?;
@@ -420,7 +421,7 @@ impl Core {
         let method = request["method"]
             .as_str()
             .ok_or_else(|| errors::invalid("Missing method"))?;
-        let params = request.get("params").cloned().unwrap_or(json!({}));
+        let mut params = request.get("params").cloned().unwrap_or(json!({}));
         soyeht_protocol::validate::parameters(method, &params)
             .map_err(|error| errors::invalid(error.to_string()))?;
         if method == "hello" {
@@ -432,12 +433,28 @@ impl Core {
                 .map(Outcome::Reply);
         }
         let scope = self.authenticated_scope(connection, method)?;
+        let prompt_attachments = if method == "pane.prompt" {
+            self.prepare_prompt_attachments(connection, &mut params)?
+        } else {
+            if self.web_attachment_pending(connection)? {
+                return Err(errors::invalid(
+                    "Binary attachments must be committed by the following request",
+                ));
+            }
+            Vec::new()
+        };
         if let Some(outcome) =
             self.repeated_result(connection, &request["id"], method, &params, &scope)?
         {
             return Ok(outcome);
         }
-        self.route(connection, request["id"].clone(), method, &params)
+        self.route(
+            connection,
+            request["id"].clone(),
+            method,
+            &params,
+            prompt_attachments,
+        )
     }
 
     fn snapshot_parts(&mut self, connection: &str) -> Result<Outcome> {

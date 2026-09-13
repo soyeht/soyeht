@@ -2,9 +2,9 @@ use crate::errors::{self, Result};
 use serde::{Deserialize, Serialize};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
-    AgentPaneRole, AgentSession, ConfigOperation, ConfigValue, HarnessLaunch, PaneQueueListResult,
-    PermissionMode, PromptItem, PromptOrigin, PromptStatus, QueuedPromptSummary, Role,
-    TaskExecutor, limits,
+    AgentPaneRole, AgentSession, AttachmentRef, ConfigOperation, ConfigValue, HarnessLaunch,
+    PaneQueueListResult, PermissionMode, PromptItem, PromptOrigin, PromptStatus,
+    QueuedPromptSummary, Role, TaskExecutor, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
@@ -258,7 +258,23 @@ impl State {
         origin: PromptOrigin,
         at: String,
     ) -> Result<PromptItem> {
-        self.enqueue_identified(Uuid::new_v4().to_string(), text, origin, at)
+        self.enqueue_with_attachments(text, origin, at, None)
+    }
+
+    pub fn enqueue_with_attachments(
+        &mut self,
+        text: String,
+        origin: PromptOrigin,
+        at: String,
+        attachments: Option<Vec<AttachmentRef>>,
+    ) -> Result<PromptItem> {
+        self.enqueue_identified_with_attachments(
+            Uuid::new_v4().to_string(),
+            text,
+            origin,
+            at,
+            attachments,
+        )
     }
 
     pub(crate) fn enqueue_identified(
@@ -267,6 +283,17 @@ impl State {
         text: String,
         origin: PromptOrigin,
         at: String,
+    ) -> Result<PromptItem> {
+        self.enqueue_identified_with_attachments(prompt_id, text, origin, at, None)
+    }
+
+    fn enqueue_identified_with_attachments(
+        &mut self,
+        prompt_id: String,
+        text: String,
+        origin: PromptOrigin,
+        at: String,
+        attachments: Option<Vec<AttachmentRef>>,
     ) -> Result<PromptItem> {
         if text.is_empty() || text.len() > limits::PROMPT_BYTES {
             return Err(errors::invalid(
@@ -284,7 +311,7 @@ impl State {
             status: PromptStatus::Queued,
             queued_at: at,
             generation: None,
-            attachments: None,
+            attachments,
         };
         self.queue.push_back(prompt.clone());
         self.prioritize_queue();

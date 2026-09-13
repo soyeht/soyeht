@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod authentication;
 pub mod catalog;
 pub mod configuration;
@@ -30,11 +31,11 @@ use serde_json::{Value, json};
 use soyeht_acp::Message;
 use soyeht_protocol::{ProbeCapability, PromptItem, TranscriptMessage, ndjson::Decoder};
 use soyeht_store::{
-    agents::{self, NativeRequest, Outgoing},
+    agents::{self, NativeRequest, Outgoing, PromptAttachment},
     database::{Change, Mutation},
 };
 use state::State;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
 
 pub struct Running {
@@ -67,6 +68,7 @@ pub struct Changes {
     pub outgoing: Vec<Message>,
     pub probes: Vec<ProbeCapability>,
     pub events: Vec<(String, Value)>,
+    pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
     pub(crate) task_blocking: Option<crate::tasks::blocking::TaskBlockingChange>,
@@ -209,7 +211,13 @@ impl AgentPersistence<'_> {
                 .iter()
                 .any(|item| item.prompt_id == prompt.prompt_id)
             {
-                agents::enqueue_prompt(tx, self.id, prompt)?;
+                let attachments = self
+                    .changes
+                    .prompt_attachments
+                    .get(&prompt.prompt_id)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                agents::enqueue_prompt_with_attachments(tx, self.id, prompt, attachments)?;
             }
         }
         for request in &self.changes.received {
