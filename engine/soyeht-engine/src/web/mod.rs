@@ -1,5 +1,6 @@
 //! Browser composition owned by the engine.
 
+mod commands;
 mod host;
 mod host_state;
 mod navigation;
@@ -23,6 +24,8 @@ const REFRESH_INTERVAL_MS: i64 = 5_000;
 pub(crate) fn handles_host_update(method: &str) -> bool {
     matches!(method, "web.host.navigated" | "web.host.console_counts")
 }
+
+pub(crate) use commands::handles as handles_command;
 
 pub struct Service {
     scan: Box<dyn PortScanPort>,

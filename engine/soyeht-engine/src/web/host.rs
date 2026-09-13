@@ -7,8 +7,9 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    ErrorKind, RpcError, WebCommandKind, WebCommandParams, WebCommandResult, WebNavigateResult,
-    error_code,
+    ErrorKind, RpcError, WebActionResult, WebCloseResult, WebCommandKind, WebCommandParams,
+    WebCommandResult, WebConsoleResult, WebEvaluateResult, WebNavigateResult, WebNetworkResult,
+    WebResizeResult, WebScreenshotResult, WebSnapshotResult, WebWaitResult, error_code,
 };
 use soyeht_web::{command_response_budget, validate_command};
 use uuid::Uuid;
@@ -22,6 +23,10 @@ pub struct WebWaiter {
     command: WebCommandKind,
     deadline_ms: i64,
     method: String,
+    mutation: Option<WebMutation>,
+}
+
+struct WebMutation {
     scope: String,
     key: String,
     fingerprint: String,
@@ -43,29 +48,22 @@ impl Core {
             .get(caller)
             .filter(|client| client.actor.is_some() && !client.outbox.is_closed())
             .ok_or_else(|| errors::unauthorized("Web command caller is disconnected"))?;
-        let scope = client.scope.clone();
-        let actor = serde_json::to_value(
-            client
-                .actor
+        let mutation = command_mutation(client, method, raw_params, &params)?;
+        if let Some((id, waiter)) = mutation.as_ref().and_then(|candidate| {
+            self.web_waiters.iter_mut().find(|(_, waiter)| {
+                waiter.mutation.as_ref().is_some_and(|existing| {
+                    existing.scope == candidate.scope && existing.key == candidate.key
+                })
+            })
+        }) {
+            let candidate = mutation
                 .as_ref()
-                .ok_or_else(|| errors::unauthorized("Web command caller is disconnected"))?,
-        )
-        .map_err(|_| errors::internal("Web command actor serialization failed"))?;
-        let key = raw_params["idempotencyKey"]
-            .as_str()
-            .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
-        if params.operation_key != key {
-            return Err(errors::invalid("Web operation identity changed"));
-        }
-        let fingerprint = STANDARD.encode(crate::auth::token_hash(
-            &json!([method, raw_params]).to_string(),
-        ));
-        if let Some((id, waiter)) = self
-            .web_waiters
-            .iter_mut()
-            .find(|(_, waiter)| waiter.scope == scope && waiter.key == key)
-        {
-            if waiter.fingerprint != fingerprint {
+                .ok_or_else(|| errors::internal("Web mutation disappeared"))?;
+            if waiter
+                .mutation
+                .as_ref()
+                .is_none_or(|existing| existing.fingerprint != candidate.fingerprint)
+            {
                 return Err(errors::idempotency_conflict(
                     "Web operation key belongs to another mutation",
                 ));
@@ -81,9 +79,6 @@ impl Core {
                 waiter.callers.push((caller.into(), caller_request));
             }
             return Ok(id.clone());
-        }
-        if method != "web.navigate" {
-            return Err(errors::internal("Unsupported routed web method"));
         }
         let pane_live = self.panes.get(&params.pane_id).is_some_and(|running| {
             !running.stored.closed && running.stored.pane.mode == soyeht_protocol::PaneMode::Web
@@ -118,10 +113,7 @@ impl Core {
                 command,
                 deadline_ms,
                 method: method.into(),
-                scope,
-                key: key.into(),
-                fingerprint,
-                actor,
+                mutation,
             },
         );
         let sent = self
@@ -171,13 +163,17 @@ impl Core {
             "Web command waiter disappeared",
         )?;
         let result = match result {
-            Ok(result) => {
+            Ok(result) if waiter.mutation.is_some() => {
+                let mutation = waiter
+                    .mutation
+                    .as_ref()
+                    .ok_or_else(|| errors::internal("Web mutation disappeared"))?;
                 let mutation = StorePort::mutate_as(
                     &mut self.store,
-                    &waiter.scope,
-                    &waiter.key,
-                    &waiter.fingerprint,
-                    Some(&waiter.actor),
+                    &mutation.scope,
+                    &mutation.key,
+                    &mutation.fingerprint,
+                    Some(&mutation.actor),
                     |_| Ok((result, Vec::new())),
                 );
                 match mutation {
@@ -185,6 +181,7 @@ impl Core {
                     Err(error) => Err(errors::wire(errors::storage(error))),
                 }
             }
+            Ok(result) => Ok(result),
             Err(error) => Err(error),
         };
         for (caller, request) in waiter.callers {
@@ -240,15 +237,82 @@ impl Core {
     }
 }
 
-fn public_result(waiter: &WebWaiter, _result: &WebCommandResult) -> Result<Value> {
+fn public_result(waiter: &WebWaiter, result: &WebCommandResult) -> Result<Value> {
     match waiter.method.as_str() {
         "web.navigate" => serde_json::to_value(WebNavigateResult {
             pane_id: waiter.pane_id.clone(),
             accepted: true,
         })
         .map_err(|_| errors::internal("Web navigation result serialization failed")),
+        "web.snapshot" => typed_public_result::<WebSnapshotResult>(waiter, result),
+        "web.click" | "web.type" | "web.press" | "web.hover" | "web.select" | "web.scroll" => {
+            typed_public_result::<WebActionResult>(waiter, result)
+        }
+        "web.wait" => typed_public_result::<WebWaitResult>(waiter, result),
+        "web.evaluate" => typed_public_result::<WebEvaluateResult>(waiter, result),
+        "web.screenshot" => typed_public_result::<WebScreenshotResult>(waiter, result),
+        "web.console" => typed_public_result::<WebConsoleResult>(waiter, result),
+        "web.network" => typed_public_result::<WebNetworkResult>(waiter, result),
+        "web.resize" => typed_public_result::<WebResizeResult>(waiter, result),
+        "web.close" => typed_public_result::<WebCloseResult>(waiter, result),
         _ => Err(errors::internal("Unsupported routed web result")),
     }
+}
+
+fn typed_public_result<T: serde::de::DeserializeOwned + serde::Serialize>(
+    waiter: &WebWaiter,
+    result: &WebCommandResult,
+) -> Result<Value> {
+    let mut object = result
+        .value
+        .as_ref()
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or_else(|| errors::invalid("Web command result value must be an object"))?;
+    if object
+        .insert("paneId".into(), json!(waiter.pane_id))
+        .is_some()
+    {
+        return Err(errors::invalid(
+            "Web command result value contains pane identity",
+        ));
+    }
+    let typed: T = serde_json::from_value(Value::Object(object))
+        .map_err(|_| errors::invalid("Invalid typed web command result"))?;
+    let canonical = serde_json::to_value(typed)
+        .map_err(|_| errors::internal("Web command result serialization failed"))?;
+    soyeht_protocol::validate::result(&waiter.method, &canonical)
+        .map_err(|_| errors::invalid("Invalid typed web command result"))?;
+    Ok(canonical)
+}
+
+fn command_mutation(
+    client: &model::Connected,
+    method: &str,
+    raw_params: &Value,
+    params: &WebCommandParams,
+) -> Result<Option<WebMutation>> {
+    let Some(key) = raw_params.get("idempotencyKey").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    if params.operation_key != key {
+        return Err(errors::invalid("Web operation identity changed"));
+    }
+    let actor = serde_json::to_value(
+        client
+            .actor
+            .as_ref()
+            .ok_or_else(|| errors::unauthorized("Web command caller is disconnected"))?,
+    )
+    .map_err(|_| errors::internal("Web command actor serialization failed"))?;
+    Ok(Some(WebMutation {
+        scope: client.scope.clone(),
+        key: key.into(),
+        fingerprint: STANDARD.encode(crate::auth::token_hash(
+            &json!([method, raw_params]).to_string(),
+        )),
+        actor,
+    }))
 }
 
 fn valid_response_id(response: &Value) -> Result<&str> {
@@ -490,6 +554,126 @@ mod tests {
             panic!("remote web host should be rejected")
         };
         assert_eq!(errors::kind(&rejected), ErrorKind::Unauthorized);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reads_are_fresh_and_mutations_are_typed_bounded_and_idempotent() {
+        let root = temp_root();
+        let mut core = Core::open(&root).unwrap();
+        let (host, mut host_receiver) = connect(&mut core, json!(["web_host"])).await;
+        let (caller, mut caller_receiver) = connect(&mut core, json!([])).await;
+        let workspace = reply(
+            &mut core,
+            &caller,
+            request(
+                2,
+                "workspace.create",
+                json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
+            ),
+        )["workspace"]["workspaceId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let pane = reply(
+            &mut core,
+            &caller,
+            request(
+                3,
+                "pane.create",
+                json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"pane"}),
+            ),
+        )["paneId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let Outcome::Queued = core
+            .dispatch(
+                &caller,
+                request(4, "web.snapshot", json!({"paneId":pane,"screenshot":true})),
+            )
+            .unwrap()
+        else {
+            panic!("snapshot should wait for the host")
+        };
+        let snapshot_command = next_json(&mut host_receiver).await;
+        assert_eq!(snapshot_command["params"]["command"], "snapshot");
+        assert_eq!(
+            snapshot_command["params"]["args"],
+            json!({"screenshot":true})
+        );
+        assert!(snapshot_command["params"]["operationKey"].is_string());
+        let oversized = "x".repeat(soyeht_protocol::limits::WEB_SNAPSHOT_BYTES);
+        assert!(
+            core.web_host_response(
+                &host,
+                json!({"jsonrpc":"2.0","id":snapshot_command["id"],"result":{
+                    "paneId":pane,"value":{"navigationGeneration":"1","title":"Page",
+                        "url":"https://example.test/","nodes":[],"truncated":false,
+                        "unknown":oversized}}}),
+            )
+            .is_err()
+        );
+        assert!(
+            core.web_host_response(
+                &host,
+                json!({"jsonrpc":"2.0","id":snapshot_command["id"],"result":{
+                    "paneId":pane,"value":{"navigationGeneration":"1","title":"Page",
+                        "url":"https://example.test/","truncated":false}}}),
+            )
+            .is_err()
+        );
+        core.web_host_response(
+            &host,
+            json!({"jsonrpc":"2.0","id":snapshot_command["id"],"result":{
+                "paneId":pane,"value":{"navigationGeneration":"1","title":"Page",
+                    "url":"https://example.test/","nodes":[],"truncated":false}}}),
+        )
+        .unwrap();
+        let snapshot = next_json(&mut caller_receiver).await;
+        assert_eq!(snapshot["result"]["title"], "Page");
+        assert_eq!(snapshot["result"]["paneId"], pane);
+        assert!(matches!(
+            core.dispatch(
+                &caller,
+                request(5, "web.snapshot", json!({"paneId":pane,"screenshot":true})),
+            )
+            .unwrap(),
+            Outcome::Queued
+        ));
+        let fresh_snapshot = next_json(&mut host_receiver).await;
+        assert_ne!(fresh_snapshot["id"], snapshot_command["id"]);
+        core.web_host_response(
+            &host,
+            json!({"jsonrpc":"2.0","id":fresh_snapshot["id"],"result":{
+                "paneId":pane,"value":{"navigationGeneration":"1","title":"Page 2",
+                    "url":"https://example.test/","nodes":[],"truncated":false}}}),
+        )
+        .unwrap();
+        let _ = next_json(&mut caller_receiver).await;
+        let click = json!({"paneId":pane,"ref":"e1","idempotencyKey":"click-1"});
+        assert!(matches!(
+            core.dispatch(&caller, request(6, "web.click", click.clone()))
+                .unwrap(),
+            Outcome::Queued
+        ));
+        let click_command = next_json(&mut host_receiver).await;
+        assert_eq!(click_command["params"]["args"], json!({"ref":"e1"}));
+        core.web_host_response(
+            &host,
+            json!({"jsonrpc":"2.0","id":click_command["id"],"result":{
+                "paneId":pane,"value":{"completed":true}}}),
+        )
+        .unwrap();
+        let clicked = next_json(&mut caller_receiver).await;
+        assert_eq!(clicked["result"], json!({"paneId":pane,"completed":true}));
+        let Outcome::Reply(repeated) = core
+            .dispatch(&caller, request(7, "web.click", click))
+            .unwrap()
+        else {
+            panic!("completed mutation should use its durable receipt")
+        };
+        assert_eq!(repeated, clicked["result"]);
         fs::remove_dir_all(root).unwrap();
     }
 }

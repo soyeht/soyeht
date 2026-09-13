@@ -22,6 +22,17 @@ pub fn parameters(method: &str, value: &Value) -> Result<Request> {
         .map_err(|_| Error::InvalidParameters)
 }
 
+pub fn result(method: &str, value: &Value) -> Result<()> {
+    let schema = schema()?;
+    let registry = &schema["x-methods"];
+    let definition = registry.get(method).ok_or(Error::UnknownMethod)?;
+    if valid(schema, &definition["result"], value) {
+        Ok(())
+    } else {
+        Err(Error::InvalidParameters)
+    }
+}
+
 fn valid(schema: &Value, rule: &Value, value: &Value) -> bool {
     if let Some(reference) = rule.get("$ref").and_then(Value::as_str) {
         let Some(target) = reference
@@ -179,5 +190,13 @@ mod tests {
             .is_err()
         );
         assert!(parameters("usage.refresh", &json!({"provider":"claude"})).is_err());
+    }
+
+    #[test]
+    fn validates_public_method_results_against_the_same_registry() {
+        let value = serde_json::json!({"paneId":"pane-1","completed":true});
+        assert!(result("web.click", &value).is_ok());
+        assert!(result("web.click", &serde_json::json!({"paneId":"pane-1"})).is_err());
+        assert!(result("missing.method", &value).is_err());
     }
 }
