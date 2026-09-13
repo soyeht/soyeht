@@ -1,7 +1,11 @@
 //! Named persistence operations for browser session grants.
 
 use crate::database::{Change, Error, Result, Store};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::{Value, json};
+use soyeht_protocol::{
+    PanePermissionAnswerResult, PermissionRequest, PermissionRequestKind, limits,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WebSessionGrantScope {
@@ -16,6 +20,20 @@ pub struct WebSessionGrant {
     pub scope: WebSessionGrantScope,
     pub granted_by: String,
     pub created_ms: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct WebPermissionRequest {
+    pub request_id: String,
+    pub pane_id: String,
+    pub workspace_id: String,
+    pub generation: u32,
+    pub task_id: Option<String>,
+    pub kind: PermissionRequestKind,
+    pub domain: String,
+    pub public: PermissionRequest,
+    pub expires_ms: i64,
+    pub result: Option<PanePermissionAnswerResult>,
 }
 
 impl Store {
@@ -84,6 +102,39 @@ impl Store {
         }
         Ok(grants)
     }
+
+    pub fn web_permission_request(&self, request_id: &str) -> Result<Option<WebPermissionRequest>> {
+        validate_id(request_id)?;
+        self.connection
+            .query_row(
+                "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE request_id=?1",
+                [request_id],
+                permission_row,
+            )
+            .optional()?
+            .map(valid_permission)
+            .transpose()
+    }
+
+    pub fn open_web_permission(
+        &self,
+        pane_id: &str,
+        kind: &PermissionRequestKind,
+        domain: &str,
+    ) -> Result<Option<WebPermissionRequest>> {
+        validate_id(pane_id)?;
+        validate_domain(domain)?;
+        let kind = encode_permission_kind(kind)?;
+        self.connection
+            .query_row(
+                "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE pane_id=?1 AND kind=?2 AND domain=?3 AND result IS NULL",
+                params![pane_id, kind, domain],
+                permission_row,
+            )
+            .optional()?
+            .map(valid_permission)
+            .transpose()
+    }
 }
 
 impl Change<'_> {
@@ -124,6 +175,141 @@ impl Change<'_> {
             params![workspace_id, domain, scope, task_id],
         )? == 1)
     }
+
+    pub fn save_web_permission_request(&self, request: &WebPermissionRequest) -> Result<()> {
+        valid_permission(request.clone())?;
+        if request.result.is_some() {
+            return Err(Error::InvalidWebPermission);
+        }
+        let pane_matches: bool = self.transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM panes WHERE id=?1 AND workspace_id=?2 AND closed=0)",
+            params![request.pane_id, request.workspace_id],
+            |row| row.get(0),
+        )?;
+        if !pane_matches {
+            return Err(Error::InvalidWebPermission);
+        }
+        self.transaction.execute(
+            "INSERT INTO web_permission_requests(request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,NULL)",
+            params![
+                request.request_id,
+                request.pane_id,
+                request.workspace_id,
+                request.generation,
+                request.task_id,
+                encode_permission_kind(&request.kind)?,
+                request.domain,
+                serde_json::to_string(&request.public)?,
+                request.expires_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn answer_web_permission(
+        &self,
+        request_id: &str,
+        result: &PanePermissionAnswerResult,
+    ) -> Result<bool> {
+        validate_id(request_id)?;
+        if result.request_id != request_id {
+            return Err(Error::InvalidWebPermission);
+        }
+        let raw = serde_json::to_string(result)?;
+        if raw.len() > 4096 {
+            return Err(Error::InvalidWebPermission);
+        }
+        Ok(self.transaction.execute(
+            "UPDATE web_permission_requests SET result=?1 WHERE request_id=?2 AND result IS NULL",
+            params![raw, request_id],
+        )? == 1)
+    }
+}
+
+pub(crate) fn permission_snapshot(connection: &Connection) -> Result<Vec<Value>> {
+    let mut statement = connection.prepare(
+        "SELECT public FROM web_permission_requests WHERE result IS NULL ORDER BY request_id",
+    )?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+    rows.map(|raw| {
+        let request: PermissionRequest = serde_json::from_str(&raw?)?;
+        Ok(json!({"kind":"permission","request":request}))
+    })
+    .collect()
+}
+
+fn permission_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WebPermissionRequest> {
+    let kind: String = row.get(5)?;
+    let public: String = row.get(7)?;
+    let result: Option<String> = row.get(9)?;
+    Ok(WebPermissionRequest {
+        request_id: row.get(0)?,
+        pane_id: row.get(1)?,
+        workspace_id: row.get(2)?,
+        generation: row.get(3)?,
+        task_id: row.get(4)?,
+        kind: decode_permission_kind(&kind).map_err(to_sql_error)?,
+        domain: row.get(6)?,
+        public: serde_json::from_str(&public).map_err(to_sql_error)?,
+        expires_ms: row.get(8)?,
+        result: result
+            .map(|value| serde_json::from_str(&value).map_err(to_sql_error))
+            .transpose()?,
+    })
+}
+
+fn to_sql_error(error: impl std::error::Error + Send + Sync + 'static) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+}
+
+fn encode_permission_kind(kind: &PermissionRequestKind) -> Result<&'static str> {
+    match kind {
+        PermissionRequestKind::WebSession => Ok("web_session"),
+        PermissionRequestKind::WebEvaluate => Ok("web_evaluate"),
+        PermissionRequestKind::Agent => Err(Error::InvalidWebPermission),
+    }
+}
+
+fn decode_permission_kind(kind: &str) -> Result<PermissionRequestKind> {
+    match kind {
+        "web_session" => Ok(PermissionRequestKind::WebSession),
+        "web_evaluate" => Ok(PermissionRequestKind::WebEvaluate),
+        _ => Err(Error::InvalidWebPermission),
+    }
+}
+
+fn valid_permission(request: WebPermissionRequest) -> Result<WebPermissionRequest> {
+    validate_id(&request.request_id).map_err(|_| Error::InvalidWebPermission)?;
+    validate_id(&request.pane_id).map_err(|_| Error::InvalidWebPermission)?;
+    validate_id(&request.workspace_id).map_err(|_| Error::InvalidWebPermission)?;
+    validate_domain(&request.domain).map_err(|_| Error::InvalidWebPermission)?;
+    if request.generation == 0 || request.expires_ms < 0 {
+        return Err(Error::InvalidWebPermission);
+    }
+    if let Some(task_id) = &request.task_id {
+        validate_id(task_id).map_err(|_| Error::InvalidWebPermission)?;
+    }
+    let public = &request.public;
+    let identity_matches = public.request_id == request.request_id
+        && public.pane_id == request.pane_id
+        && public.generation == request.generation
+        && public.kind.as_ref() == Some(&request.kind)
+        && public.domain.as_deref() == Some(&request.domain)
+        && !public.prompt_id.is_empty()
+        && !public.options.is_empty();
+    let public_bytes = serde_json::to_vec(public)?.len();
+    if !identity_matches || public_bytes > limits::JSON_BYTES {
+        return Err(Error::InvalidWebPermission);
+    }
+    if request
+        .result
+        .as_ref()
+        .is_some_and(|result| result.request_id != request.request_id)
+    {
+        return Err(Error::InvalidWebPermission);
+    }
+    encode_permission_kind(&request.kind)?;
+    Ok(request)
 }
 
 fn encode_scope(scope: &WebSessionGrantScope) -> (&'static str, Option<&str>) {

@@ -2,14 +2,15 @@
 
 use serde_json::json;
 use soyeht_protocol::{
-    Pane, PaneMode, PaneState, StateSource, WebSessionState, WebViewport, WebViewportPreset,
-    Workspace,
+    DecisionBy, Pane, PaneMode, PanePermissionAnswerResult, PaneState, PermissionOption,
+    PermissionOptionKind, PermissionRequest, PermissionRequestKind, PermissionResult, StateSource,
+    WebSessionState, WebViewport, WebViewportPreset, Workspace,
 };
 use soyeht_store::{
     Error,
     database::Store,
     domain::PaneRecord,
-    web::{WebSessionGrant, WebSessionGrantScope},
+    web::{WebPermissionRequest, WebSessionGrant, WebSessionGrantScope},
 };
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
@@ -88,6 +89,45 @@ fn grant(scope: WebSessionGrantScope, actor: &str, created_ms: i64) -> WebSessio
         scope,
         granted_by: actor.into(),
         created_ms,
+    }
+}
+
+fn permission(request_id: &str) -> WebPermissionRequest {
+    WebPermissionRequest {
+        request_id: request_id.into(),
+        pane_id: "web-pane-1".into(),
+        workspace_id: "workspace-1".into(),
+        generation: 1,
+        task_id: Some("WS-1".into()),
+        kind: PermissionRequestKind::WebSession,
+        domain: "example.test".into(),
+        public: PermissionRequest {
+            request_id: request_id.into(),
+            pane_id: "web-pane-1".into(),
+            generation: 1,
+            prompt_id: "web-operation-1".into(),
+            title: "Use signed-in session?".into(),
+            detail: "The page has a signed-in session for example.test.".into(),
+            options: vec![PermissionOption {
+                option_id: "task".into(),
+                kind: PermissionOptionKind::AllowOnce,
+                name: "This task only".into(),
+            }],
+            expires_at: "2026-09-13T18:00:00.000Z".into(),
+            kind: Some(PermissionRequestKind::WebSession),
+            domain: Some("example.test".into()),
+        },
+        expires_ms: 1_000,
+        result: None,
+    }
+}
+
+fn answer(request_id: &str, by: DecisionBy) -> PanePermissionAnswerResult {
+    PanePermissionAnswerResult {
+        request_id: request_id.into(),
+        result: PermissionResult::Selected,
+        option_id: Some("task".into()),
+        by,
     }
 }
 
@@ -201,6 +241,124 @@ fn grants_replace_and_revoke_atomically_without_broadening_scope() {
 }
 
 #[test]
+fn pending_web_permission_survives_reopen_enters_snapshot_and_accepts_one_answer() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed_workspace(&mut store);
+    seed_task(&store);
+    store
+        .mutate("test", "pane", "pane", |change| {
+            change.insert_pane(&web_pane())?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let pending = permission("request-1");
+    store
+        .mutate("test", "permission", "permission", |change| {
+            change.save_web_permission_request(&pending)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+
+    let mut store = profile.store();
+    assert_eq!(
+        store
+            .open_web_permission(
+                "web-pane-1",
+                &PermissionRequestKind::WebSession,
+                "example.test"
+            )
+            .unwrap()
+            .unwrap()
+            .request_id,
+        "request-1"
+    );
+    let snapshot = store.snapshot().unwrap();
+    let requests = &snapshot
+        .sections
+        .iter()
+        .find(|(name, _)| name == "requests")
+        .unwrap()
+        .1;
+    assert_eq!(requests[0]["request"]["requestId"], "request-1");
+
+    let first = answer("request-1", DecisionBy::Mac);
+    store
+        .mutate("test", "answer", "answer", |change| {
+            assert!(change.answer_web_permission("request-1", &first)?);
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let second = answer("request-1", DecisionBy::Iphone);
+    store
+        .mutate("test", "second-answer", "second-answer", |change| {
+            assert!(!change.answer_web_permission("request-1", &second)?);
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let stored = store.web_permission_request("request-1").unwrap().unwrap();
+    assert_eq!(stored.result.unwrap().by, DecisionBy::Mac);
+    let snapshot = store.snapshot().unwrap();
+    let requests = snapshot
+        .sections
+        .iter()
+        .find(|(name, _)| name == "requests")
+        .unwrap()
+        .1
+        .as_array()
+        .unwrap();
+    assert!(requests.is_empty());
+}
+
+#[test]
+fn web_permission_identity_is_validated_before_sql() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed_workspace(&mut store);
+    seed_task(&store);
+    store
+        .mutate("test", "pane", "pane", |change| {
+            change.insert_pane(&web_pane())?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    for (index, mut invalid) in [
+        permission("bad-1"),
+        permission("bad-2"),
+        permission("bad-3"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        match index {
+            0 => invalid.public.pane_id = "another-pane".into(),
+            1 => invalid.kind = PermissionRequestKind::Agent,
+            _ => invalid.domain = "HTTPS://example.test".into(),
+        }
+        let result = store.mutate("test", &format!("bad-{index}"), "bad", |change| {
+            change.save_web_permission_request(&invalid)?;
+            Ok((json!({}), vec![]))
+        });
+        let error = result.err();
+        assert!(
+            matches!(error, Some(Error::InvalidWebPermission)),
+            "unexpected validation error at case {index}: {error:?}"
+        );
+    }
+    assert!(
+        store
+            .open_web_permission(
+                "web-pane-1",
+                &PermissionRequestKind::WebSession,
+                "example.test"
+            )
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn invalid_grants_fail_before_sql_and_private_page_data_has_no_schema_surface() {
     let profile = Profile::new();
     let mut store = profile.store();
@@ -289,6 +447,77 @@ fn migration_from_populated_v15_preserves_rows_and_adds_web_grants() {
         "after-migration",
     );
     assert_eq!(store.web_session_grants("workspace-1").unwrap().len(), 1);
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        soyeht_store::database::SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn migration_from_populated_v16_preserves_web_state_and_adds_pending_permissions() {
+    let profile = Profile::new();
+    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
+    for migration in [
+        include_str!("../migrations/001-initial.sql"),
+        include_str!("../migrations/002-client-state.sql"),
+        include_str!("../migrations/003-english-values.sql"),
+        include_str!("../migrations/004-agent-sessions.sql"),
+        include_str!("../migrations/005-native-replay.sql"),
+        include_str!("../migrations/006-agent-auth-snapshot.sql"),
+        include_str!("../migrations/007-workspace-tasks.sql"),
+        include_str!("../migrations/008-task-reviews.sql"),
+        include_str!("../migrations/009-task-block-retries.sql"),
+        include_str!("../migrations/010-agent-pane-role.sql"),
+        include_str!("../migrations/011-usage-readings.sql"),
+        include_str!("../migrations/012-editor-files.sql"),
+        include_str!("../migrations/013-editor-project-replacements.sql"),
+        include_str!("../migrations/014-language-servers.sql"),
+        include_str!("../migrations/015-editor-agent-reviews.sql"),
+        include_str!("../migrations/016-web-session-grants.sql"),
+    ] {
+        connection.execute_batch(migration).unwrap();
+    }
+    connection
+        .execute(
+            "INSERT INTO metadata(key,value) VALUES ('db_id','v16-db')",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO workspaces(id,payload,closed) VALUES (?1,?2,0)",
+            rusqlite::params!["workspace-1", serde_json::to_string(&workspace()).unwrap()],
+        )
+        .unwrap();
+    let pane = web_pane();
+    connection
+        .execute(
+            "INSERT INTO panes(id,workspace_id,payload,closed,instance_key,sequence_base) VALUES (?1,?2,?3,0,?4,'0')",
+            rusqlite::params![pane.pane.pane_id,pane.pane.workspace_id,serde_json::to_string(&pane.pane).unwrap(),pane.instance_key],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO web_session_grants(workspace_id,domain,scope,task_id,granted_by,created_ms) VALUES ('workspace-1','example.test','workspace',NULL,'mac',100)",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    let mut store = profile.store();
+    assert_eq!(store.web_session_grants("workspace-1").unwrap().len(), 1);
+    let mut pending = permission("after-v16");
+    pending.task_id = None;
+    store
+        .mutate("test", "pending", "pending", |change| {
+            change.save_web_permission_request(&pending)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    assert!(store.web_permission_request("after-v16").unwrap().is_some());
     assert_eq!(
         store
             .connection()

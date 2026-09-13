@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 
 #[derive(Debug)]
 pub enum Error {
@@ -88,6 +88,7 @@ pub enum Error {
     InvalidLanguageServerCheckpoint,
     InvalidEditorAgentReview,
     InvalidWebSessionGrant,
+    InvalidWebPermission,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -185,6 +186,7 @@ impl fmt::Display for Error {
             }
             Self::InvalidEditorAgentReview => f.write_str("invalid editor agent review"),
             Self::InvalidWebSessionGrant => f.write_str("invalid web session grant"),
+            Self::InvalidWebPermission => f.write_str("invalid web permission request"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -336,6 +338,9 @@ impl Store {
             if version < 16 {
                 tx.execute_batch(include_str!("../migrations/016-web-session-grants.sql"))?;
             }
+            if version < 17 {
+                tx.execute_batch(include_str!("../migrations/017-web-permissions.sql"))?;
+            }
             tx.commit()?;
         }
         let db_id =
@@ -470,10 +475,11 @@ impl Store {
             &tx,
             "SELECT payload FROM devices WHERE revoked=0 ORDER BY id",
         )?;
-        let requests = rows_json(
+        let mut requests = rows_json(
             &tx,
             "SELECT json_object('kind',CASE method WHEN 'session/request_permission' THEN 'permission' ELSE 'elicitation' END,'request',json(public)) FROM agent_requests WHERE result IS NULL AND method IN ('session/request_permission','elicitation/create') AND pane_id IN (SELECT id FROM panes WHERE closed=0) ORDER BY request_id",
         )?;
+        requests.extend(crate::web::permission_snapshot(&tx)?);
         let tasks = rows_json(
             &tx,
             "SELECT payload FROM tasks ORDER BY workspace_id,priority_rank,ordinal",
