@@ -1,4 +1,5 @@
 use crate::{Error, Result, engine::EnginePort};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
 use soyeht_protocol::Role;
 use uuid::Uuid;
@@ -275,11 +276,19 @@ impl<P: EnginePort> Service<P> {
             return Err(Error::ToolForbidden);
         }
         let params = self.parameters(tool, arguments)?;
-        let result = self.engine.request(tool.method, params)?;
-        let text = serde_json::to_string(&result)?;
+        let response = self.engine.request_with_attachment(tool.method, params)?;
+        let text = serde_json::to_string(&response.value)?;
+        let mut content = vec![json!({"type":"text","text":text})];
+        if let Some(attachment) = response.attachment {
+            content.push(json!({
+                "type":"image",
+                "data":STANDARD.encode(attachment.bytes),
+                "mimeType":attachment.reference.mime_type
+            }));
+        }
         Ok(json!({
-            "content":[{"type":"text","text":text}],
-            "structuredContent":result,
+            "content":content,
+            "structuredContent":response.value,
             "isError":false
         }))
     }
@@ -729,6 +738,8 @@ fn web_resize_schema() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::{EngineAttachment, EngineResponse};
+    use soyeht_protocol::AttachmentRef;
     use std::collections::VecDeque;
 
     struct FakeEngine {
@@ -1011,5 +1022,50 @@ mod tests {
         arguments: Value,
     ) -> bool {
         service.call(name, arguments).is_ok()
+    }
+
+    struct ImageEngine;
+
+    impl EnginePort for ImageEngine {
+        fn role(&self) -> &Role {
+            &Role::Agent
+        }
+
+        fn request(&mut self, _method: &str, _params: Value) -> Result<Value> {
+            Err(Error::UnexpectedFrame)
+        }
+
+        fn request_with_attachment(
+            &mut self,
+            method: &str,
+            _params: Value,
+        ) -> Result<EngineResponse> {
+            assert_eq!(method, "web.screenshot");
+            let reference = AttachmentRef {
+                attachment_id: "00112233-4455-4677-8899-aabbccddeeff".into(),
+                mime_type: "image/png".into(),
+                name: "screenshot.png".into(),
+                bytes: "3".into(),
+            };
+            Ok(EngineResponse {
+                value: json!({"paneId":"web","image":reference}),
+                attachment: Some(EngineAttachment {
+                    reference,
+                    bytes: b"png".to_vec(),
+                }),
+            })
+        }
+    }
+
+    #[test]
+    fn screenshot_tool_returns_mcp_image_content_and_structured_reference() {
+        let mut service = Service::new(ImageEngine, context(false));
+        let result = service
+            .call("web_screenshot", json!({"paneId":"web"}))
+            .unwrap();
+        assert_eq!(result["content"][1]["type"], "image");
+        assert_eq!(result["content"][1]["mimeType"], "image/png");
+        assert_eq!(result["content"][1]["data"], "cG5n");
+        assert_eq!(result["structuredContent"]["image"]["bytes"], "3");
     }
 }

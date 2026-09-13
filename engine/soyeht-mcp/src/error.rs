@@ -14,6 +14,7 @@ pub enum Error {
     IncompleteLine,
     RequestIdExhausted,
     ResponseMissingResult,
+    ResponseMissingAttachment,
     UnknownTool,
     ToolForbidden,
     TaskContextRequired,
@@ -35,6 +36,9 @@ impl fmt::Display for Error {
             Self::IncompleteLine => formatter.write_str("incomplete JSON-RPC line"),
             Self::RequestIdExhausted => formatter.write_str("request identifiers exhausted"),
             Self::ResponseMissingResult => formatter.write_str("engine response has no result"),
+            Self::ResponseMissingAttachment => {
+                formatter.write_str("engine response has no screenshot attachment")
+            }
             Self::UnknownTool => formatter.write_str("unknown task tool"),
             Self::ToolForbidden => formatter.write_str("task tool is unavailable for this role"),
             Self::TaskContextRequired => formatter.write_str("an active task is required"),
