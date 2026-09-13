@@ -1045,6 +1045,7 @@ dependencies = [
 name = "soyeht-acp"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "serde",
  "serde_json",
  "sha2",

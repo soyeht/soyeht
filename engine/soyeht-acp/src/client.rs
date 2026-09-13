@@ -1,4 +1,5 @@
 use crate::{Error, Message, RpcError};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -86,8 +87,25 @@ impl Client {
     }
 }
 
+pub struct PromptImage<'a> {
+    pub mime_type: &'a str,
+    pub bytes: &'a [u8],
+}
+
+pub fn prompt_with_images(session_id: &str, text: &str, images: &[PromptImage<'_>]) -> Value {
+    let mut prompt = vec![json!({"type":"text","text":text})];
+    prompt.extend(images.iter().map(|image| {
+        json!({
+            "type":"image",
+            "data":STANDARD.encode(image.bytes),
+            "mimeType":image.mime_type
+        })
+    }));
+    json!({"sessionId":session_id,"prompt":prompt})
+}
+
 pub fn prompt(session_id: &str, text: &str) -> Value {
-    json!({"sessionId":session_id,"prompt":[{"type":"text","text":text}]})
+    prompt_with_images(session_id, text, &[])
 }
 
 pub fn cancel(session_id: &str) -> Message {
@@ -194,5 +212,31 @@ mod tests {
         let loaded = load_session_with_mcp("/tmp/worktree", "session-1", &[server]);
         assert_eq!(loaded["sessionId"], "session-1");
         assert_eq!(loaded["mcpServers"][0], value["mcpServers"][0]);
+    }
+
+    #[test]
+    fn prompt_images_follow_the_text_as_exact_acp_content_blocks() {
+        let value = prompt_with_images(
+            "session-1",
+            "Inspect the selected element.",
+            &[
+                PromptImage {
+                    mime_type: "image/png",
+                    bytes: b"first",
+                },
+                PromptImage {
+                    mime_type: "image/png",
+                    bytes: b"second",
+                },
+            ],
+        );
+        assert_eq!(value["sessionId"], "session-1");
+        assert_eq!(value["prompt"][0]["type"], "text");
+        assert_eq!(value["prompt"][0]["text"], "Inspect the selected element.");
+        assert_eq!(value["prompt"][1]["type"], "image");
+        assert_eq!(value["prompt"][1]["mimeType"], "image/png");
+        assert_eq!(value["prompt"][1]["data"], STANDARD.encode(b"first"));
+        assert_eq!(value["prompt"][2]["data"], STANDARD.encode(b"second"));
+        assert!(value["prompt"][1].get("uri").is_none());
     }
 }
