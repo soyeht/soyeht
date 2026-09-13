@@ -17,6 +17,7 @@ public final class EngineClient {
   public internal(set) var paneLoops: [String: LoopConfig] = [:]
   public internal(set) var usageReadings: [UsageReading] = []
   public internal(set) var editorFiles: [String: EditorFileView] = [:]
+  public internal(set) var editorNavigationTarget: EditorNavigationTarget?
   public private(set) var connected = false
   public private(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false

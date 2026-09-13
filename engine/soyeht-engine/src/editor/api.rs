@@ -22,6 +22,7 @@ struct ReattachRequest<'a> {
     method: &'a str,
     params: &'a Value,
     line: Option<u32>,
+    column: Option<u32>,
     pane_only: bool,
     workspace: &'a soyeht_protocol::Workspace,
     canonical: &'a Path,
@@ -67,7 +68,7 @@ impl Core {
                     .get(pane_id)
                     .is_some_and(|pane| !pane.stored.closed)
             }) {
-                let result = self.open_result(&file, request.line)?;
+                let result = self.open_result(&file, request.line, request.column)?;
                 let reply = open_reply(result, pane_only)?;
                 return Ok(self
                     .mutate(connection, method, params, |_| Ok((reply, vec![])))?
@@ -79,6 +80,7 @@ impl Core {
                     method,
                     params,
                     line: request.line,
+                    column: request.column,
                     pane_only,
                     workspace: &workspace,
                     canonical: &resolved.canonical,
@@ -112,7 +114,7 @@ impl Core {
             watching: true,
             updated_ms: self.now_ms(),
         };
-        let (opened, syntax) = initial_open_result(&file, &pane, request.line)?;
+        let (opened, syntax) = initial_open_result(&file, &pane, request.line, request.column)?;
         let reply = open_reply(opened, pane_only)?;
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
@@ -154,7 +156,7 @@ impl Core {
             supervisor_id: None,
             sequence_base: 0,
         };
-        let (opened, syntax) = initial_open_result(&file, &pane, request.line)?;
+        let (opened, syntax) = initial_open_result(&file, &pane, request.line, request.column)?;
         let reply = open_reply(opened, request.pane_only)?;
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
@@ -259,7 +261,12 @@ impl Core {
         Ok((source, text))
     }
 
-    fn open_result(&self, file: &EditorFile, line: Option<u32>) -> Result<FileOpenResult> {
+    fn open_result(
+        &self,
+        file: &EditorFile,
+        line: Option<u32>,
+        column: Option<u32>,
+    ) -> Result<FileOpenResult> {
         let pane = self
             .panes
             .get(
@@ -271,7 +278,7 @@ impl Core {
             .stored
             .pane
             .clone();
-        initial_open_result(file, &pane, line).map(|(result, _)| result)
+        initial_open_result(file, &pane, line, column).map(|(result, _)| result)
     }
 }
 
@@ -323,11 +330,16 @@ fn initial_open_result(
     file: &EditorFile,
     pane: &Pane,
     line: Option<u32>,
+    column: Option<u32>,
 ) -> Result<(FileOpenResult, soyeht_editor::SyntaxDocument)> {
     let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
     let syntax = soyeht_editor::SyntaxDocument::new(text, file.language.clone())?;
     let last = syntax.buffer().line_count().saturating_sub(1);
     let from = (line.unwrap_or(0) as usize).min(last);
+    syntax.buffer().byte_at(&soyeht_protocol::TextPosition {
+        line: from as u32,
+        column: column.unwrap_or(0),
+    })?;
     let lines = soyeht_editor::project(&syntax, from, INITIAL_VIEWPORT_LINES)?;
     let viewport = FileReadResult {
         file: document(file.clone()).map_err(errors::storage)?,

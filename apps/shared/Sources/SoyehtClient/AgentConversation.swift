@@ -195,7 +195,9 @@ private struct AgentWell: ViewModifier {
               .font(style.captionFont).foregroundStyle(style.warning).padding(10)
           }
           ForEach(view.messages, id: \.localId) { message in
-            TranscriptRow(message: message, style: style).id(message.localId)
+            TranscriptRow(
+              message: message, workspaceId: pane?.workspaceId ?? "", style: style
+            ).id(message.localId)
           }
           Color.clear.frame(height: 1).id("agent-bottom")
         }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
@@ -385,6 +387,7 @@ private struct ContextRing: View {
 
 private struct TranscriptRow: View {
   let message: TranscriptMessage
+  let workspaceId: String
   let style: AgentConversationStyle
   @State private var showsThought = false
   var body: some View {
@@ -392,7 +395,8 @@ private struct TranscriptRow: View {
       switch message.kind {
       case .thought:
         DisclosureGroup("Thought", isExpanded: $showsThought) {
-          Text(message.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+          FilePathText(message.text, workspaceId: workspaceId)
+            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
         }.foregroundStyle(style.secondary)
       case .tool:
@@ -406,8 +410,11 @@ private struct TranscriptRow: View {
               Text(tool.status.rawValue.replacingOccurrences(of: "_", with: " "))
                 .font(style.captionFont)
               ForEach(Array(tool.locations.enumerated()), id: \.offset) { _, location in
-                Text(location.line.map { "\(location.path):\($0)" } ?? location.path)
-                  .font(style.monoFont).textSelection(.enabled)
+                FilePathText(
+                  location.line.map { "\(location.path):\(UInt64($0) + 1)" } ?? location.path,
+                  workspaceId: workspaceId
+                )
+                .font(style.monoFont).textSelection(.enabled)
               }
             }
             Spacer()
@@ -419,14 +426,17 @@ private struct TranscriptRow: View {
         }
       case .terminal:
         if let output = message.terminal {
-          Text(Data(base64Encoded: output.bytes).map { String(decoding: $0, as: UTF8.self) } ?? "")
-            .font(style.monoFont).textSelection(.enabled).frame(
-              maxWidth: .infinity, alignment: .leading
-            )
-            .padding(style.canonicalLayout ? 10 : 11)
-            .background(
-              style.canonicalLayout ? style.well : Color.black.opacity(0.06),
-              in: RoundedRectangle(cornerRadius: 10))
+          FilePathText(
+            Data(base64Encoded: output.bytes).map { String(decoding: $0, as: UTF8.self) } ?? "",
+            workspaceId: workspaceId
+          )
+          .font(style.monoFont).textSelection(.enabled).frame(
+            maxWidth: .infinity, alignment: .leading
+          )
+          .padding(style.canonicalLayout ? 10 : 11)
+          .background(
+            style.canonicalLayout ? style.well : Color.black.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: 10))
         }
       case .plan:
         VStack(alignment: .leading, spacing: 5) {
@@ -440,7 +450,8 @@ private struct TranscriptRow: View {
       case .usage:
         EmptyView()
       default:
-        Text(message.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        FilePathText(message.text, workspaceId: workspaceId)
+          .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
           .padding(12)
           .background(
             message.role == .user

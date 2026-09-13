@@ -107,8 +107,13 @@
     let source = directory.appendingPathComponent("sample.swift")
     try "let value = 1\n".write(to: source, atomically: true, encoding: .utf8)
     let workspaceId = try #require(client.selectedPane?.workspaceId)
-    let opened = try await client.openEditorFile(workspaceId: workspaceId, path: "sample.swift")
+    let opened = try await client.openEditorFile(
+      workspaceId: workspaceId, path: "sample.swift", line: 0, column: 4)
     #expect(opened.viewport.lines.first?.text == "let value = 1")
+    #expect(client.selectedPaneId == opened.pane.paneId)
+    #expect(client.editorNavigationTarget?.fileId == opened.file.fileId)
+    #expect(client.editorNavigationTarget?.position.line == 0)
+    #expect(client.editorNavigationTarget?.position.column == 4)
     _ = try await client.writeEditorFile(
       fileId: opened.file.fileId, baseRevision: opened.file.revision,
       edits: [

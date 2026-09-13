@@ -1530,6 +1530,11 @@ fn editor_open_owns_one_bounded_workspace_file_and_restores_it_in_the_snapshot()
         json!({"fileId":file_id,"source":"disk","versionId":"unused","fromLine":0,"lineCount":1}),
     );
     assert_eq!(invalid_version["error"]["data"]["kind"], "invalid_params");
+    let invalid_position = client.request(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"src/main.rs","line":0,"column":99,"idempotencyKey":"open-invalid-position"}),
+    );
+    assert_eq!(invalid_position["error"]["data"]["kind"], "invalid_params");
     let second = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"src/main.rs","idempotencyKey":"open-main-again"}),

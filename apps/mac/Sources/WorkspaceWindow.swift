@@ -114,6 +114,12 @@ struct WorkspaceWindow: View {
         editorPaletteMode = .everywhere
       }
     )
+    .environment(
+      \.filePathOpenAction,
+      FilePathOpenAction { workspaceId, reference in
+        openFileReference(workspaceId: workspaceId, reference: reference)
+      }
+    )
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtPreferences)) { _ in
       selectedUsageProvider = nil
       showPreferences = true
@@ -188,6 +194,17 @@ struct WorkspaceWindow: View {
   private func openPane(_ paneId: String) {
     client.select(paneId)
     navigation.select(.agents)
+  }
+  private func openFileReference(workspaceId: String, reference: FilePathReference) {
+    Task { @MainActor in
+      do {
+        _ = try await client.openEditorFile(
+          workspaceId: workspaceId, path: reference.path, line: reference.line,
+          column: reference.column)
+        taskWorkspaceId = workspaceId
+        navigation.select(.editor)
+      } catch { client.problem = error.localizedDescription }
+    }
   }
   private func selectDestination(_ destination: WorkspaceDestination) {
     navigation.select(destination)

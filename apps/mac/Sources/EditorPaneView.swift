@@ -38,6 +38,7 @@ struct EditorPaneView: View {
         }
         EditorPaneBody(
           client: client, view: view, selectedPosition: $selectedPosition,
+          navigationTarget: client.editorNavigationTarget,
           languageStatus: languageStatus, diff: currentDiff.map(EditorDiffPresentation.init),
           definition: openDefinition, findReferences: findReferences
         )
@@ -250,6 +251,7 @@ private struct EditorPaneBody: View {
   @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var selectedPosition: TextPosition?
+  let navigationTarget: EditorNavigationTarget?
   let languageStatus: LspServerStatus?
   let diff: EditorDiffPresentation?
   let definition: (TextPosition) -> Void
@@ -262,6 +264,7 @@ private struct EditorPaneBody: View {
         EditorTabs(client: client, selected: view.file)
         EditorCodeViewport(
           client: client, view: view, selectedPosition: $selectedPosition,
+          navigationTarget: navigationTarget,
           diff: diff, definition: definition, findReferences: findReferences)
         if view.review != nil {
           EditorAgentReviewBar(
@@ -412,6 +415,7 @@ private struct EditorCodeViewport: View {
   @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var selectedPosition: TextPosition?
+  let navigationTarget: EditorNavigationTarget?
   let diff: EditorDiffPresentation?
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
@@ -419,6 +423,7 @@ private struct EditorCodeViewport: View {
   var body: some View {
     EditorNativeViewport(
       client: client, view: view, selectedPosition: $selectedPosition,
+      navigationTarget: navigationTarget,
       diffMarkers: diff?.gutterMarkers(lineCount: view.file.lineCount) ?? [:],
       agentReviewLines: reviewPresentation?.lines ?? [],
       agentCursors: Array(view.agentCursors.values),

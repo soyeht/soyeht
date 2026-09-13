@@ -18,9 +18,14 @@
   @MainActor
   public struct MacTerminal: NSViewRepresentable {
     private let client: EngineClient
+    @Environment(\.filePathOpenAction) private var openFile
     public init(client: EngineClient) { self.client = client }
     public func makeCoordinator() -> TerminalHost {
-      TerminalHost(client: client, acceptsInput: true) { NSSound.beep() }
+      TerminalHost(
+        client: client, acceptsInput: true, ringBell: { NSSound.beep() },
+        openFile: { workspaceId, reference in
+          openFile(workspaceId: workspaceId, reference: reference)
+        })
     }
     public func makeNSView(context: Context) -> TerminalView {
       let view = TerminalSurface(
@@ -31,11 +36,16 @@
       let foreground = TerminalHost.foreground
       view.nativeForegroundColor = NSColor(
         red: foreground.red, green: foreground.green, blue: foreground.blue, alpha: 1)
+      view.linkReporting = .implicit
+      view.linkHighlightMode = .hover
       view.setAccessibilityLabel("Selected pane terminal")
       context.coordinator.attach(view)
       return view
     }
     public func updateNSView(_ view: TerminalView, context: Context) {
+      context.coordinator.updateOpenFile { workspaceId, reference in
+        openFile(workspaceId: workspaceId, reference: reference)
+      }
       context.coordinator.update(view)
     }
     public static func dismantleNSView(_ view: TerminalView, coordinator: TerminalHost) {

@@ -56,10 +56,12 @@ struct TaskWorkspaceView: View {
     }
     .overlay(alignment: .topTrailing) {
       if let selection = selectedTask {
-        TaskDetailSheet(client: client, taskId: selection.id) { selectedTask = nil }
-          .padding(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 12))
-          .offset(y: -48)
-          .transition(.move(edge: .trailing).combined(with: .opacity)).zIndex(10)
+        TaskDetailSheet(client: client, workspaceId: workspaceId, taskId: selection.id) {
+          selectedTask = nil
+        }
+        .padding(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 12))
+        .offset(y: -48)
+        .transition(.move(edge: .trailing).combined(with: .opacity)).zIndex(10)
       }
     }
     .onAppear { client.refreshTasks(workspaceId) }
@@ -77,7 +79,8 @@ struct TaskWorkspaceView: View {
         Text(summary).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
       }
       .popover(isPresented: $showAttention, arrowEdge: .bottom) {
-        AttentionPopover(items: attention, openPane: openAttentionPane)
+        AttentionPopover(
+          items: attention, workspaceId: workspaceId, openPane: openAttentionPane)
       }
       Button {
         mode = .board
@@ -563,6 +566,7 @@ private func taskOwnerColor(_ name: String) -> Color {
 
 private struct AttentionPopover: View {
   let items: [AttentionItem]
+  let workspaceId: String
   let openPane: (String) -> Void
 
   var body: some View {
@@ -573,7 +577,8 @@ private struct AttentionPopover: View {
       } else {
         ForEach(items, id: \.attentionId) { item in
           VStack(alignment: .leading, spacing: 8) {
-            Text(item.message).font(MacTheme.chrome(MacTheme.TypeScale.control))
+            FilePathText(item.message, workspaceId: workspaceId)
+              .font(MacTheme.chrome(MacTheme.TypeScale.control))
               .fixedSize(horizontal: false, vertical: true)
             Button("Go to pane") { openPane(item.paneId) }.buttonStyle(.bordered)
           }.padding(12).neoWell(radius: MacTheme.Radius.compact)
@@ -585,6 +590,7 @@ private struct AttentionPopover: View {
 
 private struct TaskDetailSheet: View {
   @Bindable var client: EngineClient
+  let workspaceId: String
   let taskId: String
   let close: () -> Void
 
@@ -755,7 +761,8 @@ private struct TaskDetailSheet: View {
           .foregroundStyle(MacTheme.secondary)
       } else {
         ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-          Text(line).font(MacTheme.mono(MacTheme.TypeScale.small)).textSelection(.enabled)
+          FilePathText(line, workspaceId: workspaceId)
+            .font(MacTheme.mono(MacTheme.TypeScale.small)).textSelection(.enabled)
         }
       }
     }
@@ -773,7 +780,8 @@ private struct TaskDetailSheet: View {
                 .padding(.horizontal, 8).padding(.vertical, 2)
                 .background(taskOwnerColor(author), in: Capsule())
             }
-            Text(entry.text).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+            FilePathText(entry.text, workspaceId: workspaceId)
+              .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
               .foregroundStyle(entry.author == nil ? MacTheme.secondary : MacTheme.ink)
               .textSelection(.enabled)
             Text(entry.at).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))

@@ -25,6 +25,18 @@ public struct EditorFileView: Sendable {
   }
 }
 
+public struct EditorNavigationTarget: Sendable {
+  public let id: String
+  public let fileId: String
+  public let position: TextPosition
+
+  public init(id: String, fileId: String, position: TextPosition) {
+    self.id = id
+    self.fileId = fileId
+    self.position = position
+  }
+}
+
 extension EngineClient {
   public var selectedEditorFile: EditorFileView? {
     guard let paneId = selectedPaneId else { return nil }
@@ -40,6 +52,9 @@ extension EngineClient {
       replacement[file.fileId] = EditorFileView(file: file)
     }
     editorFiles = replacement
+    if let target = editorNavigationTarget, replacement[target.fileId] == nil {
+      editorNavigationTarget = nil
+    }
   }
 
   func applyEditorEvent(_ eventName: EventName, _ params: JsonValue) throws {
@@ -88,7 +103,12 @@ extension EngineClient {
   }
 
   func discardEditorPane(_ paneId: String) {
+    let discardedFileIds = Set(
+      editorFiles.values.lazy.filter { $0.file.paneId == paneId }.map(\.file.fileId))
     editorFiles = editorFiles.filter { $0.value.file.paneId != paneId }
+    if let target = editorNavigationTarget, discardedFileIds.contains(target.fileId) {
+      editorNavigationTarget = nil
+    }
   }
 
   func loadEditorPane(_ paneId: String) async throws {
@@ -112,6 +132,13 @@ extension EngineClient {
     ).decoded(FileOpenResult.self)
     upsertPane(result.pane)
     acceptEditorRead(result.viewport)
+    if line != nil || column != nil {
+      editorNavigationTarget = EditorNavigationTarget(
+        id: UUID().uuidString, fileId: result.file.fileId,
+        position: TextPosition(line: result.viewport.fromLine, column: column ?? 0))
+    } else {
+      editorNavigationTarget = nil
+    }
     select(result.pane.paneId)
     return result
   }

@@ -9,14 +9,23 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   let client: EngineClient
   private let acceptsInput: Bool
   private let ringBell: () -> Void
+  private var openFile: (String, FilePathReference) -> Void
   private var feeding = false
   private var selection: String?
   private var applyingRemoteSize = false
 
-  init(client: EngineClient, acceptsInput: Bool, ringBell: @escaping () -> Void = {}) {
+  init(
+    client: EngineClient, acceptsInput: Bool, ringBell: @escaping () -> Void = {},
+    openFile: @escaping (String, FilePathReference) -> Void = { _, _ in }
+  ) {
     self.client = client
     self.acceptsInput = acceptsInput
     self.ringBell = ringBell
+    self.openFile = openFile
+  }
+
+  func updateOpenFile(_ action: @escaping (String, FilePathReference) -> Void) {
+    openFile = action
   }
 
   func attach(_ view: TerminalView) {
@@ -62,7 +71,12 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   public func setTerminalTitle(source: TerminalView, title: String) {}
   public func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
   public func scrolled(source: TerminalView, position: Double) {}
-  public func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {}
+  public func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+    guard let workspaceId = client.selectedPane?.workspaceId,
+      let reference = FilePathReference.parse(link)
+    else { return }
+    openFile(workspaceId, reference)
+  }
   public func bell(source: TerminalView) { ringBell() }
   public func clipboardCopy(source: TerminalView, content: Data) {}
   public func clipboardRead(source: TerminalView) -> Data? { nil }

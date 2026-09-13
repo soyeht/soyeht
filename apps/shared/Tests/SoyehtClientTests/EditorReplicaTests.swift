@@ -13,6 +13,8 @@ import Testing
 
   #expect(client.editorFiles.count == 1)
   #expect(client.selectedEditorFile?.file.fileId == file.fileId)
+  client.editorNavigationTarget = EditorNavigationTarget(
+    id: "target-1", fileId: file.fileId, position: TextPosition(line: 2, column: 3))
 
   var orphan = file
   orphan.paneId = "missing-pane"
@@ -22,6 +24,7 @@ import Testing
 
   try client.applyEditorSnapshot(["files": []], panes: [pane])
   #expect(client.editorFiles.isEmpty)
+  #expect(client.editorNavigationTarget == nil)
 }
 
 @MainActor @Test func editorEventsUpdateOnlyEnginePublishedFacts() throws {
@@ -142,6 +145,19 @@ import Testing
 
   client.discardEditorPane(file.paneId)
   #expect(client.editorFiles.isEmpty)
+}
+
+@MainActor @Test func closingAnEditorPaneClearsItsNavigationTarget() {
+  let client = EngineClient(socket: "/tmp/editor-navigation.sock")
+  let file = editorFile()
+  client.editorFiles[file.fileId] = EditorFileView(file: file)
+  client.editorNavigationTarget = EditorNavigationTarget(
+    id: "target-2", fileId: file.fileId, position: TextPosition(line: 3, column: 1))
+
+  client.discardEditorPane(file.paneId)
+
+  #expect(client.editorFiles.isEmpty)
+  #expect(client.editorNavigationTarget == nil)
 }
 
 private func editorPane() -> Pane {

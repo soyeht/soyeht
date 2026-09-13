@@ -7,6 +7,7 @@ struct EditorNativeViewport: NSViewRepresentable {
   @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var selectedPosition: TextPosition?
+  let navigationTarget: EditorNavigationTarget?
   let diffMarkers: [UInt32: Set<EditorDiffMarker>]
   let agentReviewLines: Set<UInt32>
   let agentCursors: [EditorAgentCursorEvent]
@@ -29,6 +30,7 @@ struct EditorNativeViewport: NSViewRepresentable {
     private let textView = EditorTextView()
     private var ruler: EditorLineRuler?
     private var renderedIdentity: String?
+    private var appliedNavigationId: String?
     private var viewportStart: UInt32 = 0
     private var language = EditorLanguage.plain_text
 
@@ -65,13 +67,16 @@ struct EditorNativeViewport: NSViewRepresentable {
         agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line)
       let identity =
         "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics))"
-      guard renderedIdentity != identity else { return }
-      renderedIdentity = identity
-      let selection = textView.selectedRanges
-      textView.textStorage?.setAttributedString(attributed(viewport, diagnostics: view.diagnostics))
-      textView.selectedRanges = validSelections(selection, length: textView.string.utf16.count)
-      textView.needsDisplay = true
-      ruler?.needsDisplay = true
+      if renderedIdentity != identity {
+        renderedIdentity = identity
+        let selection = textView.selectedRanges
+        textView.textStorage?.setAttributedString(
+          attributed(viewport, diagnostics: view.diagnostics))
+        textView.selectedRanges = validSelections(selection, length: textView.string.utf16.count)
+        textView.needsDisplay = true
+        ruler?.needsDisplay = true
+      }
+      applyNavigation(viewport)
     }
 
     func insert(_ inserted: String, ranges: [NSRange]) -> Bool {
@@ -258,6 +263,27 @@ struct EditorNativeViewport: NSViewRepresentable {
     private func validSelections(_ values: [NSValue], length: Int) -> [NSValue] {
       let valid = values.filter { NSMaxRange($0.rangeValue) <= length }
       return valid.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : valid
+    }
+
+    private func applyNavigation(_ viewport: FileReadResult) {
+      guard let target = parent.navigationTarget, target.fileId == viewport.file.fileId,
+        target.id != appliedNavigationId,
+        let offset = localOffset(target.position, in: viewport)
+      else { return }
+      appliedNavigationId = target.id
+      let range = NSRange(location: offset, length: 0)
+      textView.setSelectedRange(range)
+      textView.scrollRangeToVisible(range)
+      selectionChanged()
+    }
+
+    private func localOffset(_ position: TextPosition, in viewport: FileReadResult) -> Int? {
+      guard position.line >= viewport.fromLine, position.line < viewport.toLine else { return nil }
+      let index = Int(position.line - viewport.fromLine)
+      guard index < viewport.lines.count else { return nil }
+      let prefix = viewport.lines.prefix(index).reduce(0) { $0 + $1.text.utf16.count + 1 }
+      let column = min(Int(position.column), viewport.lines[index].text.utf16.count)
+      return prefix + column
     }
 
     private func selectionChanged() {
