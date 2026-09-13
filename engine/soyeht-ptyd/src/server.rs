@@ -226,7 +226,13 @@ fn execute_hello() -> Result<Response> {
 
 fn execute_list(state: &State) -> Result<Response> {
     Ok(Response::Instances(
-        state.registry.instances.values().cloned().collect(),
+        state
+            .registry
+            .instances
+            .values()
+            .filter(|instance| !instance.closed)
+            .cloned()
+            .collect(),
     ))
 }
 

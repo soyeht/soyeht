@@ -171,7 +171,7 @@ fn reconnect_adopts_the_same_shell_and_spawn_and_close_are_idempotent() {
     let Response::Instances(instances) = client.request(Request::List).unwrap() else {
         panic!("expected list");
     };
-    assert_eq!(instances.len(), 1);
+    assert!(instances.is_empty());
     assert_eq!(
         fs::metadata(daemon.directory.join("ptyd.sock"))
             .unwrap()
