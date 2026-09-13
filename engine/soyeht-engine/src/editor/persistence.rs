@@ -41,6 +41,7 @@ impl Core {
         })?;
         if !mutation.repeated {
             self.editor.commit_edit(prepared);
+            self.track_language_file(&file);
         }
         Ok(mutation.result)
     }
@@ -115,7 +116,8 @@ impl Core {
             Ok((result, Vec::new()))
         })?;
         if !mutation.repeated {
-            self.editor.replace(file, self.now_ms());
+            self.editor.replace(file.clone(), self.now_ms());
+            self.track_language_file(&file);
         }
         Ok(mutation.result)
     }
@@ -271,11 +273,14 @@ impl Core {
         })
         .map_err(errors::storage)?;
         if preserve_syntax {
-            self.editor.replace_preserving_syntax(file, self.now_ms());
+            self.editor
+                .replace_preserving_syntax(file.clone(), self.now_ms());
         } else {
-            self.editor.replace(file, self.now_ms());
+            self.editor.replace(file.clone(), self.now_ms());
         }
-        self.publish(&mutation.events)
+        self.publish(&mutation.events)?;
+        self.track_language_file(&file);
+        Ok(())
     }
 
     pub(crate) fn file_author(&self, connection: &str) -> Result<FileAuthor> {

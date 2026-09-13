@@ -1703,6 +1703,91 @@ fn language_format_is_revision_checked_durable_and_idempotent() {
     assert_eq!(files[0]["revision"], "2");
 }
 
+#[test]
+fn every_editor_revision_is_synchronized_with_the_live_language_server() {
+    let rig = Rig::new();
+    let repository = rig.path.join("language-sync-repository");
+    fs::create_dir_all(&repository).unwrap();
+    let path = repository.join("main.rs");
+    fs::write(&path, "fn main() { alpha(); }\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Language sync","path":repository,"idempotencyKey":"sync-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let file_id = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"sync-open"}),
+    )["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    wait_lsp_ready(&mut client, &workspace, 1);
+    wait_for_lsp_revision(&rig, "1");
+
+    client.call(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"1","author":local_file_author(),
+            "edits":[{"range":{"start":{"line":0,"column":12},"end":{"line":0,"column":17}},"text":"bravo"}],
+            "idempotencyKey":"sync-write"
+        }),
+    );
+    wait_for_lsp_revision(&rig, "2");
+    wait_for_editor_file(&mut client, &file_id, |file| file["dirty"] == false);
+    let version_id =
+        client.call("file.history", json!({"fileId":file_id,"limit":1}))["items"][0]["versionId"]
+            .clone();
+
+    fs::write(&path, "fn main() { charlie(); }\n").unwrap();
+    wait_for_editor_file(&mut client, &file_id, |file| file["revision"] == "3");
+    wait_for_lsp_revision(&rig, "3");
+    client.call(
+        "file.revert",
+        json!({
+            "fileId":file_id,"versionId":version_id,"baseRevision":"3",
+            "idempotencyKey":"sync-revert"
+        }),
+    );
+    wait_for_lsp_revision(&rig, "4");
+    wait_for_editor_file(&mut client, &file_id, |file| file["dirty"] == false);
+
+    client.call(
+        "file.search",
+        json!({
+            "workspaceId":workspace,"query":"bravo","replacement":"delta",
+            "caseSensitive":true,"limit":10,"idempotencyKey":"sync-replace"
+        }),
+    );
+    wait_for_lsp_revision(&rig, "5");
+    assert_eq!(
+        fs::read_to_string(path).unwrap(),
+        "fn main() { delta(); }\n"
+    );
+}
+
+fn wait_for_lsp_revision(rig: &Rig, revision: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if rig
+            .database_probe()
+            .event_count_by_field("lsp.diagnostics", "revision", revision)
+            .unwrap()
+            > 0
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "language diagnostics did not reach revision {revision}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn wait_lsp_ready(client: &mut Client, workspace: &str, generation: u64) -> Value {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {

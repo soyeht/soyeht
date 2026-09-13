@@ -338,8 +338,12 @@ impl Core {
             },
         )
         .map_err(errors::storage)?;
-        self.editor.replace(file, self.now_ms());
-        self.publish(&mutation.events)
+        self.editor.replace(file.clone(), self.now_ms());
+        self.publish(&mutation.events)?;
+        if open {
+            self.track_language_file(&file);
+        }
+        Ok(())
     }
 
     fn finish_replacement(
