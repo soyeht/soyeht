@@ -180,6 +180,17 @@ class SchemaTests(unittest.TestCase):
         self.assertFalse(self.schema["x-events"]["servers.local.changed"]["durable"])
         self.assertFalse(self.schema["x-events"]["web.console_counts"]["durable"])
         self.assertFalse(self.schema["x-events"]["web.agent_driving"]["durable"])
+        for name in (
+            "ServersLocalChangedEvent",
+            "WebConsoleCountsEvent",
+            "WebAgentDrivingEvent",
+        ):
+            required = set(self.schema["$defs"][name]["required"])
+            properties = set(self.schema["$defs"][name]["properties"])
+            self.assertNotIn("eventId", required, name)
+            self.assertNotIn("at", required, name)
+            self.assertNotIn("eventId", properties, name)
+            self.assertNotIn("at", properties, name)
 
     def test_browser_mutations_require_idempotency_but_reverse_commands_use_operation_keys(self):
         for name, method in self.schema["x-methods"].items():

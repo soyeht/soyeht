@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6f3d38e0d17f9c340e0125984915062a0e0e30f72acba05a7be26fcd7827cef5). Do not edit.
+// Generated from contracts/protocol.json (sha256 457be0072c7d437efadbf7b0e48c6db9cc7b23a9f048db751a3bd3a3b640bebd). Do not edit.
 import Foundation
 
 
@@ -4863,14 +4863,10 @@ public struct WebNavigatedEvent: Codable, Sendable {
 }
 
 public struct WebConsoleCountsEvent: Codable, Sendable {
-    public var `eventId`: Decimal
-    public var `at`: String
     public var `paneId`: Id
     public var `warnings`: UInt32
     public var `errors`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `warnings`: UInt32, `errors`: UInt32) {
-        self.`eventId` = `eventId`
-        self.`at` = `at`
+    public init(`paneId`: Id, `warnings`: UInt32, `errors`: UInt32) {
         self.`paneId` = `paneId`
         self.`warnings` = `warnings`
         self.`errors` = `errors`
@@ -4878,14 +4874,10 @@ public struct WebConsoleCountsEvent: Codable, Sendable {
 }
 
 public struct WebAgentDrivingEvent: Codable, Sendable {
-    public var `eventId`: Decimal
-    public var `at`: String
     public var `paneId`: Id
     public var `on`: Bool
     public var `domain`: String?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `on`: Bool, `domain`: String? = nil) {
-        self.`eventId` = `eventId`
-        self.`at` = `at`
+    public init(`paneId`: Id, `on`: Bool, `domain`: String? = nil) {
         self.`paneId` = `paneId`
         self.`on` = `on`
         self.`domain` = `domain`
@@ -4893,12 +4885,8 @@ public struct WebAgentDrivingEvent: Codable, Sendable {
 }
 
 public struct ServersLocalChangedEvent: Codable, Sendable {
-    public var `eventId`: Decimal
-    public var `at`: String
     public var `servers`: [LocalServer]
-    public init(`eventId`: Decimal, `at`: String, `servers`: [LocalServer]) {
-        self.`eventId` = `eventId`
-        self.`at` = `at`
+    public init(`servers`: [LocalServer]) {
         self.`servers` = `servers`
     }
 }

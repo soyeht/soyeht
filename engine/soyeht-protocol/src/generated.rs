@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6f3d38e0d17f9c340e0125984915062a0e0e30f72acba05a7be26fcd7827cef5). Do not edit.
+// Generated from contracts/protocol.json (sha256 457be0072c7d437efadbf7b0e48c6db9cc7b23a9f048db751a3bd3a3b640bebd). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -4374,10 +4374,6 @@ pub struct WebNavigatedEvent {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WebConsoleCountsEvent {
-    #[serde(rename = "eventId")]
-    pub event_id: Decimal,
-    #[serde(rename = "at")]
-    pub at: String,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "warnings")]
@@ -4387,10 +4383,6 @@ pub struct WebConsoleCountsEvent {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WebAgentDrivingEvent {
-    #[serde(rename = "eventId")]
-    pub event_id: Decimal,
-    #[serde(rename = "at")]
-    pub at: String,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "on")]
@@ -4400,10 +4392,6 @@ pub struct WebAgentDrivingEvent {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ServersLocalChangedEvent {
-    #[serde(rename = "eventId")]
-    pub event_id: Decimal,
-    #[serde(rename = "at")]
-    pub at: String,
     #[serde(rename = "servers")]
     pub servers: Vec<LocalServer>,
 }

@@ -23,9 +23,10 @@ the schema before returning types. Serde and Codable check types during deserial
 Frame size limits are checked by all three binary codecs.
 
 Requests and notifications use the JSON-RPC 2.0 envelope. `welcome` is the result
-of `hello`. Challenges, snapshot parts and stream events are notifications without
-a state cursor; durable events carry `params.eventId`. 64-bit integers travel as
-decimal strings; in binary frames they are big-endian u64.
+of `hello`. Challenges, snapshot parts, stream events, local-server changes,
+web console counts and web driving state are notifications without a state
+cursor; durable events carry `params.eventId`. 64-bit integers travel as decimal
+strings; in binary frames they are big-endian u64.
 
 To change a format, edit the schema and corresponding vectors:
 

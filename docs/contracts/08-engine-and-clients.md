@@ -212,8 +212,9 @@ ptyd: {connected, version, generation}, db: {id, schemaVersion}}`.
 
 ## 5. Events (notifications)
 Names **match those published in contracts 01–04 and 07** (R01); fields are
-English in every contract (mapping table at the end). All carry
-`eventId`, `at`, `actor?`.
+English in every contract (mapping table at the end). Durable state events
+carry `eventId`, `at`, `actor?`. Notifications declared non-durable in the
+executable schema carry no state cursor and never enter replay.
 - `workspace.created|renamed|closed`
 - `pane.created|closed|renamed|arranged`
 - `pane.session_started {harness, version, sessionId, generation, options}`

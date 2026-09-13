@@ -8472,8 +8472,6 @@
       "jsonrpc": "2.0",
       "method": "servers.local.changed",
       "params": {
-        "eventId": "1",
-        "at": "2026-09-13T00:00:00Z",
         "servers": []
       }
     }
@@ -8501,8 +8499,6 @@
       "jsonrpc": "2.0",
       "method": "web.console_counts",
       "params": {
-        "eventId": "3",
-        "at": "2026-09-13T00:00:00Z",
         "paneId": "web-pane-1",
         "warnings": 1,
         "errors": 0
@@ -8516,8 +8512,6 @@
       "jsonrpc": "2.0",
       "method": "web.agent_driving",
       "params": {
-        "eventId": "4",
-        "at": "2026-09-13T00:00:00Z",
         "paneId": "web-pane-1",
         "on": true,
         "domain": "example.invalid"
@@ -8612,8 +8606,6 @@
     "name": "ServersLocalChangedEvent",
     "type": "ServersLocalChangedEvent",
     "value": {
-      "eventId": "1",
-      "at": "2026-09-13T00:00:00Z",
       "servers": []
     }
   },
@@ -8658,8 +8650,6 @@
     "name": "WebAgentDrivingEvent",
     "type": "WebAgentDrivingEvent",
     "value": {
-      "eventId": "4",
-      "at": "2026-09-13T00:00:00Z",
       "paneId": "web-pane-1",
       "on": true,
       "domain": "example.invalid"
@@ -8746,8 +8736,6 @@
     "name": "WebConsoleCountsEvent",
     "type": "WebConsoleCountsEvent",
     "value": {
-      "eventId": "3",
-      "at": "2026-09-13T00:00:00Z",
       "paneId": "web-pane-1",
       "warnings": 1,
       "errors": 0

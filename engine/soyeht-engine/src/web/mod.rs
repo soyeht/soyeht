@@ -84,7 +84,7 @@ impl Core {
 
     fn publish_local_server_change(&mut self, refresh: &Refresh) -> Result<()> {
         if refresh.changed {
-            self.system_event(
+            self.transient_event(
                 "servers.local.changed",
                 serde_json::json!({"servers": refresh.servers}),
             )?;
@@ -96,8 +96,11 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{dispatch::Outcome, ports::PortScanObservation, ports::testing::FixedClock};
+    use crate::{
+        dispatch::Outcome, outbox, ports::PortScanObservation, ports::testing::FixedClock,
+    };
     use serde_json::json;
+    use soyeht_protocol::frame::Frame;
     use std::{collections::VecDeque, fs, io, sync::Arc};
     use uuid::Uuid;
 
@@ -174,19 +177,19 @@ mod tests {
             panic!("cached local server list did not reply")
         };
         assert_eq!(cached, first);
-        assert_eq!(server_event_count(&mut core), 1);
+        assert_eq!(durable_server_event_count(&mut core), 0);
         core.clock = Arc::new(FixedClock(5_100));
         core.advance_local_servers().unwrap();
-        assert_eq!(server_event_count(&mut core), 1);
+        assert_eq!(durable_server_event_count(&mut core), 0);
         core.clock = Arc::new(FixedClock(10_100));
         core.advance_local_servers().unwrap();
-        assert_eq!(server_event_count(&mut core), 2);
+        assert_eq!(durable_server_event_count(&mut core), 0);
         assert_eq!(core.web.servers()[0].command, "python");
         drop(core);
         fs::remove_dir_all(directory).unwrap();
     }
 
-    fn server_event_count(core: &mut Core) -> usize {
+    fn durable_server_event_count(core: &mut Core) -> usize {
         core.store
             .replay(0)
             .unwrap()
@@ -194,5 +197,47 @@ mod tests {
             .iter()
             .filter(|event| event.method == "servers.local.changed")
             .count()
+    }
+
+    #[tokio::test]
+    async fn transient_events_reach_live_subscribers_without_entering_replay() {
+        let directory = std::env::temp_dir().join(format!("soyeht-web-event-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let mut core = Core::open(&directory).unwrap();
+        let (outbox, mut receiver) = outbox::channel();
+        let connection = core.connect(true, outbox).unwrap();
+        let _ = receiver.next().await.unwrap().unwrap();
+        core.dispatch(
+            &connection,
+            json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
+                "client":"transient-test","clientVersion":"1","protocolVersion":1}}),
+        )
+        .unwrap();
+        core.clients.get_mut(&connection).unwrap().events = true;
+        core.transient_event(
+            "web.console_counts",
+            json!({
+                "paneId":"pane","warnings":2,"errors":1
+            }),
+        )
+        .unwrap();
+        let Frame::Json(bytes) = receiver.next().await.unwrap().unwrap().frame else {
+            panic!("expected transient JSON event")
+        };
+        let event: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(event["method"], "web.console_counts");
+        assert!(event["params"].get("eventId").is_none());
+        assert_eq!(durable_server_event_count(&mut core), 0);
+        assert!(core.transient_event("web.navigated", json!({})).is_err());
+        assert!(
+            core.transient_event("web.console_counts", json!(null))
+                .is_err()
+        );
+        assert!(
+            core.transient_event("web.console_counts", json!({"eventId":"1"}))
+                .is_err()
+        );
+        drop(core);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -152,6 +152,24 @@ impl Core {
         self.publish(&mutation.events)
     }
 
+    pub(crate) fn transient_event(&self, method: &str, params: Value) -> Result<()> {
+        let transient = soyeht_protocol::EVENTS
+            .iter()
+            .any(|event| event.name.as_str() == method && !event.durable);
+        if !transient || !params.is_object() || params.get("eventId").is_some() {
+            return Err(errors::internal("Invalid transient event"));
+        }
+        let frame = model::notification(method, params)?;
+        for client in self
+            .clients
+            .values()
+            .filter(|client| client.events && client.actor.is_some())
+        {
+            client.outbox.send(frame.clone());
+        }
+        Ok(())
+    }
+
     pub fn publish(&self, events: &[Event]) -> Result<()> {
         for client in self
             .clients
