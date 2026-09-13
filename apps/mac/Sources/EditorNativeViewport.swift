@@ -29,8 +29,10 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
+    private static let lineHeight: CGFloat = 19
     var parent: EditorNativeViewport
     private let textView = EditorTextView()
+    private weak var scrollView: NSScrollView?
     private var ruler: EditorLineRuler?
     private var renderedIdentity: String?
     private var appliedNavigationId: String?
@@ -38,6 +40,7 @@ struct EditorNativeViewport: NSViewRepresentable {
     private var language = EditorLanguage.plain_text
     private var vim = EditorVimMachine()
     private var wasVimEnabled = false
+    private var requestedViewportStart: UInt32?
 
     init(_ parent: EditorNativeViewport) {
       self.parent = parent
@@ -52,17 +55,23 @@ struct EditorNativeViewport: NSViewRepresentable {
       scroll.autohidesScrollers = true
       scroll.borderType = .noBorder
       scroll.documentView = textView
+      scroll.contentView.postsBoundsChangedNotifications = true
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(visibleBoundsChanged(_:)),
+        name: NSView.boundsDidChangeNotification, object: scroll.contentView)
       scroll.hasVerticalRuler = true
       scroll.rulersVisible = true
       configureTextView()
       let ruler = EditorLineRuler(scrollView: scroll, textView: textView)
       scroll.verticalRulerView = ruler
       self.ruler = ruler
+      scrollView = scroll
       return scroll
     }
 
     func update(_ view: EditorFileView) {
       guard let viewport = view.viewport else { return }
+      let previousViewportStart = viewportStart
       viewportStart = viewport.fromLine
       language = view.file.language
       textView.inputDelegate = self
@@ -74,6 +83,7 @@ struct EditorNativeViewport: NSViewRepresentable {
         startLine: viewport.fromLine, lineCount: viewport.lines.count,
         markers: parent.diffMarkers, agentReviewLines: parent.agentReviewLines,
         agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line)
+      updateVirtualGeometry(viewport)
       let identity =
         "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics))"
       if renderedIdentity != identity {
@@ -81,11 +91,57 @@ struct EditorNativeViewport: NSViewRepresentable {
         let selection = textView.selectedRanges
         textView.textStorage?.setAttributedString(
           attributed(viewport, diagnostics: view.diagnostics))
-        textView.selectedRanges = validSelections(selection, length: textView.string.utf16.count)
+        textView.selectedRanges = selections(
+          afterLoading: viewport, previousStart: previousViewportStart, previous: selection)
         textView.needsDisplay = true
         ruler?.needsDisplay = true
       }
       applyNavigation(viewport)
+      requestViewportIfNeeded()
+    }
+
+    @objc private func visibleBoundsChanged(_ notification: Notification) {
+      requestViewportIfNeeded()
+    }
+
+    private func updateVirtualGeometry(_ viewport: FileReadResult) {
+      guard let scrollView else { return }
+      let top = 10 + CGFloat(viewport.fromLine) * Self.lineHeight
+      textView.textContainerInset = NSSize(width: 10, height: top)
+      let documentHeight = 20 + CGFloat(viewport.file.lineCount) * Self.lineHeight
+      let height = max(scrollView.contentSize.height, documentHeight)
+      textView.minSize = NSSize(width: 0, height: height)
+      if abs(textView.frame.height - height) > 0.5 {
+        textView.setFrameSize(
+          NSSize(width: max(scrollView.contentSize.width, textView.frame.width), height: height))
+      }
+      if requestedViewportStart == viewport.fromLine { requestedViewportStart = nil }
+    }
+
+    private func requestViewportIfNeeded() {
+      guard let scrollView, let viewport = parent.view.viewport,
+        requestedViewportStart == nil
+      else { return }
+      let visibleTop = max(0, scrollView.contentView.bounds.minY - 10)
+      let visibleFrom = UInt32(clamping: Int(visibleTop / Self.lineHeight))
+      let visibleLines = UInt32(
+        clamping: Int(ceil(scrollView.contentSize.height / Self.lineHeight)) + 2)
+      guard
+        let start = EditorViewportPaging.requestedStart(
+          visibleFrom: visibleFrom, visibleLines: visibleLines,
+          loadedFrom: viewport.fromLine, loadedTo: viewport.toLine,
+          totalLines: viewport.file.lineCount)
+      else { return }
+      requestedViewportStart = start
+      let fileId = viewport.file.fileId
+      Task { @MainActor in
+        do {
+          try await parent.client.loadEditorViewport(fileId: fileId, fromLine: start)
+        } catch {
+          parent.client.problem = error.localizedDescription
+        }
+        requestedViewportStart = nil
+      }
     }
 
     func insert(_ inserted: String, ranges: [NSRange]) -> Bool {
@@ -287,6 +343,18 @@ struct EditorNativeViewport: NSViewRepresentable {
     private func validSelections(_ values: [NSValue], length: Int) -> [NSValue] {
       let valid = values.filter { NSMaxRange($0.rangeValue) <= length }
       return valid.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : valid
+    }
+
+    private func selections(
+      afterLoading viewport: FileReadResult, previousStart: UInt32, previous: [NSValue]
+    ) -> [NSValue] {
+      guard previousStart != viewport.fromLine else {
+        return validSelections(previous, length: textView.string.utf16.count)
+      }
+      guard let position = parent.selectedPosition,
+        let offset = localOffset(position, in: viewport)
+      else { return [NSValue(range: NSRange(location: 0, length: 0))] }
+      return [NSValue(range: NSRange(location: offset, length: 0))]
     }
 
     private func applyNavigation(_ viewport: FileReadResult) {

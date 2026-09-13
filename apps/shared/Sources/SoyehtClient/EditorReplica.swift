@@ -161,6 +161,16 @@ extension EngineClient {
     return result
   }
 
+  public func loadEditorViewport(fileId: String, fromLine: UInt32) async throws {
+    if let task = editorWriteTasks[fileId] { await task.value }
+    guard let revision = editorFiles[fileId]?.file.revision else {
+      throw ClientFailure.invalidSnapshot
+    }
+    _ = try await readEditorFile(
+      fileId: fileId, revision: revision, fromLine: fromLine,
+      lineCount: EditorViewportPaging.pageLines)
+  }
+
   @discardableResult
   public func writeEditorFile(
     fileId: String, baseRevision: String, edits: [TextEdit]
