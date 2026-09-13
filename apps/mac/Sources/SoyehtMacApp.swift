@@ -1,11 +1,17 @@
 import SoyehtClient
 import SwiftUI
 
-@main
+@main @MainActor
 struct SoyehtMacApp: App {
-  @State private var client = EngineClient()
+  @State private var client: EngineClient
+  private let webHost: MacWebHost
 
   init() {
+    let host = MacWebHost()
+    let client = EngineClient(webHost: host)
+    host.bind(client)
+    webHost = host
+    _client = State(initialValue: client)
     MacTheme.registerFonts()
     #if DEBUG
       if let report = EditorPerformanceProbe.requestedReportURL() {
@@ -16,7 +22,7 @@ struct SoyehtMacApp: App {
 
   var body: some Scene {
     Window("Soyeht · Dev", id: "main") {
-      WorkspaceWindow(client: client)
+      WorkspaceWindow(client: client, webHost: webHost)
         .frame(minWidth: 1024, minHeight: 640)
         .task { client.start() }
     }

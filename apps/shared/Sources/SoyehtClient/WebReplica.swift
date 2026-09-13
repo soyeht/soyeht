@@ -112,4 +112,17 @@ extension EngineClient {
     )
     .decoded(WebNavigateResult.self)
   }
+
+  public func reportWebNavigation(
+    paneId: String, navigationGeneration: String, url: String, title: String,
+    idempotencyKey: String
+  ) async throws {
+    _ = try await mutation(
+      "web.host.navigated",
+      WebHostNavigatedParams(
+        paneId: paneId, navigationGeneration: navigationGeneration, url: url, title: title,
+        idempotencyKey: idempotencyKey)
+    )
+    .decoded(WebHostNavigatedResult.self)
+  }
 }

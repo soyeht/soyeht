@@ -6,6 +6,7 @@ import SwiftUI
 
 struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
+  let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
   @State private var editorInputPreferences = EditorInputPreferences()
   @State private var paneToClose: String?
@@ -137,6 +138,9 @@ struct WorkspaceWindow: View {
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtEditorPalette)) { note in
       editorPaletteMode = note.object as? EditorPaletteMode ?? .commands
     }
+    .onAppear { webHost.reconcile(client.panes) }
+    .onChange(of: client.panes.map(\.paneId)) { _, _ in webHost.reconcile(client.panes) }
+    .onChange(of: client.connectionRevision) { _, _ in webHost.resynchronize() }
     .onExitCommand { showPreferences = false }
   }
 
@@ -151,20 +155,20 @@ struct WorkspaceWindow: View {
     case .agents:
       if showNewPane {
         NewPaneWorkspace(
-          client: client, isPresented: $showNewPane,
+          client: client, webHost: webHost, isPresented: $showNewPane,
           onClose: { paneToClose = $0 }, onTasks: showTasks)
       } else {
         PaneGrid(
-          client: client, workspaceId: selectedTaskWorkspaceId, mode: nil,
+          client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
           onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
       }
     case .terminal:
       PaneGrid(
-        client: client, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
+        client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
         onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
     case .editor:
       PaneGrid(
-        client: client, workspaceId: selectedTaskWorkspaceId, mode: .editor,
+        client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .editor,
         onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
     case .phone:
       phoneWorkspace
@@ -413,6 +417,7 @@ private struct WorkspaceTabSurface: ViewModifier {
 
 private struct PaneGrid: View {
   @Bindable var client: EngineClient
+  let webHost: MacWebHost
   let workspaceId: String?
   let mode: PaneMode?
   let onClose: (String) -> Void
@@ -445,7 +450,7 @@ private struct PaneGrid: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if panes.count <= 2 {
         PanePair(
-          client: client, panes: panes, onClose: onClose, onTasks: onTasks,
+          client: client, webHost: webHost, panes: panes, onClose: onClose, onTasks: onTasks,
           tint: paneTint)
       } else {
         LazyVGrid(
@@ -454,7 +459,7 @@ private struct PaneGrid: View {
         ) {
           ForEach(Array(panes.enumerated()), id: \.element.paneId) { index, pane in
             PaneCard(
-              client: client, pane: pane, tint: paneTint(index), onClose: onClose,
+              client: client, webHost: webHost, pane: pane, tint: paneTint(index), onClose: onClose,
               onTasks: onTasks
             ).frame(minHeight: 320)
           }
@@ -498,6 +503,7 @@ private struct PaneGrid: View {
 
 private struct PanePair: View {
   @Bindable var client: EngineClient
+  let webHost: MacWebHost
   let panes: [Pane]
   let onClose: (String) -> Void
   let onTasks: () -> Void
@@ -508,7 +514,7 @@ private struct PanePair: View {
       HStack(spacing: MacTheme.Space.x18) {
         ForEach(Array(ordered.enumerated()), id: \.element.paneId) { index, pane in
           PaneCard(
-            client: client, pane: pane, tint: tint(index), onClose: onClose,
+            client: client, webHost: webHost, pane: pane, tint: tint(index), onClose: onClose,
             onTasks: onTasks
           )
           .frame(width: width(for: pane, total: geometry.size.width))
@@ -547,6 +553,7 @@ private struct EmptyWorkspaceView: View {
 
 private struct PaneCard: View {
   @Bindable var client: EngineClient
+  let webHost: MacWebHost
   let pane: Pane
   let tint: Color
   let onClose: (String) -> Void
@@ -612,7 +619,10 @@ private struct PaneCard: View {
   }
 
   @ViewBuilder private var paneBody: some View {
-    if pane.mode == .agent {
+    if pane.mode == .web {
+      WebPaneSurface(host: webHost, pane: pane)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    } else if pane.mode == .agent {
       VStack(spacing: MacTheme.Space.x12) {
         if let task = client.tasks.first(where: { $0.ownerPaneId == pane.paneId }) {
           HStack(spacing: MacTheme.Space.x8) {
@@ -677,6 +687,7 @@ private struct PaneCard: View {
 
 private struct NewPaneWorkspace: View {
   @Bindable var client: EngineClient
+  let webHost: MacWebHost
   @Binding var isPresented: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
@@ -685,7 +696,7 @@ private struct NewPaneWorkspace: View {
     HStack(spacing: MacTheme.Space.x18) {
       if let pane = client.selectedPane {
         PaneCard(
-          client: client, pane: pane, tint: MacTheme.agentRose, onClose: onClose,
+          client: client, webHost: webHost, pane: pane, tint: MacTheme.agentRose, onClose: onClose,
           onTasks: onTasks
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
