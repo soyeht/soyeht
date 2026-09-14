@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 20;
+pub const SCHEMA_VERSION: u32 = 21;
 
 #[derive(Debug)]
 pub enum Error {
@@ -91,6 +91,7 @@ pub enum Error {
     InvalidWebPermission,
     InvalidWritingDocument,
     InvalidWritingSidecar,
+    InvalidWritingCreateIntent,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -191,6 +192,7 @@ impl fmt::Display for Error {
             Self::InvalidWebPermission => f.write_str("invalid web permission request"),
             Self::InvalidWritingDocument => f.write_str("invalid writing document"),
             Self::InvalidWritingSidecar => f.write_str("invalid writing sidecar"),
+            Self::InvalidWritingCreateIntent => f.write_str("invalid writing create intent"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -357,6 +359,9 @@ impl Store {
             }
             if version < 20 {
                 tx.execute_batch(include_str!("../migrations/020-writing-documents.sql"))?;
+            }
+            if version < 21 {
+                tx.execute_batch(include_str!("../migrations/021-writing-create-intents.sql"))?;
             }
             tx.commit()?;
         }

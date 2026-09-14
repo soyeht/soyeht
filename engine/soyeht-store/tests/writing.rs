@@ -9,7 +9,7 @@ use soyeht_store::{
     database::{Error, Store},
     domain::PaneRecord,
     editor::EditorFile,
-    writing::{WritingDocumentRecord, WritingSceneAnnotation, WritingSidecar},
+    writing::{WritingCreateIntent, WritingDocumentRecord, WritingSceneAnnotation, WritingSidecar},
 };
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
@@ -142,6 +142,64 @@ fn sidecar() -> WritingSidecar {
     }
 }
 
+fn create_intent() -> WritingCreateIntent {
+    WritingCreateIntent {
+        scope: "client:local".into(),
+        idempotency_key: "create-draft".into(),
+        fingerprint: "request-fingerprint".into(),
+        operation_id: "operation-1".into(),
+        workspace_id: "workspace-1".into(),
+        relative_path: "Writing/Screenplays/draft-two.fountain".into(),
+        file_id: "file-2".into(),
+        pane_id: "pane-2".into(),
+        kind: WritingKind::Screenplay,
+        section: WritingSection::Screenplays,
+        created_ms: 4,
+    }
+}
+
+#[test]
+fn document_create_intent_survives_reopen_and_is_removed_with_the_final_receipt() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed_file(&mut store);
+    let intent = create_intent();
+    store.record_writing_create_intent(&intent).unwrap();
+    drop(store);
+
+    let mut store = profile.store();
+    assert_eq!(
+        store
+            .writing_create_intent(&intent.scope, &intent.idempotency_key)
+            .unwrap(),
+        Some(intent.clone())
+    );
+    store
+        .mutate(
+            "client:local",
+            "create-draft",
+            "request-fingerprint",
+            |change| {
+                change.remove_writing_create_intent(&intent.scope, &intent.idempotency_key)?;
+                Ok((json!({"created":true}), vec![]))
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .writing_create_intent(&intent.scope, &intent.idempotency_key)
+            .unwrap(),
+        None
+    );
+
+    let mut invalid = intent;
+    invalid.kind = WritingKind::Text;
+    assert!(matches!(
+        store.record_writing_create_intent(&invalid),
+        Err(Error::InvalidWritingCreateIntent)
+    ));
+}
+
 #[test]
 fn writing_document_preferences_replace_without_bypassing_the_sidecar_journal() {
     let profile = Profile::new();
@@ -272,7 +330,7 @@ fn invalid_kind_section_and_sidecar_bounds_fail_before_sql() {
 }
 
 #[test]
-fn migration_from_populated_v19_preserves_editor_data_and_adds_writing_state() {
+fn migration_from_populated_v20_preserves_writing_data_and_adds_create_intents() {
     let profile = Profile::new();
     let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
     for migration in [
@@ -295,6 +353,7 @@ fn migration_from_populated_v19_preserves_editor_data_and_adds_writing_state() {
         include_str!("../migrations/017-web-permissions.sql"),
         include_str!("../migrations/018-web-permission-operations.sql"),
         include_str!("../migrations/019-agent-prompt-attachments.sql"),
+        include_str!("../migrations/020-writing-documents.sql"),
     ] {
         connection.execute_batch(migration).unwrap();
     }
@@ -303,7 +362,8 @@ fn migration_from_populated_v19_preserves_editor_data_and_adds_writing_state() {
             r#"INSERT INTO metadata(key,value) VALUES ('db_id','v19-db'),('engine_generation','0');
                INSERT INTO workspaces(id,payload,closed) VALUES ('workspace-1','{"workspaceId":"workspace-1","name":"Writing","path":"/tmp/writing","layout":{}}',0);
                INSERT INTO panes(id,workspace_id,payload,closed,instance_key,sequence_base) VALUES ('pane-1','workspace-1','{"paneId":"pane-1","workspaceId":"workspace-1","name":"Draft","cwd":"/tmp/writing","mode":"writing","state":"idle","source":"protocol","confidence":1.0,"phrase":"","generation":1,"cols":80,"rows":24,"record":false,"writingKind":"screenplay","writingSection":"screenplays"}',0,'writing-pane-1','0');
-               INSERT INTO editor_files(file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms) VALUES ('file-1','pane-1','workspace-1','Writing/Screenplays/draft.fountain','plain_text',1,1,'INT. ROOM - DAY\n',NULL,NULL,NULL,1,1);"#,
+               INSERT INTO editor_files(file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms) VALUES ('file-1','pane-1','workspace-1','Writing/Screenplays/draft.fountain','plain_text',1,1,'INT. ROOM - DAY\n',NULL,NULL,NULL,1,1);
+               INSERT INTO writing_documents(file_id,kind,section,sidecar_revision,font,focus_mode,sidecar_payload,updated_ms) VALUES ('file-1','screenplay','screenplays',0,'reading_serif',0,'{"lineVariants":[],"beatCards":[],"sceneAnnotations":[]}',2);"#,
         )
         .unwrap();
     drop(connection);

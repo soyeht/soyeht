@@ -49,7 +49,39 @@ pub struct WritingSidecarVersion {
     pub created_ms: i64,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct WritingCreateIntent {
+    pub scope: String,
+    pub idempotency_key: String,
+    pub fingerprint: String,
+    pub operation_id: String,
+    pub workspace_id: String,
+    pub relative_path: String,
+    pub file_id: String,
+    pub pane_id: String,
+    pub kind: WritingKind,
+    pub section: WritingSection,
+    pub created_ms: i64,
+}
+
 impl Store {
+    pub fn writing_create_intent(
+        &self,
+        scope: &str,
+        key: &str,
+    ) -> Result<Option<WritingCreateIntent>> {
+        create_intent_from(self.connection(), scope, key)
+    }
+
+    pub fn record_writing_create_intent(&self, intent: &WritingCreateIntent) -> Result<()> {
+        validate_create_intent(intent.clone())?;
+        self.connection.execute(
+            "INSERT INTO writing_create_intents(scope,idempotency_key,fingerprint,operation_id,workspace_id,relative_path,file_id,pane_id,kind,section,created_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![intent.scope, intent.idempotency_key, intent.fingerprint, intent.operation_id, intent.workspace_id, intent.relative_path, intent.file_id, intent.pane_id, kind_name(&intent.kind), section_name(&intent.section), intent.created_ms],
+        )?;
+        Ok(())
+    }
+
     pub fn writing_document(&self, file_id: &str) -> Result<Option<WritingDocumentRecord>> {
         document_from(self.connection(), file_id)
     }
@@ -88,6 +120,14 @@ impl Store {
 }
 
 impl Change<'_> {
+    pub fn remove_writing_create_intent(&self, scope: &str, key: &str) -> Result<()> {
+        self.transaction.execute(
+            "DELETE FROM writing_create_intents WHERE scope=?1 AND idempotency_key=?2",
+            params![scope, key],
+        )?;
+        Ok(())
+    }
+
     pub fn save_writing_document(&self, document: &WritingDocumentRecord) -> Result<()> {
         validate_document(document.clone())?;
         let payload = sidecar_json(&document.sidecar)?;
@@ -155,6 +195,60 @@ impl Change<'_> {
         }
         prune_sidecar_history(self, &document.file_id)
     }
+}
+
+fn create_intent_from(
+    connection: &rusqlite::Connection,
+    scope: &str,
+    key: &str,
+) -> Result<Option<WritingCreateIntent>> {
+    let intent = connection
+        .query_row(
+            "SELECT scope,idempotency_key,fingerprint,operation_id,workspace_id,relative_path,file_id,pane_id,kind,section,created_ms FROM writing_create_intents WHERE scope=?1 AND idempotency_key=?2",
+            params![scope, key],
+            |row| {
+                Ok(WritingCreateIntent {
+                    scope: row.get(0)?,
+                    idempotency_key: row.get(1)?,
+                    fingerprint: row.get(2)?,
+                    operation_id: row.get(3)?,
+                    workspace_id: row.get(4)?,
+                    relative_path: row.get(5)?,
+                    file_id: row.get(6)?,
+                    pane_id: row.get(7)?,
+                    kind: kind_from_name(&row.get::<_, String>(8)?).ok_or_else(invalid_column)?,
+                    section: section_from_name(&row.get::<_, String>(9)?).ok_or_else(invalid_column)?,
+                    created_ms: row.get(10)?,
+                })
+            },
+        )
+        .optional()?;
+    intent.map(validate_create_intent).transpose()
+}
+
+fn validate_create_intent(intent: WritingCreateIntent) -> Result<WritingCreateIntent> {
+    let matching = matches!(
+        (&intent.kind, &intent.section),
+        (WritingKind::Text, WritingSection::Texts)
+            | (WritingKind::Presentation, WritingSection::Presentations)
+            | (WritingKind::Screenplay, WritingSection::Screenplays)
+    );
+    let bounded_id = |value: &str| !value.is_empty() && value.len() <= 128;
+    if !bounded_id(&intent.scope)
+        || !bounded_id(&intent.idempotency_key)
+        || !bounded_id(&intent.fingerprint)
+        || !bounded_id(&intent.operation_id)
+        || !bounded_id(&intent.workspace_id)
+        || !bounded_id(&intent.file_id)
+        || !bounded_id(&intent.pane_id)
+        || intent.relative_path.is_empty()
+        || intent.relative_path.len() > 4096
+        || intent.created_ms < 0
+        || !matching
+    {
+        return Err(Error::InvalidWritingCreateIntent);
+    }
+    Ok(intent)
 }
 
 fn document_from(
