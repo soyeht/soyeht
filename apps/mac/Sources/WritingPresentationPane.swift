@@ -250,6 +250,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
     private var source = ""
     private var firstLine: UInt32 = 0
     private var revision: String?
+    private var renderedTheme: TerminalColorTheme?
     private var applying = false
 
     init(_ parent: WritingPresentationViewport) { self.parent = parent }
@@ -267,18 +268,27 @@ private struct WritingPresentationViewport: NSViewRepresentable {
 
     func update() {
       guard let viewport = parent.view.viewport else { return }
+      applyTheme()
       firstLine = viewport.fromLine
       let next = viewport.lines.map(\.text).joined(separator: "\n")
       let nextRevision = "\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine)"
-      if nextRevision != revision {
+      if nextRevision != revision || renderedTheme != SoyehtThemeStore.shared.activeTheme {
         source = next
         revision = nextRevision
+        renderedTheme = SoyehtThemeStore.shared.activeTheme
         render(selection: valid(textView.selectedRange()))
       }
       if let line = parent.targetLine, line >= viewport.fromLine, line < viewport.toLine {
         scroll(to: line)
         parent.targetLine = nil
       }
+    }
+
+    private func applyTheme() {
+      textView.enclosingScrollView?.backgroundColor = NSColor(MacTheme.face)
+      textView.backgroundColor = NSColor(MacTheme.face)
+      textView.insertionPointColor = NSColor(MacTheme.accent)
+      textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -379,7 +389,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
   }
 }
 
-private enum WritingPresentationStyle {
+@MainActor private enum WritingPresentationStyle {
   static func attributed(_ source: String) -> NSAttributedString {
     let paragraph = NSMutableParagraphStyle()
     paragraph.minimumLineHeight = 23

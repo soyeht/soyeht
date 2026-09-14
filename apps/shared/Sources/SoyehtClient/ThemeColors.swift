@@ -66,8 +66,8 @@ public struct SoyehtThemeColorSet {
   }
 }
 
-public enum SoyehtThemeColors {
-  public static var palette: SoyehtThemePalette { TerminalColorTheme.seededDefault.palette }
+@MainActor public enum SoyehtThemeColors {
+  public static var palette: SoyehtThemePalette { SoyehtThemeStore.shared.activeTheme.palette }
 
   private static var active: SoyehtThemeColorSet { SoyehtThemeColorSet(palette: palette) }
 

@@ -92,6 +92,7 @@ struct EditorNativeViewport: NSViewRepresentable {
 
     func update(_ view: EditorFileView) {
       guard let viewport = view.viewport else { return }
+      applyTheme()
       let previousViewportStart = viewportStart
       viewportStart = viewport.fromLine
       language = view.file.language
@@ -106,7 +107,7 @@ struct EditorNativeViewport: NSViewRepresentable {
         agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line)
       updateVirtualGeometry(viewport)
       let identity =
-        "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics))"
+        "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics)):\(SoyehtThemeStore.shared.activeTheme.rawValue)"
       if renderedIdentity != identity {
         let selection = textView.selectedRanges
         guard let storage = textView.textStorage else { return }
@@ -120,6 +121,13 @@ struct EditorNativeViewport: NSViewRepresentable {
       }
       applyNavigation(viewport)
       requestViewportIfNeeded()
+    }
+
+    private func applyTheme() {
+      scrollView?.backgroundColor = NSColor(MacTheme.face)
+      textView.backgroundColor = NSColor(MacTheme.face)
+      textView.insertionPointColor = NSColor(MacTheme.accent)
+      textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
     }
 
     @objc private func visibleBoundsChanged(_ notification: Notification) {

@@ -3,9 +3,6 @@ import SwiftTerm
 
 @MainActor
 public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate {
-  static let background = (red: 232 / 255.0, green: 237 / 255.0, blue: 244 / 255.0)
-  static let foreground = (red: 62 / 255.0, green: 74 / 255.0, blue: 102 / 255.0)
-
   let client: EngineClient
   private let acceptsInput: Bool
   private let ringBell: () -> Void

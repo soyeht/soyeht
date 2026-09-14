@@ -16,18 +16,21 @@
     public func makeUIView(context: Context) -> TerminalView {
       let view = ReadOnlyTerminal(
         frame: .zero, font: .monospacedSystemFont(ofSize: 12, weight: .regular))
-      let background = TerminalHost.background
-      view.nativeBackgroundColor = UIColor(
-        red: background.red, green: background.green, blue: background.blue, alpha: 1)
-      let foreground = TerminalHost.foreground
-      view.nativeForegroundColor = UIColor(
-        red: foreground.red, green: foreground.green, blue: foreground.blue, alpha: 1)
+      applyTheme(to: view)
       view.accessibilityLabel = "Terminal screen, read-only"
       context.coordinator.attach(view)
       return view
     }
     public func updateUIView(_ view: TerminalView, context: Context) {
+      applyTheme(to: view)
       context.coordinator.update(view)
+    }
+
+    private func applyTheme(to view: TerminalView) {
+      let colors = SoyehtThemeColorSet(palette: SoyehtThemeStore.shared.activeTheme.palette)
+      view.nativeBackgroundColor = UIColor(colors.face)
+      view.nativeForegroundColor = UIColor(colors.ink)
+      view.setNeedsDisplay()
     }
     public static func dismantleUIView(_ view: TerminalView, coordinator: TerminalHost) {
       coordinator.detach(view)

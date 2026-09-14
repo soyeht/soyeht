@@ -558,7 +558,7 @@ private struct TaskOwnerChip: View {
   }
 }
 
-private func taskOwnerColor(_ name: String) -> Color {
+@MainActor private func taskOwnerColor(_ name: String) -> Color {
   let colors = [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand]
   let value = name.utf8.reduce(0) { ($0 + Int($1)) % colors.count }
   return colors[value]
@@ -1250,7 +1250,7 @@ extension PermissionMode {
   }
 }
 
-extension TaskState {
+@MainActor extension TaskState {
   fileprivate var title: String {
     switch self {
     case .todo: "To do"
@@ -1271,7 +1271,7 @@ extension TaskState {
   }
 }
 
-extension TaskPriority {
+@MainActor extension TaskPriority {
   fileprivate static let all: [TaskPriority] = [.urgent, .high, .medium, .low]
   fileprivate var title: String { rawValue.replacingOccurrences(of: "_", with: " ").capitalized }
   fileprivate var color: Color {
@@ -1284,7 +1284,7 @@ extension TaskPriority {
   }
 }
 
-extension TaskReviewBadge {
+@MainActor extension TaskReviewBadge {
   fileprivate var title: String { self == .your_turn ? "YOUR TURN" : "SYSTEM'S TURN" }
   fileprivate var color: Color { self == .your_turn ? MacTheme.accent : MacTheme.warning }
 }

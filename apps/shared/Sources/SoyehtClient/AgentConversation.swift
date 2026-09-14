@@ -16,6 +16,9 @@ public struct AgentConversationStyle: Sendable {
   public let accent: Color
   public let shadowDark: Color
   public let shadowLight: Color
+  public let wellShadow: Color
+  public let wellRim: Color
+  public let wellLip: Color?
   public let success: Color
   public let warning: Color
   public let danger: Color
@@ -29,9 +32,10 @@ public struct AgentConversationStyle: Sendable {
 
   public init(
     canvas: Color, face: Color, well: Color, ink: Color, secondary: Color, muted: Color,
-    accent: Color, shadowDark: Color, shadowLight: Color, success: Color, warning: Color,
-    danger: Color, bodyFont: Font, captionFont: Font, controlFont: Font, headingFont: Font,
-    monoFont: Font, monoSmallFont: Font, canonicalLayout: Bool
+    accent: Color, shadowDark: Color, shadowLight: Color, wellShadow: Color, wellRim: Color,
+    wellLip: Color?, success: Color, warning: Color, danger: Color, bodyFont: Font,
+    captionFont: Font, controlFont: Font, headingFont: Font, monoFont: Font,
+    monoSmallFont: Font, canonicalLayout: Bool
   ) {
     self.canvas = canvas
     self.face = face
@@ -42,6 +46,9 @@ public struct AgentConversationStyle: Sendable {
     self.accent = accent
     self.shadowDark = shadowDark
     self.shadowLight = shadowLight
+    self.wellShadow = wellShadow
+    self.wellRim = wellRim
+    self.wellLip = wellLip
     self.success = success
     self.warning = warning
     self.danger = danger
@@ -54,16 +61,19 @@ public struct AgentConversationStyle: Sendable {
     self.canonicalLayout = canonicalLayout
   }
 
-  public static let standard = AgentConversationStyle(
-    canvas: SoyehtThemeColors.canvas, face: SoyehtThemeColors.face,
-    well: SoyehtThemeColors.well, ink: SoyehtThemeColors.ink,
-    secondary: SoyehtThemeColors.secondary, muted: SoyehtThemeColors.muted,
-    accent: SoyehtThemeColors.accent, shadowDark: SoyehtThemeColors.shadowDark,
-    shadowLight: SoyehtThemeColors.shadowLight, success: SoyehtThemeColors.success,
-    warning: SoyehtThemeColors.warning, danger: SoyehtThemeColors.danger,
-    bodyFont: .body, captionFont: .caption, controlFont: .caption, headingFont: .headline,
-    monoFont: .caption.monospaced(), monoSmallFont: .caption2.monospaced(),
-    canonicalLayout: false)
+  @MainActor public static var standard: AgentConversationStyle {
+    AgentConversationStyle(
+      canvas: SoyehtThemeColors.canvas, face: SoyehtThemeColors.face,
+      well: SoyehtThemeColors.well, ink: SoyehtThemeColors.ink,
+      secondary: SoyehtThemeColors.secondary, muted: SoyehtThemeColors.muted,
+      accent: SoyehtThemeColors.accent, shadowDark: SoyehtThemeColors.shadowDark,
+      shadowLight: SoyehtThemeColors.shadowLight, wellShadow: SoyehtThemeColors.wellShadow,
+      wellRim: SoyehtThemeColors.wellRim, wellLip: SoyehtThemeColors.wellLip,
+      success: SoyehtThemeColors.success, warning: SoyehtThemeColors.warning,
+      danger: SoyehtThemeColors.danger, bodyFont: .body, captionFont: .caption,
+      controlFont: .caption, headingFont: .headline, monoFont: .caption.monospaced(),
+      monoSmallFont: .caption2.monospaced(), canonicalLayout: false)
+  }
 }
 
 private struct AgentRaised: ViewModifier {
@@ -94,8 +104,15 @@ private struct AgentWell: ViewModifier {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
           .fill(
             style.well
-              .shadow(.inner(color: style.shadowDark, radius: 3, x: 3, y: 3))
-              .shadow(.inner(color: style.shadowLight, radius: 3, x: -3, y: -3)))
+              .shadow(.inner(color: style.wellShadow, radius: 3, x: 3, y: 3))
+              .shadow(.inner(color: style.wellRim, radius: 3, x: -3, y: -3))
+          )
+          .overlay {
+            if let lip = style.wellLip {
+              RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(lip, lineWidth: 1)
+            }
+          }
       }
     } else {
       content.background(style.face, in: RoundedRectangle(cornerRadius: radius))

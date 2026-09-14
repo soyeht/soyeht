@@ -34,12 +34,7 @@
     public func makeNSView(context: Context) -> TerminalView {
       let view = TerminalSurface(
         frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
-      let background = TerminalHost.background
-      view.nativeBackgroundColor = NSColor(
-        red: background.red, green: background.green, blue: background.blue, alpha: 1)
-      let foreground = TerminalHost.foreground
-      view.nativeForegroundColor = NSColor(
-        red: foreground.red, green: foreground.green, blue: foreground.blue, alpha: 1)
+      applyTheme(to: view)
       view.linkReporting = .implicit
       view.linkHighlightMode = .hover
       view.setAccessibilityLabel("Selected pane terminal")
@@ -47,6 +42,7 @@
       return view
     }
     public func updateNSView(_ view: TerminalView, context: Context) {
+      applyTheme(to: view)
       context.coordinator.updateOpenFile { workspaceId, reference in
         openFile(workspaceId: workspaceId, reference: reference)
       }
@@ -54,6 +50,13 @@
         openWeb(workspaceId: workspaceId, url: url)
       }
       context.coordinator.update(view)
+    }
+
+    private func applyTheme(to view: TerminalView) {
+      let colors = SoyehtThemeColorSet(palette: SoyehtThemeStore.shared.activeTheme.palette)
+      view.nativeBackgroundColor = NSColor(colors.face)
+      view.nativeForegroundColor = NSColor(colors.ink)
+      view.needsDisplay = true
     }
     public static func dismantleNSView(_ view: TerminalView, coordinator: TerminalHost) {
       coordinator.detach(view)

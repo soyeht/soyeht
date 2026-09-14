@@ -4,7 +4,7 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-enum MacTheme {
+@MainActor enum MacTheme {
   static var canvas: Color { SoyehtThemeColors.canvas }
   static var face: Color { SoyehtThemeColors.face }
   static var well: Color { SoyehtThemeColors.well }
@@ -149,8 +149,9 @@ enum MacTheme {
   static var agentConversation: AgentConversationStyle {
     AgentConversationStyle(
       canvas: face, face: face, well: well, ink: ink, secondary: secondary, muted: muted,
-      accent: accent, shadowDark: shadowDark, shadowLight: shadowLight, success: success,
-      warning: warning, danger: danger, bodyFont: chrome(TypeScale.body),
+      accent: accent, shadowDark: shadowDark, shadowLight: shadowLight, wellShadow: wellShadow,
+      wellRim: wellRim, wellLip: wellLip, success: success, warning: warning, danger: danger,
+      bodyFont: chrome(TypeScale.body),
       captionFont: chrome(TypeScale.caption), controlFont: chrome(TypeScale.control),
       headingFont: chrome(TypeScale.caption, weight: .bold), monoFont: mono(TypeScale.control),
       monoSmallFont: mono(TypeScale.micro), canonicalLayout: true)

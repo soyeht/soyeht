@@ -4,6 +4,7 @@ import SwiftUI
 @main @MainActor
 struct SoyehtMacApp: App {
   @State private var client: EngineClient
+  @State private var themeStore = SoyehtThemeStore.shared
   private let webHost: MacWebHost
 
   init() {
@@ -24,6 +25,8 @@ struct SoyehtMacApp: App {
     Window("Soyeht · Dev", id: "main") {
       WorkspaceWindow(client: client, webHost: webHost)
         .frame(minWidth: 1024, minHeight: 640)
+        .environment(themeStore)
+        .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
         .task { client.start() }
     }
     .defaultSize(width: 1440, height: 900)

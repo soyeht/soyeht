@@ -4,7 +4,7 @@ import SoyehtProtocol
 import SwiftUI
 import VisionKit
 
-enum PhonePalette {
+@MainActor enum PhonePalette {
   static var canvas: Color { SoyehtThemeColors.canvas }
   static var face: Color { SoyehtThemeColors.face }
   static var ink: Color { SoyehtThemeColors.ink }

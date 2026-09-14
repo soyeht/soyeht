@@ -233,7 +233,7 @@ private struct WritingTextViewport: NSViewRepresentable {
   func makeNSView(context: Context) -> NSScrollView { context.coordinator.makeScrollView() }
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
-    context.coordinator.update()
+    context.coordinator.update(scrollView)
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -243,6 +243,7 @@ private struct WritingTextViewport: NSViewRepresentable {
     private var firstLine: UInt32 = 0
     private var renderedRevision: String?
     private var renderedFont: WritingFont?
+    private var renderedTheme: TerminalColorTheme?
     private var rendering = false
 
     init(_ parent: WritingTextViewport) { self.parent = parent }
@@ -259,19 +260,30 @@ private struct WritingTextViewport: NSViewRepresentable {
       return scroll
     }
 
-    func update() {
+    func update(_ scrollView: NSScrollView) {
       guard let viewport = parent.view.viewport else { return }
+      applyTheme(scrollView)
       firstLine = viewport.fromLine
       let next = viewport.lines.map(\.text).joined(separator: "\n")
       let revision = "\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine)"
-      if revision != renderedRevision || renderedFont != parent.document.font {
+      if revision != renderedRevision || renderedFont != parent.document.font
+        || renderedTheme != SoyehtThemeStore.shared.activeTheme
+      {
         source = next
         renderedRevision = revision
         renderedFont = parent.document.font
+        renderedTheme = SoyehtThemeStore.shared.activeTheme
         render(selection: validSelection(textView.selectedRange()))
       } else if parent.activeLine != currentLine() || parent.document.focusMode != focusApplied {
         render(selection: validSelection(textView.selectedRange()))
       }
+    }
+
+    private func applyTheme(_ scrollView: NSScrollView) {
+      scrollView.backgroundColor = NSColor(MacTheme.face)
+      textView.backgroundColor = NSColor(MacTheme.face)
+      textView.insertionPointColor = NSColor(MacTheme.accent)
+      textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -390,7 +402,7 @@ private struct WritingTextViewport: NSViewRepresentable {
   }
 }
 
-private enum WritingTextStyle {
+@MainActor private enum WritingTextStyle {
   static func attributed(
     _ projection: WritingMarkdownProjection, font: WritingFont, focus: Bool
   ) -> NSAttributedString {

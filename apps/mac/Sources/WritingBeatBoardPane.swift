@@ -304,7 +304,7 @@ private struct BeatEditorSheet: View {
   }
 }
 
-extension BeatCategory {
+@MainActor extension BeatCategory {
   fileprivate var label: String {
     switch self {
     case .story: "Beat"

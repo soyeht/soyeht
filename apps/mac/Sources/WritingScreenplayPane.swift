@@ -436,6 +436,7 @@ private struct ScreenplayViewport: NSViewRepresentable {
     private var source = ""
     private var firstLine: UInt32 = 0
     private var renderedRevision: String?
+    private var renderedTheme: TerminalColorTheme?
     private var applying = false
     private var appliedRequest: UUID?
 
@@ -455,12 +456,14 @@ private struct ScreenplayViewport: NSViewRepresentable {
 
     func update(_ scrollView: NSScrollView) {
       guard let viewport = parent.view.viewport else { return }
+      applyTheme(scrollView)
       firstLine = viewport.fromLine
       let next = viewport.lines.map(\.text).joined(separator: "\n")
       let revision = "\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine)"
-      if revision != renderedRevision {
+      if revision != renderedRevision || renderedTheme != SoyehtThemeStore.shared.activeTheme {
         source = next
         renderedRevision = revision
+        renderedTheme = SoyehtThemeStore.shared.activeTheme
         render(selection: valid(textView.selectedRange()))
       } else if parent.activeLine != currentLine() || focusApplied != parent.document.focusMode {
         render(selection: valid(textView.selectedRange()))
@@ -478,6 +481,13 @@ private struct ScreenplayViewport: NSViewRepresentable {
         guard let self, let scrollView else { return }
         hover(at: point, scroll: scrollView)
       }
+    }
+
+    private func applyTheme(_ scrollView: NSScrollView) {
+      scrollView.backgroundColor = NSColor(MacTheme.face)
+      textView.backgroundColor = NSColor(MacTheme.face)
+      textView.insertionPointColor = NSColor(MacTheme.accent)
+      textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -663,7 +673,7 @@ private struct ScreenplayViewport: NSViewRepresentable {
   }
 }
 
-private enum ScreenplayStyle {
+@MainActor private enum ScreenplayStyle {
   static func attributed(
     _ source: String, firstLine: UInt32, activeLine: UInt32, focus: Bool,
     structure: WritingStructureResult
