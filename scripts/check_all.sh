@@ -32,6 +32,7 @@ python3 scripts/e2e_agents.py --report .cache/e2e-agents.json
 python3 scripts/e2e_tasks.py --report .cache/e2e-tasks.json
 python3 scripts/e2e_editor.py --report .cache/e2e-editor.json
 python3 scripts/e2e_web.py --report .cache/e2e-web.json
+python3 scripts/e2e_writing.py --report .cache/e2e-writing.json
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
     python3 scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
 fi
