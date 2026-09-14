@@ -52,7 +52,16 @@ import WebKit
     else {
       throw ClientFailure.webHost(.internal_error, "The web pane is unavailable.")
     }
+    if humanCommand(command.args) { client?.select(command.paneId) }
     return try await session(for: pane).execute(command)
+  }
+
+  private func humanCommand(_ args: JsonValue) -> Bool {
+    guard case .object(let values) = args,
+      case .object(let access)? = values["_soyehtAccess"],
+      case .string("human")? = access["session"]
+    else { return false }
+    return true
   }
 
   private func reportNavigation(

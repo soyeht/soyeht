@@ -162,10 +162,7 @@ struct PhoneHome: View {
                   Text(pane.phrase).font(.caption).foregroundStyle(PhonePalette.secondary)
                 }.padding(.vertical, 6)
               } icon: {
-                Image(
-                  systemName: pane.mode == .agent
-                    ? "bubble.left.and.bubble.right" : "terminal"
-                ).foregroundStyle(PhonePalette.accent)
+                Image(systemName: paneIcon(pane.mode)).foregroundStyle(PhonePalette.accent)
               }
             }.listRowBackground(PhonePalette.face)
           }
@@ -183,6 +180,15 @@ struct PhoneHome: View {
           PhonePalette.face, in: RoundedRectangle(cornerRadius: 16))
       Button("Cancel", role: .cancel) { model.cancelPairing() }
     }.padding(28)
+  }
+
+  private func paneIcon(_ mode: PaneMode) -> String {
+    switch mode {
+    case .terminal: "terminal"
+    case .agent: "bubble.left.and.bubble.right"
+    case .editor: "doc.text"
+    case .web: "globe"
+    }
   }
   private func scan() {
     Task {
@@ -207,7 +213,9 @@ private struct PhonePane: View {
   var body: some View {
     VStack(spacing: 0) {
       if client.connected, let pane = client.panes.first(where: { $0.paneId == paneId }) {
-        if pane.mode == .agent {
+        if pane.mode == .web {
+          PhoneWebPane(client: client, pane: pane)
+        } else if pane.mode == .agent {
           AgentConversationView(client: client, paneId: paneId)
         } else {
           HStack {
@@ -232,5 +240,55 @@ private struct PhonePane: View {
       .navigationTitle(client.panes.first(where: { $0.paneId == paneId })?.name ?? "Pane")
       .navigationBarTitleDisplayMode(.inline)
       .onAppear { client.select(paneId) }
+  }
+}
+
+private struct PhoneWebPane: View {
+  let client: EngineClient
+  let pane: Pane
+
+  var body: some View {
+    VStack(spacing: 20) {
+      Spacer()
+      Image(systemName: "macbook.and.iphone")
+        .font(.system(size: 42, weight: .light))
+        .foregroundStyle(PhonePalette.accent)
+      VStack(spacing: 7) {
+        Text(pane.title?.isEmpty == false ? pane.title ?? pane.name : pane.name)
+          .font(.system(.title3, design: .rounded, weight: .bold))
+          .multilineTextAlignment(.center)
+        Text(pane.url ?? "No address")
+          .font(.system(.footnote, design: .monospaced))
+          .foregroundStyle(PhonePalette.secondary)
+          .multilineTextAlignment(.center)
+          .textSelection(.enabled)
+      }
+      Button {
+        openOnMac()
+      } label: {
+        Label("Open on the Mac", systemImage: "macbook")
+          .font(.system(.headline, design: .rounded))
+          .frame(maxWidth: 260)
+      }
+      .buttonStyle(.borderedProminent)
+      Text("The page stays on your Mac. This iPhone shows its title and address only.")
+        .font(.footnote)
+        .foregroundStyle(PhonePalette.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 300)
+      Spacer()
+    }
+    .padding(28)
+  }
+
+  private func openOnMac() {
+    guard let url = pane.url else { return }
+    Task {
+      do {
+        _ = try await client.navigateWeb(paneId: pane.paneId, url: url)
+      } catch {
+        client.problem = error.localizedDescription
+      }
+    }
   }
 }
