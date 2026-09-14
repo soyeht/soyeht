@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SoyehtProtocol
 
 public enum WorkspaceDestination: String, CaseIterable, Sendable {
   case agents
@@ -8,6 +9,36 @@ public enum WorkspaceDestination: String, CaseIterable, Sendable {
   case tasks
   case terminal
   case phone
+  case texts
+  case presentations
+  case screenplays
+
+  public var writingSection: WritingSection? {
+    switch self {
+    case .texts: .texts
+    case .presentations: .presentations
+    case .screenplays: .screenplays
+    case .agents, .editor, .web, .tasks, .terminal, .phone: nil
+    }
+  }
+}
+
+extension WritingSection {
+  public var destination: WorkspaceDestination {
+    switch self {
+    case .texts: .texts
+    case .presentations: .presentations
+    case .screenplays: .screenplays
+    }
+  }
+
+  public var writingKind: WritingKind {
+    switch self {
+    case .texts: .text
+    case .presentations: .presentation
+    case .screenplays: .screenplay
+    }
+  }
 }
 
 public protocol ClientPreferenceStore: AnyObject {

@@ -1,3 +1,4 @@
+import SoyehtProtocol
 import Testing
 
 @testable import SoyehtClient
@@ -12,6 +13,16 @@ private final class MemoryClientPreferenceStore: ClientPreferenceStore {
   func set(_ value: Bool, forKey key: String) {
     values[key] = value
   }
+}
+
+@Test func writingDestinationsMapToOneClosedSectionAndKind() {
+  #expect(WorkspaceDestination.texts.writingSection == .texts)
+  #expect(WorkspaceDestination.presentations.writingSection == .presentations)
+  #expect(WorkspaceDestination.screenplays.writingSection == .screenplays)
+  #expect(WorkspaceDestination.editor.writingSection == nil)
+  #expect(WritingSection.texts.destination == .texts)
+  #expect(WritingSection.presentations.writingKind == .presentation)
+  #expect(WritingSection.screenplays.writingKind == .screenplay)
 }
 
 @Test

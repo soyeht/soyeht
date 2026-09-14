@@ -63,6 +63,9 @@ struct SoyehtMacApp: App {
         workspaceViewCommand("Tasks", destination: .tasks, key: "4")
         workspaceViewCommand("Terminal", destination: .terminal, key: "5")
         workspaceViewCommand("iPhone", destination: .phone, key: "6")
+        workspaceViewCommand("Texts", destination: .texts, key: "7")
+        workspaceViewCommand("Presentations", destination: .presentations, key: "8")
+        workspaceViewCommand("Screenplays", destination: .screenplays, key: "9")
       }
       CommandGroup(replacing: .appSettings) {
         Button("Preferences…") {

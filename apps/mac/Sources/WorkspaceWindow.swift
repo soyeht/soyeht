@@ -184,6 +184,19 @@ struct WorkspaceWindow: View {
         onClose: { paneToClose = $0 }, onTasks: showTasks)
     case .phone:
       phoneWorkspace
+    case .texts, .presentations, .screenplays:
+      if let workspaceId = selectedTaskWorkspaceId,
+        let section = navigation.destination.writingSection
+      {
+        WritingSectionView(
+          client: client, workspaceId: workspaceId, section: section,
+          onOpen: { paneId in
+            client.select(paneId)
+            navigation.select(.agents)
+          })
+      } else {
+        EmptyWorkspaceView(icon: "text.book.closed", title: "No workspace selected")
+      }
     }
   }
 
