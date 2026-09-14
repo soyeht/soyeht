@@ -7,10 +7,10 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttachmentRef, ErrorKind, RpcError, WebActionResult, WebCloseResult, WebCommandKind,
-    WebCommandParams, WebCommandResult, WebConsoleResult, WebEvaluateResult, WebNavigateResult,
-    WebNetworkResult, WebResizeResult, WebScreenshotResult, WebSnapshotResult, WebWaitResult,
-    attachment::attachment_frames, error_code, frame::Frame,
+    AttachmentRef, ErrorKind, RpcError, WebActionResult, WebAgentDrivingEvent, WebCloseResult,
+    WebCommandKind, WebCommandParams, WebCommandResult, WebConsoleResult, WebEvaluateResult,
+    WebNavigateResult, WebNetworkResult, WebResizeResult, WebScreenshotResult, WebSnapshotResult,
+    WebWaitResult, attachment::attachment_frames, error_code, frame::Frame,
 };
 use soyeht_web::{command_response_budget, validate_command};
 use uuid::Uuid;
@@ -19,6 +19,7 @@ const WEB_WAITER_LIMIT: usize = 128;
 
 pub struct WebWaiter {
     pub(super) host: String,
+    pub(super) driving: bool,
     pub(super) callers: Vec<(String, Value)>,
     pub(super) pane_id: String,
     pub(super) command: WebCommandKind,
@@ -126,6 +127,7 @@ impl Core {
             reverse_id.clone(),
             WebWaiter {
                 host: String::new(),
+                driving: false,
                 callers: vec![(caller.into(), caller_request)],
                 pane_id,
                 command,
@@ -195,6 +197,7 @@ impl Core {
             self.web_waiters.remove(id),
             "Web command waiter disappeared",
         )?;
+        self.finish_web_driving(&waiter)?;
         let result = match result {
             Ok(result) if waiter.mutation.is_some() => {
                 let mutation = waiter
@@ -285,6 +288,7 @@ impl Core {
         let Some(waiter) = self.web_waiters.remove(id) else {
             return Ok(());
         };
+        self.finish_web_driving(&waiter)?;
         let error = errors::wire(errors::web_host_unavailable(message));
         for (caller, request) in waiter.callers {
             if let Some(client) = self.clients.get(&caller) {
@@ -319,7 +323,54 @@ impl Core {
         if !sent {
             return Err(errors::web_host_unavailable("Web host disconnected"));
         }
+        self.begin_web_driving(id)?;
         Ok(())
+    }
+
+    fn begin_web_driving(&mut self, id: &str) -> Result<()> {
+        let Some((pane_id, domain)) = self.web_waiters.get(id).and_then(|waiter| {
+            waiter
+                .permission
+                .driving_domain()
+                .map(|domain| (waiter.pane_id.clone(), domain.to_owned()))
+        }) else {
+            return Ok(());
+        };
+        let already_on = self
+            .web_waiters
+            .values()
+            .any(|waiter| waiter.pane_id == pane_id && waiter.driving);
+        self.web_waiters
+            .get_mut(id)
+            .ok_or_else(|| errors::internal("Web command waiter disappeared"))?
+            .driving = true;
+        if !already_on {
+            self.publish_web_driving(&pane_id, true, Some(domain))?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn finish_web_driving(&self, waiter: &WebWaiter) -> Result<()> {
+        if waiter.driving
+            && !self
+                .web_waiters
+                .values()
+                .any(|other| other.pane_id == waiter.pane_id && other.driving)
+        {
+            self.publish_web_driving(&waiter.pane_id, false, None)?;
+        }
+        Ok(())
+    }
+
+    fn publish_web_driving(&self, pane_id: &str, on: bool, domain: Option<String>) -> Result<()> {
+        let event = WebAgentDrivingEvent {
+            pane_id: pane_id.into(),
+            on,
+            domain,
+        };
+        let params = serde_json::to_value(event)
+            .map_err(|_| errors::internal("Web driving event serialization failed"))?;
+        self.transient_event("web.agent_driving", params)
     }
 }
 

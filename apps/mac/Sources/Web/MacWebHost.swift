@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import SoyehtClient
@@ -93,7 +94,10 @@ import WebKit
   private let structuredActions: WebStructuredActions
   @ObservationIgnored
   private let pageObservation: WebPageObservation
+  @ObservationIgnored
+  private var inputMonitor: Any?
   let elementPicker: WebElementPicker
+  private var control = WebControlHandoff()
 
   init(
     paneId: String, incognito: Bool, navigationGeneration: UInt32,
@@ -116,6 +120,12 @@ import WebKit
     pageObservation = observation
     elementPicker = WebElementPicker(webView: view)
     super.init()
+    inputMonitor = NSEvent.addLocalMonitorForEvents(
+      matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
+    ) { [weak self, weak view] event in
+      self?.observeHumanInput(event, in: view)
+      return event
+    }
     pageObservation.bind(view)
     webView.navigationDelegate = self
     webView.allowsMagnification = true
@@ -127,6 +137,14 @@ import WebKit
   var canGoForward: Bool { webView.canGoForward }
 
   var zoomPercent: UInt32 { UInt32((webView.pageZoom * 100).rounded()) }
+
+  var humanHasControl: Bool { control.humanHasControl }
+
+  var agentCommandRunning: Bool { control.agentCommandRunning }
+
+  func noteHumanInput() { control.noteHumanInput() }
+
+  func handBack() { control.handBack() }
 
   func consoleEntries() -> [WebConsoleEntry] { pageObservation.consoleEntries() }
 
@@ -180,6 +198,14 @@ import WebKit
         || (!incognito && ["probe", "granted"].contains(access))
     else {
       throw ClientFailure.webHost(.internal_error, "The web command access is invalid.")
+    }
+    let agentCommand = access != "human"
+    if agentCommand && !control.beginAgentCommand() {
+      throw ClientFailure.webHost(
+        .human_took_over, "A person has control of this web pane. Wait for hand-back.")
+    }
+    defer {
+      if agentCommand { control.finishAgentCommand() }
     }
     if access == "probe" {
       if await cookiesPresent(for: targetHost(command.args)) {
@@ -248,6 +274,8 @@ import WebKit
   }
 
   func stop() {
+    if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
+    inputMonitor = nil
     elementPicker.navigationStarted()
     webView.stopLoading()
     webView.navigationDelegate = nil
@@ -400,6 +428,19 @@ import WebKit
       components.host?.isEmpty == false
     else { return nil }
     return components.url
+  }
+
+  private func observeHumanInput(_ event: NSEvent, in view: WKWebView?) {
+    guard let view, event.window === view.window else { return }
+    if event.type == .keyDown {
+      guard let responder = view.window?.firstResponder as? NSView,
+        responder === view || responder.isDescendant(of: view)
+      else { return }
+      noteHumanInput()
+      return
+    }
+    let point = view.convert(event.locationInWindow, from: nil)
+    if view.bounds.contains(point) { noteHumanInput() }
   }
 }
 

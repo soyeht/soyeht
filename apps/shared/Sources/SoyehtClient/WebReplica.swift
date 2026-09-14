@@ -20,6 +20,31 @@ public struct WebPaneView: Sendable {
   }
 }
 
+public struct WebControlHandoff: Sendable {
+  public private(set) var humanHasControl = false
+  public private(set) var agentCommandRunning = false
+
+  public init() {}
+
+  public mutating func noteHumanInput() {
+    humanHasControl = true
+  }
+
+  public mutating func beginAgentCommand() -> Bool {
+    guard !humanHasControl else { return false }
+    agentCommandRunning = true
+    return true
+  }
+
+  public mutating func finishAgentCommand() {
+    agentCommandRunning = false
+  }
+
+  public mutating func handBack() {
+    humanHasControl = false
+  }
+}
+
 @MainActor
 public protocol WebHostPort: AnyObject {
   func execute(_ command: WebCommandParams) async throws -> WebHostOutput

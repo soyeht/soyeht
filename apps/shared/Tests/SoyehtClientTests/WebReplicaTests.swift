@@ -45,6 +45,24 @@ import Testing
   #expect(client.webPanes.isEmpty)
 }
 
+@Test func humanInputBlocksAgentCommandsUntilAnExplicitHandBack() {
+  var handoff = WebControlHandoff()
+  let first = handoff.beginAgentCommand()
+  #expect(first)
+  #expect(handoff.agentCommandRunning)
+  handoff.finishAgentCommand()
+  #expect(!handoff.agentCommandRunning)
+
+  handoff.noteHumanInput()
+  #expect(handoff.humanHasControl)
+  let blocked = handoff.beginAgentCommand()
+  #expect(!blocked)
+  handoff.handBack()
+  #expect(!handoff.humanHasControl)
+  let resumed = handoff.beginAgentCommand()
+  #expect(resumed)
+}
+
 @MainActor @Test func localServerEventReplacesTheBoundedEngineList() throws {
   let client = EngineClient(socket: "/tmp/web-servers.sock")
   let server = LocalServer(

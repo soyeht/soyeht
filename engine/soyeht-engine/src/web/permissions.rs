@@ -44,6 +44,10 @@ enum PermissionDecision {
 }
 
 impl WebPermission {
+    pub(super) fn driving_domain(&self) -> Option<&str> {
+        self.agent.then_some(self.domain.as_str())
+    }
+
     pub(super) fn apply_to(&self, params: &mut WebCommandParams) -> Result<()> {
         let args = params
             .args
@@ -286,6 +290,8 @@ impl Core {
             .web_waiters
             .remove(waiter_id)
             .ok_or_else(|| errors::invalid("Unknown web command response"))?;
+        self.finish_web_driving(&waiter)?;
+        waiter.driving = false;
         if !waiter.permission.agent || !matches!(waiter.permission.session, SessionAccess::Probe) {
             self.web_waiters.insert(waiter_id.into(), waiter);
             return Err(errors::invalid("Unexpected web session probe response"));
@@ -812,6 +818,39 @@ mod tests {
             operation_key: operation.into(),
         };
         (raw, params)
+    }
+
+    #[tokio::test]
+    async fn agent_web_commands_publish_one_bounded_driving_interval() {
+        let (mut core, host, mut host_rx, caller, mut caller_rx, pane, root) = setup().await;
+        let (viewer, mut viewer_rx) = connect(&mut core, false).await;
+        core.clients.get_mut(&viewer).unwrap().events = true;
+
+        let (raw, params) = click(&pane, "driving");
+        let id = core
+            .queue_web_command(&caller, json!(9), "web.click", &raw, params)
+            .unwrap();
+        let started = next_json(&mut viewer_rx).await;
+        assert_eq!(started["method"], "web.agent_driving");
+        assert_eq!(started["params"]["paneId"], pane);
+        assert_eq!(started["params"]["on"], true);
+        assert_eq!(started["params"]["domain"], "example.test");
+        let command = next_json(&mut host_rx).await;
+        assert_eq!(command["id"], id);
+
+        core.web_host_response(
+            &host,
+            json!({"jsonrpc":"2.0","id":id,"result":{
+                "paneId":pane,"cookiesPresent":false,"value":{"completed":true}}}),
+        )
+        .unwrap();
+        let stopped = next_json(&mut viewer_rx).await;
+        assert_eq!(stopped["method"], "web.agent_driving");
+        assert_eq!(stopped["params"]["paneId"], pane);
+        assert_eq!(stopped["params"]["on"], false);
+        assert!(stopped["params"].get("domain").is_none());
+        assert_eq!(next_json(&mut caller_rx).await["result"]["completed"], true);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]

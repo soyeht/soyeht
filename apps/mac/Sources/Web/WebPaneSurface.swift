@@ -31,6 +31,10 @@ struct WebPaneSurface: View {
           client: client, pane: pane, picker: session.elementPicker,
           attach: attachSelection)
       }
+      .overlay(alignment: .topTrailing) {
+        WebControlBadge(
+          session: session, view: client.webPanes[pane.paneId], url: pane.url)
+      }
       WebStatusBar(
         pane: pane, viewport: session.viewport ?? pane.viewport,
         view: client.webPanes[pane.paneId], session: session,
@@ -57,6 +61,7 @@ struct WebPaneSurface: View {
   }
 
   private func navigate(url: String?, action: WebNavigationAction?) {
+    host.session(for: pane).noteHumanInput()
     Task {
       do {
         _ = try await client.navigateWeb(paneId: pane.paneId, url: url, action: action)
@@ -67,6 +72,7 @@ struct WebPaneSurface: View {
   }
 
   private func resize(_ preset: WebViewportPreset, rotate: Bool) {
+    host.session(for: pane).noteHumanInput()
     Task {
       do {
         let bounds = host.session(for: pane).webView.bounds
@@ -84,6 +90,39 @@ struct WebPaneSurface: View {
     client.attachWebElements(
       from: pane.paneId, package: selection.package, images: selection.images,
       to: agentPaneId)
+  }
+}
+
+private struct WebControlBadge: View {
+  let session: MacWebSession
+  let view: WebPaneView?
+  let url: String?
+
+  var body: some View {
+    if session.humanHasControl {
+      Button(action: session.handBack) {
+        Label("Your turn · Hand control back", systemImage: "hand.raised.fill")
+          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+          .foregroundStyle(MacTheme.ink)
+          .padding(.horizontal, MacTheme.Space.x10)
+          .frame(height: 28)
+          .neoRaised(radius: MacTheme.Radius.pill, elevation: .card)
+      }
+      .buttonStyle(.plain)
+      .padding(MacTheme.Space.x12)
+    } else if session.agentCommandRunning || view?.agentDriving == true {
+      Label("Agent driving · \(domain)", systemImage: "cursorarrow.motionlines")
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(MacTheme.accent)
+        .padding(.horizontal, MacTheme.Space.x10)
+        .frame(height: 28)
+        .neoRaised(radius: MacTheme.Radius.pill, elevation: .card)
+        .padding(MacTheme.Space.x12)
+    }
+  }
+
+  private var domain: String {
+    view?.drivingDomain ?? URL(string: url ?? "")?.host ?? "web pane"
   }
 }
 
@@ -127,9 +166,9 @@ private struct WebNavigationBar: View {
 
   private var zoomMenu: some View {
     Menu {
-      Button("Zoom out") { session.setZoomPercent(session.zoomPercent.saturatingSubtract(10)) }
-      Button("Actual size") { session.setZoomPercent(100) }
-      Button("Zoom in") { session.setZoomPercent(min(200, session.zoomPercent + 10)) }
+      Button("Zoom out") { setZoom(session.zoomPercent.saturatingSubtract(10)) }
+      Button("Actual size") { setZoom(100) }
+      Button("Zoom in") { setZoom(min(200, session.zoomPercent + 10)) }
     } label: {
       Text("\(session.zoomPercent)%")
         .font(MacTheme.mono(MacTheme.TypeScale.micro))
@@ -197,10 +236,12 @@ private struct WebNavigationBar: View {
   }
 
   private func find(backwards: Bool) {
+    session.noteHumanInput()
     Task { findMatched = await session.find(findText, backwards: backwards) }
   }
 
   private func screenshot(fullPage: Bool, destination: ScreenshotDestination) {
+    session.noteHumanInput()
     Task {
       do {
         let data = try await session.humanScreenshot(fullPage: fullPage)
@@ -241,7 +282,10 @@ private struct WebNavigationBar: View {
   }
 
   private var pickButton: some View {
-    Button(action: togglePicker) {
+    Button {
+      session.noteHumanInput()
+      togglePicker()
+    } label: {
       HStack(spacing: MacTheme.Space.x6) {
         Image(systemName: "cursorarrow.click.2").frame(width: 11, height: 11)
         Text("Pick element").font(MacTheme.chrome(MacTheme.TypeScale.micro))
@@ -286,6 +330,7 @@ private struct WebNavigationBar: View {
       TextField("Address", text: $address)
         .textFieldStyle(.plain)
         .font(MacTheme.mono(MacTheme.TypeScale.small))
+        .simultaneousGesture(TapGesture().onEnded { session.noteHumanInput() })
         .onSubmit { navigate(address, nil) }
       if let label = serverLabel {
         Text(label)
@@ -317,7 +362,10 @@ private struct WebNavigationBar: View {
   private func navigationButton(
     _ icon: String, _ label: String, enabled: Bool = true, action: @escaping () -> Void
   ) -> some View {
-    Button(action: action) {
+    Button {
+      session.noteHumanInput()
+      action()
+    } label: {
       Image(systemName: icon)
         .frame(width: 12, height: 12)
         .foregroundStyle(enabled ? MacTheme.ink : MacTheme.muted)
@@ -326,6 +374,11 @@ private struct WebNavigationBar: View {
     .disabled(!enabled)
     .help(label)
     .accessibilityLabel(label)
+  }
+
+  private func setZoom(_ percent: UInt32) {
+    session.noteHumanInput()
+    session.setZoomPercent(percent)
   }
 }
 
