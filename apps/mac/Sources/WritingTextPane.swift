@@ -236,7 +236,7 @@ private struct WritingTextViewport: NSViewRepresentable {
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: WritingTextViewport
-    private let textView = NSTextView()
+    private let textView = WritingImagePasteTextView()
     private var source = ""
     private var firstLine: UInt32 = 0
     private var renderedRevision: String?
@@ -360,6 +360,30 @@ private struct WritingTextViewport: NSViewRepresentable {
       textView.autoresizingMask = [.width]
       textView.textContainer?.widthTracksTextView = true
       textView.textContainer?.lineFragmentPadding = 0
+      textView.registerForDraggedTypes([.png, .tiff, .fileURL])
+      textView.imageHandler = { [weak self] pasteboard in
+        self?.insertImage(from: pasteboard) ?? false
+      }
+    }
+
+    private func insertImage(from pasteboard: NSPasteboard) -> Bool {
+      guard let start = position(textView.selectedRange().location),
+        let end = position(NSMaxRange(textView.selectedRange())),
+        let image = NSImage(pasteboard: pasteboard)
+      else { return false }
+      let attachment: WebHostAttachment
+      do { attachment = try WritingImageAttachment.make(from: image) } catch {
+        parent.client.problem = error.localizedDescription
+        return true
+      }
+      let range = SoyehtProtocol.TextRange(start: start, end: end)
+      Task { @MainActor [parent] in
+        do {
+          _ = try await parent.client.formatWritingDocument(
+            fileId: parent.view.file.fileId, range: range, kind: .image, image: attachment)
+        } catch { parent.client.problem = error.localizedDescription }
+      }
+      return true
     }
   }
 }

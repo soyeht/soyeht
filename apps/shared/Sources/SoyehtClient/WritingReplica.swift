@@ -129,7 +129,7 @@ extension EngineClient {
   @discardableResult
   public func formatWritingDocument(
     fileId: String, range: SoyehtProtocol.TextRange, kind: WritingFormatKind,
-    value: String? = nil
+    value: String? = nil, image: WebHostAttachment? = nil
   ) async throws -> WritingFormatResult {
     guard let revision = writingDocuments[fileId]?.document.file.revision else {
       throw ClientFailure.invalidSnapshot
@@ -138,7 +138,8 @@ extension EngineClient {
       "writing.format",
       WritingFormatParams(
         fileId: fileId, baseRevision: revision, range: range, kind: kind, value: value,
-        idempotencyKey: UUID().uuidString)
+        image: image?.reference, idempotencyKey: UUID().uuidString),
+      attachments: image.map { [$0] } ?? []
     )
     .decoded(WritingFormatResult.self)
     acceptWritingFile(result.file)

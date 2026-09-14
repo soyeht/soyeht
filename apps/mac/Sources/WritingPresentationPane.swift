@@ -37,7 +37,10 @@ struct WritingPresentationPane: View {
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .task(id: writing?.document.file.fileId) { await loadIfNeeded() }
     .sheet(isPresented: $presenting) {
-      WritingSlideShow(slides: slides, initialIndex: selectedSlide)
+      if let fileId = writing?.document.file.fileId {
+        WritingSlideShow(
+          client: client, fileId: fileId, slides: slides, initialIndex: selectedSlide)
+      }
     }
   }
 
@@ -74,7 +77,10 @@ struct WritingPresentationPane: View {
       ScrollView {
         LazyVStack(spacing: MacTheme.Space.x10) {
           ForEach(slides, id: \.index) { slide in
-            WritingSlideThumbnail(slide: slide, selected: slide.index == selectedSlide) {
+            WritingSlideThumbnail(
+              client: client, fileId: writing?.document.file.fileId, slide: slide,
+              selected: slide.index == selectedSlide
+            ) {
               select(slide)
             }
           }
@@ -135,6 +141,8 @@ struct WritingPresentationPane: View {
 }
 
 private struct WritingSlideThumbnail: View {
+  @Bindable var client: EngineClient
+  let fileId: String?
   let slide: WritingSlide
   let selected: Bool
   let action: () -> Void
@@ -156,9 +164,14 @@ private struct WritingSlideThumbnail: View {
         Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
           .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
           .foregroundStyle(MacTheme.ink).lineLimit(2)
-        Text(slide.notes.isEmpty ? "No speaker notes" : slide.notes)
-          .font(MacTheme.chrome(MacTheme.TypeScale.micro))
-          .foregroundStyle(MacTheme.muted).lineLimit(2)
+        if let asset = slide.imagePaths.first, let fileId {
+          WritingAssetImage(client: client, fileId: fileId, asset: asset)
+            .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 44)
+        } else {
+          Text(slide.notes.isEmpty ? "No speaker notes" : slide.notes)
+            .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+            .foregroundStyle(MacTheme.muted).lineLimit(2)
+        }
       }
       .padding(MacTheme.Space.x10)
       .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
@@ -173,11 +186,15 @@ private struct WritingSlideThumbnail: View {
 }
 
 private struct WritingSlideShow: View {
+  @Bindable var client: EngineClient
+  let fileId: String
   let slides: [WritingSlide]
   @State private var index: Int
   @Environment(\.dismiss) private var dismiss
 
-  init(slides: [WritingSlide], initialIndex: UInt32) {
+  init(client: EngineClient, fileId: String, slides: [WritingSlide], initialIndex: UInt32) {
+    self.client = client
+    self.fileId = fileId
     self.slides = slides
     _index = State(initialValue: min(Int(initialIndex), max(slides.count - 1, 0)))
   }
@@ -194,9 +211,9 @@ private struct WritingSlideShow: View {
         VStack(spacing: 28) {
           Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
             .font(MacTheme.prose(.sans, 46, weight: .bold)).multilineTextAlignment(.center)
-          ForEach(slide.imagePaths, id: \.self) { path in
-            Label(path, systemImage: "photo")
-              .font(MacTheme.mono(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
+          ForEach(slide.imagePaths, id: \.self) { asset in
+            WritingAssetImage(client: client, fileId: fileId, asset: asset)
+              .frame(maxWidth: 720, maxHeight: 380)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -229,7 +246,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: WritingPresentationViewport
-    private let textView = NSTextView()
+    private let textView = WritingImagePasteTextView()
     private var source = ""
     private var firstLine: UInt32 = 0
     private var revision: String?
@@ -334,6 +351,30 @@ private struct WritingPresentationViewport: NSViewRepresentable {
       textView.autoresizingMask = [.width]
       textView.textContainer?.widthTracksTextView = true
       textView.textContainer?.lineFragmentPadding = 0
+      textView.registerForDraggedTypes([.png, .tiff, .fileURL])
+      textView.imageHandler = { [weak self] pasteboard in
+        self?.insertImage(from: pasteboard) ?? false
+      }
+    }
+
+    private func insertImage(from pasteboard: NSPasteboard) -> Bool {
+      guard let start = position(textView.selectedRange().location),
+        let end = position(NSMaxRange(textView.selectedRange())),
+        let image = NSImage(pasteboard: pasteboard)
+      else { return false }
+      let attachment: WebHostAttachment
+      do { attachment = try WritingImageAttachment.make(from: image) } catch {
+        parent.client.problem = error.localizedDescription
+        return true
+      }
+      let range = SoyehtProtocol.TextRange(start: start, end: end)
+      Task { @MainActor [parent] in
+        do {
+          _ = try await parent.client.formatWritingDocument(
+            fileId: parent.view.file.fileId, range: range, kind: .image, image: attachment)
+        } catch { parent.client.problem = error.localizedDescription }
+      }
+      return true
     }
   }
 }
@@ -372,5 +413,87 @@ private enum WritingPresentationStyle {
 extension Collection {
   fileprivate subscript(safe index: Index) -> Element? {
     indices.contains(index) ? self[index] : nil
+  }
+}
+
+private struct WritingAssetImage: View {
+  @Bindable var client: EngineClient
+  let fileId: String
+  let asset: String
+  @State private var image: NSImage?
+
+  var body: some View {
+    Group {
+      if let image {
+        Image(nsImage: image).resizable().scaledToFit()
+      } else {
+        ProgressView().controlSize(.small)
+      }
+    }
+    .task(id: "\(fileId):\(asset)") {
+      do {
+        let bytes = try await client.readWritingAsset(fileId: fileId, asset: asset)
+        guard let decoded = NSImage(data: bytes) else { throw ClientFailure.invalidFrame }
+        image = decoded
+      } catch { client.problem = error.localizedDescription }
+    }
+  }
+}
+
+@MainActor final class WritingImagePasteTextView: NSTextView {
+  var imageHandler: ((NSPasteboard) -> Bool)?
+
+  override func paste(_ sender: Any?) {
+    if imageHandler?(NSPasteboard.general) == true { return }
+    super.paste(sender)
+  }
+
+  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    if imageHandler?(sender.draggingPasteboard) == true { return true }
+    return super.performDragOperation(sender)
+  }
+}
+
+enum WritingImageAttachment {
+  static func make(from image: NSImage) throws -> WebHostAttachment {
+    let bytes = try boundedPNG(image)
+    let reference = AttachmentRef(
+      attachmentId: UUID().uuidString.lowercased(), mimeType: "image/png", name: "image.png",
+      bytes: String(bytes.count))
+    return WebHostAttachment(reference: reference, bytes: bytes)
+  }
+
+  private static func boundedPNG(_ image: NSImage) throws -> Data {
+    var candidate = image
+    for _ in 0..<8 {
+      guard let tiff = candidate.tiffRepresentation,
+        let bitmap = NSBitmapImageRep(data: tiff),
+        let png = bitmap.representation(using: .png, properties: [:])
+      else { throw ClientFailure.editorCommand("The image could not be encoded.") }
+      if png.count <= ProtocolLimits.writingImageBytes { return png }
+      let ratio = sqrt(Double(ProtocolLimits.writingImageBytes) / Double(png.count)) * 0.85
+      candidate = try resized(candidate, ratio: min(0.9, ratio))
+    }
+    throw ClientFailure.editorCommand("The image exceeds its byte limit.")
+  }
+
+  private static func resized(_ image: NSImage, ratio: Double) throws -> NSImage {
+    let width = max(1, Int(floor(image.size.width * ratio)))
+    let height = max(1, Int(floor(image.size.height * ratio)))
+    guard
+      let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0)
+    else { throw ClientFailure.editorCommand("The image could not be resized.") }
+    NSGraphicsContext.saveGraphicsState()
+    defer { NSGraphicsContext.restoreGraphicsState() }
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+    image.draw(
+      in: NSRect(x: 0, y: 0, width: width, height: height), from: .zero,
+      operation: .copy, fraction: 1)
+    let resized = NSImage(size: NSSize(width: width, height: height))
+    resized.addRepresentation(bitmap)
+    return resized
   }
 }
