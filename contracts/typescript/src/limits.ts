@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6e36ed94149695bac6694bf3d4201eb951cc7d0fedd3fa6e47e970f9799bbc64). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,
@@ -46,5 +46,16 @@ export const limits = {
   "webOuterHtmlBytes": 2048,
   "webPickCropWidth": 640,
   "webCommandWaiters": 64,
-  "portScanBytes": 1048576
+  "portScanBytes": 1048576,
+  "writingSectionEntries": 500,
+  "writingSlides": 500,
+  "writingScenes": 1000,
+  "writingElements": 10000,
+  "writingBeatCards": 500,
+  "writingSceneLinks": 1000,
+  "writingVariantsPerLine": 12,
+  "writingVariantBytes": 16384,
+  "writingSuggestionBytes": 65536,
+  "writingSidecarBytes": 1048576,
+  "writingImageBytes": 2097152
 } as const;

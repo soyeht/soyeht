@@ -72,6 +72,8 @@ fn web_pane() -> PaneRecord {
                 zoom_percent: 100,
             }),
             incognito: Some(true),
+            writing_kind: None,
+            writing_section: None,
             web_session: Some(WebSessionState::Incognito),
         },
         closed: false,

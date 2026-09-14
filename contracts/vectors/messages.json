@@ -9158,5 +9158,1653 @@
       "paneId": "web-pane-1",
       "matched": true
     }
+  },
+  {
+    "name": "WritingKind",
+    "type": "WritingKind",
+    "value": "text"
+  },
+  {
+    "name": "WritingSection",
+    "type": "WritingSection",
+    "value": "texts"
+  },
+  {
+    "name": "WritingFont",
+    "type": "WritingFont",
+    "value": "reading_serif"
+  },
+  {
+    "name": "WritingFormatKind",
+    "type": "WritingFormatKind",
+    "value": "bold"
+  },
+  {
+    "name": "ScreenplayElementKind",
+    "type": "ScreenplayElementKind",
+    "value": "dialogue"
+  },
+  {
+    "name": "BeatCategory",
+    "type": "BeatCategory",
+    "value": "story"
+  },
+  {
+    "name": "WritingDocument",
+    "type": "WritingDocument",
+    "value": {
+      "file": {
+        "fileId": "writing-file-1",
+        "paneId": "writing-pane-1",
+        "workspaceId": "workspace-1",
+        "path": "Writing/Texts/Chapter One.md",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 3,
+        "byteCount": "32",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "kind": "text",
+      "section": "texts",
+      "sidecarRevision": "1",
+      "font": "reading_serif",
+      "focusMode": false
+    }
+  },
+  {
+    "name": "WritingSectionEntry",
+    "type": "WritingSectionEntry",
+    "value": {
+      "path": "Writing/Texts/Chapter One.md",
+      "title": "Chapter One",
+      "kind": "text",
+      "section": "texts",
+      "fileId": "writing-file-1",
+      "modifiedAt": "2026-09-14T00:00:00Z",
+      "byteCount": "32"
+    }
+  },
+  {
+    "name": "WritingSlide",
+    "type": "WritingSlide",
+    "value": {
+      "index": 0,
+      "startLine": 0,
+      "endLine": 3,
+      "heading": "A beginning",
+      "notes": "Speaker notes",
+      "imagePaths": [
+        "images/opening.png"
+      ]
+    }
+  },
+  {
+    "name": "ScreenplayElement",
+    "type": "ScreenplayElement",
+    "value": {
+      "elementId": "element-1",
+      "kind": "dialogue",
+      "startLine": 3,
+      "endLine": 3,
+      "text": "What time is it?",
+      "sceneId": "scene-1"
+    }
+  },
+  {
+    "name": "ScreenplayScene",
+    "type": "ScreenplayScene",
+    "value": {
+      "sceneId": "scene-1",
+      "ordinal": 0,
+      "heading": "INT. KITCHEN - NIGHT",
+      "line": 0,
+      "referenceImage": "images/kitchen.png",
+      "caption": "A quiet kitchen",
+      "promptIdea": "Warm practical light",
+      "linkedBeatIds": [
+        "beat-1"
+      ]
+    }
+  },
+  {
+    "name": "WritingVariant",
+    "type": "WritingVariant",
+    "value": {
+      "variantId": "variant-1",
+      "text": "What time is it?",
+      "author": {
+        "actor": {
+          "role": "human_local",
+          "client": "x"
+        },
+        "name": "x"
+      }
+    }
+  },
+  {
+    "name": "WritingLineVariants",
+    "type": "WritingLineVariants",
+    "value": {
+      "lineId": "line-1",
+      "line": 3,
+      "alternates": [
+        {
+          "variantId": "variant-1",
+          "text": "What time is it?",
+          "author": {
+            "actor": {
+              "role": "human_local",
+              "client": "x"
+            },
+            "name": "x"
+          }
+        },
+        {
+          "variantId": "variant-2",
+          "text": "Do you know the time?",
+          "author": {
+            "actor": {
+              "role": "human_local",
+              "client": "x"
+            },
+            "name": "x"
+          }
+        }
+      ],
+      "selectedIndex": 0
+    }
+  },
+  {
+    "name": "BeatCard",
+    "type": "BeatCard",
+    "value": {
+      "beatId": "beat-1",
+      "title": "The clock stops",
+      "body": "The room falls silent.",
+      "category": "story",
+      "order": 0,
+      "sceneId": "scene-1"
+    }
+  },
+  {
+    "name": "WritingSectionListParams",
+    "type": "WritingSectionListParams",
+    "value": {
+      "workspaceId": "workspace-1",
+      "section": "texts",
+      "limit": 20
+    }
+  },
+  {
+    "name": "WritingSectionListResult",
+    "type": "WritingSectionListResult",
+    "value": {
+      "entries": [
+        {
+          "path": "Writing/Texts/Chapter One.md",
+          "title": "Chapter One",
+          "kind": "text",
+          "section": "texts",
+          "fileId": "writing-file-1",
+          "modifiedAt": "2026-09-14T00:00:00Z",
+          "byteCount": "32"
+        }
+      ],
+      "nextCursor": "cursor-2"
+    }
+  },
+  {
+    "name": "WritingDocumentCreateParams",
+    "type": "WritingDocumentCreateParams",
+    "value": {
+      "workspaceId": "workspace-1",
+      "section": "texts",
+      "title": "Chapter One",
+      "relativeFolder": "Novel",
+      "idempotencyKey": "writing-create-1"
+    }
+  },
+  {
+    "name": "WritingDocumentCreateResult",
+    "type": "WritingDocumentCreateResult",
+    "value": {
+      "document": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "reading_serif",
+        "focusMode": false
+      },
+      "pane": {
+        "paneId": "writing-pane-1",
+        "workspaceId": "workspace-1",
+        "name": "Chapter One",
+        "cwd": "/tmp/writing",
+        "mode": "writing",
+        "state": "idle",
+        "source": "protocol",
+        "confidence": 0.5,
+        "phrase": "example",
+        "generation": 1,
+        "cols": 1,
+        "rows": 1,
+        "record": true,
+        "writingKind": "text",
+        "writingSection": "texts"
+      },
+      "viewport": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "source": "buffer",
+        "fromLine": 0,
+        "toLine": 3,
+        "lines": [
+          {
+            "line": 0,
+            "text": "# Chapter One",
+            "highlights": []
+          },
+          {
+            "line": 1,
+            "text": "",
+            "highlights": []
+          },
+          {
+            "line": 2,
+            "text": "Opening.",
+            "highlights": []
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "WritingDocumentOpenParams",
+    "type": "WritingDocumentOpenParams",
+    "value": {
+      "workspaceId": "workspace-1",
+      "path": "Writing/Texts/Chapter One.md",
+      "kind": "text",
+      "idempotencyKey": "writing-open-1"
+    }
+  },
+  {
+    "name": "WritingDocumentOpenResult",
+    "type": "WritingDocumentOpenResult",
+    "value": {
+      "document": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "reading_serif",
+        "focusMode": false
+      },
+      "pane": {
+        "paneId": "writing-pane-1",
+        "workspaceId": "workspace-1",
+        "name": "Chapter One",
+        "cwd": "/tmp/writing",
+        "mode": "writing",
+        "state": "idle",
+        "source": "protocol",
+        "confidence": 0.5,
+        "phrase": "example",
+        "generation": 1,
+        "cols": 1,
+        "rows": 1,
+        "record": true,
+        "writingKind": "text",
+        "writingSection": "texts"
+      },
+      "viewport": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "source": "buffer",
+        "fromLine": 0,
+        "toLine": 3,
+        "lines": [
+          {
+            "line": 0,
+            "text": "# Chapter One",
+            "highlights": []
+          },
+          {
+            "line": 1,
+            "text": "",
+            "highlights": []
+          },
+          {
+            "line": 2,
+            "text": "Opening.",
+            "highlights": []
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "WritingStructureParams",
+    "type": "WritingStructureParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "revision": "1"
+    }
+  },
+  {
+    "name": "WritingStructureResult",
+    "type": "WritingStructureResult",
+    "value": {
+      "document": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "reading_serif",
+        "focusMode": false
+      },
+      "slides": [
+        {
+          "index": 0,
+          "startLine": 0,
+          "endLine": 3,
+          "heading": "A beginning",
+          "notes": "Speaker notes",
+          "imagePaths": [
+            "images/opening.png"
+          ]
+        }
+      ],
+      "scenes": [
+        {
+          "sceneId": "scene-1",
+          "ordinal": 0,
+          "heading": "INT. KITCHEN - NIGHT",
+          "line": 0,
+          "referenceImage": "images/kitchen.png",
+          "caption": "A quiet kitchen",
+          "promptIdea": "Warm practical light",
+          "linkedBeatIds": [
+            "beat-1"
+          ]
+        }
+      ],
+      "elements": [
+        {
+          "elementId": "element-1",
+          "kind": "dialogue",
+          "startLine": 3,
+          "endLine": 3,
+          "text": "What time is it?",
+          "sceneId": "scene-1"
+        }
+      ],
+      "variants": [
+        {
+          "lineId": "line-1",
+          "line": 3,
+          "alternates": [
+            {
+              "variantId": "variant-1",
+              "text": "What time is it?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            },
+            {
+              "variantId": "variant-2",
+              "text": "Do you know the time?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            }
+          ],
+          "selectedIndex": 0
+        }
+      ],
+      "beats": [
+        {
+          "beatId": "beat-1",
+          "title": "The clock stops",
+          "body": "The room falls silent.",
+          "category": "story",
+          "order": 0,
+          "sceneId": "scene-1"
+        }
+      ],
+      "truncated": false
+    }
+  },
+  {
+    "name": "WritingFormatParams",
+    "type": "WritingFormatParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "baseRevision": "1",
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      },
+      "kind": "bold",
+      "value": "strong",
+      "idempotencyKey": "writing-format-1"
+    }
+  },
+  {
+    "name": "WritingFormatResult",
+    "type": "WritingFormatResult",
+    "value": {
+      "file": {
+        "fileId": "writing-file-1",
+        "paneId": "writing-pane-1",
+        "workspaceId": "workspace-1",
+        "path": "Writing/Texts/Chapter One.md",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 3,
+        "byteCount": "32",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      }
+    }
+  },
+  {
+    "name": "WritingPreferencesParams",
+    "type": "WritingPreferencesParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "baseRevision": "1",
+      "font": "classic_serif",
+      "focusMode": true,
+      "idempotencyKey": "writing-prefs-1"
+    }
+  },
+  {
+    "name": "WritingPreferencesResult",
+    "type": "WritingPreferencesResult",
+    "value": {
+      "document": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "classic_serif",
+        "focusMode": true
+      }
+    }
+  },
+  {
+    "name": "WritingVariantRequestParams",
+    "type": "WritingVariantRequestParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "lineId": "line-1",
+      "baseRevision": "1",
+      "agentPaneId": "agent-pane-1",
+      "instruction": "Try a quieter line.",
+      "idempotencyKey": "writing-variant-request-1"
+    }
+  },
+  {
+    "name": "WritingVariantRequestResult",
+    "type": "WritingVariantRequestResult",
+    "value": {
+      "requestId": "variant-request-1",
+      "delivered": true
+    }
+  },
+  {
+    "name": "WritingVariantAddParams",
+    "type": "WritingVariantAddParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "lineId": "line-1",
+      "baseRevision": "1",
+      "text": "Has the clock stopped?",
+      "idempotencyKey": "writing-variant-add-1"
+    }
+  },
+  {
+    "name": "WritingVariantSelectParams",
+    "type": "WritingVariantSelectParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "lineId": "line-1",
+      "variantId": "variant-2",
+      "baseRevision": "1",
+      "idempotencyKey": "writing-variant-select-1"
+    }
+  },
+  {
+    "name": "WritingVariantRemoveParams",
+    "type": "WritingVariantRemoveParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "lineId": "line-1",
+      "variantId": "variant-2",
+      "baseRevision": "1",
+      "idempotencyKey": "writing-variant-remove-1"
+    }
+  },
+  {
+    "name": "WritingVariantResult",
+    "type": "WritingVariantResult",
+    "value": {
+      "document": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "reading_serif",
+        "focusMode": false
+      },
+      "variants": {
+        "lineId": "line-1",
+        "line": 3,
+        "alternates": [
+          {
+            "variantId": "variant-1",
+            "text": "What time is it?",
+            "author": {
+              "actor": {
+                "role": "human_local",
+                "client": "x"
+              },
+              "name": "x"
+            }
+          },
+          {
+            "variantId": "variant-2",
+            "text": "Do you know the time?",
+            "author": {
+              "actor": {
+                "role": "human_local",
+                "client": "x"
+              },
+              "name": "x"
+            }
+          }
+        ],
+        "selectedIndex": 0
+      }
+    }
+  },
+  {
+    "name": "WritingBeatListParams",
+    "type": "WritingBeatListParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "revision": "1"
+    }
+  },
+  {
+    "name": "WritingBeatListResult",
+    "type": "WritingBeatListResult",
+    "value": {
+      "beats": [
+        {
+          "beatId": "beat-1",
+          "title": "The clock stops",
+          "body": "The room falls silent.",
+          "category": "story",
+          "order": 0,
+          "sceneId": "scene-1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "WritingBeatPutParams",
+    "type": "WritingBeatPutParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "baseRevision": "1",
+      "beatId": "beat-1",
+      "title": "The clock stops",
+      "body": "The room falls silent.",
+      "category": "story",
+      "order": 0,
+      "sceneId": "scene-1",
+      "idempotencyKey": "writing-beat-put-1"
+    }
+  },
+  {
+    "name": "WritingBeatDeleteParams",
+    "type": "WritingBeatDeleteParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "baseRevision": "1",
+      "beatId": "beat-1",
+      "idempotencyKey": "writing-beat-delete-1"
+    }
+  },
+  {
+    "name": "WritingBeatResult",
+    "type": "WritingBeatResult",
+    "value": {
+      "document": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "reading_serif",
+        "focusMode": false
+      },
+      "beat": {
+        "beatId": "beat-1",
+        "title": "The clock stops",
+        "body": "The room falls silent.",
+        "category": "story",
+        "order": 0,
+        "sceneId": "scene-1"
+      }
+    }
+  },
+  {
+    "name": "WritingChangedEvent",
+    "type": "WritingChangedEvent",
+    "value": {
+      "eventId": "1",
+      "at": "2026-09-14T00:00:00Z",
+      "fileId": "writing-file-1",
+      "paneId": "writing-pane-1",
+      "revision": "1",
+      "sidecarRevision": "1"
+    }
+  },
+  {
+    "name": "request:writing.section.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-1",
+      "method": "writing.section.list",
+      "params": {
+        "workspaceId": "workspace-1",
+        "section": "texts",
+        "limit": 20
+      }
+    }
+  },
+  {
+    "name": "response:writing.section.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-1",
+      "result": {
+        "entries": [
+          {
+            "path": "Writing/Texts/Chapter One.md",
+            "title": "Chapter One",
+            "kind": "text",
+            "section": "texts",
+            "fileId": "writing-file-1",
+            "modifiedAt": "2026-09-14T00:00:00Z",
+            "byteCount": "32"
+          }
+        ],
+        "nextCursor": "cursor-2"
+      }
+    }
+  },
+  {
+    "name": "request:writing.document.create",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-2",
+      "method": "writing.document.create",
+      "params": {
+        "workspaceId": "workspace-1",
+        "section": "texts",
+        "title": "Chapter One",
+        "relativeFolder": "Novel",
+        "idempotencyKey": "writing-create-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.document.create",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-2",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "pane": {
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "name": "Chapter One",
+          "cwd": "/tmp/writing",
+          "mode": "writing",
+          "state": "idle",
+          "source": "protocol",
+          "confidence": 0.5,
+          "phrase": "example",
+          "generation": 1,
+          "cols": 1,
+          "rows": 1,
+          "record": true,
+          "writingKind": "text",
+          "writingSection": "texts"
+        },
+        "viewport": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "source": "buffer",
+          "fromLine": 0,
+          "toLine": 3,
+          "lines": [
+            {
+              "line": 0,
+              "text": "# Chapter One",
+              "highlights": []
+            },
+            {
+              "line": 1,
+              "text": "",
+              "highlights": []
+            },
+            {
+              "line": 2,
+              "text": "Opening.",
+              "highlights": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.document.open",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-3",
+      "method": "writing.document.open",
+      "params": {
+        "workspaceId": "workspace-1",
+        "path": "Writing/Texts/Chapter One.md",
+        "kind": "text",
+        "idempotencyKey": "writing-open-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.document.open",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-3",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "pane": {
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "name": "Chapter One",
+          "cwd": "/tmp/writing",
+          "mode": "writing",
+          "state": "idle",
+          "source": "protocol",
+          "confidence": 0.5,
+          "phrase": "example",
+          "generation": 1,
+          "cols": 1,
+          "rows": 1,
+          "record": true,
+          "writingKind": "text",
+          "writingSection": "texts"
+        },
+        "viewport": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "source": "buffer",
+          "fromLine": 0,
+          "toLine": 3,
+          "lines": [
+            {
+              "line": 0,
+              "text": "# Chapter One",
+              "highlights": []
+            },
+            {
+              "line": 1,
+              "text": "",
+              "highlights": []
+            },
+            {
+              "line": 2,
+              "text": "Opening.",
+              "highlights": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.structure",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-4",
+      "method": "writing.structure",
+      "params": {
+        "fileId": "writing-file-1",
+        "revision": "1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.structure",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-4",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "slides": [
+          {
+            "index": 0,
+            "startLine": 0,
+            "endLine": 3,
+            "heading": "A beginning",
+            "notes": "Speaker notes",
+            "imagePaths": [
+              "images/opening.png"
+            ]
+          }
+        ],
+        "scenes": [
+          {
+            "sceneId": "scene-1",
+            "ordinal": 0,
+            "heading": "INT. KITCHEN - NIGHT",
+            "line": 0,
+            "referenceImage": "images/kitchen.png",
+            "caption": "A quiet kitchen",
+            "promptIdea": "Warm practical light",
+            "linkedBeatIds": [
+              "beat-1"
+            ]
+          }
+        ],
+        "elements": [
+          {
+            "elementId": "element-1",
+            "kind": "dialogue",
+            "startLine": 3,
+            "endLine": 3,
+            "text": "What time is it?",
+            "sceneId": "scene-1"
+          }
+        ],
+        "variants": [
+          {
+            "lineId": "line-1",
+            "line": 3,
+            "alternates": [
+              {
+                "variantId": "variant-1",
+                "text": "What time is it?",
+                "author": {
+                  "actor": {
+                    "role": "human_local",
+                    "client": "x"
+                  },
+                  "name": "x"
+                }
+              },
+              {
+                "variantId": "variant-2",
+                "text": "Do you know the time?",
+                "author": {
+                  "actor": {
+                    "role": "human_local",
+                    "client": "x"
+                  },
+                  "name": "x"
+                }
+              }
+            ],
+            "selectedIndex": 0
+          }
+        ],
+        "beats": [
+          {
+            "beatId": "beat-1",
+            "title": "The clock stops",
+            "body": "The room falls silent.",
+            "category": "story",
+            "order": 0,
+            "sceneId": "scene-1"
+          }
+        ],
+        "truncated": false
+      }
+    }
+  },
+  {
+    "name": "request:writing.format",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-5",
+      "method": "writing.format",
+      "params": {
+        "fileId": "writing-file-1",
+        "baseRevision": "1",
+        "range": {
+          "start": {
+            "line": 0,
+            "column": 0
+          },
+          "end": {
+            "line": 0,
+            "column": 0
+          }
+        },
+        "kind": "bold",
+        "value": "strong",
+        "idempotencyKey": "writing-format-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.format",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-5",
+      "result": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "writing-pane-1",
+          "workspaceId": "workspace-1",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": false
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.preferences.set",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-6",
+      "method": "writing.preferences.set",
+      "params": {
+        "fileId": "writing-file-1",
+        "baseRevision": "1",
+        "font": "classic_serif",
+        "focusMode": true,
+        "idempotencyKey": "writing-prefs-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.preferences.set",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-6",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "classic_serif",
+          "focusMode": true
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.variant.request",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-7",
+      "method": "writing.variant.request",
+      "params": {
+        "fileId": "writing-file-1",
+        "lineId": "line-1",
+        "baseRevision": "1",
+        "agentPaneId": "agent-pane-1",
+        "instruction": "Try a quieter line.",
+        "idempotencyKey": "writing-variant-request-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.variant.request",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-7",
+      "result": {
+        "requestId": "variant-request-1",
+        "delivered": true
+      }
+    }
+  },
+  {
+    "name": "request:writing.variant.add",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-8",
+      "method": "writing.variant.add",
+      "params": {
+        "fileId": "writing-file-1",
+        "lineId": "line-1",
+        "baseRevision": "1",
+        "text": "Has the clock stopped?",
+        "idempotencyKey": "writing-variant-add-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.variant.add",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-8",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "variants": {
+          "lineId": "line-1",
+          "line": 3,
+          "alternates": [
+            {
+              "variantId": "variant-1",
+              "text": "What time is it?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            },
+            {
+              "variantId": "variant-2",
+              "text": "Do you know the time?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            }
+          ],
+          "selectedIndex": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.variant.select",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-9",
+      "method": "writing.variant.select",
+      "params": {
+        "fileId": "writing-file-1",
+        "lineId": "line-1",
+        "variantId": "variant-2",
+        "baseRevision": "1",
+        "idempotencyKey": "writing-variant-select-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.variant.select",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-9",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "variants": {
+          "lineId": "line-1",
+          "line": 3,
+          "alternates": [
+            {
+              "variantId": "variant-1",
+              "text": "What time is it?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            },
+            {
+              "variantId": "variant-2",
+              "text": "Do you know the time?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            }
+          ],
+          "selectedIndex": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.variant.remove",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-10",
+      "method": "writing.variant.remove",
+      "params": {
+        "fileId": "writing-file-1",
+        "lineId": "line-1",
+        "variantId": "variant-2",
+        "baseRevision": "1",
+        "idempotencyKey": "writing-variant-remove-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.variant.remove",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-10",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "variants": {
+          "lineId": "line-1",
+          "line": 3,
+          "alternates": [
+            {
+              "variantId": "variant-1",
+              "text": "What time is it?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            },
+            {
+              "variantId": "variant-2",
+              "text": "Do you know the time?",
+              "author": {
+                "actor": {
+                  "role": "human_local",
+                  "client": "x"
+                },
+                "name": "x"
+              }
+            }
+          ],
+          "selectedIndex": 0
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.beat.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-11",
+      "method": "writing.beat.list",
+      "params": {
+        "fileId": "writing-file-1",
+        "revision": "1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.beat.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-11",
+      "result": {
+        "beats": [
+          {
+            "beatId": "beat-1",
+            "title": "The clock stops",
+            "body": "The room falls silent.",
+            "category": "story",
+            "order": 0,
+            "sceneId": "scene-1"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:writing.beat.put",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-12",
+      "method": "writing.beat.put",
+      "params": {
+        "fileId": "writing-file-1",
+        "baseRevision": "1",
+        "beatId": "beat-1",
+        "title": "The clock stops",
+        "body": "The room falls silent.",
+        "category": "story",
+        "order": 0,
+        "sceneId": "scene-1",
+        "idempotencyKey": "writing-beat-put-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.beat.put",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-12",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "beat": {
+          "beatId": "beat-1",
+          "title": "The clock stops",
+          "body": "The room falls silent.",
+          "category": "story",
+          "order": 0,
+          "sceneId": "scene-1"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.beat.delete",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-13",
+      "method": "writing.beat.delete",
+      "params": {
+        "fileId": "writing-file-1",
+        "baseRevision": "1",
+        "beatId": "beat-1",
+        "idempotencyKey": "writing-beat-delete-1"
+      }
+    }
+  },
+  {
+    "name": "response:writing.beat.delete",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-13",
+      "result": {
+        "document": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "writing-pane-1",
+            "workspaceId": "workspace-1",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": false
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false
+        },
+        "beat": {
+          "beatId": "beat-1",
+          "title": "The clock stops",
+          "body": "The room falls silent.",
+          "category": "story",
+          "order": 0,
+          "sceneId": "scene-1"
+        }
+      }
+    }
+  },
+  {
+    "name": "event:writing.changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "writing.changed",
+      "params": {
+        "eventId": "1",
+        "at": "2026-09-14T00:00:00Z",
+        "fileId": "writing-file-1",
+        "paneId": "writing-pane-1",
+        "revision": "1",
+        "sidecarRevision": "1"
+      }
+    }
   }
 ]

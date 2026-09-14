@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6e36ed94149695bac6694bf3d4201eb951cc7d0fedd3fa6e47e970f9799bbc64). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -47,3 +47,14 @@ pub const WEB_OUTER_HTML_BYTES: usize = 2048;
 pub const WEB_PICK_CROP_WIDTH: usize = 640;
 pub const WEB_COMMAND_WAITERS: usize = 64;
 pub const PORT_SCAN_BYTES: usize = 1048576;
+pub const WRITING_SECTION_ENTRIES: usize = 500;
+pub const WRITING_SLIDES: usize = 500;
+pub const WRITING_SCENES: usize = 1000;
+pub const WRITING_ELEMENTS: usize = 10000;
+pub const WRITING_BEAT_CARDS: usize = 500;
+pub const WRITING_SCENE_LINKS: usize = 1000;
+pub const WRITING_VARIANTS_PER_LINE: usize = 12;
+pub const WRITING_VARIANT_BYTES: usize = 16384;
+pub const WRITING_SUGGESTION_BYTES: usize = 65536;
+pub const WRITING_SIDECAR_BYTES: usize = 1048576;
+pub const WRITING_IMAGE_BYTES: usize = 2097152;

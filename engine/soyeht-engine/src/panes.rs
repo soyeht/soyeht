@@ -115,6 +115,8 @@ impl Core {
             title: None,
             viewport: None,
             incognito: None,
+            writing_kind: None,
+            writing_section: None,
             web_session: None,
             pane_id: Uuid::new_v4().to_string(),
             workspace_id: workspace.workspace_id,
@@ -288,7 +290,10 @@ impl Core {
             client.streams.remove(id);
         }
         let saved = &errors::invariant(self.panes.get(id), "Closing pane disappeared")?.stored;
-        if matches!(saved.pane.mode, PaneMode::Editor | PaneMode::Web) {
+        if matches!(
+            saved.pane.mode,
+            PaneMode::Editor | PaneMode::Web | PaneMode::Writing
+        ) {
             return Ok(());
         }
         let mut instance_id = saved.instance_id.clone();

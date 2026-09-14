@@ -76,6 +76,8 @@ fn pane(id: &str) -> PaneRecord {
             title: None,
             viewport: None,
             incognito: None,
+            writing_kind: None,
+            writing_section: None,
             web_session: None,
         },
         closed: false,

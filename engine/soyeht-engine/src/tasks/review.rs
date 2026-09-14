@@ -665,6 +665,8 @@ fn reviewer_pane(core: &Core, task: &Task, state: &State, repository: &Path) -> 
         title: None,
         viewport: None,
         incognito: None,
+        writing_kind: None,
+        writing_section: None,
         web_session: None,
     };
     Ok(StoredPane {

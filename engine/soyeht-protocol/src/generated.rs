@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6e36ed94149695bac6694bf3d4201eb951cc7d0fedd3fa6e47e970f9799bbc64). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -31,6 +31,8 @@ pub enum PaneMode {
     Editor,
     #[serde(rename = "web")]
     Web,
+    #[serde(rename = "writing")]
+    Writing,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PaneState {
@@ -88,6 +90,8 @@ pub enum SnapshotSection {
     Streams,
     #[serde(rename = "files")]
     Files,
+    #[serde(rename = "writing")]
+    Writing,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ErrorKind {
@@ -149,6 +153,18 @@ pub enum ErrorKind {
     WebHostUnavailable,
     #[serde(rename = "navigation_refused")]
     NavigationRefused,
+    #[serde(rename = "writing_kind_refused")]
+    WritingKindRefused,
+    #[serde(rename = "writing_limit_exceeded")]
+    WritingLimitExceeded,
+    #[serde(rename = "writing_sidecar_conflict")]
+    WritingSidecarConflict,
+    #[serde(rename = "writing_line_not_found")]
+    WritingLineNotFound,
+    #[serde(rename = "writing_scene_not_found")]
+    WritingSceneNotFound,
+    #[serde(rename = "writing_section_refused")]
+    WritingSectionRefused,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -234,6 +250,10 @@ pub struct Pane {
     pub incognito: Option<bool>,
     #[serde(rename = "webSession", skip_serializing_if = "Option::is_none")]
     pub web_session: Option<WebSessionState>,
+    #[serde(rename = "writingKind", skip_serializing_if = "Option::is_none")]
+    pub writing_kind: Option<WritingKind>,
+    #[serde(rename = "writingSection", skip_serializing_if = "Option::is_none")]
+    pub writing_section: Option<WritingSection>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Device {
@@ -436,6 +456,12 @@ pub struct PaneCreateParams {
     pub url: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
     pub incognito: Option<bool>,
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(rename = "writingKind", skip_serializing_if = "Option::is_none")]
+    pub writing_kind: Option<WritingKind>,
+    #[serde(rename = "writingSection", skip_serializing_if = "Option::is_none")]
+    pub writing_section: Option<WritingSection>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneCreateResult {
@@ -4406,6 +4432,456 @@ pub enum PermissionRequestKind {
     #[serde(rename = "web_evaluate")]
     WebEvaluate,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WritingKind {
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "presentation")]
+    Presentation,
+    #[serde(rename = "screenplay")]
+    Screenplay,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WritingSection {
+    #[serde(rename = "texts")]
+    Texts,
+    #[serde(rename = "presentations")]
+    Presentations,
+    #[serde(rename = "screenplays")]
+    Screenplays,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WritingFont {
+    #[serde(rename = "reading_serif")]
+    ReadingSerif,
+    #[serde(rename = "classic_serif")]
+    ClassicSerif,
+    #[serde(rename = "sans")]
+    Sans,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WritingFormatKind {
+    #[serde(rename = "heading_1")]
+    Heading1,
+    #[serde(rename = "heading_2")]
+    Heading2,
+    #[serde(rename = "heading_3")]
+    Heading3,
+    #[serde(rename = "bold")]
+    Bold,
+    #[serde(rename = "italic")]
+    Italic,
+    #[serde(rename = "bullet_list")]
+    BulletList,
+    #[serde(rename = "numbered_list")]
+    NumberedList,
+    #[serde(rename = "quote")]
+    Quote,
+    #[serde(rename = "link")]
+    Link,
+    #[serde(rename = "image")]
+    Image,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ScreenplayElementKind {
+    #[serde(rename = "scene_heading")]
+    SceneHeading,
+    #[serde(rename = "action")]
+    Action,
+    #[serde(rename = "character")]
+    Character,
+    #[serde(rename = "parenthetical")]
+    Parenthetical,
+    #[serde(rename = "dialogue")]
+    Dialogue,
+    #[serde(rename = "transition")]
+    Transition,
+    #[serde(rename = "shot")]
+    Shot,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum BeatCategory {
+    #[serde(rename = "story")]
+    Story,
+    #[serde(rename = "character")]
+    Character,
+    #[serde(rename = "setting")]
+    Setting,
+    #[serde(rename = "research")]
+    Research,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingDocument {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "kind")]
+    pub kind: WritingKind,
+    #[serde(rename = "section")]
+    pub section: WritingSection,
+    #[serde(rename = "sidecarRevision")]
+    pub sidecar_revision: Decimal,
+    #[serde(rename = "font")]
+    pub font: WritingFont,
+    #[serde(rename = "focusMode")]
+    pub focus_mode: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingSectionEntry {
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "kind")]
+    pub kind: WritingKind,
+    #[serde(rename = "section")]
+    pub section: WritingSection,
+    #[serde(rename = "fileId", skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<Id>,
+    #[serde(rename = "modifiedAt")]
+    pub modified_at: String,
+    #[serde(rename = "byteCount")]
+    pub byte_count: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingSlide {
+    #[serde(rename = "index")]
+    pub index: u32,
+    #[serde(rename = "startLine")]
+    pub start_line: u32,
+    #[serde(rename = "endLine")]
+    pub end_line: u32,
+    #[serde(rename = "heading")]
+    pub heading: String,
+    #[serde(rename = "notes")]
+    pub notes: String,
+    #[serde(rename = "imagePaths")]
+    pub image_paths: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ScreenplayElement {
+    #[serde(rename = "elementId")]
+    pub element_id: Id,
+    #[serde(rename = "kind")]
+    pub kind: ScreenplayElementKind,
+    #[serde(rename = "startLine")]
+    pub start_line: u32,
+    #[serde(rename = "endLine")]
+    pub end_line: u32,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "sceneId", skip_serializing_if = "Option::is_none")]
+    pub scene_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ScreenplayScene {
+    #[serde(rename = "sceneId")]
+    pub scene_id: Id,
+    #[serde(rename = "ordinal")]
+    pub ordinal: u32,
+    #[serde(rename = "heading")]
+    pub heading: String,
+    #[serde(rename = "line")]
+    pub line: u32,
+    #[serde(rename = "referenceImage", skip_serializing_if = "Option::is_none")]
+    pub reference_image: Option<String>,
+    #[serde(rename = "caption", skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    #[serde(rename = "promptIdea", skip_serializing_if = "Option::is_none")]
+    pub prompt_idea: Option<String>,
+    #[serde(rename = "linkedBeatIds")]
+    pub linked_beat_ids: Vec<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingVariant {
+    #[serde(rename = "variantId")]
+    pub variant_id: Id,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "author")]
+    pub author: FileAuthor,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingLineVariants {
+    #[serde(rename = "lineId")]
+    pub line_id: Id,
+    #[serde(rename = "line")]
+    pub line: u32,
+    #[serde(rename = "alternates")]
+    pub alternates: Vec<WritingVariant>,
+    #[serde(rename = "selectedIndex")]
+    pub selected_index: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BeatCard {
+    #[serde(rename = "beatId")]
+    pub beat_id: Id,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "body")]
+    pub body: String,
+    #[serde(rename = "category")]
+    pub category: BeatCategory,
+    #[serde(rename = "order")]
+    pub order: u32,
+    #[serde(rename = "sceneId", skip_serializing_if = "Option::is_none")]
+    pub scene_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingSectionListParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "section")]
+    pub section: WritingSection,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<Id>,
+    #[serde(rename = "limit")]
+    pub limit: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingSectionListResult {
+    #[serde(rename = "entries")]
+    pub entries: Vec<WritingSectionEntry>,
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingDocumentCreateParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "section")]
+    pub section: WritingSection,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "relativeFolder", skip_serializing_if = "Option::is_none")]
+    pub relative_folder: Option<String>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingDocumentCreateResult {
+    #[serde(rename = "document")]
+    pub document: WritingDocument,
+    #[serde(rename = "pane")]
+    pub pane: Pane,
+    #[serde(rename = "viewport")]
+    pub viewport: FileReadResult,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingDocumentOpenParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "kind")]
+    pub kind: WritingKind,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingDocumentOpenResult {
+    #[serde(rename = "document")]
+    pub document: WritingDocument,
+    #[serde(rename = "pane")]
+    pub pane: Pane,
+    #[serde(rename = "viewport")]
+    pub viewport: FileReadResult,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingStructureParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingStructureResult {
+    #[serde(rename = "document")]
+    pub document: WritingDocument,
+    #[serde(rename = "slides")]
+    pub slides: Vec<WritingSlide>,
+    #[serde(rename = "scenes")]
+    pub scenes: Vec<ScreenplayScene>,
+    #[serde(rename = "elements")]
+    pub elements: Vec<ScreenplayElement>,
+    #[serde(rename = "variants")]
+    pub variants: Vec<WritingLineVariants>,
+    #[serde(rename = "beats")]
+    pub beats: Vec<BeatCard>,
+    #[serde(rename = "truncated")]
+    pub truncated: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingFormatParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "range")]
+    pub range: TextRange,
+    #[serde(rename = "kind")]
+    pub kind: WritingFormatKind,
+    #[serde(rename = "value", skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingFormatResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingPreferencesParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "font", skip_serializing_if = "Option::is_none")]
+    pub font: Option<WritingFont>,
+    #[serde(rename = "focusMode", skip_serializing_if = "Option::is_none")]
+    pub focus_mode: Option<bool>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingPreferencesResult {
+    #[serde(rename = "document")]
+    pub document: WritingDocument,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingVariantRequestParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "lineId")]
+    pub line_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "agentPaneId")]
+    pub agent_pane_id: Id,
+    #[serde(rename = "instruction", skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingVariantRequestResult {
+    #[serde(rename = "requestId")]
+    pub request_id: Id,
+    #[serde(rename = "delivered")]
+    pub delivered: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingVariantAddParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "lineId")]
+    pub line_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingVariantSelectParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "lineId")]
+    pub line_id: Id,
+    #[serde(rename = "variantId")]
+    pub variant_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingVariantRemoveParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "lineId")]
+    pub line_id: Id,
+    #[serde(rename = "variantId")]
+    pub variant_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingVariantResult {
+    #[serde(rename = "document")]
+    pub document: WritingDocument,
+    #[serde(rename = "variants")]
+    pub variants: WritingLineVariants,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingBeatListParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingBeatListResult {
+    #[serde(rename = "beats")]
+    pub beats: Vec<BeatCard>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingBeatPutParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "beatId", skip_serializing_if = "Option::is_none")]
+    pub beat_id: Option<Id>,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "body")]
+    pub body: String,
+    #[serde(rename = "category")]
+    pub category: BeatCategory,
+    #[serde(rename = "order")]
+    pub order: u32,
+    #[serde(rename = "sceneId", skip_serializing_if = "Option::is_none")]
+    pub scene_id: Option<Id>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingBeatDeleteParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "beatId")]
+    pub beat_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingBeatResult {
+    #[serde(rename = "document")]
+    pub document: WritingDocument,
+    #[serde(rename = "beat", skip_serializing_if = "Option::is_none")]
+    pub beat: Option<BeatCard>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "sidecarRevision")]
+    pub sidecar_revision: Decimal,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -4605,6 +5081,32 @@ pub enum Request {
     WebHostNavigated(WebHostNavigatedParams),
     #[serde(rename = "web.host.console_counts")]
     WebHostConsoleCounts(WebHostConsoleCountsParams),
+    #[serde(rename = "writing.section.list")]
+    WritingSectionList(WritingSectionListParams),
+    #[serde(rename = "writing.document.create")]
+    WritingDocumentCreate(WritingDocumentCreateParams),
+    #[serde(rename = "writing.document.open")]
+    WritingDocumentOpen(WritingDocumentOpenParams),
+    #[serde(rename = "writing.structure")]
+    WritingStructure(WritingStructureParams),
+    #[serde(rename = "writing.format")]
+    WritingFormat(WritingFormatParams),
+    #[serde(rename = "writing.preferences.set")]
+    WritingPreferencesSet(WritingPreferencesParams),
+    #[serde(rename = "writing.variant.request")]
+    WritingVariantRequest(WritingVariantRequestParams),
+    #[serde(rename = "writing.variant.add")]
+    WritingVariantAdd(WritingVariantAddParams),
+    #[serde(rename = "writing.variant.select")]
+    WritingVariantSelect(WritingVariantSelectParams),
+    #[serde(rename = "writing.variant.remove")]
+    WritingVariantRemove(WritingVariantRemoveParams),
+    #[serde(rename = "writing.beat.list")]
+    WritingBeatList(WritingBeatListParams),
+    #[serde(rename = "writing.beat.put")]
+    WritingBeatPut(WritingBeatPutParams),
+    #[serde(rename = "writing.beat.delete")]
+    WritingBeatDelete(WritingBeatDeleteParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -4965,6 +5467,84 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "WebHostConsoleCountsResult",
         true,
     ),
+    (
+        "writing.section.list",
+        "WritingSectionListParams",
+        "WritingSectionListResult",
+        false,
+    ),
+    (
+        "writing.document.create",
+        "WritingDocumentCreateParams",
+        "WritingDocumentCreateResult",
+        true,
+    ),
+    (
+        "writing.document.open",
+        "WritingDocumentOpenParams",
+        "WritingDocumentOpenResult",
+        true,
+    ),
+    (
+        "writing.structure",
+        "WritingStructureParams",
+        "WritingStructureResult",
+        false,
+    ),
+    (
+        "writing.format",
+        "WritingFormatParams",
+        "WritingFormatResult",
+        true,
+    ),
+    (
+        "writing.preferences.set",
+        "WritingPreferencesParams",
+        "WritingPreferencesResult",
+        true,
+    ),
+    (
+        "writing.variant.request",
+        "WritingVariantRequestParams",
+        "WritingVariantRequestResult",
+        true,
+    ),
+    (
+        "writing.variant.add",
+        "WritingVariantAddParams",
+        "WritingVariantResult",
+        true,
+    ),
+    (
+        "writing.variant.select",
+        "WritingVariantSelectParams",
+        "WritingVariantResult",
+        true,
+    ),
+    (
+        "writing.variant.remove",
+        "WritingVariantRemoveParams",
+        "WritingVariantResult",
+        true,
+    ),
+    (
+        "writing.beat.list",
+        "WritingBeatListParams",
+        "WritingBeatListResult",
+        false,
+    ),
+    (
+        "writing.beat.put",
+        "WritingBeatPutParams",
+        "WritingBeatResult",
+        true,
+    ),
+    (
+        "writing.beat.delete",
+        "WritingBeatDeleteParams",
+        "WritingBeatResult",
+        true,
+    ),
 ];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EventName {
@@ -5094,6 +5674,8 @@ pub enum EventName {
     WebConsoleCounts,
     #[serde(rename = "web.agent_driving")]
     WebAgentDriving,
+    #[serde(rename = "writing.changed")]
+    WritingChanged,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -5161,6 +5743,7 @@ impl EventName {
             Self::WebNavigated => "web.navigated",
             Self::WebConsoleCounts => "web.console_counts",
             Self::WebAgentDriving => "web.agent_driving",
+            Self::WritingChanged => "writing.changed",
         }
     }
 }
@@ -5486,6 +6069,11 @@ pub const EVENTS: &[EventDescriptor] = &[
         params_type: "WebAgentDrivingEvent",
         durable: false,
     },
+    EventDescriptor {
+        name: EventName::WritingChanged,
+        params_type: "WritingChangedEvent",
+        durable: true,
+    },
 ];
 
 pub fn error_code(kind: &ErrorKind) -> i64 {
@@ -5519,5 +6107,11 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::HumanTookOver => -32026,
         ErrorKind::WebHostUnavailable => -32027,
         ErrorKind::NavigationRefused => -32028,
+        ErrorKind::WritingKindRefused => -32029,
+        ErrorKind::WritingLimitExceeded => -32030,
+        ErrorKind::WritingSidecarConflict => -32031,
+        ErrorKind::WritingLineNotFound => -32032,
+        ErrorKind::WritingSceneNotFound => -32033,
+        ErrorKind::WritingSectionRefused => -32034,
     }
 }

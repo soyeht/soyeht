@@ -188,6 +188,7 @@ struct PhoneHome: View {
     case .agent: "bubble.left.and.bubble.right"
     case .editor: "doc.text"
     case .web: "globe"
+    case .writing: "text.book.closed"
     }
   }
   private func scan() {

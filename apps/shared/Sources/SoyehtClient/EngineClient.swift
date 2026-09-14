@@ -186,6 +186,7 @@ public final class EngineClient {
       case .agent: try await loadAgentPane(pane.paneId, replacing: true)
       case .editor: try await loadEditorPane(pane.paneId)
       case .web: break
+      case .writing: break
       }
     }
     await reader.value
@@ -398,7 +399,7 @@ public final class EngineClient {
       try applyWebEvent(eventName, params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
-      .paneConfigChanged:
+      .paneConfigChanged, .writingChanged:
       break
     }
   }
@@ -495,6 +496,7 @@ public final class EngineClient {
           case .agent: try await self.loadAgentPane(paneId, replacing: true)
           case .editor: try await self.loadEditorPane(paneId)
           case .web: break
+          case .writing: break
           }
         }
       }

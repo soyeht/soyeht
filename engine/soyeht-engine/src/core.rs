@@ -325,7 +325,9 @@ impl Core {
             let saved = self.panes[&id].stored.clone();
             if matches!(
                 saved.pane.mode,
-                soyeht_protocol::PaneMode::Editor | soyeht_protocol::PaneMode::Web
+                soyeht_protocol::PaneMode::Editor
+                    | soyeht_protocol::PaneMode::Web
+                    | soyeht_protocol::PaneMode::Writing
             ) {
                 continue;
             }

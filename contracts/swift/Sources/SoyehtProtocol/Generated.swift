@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6e36ed94149695bac6694bf3d4201eb951cc7d0fedd3fa6e47e970f9799bbc64). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
 import Foundation
 
 
@@ -26,6 +26,7 @@ public enum PaneMode: String, Codable, Sendable {
     case `agent` = "agent"
     case `editor` = "editor"
     case `web` = "web"
+    case `writing` = "writing"
 }
 
 public enum PaneState: String, Codable, Sendable {
@@ -59,6 +60,7 @@ public enum SnapshotSection: String, Codable, Sendable {
     case `capabilities` = "capabilities"
     case `streams` = "streams"
     case `files` = "files"
+    case `writing` = "writing"
 }
 
 public enum ErrorKind: String, Codable, Sendable {
@@ -91,6 +93,12 @@ public enum ErrorKind: String, Codable, Sendable {
     case `human_took_over` = "human_took_over"
     case `web_host_unavailable` = "web_host_unavailable"
     case `navigation_refused` = "navigation_refused"
+    case `writing_kind_refused` = "writing_kind_refused"
+    case `writing_limit_exceeded` = "writing_limit_exceeded"
+    case `writing_sidecar_conflict` = "writing_sidecar_conflict"
+    case `writing_line_not_found` = "writing_line_not_found"
+    case `writing_scene_not_found` = "writing_scene_not_found"
+    case `writing_section_refused` = "writing_section_refused"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -163,7 +171,9 @@ public struct Pane: Codable, Sendable {
     public var `viewport`: WebViewport?
     public var `incognito`: Bool?
     public var `webSession`: WebSessionState?
-    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `pid`: UInt32? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil) {
+    public var `writingKind`: WritingKind?
+    public var `writingSection`: WritingSection?
+    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `pid`: UInt32? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
         self.`paneId` = `paneId`
         self.`workspaceId` = `workspaceId`
         self.`name` = `name`
@@ -185,6 +195,8 @@ public struct Pane: Codable, Sendable {
         self.`viewport` = `viewport`
         self.`incognito` = `incognito`
         self.`webSession` = `webSession`
+        self.`writingKind` = `writingKind`
+        self.`writingSection` = `writingSection`
     }
 }
 
@@ -440,7 +452,10 @@ public struct PaneCreateParams: Codable, Sendable {
     public var `permission`: PermissionMode?
     public var `url`: String?
     public var `incognito`: Bool?
-    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil, `url`: String? = nil, `incognito`: Bool? = nil) {
+    public var `path`: String?
+    public var `writingKind`: WritingKind?
+    public var `writingSection`: WritingSection?
+    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil, `url`: String? = nil, `incognito`: Bool? = nil, `path`: String? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
         self.`workspaceId` = `workspaceId`
         self.`mode` = `mode`
         self.`cwd` = `cwd`
@@ -454,6 +469,9 @@ public struct PaneCreateParams: Codable, Sendable {
         self.`permission` = `permission`
         self.`url` = `url`
         self.`incognito` = `incognito`
+        self.`path` = `path`
+        self.`writingKind` = `writingKind`
+        self.`writingSection` = `writingSection`
     }
 }
 
@@ -4899,6 +4917,490 @@ public enum PermissionRequestKind: String, Codable, Sendable {
     case `web_evaluate` = "web_evaluate"
 }
 
+public enum WritingKind: String, Codable, Sendable {
+    case `text` = "text"
+    case `presentation` = "presentation"
+    case `screenplay` = "screenplay"
+}
+
+public enum WritingSection: String, Codable, Sendable {
+    case `texts` = "texts"
+    case `presentations` = "presentations"
+    case `screenplays` = "screenplays"
+}
+
+public enum WritingFont: String, Codable, Sendable {
+    case `reading_serif` = "reading_serif"
+    case `classic_serif` = "classic_serif"
+    case `sans` = "sans"
+}
+
+public enum WritingFormatKind: String, Codable, Sendable {
+    case `heading1` = "heading_1"
+    case `heading2` = "heading_2"
+    case `heading3` = "heading_3"
+    case `bold` = "bold"
+    case `italic` = "italic"
+    case `bullet_list` = "bullet_list"
+    case `numbered_list` = "numbered_list"
+    case `quote` = "quote"
+    case `link` = "link"
+    case `image` = "image"
+}
+
+public enum ScreenplayElementKind: String, Codable, Sendable {
+    case `scene_heading` = "scene_heading"
+    case `action` = "action"
+    case `character` = "character"
+    case `parenthetical` = "parenthetical"
+    case `dialogue` = "dialogue"
+    case `transition` = "transition"
+    case `shot` = "shot"
+}
+
+public enum BeatCategory: String, Codable, Sendable {
+    case `story` = "story"
+    case `character` = "character"
+    case `setting` = "setting"
+    case `research` = "research"
+}
+
+public struct WritingDocument: Codable, Sendable {
+    public var `file`: FileDocument
+    public var `kind`: WritingKind
+    public var `section`: WritingSection
+    public var `sidecarRevision`: Decimal
+    public var `font`: WritingFont
+    public var `focusMode`: Bool
+    public init(`file`: FileDocument, `kind`: WritingKind, `section`: WritingSection, `sidecarRevision`: Decimal, `font`: WritingFont, `focusMode`: Bool) {
+        self.`file` = `file`
+        self.`kind` = `kind`
+        self.`section` = `section`
+        self.`sidecarRevision` = `sidecarRevision`
+        self.`font` = `font`
+        self.`focusMode` = `focusMode`
+    }
+}
+
+public struct WritingSectionEntry: Codable, Sendable {
+    public var `path`: String
+    public var `title`: String
+    public var `kind`: WritingKind
+    public var `section`: WritingSection
+    public var `fileId`: Id?
+    public var `modifiedAt`: String
+    public var `byteCount`: Decimal
+    public init(`path`: String, `title`: String, `kind`: WritingKind, `section`: WritingSection, `fileId`: Id? = nil, `modifiedAt`: String, `byteCount`: Decimal) {
+        self.`path` = `path`
+        self.`title` = `title`
+        self.`kind` = `kind`
+        self.`section` = `section`
+        self.`fileId` = `fileId`
+        self.`modifiedAt` = `modifiedAt`
+        self.`byteCount` = `byteCount`
+    }
+}
+
+public struct WritingSlide: Codable, Sendable {
+    public var `index`: UInt32
+    public var `startLine`: UInt32
+    public var `endLine`: UInt32
+    public var `heading`: String
+    public var `notes`: String
+    public var `imagePaths`: [String]
+    public init(`index`: UInt32, `startLine`: UInt32, `endLine`: UInt32, `heading`: String, `notes`: String, `imagePaths`: [String]) {
+        self.`index` = `index`
+        self.`startLine` = `startLine`
+        self.`endLine` = `endLine`
+        self.`heading` = `heading`
+        self.`notes` = `notes`
+        self.`imagePaths` = `imagePaths`
+    }
+}
+
+public struct ScreenplayElement: Codable, Sendable {
+    public var `elementId`: Id
+    public var `kind`: ScreenplayElementKind
+    public var `startLine`: UInt32
+    public var `endLine`: UInt32
+    public var `text`: String
+    public var `sceneId`: Id?
+    public init(`elementId`: Id, `kind`: ScreenplayElementKind, `startLine`: UInt32, `endLine`: UInt32, `text`: String, `sceneId`: Id? = nil) {
+        self.`elementId` = `elementId`
+        self.`kind` = `kind`
+        self.`startLine` = `startLine`
+        self.`endLine` = `endLine`
+        self.`text` = `text`
+        self.`sceneId` = `sceneId`
+    }
+}
+
+public struct ScreenplayScene: Codable, Sendable {
+    public var `sceneId`: Id
+    public var `ordinal`: UInt32
+    public var `heading`: String
+    public var `line`: UInt32
+    public var `referenceImage`: String?
+    public var `caption`: String?
+    public var `promptIdea`: String?
+    public var `linkedBeatIds`: [Id]
+    public init(`sceneId`: Id, `ordinal`: UInt32, `heading`: String, `line`: UInt32, `referenceImage`: String? = nil, `caption`: String? = nil, `promptIdea`: String? = nil, `linkedBeatIds`: [Id]) {
+        self.`sceneId` = `sceneId`
+        self.`ordinal` = `ordinal`
+        self.`heading` = `heading`
+        self.`line` = `line`
+        self.`referenceImage` = `referenceImage`
+        self.`caption` = `caption`
+        self.`promptIdea` = `promptIdea`
+        self.`linkedBeatIds` = `linkedBeatIds`
+    }
+}
+
+public struct WritingVariant: Codable, Sendable {
+    public var `variantId`: Id
+    public var `text`: String
+    public var `author`: FileAuthor
+    public init(`variantId`: Id, `text`: String, `author`: FileAuthor) {
+        self.`variantId` = `variantId`
+        self.`text` = `text`
+        self.`author` = `author`
+    }
+}
+
+public struct WritingLineVariants: Codable, Sendable {
+    public var `lineId`: Id
+    public var `line`: UInt32
+    public var `alternates`: [WritingVariant]
+    public var `selectedIndex`: UInt32
+    public init(`lineId`: Id, `line`: UInt32, `alternates`: [WritingVariant], `selectedIndex`: UInt32) {
+        self.`lineId` = `lineId`
+        self.`line` = `line`
+        self.`alternates` = `alternates`
+        self.`selectedIndex` = `selectedIndex`
+    }
+}
+
+public struct BeatCard: Codable, Sendable {
+    public var `beatId`: Id
+    public var `title`: String
+    public var `body`: String
+    public var `category`: BeatCategory
+    public var `order`: UInt32
+    public var `sceneId`: Id?
+    public init(`beatId`: Id, `title`: String, `body`: String, `category`: BeatCategory, `order`: UInt32, `sceneId`: Id? = nil) {
+        self.`beatId` = `beatId`
+        self.`title` = `title`
+        self.`body` = `body`
+        self.`category` = `category`
+        self.`order` = `order`
+        self.`sceneId` = `sceneId`
+    }
+}
+
+public struct WritingSectionListParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `section`: WritingSection
+    public var `cursor`: Id?
+    public var `limit`: UInt32
+    public init(`workspaceId`: Id, `section`: WritingSection, `cursor`: Id? = nil, `limit`: UInt32) {
+        self.`workspaceId` = `workspaceId`
+        self.`section` = `section`
+        self.`cursor` = `cursor`
+        self.`limit` = `limit`
+    }
+}
+
+public struct WritingSectionListResult: Codable, Sendable {
+    public var `entries`: [WritingSectionEntry]
+    public var `nextCursor`: Id?
+    public init(`entries`: [WritingSectionEntry], `nextCursor`: Id? = nil) {
+        self.`entries` = `entries`
+        self.`nextCursor` = `nextCursor`
+    }
+}
+
+public struct WritingDocumentCreateParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `section`: WritingSection
+    public var `title`: String
+    public var `relativeFolder`: String?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `section`: WritingSection, `title`: String, `relativeFolder`: String? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`section` = `section`
+        self.`title` = `title`
+        self.`relativeFolder` = `relativeFolder`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingDocumentCreateResult: Codable, Sendable {
+    public var `document`: WritingDocument
+    public var `pane`: Pane
+    public var `viewport`: FileReadResult
+    public init(`document`: WritingDocument, `pane`: Pane, `viewport`: FileReadResult) {
+        self.`document` = `document`
+        self.`pane` = `pane`
+        self.`viewport` = `viewport`
+    }
+}
+
+public struct WritingDocumentOpenParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `kind`: WritingKind
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `path`: String, `kind`: WritingKind, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`kind` = `kind`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingDocumentOpenResult: Codable, Sendable {
+    public var `document`: WritingDocument
+    public var `pane`: Pane
+    public var `viewport`: FileReadResult
+    public init(`document`: WritingDocument, `pane`: Pane, `viewport`: FileReadResult) {
+        self.`document` = `document`
+        self.`pane` = `pane`
+        self.`viewport` = `viewport`
+    }
+}
+
+public struct WritingStructureParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public init(`fileId`: Id, `revision`: Decimal) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+    }
+}
+
+public struct WritingStructureResult: Codable, Sendable {
+    public var `document`: WritingDocument
+    public var `slides`: [WritingSlide]
+    public var `scenes`: [ScreenplayScene]
+    public var `elements`: [ScreenplayElement]
+    public var `variants`: [WritingLineVariants]
+    public var `beats`: [BeatCard]
+    public var `truncated`: Bool
+    public init(`document`: WritingDocument, `slides`: [WritingSlide], `scenes`: [ScreenplayScene], `elements`: [ScreenplayElement], `variants`: [WritingLineVariants], `beats`: [BeatCard], `truncated`: Bool) {
+        self.`document` = `document`
+        self.`slides` = `slides`
+        self.`scenes` = `scenes`
+        self.`elements` = `elements`
+        self.`variants` = `variants`
+        self.`beats` = `beats`
+        self.`truncated` = `truncated`
+    }
+}
+
+public struct WritingFormatParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `range`: TextRange
+    public var `kind`: WritingFormatKind
+    public var `value`: String?
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `range`: TextRange, `kind`: WritingFormatKind, `value`: String? = nil, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`range` = `range`
+        self.`kind` = `kind`
+        self.`value` = `value`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingFormatResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public init(`file`: FileDocument) {
+        self.`file` = `file`
+    }
+}
+
+public struct WritingPreferencesParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `font`: WritingFont?
+    public var `focusMode`: Bool?
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `font`: WritingFont? = nil, `focusMode`: Bool? = nil, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`font` = `font`
+        self.`focusMode` = `focusMode`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingPreferencesResult: Codable, Sendable {
+    public var `document`: WritingDocument
+    public init(`document`: WritingDocument) {
+        self.`document` = `document`
+    }
+}
+
+public struct WritingVariantRequestParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `lineId`: Id
+    public var `baseRevision`: Decimal
+    public var `agentPaneId`: Id
+    public var `instruction`: String?
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `lineId`: Id, `baseRevision`: Decimal, `agentPaneId`: Id, `instruction`: String? = nil, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`lineId` = `lineId`
+        self.`baseRevision` = `baseRevision`
+        self.`agentPaneId` = `agentPaneId`
+        self.`instruction` = `instruction`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingVariantRequestResult: Codable, Sendable {
+    public var `requestId`: Id
+    public var `delivered`: Bool
+    public init(`requestId`: Id, `delivered`: Bool) {
+        self.`requestId` = `requestId`
+        self.`delivered` = `delivered`
+    }
+}
+
+public struct WritingVariantAddParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `lineId`: Id
+    public var `baseRevision`: Decimal
+    public var `text`: String
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `lineId`: Id, `baseRevision`: Decimal, `text`: String, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`lineId` = `lineId`
+        self.`baseRevision` = `baseRevision`
+        self.`text` = `text`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingVariantSelectParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `lineId`: Id
+    public var `variantId`: Id
+    public var `baseRevision`: Decimal
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `lineId`: Id, `variantId`: Id, `baseRevision`: Decimal, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`lineId` = `lineId`
+        self.`variantId` = `variantId`
+        self.`baseRevision` = `baseRevision`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingVariantRemoveParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `lineId`: Id
+    public var `variantId`: Id
+    public var `baseRevision`: Decimal
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `lineId`: Id, `variantId`: Id, `baseRevision`: Decimal, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`lineId` = `lineId`
+        self.`variantId` = `variantId`
+        self.`baseRevision` = `baseRevision`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingVariantResult: Codable, Sendable {
+    public var `document`: WritingDocument
+    public var `variants`: WritingLineVariants
+    public init(`document`: WritingDocument, `variants`: WritingLineVariants) {
+        self.`document` = `document`
+        self.`variants` = `variants`
+    }
+}
+
+public struct WritingBeatListParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public init(`fileId`: Id, `revision`: Decimal) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+    }
+}
+
+public struct WritingBeatListResult: Codable, Sendable {
+    public var `beats`: [BeatCard]
+    public init(`beats`: [BeatCard]) {
+        self.`beats` = `beats`
+    }
+}
+
+public struct WritingBeatPutParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `beatId`: Id?
+    public var `title`: String
+    public var `body`: String
+    public var `category`: BeatCategory
+    public var `order`: UInt32
+    public var `sceneId`: Id?
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `beatId`: Id? = nil, `title`: String, `body`: String, `category`: BeatCategory, `order`: UInt32, `sceneId`: Id? = nil, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`beatId` = `beatId`
+        self.`title` = `title`
+        self.`body` = `body`
+        self.`category` = `category`
+        self.`order` = `order`
+        self.`sceneId` = `sceneId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingBeatDeleteParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `beatId`: Id
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `beatId`: Id, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`beatId` = `beatId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WritingBeatResult: Codable, Sendable {
+    public var `document`: WritingDocument
+    public var `beat`: BeatCard?
+    public init(`document`: WritingDocument, `beat`: BeatCard? = nil) {
+        self.`document` = `document`
+        self.`beat` = `beat`
+    }
+}
+
+public struct WritingChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `fileId`: Id
+    public var `paneId`: Id
+    public var `revision`: Decimal
+    public var `sidecarRevision`: Decimal
+    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `paneId`: Id, `revision`: Decimal, `sidecarRevision`: Decimal) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`fileId` = `fileId`
+        self.`paneId` = `paneId`
+        self.`revision` = `revision`
+        self.`sidecarRevision` = `sidecarRevision`
+    }
+}
+
 public enum EventName: String, Codable, Sendable, CaseIterable {
     case authChallenge = "auth.challenge"
     case stateSnapshotPart = "state.snapshot_part"
@@ -4963,6 +5465,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case webNavigated = "web.navigated"
     case webConsoleCounts = "web.console_counts"
     case webAgentDriving = "web.agent_driving"
+    case writingChanged = "writing.changed"
 }
 
 public struct EventDescriptor: Sendable {
@@ -5038,4 +5541,5 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .webNavigated: EventDescriptor(paramsType: "WebNavigatedEvent", durable: true),
     .webConsoleCounts: EventDescriptor(paramsType: "WebConsoleCountsEvent", durable: false),
     .webAgentDriving: EventDescriptor(paramsType: "WebAgentDrivingEvent", durable: false),
+    .writingChanged: EventDescriptor(paramsType: "WritingChangedEvent", durable: true),
 ]

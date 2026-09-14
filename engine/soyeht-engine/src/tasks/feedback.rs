@@ -789,6 +789,8 @@ mod tests {
             title: None,
             viewport: None,
             incognito: None,
+            writing_kind: None,
+            writing_section: None,
             web_session: None,
         };
         let saved = StoredPane {

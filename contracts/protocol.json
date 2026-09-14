@@ -41,7 +41,8 @@
         "terminal",
         "agent",
         "editor",
-        "web"
+        "web",
+        "writing"
       ]
     },
     "PaneState": {
@@ -80,7 +81,8 @@
         "devices",
         "capabilities",
         "streams",
-        "files"
+        "files",
+        "writing"
       ]
     },
     "ErrorKind": {
@@ -114,7 +116,13 @@
         "stale_reference",
         "human_took_over",
         "web_host_unavailable",
-        "navigation_refused"
+        "navigation_refused",
+        "writing_kind_refused",
+        "writing_limit_exceeded",
+        "writing_sidecar_conflict",
+        "writing_line_not_found",
+        "writing_scene_not_found",
+        "writing_section_refused"
       ]
     },
     "RpcError": {
@@ -280,6 +288,12 @@
         },
         "webSession": {
           "$ref": "#/$defs/WebSessionState"
+        },
+        "writingKind": {
+          "$ref": "#/$defs/WritingKind"
+        },
+        "writingSection": {
+          "$ref": "#/$defs/WritingSection"
         }
       },
       "required": [
@@ -753,6 +767,17 @@
         },
         "incognito": {
           "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "writingKind": {
+          "$ref": "#/$defs/WritingKind"
+        },
+        "writingSection": {
+          "$ref": "#/$defs/WritingSection"
         }
       },
       "required": [
@@ -8989,6 +9014,945 @@
         "web_session",
         "web_evaluate"
       ]
+    },
+    "WritingKind": {
+      "type": "string",
+      "enum": [
+        "text",
+        "presentation",
+        "screenplay"
+      ]
+    },
+    "WritingSection": {
+      "type": "string",
+      "enum": [
+        "texts",
+        "presentations",
+        "screenplays"
+      ]
+    },
+    "WritingFont": {
+      "type": "string",
+      "enum": [
+        "reading_serif",
+        "classic_serif",
+        "sans"
+      ]
+    },
+    "WritingFormatKind": {
+      "type": "string",
+      "enum": [
+        "heading_1",
+        "heading_2",
+        "heading_3",
+        "bold",
+        "italic",
+        "bullet_list",
+        "numbered_list",
+        "quote",
+        "link",
+        "image"
+      ]
+    },
+    "ScreenplayElementKind": {
+      "type": "string",
+      "enum": [
+        "scene_heading",
+        "action",
+        "character",
+        "parenthetical",
+        "dialogue",
+        "transition",
+        "shot"
+      ]
+    },
+    "BeatCategory": {
+      "type": "string",
+      "enum": [
+        "story",
+        "character",
+        "setting",
+        "research"
+      ]
+    },
+    "WritingDocument": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "kind": {
+          "$ref": "#/$defs/WritingKind"
+        },
+        "section": {
+          "$ref": "#/$defs/WritingSection"
+        },
+        "sidecarRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "font": {
+          "$ref": "#/$defs/WritingFont"
+        },
+        "focusMode": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file",
+        "kind",
+        "section",
+        "sidecarRevision",
+        "font",
+        "focusMode"
+      ],
+      "additionalProperties": true
+    },
+    "WritingSectionEntry": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kind": {
+          "$ref": "#/$defs/WritingKind"
+        },
+        "section": {
+          "$ref": "#/$defs/WritingSection"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "modifiedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "byteCount": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "path",
+        "title",
+        "kind",
+        "section",
+        "modifiedAt",
+        "byteCount"
+      ],
+      "additionalProperties": true
+    },
+    "WritingSlide": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "heading": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "imagePaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": [
+        "index",
+        "startLine",
+        "endLine",
+        "heading",
+        "notes",
+        "imagePaths"
+      ],
+      "additionalProperties": true
+    },
+    "ScreenplayElement": {
+      "type": "object",
+      "properties": {
+        "elementId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/ScreenplayElementKind"
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "sceneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "elementId",
+        "kind",
+        "startLine",
+        "endLine",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "ScreenplayScene": {
+      "type": "object",
+      "properties": {
+        "sceneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "heading": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "referenceImage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "promptIdea": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "linkedBeatIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        }
+      },
+      "required": [
+        "sceneId",
+        "ordinal",
+        "heading",
+        "line",
+        "linkedBeatIds"
+      ],
+      "additionalProperties": true
+    },
+    "WritingVariant": {
+      "type": "object",
+      "properties": {
+        "variantId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "author": {
+          "$ref": "#/$defs/FileAuthor"
+        }
+      },
+      "required": [
+        "variantId",
+        "text",
+        "author"
+      ],
+      "additionalProperties": true
+    },
+    "WritingLineVariants": {
+      "type": "object",
+      "properties": {
+        "lineId": {
+          "$ref": "#/$defs/Id"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "alternates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WritingVariant"
+          }
+        },
+        "selectedIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "lineId",
+        "line",
+        "alternates",
+        "selectedIndex"
+      ],
+      "additionalProperties": true
+    },
+    "BeatCard": {
+      "type": "object",
+      "properties": {
+        "beatId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "category": {
+          "$ref": "#/$defs/BeatCategory"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "sceneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "beatId",
+        "title",
+        "body",
+        "category",
+        "order"
+      ],
+      "additionalProperties": true
+    },
+    "WritingSectionListParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "section": {
+          "$ref": "#/$defs/WritingSection"
+        },
+        "cursor": {
+          "$ref": "#/$defs/Id"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": [
+        "workspaceId",
+        "section",
+        "limit"
+      ],
+      "additionalProperties": true
+    },
+    "WritingSectionListResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WritingSectionEntry"
+          }
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "WritingDocumentCreateParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "section": {
+          "$ref": "#/$defs/WritingSection"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "relativeFolder": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "section",
+        "title",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingDocumentCreateResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/WritingDocument"
+        },
+        "pane": {
+          "$ref": "#/$defs/Pane"
+        },
+        "viewport": {
+          "$ref": "#/$defs/FileReadResult"
+        }
+      },
+      "required": [
+        "document",
+        "pane",
+        "viewport"
+      ],
+      "additionalProperties": true
+    },
+    "WritingDocumentOpenParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "kind": {
+          "$ref": "#/$defs/WritingKind"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "kind",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingDocumentOpenResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/WritingDocument"
+        },
+        "pane": {
+          "$ref": "#/$defs/Pane"
+        },
+        "viewport": {
+          "$ref": "#/$defs/FileReadResult"
+        }
+      },
+      "required": [
+        "document",
+        "pane",
+        "viewport"
+      ],
+      "additionalProperties": true
+    },
+    "WritingStructureParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "fileId",
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    "WritingStructureResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/WritingDocument"
+        },
+        "slides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WritingSlide"
+          }
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScreenplayScene"
+          }
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScreenplayElement"
+          }
+        },
+        "variants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WritingLineVariants"
+          }
+        },
+        "beats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BeatCard"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "document",
+        "slides",
+        "scenes",
+        "elements",
+        "variants",
+        "beats",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "WritingFormatParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "kind": {
+          "$ref": "#/$defs/WritingFormatKind"
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "range",
+        "kind",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingFormatResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "additionalProperties": true
+    },
+    "WritingPreferencesParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "font": {
+          "$ref": "#/$defs/WritingFont"
+        },
+        "focusMode": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingPreferencesResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/WritingDocument"
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "additionalProperties": true
+    },
+    "WritingVariantRequestParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "lineId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "agentPaneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "instruction": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "lineId",
+        "baseRevision",
+        "agentPaneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingVariantRequestResult": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/Id"
+        },
+        "delivered": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestId",
+        "delivered"
+      ],
+      "additionalProperties": true
+    },
+    "WritingVariantAddParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "lineId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "lineId",
+        "baseRevision",
+        "text",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingVariantSelectParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "lineId": {
+          "$ref": "#/$defs/Id"
+        },
+        "variantId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "lineId",
+        "variantId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingVariantRemoveParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "lineId": {
+          "$ref": "#/$defs/Id"
+        },
+        "variantId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "lineId",
+        "variantId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingVariantResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/WritingDocument"
+        },
+        "variants": {
+          "$ref": "#/$defs/WritingLineVariants"
+        }
+      },
+      "required": [
+        "document",
+        "variants"
+      ],
+      "additionalProperties": true
+    },
+    "WritingBeatListParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "fileId",
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    "WritingBeatListResult": {
+      "type": "object",
+      "properties": {
+        "beats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BeatCard"
+          }
+        }
+      },
+      "required": [
+        "beats"
+      ],
+      "additionalProperties": true
+    },
+    "WritingBeatPutParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "beatId": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "category": {
+          "$ref": "#/$defs/BeatCategory"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "sceneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "title",
+        "body",
+        "category",
+        "order",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingBeatDeleteParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "beatId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "beatId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WritingBeatResult": {
+      "type": "object",
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/WritingDocument"
+        },
+        "beat": {
+          "$ref": "#/$defs/BeatCard"
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "additionalProperties": true
+    },
+    "WritingChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "sidecarRevision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "fileId",
+        "paneId",
+        "revision",
+        "sidecarRevision"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -9874,6 +10838,123 @@
         "$ref": "#/$defs/WebHostConsoleCountsResult"
       },
       "mutation": true
+    },
+    "writing.section.list": {
+      "params": {
+        "$ref": "#/$defs/WritingSectionListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingSectionListResult"
+      },
+      "mutation": false
+    },
+    "writing.document.create": {
+      "params": {
+        "$ref": "#/$defs/WritingDocumentCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingDocumentCreateResult"
+      },
+      "mutation": true
+    },
+    "writing.document.open": {
+      "params": {
+        "$ref": "#/$defs/WritingDocumentOpenParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingDocumentOpenResult"
+      },
+      "mutation": true
+    },
+    "writing.structure": {
+      "params": {
+        "$ref": "#/$defs/WritingStructureParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingStructureResult"
+      },
+      "mutation": false
+    },
+    "writing.format": {
+      "params": {
+        "$ref": "#/$defs/WritingFormatParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingFormatResult"
+      },
+      "mutation": true
+    },
+    "writing.preferences.set": {
+      "params": {
+        "$ref": "#/$defs/WritingPreferencesParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingPreferencesResult"
+      },
+      "mutation": true
+    },
+    "writing.variant.request": {
+      "params": {
+        "$ref": "#/$defs/WritingVariantRequestParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingVariantRequestResult"
+      },
+      "mutation": true
+    },
+    "writing.variant.add": {
+      "params": {
+        "$ref": "#/$defs/WritingVariantAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingVariantResult"
+      },
+      "mutation": true
+    },
+    "writing.variant.select": {
+      "params": {
+        "$ref": "#/$defs/WritingVariantSelectParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingVariantResult"
+      },
+      "mutation": true
+    },
+    "writing.variant.remove": {
+      "params": {
+        "$ref": "#/$defs/WritingVariantRemoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingVariantResult"
+      },
+      "mutation": true
+    },
+    "writing.beat.list": {
+      "params": {
+        "$ref": "#/$defs/WritingBeatListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingBeatListResult"
+      },
+      "mutation": false
+    },
+    "writing.beat.put": {
+      "params": {
+        "$ref": "#/$defs/WritingBeatPutParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingBeatResult"
+      },
+      "mutation": true
+    },
+    "writing.beat.delete": {
+      "params": {
+        "$ref": "#/$defs/WritingBeatDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingBeatResult"
+      },
+      "mutation": true
     }
   },
   "x-events": {
@@ -10254,6 +11335,12 @@
         "$ref": "#/$defs/WebAgentDrivingEvent"
       },
       "durable": false
+    },
+    "writing.changed": {
+      "params": {
+        "$ref": "#/$defs/WritingChangedEvent"
+      },
+      "durable": true
     }
   },
   "x-framing": {
@@ -10341,7 +11428,18 @@
     "webOuterHtmlBytes": 2048,
     "webPickCropWidth": 640,
     "webCommandWaiters": 64,
-    "portScanBytes": 1048576
+    "portScanBytes": 1048576,
+    "writingSectionEntries": 500,
+    "writingSlides": 500,
+    "writingScenes": 1000,
+    "writingElements": 10000,
+    "writingBeatCards": 500,
+    "writingSceneLinks": 1000,
+    "writingVariantsPerLine": 12,
+    "writingVariantBytes": 16384,
+    "writingSuggestionBytes": 65536,
+    "writingSidecarBytes": 1048576,
+    "writingImageBytes": 2097152
   },
   "x-settings": {
     "terminal.defaultCols": {
@@ -10412,6 +11510,12 @@
     "stale_reference": -32025,
     "human_took_over": -32026,
     "web_host_unavailable": -32027,
-    "navigation_refused": -32028
+    "navigation_refused": -32028,
+    "writing_kind_refused": -32029,
+    "writing_limit_exceeded": -32030,
+    "writing_sidecar_conflict": -32031,
+    "writing_line_not_found": -32032,
+    "writing_scene_not_found": -32033,
+    "writing_section_refused": -32034
   }
 }

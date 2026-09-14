@@ -164,6 +164,8 @@ fn web_pane(
             DEFAULT_ZOOM_PERCENT,
         )?),
         incognito: Some(incognito),
+        writing_kind: None,
+        writing_section: None,
         web_session: Some(if incognito {
             WebSessionState::Incognito
         } else {

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6e36ed94149695bac6694bf3d4201eb951cc7d0fedd3fa6e47e970f9799bbc64). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -11,15 +11,15 @@ export type Role = "human_local" | "human_device" | "agent" | "chief";
 
 export type AgentPaneRole = "worker" | "chief";
 
-export type PaneMode = "terminal" | "agent" | "editor" | "web";
+export type PaneMode = "terminal" | "agent" | "editor" | "web" | "writing";
 
 export type PaneState = "starting" | "working" | "idle" | "waiting_for_you" | "cancelling" | "no_signal" | "recovering" | "dead" | "unknown";
 
 export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
-export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files";
+export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files" | "writing";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused";
 
 export interface RpcError {
   "code": number;
@@ -69,6 +69,8 @@ export interface Pane {
   "viewport"?: WebViewport;
   "incognito"?: boolean;
   "webSession"?: WebSessionState;
+  "writingKind"?: WritingKind;
+  "writingSection"?: WritingSection;
 }
 
 export interface Device {
@@ -208,6 +210,9 @@ export interface PaneCreateParams {
   "permission"?: PermissionMode;
   "url"?: string;
   "incognito"?: boolean;
+  "path"?: string;
+  "writingKind"?: WritingKind;
+  "writingSection"?: WritingSection;
 }
 
 export interface PaneCreateResult {
@@ -2482,6 +2487,252 @@ export interface ServersLocalChangedEvent {
 
 export type PermissionRequestKind = "agent" | "web_session" | "web_evaluate";
 
+export type WritingKind = "text" | "presentation" | "screenplay";
+
+export type WritingSection = "texts" | "presentations" | "screenplays";
+
+export type WritingFont = "reading_serif" | "classic_serif" | "sans";
+
+export type WritingFormatKind = "heading_1" | "heading_2" | "heading_3" | "bold" | "italic" | "bullet_list" | "numbered_list" | "quote" | "link" | "image";
+
+export type ScreenplayElementKind = "scene_heading" | "action" | "character" | "parenthetical" | "dialogue" | "transition" | "shot";
+
+export type BeatCategory = "story" | "character" | "setting" | "research";
+
+export interface WritingDocument {
+  "file": FileDocument;
+  "kind": WritingKind;
+  "section": WritingSection;
+  "sidecarRevision": Decimal;
+  "font": WritingFont;
+  "focusMode": boolean;
+}
+
+export interface WritingSectionEntry {
+  "path": string;
+  "title": string;
+  "kind": WritingKind;
+  "section": WritingSection;
+  "fileId"?: Id;
+  "modifiedAt": string;
+  "byteCount": Decimal;
+}
+
+export interface WritingSlide {
+  "index": number;
+  "startLine": number;
+  "endLine": number;
+  "heading": string;
+  "notes": string;
+  "imagePaths": Array<string>;
+}
+
+export interface ScreenplayElement {
+  "elementId": Id;
+  "kind": ScreenplayElementKind;
+  "startLine": number;
+  "endLine": number;
+  "text": string;
+  "sceneId"?: Id;
+}
+
+export interface ScreenplayScene {
+  "sceneId": Id;
+  "ordinal": number;
+  "heading": string;
+  "line": number;
+  "referenceImage"?: string;
+  "caption"?: string;
+  "promptIdea"?: string;
+  "linkedBeatIds": Array<Id>;
+}
+
+export interface WritingVariant {
+  "variantId": Id;
+  "text": string;
+  "author": FileAuthor;
+}
+
+export interface WritingLineVariants {
+  "lineId": Id;
+  "line": number;
+  "alternates": Array<WritingVariant>;
+  "selectedIndex": number;
+}
+
+export interface BeatCard {
+  "beatId": Id;
+  "title": string;
+  "body": string;
+  "category": BeatCategory;
+  "order": number;
+  "sceneId"?: Id;
+}
+
+export interface WritingSectionListParams {
+  "workspaceId": Id;
+  "section": WritingSection;
+  "cursor"?: Id;
+  "limit": number;
+}
+
+export interface WritingSectionListResult {
+  "entries": Array<WritingSectionEntry>;
+  "nextCursor"?: Id;
+}
+
+export interface WritingDocumentCreateParams {
+  "workspaceId": Id;
+  "section": WritingSection;
+  "title": string;
+  "relativeFolder"?: string;
+  "idempotencyKey": Id;
+}
+
+export interface WritingDocumentCreateResult {
+  "document": WritingDocument;
+  "pane": Pane;
+  "viewport": FileReadResult;
+}
+
+export interface WritingDocumentOpenParams {
+  "workspaceId": Id;
+  "path": string;
+  "kind": WritingKind;
+  "idempotencyKey": Id;
+}
+
+export interface WritingDocumentOpenResult {
+  "document": WritingDocument;
+  "pane": Pane;
+  "viewport": FileReadResult;
+}
+
+export interface WritingStructureParams {
+  "fileId": Id;
+  "revision": Decimal;
+}
+
+export interface WritingStructureResult {
+  "document": WritingDocument;
+  "slides": Array<WritingSlide>;
+  "scenes": Array<ScreenplayScene>;
+  "elements": Array<ScreenplayElement>;
+  "variants": Array<WritingLineVariants>;
+  "beats": Array<BeatCard>;
+  "truncated": boolean;
+}
+
+export interface WritingFormatParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "range": TextRange;
+  "kind": WritingFormatKind;
+  "value"?: string;
+  "idempotencyKey": Id;
+}
+
+export interface WritingFormatResult {
+  "file": FileDocument;
+}
+
+export interface WritingPreferencesParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "font"?: WritingFont;
+  "focusMode"?: boolean;
+  "idempotencyKey": Id;
+}
+
+export interface WritingPreferencesResult {
+  "document": WritingDocument;
+}
+
+export interface WritingVariantRequestParams {
+  "fileId": Id;
+  "lineId": Id;
+  "baseRevision": Decimal;
+  "agentPaneId": Id;
+  "instruction"?: string;
+  "idempotencyKey": Id;
+}
+
+export interface WritingVariantRequestResult {
+  "requestId": Id;
+  "delivered": boolean;
+}
+
+export interface WritingVariantAddParams {
+  "fileId": Id;
+  "lineId": Id;
+  "baseRevision": Decimal;
+  "text": string;
+  "idempotencyKey": Id;
+}
+
+export interface WritingVariantSelectParams {
+  "fileId": Id;
+  "lineId": Id;
+  "variantId": Id;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface WritingVariantRemoveParams {
+  "fileId": Id;
+  "lineId": Id;
+  "variantId": Id;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface WritingVariantResult {
+  "document": WritingDocument;
+  "variants": WritingLineVariants;
+}
+
+export interface WritingBeatListParams {
+  "fileId": Id;
+  "revision": Decimal;
+}
+
+export interface WritingBeatListResult {
+  "beats": Array<BeatCard>;
+}
+
+export interface WritingBeatPutParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "beatId"?: Id;
+  "title": string;
+  "body": string;
+  "category": BeatCategory;
+  "order": number;
+  "sceneId"?: Id;
+  "idempotencyKey": Id;
+}
+
+export interface WritingBeatDeleteParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "beatId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface WritingBeatResult {
+  "document": WritingDocument;
+  "beat"?: BeatCard;
+}
+
+export interface WritingChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "fileId": Id;
+  "paneId": Id;
+  "revision": Decimal;
+  "sidecarRevision": Decimal;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -2581,6 +2832,19 @@ export interface Methods {
   "web.command": { params: WebCommandParams; result: WebCommandResult };
   "web.host.navigated": { params: WebHostNavigatedParams; result: WebHostNavigatedResult };
   "web.host.console_counts": { params: WebHostConsoleCountsParams; result: WebHostConsoleCountsResult };
+  "writing.section.list": { params: WritingSectionListParams; result: WritingSectionListResult };
+  "writing.document.create": { params: WritingDocumentCreateParams; result: WritingDocumentCreateResult };
+  "writing.document.open": { params: WritingDocumentOpenParams; result: WritingDocumentOpenResult };
+  "writing.structure": { params: WritingStructureParams; result: WritingStructureResult };
+  "writing.format": { params: WritingFormatParams; result: WritingFormatResult };
+  "writing.preferences.set": { params: WritingPreferencesParams; result: WritingPreferencesResult };
+  "writing.variant.request": { params: WritingVariantRequestParams; result: WritingVariantRequestResult };
+  "writing.variant.add": { params: WritingVariantAddParams; result: WritingVariantResult };
+  "writing.variant.select": { params: WritingVariantSelectParams; result: WritingVariantResult };
+  "writing.variant.remove": { params: WritingVariantRemoveParams; result: WritingVariantResult };
+  "writing.beat.list": { params: WritingBeatListParams; result: WritingBeatListResult };
+  "writing.beat.put": { params: WritingBeatPutParams; result: WritingBeatResult };
+  "writing.beat.delete": { params: WritingBeatDeleteParams; result: WritingBeatResult };
 }
 
 export interface Events {
@@ -2647,6 +2911,7 @@ export interface Events {
   "web.navigated": WebNavigatedEvent;
   "web.console_counts": WebConsoleCountsEvent;
   "web.agent_driving": WebAgentDrivingEvent;
+  "writing.changed": WritingChangedEvent;
 }
 export type EventName = keyof Events;
 export interface EventDescriptor {
@@ -2717,4 +2982,5 @@ export const eventRegistry = {
   "web.navigated": { paramsType: "WebNavigatedEvent", durable: true },
   "web.console_counts": { paramsType: "WebConsoleCountsEvent", durable: false },
   "web.agent_driving": { paramsType: "WebAgentDrivingEvent", durable: false },
+  "writing.changed": { paramsType: "WritingChangedEvent", durable: true },
 } as const satisfies Record<EventName, EventDescriptor>;
