@@ -13,3 +13,4 @@ pub mod tasks;
 pub mod test_support;
 pub mod usage;
 pub mod web;
+pub mod writing;

@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 19;
+pub const SCHEMA_VERSION: u32 = 20;
 
 #[derive(Debug)]
 pub enum Error {
@@ -89,6 +89,8 @@ pub enum Error {
     InvalidEditorAgentReview,
     InvalidWebSessionGrant,
     InvalidWebPermission,
+    InvalidWritingDocument,
+    InvalidWritingSidecar,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -187,6 +189,8 @@ impl fmt::Display for Error {
             Self::InvalidEditorAgentReview => f.write_str("invalid editor agent review"),
             Self::InvalidWebSessionGrant => f.write_str("invalid web session grant"),
             Self::InvalidWebPermission => f.write_str("invalid web permission request"),
+            Self::InvalidWritingDocument => f.write_str("invalid writing document"),
+            Self::InvalidWritingSidecar => f.write_str("invalid writing sidecar"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -350,6 +354,9 @@ impl Store {
                 tx.execute_batch(include_str!(
                     "../migrations/019-agent-prompt-attachments.sql"
                 ))?;
+            }
+            if version < 20 {
+                tx.execute_batch(include_str!("../migrations/020-writing-documents.sql"))?;
             }
             tx.commit()?;
         }

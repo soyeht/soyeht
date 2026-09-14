@@ -8,7 +8,7 @@ use soyeht_protocol::{
 };
 use soyeht_store::{
     agents::{self, NativeRequest, Outgoing},
-    database::{Error, Store},
+    database::{Error, SCHEMA_VERSION, Store},
     domain::PaneRecord,
 };
 use std::{fs, path::PathBuf};
@@ -456,7 +456,7 @@ fn migration_from_populated_v18_preserves_the_queue_and_adds_prompt_images() {
             .connection()
             .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
             .unwrap(),
-        19
+        SCHEMA_VERSION
     );
     let (prompt, attachment) = prompt_with_image();
     store
