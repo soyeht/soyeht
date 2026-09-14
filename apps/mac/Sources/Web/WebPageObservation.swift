@@ -74,6 +74,14 @@ private struct PageObservationMessage: Decodable {
     ])
   }
 
+  func consoleEntries() -> [WebConsoleEntry] {
+    (try? buffer.consolePage(since: nil).values) ?? []
+  }
+
+  func networkEntries() -> [WebNetworkEntry] {
+    (try? buffer.networkPage(since: nil).values) ?? []
+  }
+
   func wait(args: JsonValue, timeoutMs: UInt32) async throws -> Bool {
     guard let webView else {
       throw ClientFailure.webHost(.internal_error, "The web pane is unavailable.")

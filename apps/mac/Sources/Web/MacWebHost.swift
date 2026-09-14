@@ -128,6 +128,10 @@ import WebKit
 
   var zoomPercent: UInt32 { UInt32((webView.pageZoom * 100).rounded()) }
 
+  func consoleEntries() -> [WebConsoleEntry] { pageObservation.consoleEntries() }
+
+  func networkEntries() -> [WebNetworkEntry] { pageObservation.networkEntries() }
+
   func setZoomPercent(_ percent: UInt32) {
     let bounded = min(200, max(50, percent))
     webView.pageZoom = Double(bounded) / 100

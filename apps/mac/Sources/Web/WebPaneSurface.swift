@@ -33,7 +33,7 @@ struct WebPaneSurface: View {
       }
       WebStatusBar(
         pane: pane, viewport: session.viewport ?? pane.viewport,
-        view: client.webPanes[pane.paneId],
+        view: client.webPanes[pane.paneId], session: session,
         servers: client.localServers)
     }
     .onChange(of: pane.url) { _, value in address = value ?? "" }
@@ -392,7 +392,9 @@ private struct WebStatusBar: View {
   let pane: Pane
   let viewport: WebViewport?
   let view: WebPaneView?
+  let session: MacWebSession
   let servers: [LocalServer]
+  @State private var observationsPresented = false
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -405,9 +407,20 @@ private struct WebStatusBar: View {
           .font(MacTheme.mono(MacTheme.TypeScale.micro))
       }
       Spacer(minLength: 0)
-      Image(systemName: "terminal").foregroundStyle(MacTheme.warning)
-      Text("console: \(view?.warnings ?? 0) warnings · \(view?.errors ?? 0) errors")
-        .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+      Button {
+        observationsPresented.toggle()
+      } label: {
+        HStack(spacing: MacTheme.Space.x6) {
+          Image(systemName: "terminal").foregroundStyle(MacTheme.warning)
+          Text("console: \(view?.warnings ?? 0) warnings · \(view?.errors ?? 0) errors")
+            .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+        }
+      }
+      .buttonStyle(.plain)
+      .help("Console and network activity")
+      .popover(isPresented: $observationsPresented) {
+        WebObservationPanel(session: session)
+      }
       Text(sessionLabel)
         .font(MacTheme.chrome(MacTheme.TypeScale.micro))
     }
@@ -429,6 +442,107 @@ private struct WebStatusBar: View {
     case .permission_required: "session: permission required"
     case .granted: "session: this Mac profile"
     case .incognito: "session: incognito"
+    }
+  }
+}
+
+private enum WebObservationSection: String, CaseIterable, Identifiable {
+  case console = "Console"
+  case network = "Network"
+  var id: Self { self }
+}
+
+private struct WebObservationPanel: View {
+  let session: MacWebSession
+  @State private var section = WebObservationSection.console
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+      Picker("Activity", selection: $section) {
+        ForEach(WebObservationSection.allCases) { Text($0.rawValue).tag($0) }
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      TimelineView(.periodic(from: .now, by: 1)) { _ in
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: MacTheme.Space.x8) {
+            if section == .console { consoleRows } else { networkRows }
+          }
+        }
+      }
+    }
+    .padding(MacTheme.Space.x12)
+    .frame(width: 480, height: 320)
+    .background(MacTheme.canvas)
+  }
+
+  @ViewBuilder private var consoleRows: some View {
+    let entries = session.consoleEntries().reversed()
+    if entries.isEmpty {
+      empty("No console messages")
+    } else {
+      ForEach(Array(entries), id: \.sequence) { entry in
+        VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+          HStack {
+            Text(entry.level.rawValue.uppercased())
+              .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold))
+              .foregroundStyle(consoleColor(entry.level))
+            Spacer()
+            Text(entry.at).font(MacTheme.mono(MacTheme.TypeScale.micro))
+          }
+          Text(entry.text)
+            .font(MacTheme.mono(MacTheme.TypeScale.small))
+            .foregroundStyle(MacTheme.ink)
+            .textSelection(.enabled)
+          Text(entry.source)
+            .font(MacTheme.mono(MacTheme.TypeScale.micro))
+            .foregroundStyle(MacTheme.muted)
+            .lineLimit(1)
+        }
+        .padding(MacTheme.Space.x8)
+        .neoWell(radius: MacTheme.Radius.compact)
+      }
+    }
+  }
+
+  @ViewBuilder private var networkRows: some View {
+    let entries = session.networkEntries().reversed()
+    if entries.isEmpty {
+      empty("No network requests")
+    } else {
+      ForEach(Array(entries), id: \.sequence) { entry in
+        VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+          HStack(spacing: MacTheme.Space.x8) {
+            Text(entry.method).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold))
+            Text(String(entry.status)).font(MacTheme.mono(MacTheme.TypeScale.micro))
+            Text("\(entry.durationMs) ms").font(MacTheme.mono(MacTheme.TypeScale.micro))
+            Spacer()
+            Text("\(entry.bytes) bytes").font(MacTheme.mono(MacTheme.TypeScale.micro))
+          }
+          Text(entry.url)
+            .font(MacTheme.mono(MacTheme.TypeScale.small))
+            .foregroundStyle(MacTheme.ink)
+            .lineLimit(2)
+            .textSelection(.enabled)
+        }
+        .padding(MacTheme.Space.x8)
+        .neoWell(radius: MacTheme.Radius.compact)
+      }
+    }
+  }
+
+  private func empty(_ title: String) -> some View {
+    Text(title)
+      .font(MacTheme.chrome(MacTheme.TypeScale.small))
+      .foregroundStyle(MacTheme.muted)
+      .frame(maxWidth: .infinity, minHeight: 220)
+  }
+
+  private func consoleColor(_ level: WebConsoleLevel) -> Color {
+    switch level {
+    case .debug, .info: MacTheme.secondary
+    case .warning: MacTheme.warning
+    case .error: MacTheme.danger
     }
   }
 }
