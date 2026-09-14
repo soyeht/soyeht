@@ -101,6 +101,10 @@ enum MacTheme {
     .custom("JetBrains Mono", size: size).weight(weight)
   }
 
+  static func screenplay(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    .custom("Courier Prime", size: size).weight(weight)
+  }
+
   static func prose(
     _ family: WritingFont, _ size: CGFloat, weight: Font.Weight = .regular
   ) -> Font {
@@ -116,6 +120,11 @@ enum MacTheme {
     let base =
       NSFont(name: "JetBrains Mono", size: size)
       ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    return bold ? NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask) : base
+  }
+
+  static func screenplayNSFont(_ size: CGFloat, bold: Bool = false) -> NSFont {
+    let base = NSFont(name: "Courier Prime", size: size) ?? monoNSFont(size)
     return bold ? NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask) : base
   }
 

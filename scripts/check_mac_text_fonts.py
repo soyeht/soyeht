@@ -12,6 +12,7 @@ APPROVED_FONT_NAMES = {
     "JetBrains Mono",
     "Newsreader",
     "Nunito",
+    "Courier Prime",
     "Times New Roman",
 }
 

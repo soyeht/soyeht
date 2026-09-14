@@ -625,6 +625,8 @@ private struct PaneCard: View {
         WritingTextPane(client: client, pane: pane)
       } else if pane.mode == .writing, pane.writingKind == .presentation {
         WritingPresentationPane(client: client, pane: pane)
+      } else if pane.mode == .writing, pane.writingKind == .screenplay {
+        WritingScreenplayPane(client: client, pane: pane)
       } else {
         VStack(spacing: MacTheme.Space.x8) {
           header
