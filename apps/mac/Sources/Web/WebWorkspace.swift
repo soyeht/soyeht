@@ -71,14 +71,19 @@ private struct WebEmptyState: View {
       .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
       .neoWell(radius: MacTheme.Radius.compact)
     } else {
-      ForEach(client.localServers, id: \.port) { server in
-        Button {
-          open("http://127.0.0.1:\(server.port)")
-        } label: {
-          LocalServerRow(server: server)
+      ScrollView {
+        LazyVStack(spacing: MacTheme.Space.x8) {
+          ForEach(client.localServers, id: \.port) { server in
+            Button {
+              open("http://127.0.0.1:\(server.port)")
+            } label: {
+              LocalServerRow(server: server)
+            }
+            .buttonStyle(.plain)
+          }
         }
-        .buttonStyle(.plain)
       }
+      .frame(maxHeight: 280)
     }
   }
 
