@@ -57,7 +57,7 @@ def receive(stream):
 
 
 class Client:
-    def __init__(self, data, name="acceptance"):
+    def __init__(self, data, name="acceptance", capabilities=None):
         self.stream = socket.socket(socket.AF_UNIX)
         self.stream.settimeout(10)
         try:
@@ -65,7 +65,10 @@ class Client:
             require(receive(self.stream).get("method") == "auth.challenge", "missing challenge")
             self.next = 0
             self.pending = []
-            self.welcome = self.call("hello", {"client": name, "clientVersion": "1", "protocolVersion": 1})
+            hello = {"client": name, "clientVersion": "1", "protocolVersion": 1}
+            if capabilities is not None:
+                hello["capabilities"] = capabilities
+            self.welcome = self.call("hello", hello)
         except BaseException:
             self.stream.close()
             raise
@@ -191,11 +194,11 @@ class Services:
     def stop_engine(self):
         subprocess.run(["launchctl", "bootout", self.target("engine")], check=True)
 
-    def client(self, name="acceptance"):
+    def client(self, name="acceptance", capabilities=None):
         deadline = time.monotonic() + 20
         while True:
             try:
-                client = Client(self.data, name)
+                client = Client(self.data, name, capabilities)
                 self.clients.append(client)
                 return client
             except (OSError, EOFError):
