@@ -623,6 +623,8 @@ private struct PaneCard: View {
         EditorPaneView(client: client, pane: pane)
       } else if pane.mode == .writing, pane.writingKind == .text {
         WritingTextPane(client: client, pane: pane)
+      } else if pane.mode == .writing, pane.writingKind == .presentation {
+        WritingPresentationPane(client: client, pane: pane)
       } else {
         VStack(spacing: MacTheme.Space.x8) {
           header
