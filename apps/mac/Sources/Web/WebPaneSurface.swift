@@ -2,6 +2,7 @@ import AppKit
 import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 struct WebPaneSurface: View {
@@ -22,7 +23,8 @@ struct WebPaneSurface: View {
     VStack(spacing: MacTheme.Space.x8) {
       WebNavigationBar(
         address: $address, pane: pane, session: session,
-        navigate: navigate, resize: resize, togglePicker: session.elementPicker.toggle)
+        navigate: navigate, resize: resize, togglePicker: session.elementPicker.toggle,
+        reportProblem: { client.problem = $0 })
       ZStack(alignment: .bottom) {
         viewportBody(session, viewport: session.viewport ?? pane.viewport)
         WebPickTray(
@@ -92,6 +94,11 @@ private struct WebNavigationBar: View {
   let navigate: (String?, WebNavigationAction?) -> Void
   let resize: (WebViewportPreset, Bool) -> Void
   let togglePicker: () -> Void
+  let reportProblem: (String) -> Void
+  @State private var findPresented = false
+  @State private var inspectorPresented = false
+  @State private var findText = ""
+  @State private var findMatched: Bool?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x8) {
@@ -106,12 +113,131 @@ private struct WebNavigationBar: View {
       }
       addressField
       viewportMenu
+      zoomMenu
+      findButton
       pickButton
+      inspectorButton
+      screenshotMenu
       navigationButton("arrow.up.right.square", "Open in system browser") { openExternally() }
     }
     .padding(.horizontal, MacTheme.Space.x10)
     .frame(height: 27)
     .neoWell(radius: MacTheme.Radius.pill)
+  }
+
+  private var zoomMenu: some View {
+    Menu {
+      Button("Zoom out") { session.setZoomPercent(session.zoomPercent.saturatingSubtract(10)) }
+      Button("Actual size") { session.setZoomPercent(100) }
+      Button("Zoom in") { session.setZoomPercent(min(200, session.zoomPercent + 10)) }
+    } label: {
+      Text("\(session.zoomPercent)%")
+        .font(MacTheme.mono(MacTheme.TypeScale.micro))
+        .foregroundStyle(MacTheme.ink)
+    }
+    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Zoom")
+  }
+
+  private var findButton: some View {
+    navigationButton("magnifyingglass", "Find in page") { findPresented.toggle() }
+      .popover(isPresented: $findPresented) {
+        VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
+          Text("Find in page")
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          TextField("Text", text: $findText)
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+            .textFieldStyle(.plain).padding(.horizontal, MacTheme.Space.x8)
+            .frame(width: 220, height: 26).neoWell(radius: MacTheme.Radius.compact)
+            .onSubmit { find(backwards: false) }
+          HStack {
+            Button("Previous") { find(backwards: true) }
+            Button("Next") { find(backwards: false) }
+            Spacer()
+            if let findMatched {
+              Text(findMatched ? "Match found" : "No match")
+                .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+                .foregroundStyle(findMatched ? MacTheme.success : MacTheme.muted)
+            }
+          }.buttonStyle(.plain)
+        }.padding(MacTheme.Space.x12)
+      }
+  }
+
+  private var inspectorButton: some View {
+    navigationButton("wrench.and.screwdriver", "Web Inspector") {
+      session.webView.isInspectable = true
+      inspectorPresented.toggle()
+    }
+    .popover(isPresented: $inspectorPresented) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
+        Text("Web Inspector")
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        Text("This pane is inspectable. Choose it from Safari’s Develop menu.")
+          .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
+          .frame(width: 240, alignment: .leading)
+        Button("Open Safari") { openSafari() }
+          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          .buttonStyle(.plain).foregroundStyle(MacTheme.accent)
+      }.padding(MacTheme.Space.x12)
+    }
+  }
+
+  private var screenshotMenu: some View {
+    Menu {
+      Button("Copy viewport") { screenshot(fullPage: false, destination: .clipboard) }
+      Button("Copy full page") { screenshot(fullPage: true, destination: .clipboard) }
+      Divider()
+      Button("Save viewport…") { screenshot(fullPage: false, destination: .file) }
+      Button("Save full page…") { screenshot(fullPage: true, destination: .file) }
+    } label: {
+      Image(systemName: "camera").frame(width: 12, height: 12).foregroundStyle(MacTheme.ink)
+    }
+    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    .help("Screenshot").accessibilityLabel("Screenshot")
+  }
+
+  private func find(backwards: Bool) {
+    Task { findMatched = await session.find(findText, backwards: backwards) }
+  }
+
+  private func screenshot(fullPage: Bool, destination: ScreenshotDestination) {
+    Task {
+      do {
+        let data = try await session.humanScreenshot(fullPage: fullPage)
+        switch destination {
+        case .clipboard:
+          NSPasteboard.general.clearContents()
+          guard NSPasteboard.general.setData(data, forType: .png) else {
+            throw CocoaError(.fileWriteUnknown)
+          }
+        case .file:
+          try saveScreenshot(data)
+        }
+      } catch { reportProblem(error.localizedDescription) }
+    }
+  }
+
+  private func saveScreenshot(_ data: Data) throws {
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.png]
+    panel.nameFieldStringValue = "screenshot.png"
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    try data.write(to: url, options: .atomic)
+  }
+
+  private func openSafari() {
+    guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari")
+    else {
+      reportProblem("Safari is unavailable.")
+      return
+    }
+    Task {
+      do {
+        _ = try await NSWorkspace.shared.openApplication(at: url, configuration: .init())
+      } catch {
+        reportProblem(error.localizedDescription)
+      }
+    }
   }
 
   private var pickButton: some View {
@@ -201,6 +327,12 @@ private struct WebNavigationBar: View {
     .help(label)
     .accessibilityLabel(label)
   }
+}
+
+private enum ScreenshotDestination { case clipboard, file }
+
+extension UInt32 {
+  fileprivate func saturatingSubtract(_ value: UInt32) -> UInt32 { self > value ? self - value : 0 }
 }
 
 private struct WebPickTray: View {

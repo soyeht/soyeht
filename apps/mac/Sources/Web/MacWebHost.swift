@@ -126,6 +126,35 @@ import WebKit
 
   var canGoForward: Bool { webView.canGoForward }
 
+  var zoomPercent: UInt32 { UInt32((webView.pageZoom * 100).rounded()) }
+
+  func setZoomPercent(_ percent: UInt32) {
+    let bounded = min(200, max(50, percent))
+    webView.pageZoom = Double(bounded) / 100
+    if let viewport {
+      self.viewport = WebViewport(
+        width: viewport.width, height: viewport.height, preset: viewport.preset,
+        zoomPercent: bounded)
+    }
+  }
+
+  func find(_ query: String, backwards: Bool) async -> Bool {
+    let bounded = String(query.prefix(4_096))
+    guard !bounded.isEmpty else { return false }
+    let configuration = WKFindConfiguration()
+    configuration.backwards = backwards
+    configuration.wraps = true
+    return await withCheckedContinuation { continuation in
+      webView.find(bounded, configuration: configuration) { result in
+        continuation.resume(returning: result.matchFound)
+      }
+    }
+  }
+
+  func humanScreenshot(fullPage: Bool) async throws -> Data {
+    try await WebScreenshotCapture.capture(webView: webView, fullPage: fullPage).bytes
+  }
+
   func loadIfNeeded(_ rawURL: String?) {
     guard webView.url == nil, requestedURL == nil, let rawURL,
       let url = allowedURL(rawURL)
