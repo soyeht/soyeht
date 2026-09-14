@@ -484,6 +484,25 @@ impl Rig {
         }
         let _ = fs::remove_file(self.path.join("engine.sock"));
     }
+    fn restart_ptyd(&mut self) {
+        self.ptyd.kill().unwrap();
+        self.ptyd.wait().unwrap();
+        let _ = fs::remove_file(self.path.join("ptyd.sock"));
+        let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"));
+        self.ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
+            .arg("--data-dir")
+            .arg(&self.path)
+            .env("PATH", test_path(&self.path))
+            .env("ZDOTDIR", &self.path)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while UnixStream::connect(self.path.join("ptyd.sock")).is_err() {
+            assert!(Instant::now() < deadline, "ptyd ready timeout");
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
     fn client(&self) -> Client {
         Client::new(self.path.join("engine.sock"))
     }
@@ -2488,6 +2507,65 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
     assert_eq!(
         restored.call("file.symbols", json!({"fileId":file_id,"revision":"1"}))["items"][0]["name"],
         "main"
+    );
+}
+
+#[test]
+fn closed_editor_checkpoint_does_not_block_supervisor_reconnect_when_workspace_is_gone() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("closed-language-repository");
+    fs::create_dir_all(&repository).unwrap();
+    fs::write(repository.join("main.rs"), "fn main() {}\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Closed language","path":repository,"idempotencyKey":"closed-language-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "file.open",
+        json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"closed-language-open"}),
+    );
+    let pane_id = opened["pane"]["paneId"].as_str().unwrap().to_owned();
+    wait_lsp_ready(&mut client, &workspace, 1);
+    client.call(
+        "pane.close",
+        json!({"paneId":pane_id,"idempotencyKey":"close-language-pane"}),
+    );
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut parked = rig.client();
+    assert_eq!(
+        parked.call("engine.status", json!({}))["ptyd"]["connected"],
+        true
+    );
+    assert_no_open_language_server(&rig);
+
+    drop(parked);
+    rig.kill_engine();
+    rig.restart_ptyd();
+    fs::remove_dir_all(&repository).unwrap();
+    rig.start();
+
+    let mut restored = rig.client();
+    let status = restored.call("engine.status", json!({}));
+    assert_eq!(status["ptyd"]["connected"], true);
+    assert_no_open_language_server(&rig);
+}
+
+fn assert_no_open_language_server(rig: &Rig) {
+    let registry: Value =
+        serde_json::from_slice(&fs::read(rig.path.join("ptyd-registry.json")).unwrap()).unwrap();
+    assert!(
+        registry["instances"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|instance| instance["spawn"]["kind"] != "pipes_lsp" || instance["closed"] == true)
     );
 }
 

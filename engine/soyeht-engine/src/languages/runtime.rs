@@ -147,6 +147,10 @@ impl Core {
                     && !instance.closed
                     && instance.exit_code.is_none()
             });
+            if !self.language_server_requires_process(&key)? {
+                self.park_language_server(&key, existing)?;
+                continue;
+            }
             if let Some(instance) = existing {
                 language_mut(&mut self.languages, &key)?.adopt(instance)?;
                 self.persist_language_server(&key, Vec::new())?;
@@ -155,6 +159,42 @@ impl Core {
             } else {
                 self.restart_language_server(&key, "Language server process was lost")?;
             }
+        }
+        Ok(())
+    }
+
+    fn language_server_requires_process(&self, key: &str) -> Result<bool> {
+        let server = language(&self.languages, key)?;
+        if !server.pending_writes.is_empty() || !server.requests.is_empty() {
+            return Ok(true);
+        }
+        for document in server.documents.values() {
+            let file = match self.editor.stored(&document.file_id) {
+                Ok(file) => file,
+                Err(errors::Error::NotFound(_)) => continue,
+                Err(error) => return Err(error),
+            };
+            if file.pane_id.as_ref().is_some_and(|pane_id| {
+                self.panes
+                    .get(pane_id)
+                    .is_some_and(|pane| !pane.stored.closed)
+            }) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn park_language_server(&mut self, key: &str, existing: Option<&Instance>) -> Result<()> {
+        if let Some(instance) = existing {
+            self.pty_request(Request::Close {
+                instance_id: instance.instance_id.clone(),
+            })?;
+        }
+        if existing.is_some() || language(&self.languages, key)?.instance_id.is_some() {
+            language_mut(&mut self.languages, key)?
+                .restart("No open editor pane requires this language server")?;
+            self.persist_language_server(key, Vec::new())?;
         }
         Ok(())
     }
