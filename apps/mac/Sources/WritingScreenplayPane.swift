@@ -16,6 +16,7 @@ struct WritingScreenplayPane: View {
   @State private var editRequest: ScreenplayEditRequest?
   @State private var hoveredLine: UInt32?
   @State private var hoverY: CGFloat = 0
+  @State private var showingBeatBoard = false
 
   private var writing: WritingDocumentView? {
     client.writingDocuments.values.first { $0.document.file.paneId == pane.paneId }
@@ -28,27 +29,37 @@ struct WritingScreenplayPane: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      header
-      if let writing, let file, file.viewport != nil, let structure {
-        HStack(spacing: 0) {
-          if railVisible {
-            ScreenplaySceneRail(
-              scenes: structure.scenes, elements: structure.elements,
-              activeLine: activeLine, select: selectScene)
-            Divider().overlay(MacTheme.well)
-          }
-          VStack(spacing: 0) {
-            toolbar(document: writing.document, structure: structure)
-            screenplaySheet(file: file, document: writing.document, structure: structure)
-          }
-        }
+      if showingBeatBoard, let writing, let structure {
+        WritingBeatBoardPane(
+          client: client, pane: pane, document: writing.document, structure: structure,
+          showScreenplay: { showingBeatBoard = false })
       } else {
-        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        header
+        screenplayContent
       }
     }
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .task(id: writing?.document.file.fileId) { await loadIfNeeded() }
+  }
+
+  @ViewBuilder private var screenplayContent: some View {
+    if let writing, let file, file.viewport != nil, let structure {
+      HStack(spacing: 0) {
+        if railVisible {
+          ScreenplaySceneRail(
+            scenes: structure.scenes, elements: structure.elements,
+            activeLine: activeLine, select: selectScene)
+          Divider().overlay(MacTheme.well)
+        }
+        VStack(spacing: 0) {
+          toolbar(document: writing.document, structure: structure)
+          screenplaySheet(file: file, document: writing.document, structure: structure)
+        }
+      }
+    } else {
+      ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
   }
 
   private var header: some View {
@@ -58,6 +69,14 @@ struct WritingScreenplayPane: View {
       Text(pane.name)
         .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
       Spacer()
+      Button {
+        showingBeatBoard = true
+      } label: {
+        Label("Idea board", systemImage: "lightbulb")
+          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+      }
+      .buttonStyle(NeoPillButtonStyle())
+      .accessibilityIdentifier("writing-show-beat-board")
     }
     .padding(.horizontal, MacTheme.Space.x12).frame(height: 42)
     .background(MacTheme.well, in: Capsule())
@@ -268,6 +287,14 @@ private struct ScreenplaySceneRail: View {
           Text(summary)
             .font(MacTheme.chrome(MacTheme.TypeScale.small))
             .foregroundStyle(MacTheme.secondary).lineLimit(2)
+        }
+        if !scene.linkedBeatIds.isEmpty {
+          Label(
+            "\(scene.linkedBeatIds.count) \(scene.linkedBeatIds.count == 1 ? "idea" : "ideas")",
+            systemImage: "link"
+          )
+          .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+          .foregroundStyle(MacTheme.accent)
         }
       }
       .padding(MacTheme.Space.x10).frame(maxWidth: .infinity, alignment: .leading)
