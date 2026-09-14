@@ -17,6 +17,29 @@ import WebKit
     return WebHostAttachment(reference: reference, bytes: bytes)
   }
 
+  static func capture(webView: WKWebView, viewportRect: WebRect) async throws -> WebHostAttachment {
+    let requested = CGRect(
+      x: CGFloat(viewportRect.x) - 16, y: CGFloat(viewportRect.y) - 16,
+      width: CGFloat(viewportRect.width) + 32, height: CGFloat(viewportRect.height) + 32)
+    let rect = requested.intersection(webView.bounds)
+    guard !rect.isNull, rect.width > 0, rect.height > 0 else {
+      throw ClientFailure.webHost(.internal_error, "The selected element is outside the viewport.")
+    }
+    let configuration = WKSnapshotConfiguration()
+    configuration.rect = rect
+    if rect.width > CGFloat(ProtocolLimits.webPickCropWidth) {
+      configuration.snapshotWidth = NSNumber(value: ProtocolLimits.webPickCropWidth)
+    }
+    let image = try await snapshot(webView, configuration: configuration)
+    let bytes = try boundedPNG(image, maxBytes: 30 * 1_024)
+    let id = UUID().uuidString.lowercased()
+    return WebHostAttachment(
+      reference: AttachmentRef(
+        attachmentId: id, mimeType: "image/png", name: "selected-element.png",
+        bytes: String(bytes.count)),
+      bytes: bytes)
+  }
+
   private static func configuration(
     for webView: WKWebView, fullPage: Bool
   ) async throws -> WKSnapshotConfiguration {
@@ -62,17 +85,19 @@ import WebKit
     }
   }
 
-  private static func boundedPNG(_ image: NSImage) throws -> Data {
+  private static func boundedPNG(
+    _ image: NSImage, maxBytes: Int = ProtocolLimits.webScreenshotBytes
+  ) throws -> Data {
     var candidate = image
-    for _ in 0..<6 {
+    for _ in 0..<8 {
       guard let tiff = candidate.tiffRepresentation,
         let bitmap = NSBitmapImageRep(data: tiff),
         let png = bitmap.representation(using: .png, properties: [:])
       else {
         throw ClientFailure.webHost(.internal_error, "The page snapshot could not be encoded.")
       }
-      if png.count <= ProtocolLimits.webScreenshotBytes { return png }
-      let ratio = sqrt(Double(ProtocolLimits.webScreenshotBytes) / Double(png.count)) * 0.85
+      if png.count <= maxBytes { return png }
+      let ratio = sqrt(Double(maxBytes) / Double(png.count)) * 0.85
       candidate = try resized(candidate, ratio: min(0.9, ratio))
     }
     throw ClientFailure.webHost(.internal_error, "The page snapshot exceeds its byte limit.")

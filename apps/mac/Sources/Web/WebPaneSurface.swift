@@ -22,14 +22,20 @@ struct WebPaneSurface: View {
     VStack(spacing: MacTheme.Space.x8) {
       WebNavigationBar(
         address: $address, pane: pane, session: session,
-        navigate: navigate, resize: resize)
-      viewportBody(session, viewport: session.viewport ?? pane.viewport)
+        navigate: navigate, resize: resize, togglePicker: session.elementPicker.toggle)
+      ZStack(alignment: .bottom) {
+        viewportBody(session, viewport: session.viewport ?? pane.viewport)
+        WebPickTray(
+          client: client, pane: pane, picker: session.elementPicker,
+          attach: attachSelection)
+      }
       WebStatusBar(
         pane: pane, viewport: session.viewport ?? pane.viewport,
         view: client.webPanes[pane.paneId],
         servers: client.localServers)
     }
     .onChange(of: pane.url) { _, value in address = value ?? "" }
+    .onDisappear { session.elementPicker.navigationStarted() }
   }
 
   @ViewBuilder private func viewportBody(_ session: MacWebSession, viewport: WebViewport?)
@@ -70,6 +76,13 @@ struct WebPaneSurface: View {
       } catch { client.problem = error.localizedDescription }
     }
   }
+
+  private func attachSelection(to agentPaneId: String) {
+    guard let selection = host.session(for: pane).elementPicker.takeSelection() else { return }
+    client.attachWebElements(
+      from: pane.paneId, package: selection.package, images: selection.images,
+      to: agentPaneId)
+  }
 }
 
 private struct WebNavigationBar: View {
@@ -78,6 +91,7 @@ private struct WebNavigationBar: View {
   let session: MacWebSession
   let navigate: (String?, WebNavigationAction?) -> Void
   let resize: (WebViewportPreset, Bool) -> Void
+  let togglePicker: () -> Void
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x8) {
@@ -92,11 +106,27 @@ private struct WebNavigationBar: View {
       }
       addressField
       viewportMenu
+      pickButton
       navigationButton("arrow.up.right.square", "Open in system browser") { openExternally() }
     }
     .padding(.horizontal, MacTheme.Space.x10)
     .frame(height: 27)
     .neoWell(radius: MacTheme.Radius.pill)
+  }
+
+  private var pickButton: some View {
+    Button(action: togglePicker) {
+      HStack(spacing: MacTheme.Space.x6) {
+        Image(systemName: "cursorarrow.click.2").frame(width: 11, height: 11)
+        Text("Pick element").font(MacTheme.chrome(MacTheme.TypeScale.micro))
+      }
+      .foregroundStyle(session.elementPicker.isActive ? MacTheme.accent : MacTheme.ink)
+      .padding(.horizontal, MacTheme.Space.x8).frame(height: 20)
+      .background(
+        session.elementPicker.isActive ? MacTheme.well : MacTheme.face,
+        in: Capsule())
+    }
+    .buttonStyle(.plain).help("Pick an element for an agent request")
   }
 
   private var viewportMenu: some View {
@@ -170,6 +200,59 @@ private struct WebNavigationBar: View {
     .disabled(!enabled)
     .help(label)
     .accessibilityLabel(label)
+  }
+}
+
+private struct WebPickTray: View {
+  @Bindable var client: EngineClient
+  let pane: Pane
+  let picker: WebElementPicker
+  let attach: (String) -> Void
+
+  private var agents: [Pane] {
+    client.panes.filter { $0.workspaceId == pane.workspaceId && $0.mode == .agent }
+  }
+
+  private var preferred: Pane? {
+    client.preferredAgentPane(in: pane.workspaceId) ?? agents.first
+  }
+
+  var body: some View {
+    if picker.isActive || picker.selection != nil {
+      HStack(spacing: MacTheme.Space.x10) {
+        Image(systemName: "cursorarrow.click.2").foregroundStyle(MacTheme.accent)
+        Text(message).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        Spacer()
+        if picker.selection != nil, let preferred {
+          Button {
+            attach(preferred.paneId)
+          } label: {
+            Label("Attach to \(preferred.name)", systemImage: "paperclip")
+              .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          }.buttonStyle(.plain)
+          Menu {
+            ForEach(agents, id: \.paneId) { agent in
+              Button(agent.name) { attach(agent.paneId) }
+            }
+          } label: {
+            Image(systemName: "chevron.down")
+          }.menuStyle(.borderlessButton).fixedSize()
+        }
+        Button("Clear") { picker.navigationStarted() }
+          .font(MacTheme.chrome(MacTheme.TypeScale.small)).buttonStyle(.plain)
+      }
+      .padding(.horizontal, MacTheme.Space.x12).frame(height: 34)
+      .neoRaised(radius: MacTheme.Radius.pill, elevation: .card)
+      .padding(MacTheme.Space.x12)
+    }
+  }
+
+  private var message: String {
+    if !agents.isEmpty, !picker.elements.isEmpty {
+      return "\(picker.elements.count) selected · Shift-click to add"
+    }
+    if agents.isEmpty { return "Open an agent pane to attach this selection" }
+    return "Click an element · Shift-click to select up to 20"
   }
 }
 

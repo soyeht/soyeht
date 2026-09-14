@@ -117,16 +117,22 @@ final class Wire {
     fail(ClientFailure.disconnected)
   }
 
-  func send(_ value: JsonValue) async throws {
+  func send(_ value: JsonValue, attachments: [WebHostAttachment] = []) async throws {
     guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
-    let json = try JSONEncoder().encode(value)
-    guard json.count <= 1_048_576 else { throw ClientFailure.invalidFrame }
+    let frames = try WirePayload(message: value, attachments: attachments).frames()
     if let webSocket {
-      try await webSocket.send(.string(String(decoding: json, as: UTF8.self)))
+      for frame in frames {
+        if frame.kind == 1 {
+          try await webSocket.send(.string(String(decoding: frame.payload, as: UTF8.self)))
+        } else {
+          try await webSocket.send(.data(try frame.encode()))
+        }
+      }
       return
     }
     guard let connection else { throw ClientFailure.disconnected }
-    let data = try Frame(kind: 1, payload: json).encode()
+    var data = Data()
+    for frame in frames { data.append(try frame.encode()) }
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       connection.send(
         content: data,
@@ -249,17 +255,12 @@ final class Wire {
   }
 }
 
-struct WebHostResponse: Sendable {
+struct WirePayload {
   let message: JsonValue
   let attachments: [WebHostAttachment]
 
-  init(message: JsonValue, attachments: [WebHostAttachment] = []) {
-    self.message = message
-    self.attachments = attachments
-  }
-
-  func frames() throws -> [Frame] {
-    guard attachments.count <= 1 else { throw ClientFailure.invalidFrame }
+  func frames(maxAttachments: Int = 20) throws -> [Frame] {
+    guard attachments.count <= maxAttachments else { throw ClientFailure.invalidFrame }
     var frames: [Frame] = []
     for attachment in attachments {
       guard !attachment.bytes.isEmpty,
@@ -281,5 +282,19 @@ struct WebHostResponse: Sendable {
     guard json.count <= ProtocolLimits.jsonBytes else { throw ClientFailure.invalidFrame }
     frames.append(Frame(kind: 1, payload: json))
     return frames
+  }
+}
+
+struct WebHostResponse: Sendable {
+  let message: JsonValue
+  let attachments: [WebHostAttachment]
+
+  init(message: JsonValue, attachments: [WebHostAttachment] = []) {
+    self.message = message
+    self.attachments = attachments
+  }
+
+  func frames() throws -> [Frame] {
+    try WirePayload(message: message, attachments: attachments).frames(maxAttachments: 1)
   }
 }

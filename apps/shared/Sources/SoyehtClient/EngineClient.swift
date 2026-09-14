@@ -9,6 +9,7 @@ public final class EngineClient {
   public private(set) var devices: [Device] = []
   public private(set) var pairRequests: [PairPrompt] = []
   public internal(set) var agentPanes: [String: AgentPaneView] = [:]
+  public internal(set) var agentWebDrafts: [String: AgentWebAttachmentDraft] = [:]
   public internal(set) var harnesses: [HarnessInfo] = []
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public internal(set) var tasks: [TaskRecord] = []
@@ -41,6 +42,7 @@ public final class EngineClient {
   @ObservationIgnored private var queuedInputBytes = 0
   @ObservationIgnored private var resizeTask: Task<Void, Never>?
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private let socket: String
@@ -106,6 +108,7 @@ public final class EngineClient {
       panes = []
       workspaces = []
       agentPanes = [:]
+      agentWebDrafts = [:]
       tasks = []
       taskDetails = [:]
       attentionByWorkspace = [:]
@@ -188,7 +191,8 @@ public final class EngineClient {
     await reader.value
   }
   func request(
-    _ method: String, _ params: JsonValue, timeoutSeconds: Double = 12
+    _ method: String, _ params: JsonValue, timeoutSeconds: Double = 12,
+    attachments: [WebHostAttachment] = []
   ) async throws -> JsonValue {
     guard let wire else { throw ClientFailure.disconnected }
     let id = UUID().uuidString
@@ -207,7 +211,7 @@ public final class EngineClient {
             .object([
               "jsonrpc": .string("2.0"), "id": .string(id),
               "method": .string(method), "params": params,
-            ]))
+            ]), attachments: attachments)
         } catch {
           if let request = self.pending.removeValue(forKey: id) {
             request.timeout.cancel()
@@ -219,11 +223,15 @@ public final class EngineClient {
   }
   /// Retry only connection loss, with the same mutation parameters and idempotency key.
   func mutation<T: Encodable>(
-    _ method: String, _ params: T, timeoutSeconds: Double = 12
+    _ method: String, _ params: T, timeoutSeconds: Double = 12,
+    attachments: [WebHostAttachment] = []
   ) async throws -> JsonValue {
     let value = try JsonValue.encoded(params)
     for attempt in 0..<3 {
-      do { return try await request(method, value, timeoutSeconds: timeoutSeconds) } catch let error
+      do {
+        return try await request(
+          method, value, timeoutSeconds: timeoutSeconds, attachments: attachments)
+      } catch let error
         as ClientFailure
         where error.canRetry && attempt < 2
       {
@@ -409,6 +417,7 @@ public final class EngineClient {
       let id = params["paneId"].string
       panes.removeAll { $0.paneId == id }
       if let id { agentPanes.removeValue(forKey: id) }
+      if let id { agentWebDrafts.removeValue(forKey: id) }
       if let id { discardEditorPane(id) }
       if let id { discardWebPane(id) }
       if selectedPaneId == id { select(panes.first?.paneId) }
@@ -464,6 +473,9 @@ public final class EngineClient {
   public func select(_ paneId: String?) {
     let old = selectedPaneId
     selectedPaneId = paneId
+    if let pane = panes.first(where: { $0.paneId == paneId }), pane.mode == .agent {
+      lastAgentPaneByWorkspace[pane.workspaceId] = pane.paneId
+    }
     position = nil
     gapText = nil
     terminalOutput?(Data(), true)
@@ -487,6 +499,15 @@ public final class EngineClient {
         }
       }
     }
+  }
+
+  public func preferredAgentPane(in workspaceId: String) -> Pane? {
+    if let paneId = lastAgentPaneByWorkspace[workspaceId],
+      let pane = panes.first(where: { $0.paneId == paneId && $0.mode == .agent })
+    {
+      return pane
+    }
+    return panes.first { $0.workspaceId == workspaceId && $0.mode == .agent }
   }
   func upsertPane(_ pane: Pane) {
     panes.removeAll { $0.paneId == pane.paneId }

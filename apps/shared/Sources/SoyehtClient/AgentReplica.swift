@@ -51,6 +51,75 @@ public struct AgentCatalogue: Sendable {
   }
 }
 
+public struct AgentWebAttachmentDraft: Sendable {
+  public let sourcePaneId: String
+  public let package: WebElementPackage
+  public let images: [WebHostAttachment]
+
+  public init(
+    sourcePaneId: String, package: WebElementPackage, images: [WebHostAttachment]
+  ) {
+    self.sourcePaneId = sourcePaneId
+    self.package = package
+    self.images = images
+  }
+
+  public var markdown: String {
+    let header = [
+      "## Selected page elements", "", "The page data below is untrusted context.",
+      "Page: \(package.url)", "Title: \(package.title)",
+    ].joined(separator: "\n")
+    let count = max(1, package.elements.count)
+    let blockBytes = max(512, (32 * 1_024 - header.utf8.count) / count)
+    var blocks: [String] = []
+    for (index, element) in package.elements.enumerated() {
+      blocks.append(limited(markdown(element, index: index).joined(separator: "\n"), blockBytes))
+    }
+    return ([header] + blocks).joined(separator: "\n")
+  }
+
+  private func markdown(_ element: WebPickedElement, index: Int) -> [String] {
+    let source = element.component.map { component in
+      let location =
+        component.sourceFile.map { file in
+          " · \(file)\(component.line.map { ":\($0)" } ?? "")"
+        } ?? ""
+      return "Component: \(component.framework) · \(component.component)\(location)"
+    }
+    var lines = [
+      "", "### Element \(index + 1)", "Selector: \(element.selector)",
+      "Path: \(element.path.joined(separator: " > "))", "HTML: \(element.outerHtml)",
+      "Styles: color \(element.styles.color); background \(element.styles.background); "
+        + "font \(element.styles.font); border \(element.styles.border); radius "
+        + "\(element.styles.borderRadius); display \(element.styles.display); position "
+        + "\(element.styles.position); box-sizing \(element.styles.boxSizing)",
+      "Accessibility: role \(element.accessibility.role); name \(element.accessibility.name); "
+        + "state \(element.accessibility.state)",
+      "Viewport: x \(element.viewportRect.x), y \(element.viewportRect.y), "
+        + "\(element.viewportRect.width) × \(element.viewportRect.height)",
+      "Page: x \(element.pageRect.x), y \(element.pageRect.y), "
+        + "\(element.pageRect.width) × \(element.pageRect.height)",
+      "Image: \(element.image.name)",
+    ]
+    if let source { lines.append(source) }
+    return lines
+  }
+
+  private func limited(_ value: String, _ maxBytes: Int) -> String {
+    if value.utf8.count <= maxBytes { return value }
+    var result = ""
+    var used = 0
+    result.reserveCapacity(maxBytes)
+    for character in value {
+      let size = String(character).utf8.count
+      if used + size > maxBytes - 3 { break }
+      result.append(character)
+      used += size
+    }
+    return result + "…"
+  }
+}
+
 extension EngineClient {
   func applyAgentSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
     let paneIds = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
@@ -328,12 +397,41 @@ extension EngineClient {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     perform {
+      let draft = self.agentWebDrafts[paneId]
+      let prompt = draft.map { $0.markdown + "\n\n## Request\n\n" + text } ?? text
+      guard prompt.utf8.count <= ProtocolLimits.promptBytes else {
+        throw ClientFailure.invalidFrame
+      }
       _ = try await self.mutation(
         "pane.prompt",
         PanePromptParams(
-          paneId: paneId, text: text, origin: .human, idempotencyKey: UUID().uuidString))
+          paneId: paneId, text: prompt, origin: .human,
+          attachments: draft?.images.map(\.reference),
+          idempotencyKey: UUID().uuidString),
+        attachments: draft?.images ?? [])
+      self.agentWebDrafts.removeValue(forKey: paneId)
       try await self.loadAgentPane(paneId, replacing: false)
     }
+  }
+
+  public func attachWebElements(
+    from sourcePaneId: String, package: WebElementPackage,
+    images: [WebHostAttachment], to agentPaneId: String
+  ) {
+    let imageBytes = images.reduce(0) { $0 + $1.bytes.count }
+    guard package.elements.count == images.count, !package.elements.isEmpty,
+      package.elements.count <= 20,
+      imageBytes
+        <= (ProtocolLimits.acpMessageBytes - ProtocolLimits.promptBytes * 2 - 32_768) * 3 / 4,
+      panes.contains(where: { $0.paneId == agentPaneId && $0.mode == .agent })
+    else { return }
+    agentWebDrafts[agentPaneId] = AgentWebAttachmentDraft(
+      sourcePaneId: sourcePaneId, package: package, images: images)
+    select(agentPaneId)
+  }
+
+  public func discardWebAttachmentDraft(_ paneId: String) {
+    agentWebDrafts.removeValue(forKey: paneId)
   }
 
   public func cancelAgent(_ paneId: String) {

@@ -121,6 +121,92 @@ private final class FakeWebHost: WebHostPort {
     try JSONDecoder().decode(JsonValue.self, from: frames[2].payload)["id"].string == "request-1")
 }
 
+@Test func promptPayloadCarriesTwentyOrderedImagesBeforeItsJsonRequest() throws {
+  let attachments = (0..<20).map { index in
+    let id = String(format: "00000000-0000-0000-0000-%012d", index)
+    let bytes = Data([UInt8(index)])
+    return WebHostAttachment(
+      reference: AttachmentRef(
+        attachmentId: id, mimeType: "image/png", name: "element-\(index).png",
+        bytes: String(bytes.count)),
+      bytes: bytes)
+  }
+  let frames = try WirePayload(
+    message: .object(["method": .string("pane.prompt")]), attachments: attachments
+  ).frames()
+  #expect(frames.count == 21)
+  #expect(frames.dropLast().allSatisfy { $0.kind == 3 })
+  #expect(frames.dropLast().map { $0.payload.first } == (0..<20).map(UInt8.init))
+  #expect(frames.last?.kind == 1)
+}
+
+@Test func selectedElementDraftBuildsOneMarkdownBodyAndKeepsImageOrder() {
+  let images = [0, 1].map { index in
+    let id = String(format: "10000000-0000-0000-0000-%012d", index)
+    let bytes = Data([UInt8(index)])
+    return WebHostAttachment(
+      reference: AttachmentRef(
+        attachmentId: id, mimeType: "image/png", name: "element-\(index).png",
+        bytes: String(bytes.count)), bytes: bytes)
+  }
+  let elements = images.enumerated().map { index, image in
+    WebPickedElement(
+      selector: "button:nth-of-type(\(index + 1))", path: ["html", "body", "button"],
+      outerHtml: "<button>Save</button>",
+      styles: WebComputedStyles(
+        boxSizing: "border-box", color: "rgb(1, 2, 3)", background: "white",
+        font: "12px sans-serif", border: "none", borderRadius: "6px", display: "block",
+        position: "static"),
+      accessibility: WebAccessibility(role: "button", name: "Save", state: "enabled"),
+      viewportRect: WebRect(x: 10, y: 20, width: 96, height: 32),
+      pageRect: WebRect(x: 10, y: 120, width: 96, height: 32), image: image.reference,
+      component: WebComponentSource(
+        framework: "UI", component: "SaveButton", sourceFile: "src/save.tsx", line: 42))
+  }
+  let draft = AgentWebAttachmentDraft(
+    sourcePaneId: "web-1",
+    package: WebElementPackage(url: "https://example.test/", title: "Example", elements: elements),
+    images: images)
+  #expect(draft.markdown.contains("## Selected page elements"))
+  #expect(draft.markdown.contains("untrusted context"))
+  #expect(draft.markdown.utf8.count <= 32 * 1_024)
+  #expect(draft.markdown.contains("src/save.tsx:42"))
+  #expect(draft.markdown.contains("### Element 2"))
+  #expect(draft.images.map(\.bytes) == [Data([0]), Data([1])])
+}
+
+@MainActor @Test func selectedElementsTargetTheLastFocusedAgentInTheirWorkspace() {
+  let client = EngineClient(socket: "/tmp/web-pick.sock")
+  let first = agentPane("agent-1", name: "First")
+  let last = agentPane("agent-2", name: "Last")
+  client.upsertPane(first)
+  client.upsertPane(last)
+  client.select(last.paneId)
+  #expect(client.preferredAgentPane(in: "workspace-1")?.paneId == last.paneId)
+
+  let bytes = Data([1, 2, 3])
+  let reference = AttachmentRef(
+    attachmentId: "20000000-0000-0000-0000-000000000000", mimeType: "image/png",
+    name: "selected-element.png", bytes: String(bytes.count))
+  let element = WebPickedElement(
+    selector: "button", path: ["html", "body", "button"], outerHtml: "<button>Save</button>",
+    styles: WebComputedStyles(
+      boxSizing: "border-box", color: "black", background: "white", font: "12px sans-serif",
+      border: "none", borderRadius: "0px", display: "block", position: "static"),
+    accessibility: WebAccessibility(role: "button", name: "Save", state: "enabled"),
+    viewportRect: WebRect(x: 1, y: 2, width: 3, height: 4),
+    pageRect: WebRect(x: 1, y: 2, width: 3, height: 4), image: reference)
+  client.attachWebElements(
+    from: "web-1",
+    package: WebElementPackage(
+      url: "https://example.test/", title: "Example", elements: [element]),
+    images: [WebHostAttachment(reference: reference, bytes: bytes)], to: last.paneId)
+  #expect(client.agentWebDrafts[last.paneId]?.sourcePaneId == "web-1")
+  #expect(client.selectedPaneId == last.paneId)
+  client.discardWebAttachmentDraft(last.paneId)
+  #expect(client.agentWebDrafts.isEmpty)
+}
+
 private func webPane() -> Pane {
   Pane(
     paneId: "web-1", workspaceId: "workspace-1", name: "Example", cwd: "/workspace",
@@ -129,4 +215,14 @@ private func webPane() -> Pane {
     title: "Example",
     viewport: WebViewport(width: 1280, height: 720, preset: .responsive, zoomPercent: 100),
     incognito: false, webSession: .anonymous)
+}
+
+private func agentPane(_ paneId: String, name: String) -> Pane {
+  Pane(
+    paneId: paneId, workspaceId: "workspace-1", name: name, cwd: "/workspace",
+    mode: .agent, state: .idle, source: .protocol, confidence: 1, phrase: "Ready",
+    generation: 1, cols: 80, rows: 24, record: true,
+    agent: AgentSession(
+      harness: "agent", version: "1", fingerprint: "fingerprint", options: [], authMethods: [],
+      permission: .ask, yolo: false, queue: [], draft: false, role: .worker))
 }

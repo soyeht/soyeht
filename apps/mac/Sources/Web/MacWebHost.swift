@@ -93,6 +93,7 @@ import WebKit
   private let structuredActions: WebStructuredActions
   @ObservationIgnored
   private let pageObservation: WebPageObservation
+  let elementPicker: WebElementPicker
 
   init(
     paneId: String, incognito: Bool, navigationGeneration: UInt32,
@@ -113,6 +114,7 @@ import WebKit
     webView = view
     structuredActions = WebStructuredActions(webView: view)
     pageObservation = observation
+    elementPicker = WebElementPicker(webView: view)
     super.init()
     pageObservation.bind(view)
     webView.navigationDelegate = self
@@ -213,6 +215,7 @@ import WebKit
   }
 
   func stop() {
+    elementPicker.navigationStarted()
     webView.stopLoading()
     webView.navigationDelegate = nil
     pageObservation.stop()
@@ -221,6 +224,7 @@ import WebKit
   func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation?) {
     navigationGeneration &+= 1
     structuredActions.navigationStarted()
+    elementPicker.navigationStarted()
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {

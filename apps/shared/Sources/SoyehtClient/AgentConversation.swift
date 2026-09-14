@@ -2,6 +2,10 @@ import Foundation
 import SoyehtProtocol
 import SwiftUI
 
+#if os(macOS)
+  import AppKit
+#endif
+
 public struct AgentConversationStyle: Sendable {
   public let canvas: Color
   public let face: Color
@@ -140,6 +144,11 @@ private struct AgentWell: ViewModifier {
           elicitation.requestId)
       }
       if !view.queue.isEmpty || view.queuePaused { queue }
+      if let draft = client.agentWebDrafts[paneId] {
+        WebElementAttachmentCard(
+          draft: draft, style: style,
+          remove: { client.discardWebAttachmentDraft(paneId) })
+      }
       composer
       if showsConfiguration, let options = pane?.agent?.options, !options.isEmpty {
         configuration(options)
@@ -359,6 +368,84 @@ private struct AgentWell: ViewModifier {
     case "mode": "shield.checkered"
     default: "slider.horizontal.3"
     }
+  }
+}
+
+private struct WebElementAttachmentCard: View {
+  let draft: AgentWebAttachmentDraft
+  let style: AgentConversationStyle
+  let remove: () -> Void
+
+  private var element: WebPickedElement { draft.package.elements[0] }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 8) {
+        Image(systemName: "cursorarrow.click.2").foregroundStyle(style.accent)
+        Text(title).font(style.captionFont.weight(.bold))
+        Spacer()
+        Button(action: remove) { Image(systemName: "xmark").foregroundStyle(style.muted) }
+          .buttonStyle(.plain).accessibilityLabel("Remove selected page elements")
+      }
+      field("page", draft.package.url)
+      field("selector", element.selector)
+      if let component = element.component {
+        field("source", source(component), color: style.success)
+      }
+      field("html", element.outerHtml)
+      field("styles", styleSummary(element.styles))
+      field(
+        "accessibility",
+        "role \(element.accessibility.role) · name \(element.accessibility.name) · "
+          + element.accessibility.state)
+      field(
+        "position",
+        "x \(element.viewportRect.x) · y \(element.viewportRect.y) · viewport "
+          + "\(element.viewportRect.width)×\(element.viewportRect.height)")
+      imagePreview
+      if draft.package.elements.count > 1 {
+        Text("\(draft.package.elements.count) elements selected")
+          .font(style.captionFont).foregroundStyle(style.secondary)
+      }
+    }
+    .padding(14).modifier(AgentRaised(style: style, radius: 20, offset: 5, blur: 10))
+    .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
+  }
+
+  private var title: String {
+    "Page element attached to this request"
+  }
+
+  private func field(_ label: String, _ value: String, color: Color? = nil) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Text(label).font(style.captionFont).foregroundStyle(style.muted).frame(
+        width: 72, alignment: .leading)
+      Text(value).font(style.monoSmallFont).foregroundStyle(color ?? style.ink).lineLimit(2)
+        .textSelection(.enabled)
+    }
+  }
+
+  @ViewBuilder private var imagePreview: some View {
+    #if os(macOS)
+      if let first = draft.images.first, let image = NSImage(data: first.bytes) {
+        Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 96)
+          .background(style.well, in: RoundedRectangle(cornerRadius: 8))
+      }
+    #else
+      EmptyView()
+    #endif
+  }
+
+  private func source(_ component: WebComponentSource) -> String {
+    let location =
+      component.sourceFile.map { file in
+        " · \(file)\(component.line.map { ":\($0)" } ?? "")"
+      } ?? ""
+    return "\(component.component) · \(component.framework)\(location)"
+  }
+
+  private func styleSummary(_ value: WebComputedStyles) -> String {
+    "\(value.color) on \(value.background) · \(value.font) · radius \(value.borderRadius)"
   }
 }
 
