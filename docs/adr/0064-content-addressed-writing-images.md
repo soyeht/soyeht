@@ -1,4 +1,4 @@
-# ADR 0062: Content-addressed writing images
+# ADR 0064: Content-addressed writing images
 
 Date: 2026-09-14
 Status: Accepted

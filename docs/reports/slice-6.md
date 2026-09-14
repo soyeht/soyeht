@@ -170,7 +170,7 @@ The report PR repeats the complete gate from the final implementation base.
    dedicated worktree. Run `scripts/check_all.sh` with `FORBIDDEN_TERMS`
    supplied through the environment.
 2. Build the Rust workspace and install only the Dev profile with
-   `python3 scripts/install_dev.py`. Confirm schema 20 and connected engine and
+   `python3 scripts/install_dev.py`. Confirm schema 21 and connected engine and
    ptyd services.
 3. Build and open the development-signed Mac app. Create a disposable workspace
    with the three `Writing` section folders.
@@ -188,10 +188,9 @@ The report PR repeats the complete gate from the final implementation base.
 
 - ADR 0061 records the native writing surface, subsystem boundaries, one writing
   mode with a closed kind, and reuse of the editor ownership lifecycle.
-- ADR 0062 records journalled document creation and immutable content-addressed
-  writing assets. The repository contains two narrowly scoped ADR 0062 files;
-  their titles distinguish these independent decisions.
+- ADR 0062 records journalled document creation.
 - ADR 0063 records revision-checked bounded asset reads over attachment frames.
+- ADR 0064 records immutable content-addressed writing assets.
 
 Writing documents remain plain Markdown or Fountain. Presentation layout,
 screenplay layout and the Idea Board are client views over bounded derived facts.
