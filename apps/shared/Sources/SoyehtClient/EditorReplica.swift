@@ -44,7 +44,8 @@ extension EngineClient {
   }
 
   func applyEditorSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
-    let livePanes = Set(panes.lazy.filter { $0.mode == .editor }.map(\.paneId))
+    let livePanes = Set(
+      panes.lazy.filter { $0.mode == .editor || $0.mode == .writing }.map(\.paneId))
     var replacement: [String: EditorFileView] = [:]
     for value in sections["files"] ?? [] {
       let file = try value.decoded(FileDocument.self)
@@ -462,11 +463,11 @@ extension EngineClient {
     perform { try await self.refreshEditorFile(fileId) }
   }
 
-  private func acceptEditorRead(_ result: FileReadResult) {
+  func acceptEditorRead(_ result: FileReadResult) {
     upsertEditor(result.file) { $0.viewport = result }
   }
 
-  private func upsertEditor(
+  func upsertEditor(
     _ file: FileDocument, update: (inout EditorFileView) -> Void = { _ in }
   ) {
     var view = editorFiles[file.fileId] ?? EditorFileView(file: file)

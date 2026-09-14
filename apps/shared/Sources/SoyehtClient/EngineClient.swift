@@ -19,6 +19,7 @@ public final class EngineClient {
   public internal(set) var usageReadings: [UsageReading] = []
   public internal(set) var editorFiles: [String: EditorFileView] = [:]
   public internal(set) var editorNavigationTarget: EditorNavigationTarget?
+  public internal(set) var writingDocuments: [String: WritingDocumentView] = [:]
   public internal(set) var webPanes: [String: WebPaneView] = [:]
   public internal(set) var localServers: [LocalServer] = []
   public private(set) var connected = false
@@ -115,6 +116,7 @@ public final class EngineClient {
       paneLoops = [:]
       usageReadings = []
       editorFiles = [:]
+      writingDocuments = [:]
       webPanes = [:]
       localServers = []
       terminalOutput?(Data(), true)
@@ -186,7 +188,7 @@ public final class EngineClient {
       case .agent: try await loadAgentPane(pane.paneId, replacing: true)
       case .editor: try await loadEditorPane(pane.paneId)
       case .web: break
-      case .writing: break
+      case .writing: try await loadWritingPane(pane.paneId)
       }
     }
     await reader.value
@@ -399,8 +401,9 @@ public final class EngineClient {
       try applyWebEvent(eventName, params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
-      .paneConfigChanged, .writingChanged:
+      .paneConfigChanged:
       break
+    case .writingChanged: try applyWritingEvent(params)
     }
   }
   private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
@@ -420,6 +423,7 @@ public final class EngineClient {
       if let id { agentPanes.removeValue(forKey: id) }
       if let id { agentWebDrafts.removeValue(forKey: id) }
       if let id { discardEditorPane(id) }
+      if let id { discardWritingPane(id) }
       if let id { discardWebPane(id) }
       if selectedPaneId == id { select(panes.first?.paneId) }
     case .paneStateChanged:
@@ -463,6 +467,7 @@ public final class EngineClient {
     try applyAgentSnapshot(sections, panes: panes)
     try applyTaskSnapshot(sections, panes: panes)
     try applyEditorSnapshot(sections, panes: panes)
+    try applyWritingSnapshot(sections, panes: panes)
     applyWebSnapshot(panes: panes)
     pairRequests = requests
     cursor = UInt64(result.cursor)!
@@ -496,7 +501,7 @@ public final class EngineClient {
           case .agent: try await self.loadAgentPane(paneId, replacing: true)
           case .editor: try await self.loadEditorPane(paneId)
           case .web: break
-          case .writing: break
+          case .writing: try await self.loadWritingPane(paneId)
           }
         }
       }
