@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5423a3c96ff94c06f5a93b85f760ca6409dfa8d6673497c61c9b32ba50850835). Do not edit.
+// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
 import Foundation
 
 
@@ -5220,6 +5220,28 @@ public struct WritingFormatResult: Codable, Sendable {
     public var `file`: FileDocument
     public init(`file`: FileDocument) {
         self.`file` = `file`
+    }
+}
+
+public struct WritingAssetReadParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `asset`: String
+    public init(`fileId`: Id, `revision`: Decimal, `asset`: String) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`asset` = `asset`
+    }
+}
+
+public struct WritingAssetReadResult: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `image`: AttachmentRef
+    public init(`fileId`: Id, `revision`: Decimal, `image`: AttachmentRef) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`image` = `image`
     }
 }
 

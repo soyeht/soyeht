@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5423a3c96ff94c06f5a93b85f760ca6409dfa8d6673497c61c9b32ba50850835). Do not edit.
+// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -2637,6 +2637,18 @@ export interface WritingFormatResult {
   "file": FileDocument;
 }
 
+export interface WritingAssetReadParams {
+  "fileId": Id;
+  "revision": Decimal;
+  "asset": string;
+}
+
+export interface WritingAssetReadResult {
+  "fileId": Id;
+  "revision": Decimal;
+  "image": AttachmentRef;
+}
+
 export interface WritingPreferencesParams {
   "fileId": Id;
   "baseRevision": Decimal;
@@ -2838,6 +2850,7 @@ export interface Methods {
   "writing.document.open": { params: WritingDocumentOpenParams; result: WritingDocumentOpenResult };
   "writing.structure": { params: WritingStructureParams; result: WritingStructureResult };
   "writing.format": { params: WritingFormatParams; result: WritingFormatResult };
+  "writing.asset.read": { params: WritingAssetReadParams; result: WritingAssetReadResult };
   "writing.preferences.set": { params: WritingPreferencesParams; result: WritingPreferencesResult };
   "writing.variant.request": { params: WritingVariantRequestParams; result: WritingVariantRequestResult };
   "writing.variant.add": { params: WritingVariantAddParams; result: WritingVariantResult };

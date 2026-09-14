@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5423a3c96ff94c06f5a93b85f760ca6409dfa8d6673497c61c9b32ba50850835). Do not edit.
+// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -439,6 +439,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "WritingStructureResult": return try codec(SoyehtProtocol.WritingStructureResult.self, data)
         case "WritingFormatParams": return try codec(SoyehtProtocol.WritingFormatParams.self, data)
         case "WritingFormatResult": return try codec(SoyehtProtocol.WritingFormatResult.self, data)
+        case "WritingAssetReadParams": return try codec(SoyehtProtocol.WritingAssetReadParams.self, data)
+        case "WritingAssetReadResult": return try codec(SoyehtProtocol.WritingAssetReadResult.self, data)
         case "WritingPreferencesParams": return try codec(SoyehtProtocol.WritingPreferencesParams.self, data)
         case "WritingPreferencesResult": return try codec(SoyehtProtocol.WritingPreferencesResult.self, data)
         case "WritingVariantRequestParams": return try codec(SoyehtProtocol.WritingVariantRequestParams.self, data)

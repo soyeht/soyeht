@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5423a3c96ff94c06f5a93b85f760ca6409dfa8d6673497c61c9b32ba50850835). Do not edit.
+// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -4733,6 +4733,24 @@ pub struct WritingFormatResult {
     pub file: FileDocument,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingAssetReadParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "asset")]
+    pub asset: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WritingAssetReadResult {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "image")]
+    pub image: AttachmentRef,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WritingPreferencesParams {
     #[serde(rename = "fileId")]
     pub file_id: Id,
@@ -5093,6 +5111,8 @@ pub enum Request {
     WritingStructure(WritingStructureParams),
     #[serde(rename = "writing.format")]
     WritingFormat(WritingFormatParams),
+    #[serde(rename = "writing.asset.read")]
+    WritingAssetRead(WritingAssetReadParams),
     #[serde(rename = "writing.preferences.set")]
     WritingPreferencesSet(WritingPreferencesParams),
     #[serde(rename = "writing.variant.request")]
@@ -5498,6 +5518,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "WritingFormatParams",
         "WritingFormatResult",
         true,
+    ),
+    (
+        "writing.asset.read",
+        "WritingAssetReadParams",
+        "WritingAssetReadResult",
+        false,
     ),
     (
         "writing.preferences.set",

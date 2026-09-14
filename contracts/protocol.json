@@ -9620,6 +9620,48 @@
       ],
       "additionalProperties": true
     },
+    "WritingAssetReadParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "asset": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "fileId",
+        "revision",
+        "asset"
+      ],
+      "additionalProperties": true
+    },
+    "WritingAssetReadResult": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "image": {
+          "$ref": "#/$defs/AttachmentRef"
+        }
+      },
+      "required": [
+        "fileId",
+        "revision",
+        "image"
+      ],
+      "additionalProperties": true
+    },
     "WritingPreferencesParams": {
       "type": "object",
       "properties": {
@@ -10886,6 +10928,15 @@
         "$ref": "#/$defs/WritingFormatResult"
       },
       "mutation": true
+    },
+    "writing.asset.read": {
+      "params": {
+        "$ref": "#/$defs/WritingAssetReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WritingAssetReadResult"
+      },
+      "mutation": false
     },
     "writing.preferences.set": {
       "params": {

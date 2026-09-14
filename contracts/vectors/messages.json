@@ -9692,6 +9692,29 @@
     }
   },
   {
+    "name": "WritingAssetReadParams",
+    "type": "WritingAssetReadParams",
+    "value": {
+      "fileId": "writing-file-1",
+      "revision": "1",
+      "asset": "assets/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png"
+    }
+  },
+  {
+    "name": "WritingAssetReadResult",
+    "type": "WritingAssetReadResult",
+    "value": {
+      "fileId": "writing-file-1",
+      "revision": "1",
+      "image": {
+        "attachmentId": "22222222-2222-4222-8222-222222222222",
+        "mimeType": "image/png",
+        "name": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png",
+        "bytes": "8"
+      }
+    }
+  },
+  {
     "name": "WritingPreferencesParams",
     "type": "WritingPreferencesParams",
     "value": {
@@ -10342,6 +10365,38 @@
           "dirty": false,
           "conflicted": false,
           "watching": false
+        }
+      }
+    }
+  },
+  {
+    "name": "request:writing.asset.read",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-asset-1",
+      "method": "writing.asset.read",
+      "params": {
+        "fileId": "writing-file-1",
+        "revision": "1",
+        "asset": "assets/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png"
+      }
+    }
+  },
+  {
+    "name": "response:writing.asset.read",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "writing-asset-1",
+      "result": {
+        "fileId": "writing-file-1",
+        "revision": "1",
+        "image": {
+          "attachmentId": "22222222-2222-4222-8222-222222222222",
+          "mimeType": "image/png",
+          "name": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png",
+          "bytes": "8"
         }
       }
     }
