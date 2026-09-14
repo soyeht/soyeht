@@ -5,6 +5,7 @@ pub(crate) mod attachments;
 mod documents;
 mod formatting;
 mod structure;
+mod variants;
 
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
@@ -19,6 +20,10 @@ pub fn handles(method: &str) -> bool {
             | "writing.format"
             | "writing.asset.read"
             | "writing.preferences.set"
+            | "writing.variant.request"
+            | "writing.variant.add"
+            | "writing.variant.select"
+            | "writing.variant.remove"
     )
 }
 
@@ -66,9 +71,13 @@ impl Core {
             "writing.section.list" => self.writing_section_list(params),
             "writing.document.create" => self.writing_document_create(connection, params),
             "writing.document.open" => self.writing_document_open(connection, params),
-            "writing.structure" => self.writing_structure(params),
+            "writing.structure" => self.writing_structure(connection, params),
             "writing.format" => self.writing_format(connection, params, writing_image),
             "writing.preferences.set" => self.writing_preferences(connection, params),
+            "writing.variant.request" => self.writing_variant_request(connection, params),
+            "writing.variant.add" => self.writing_variant_add(connection, params),
+            "writing.variant.select" => self.writing_variant_select(connection, params),
+            "writing.variant.remove" => self.writing_variant_remove(connection, params),
             _ => Err(errors::internal("Unknown writing method")),
         }
     }

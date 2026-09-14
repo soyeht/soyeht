@@ -285,6 +285,212 @@ fn writing_format_uses_the_owned_revisioned_file_and_survives_restart() {
 }
 
 #[test]
+fn screenplay_variants_are_agent_authored_writer_selected_and_restart_durable() {
+    let mut rig = Rig::new();
+    let (mut human, workspace, file_id, path) = screenplay_variant_fixture(&rig);
+    let (mut agent_client, pane) = rig.agent_in_workspace(&workspace);
+    let agent_name = agent_client.pane(&pane)["name"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let request = json!({"fileId":file_id,"lineId":"element-3","baseRevision":"1",
+        "agentPaneId":pane,"instruction":"Write a quieter alternate.",
+        "idempotencyKey":"request-screenplay-variant"});
+    let requested = human.call("writing.variant.request", request.clone());
+    assert_eq!(requested["delivered"], true);
+    assert_eq!(human.call("writing.variant.request", request), requested);
+
+    let binding = rig.database_probe().agent_binding(&pane).unwrap();
+    let (mut agent, welcome) = binding_hello(&rig.path.join("engine.sock"), &binding);
+    assert_eq!(welcome["result"]["role"], "agent");
+    let context = binding_request(
+        &mut agent,
+        2,
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    assert!(context["result"]["variants"].as_array().unwrap().is_empty());
+    let add_params = json!({"fileId":file_id,"lineId":"element-3","baseRevision":"1",
+        "text":"Is it late already?","idempotencyKey":"add-screenplay-variant"});
+    let added = binding_request(&mut agent, 3, "writing.variant.add", add_params.clone());
+    assert!(added.get("error").is_none(), "{added}");
+    assert_eq!(
+        added["result"]["variants"]["alternates"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        added["result"]["variants"]["alternates"][1]["author"]["actor"]["paneId"],
+        pane
+    );
+    assert_eq!(
+        added["result"]["variants"]["alternates"][1]["author"]["name"],
+        agent_name
+    );
+    assert_eq!(
+        binding_request(&mut agent, 4, "writing.variant.add", add_params)["result"],
+        added["result"]
+    );
+    let denied = binding_request(
+        &mut agent,
+        5,
+        "writing.variant.select",
+        json!({"fileId":file_id,"lineId":"element-3",
+            "variantId":added["result"]["variants"]["alternates"][1]["variantId"],
+            "baseRevision":"1","idempotencyKey":"agent-cannot-select"}),
+    );
+    assert_eq!(denied["error"]["data"]["kind"], "forbidden_role");
+
+    let alternate_id = added["result"]["variants"]["alternates"][1]["variantId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let select = json!({"fileId":file_id,"lineId":"element-3","variantId":alternate_id,
+        "baseRevision":"1","idempotencyKey":"select-screenplay-variant"});
+    let selected = human.call("writing.variant.select", select.clone());
+    assert_eq!(selected["document"]["file"]["revision"], "2");
+    assert_eq!(selected["variants"]["selectedIndex"], 1);
+    assert_eq!(human.call("writing.variant.select", select), selected);
+    wait_for_path_text(&path, "INT. STATION - NIGHT\n\nANA\nIs it late already?\n");
+
+    drop(agent);
+    drop(agent_client);
+    drop(human);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let structure = restored.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"2"}),
+    );
+    assert_eq!(structure["variants"][0]["selectedIndex"], 1);
+    assert_eq!(
+        structure["variants"][0]["alternates"][1]["text"],
+        "Is it late already?"
+    );
+
+    let remove = json!({"fileId":file_id,"lineId":"element-3","variantId":alternate_id,
+        "baseRevision":"2","idempotencyKey":"remove-screenplay-variant"});
+    let removed = restored.call("writing.variant.remove", remove.clone());
+    assert_eq!(removed["document"]["file"]["revision"], "3");
+    assert_eq!(
+        removed["variants"]["alternates"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(restored.call("writing.variant.remove", remove), removed);
+    wait_for_path_text(&path, VARIANT_SCREENPLAY);
+    drop(restored);
+    rig.kill_engine();
+    rig.start();
+    let mut final_client = rig.client();
+    let final_structure = final_client.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"3"}),
+    );
+    assert_eq!(final_structure["variants"][0]["selectedIndex"], 0);
+    assert_eq!(
+        final_structure["variants"][0]["alternates"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(fs::read_to_string(path).unwrap(), VARIANT_SCREENPLAY);
+}
+
+const VARIANT_SCREENPLAY: &str = "INT. STATION - NIGHT\n\nANA\nWhat time is it?\n";
+
+fn screenplay_variant_fixture(rig: &Rig) -> (Client, String, String, PathBuf) {
+    let repository = rig.path.join("screenplay-variants");
+    fs::create_dir_all(repository.join("Writing/Screenplays")).unwrap();
+    let path = repository.join("Writing/Screenplays/night-train.fountain");
+    fs::write(&path, VARIANT_SCREENPLAY).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Screenplay variants","path":repository,"idempotencyKey":"variant-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let file_id = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Screenplays/night-train.fountain",
+            "kind":"screenplay","idempotencyKey":"variant-open"}),
+    )["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (client, workspace, file_id, path)
+}
+
+fn wait_for_path_text(path: &std::path::Path, expected: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while fs::read_to_string(path).unwrap() != expected {
+        assert!(Instant::now() < deadline, "writing draft did not autosave");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn bound_agent_cannot_read_or_add_variants_in_another_workspace() {
+    let rig = Rig::new();
+    let first = rig.path.join("variant-agent-workspace");
+    let second = rig.path.join("variant-document-workspace");
+    fs::create_dir_all(&first).unwrap();
+    fs::create_dir_all(second.join("Writing/Screenplays")).unwrap();
+    fs::write(
+        second.join("Writing/Screenplays/private.fountain"),
+        "INT. ROOM - DAY\n\nANA\nKeep this private.\n",
+    )
+    .unwrap();
+    let mut human = rig.client();
+    let first_workspace = human.call(
+        "workspace.create",
+        json!({"name":"Variant agent","path":first,"idempotencyKey":"variant-agent-scope"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second_workspace = human.call(
+        "workspace.create",
+        json!({"name":"Variant document","path":second,"idempotencyKey":"variant-document-scope"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let file_id = human.call(
+        "writing.document.open",
+        json!({"workspaceId":second_workspace,"path":"Writing/Screenplays/private.fountain",
+            "kind":"screenplay","idempotencyKey":"open-private-screenplay"}),
+    )["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, pane) = rig.agent_in_workspace(&first_workspace);
+    let binding = rig.database_probe().agent_binding(&pane).unwrap();
+    let (mut agent, _) = binding_hello(&rig.path.join("engine.sock"), &binding);
+    for (id, method, params) in [
+        (
+            2,
+            "writing.structure",
+            json!({"fileId":file_id,"revision":"1"}),
+        ),
+        (
+            3,
+            "writing.variant.add",
+            json!({"fileId":file_id,"lineId":"element-3","baseRevision":"1",
+                "text":"Do not cross this boundary.","idempotencyKey":"cross-workspace-variant"}),
+        ),
+    ] {
+        let denied = binding_request(&mut agent, id, method, params);
+        assert_eq!(denied["error"]["data"]["kind"], "unauthorized");
+    }
+}
+
+#[test]
 fn presentation_image_is_content_addressed_recoverable_and_idempotent() {
     let mut rig = Rig::new();
     let repository = rig.path.join("presentation-image-repository");

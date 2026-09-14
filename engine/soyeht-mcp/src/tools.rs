@@ -28,7 +28,7 @@ struct Tool {
     schema: fn() -> Value,
 }
 
-const TOOLS: [Tool; 31] = [
+const TOOLS: [Tool; 33] = [
     Tool {
         name: "task_create",
         method: "task.create",
@@ -133,6 +133,20 @@ const TOOLS: [Tool; 31] = [
         audience: Audience::Both,
         description: "Configure the loop for this pane.",
         schema: loop_schema,
+    },
+    Tool {
+        name: "writing_structure",
+        method: "writing.structure",
+        audience: Audience::Both,
+        description: "Read the bounded structure of an open writing document.",
+        schema: writing_structure_schema,
+    },
+    Tool {
+        name: "writing_variant_add",
+        method: "writing.variant.add",
+        audience: Audience::Both,
+        description: "Add one alternate take to a screenplay line for the writer to choose.",
+        schema: writing_variant_add_schema,
     },
     Tool {
         name: "web_open",
@@ -396,6 +410,7 @@ fn mutating(method: &str) -> bool {
         method,
         "task.show"
             | "task.list"
+            | "writing.structure"
             | "web.snapshot"
             | "web.wait"
             | "web.screenshot"
@@ -583,6 +598,28 @@ fn loop_schema() -> Value {
             ("enabled", json!({"type":"boolean"})),
         ]),
         &["prompt", "interval", "maxRounds", "stopWhen", "enabled"],
+    )
+}
+
+fn writing_structure_schema() -> Value {
+    object(
+        fields(&[("fileId", id()), ("revision", decimal())]),
+        &["fileId", "revision"],
+    )
+}
+
+fn writing_variant_add_schema() -> Value {
+    object(
+        fields(&[
+            ("fileId", id()),
+            ("lineId", id()),
+            ("baseRevision", decimal()),
+            (
+                "text",
+                bounded_string(soyeht_protocol::limits::WRITING_VARIANT_BYTES),
+            ),
+        ]),
+        &["fileId", "lineId", "baseRevision", "text"],
     )
 }
 
@@ -834,6 +871,10 @@ mod tests {
         assert!(chief_names.contains(&"task_dispatch".into()));
         assert!(chief_names.contains(&"task_list".into()));
         assert!(!chief_names.contains(&"task_complete".into()));
+        for name in ["writing_structure", "writing_variant_add"] {
+            assert!(agent_names.contains(&name.into()));
+            assert!(chief_names.contains(&name.into()));
+        }
         for name in [
             "web_open",
             "web_navigate",
@@ -907,6 +948,14 @@ mod tests {
             (
                 "loop_set",
                 json!({"prompt":"Continue","interval":5,"maxRounds":10,"stopWhen":"round_limit","enabled":true}),
+            ),
+            (
+                "writing_structure",
+                json!({"fileId":"file-1","revision":"1"}),
+            ),
+            (
+                "writing_variant_add",
+                json!({"fileId":"file-1","lineId":"element-3","baseRevision":"1","text":"Another take."}),
             ),
         ] {
             assert!(

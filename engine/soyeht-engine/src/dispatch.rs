@@ -232,10 +232,11 @@ impl Core {
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method.starts_with("task.")
             && !method.starts_with("web.")
+            && !matches!(method, "writing.structure" | "writing.variant.add")
             && method != "loop.set"
         {
             return Err(errors::forbidden_role(
-                "Agent bindings may call only task and loop methods",
+                "Agent binding method is not allowed",
             ));
         }
         if actor.role == Role::HumanDevice

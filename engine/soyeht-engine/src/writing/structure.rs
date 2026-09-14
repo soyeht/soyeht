@@ -52,10 +52,12 @@ impl Core {
         .map_err(|_| errors::internal("Writing section list cannot be encoded"))
     }
 
-    pub(super) fn writing_structure(&self, params: &Value) -> Result<Value> {
+    pub(super) fn writing_structure(&self, connection: &str, params: &Value) -> Result<Value> {
         let request: WritingStructureParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid writing structure parameters"))?;
         let file = self.editor.stored(&request.file_id)?.clone();
+        let author = self.file_author(connection)?;
+        super::variants::authorize_agent_workspace(self, &author, &file.workspace_id)?;
         require_revision(&request.revision, file.revision)?;
         let record = self.writing_record(&file.file_id)?;
         let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
