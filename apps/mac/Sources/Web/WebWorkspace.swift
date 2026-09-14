@@ -30,6 +30,7 @@ private struct WebEmptyState: View {
   @Bindable var client: EngineClient
   let workspaceId: String?
   @State private var address = ""
+  @State private var incognito = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
@@ -40,6 +41,16 @@ private struct WebEmptyState: View {
         .foregroundStyle(MacTheme.secondary)
       serverList
       addressField
+      Toggle(isOn: $incognito) {
+        VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+          Text("Incognito pane")
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+          Text("Use a temporary session that is discarded when this pane closes.")
+            .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+            .foregroundStyle(MacTheme.secondary)
+        }
+      }
+      .toggleStyle(.switch)
     }
     .padding(MacTheme.Space.x14)
     .frame(width: 420)
@@ -99,7 +110,9 @@ private struct WebEmptyState: View {
       return
     }
     Task {
-      do { _ = try await client.openWeb(workspaceId: workspaceId, url: url) } catch {
+      do {
+        _ = try await client.openWeb(workspaceId: workspaceId, url: url, incognito: incognito)
+      } catch {
         client.problem = error.localizedDescription
       }
     }
