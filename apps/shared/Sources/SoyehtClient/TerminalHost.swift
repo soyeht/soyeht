@@ -10,23 +10,28 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   private let acceptsInput: Bool
   private let ringBell: () -> Void
   private var openFile: (String, FilePathReference) -> Void
+  private var openWeb: (String, URL) -> Void
   private var feeding = false
   private var selection: String?
   private var applyingRemoteSize = false
 
   init(
     client: EngineClient, acceptsInput: Bool, ringBell: @escaping () -> Void = {},
-    openFile: @escaping (String, FilePathReference) -> Void = { _, _ in }
+    openFile: @escaping (String, FilePathReference) -> Void = { _, _ in },
+    openWeb: @escaping (String, URL) -> Void = { _, _ in }
   ) {
     self.client = client
     self.acceptsInput = acceptsInput
     self.ringBell = ringBell
     self.openFile = openFile
+    self.openWeb = openWeb
   }
 
   func updateOpenFile(_ action: @escaping (String, FilePathReference) -> Void) {
     openFile = action
   }
+
+  func updateOpenWeb(_ action: @escaping (String, URL) -> Void) { openWeb = action }
 
   func attach(_ view: TerminalView) {
     view.terminalDelegate = self
@@ -72,10 +77,16 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   public func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
   public func scrolled(source: TerminalView, position: Double) {}
   public func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-    guard let workspaceId = client.selectedPane?.workspaceId,
-      let reference = FilePathReference.parse(link)
-    else { return }
-    openFile(workspaceId, reference)
+    guard let workspaceId = client.selectedPane?.workspaceId else { return }
+    if let reference = FilePathReference.parse(link) {
+      openFile(workspaceId, reference)
+    } else if let destination = WebLinkRouting.destination(
+      for: link, openExternalLinksInSoyeht: true)
+    {
+      switch destination {
+      case .soyeht(let url), .system(let url): openWeb(workspaceId, url)
+      }
+    }
   }
   public func bell(source: TerminalView) { ringBell() }
   public func clipboardCopy(source: TerminalView, content: Data) {}

@@ -6,6 +6,7 @@ private enum PreferencesSection {
   case harnesses
   case usage
   case editor
+  case links
 }
 
 struct PreferencesPanel: View {
@@ -27,6 +28,7 @@ struct PreferencesPanel: View {
       case .usage:
         UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
       case .editor: EditorInputPreferencesPanel()
+      case .links: WebLinkPreferencesPanel()
       }
     }
     .padding(MacTheme.Space.x10)
@@ -62,6 +64,7 @@ private struct PreferencesSidebar: View {
       sidebarRow("Engine", icon: "memorychip")
       sidebarRow("Phone", icon: "iphone")
       sidebarRow("Tasks & loops", icon: "list.bullet.clipboard")
+      sidebarButton("Links", icon: "link", section: .links)
       sidebarButton("Shortcuts", icon: "keyboard", section: .editor)
       Spacer()
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
@@ -114,6 +117,42 @@ private struct PreferencesSidebar: View {
 
   private var appVersion: String {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Dev"
+  }
+}
+
+private struct WebLinkPreferencesPanel: View {
+  @Environment(WebLinkPreferences.self) private var preferences
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
+      Text("Web links").font(MacTheme.chrome(18, weight: .bold))
+      Text("Local links open in a web pane. Choose whether other web links do too.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+      Button {
+        preferences.setOpenExternalLinksInSoyeht(!preferences.openExternalLinksInSoyeht)
+      } label: {
+        HStack(spacing: MacTheme.Space.x14) {
+          VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+            Text("Open external links in Soyeht")
+              .font(MacTheme.chrome(14, weight: .bold))
+            Text("When off, external links use the system browser")
+              .font(MacTheme.chrome(MacTheme.TypeScale.control))
+              .foregroundStyle(MacTheme.secondary)
+          }
+          Spacer()
+          PreferenceToggle(isOn: preferences.openExternalLinksInSoyeht)
+        }
+        .padding(.horizontal, MacTheme.Space.x16).frame(height: 64)
+        .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+      }
+      .buttonStyle(.plain)
+      Text("localhost and loopback links always open in Soyeht.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
+      Spacer()
+    }
+    .padding(.vertical, MacTheme.Space.x16).padding(.horizontal, 22)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 }
 

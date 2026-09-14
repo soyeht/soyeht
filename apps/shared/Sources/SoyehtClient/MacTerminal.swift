@@ -19,12 +19,16 @@
   public struct MacTerminal: NSViewRepresentable {
     private let client: EngineClient
     @Environment(\.filePathOpenAction) private var openFile
+    @Environment(\.webLinkOpenAction) private var openWeb
     public init(client: EngineClient) { self.client = client }
     public func makeCoordinator() -> TerminalHost {
       TerminalHost(
         client: client, acceptsInput: true, ringBell: { NSSound.beep() },
         openFile: { workspaceId, reference in
           openFile(workspaceId: workspaceId, reference: reference)
+        },
+        openWeb: { workspaceId, url in
+          openWeb(workspaceId: workspaceId, url: url)
         })
     }
     public func makeNSView(context: Context) -> TerminalView {
@@ -45,6 +49,9 @@
     public func updateNSView(_ view: TerminalView, context: Context) {
       context.coordinator.updateOpenFile { workspaceId, reference in
         openFile(workspaceId: workspaceId, reference: reference)
+      }
+      context.coordinator.updateOpenWeb { workspaceId, url in
+        openWeb(workspaceId: workspaceId, url: url)
       }
       context.coordinator.update(view)
     }

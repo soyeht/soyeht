@@ -115,6 +115,7 @@ public struct FilePathText: View {
   private let text: String
   private let workspaceId: String
   @Environment(\.filePathOpenAction) private var openFile
+  @Environment(\.webLinkOpenAction) private var openWeb
 
   public init(_ text: String, workspaceId: String) {
     self.text = text
@@ -126,18 +127,22 @@ public struct FilePathText: View {
       .environment(
         \.openURL,
         OpenURLAction { url in
-          guard let reference = Self.reference(from: url) else { return .discarded }
-          openFile(workspaceId: workspaceId, reference: reference)
+          if let reference = Self.reference(from: url) {
+            openFile(workspaceId: workspaceId, reference: reference)
+            return .handled
+          }
+          guard ["http", "https"].contains(url.scheme?.lowercased()) else { return .discarded }
+          openWeb(workspaceId: workspaceId, url: url)
           return .handled
         })
   }
 
   private var attributedText: AttributedString {
-    guard openFile.enabled else { return AttributedString(text) }
+    guard openFile.enabled || openWeb.enabled else { return AttributedString(text) }
     var result = AttributedString()
     for segment in FilePathLinks.segments(in: text) {
       switch segment {
-      case .plain(let value): result += AttributedString(value)
+      case .plain(let value): appendPlain(value, to: &result)
       case .reference(let label, let reference):
         var value = AttributedString(label)
         value.link = Self.url(for: reference)
@@ -145,6 +150,24 @@ public struct FilePathText: View {
       }
     }
     return result
+  }
+
+  private func appendPlain(_ value: String, to result: inout AttributedString) {
+    guard openWeb.enabled else {
+      result += AttributedString(value)
+      return
+    }
+    var cursor = value.startIndex
+    for link in WebLinkRouting.links(in: value) {
+      if cursor < link.range.lowerBound {
+        result += AttributedString(String(value[cursor..<link.range.lowerBound]))
+      }
+      var linked = AttributedString(link.label)
+      linked.link = link.url
+      result += linked
+      cursor = link.range.upperBound
+    }
+    if cursor < value.endIndex { result += AttributedString(String(value[cursor...])) }
   }
 
   private static func url(for reference: FilePathReference) -> URL? {

@@ -9,6 +9,7 @@ struct WorkspaceWindow: View {
   let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
   @State private var editorInputPreferences = EditorInputPreferences()
+  @State private var webLinkPreferences = WebLinkPreferences()
   @State private var paneToClose: String?
   @State private var showNewPane = false
   @State private var showPairing = false
@@ -47,6 +48,7 @@ struct WorkspaceWindow: View {
     .padding(EdgeInsets(top: 14, leading: 18, bottom: 18, trailing: 18))
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
     .environment(editorInputPreferences)
+    .environment(webLinkPreferences)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
     .alert(
       "Close pane?",
@@ -121,6 +123,12 @@ struct WorkspaceWindow: View {
       \.filePathOpenAction,
       FilePathOpenAction { workspaceId, reference in
         openFileReference(workspaceId: workspaceId, reference: reference)
+      }
+    )
+    .environment(
+      \.webLinkOpenAction,
+      WebLinkOpenAction { workspaceId, url in
+        openWebLink(workspaceId: workspaceId, url: url)
       }
     )
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtPreferences)) { _ in
@@ -214,6 +222,20 @@ struct WorkspaceWindow: View {
         taskWorkspaceId = workspaceId
         navigation.select(.editor)
       } catch { client.problem = error.localizedDescription }
+    }
+  }
+  private func openWebLink(workspaceId: String, url: URL) {
+    switch webLinkPreferences.destination(for: url.absoluteString) {
+    case .soyeht(let target):
+      Task { @MainActor in
+        do {
+          _ = try await client.openWeb(workspaceId: workspaceId, url: target.absoluteString)
+          taskWorkspaceId = workspaceId
+          navigation.select(.web)
+        } catch { client.problem = error.localizedDescription }
+      }
+    case .system(let target): NSWorkspace.shared.open(target)
+    case nil: client.problem = "Only HTTP and HTTPS links can be opened."
     }
   }
   private func selectDestination(_ destination: WorkspaceDestination) {
