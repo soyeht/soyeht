@@ -10,6 +10,7 @@ pub fn handles(method: &str) -> bool {
     matches!(
         method,
         "writing.section.list"
+            | "writing.document.create"
             | "writing.document.open"
             | "writing.structure"
             | "writing.preferences.set"
@@ -56,6 +57,7 @@ impl Core {
     ) -> Result<Value> {
         match method {
             "writing.section.list" => self.writing_section_list(params),
+            "writing.document.create" => self.writing_document_create(connection, params),
             "writing.document.open" => self.writing_document_open(connection, params),
             "writing.structure" => self.writing_structure(params),
             "writing.preferences.set" => self.writing_preferences(connection, params),

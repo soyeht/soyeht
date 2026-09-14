@@ -15,6 +15,8 @@ pub trait FileSystemPort: Send {
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>>;
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String>;
     fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool>;
+    fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool>;
+    fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf>;
 }
 
 #[derive(Default)]
@@ -74,6 +76,119 @@ impl FileSystemPort for SystemFiles {
         }
         result.map(|()| true)
     }
+
+    fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool> {
+        let root = root.canonicalize()?;
+        validate_relative_creation_path(relative)?;
+        let target = root.join(relative);
+        match fs::symlink_metadata(&target) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "document target cannot be a symbolic link",
+                    ));
+                }
+                let canonical = target.canonicalize()?;
+                if !canonical.starts_with(&root) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "document target leaves the workspace",
+                    ));
+                }
+                Ok(true)
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf> {
+        let root = root.canonicalize()?;
+        validate_relative_creation_path(relative)?;
+        let parent = create_contained_directories(&root, relative)?;
+        let filename = relative.file_name().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "document filename is missing")
+        })?;
+        let target = parent.join(filename);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+        {
+            Ok(file) => file.sync_all()?,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(&target)?;
+                if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "document target already exists",
+                    ));
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        fs::File::open(&parent)?.sync_all()?;
+        let canonical = target.canonicalize()?;
+        if !canonical.starts_with(&root) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "document target leaves the workspace",
+            ));
+        }
+        Ok(canonical)
+    }
+}
+
+fn validate_relative_creation_path(relative: &Path) -> io::Result<()> {
+    if relative.as_os_str().is_empty()
+        || relative.is_absolute()
+        || relative
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "document path must be a normal relative path",
+        ));
+    }
+    Ok(())
+}
+
+fn create_contained_directories(root: &Path, relative: &Path) -> io::Result<PathBuf> {
+    let mut current = root.to_path_buf();
+    let parent = relative.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "document path has no parent")
+    })?;
+    for component in parent.components() {
+        let Component::Normal(component) = component else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "document folder is invalid",
+            ));
+        };
+        let next = current.join(component);
+        match fs::create_dir(&next) {
+            Ok(()) => fs::File::open(&current)?.sync_all()?,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+        let metadata = fs::symlink_metadata(&next)?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "document folder is not a regular directory",
+            ));
+        }
+        current = next.canonicalize()?;
+        if !current.starts_with(root) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "document folder leaves the workspace",
+            ));
+        }
+    }
+    Ok(current)
 }
 
 struct OpenDocument {
@@ -211,6 +326,38 @@ impl Service {
             .canonicalize(workspace_root)
             .map_err(errors::io)?;
         self.files.project_files(&root).map_err(errors::io)
+    }
+
+    pub fn creation_target_exists(&self, workspace_root: &Path, relative: &str) -> Result<bool> {
+        self.files
+            .creation_target_exists(workspace_root, Path::new(relative))
+            .map_err(|error| {
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::InvalidInput | io::ErrorKind::PermissionDenied
+                ) {
+                    errors::invalid(error.to_string())
+                } else {
+                    errors::io(error)
+                }
+            })
+    }
+
+    pub fn create_empty_text(&self, workspace_root: &Path, relative: &str) -> Result<PathBuf> {
+        self.files
+            .create_empty_text(workspace_root, Path::new(relative))
+            .map_err(|error| {
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::AlreadyExists
+                        | io::ErrorKind::InvalidInput
+                        | io::ErrorKind::PermissionDenied
+                ) {
+                    errors::invalid(error.to_string())
+                } else {
+                    errors::io(error)
+                }
+            })
     }
 
     pub fn project_text(&self, workspace_id: &str, file: &ProjectFile) -> Result<Option<String>> {
@@ -610,6 +757,12 @@ mod tests {
                 .push((path.into(), text.into()));
             Ok(true)
         }
+        fn creation_target_exists(&self, _root: &Path, relative: &Path) -> io::Result<bool> {
+            Ok(self.contents.contains_key(relative))
+        }
+        fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf> {
+            Ok(root.join(relative))
+        }
     }
 
     struct SwappingFiles {
@@ -652,6 +805,12 @@ mod tests {
         ) -> io::Result<bool> {
             self.wrote.store(true, Ordering::SeqCst);
             Ok(true)
+        }
+        fn creation_target_exists(&self, _root: &Path, _relative: &Path) -> io::Result<bool> {
+            Ok(false)
+        }
+        fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf> {
+            Ok(root.join(relative))
         }
     }
 
@@ -730,6 +889,43 @@ mod tests {
         assert_eq!(service.current_disk(&root, &file).unwrap(), "before");
         assert!(service.save_disk(&root, &file, "before", "after").is_err());
         assert!(!wrote.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn document_creation_is_exclusive_recoverable_and_symlink_safe() {
+        let root = std::env::temp_dir().join(format!("sn-create-{}", Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("sn-create-outside-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        let files = SystemFiles;
+        let relative = Path::new("Writing/Texts/field-notes.md");
+
+        assert!(!files.creation_target_exists(&root, relative).unwrap());
+        let canonical = files.create_empty_text(&root, relative).unwrap();
+        assert_eq!(canonical, root.join(relative).canonicalize().unwrap());
+        assert_eq!(fs::read(&canonical).unwrap(), Vec::<u8>::new());
+        assert!(files.creation_target_exists(&root, relative).unwrap());
+        assert_eq!(files.create_empty_text(&root, relative).unwrap(), canonical);
+
+        fs::write(&canonical, "existing work").unwrap();
+        assert_eq!(
+            files.create_empty_text(&root, relative).unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        fs::create_dir(root.join("Writing/Screenplays")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("Writing/Screenplays/linked")).unwrap();
+        assert!(
+            files
+                .create_empty_text(
+                    &root,
+                    Path::new("Writing/Screenplays/linked/scene.fountain")
+                )
+                .is_err()
+        );
+        assert!(!outside.join("scene.fountain").exists());
+
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
     }
 
     #[test]

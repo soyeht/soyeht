@@ -5,15 +5,16 @@ use crate::{
     panes::persist_new_pane,
     screen::Screen,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneMode, PaneState, StateSource, WritingDocument, WritingDocumentOpenParams,
-    WritingDocumentOpenResult, WritingFont, WritingKind, WritingPreferencesParams,
-    WritingPreferencesResult, WritingSection,
+    Pane, PaneMode, PaneState, StateSource, WritingDocument, WritingDocumentCreateParams,
+    WritingDocumentCreateResult, WritingDocumentOpenParams, WritingDocumentOpenResult, WritingFont,
+    WritingKind, WritingPreferencesParams, WritingPreferencesResult, WritingSection,
 };
 use soyeht_store::{
     editor::{EditorFile, document},
-    writing::{WritingDocumentRecord, WritingSidecar},
+    writing::{WritingCreateIntent, WritingDocumentRecord, WritingSidecar},
 };
 use std::path::Path;
 use uuid::Uuid;
@@ -29,7 +30,164 @@ struct OpenContext<'a> {
     pane_only: bool,
 }
 
+struct CreateIntentInput<'a> {
+    scope: &'a str,
+    key: &'a str,
+    fingerprint: &'a str,
+    workspace: &'a soyeht_protocol::Workspace,
+    relative: String,
+    kind: WritingKind,
+    section: WritingSection,
+}
+
 impl Core {
+    pub(super) fn writing_document_create(
+        &mut self,
+        connection: &str,
+        params: &Value,
+    ) -> Result<Value> {
+        let request: WritingDocumentCreateParams = parameters(params, "document create")?;
+        if let Some(result) =
+            self.repeated_mutation(connection, "writing.document.create", params)?
+        {
+            return Ok(result);
+        }
+        let kind = soyeht_writing::kind_for(&request.section);
+        let relative = soyeht_writing::new_document_path(
+            &request.section,
+            &request.title,
+            request.relative_folder.as_deref(),
+        )?;
+        let workspace = crate::model::workspace(&self.store, &request.workspace_id)?;
+        let scope = self
+            .clients
+            .get(connection)
+            .map(|client| client.scope.clone())
+            .ok_or_else(|| errors::unauthorized("Writing connection is unavailable"))?;
+        let fingerprint = STANDARD.encode(crate::auth::token_hash(
+            &json!(["writing.document.create", params]).to_string(),
+        ));
+        let intent = self.resolve_writing_create_intent(CreateIntentInput {
+            scope: &scope,
+            key: &request.idempotency_key,
+            fingerprint: &fingerprint,
+            workspace: &workspace,
+            relative,
+            kind,
+            section: request.section,
+        })?;
+        let canonical = self
+            .editor
+            .create_empty_text(Path::new(&workspace.path), &intent.relative_path)?;
+        self.finish_writing_create(connection, params, &workspace, intent, &canonical)
+    }
+
+    fn resolve_writing_create_intent(
+        &self,
+        input: CreateIntentInput<'_>,
+    ) -> Result<WritingCreateIntent> {
+        if let Some(intent) = self
+            .store
+            .writing_create_intent(input.scope, input.key)
+            .map_err(errors::storage)?
+        {
+            if intent.fingerprint != input.fingerprint
+                || intent.workspace_id != input.workspace.workspace_id
+                || intent.relative_path != input.relative
+                || intent.kind != input.kind
+                || intent.section != input.section
+            {
+                return Err(errors::idempotency_conflict(
+                    "Writing creation key belongs to another document",
+                ));
+            }
+            return Ok(intent);
+        }
+        if self
+            .editor
+            .creation_target_exists(Path::new(&input.workspace.path), &input.relative)?
+        {
+            return Err(errors::invalid("Writing document already exists"));
+        }
+        let intent = WritingCreateIntent {
+            scope: input.scope.into(),
+            idempotency_key: input.key.into(),
+            fingerprint: input.fingerprint.into(),
+            operation_id: Uuid::new_v4().to_string(),
+            workspace_id: input.workspace.workspace_id.clone(),
+            relative_path: input.relative,
+            file_id: Uuid::new_v4().to_string(),
+            pane_id: Uuid::new_v4().to_string(),
+            kind: input.kind,
+            section: input.section,
+            created_ms: self.now_ms(),
+        };
+        self.store
+            .record_writing_create_intent(&intent)
+            .map_err(errors::storage)?;
+        Ok(intent)
+    }
+
+    fn finish_writing_create(
+        &mut self,
+        connection: &str,
+        params: &Value,
+        workspace: &soyeht_protocol::Workspace,
+        intent: WritingCreateIntent,
+        canonical: &Path,
+    ) -> Result<Value> {
+        let pane = writing_pane_with_id(
+            workspace,
+            &intent.relative_path,
+            intent.kind.clone(),
+            intent.section.clone(),
+            intent.pane_id.clone(),
+        );
+        let saved_pane = stored_pane(pane.clone());
+        let file = new_file_with_id(
+            workspace,
+            &pane,
+            intent.relative_path.clone(),
+            String::new(),
+            canonical,
+            self.now_ms(),
+            intent.file_id.clone(),
+        );
+        let record = self.record_or_default(
+            file.file_id.clone(),
+            intent.kind.clone(),
+            intent.section.clone(),
+        )?;
+        let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
+        let result = serde_json::to_value(WritingDocumentCreateResult {
+            document: public_document(&file, &record)?,
+            pane: opened.pane,
+            viewport: opened.viewport,
+        })
+        .map_err(|_| errors::internal("Writing create result cannot be encoded"))?;
+        let event = changed_event(&file, &record)?;
+        let screen = self.open_pane_screen(&pane.pane_id)?;
+        let saved_file = file.clone();
+        let saved_record = record.clone();
+        let mutation = self.mutate(connection, "writing.document.create", params, |change| {
+            persist_new_pane(change, &saved_pane, None)?;
+            change.save_editor_file(&saved_file)?;
+            change.save_writing_document(&saved_record)?;
+            change.remove_writing_create_intent(&intent.scope, &intent.idempotency_key)?;
+            Ok((
+                result,
+                vec![
+                    ("pane.created".into(), json!({"pane":saved_pane.pane})),
+                    ("writing.changed".into(), event),
+                ],
+            ))
+        })?;
+        if !mutation.repeated {
+            self.install_open_writing(saved_pane, screen, file, syntax);
+        }
+        Ok(mutation.result)
+    }
+
     pub(super) fn writing_document_open(
         &mut self,
         connection: &str,
@@ -408,8 +566,28 @@ fn new_file(
     canonical: &Path,
     now_ms: i64,
 ) -> EditorFile {
+    new_file_with_id(
+        workspace,
+        pane,
+        relative,
+        text,
+        canonical,
+        now_ms,
+        Uuid::new_v4().to_string(),
+    )
+}
+
+fn new_file_with_id(
+    workspace: &soyeht_protocol::Workspace,
+    pane: &Pane,
+    relative: String,
+    text: String,
+    canonical: &Path,
+    now_ms: i64,
+    file_id: String,
+) -> EditorFile {
     EditorFile {
-        file_id: Uuid::new_v4().to_string(),
+        file_id,
         pane_id: Some(pane.pane_id.clone()),
         workspace_id: workspace.workspace_id.clone(),
         relative_path: relative,
@@ -431,12 +609,28 @@ fn writing_pane(
     kind: WritingKind,
     section: WritingSection,
 ) -> Pane {
+    writing_pane_with_id(
+        workspace,
+        relative,
+        kind,
+        section,
+        Uuid::new_v4().to_string(),
+    )
+}
+
+fn writing_pane_with_id(
+    workspace: &soyeht_protocol::Workspace,
+    relative: &str,
+    kind: WritingKind,
+    section: WritingSection,
+    pane_id: String,
+) -> Pane {
     let name = Path::new(relative)
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or(relative);
     Pane {
-        pane_id: Uuid::new_v4().to_string(),
+        pane_id,
         workspace_id: workspace.workspace_id.clone(),
         name: name.into(),
         cwd: workspace.path.clone(),

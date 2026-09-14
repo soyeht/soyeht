@@ -124,6 +124,98 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
     assert_eq!(restored_document["focusMode"], true);
     assert_eq!(restored_document["file"]["paneId"], pane_id);
 }
+
+#[test]
+fn writing_document_creation_is_durable_disjoint_and_idempotent_across_restart() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("writing-create-repository");
+    fs::create_dir(&repository).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Writing create","path":repository,"idempotencyKey":"writing-create-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let created = client.call(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"texts","title":"Field Notes",
+            "relativeFolder":"Research/September","idempotencyKey":"create-field-notes"
+        }),
+    );
+    assert_eq!(created["document"]["kind"], "text");
+    assert_eq!(created["document"]["section"], "texts");
+    assert_eq!(
+        created["document"]["file"]["path"],
+        "Writing/Texts/Research/September/field-notes.md"
+    );
+    assert_eq!(created["pane"]["mode"], "writing");
+    assert_eq!(created["viewport"]["fromLine"], 0);
+    assert_eq!(created["viewport"]["toLine"], 1);
+    assert_eq!(created["viewport"]["lines"][0]["text"], "");
+    assert_eq!(
+        fs::read_to_string(repository.join("Writing/Texts/Research/September/field-notes.md"))
+            .unwrap(),
+        ""
+    );
+    let repeated = client.call(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"texts","title":"Field Notes",
+            "relativeFolder":"Research/September","idempotencyKey":"create-field-notes"
+        }),
+    );
+    assert_eq!(repeated, created);
+    let duplicate = client.request(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"texts","title":"Field Notes",
+            "relativeFolder":"Research/September","idempotencyKey":"create-field-notes-again"
+        }),
+    );
+    assert_eq!(duplicate["error"]["data"]["kind"], "invalid_params");
+
+    let screenplay = client.call(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"screenplays","title":"Night Train",
+            "idempotencyKey":"create-night-train"
+        }),
+    );
+    assert_eq!(screenplay["document"]["kind"], "screenplay");
+    assert_eq!(
+        screenplay["document"]["file"]["path"],
+        "Writing/Screenplays/night-train.fountain"
+    );
+    let texts = client.call(
+        "writing.section.list",
+        json!({"workspaceId":workspace,"section":"texts","limit":50}),
+    );
+    let screenplays = client.call(
+        "writing.section.list",
+        json!({"workspaceId":workspace,"section":"screenplays","limit":50}),
+    );
+    assert_eq!(texts["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(screenplays["entries"].as_array().unwrap().len(), 1);
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let after_restart = restored.call(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"texts","title":"Field Notes",
+            "relativeFolder":"Research/September","idempotencyKey":"create-field-notes"
+        }),
+    );
+    assert_eq!(after_restart, created);
+    let writing = restored.section("writing");
+    assert_eq!(writing.len(), 2);
+}
 impl Rig {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));

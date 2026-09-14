@@ -6,7 +6,8 @@ use soyeht_protocol::{
 };
 use soyeht_writing::{
     BeatBoard, Error, HybridBlockKind, SectionEntryInput, VariantSet, advance_after,
-    format_markdown, hybrid_blocks, parse_screenplay, section_entries, segment_slides,
+    format_markdown, hybrid_blocks, new_document_path, parse_screenplay, section_entries,
+    segment_slides,
 };
 
 fn position(line: u32, column: u32) -> TextPosition {
@@ -102,6 +103,31 @@ fn markdown_toolbar_emits_valid_markdown_for_every_closed_format() {
     )
     .unwrap();
     assert_eq!(image, "Title\nalpha\nbeta\n![label](images/cover.png)");
+}
+
+#[test]
+fn new_document_paths_are_stable_nested_and_confined_to_their_section() {
+    assert_eq!(
+        new_document_path(
+            &WritingSection::Texts,
+            "  Field Notes!  ",
+            Some("Research/2026")
+        )
+        .unwrap(),
+        "Writing/Texts/Research/2026/field-notes.md"
+    );
+    assert_eq!(
+        new_document_path(&WritingSection::Screenplays, "Night Train", None).unwrap(),
+        "Writing/Screenplays/night-train.fountain"
+    );
+    assert_eq!(
+        new_document_path(&WritingSection::Presentations, "Review", Some("../Texts")),
+        Err(Error::InvalidSectionPath)
+    );
+    assert_eq!(
+        new_document_path(&WritingSection::Texts, "***", None),
+        Err(Error::InvalidSectionPath)
+    );
 }
 
 #[test]

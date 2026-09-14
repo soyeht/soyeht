@@ -27,6 +27,70 @@ pub fn kind_for(section: &WritingSection) -> WritingKind {
     }
 }
 
+pub fn new_document_path(
+    section: &WritingSection,
+    title: &str,
+    relative_folder: Option<&str>,
+) -> Result<String> {
+    if title.trim().is_empty() || title.len() > 512 {
+        return Err(Error::InvalidSectionPath);
+    }
+    let kind = kind_for(section);
+    let mut path = Path::new(folder_for(section)).to_path_buf();
+    if let Some(folder) = relative_folder.filter(|folder| !folder.is_empty()) {
+        let nested = Path::new(folder);
+        if folder.len() > 2048
+            || nested.is_absolute()
+            || nested
+                .components()
+                .any(|part| !matches!(part, Component::Normal(_)))
+        {
+            return Err(Error::InvalidSectionPath);
+        }
+        path.push(nested);
+    }
+    let extension = match kind {
+        WritingKind::Text | WritingKind::Presentation => "md",
+        WritingKind::Screenplay => "fountain",
+    };
+    path.push(format!("{}.{}", filename_stem(title)?, extension));
+    let path = path.to_str().ok_or(Error::InvalidSectionPath)?.to_owned();
+    validate_path(&path, folder_for(section), &kind)?;
+    Ok(path)
+}
+
+fn filename_stem(title: &str) -> Result<String> {
+    let mut stem = String::new();
+    let mut separator = false;
+    for character in title.trim().chars() {
+        if character.is_alphanumeric() {
+            for lowered in character.to_lowercase() {
+                if stem.len().saturating_add(lowered.len_utf8()) > 240 {
+                    break;
+                }
+                stem.push(lowered);
+            }
+            separator = false;
+        } else if !stem.is_empty() {
+            separator = true;
+        }
+        if stem.len() >= 240 {
+            break;
+        }
+        if separator && !stem.ends_with('-') {
+            stem.push('-');
+            separator = false;
+        }
+    }
+    while stem.ends_with('-') {
+        stem.pop();
+    }
+    if stem.is_empty() {
+        return Err(Error::InvalidSectionPath);
+    }
+    Ok(stem)
+}
+
 pub fn section_entries(
     section: WritingSection,
     inputs: Vec<SectionEntryInput>,
