@@ -551,6 +551,9 @@ private struct PanePair: View {
 
   private var ordered: [Pane] {
     guard panes.count == 2 else { return panes }
+    if panes.contains(where: { $0.mode == .writing }) {
+      return panes.sorted { left, right in left.mode == .writing && right.mode != .writing }
+    }
     if panes.contains(where: { $0.mode == .editor }) {
       return panes.sorted { left, right in left.mode == .editor && right.mode != .editor }
     }
@@ -563,6 +566,9 @@ private struct PanePair: View {
   private func width(for pane: Pane, total: CGFloat) -> CGFloat? {
     guard ordered.count == 2 else { return nil }
     let available = max(0, total - MacTheme.Space.x18)
+    if ordered.contains(where: { $0.mode == .writing }) {
+      return pane.mode == .writing ? available * 0.67 : available * 0.33
+    }
     if ordered.contains(where: { $0.mode == .editor }) {
       return pane.mode == .editor ? available * 0.7 : available * 0.3
     }
@@ -602,6 +608,8 @@ private struct PaneCard: View {
     Group {
       if pane.mode == .editor {
         EditorPaneView(client: client, pane: pane)
+      } else if pane.mode == .writing, pane.writingKind == .text {
+        WritingTextPane(client: client, pane: pane)
       } else {
         VStack(spacing: MacTheme.Space.x8) {
           header

@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
-"""Reject SwiftUI Text views that select the system font directly."""
+"""Reject system and unapproved literal fonts in the Mac interface."""
 
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
+
+
+APPROVED_FONT_NAMES = {
+    "JetBrains Mono",
+    "Newsreader",
+    "Nunito",
+    "Times New Roman",
+}
+
+LITERAL_FONT = re.compile(
+    r'(?:\.custom\(\s*|NSFont\(\s*name:\s*)"([^"]+)"'
+)
 
 
 def matching_parenthesis(source: str, opening: int) -> int | None:
@@ -46,7 +59,7 @@ def violations(source: str) -> list[int]:
     while True:
         start = source.find("Text", cursor)
         if start < 0:
-            return lines
+            break
         before = source[start - 1] if start else " "
         after = source[start + 4] if start + 4 < len(source) else " "
         if before.isalnum() or before == "_" or after.isalnum() or after == "_":
@@ -71,6 +84,10 @@ def violations(source: str) -> list[int]:
             if compact.startswith("(.system("):
                 lines.append(source.count("\n", 0, start) + 1)
         cursor = closing + 1
+    for match in LITERAL_FONT.finditer(source):
+        if match.group(1) not in APPROVED_FONT_NAMES:
+            lines.append(source.count("\n", 0, match.start()) + 1)
+    return sorted(set(lines))
 
 
 def main() -> int:
@@ -78,7 +95,7 @@ def main() -> int:
     found = False
     for path in sorted(root.rglob("*.swift")):
         for line in violations(path.read_text(encoding="utf-8")):
-            print(f"{path}:{line}: SwiftUI Text must use MacTheme.chrome or MacTheme.mono")
+            print(f"{path}:{line}: text must use an approved MacTheme font")
             found = True
     return 1 if found else 0
 

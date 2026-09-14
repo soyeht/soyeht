@@ -60,7 +60,7 @@ extension EngineClient {
     writingDocuments = writingDocuments.filter { $0.value.document.file.paneId != paneId }
   }
 
-  func loadWritingPane(_ paneId: String) async throws {
+  public func loadWritingPane(_ paneId: String) async throws {
     guard let view = writingDocuments.values.first(where: { $0.document.file.paneId == paneId })
     else { throw ClientFailure.invalidSnapshot }
     _ = try await readEditorFile(

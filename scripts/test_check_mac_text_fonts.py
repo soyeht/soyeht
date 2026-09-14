@@ -20,9 +20,18 @@ Text(
         source = '''
 Text("copy").font(MacTheme.chrome(12))
 Text(code).font(MacTheme.mono(11))
+Text("story").font(.custom("Newsreader", size: 18))
+let mono = NSFont(name: "JetBrains Mono", size: 12)
 Image(systemName: "plus").font(.system(size: 12))
 '''
         self.assertEqual(violations(source), [])
+
+    def test_rejects_unapproved_literal_fonts(self) -> None:
+        source = '''
+Text("copy").font(.custom("Unapproved Serif", size: 18))
+let font = NSFont(name: "Other Mono", size: 12)
+'''
+        self.assertEqual(violations(source), [2, 3])
 
 
 if __name__ == "__main__":
