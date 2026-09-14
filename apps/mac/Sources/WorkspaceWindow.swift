@@ -550,14 +550,26 @@ private struct PanePair: View {
   }
 
   private var ordered: [Pane] {
-    guard panes.count == 2, panes.contains(where: { $0.mode == .editor }) else { return panes }
-    return panes.sorted { left, right in left.mode == .editor && right.mode != .editor }
+    guard panes.count == 2 else { return panes }
+    if panes.contains(where: { $0.mode == .editor }) {
+      return panes.sorted { left, right in left.mode == .editor && right.mode != .editor }
+    }
+    if Set(panes.map(\.mode)) == Set([.web, .agent]) {
+      return panes.sorted { left, _ in left.mode == .web }
+    }
+    return panes
   }
 
   private func width(for pane: Pane, total: CGFloat) -> CGFloat? {
-    guard ordered.count == 2, ordered.contains(where: { $0.mode == .editor }) else { return nil }
+    guard ordered.count == 2 else { return nil }
     let available = max(0, total - MacTheme.Space.x18)
-    return pane.mode == .editor ? available * 0.7 : available * 0.3
+    if ordered.contains(where: { $0.mode == .editor }) {
+      return pane.mode == .editor ? available * 0.7 : available * 0.3
+    }
+    if Set(ordered.map(\.mode)) == Set([.web, .agent]) {
+      return pane.mode == .web ? available * 0.67 : available * 0.33
+    }
+    return nil
   }
 }
 
