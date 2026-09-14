@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
+// Generated from contracts/protocol.json (sha256 5423a3c96ff94c06f5a93b85f760ca6409dfa8d6673497c61c9b32ba50850835). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -2629,6 +2629,7 @@ export interface WritingFormatParams {
   "range": TextRange;
   "kind": WritingFormatKind;
   "value"?: string;
+  "image"?: AttachmentRef;
   "idempotencyKey": Id;
 }
 

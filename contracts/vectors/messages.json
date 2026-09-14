@@ -10311,8 +10311,13 @@
             "column": 0
           }
         },
-        "kind": "bold",
-        "value": "strong",
+        "kind": "image",
+        "image": {
+          "attachmentId": "11111111-1111-4111-8111-111111111111",
+          "mimeType": "image/png",
+          "name": "slide-image.png",
+          "bytes": "4"
+        },
         "idempotencyKey": "writing-format-1"
       }
     }

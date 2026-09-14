@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
+// Generated from contracts/protocol.json (sha256 5423a3c96ff94c06f5a93b85f760ca6409dfa8d6673497c61c9b32ba50850835). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -4722,6 +4722,8 @@ pub struct WritingFormatParams {
     pub kind: WritingFormatKind,
     #[serde(rename = "value", skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+    #[serde(rename = "image", skip_serializing_if = "Option::is_none")]
+    pub image: Option<AttachmentRef>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }

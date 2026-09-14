@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a7100a13802f3cf695f3a36b89979eb8cd458f555b1af607b4313af080997c8e). Do not edit.
+// Generated from contracts/protocol.json (sha256 5423a3c96ff94c06f5a93b85f760ca6409dfa8d6673497c61c9b32ba50850835). Do not edit.
 import Foundation
 
 
@@ -5203,13 +5203,15 @@ public struct WritingFormatParams: Codable, Sendable {
     public var `range`: TextRange
     public var `kind`: WritingFormatKind
     public var `value`: String?
+    public var `image`: AttachmentRef?
     public var `idempotencyKey`: Id
-    public init(`fileId`: Id, `baseRevision`: Decimal, `range`: TextRange, `kind`: WritingFormatKind, `value`: String? = nil, `idempotencyKey`: Id) {
+    public init(`fileId`: Id, `baseRevision`: Decimal, `range`: TextRange, `kind`: WritingFormatKind, `value`: String? = nil, `image`: AttachmentRef? = nil, `idempotencyKey`: Id) {
         self.`fileId` = `fileId`
         self.`baseRevision` = `baseRevision`
         self.`range` = `range`
         self.`kind` = `kind`
         self.`value` = `value`
+        self.`image` = `image`
         self.`idempotencyKey` = `idempotencyKey`
     }
 }
