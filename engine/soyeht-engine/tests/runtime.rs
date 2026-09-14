@@ -338,6 +338,34 @@ fn presentation_image_is_content_addressed_recoverable_and_idempotent() {
         read["lines"][2]["text"],
         format!("![Slide image](assets/{digest}.png)")
     );
+    client.messages.clear();
+    let asset_result = client.call(
+        "writing.asset.read",
+        json!({
+            "fileId":file_id,"revision":"2",
+            "asset":format!("assets/{digest}.png")
+        }),
+    );
+    assert_eq!(asset_result["revision"], "2");
+    let reference = &asset_result["image"];
+    let header =
+        soyeht_protocol::attachment::attachment_header(reference["attachmentId"].as_str().unwrap())
+            .unwrap();
+    let delivered: Vec<_> = client
+        .messages
+        .iter()
+        .filter_map(|frame| match frame {
+            Frame::Attachment {
+                header: candidate,
+                bytes,
+            } if *candidate == header => Some(bytes.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    assert_eq!(delivered, image);
+    assert_eq!(reference["bytes"], image.len().to_string());
 
     drop(client);
     rig.kill_engine();

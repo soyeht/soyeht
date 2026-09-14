@@ -43,6 +43,7 @@ public final class EngineClient {
   @ObservationIgnored private var queuedInputBytes = 0
   @ObservationIgnored private var resizeTask: Task<Void, Never>?
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var responseAttachments = ResponseAttachmentAssembly()
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
@@ -54,8 +55,13 @@ public final class EngineClient {
   private struct Pending {
     var method: String
     var params: JsonValue
-    var continuation: CheckedContinuation<JsonValue, Error>
+    var continuation: CheckedContinuation<EngineResponse, Error>
     var timeout: Task<Void, Never>
+  }
+
+  struct EngineResponse: Sendable {
+    var value: JsonValue
+    var attachment: WebHostAttachment?
   }
 
   public init(socket: String = DevProfile.socketPath, webHost: (any WebHostPort)? = nil) {
@@ -123,6 +129,7 @@ public final class EngineClient {
     }
     connectionActor = nil
     position = nil
+    responseAttachments.reset()
     wire?.close()
     wire = nil
     let requests = pending
@@ -197,6 +204,14 @@ public final class EngineClient {
     _ method: String, _ params: JsonValue, timeoutSeconds: Double = 12,
     attachments: [WebHostAttachment] = []
   ) async throws -> JsonValue {
+    try await requestResponse(
+      method, params, timeoutSeconds: timeoutSeconds, attachments: attachments
+    ).value
+  }
+  func requestResponse(
+    _ method: String, _ params: JsonValue, timeoutSeconds: Double = 12,
+    attachments: [WebHostAttachment] = []
+  ) async throws -> EngineResponse {
     guard let wire else { throw ClientFailure.disconnected }
     let id = UUID().uuidString
     return try await withCheckedThrowingContinuation { continuation in
@@ -306,6 +321,10 @@ public final class EngineClient {
     ])
   }
   private func receive(_ frame: Frame) throws {
+    if frame.kind == 3 {
+      try responseAttachments.accept(frame)
+      return
+    }
     if frame.kind == 2 {
       guard position != nil else { return }
       if let bytes = try position?.accept(frame) { terminalOutput?(bytes, false) }
@@ -317,6 +336,11 @@ public final class EngineClient {
     if let id = message["id"].string, let request = pending.removeValue(forKey: id) {
       request.timeout.cancel()
       if message["error"] != .null {
+        if responseAttachments.isPending {
+          responseAttachments.reset()
+          request.continuation.resume(throwing: ClientFailure.invalidFrame)
+          throw ClientFailure.invalidFrame
+        }
         request.continuation.resume(
           throwing: ClientFailure.remote(
             message["error"]["data"]["kind"].string ?? "internal_error",
@@ -326,6 +350,11 @@ public final class EngineClient {
       }
       let result = message["result"]
       do {
+        let reference = try responseAttachmentReference(method: request.method, result: result)
+        let attachment = try reference.map {
+          WebHostAttachment(reference: $0, bytes: try responseAttachments.commit($0))
+        }
+        if reference == nil, responseAttachments.isPending { throw ClientFailure.invalidFrame }
         if request.method == "state.snapshot" { try applySnapshot(result) }
         if request.method == "pane.stream.subscribe",
           request.params["paneId"].string == selectedPaneId
@@ -335,7 +364,9 @@ public final class EngineClient {
             streamId: info.streamId, reference: info.binaryPaneRef,
             generation: info.generation, next: nil)
         }
-        request.continuation.resume(returning: result)
+        request.continuation.resume(
+          returning: EngineResponse(value: result, attachment: attachment)
+        )
       } catch {
         request.continuation.resume(throwing: error)
         throw error
@@ -638,5 +669,18 @@ public final class EngineClient {
   }
   func perform(_ action: @escaping @MainActor () async throws -> Void) {
     Task { do { try await action() } catch { self.problem = error.localizedDescription } }
+  }
+}
+
+private func responseAttachmentReference(
+  method: String, result: JsonValue
+) throws -> AttachmentRef? {
+  switch method {
+  case "writing.asset.read", "web.screenshot":
+    return try result["image"].decoded(AttachmentRef.self)
+  case "web.snapshot" where result["screenshot"] != .null:
+    return try result["screenshot"].decoded(AttachmentRef.self)
+  default:
+    return nil
   }
 }

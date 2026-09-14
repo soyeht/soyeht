@@ -9,16 +9,24 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, ClientCapability, HelloParams, Role, Welcome, attachment::AttachmentAssembler,
-    frame::Frame, limits,
+    Actor, AttachmentRef, ClientCapability, HelloParams, Role, Welcome,
+    attachment::AttachmentAssembler, frame::Frame, limits,
 };
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
 pub enum Outcome {
     Reply(Value),
+    Attachment {
+        result: Value,
+        reference: AttachmentRef,
+        bytes: Vec<u8>,
+    },
     Queued,
-    Snapshot { parts: Vec<Frame>, result: Value },
+    Snapshot {
+        parts: Vec<Frame>,
+        result: Value,
+    },
 }
 
 impl Core {
@@ -345,6 +353,7 @@ impl Core {
             }
             "file.format" => return self.language_format(connection, request_id, params),
             "file.diagnostics" | "file.diff" => self.file_inspection(method, params)?,
+            "writing.asset.read" => return self.writing_asset_read(params),
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
                 self.document_request(connection, method, params, writing_image)?
             }

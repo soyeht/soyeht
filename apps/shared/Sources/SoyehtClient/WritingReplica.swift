@@ -148,6 +148,25 @@ extension EngineClient {
     return result
   }
 
+  public func readWritingAsset(fileId: String, asset: String) async throws -> Data {
+    guard let revision = writingDocuments[fileId]?.document.file.revision else {
+      throw ClientFailure.invalidSnapshot
+    }
+    let response = try await requestResponse(
+      "writing.asset.read",
+      .encoded(WritingAssetReadParams(fileId: fileId, revision: revision, asset: asset)))
+    let result = try response.value.decoded(WritingAssetReadResult.self)
+    guard result.fileId == fileId, result.revision == revision,
+      result.image.mimeType == "image/png",
+      result.image.name == String(asset.dropFirst("assets/".count)),
+      let attachment = response.attachment,
+      attachment.reference.attachmentId == result.image.attachmentId,
+      attachment.bytes.starts(with: Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+      attachment.bytes.count <= ProtocolLimits.writingImageBytes
+    else { throw ClientFailure.invalidFrame }
+    return attachment.bytes
+  }
+
   @discardableResult
   public func setWritingPreferences(
     fileId: String, font: WritingFont? = nil, focusMode: Bool? = nil

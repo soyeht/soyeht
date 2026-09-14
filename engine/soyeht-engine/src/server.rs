@@ -7,7 +7,9 @@ use crate::{
     transport,
 };
 use serde_json::Value;
-use soyeht_protocol::{frame::Frame, profile::DEV_ENGINE_SOCKET};
+use soyeht_protocol::{
+    AttachmentRef, attachment::attachment_frames, frame::Frame, profile::DEV_ENGINE_SOCKET,
+};
 use std::{
     fs::{self, File, OpenOptions},
     io,
@@ -377,6 +379,17 @@ async fn read_requests(
                     return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
                 }
             }
+            Ok(Ok(Outcome::Attachment {
+                result,
+                reference,
+                bytes,
+            })) => {
+                if let Err(reason) =
+                    send_attachment_response(outbox, request_id, result, &reference, &bytes)
+                {
+                    return reason;
+                }
+            }
             Ok(Ok(Outcome::Queued)) => (),
             Ok(Ok(Outcome::Snapshot { parts, result })) => {
                 for part in parts {
@@ -413,6 +426,26 @@ async fn read_requests(
     }
 }
 
+fn send_attachment_response(
+    outbox: &Outbox,
+    request_id: Value,
+    result: Value,
+    reference: &AttachmentRef,
+    bytes: &[u8],
+) -> Result<(), CloseReason> {
+    let frames = attachment_frames(reference, bytes).map_err(|_| CloseReason::WorkerFailed)?;
+    for frame in frames {
+        if !outbox.send_ordered(frame) {
+            return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
+        }
+    }
+    let frame = model::response(request_id, result).map_err(|_| CloseReason::WorkerFailed)?;
+    if !outbox.send_ordered(frame) {
+        return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
+    }
+    Ok(())
+}
+
 fn log_operation(
     operation: &str,
     connection: &str,
@@ -422,6 +455,7 @@ fn log_operation(
 ) {
     let (status, kind) = match outcome {
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
+        Ok(Ok(Outcome::Attachment { .. })) => ("attachment", None),
         Ok(Ok(Outcome::Queued)) => ("queued", None),
         Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
         Ok(Err(error)) => ("error", Some(errors::kind(error))),

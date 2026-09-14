@@ -14,6 +14,7 @@ pub trait FileSystemPort: Send {
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>>;
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String>;
+    fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>>;
     fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool>;
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool>;
     fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf>;
@@ -54,6 +55,30 @@ impl FileSystemPort for SystemFiles {
         }
         String::from_utf8(bytes)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not UTF-8"))
+    }
+
+    fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+        let metadata = fs::symlink_metadata(path)?;
+        let limit = u64::try_from(limit)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "binary limit is invalid"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > limit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "asset is not a regular file within the writing image limit",
+            ));
+        }
+        let bytes = fs::read(path)?;
+        if bytes.is_empty()
+            || u64::try_from(bytes.len())
+                .ok()
+                .is_none_or(|size| size > limit)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "asset is outside the writing image limit",
+            ));
+        }
+        Ok(bytes)
     }
 
     fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool> {
@@ -389,6 +414,16 @@ impl Service {
                     errors::io(error)
                 }
             })
+    }
+
+    pub fn read_binary(&self, path: &Path, limit: usize) -> Result<Vec<u8>> {
+        self.files.read_binary(path, limit).map_err(|error| {
+            if error.kind() == io::ErrorKind::InvalidData {
+                errors::invalid(error.to_string())
+            } else {
+                errors::io(error)
+            }
+        })
     }
 
     pub fn project_files(&self, workspace_root: &Path) -> Result<Vec<ProjectFile>> {
@@ -838,6 +873,17 @@ mod tests {
                 .then_some(text)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fixture too large"))
         }
+        fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+            let bytes = self
+                .contents
+                .get(path)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "fixture file"))?
+                .as_bytes()
+                .to_vec();
+            (bytes.len() <= limit)
+                .then_some(bytes)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "fixture too large"))
+        }
         fn write_text_if_unchanged(
             &self,
             path: &Path,
@@ -896,6 +942,10 @@ mod tests {
 
         fn read_text(&self, _path: &Path, _limit: usize) -> io::Result<String> {
             Ok("before".into())
+        }
+
+        fn read_binary(&self, _path: &Path, _limit: usize) -> io::Result<Vec<u8>> {
+            Ok(b"before".to_vec())
         }
 
         fn write_text_if_unchanged(

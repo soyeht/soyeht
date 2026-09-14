@@ -1,5 +1,6 @@
 //! Writing document ownership and bounded structural projections.
 
+mod assets;
 pub(crate) mod attachments;
 mod documents;
 mod formatting;
@@ -16,6 +17,7 @@ pub fn handles(method: &str) -> bool {
             | "writing.document.open"
             | "writing.structure"
             | "writing.format"
+            | "writing.asset.read"
             | "writing.preferences.set"
     )
 }
