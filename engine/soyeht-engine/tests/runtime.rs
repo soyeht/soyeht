@@ -216,6 +216,73 @@ fn writing_document_creation_is_durable_disjoint_and_idempotent_across_restart()
     let writing = restored.section("writing");
     assert_eq!(writing.len(), 2);
 }
+
+#[test]
+fn writing_format_uses_the_owned_revisioned_file_and_survives_restart() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("writing-format-repository");
+    fs::create_dir_all(repository.join("Writing/Texts")).unwrap();
+    let path = repository.join("Writing/Texts/field-notes.md");
+    fs::write(&path, "# Field notes\n\nDraft safely.\n").unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Writing format","path":repository,"idempotencyKey":"writing-format-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Texts/field-notes.md","kind":"text","idempotencyKey":"writing-format-open"}),
+    );
+    let file_id = opened["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let params = json!({
+        "fileId":file_id,"baseRevision":"1","range":{"start":{"line":2,"column":0},"end":{"line":2,"column":5}},
+        "kind":"bold","idempotencyKey":"writing-format-bold"
+    });
+    let formatted = client.call("writing.format", params.clone());
+    assert_eq!(formatted["file"]["revision"], "2");
+    assert_eq!(client.call("writing.format", params), formatted);
+    let read = client.call(
+        "file.read",
+        json!({"fileId":file_id,"fromLine":0,"lineCount":10}),
+    );
+    assert_eq!(read["lines"][2]["text"], "**Draft** safely.");
+    let stale = client.request(
+        "writing.format",
+        json!({
+            "fileId":file_id,"baseRevision":"1","range":{"start":{"line":2,"column":0},"end":{"line":2,"column":5}},
+            "kind":"italic","idempotencyKey":"writing-format-stale"
+        }),
+    );
+    assert_eq!(stale["error"]["data"]["kind"], "stale_version");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while fs::read_to_string(&path).unwrap() != "# Field notes\n\n**Draft** safely.\n" {
+        assert!(
+            Instant::now() < deadline,
+            "formatted draft did not autosave"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let repeated = restored.call(
+        "writing.format",
+        json!({
+            "fileId":file_id,"baseRevision":"1","range":{"start":{"line":2,"column":0},"end":{"line":2,"column":5}},
+            "kind":"bold","idempotencyKey":"writing-format-bold"
+        }),
+    );
+    assert_eq!(repeated["file"]["revision"], "2");
+    assert_eq!(restored.section("writing")[0]["file"]["revision"], "2");
+}
 impl Rig {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));

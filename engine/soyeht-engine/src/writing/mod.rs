@@ -1,6 +1,7 @@
 //! Writing document ownership and bounded structural projections.
 
 mod documents;
+mod formatting;
 mod structure;
 
 use crate::{core::Core, errors, errors::Result};
@@ -13,6 +14,7 @@ pub fn handles(method: &str) -> bool {
             | "writing.document.create"
             | "writing.document.open"
             | "writing.structure"
+            | "writing.format"
             | "writing.preferences.set"
     )
 }
@@ -60,6 +62,7 @@ impl Core {
             "writing.document.create" => self.writing_document_create(connection, params),
             "writing.document.open" => self.writing_document_open(connection, params),
             "writing.structure" => self.writing_structure(params),
+            "writing.format" => self.writing_format(connection, params),
             "writing.preferences.set" => self.writing_preferences(connection, params),
             _ => Err(errors::internal("Unknown writing method")),
         }

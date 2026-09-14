@@ -684,7 +684,7 @@ fn open_result(
     .map_err(|_| errors::internal("Writing open result cannot be encoded"))
 }
 
-fn changed_event(file: &EditorFile, record: &WritingDocumentRecord) -> Result<Value> {
+pub(super) fn changed_event(file: &EditorFile, record: &WritingDocumentRecord) -> Result<Value> {
     let pane_id = file
         .pane_id
         .clone()
