@@ -24,6 +24,8 @@ struct WritingTextPane: View {
       header
       if let writing, let file, file.viewport != nil {
         toolbar(writing.document)
+        EditorAgentReviewBar(
+          client: client, view: file, selectedPosition: selection?.start)
         WritingTextViewport(
           client: client, view: file, document: writing.document,
           selection: $selection, activeLine: $activeLine

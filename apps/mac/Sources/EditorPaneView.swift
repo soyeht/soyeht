@@ -479,7 +479,7 @@ private struct EditorCodeViewport: View {
   }
 }
 
-private struct EditorAgentReviewBar: View {
+struct EditorAgentReviewBar: View {
   @Bindable var client: EngineClient
   let view: EditorFileView
   let selectedPosition: TextPosition?
