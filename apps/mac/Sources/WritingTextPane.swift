@@ -420,7 +420,10 @@ private enum WritingTextStyle {
         range: line.range)
     case .table:
       result.addAttributes(
-        [.font: MacTheme.monoNSFont(13), .foregroundColor: color], range: line.range)
+        [
+          .font: MacTheme.monoNSFont(13), .foregroundColor: color,
+          .paragraphStyle: tableStyle(), .backgroundColor: NSColor(MacTheme.well),
+        ], range: line.range)
     case .image:
       result.addAttributes([.foregroundColor: NSColor(MacTheme.accent)], range: line.range)
     case .blank, .paragraph:
@@ -469,6 +472,21 @@ private enum WritingTextStyle {
       paragraphStyle(lineHeight: 31) as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
     style.firstLineHeadIndent = value
     style.headIndent = value
+    return style
+  }
+
+  private static func tableStyle() -> NSParagraphStyle {
+    let style = NSMutableParagraphStyle()
+    style.minimumLineHeight = 27
+    style.maximumLineHeight = 27
+    style.paragraphSpacing = 0
+    style.headIndent = 12
+    style.firstLineHeadIndent = 12
+    style.tailIndent = -12
+    style.defaultTabInterval = 180
+    style.tabStops = stride(from: 180, through: 1_080, by: 180).map {
+      NSTextTab(textAlignment: .left, location: CGFloat($0), options: [:])
+    }
     return style
   }
 }

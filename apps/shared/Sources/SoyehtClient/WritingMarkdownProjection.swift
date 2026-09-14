@@ -284,10 +284,16 @@ extension WritingMarkdownProjection {
     _ line: String, at offset: Int, in display: NSMutableString
   ) {
     let separator = isTableSeparator(line)
+    let pipeIndexes = line.utf16.enumerated().compactMap { index, value in
+      value == 124 ? index : nil
+    }
     for (index, value) in line.utf16.enumerated() {
       if value == 124 {
-        replace(
-          NSRange(location: index, length: 1), at: offset, with: separator ? "┼" : "│", in: display)
+        if index == pipeIndexes.first || index == pipeIndexes.last {
+          conceal(NSRange(location: index, length: 1), at: offset, in: display)
+        } else {
+          replace(NSRange(location: index, length: 1), at: offset, with: "\t", in: display)
+        }
       } else if separator, value == 45 {
         replace(NSRange(location: index, length: 1), at: offset, with: "─", in: display)
       } else if separator, value == 58 {
