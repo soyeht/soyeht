@@ -15,7 +15,7 @@ use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use std::path::Path;
 use uuid::Uuid;
 
-const INITIAL_VIEWPORT_LINES: usize = 200;
+pub(crate) const INITIAL_VIEWPORT_LINES: usize = 200;
 
 struct ReattachRequest<'a> {
     connection: &'a str,
@@ -282,7 +282,7 @@ impl Core {
     }
 }
 
-fn reconcile_reopened_file(
+pub(crate) fn reconcile_reopened_file(
     mut file: EditorFile,
     disk: String,
     now_ms: i64,
@@ -326,7 +326,7 @@ fn open_reply(result: FileOpenResult, pane_only: bool) -> Result<Value> {
     }
 }
 
-fn initial_open_result(
+pub(crate) fn initial_open_result(
     file: &EditorFile,
     pane: &Pane,
     line: Option<u32>,

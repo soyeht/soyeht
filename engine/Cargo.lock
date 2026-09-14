@@ -1106,6 +1106,7 @@ dependencies = [
  "soyeht-usage",
  "soyeht-vcs",
  "soyeht-web",
+ "soyeht-writing",
  "tokio",
  "tokio-tungstenite",
  "uuid",

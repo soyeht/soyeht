@@ -24,3 +24,4 @@ pub mod usage;
 pub mod vcs;
 pub mod web;
 pub mod workspaces;
+pub mod writing;

@@ -97,6 +97,8 @@ pub struct ResolvedPath {
 pub struct ProjectFile {
     pub canonical: PathBuf,
     pub relative: String,
+    pub byte_count: u64,
+    pub modified_ms: i64,
 }
 
 pub struct PreparedEdit {
@@ -499,9 +501,18 @@ fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile>> {
             .filter(|path| !path.is_empty())
             .map(str::to_owned);
         if let Some(relative) = relative {
+            let metadata = fs::metadata(&canonical)?;
+            let modified_ms = metadata
+                .modified()
+                .ok()
+                .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+                .and_then(|value| i64::try_from(value.as_millis()).ok())
+                .unwrap_or(0);
             files.push(ProjectFile {
                 canonical,
                 relative,
+                byte_count: metadata.len(),
+                modified_ms,
             });
         }
     }

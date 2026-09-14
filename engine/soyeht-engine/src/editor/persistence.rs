@@ -318,7 +318,7 @@ pub(super) fn next_revision(current: u64) -> Result<u64> {
         .ok_or_else(|| errors::internal("File revision exhausted"))
 }
 
-pub(super) fn stored_version(
+pub(crate) fn stored_version(
     file: &EditorFile,
     content: String,
     author: FileAuthor,

@@ -1,11 +1,12 @@
 //! File ownership, viewport projection, and filesystem isolation.
 
 pub(crate) mod agent_review;
-mod api;
+pub(crate) mod api;
 mod persistence;
 mod search;
 mod service;
 
+pub(crate) use service::language;
 pub use service::{FileSystemPort, Service, SystemFiles};
 
 use crate::{core::Core, errors, errors::Result};

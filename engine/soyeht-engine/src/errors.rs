@@ -32,6 +32,7 @@ pub enum Error {
     StaleEngineGeneration(String),
     WorktreeUnavailable(String),
     WebHostUnavailable(String),
+    WritingKindRefused(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -42,6 +43,7 @@ pub enum Error {
     Usage(soyeht_usage::Error),
     Vcs(soyeht_vcs::Error),
     Web(soyeht_web::Error),
+    Writing(soyeht_writing::Error),
     Supervisor(soyeht_ptyd::Error),
     Protocol(soyeht_protocol::Error),
     WebSocket(tokio_tungstenite::tungstenite::Error),
@@ -98,6 +100,7 @@ constructor!(ptyd_unavailable, PtydUnavailable);
 constructor!(stale_engine_generation, StaleEngineGeneration);
 constructor!(worktree_unavailable, WorktreeUnavailable);
 constructor!(web_host_unavailable, WebHostUnavailable);
+constructor!(writing_kind_refused, WritingKindRefused);
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -248,6 +251,31 @@ fn web_kind(error: &soyeht_web::Error) -> ErrorKind {
     }
 }
 
+fn writing_kind(error: &soyeht_writing::Error) -> ErrorKind {
+    use soyeht_writing::Error;
+    match error {
+        Error::InvalidSectionPath => ErrorKind::WritingSectionRefused,
+        Error::VariantNotFound | Error::CannotRemoveOnlyVariant => ErrorKind::WritingLineNotFound,
+        Error::BeatNotFound => ErrorKind::NotFound,
+        Error::SceneNotFound => ErrorKind::WritingSceneNotFound,
+        Error::DocumentTooLarge
+        | Error::SlideLimit
+        | Error::SceneLimit
+        | Error::ElementLimit
+        | Error::VariantLimit
+        | Error::VariantTooLarge
+        | Error::BeatLimit
+        | Error::LinkLimit
+        | Error::SectionLimit => ErrorKind::WritingLimitExceeded,
+        Error::InvalidPosition
+        | Error::InvalidRange
+        | Error::EmptySelection
+        | Error::MissingFormatValue
+        | Error::InvalidVariantSelection
+        | Error::InvalidBeat => ErrorKind::InvalidParams,
+    }
+}
+
 /// The single translation from engine failures to the public protocol.
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
@@ -271,6 +299,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::Editor(error) => editor_kind(error),
         Error::Vcs(error) => vcs_kind(error),
         Error::Web(error) => web_kind(error),
+        Error::Writing(error) => writing_kind(error),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
         Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
@@ -281,6 +310,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::StaleEngineGeneration(_) => ErrorKind::StaleEngineGeneration,
         Error::WorktreeUnavailable(_) => ErrorKind::InternalError,
         Error::WebHostUnavailable(_) => ErrorKind::WebHostUnavailable,
+        Error::WritingKindRefused(_) => ErrorKind::WritingKindRefused,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -316,6 +346,12 @@ impl From<soyeht_editor::Error> for Error {
     }
 }
 
+impl From<soyeht_writing::Error> for Error {
+    fn from(error: soyeht_writing::Error) -> Self {
+        Self::Writing(error)
+    }
+}
+
 fn message(error: &Error) -> String {
     match error {
         Error::NotFound(message)
@@ -341,6 +377,7 @@ fn message(error: &Error) -> String {
         | Error::StaleEngineGeneration(message)
         | Error::WorktreeUnavailable(message)
         | Error::WebHostUnavailable(message)
+        | Error::WritingKindRefused(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),
@@ -359,6 +396,7 @@ fn message(error: &Error) -> String {
         Error::Usage(_) => "Usage operation failed".into(),
         Error::Vcs(error) => error.to_string(),
         Error::Web(error) => error.to_string(),
+        Error::Writing(error) => error.to_string(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
         Error::Supervisor(_) => "Supervisor unavailable".into(),
         Error::Protocol(_) => "Protocol operation failed".into(),

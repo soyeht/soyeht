@@ -16,6 +16,7 @@ soyeht-store = { path = "../soyeht-store" }
 soyeht-usage = { path = "../soyeht-usage" }
 soyeht-vcs = { path = "../soyeht-vcs" }
 soyeht-web = { path = "../soyeht-web" }
+soyeht-writing = { path = "../soyeht-writing" }
 serde.workspace = true
 serde_json.workspace = true
 libc.workspace = true

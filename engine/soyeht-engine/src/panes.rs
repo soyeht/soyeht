@@ -92,6 +92,9 @@ impl Core {
         if params["mode"] == "web" {
             return self.web_pane_create(connection, params);
         }
+        if params["mode"] == "writing" {
+            return self.writing_pane_create(connection, params);
+        }
         let defaults = pane_defaults(&self.store)?;
         let agent_mode = params["mode"] == "agent";
         let agent = new_agent(&self.directory, params)?;

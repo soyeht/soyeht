@@ -29,6 +29,101 @@ struct Rig {
     engine: Option<Child>,
     ptyd: Child,
 }
+
+#[test]
+fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
+    let mut rig = Rig::new();
+    fs::create_dir_all(rig.path.join("Writing/Texts")).unwrap();
+    fs::create_dir_all(rig.path.join("Writing/Presentations")).unwrap();
+    fs::write(
+        rig.path.join("Writing/Texts/field-notes.md"),
+        "# Field notes\n\nA bounded writing document.\n",
+    )
+    .unwrap();
+    fs::write(
+        rig.path.join("Writing/Presentations/review.md"),
+        "# First\nSpeaker note\n---\n# Second\nAnother note\n",
+    )
+    .unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Writing","path":rig.path,"idempotencyKey":"writing-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let opened = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Texts/field-notes.md","kind":"text","idempotencyKey":"open-text"}),
+    );
+    let file_id = opened["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let pane_id = opened["pane"]["paneId"].as_str().unwrap().to_owned();
+    assert_eq!(opened["pane"]["mode"], "writing");
+    assert_eq!(opened["pane"]["writingKind"], "text");
+    assert_eq!(opened["pane"]["writingSection"], "texts");
+    assert_eq!(opened["document"]["file"]["paneId"], pane_id);
+    let repeated = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Texts/field-notes.md","kind":"text","idempotencyKey":"open-text"}),
+    );
+    assert_eq!(repeated, opened);
+    let pane_route = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"writing","path":"Writing/Texts/field-notes.md",
+        "writingKind":"text","writingSection":"texts","idempotencyKey":"open-writing-pane"}),
+    );
+    assert_eq!(pane_route["paneId"], pane_id);
+
+    let preferred = client.call(
+        "writing.preferences.set",
+        json!({"fileId":file_id,"baseRevision":"1","font":"sans","focusMode":true,"idempotencyKey":"writing-preferences"}),
+    );
+    assert_eq!(preferred["document"]["font"], "sans");
+    assert_eq!(preferred["document"]["focusMode"], true);
+    let listed = client.call(
+        "writing.section.list",
+        json!({"workspaceId":workspace,"section":"texts","limit":50}),
+    );
+    assert_eq!(listed["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["entries"][0]["fileId"], file_id);
+
+    let slides = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Presentations/review.md","kind":"presentation","idempotencyKey":"open-presentation"}),
+    );
+    let slides_file = slides["document"]["file"]["fileId"].clone();
+    let structure = client.call(
+        "writing.structure",
+        json!({"fileId":slides_file,"revision":"1"}),
+    );
+    assert_eq!(structure["slides"].as_array().unwrap().len(), 2);
+    assert_eq!(structure["slides"][0]["heading"], "First");
+    assert_eq!(structure["slides"][1]["notes"], "Another note");
+    assert!(structure["scenes"].as_array().unwrap().is_empty());
+
+    let escaped = client.request(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Texts/../Presentations/review.md","kind":"text","idempotencyKey":"escaped-writing"}),
+    );
+    assert_eq!(escaped["error"]["data"]["kind"], "writing_section_refused");
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let writing = restored.section("writing");
+    let restored_document = writing
+        .iter()
+        .find(|document| document["file"]["fileId"] == file_id)
+        .unwrap();
+    assert_eq!(restored_document["font"], "sans");
+    assert_eq!(restored_document["focusMode"], true);
+    assert_eq!(restored_document["file"]["paneId"], pane_id);
+}
 impl Rig {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));
