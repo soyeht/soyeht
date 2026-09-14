@@ -5,29 +5,32 @@ import SoyehtProtocol
 import SwiftUI
 
 enum MacTheme {
-  static let canvas = SoyehtThemeColors.canvas
-  static let face = SoyehtThemeColors.face
-  static let well = SoyehtThemeColors.well
-  static let hover = SoyehtThemeColors.hover
-  static let border = SoyehtThemeColors.well
-  static let ink = SoyehtThemeColors.ink
-  static let secondary = SoyehtThemeColors.secondary
-  static let muted = SoyehtThemeColors.muted
-  static let accent = SoyehtThemeColors.accent
-  static let onAccent = SoyehtThemeColors.onAccent
-  static let shadowDark = SoyehtThemeColors.shadowDark
-  static let shadowLight = SoyehtThemeColors.shadowLight
-  static let selection = SoyehtThemeColors.selection
-  static let success = SoyehtThemeColors.success
-  static let warning = SoyehtThemeColors.warning
-  static let danger = SoyehtThemeColors.danger
-  static let syntaxType = SoyehtThemeColors.syntaxType
-  static let diffAdded = SoyehtThemeColors.diffAdded
-  static let urgent = danger
-  static let agentRose = SoyehtThemeColors.agentRose
-  static let agentBlue = SoyehtThemeColors.agentBlue
-  static let agentGreen = SoyehtThemeColors.agentGreen
-  static let agentSand = SoyehtThemeColors.agentSand
+  static var canvas: Color { SoyehtThemeColors.canvas }
+  static var face: Color { SoyehtThemeColors.face }
+  static var well: Color { SoyehtThemeColors.well }
+  static var hover: Color { SoyehtThemeColors.hover }
+  static var border: Color { SoyehtThemeColors.well }
+  static var ink: Color { SoyehtThemeColors.ink }
+  static var secondary: Color { SoyehtThemeColors.secondary }
+  static var muted: Color { SoyehtThemeColors.muted }
+  static var accent: Color { SoyehtThemeColors.accent }
+  static var onAccent: Color { SoyehtThemeColors.onAccent }
+  static var shadowDark: Color { SoyehtThemeColors.shadowDark }
+  static var shadowLight: Color { SoyehtThemeColors.shadowLight }
+  static var wellShadow: Color { SoyehtThemeColors.wellShadow }
+  static var wellRim: Color { SoyehtThemeColors.wellRim }
+  static var wellLip: Color? { SoyehtThemeColors.wellLip }
+  static var selection: Color { SoyehtThemeColors.selection }
+  static var success: Color { SoyehtThemeColors.success }
+  static var warning: Color { SoyehtThemeColors.warning }
+  static var danger: Color { SoyehtThemeColors.danger }
+  static var syntaxType: Color { SoyehtThemeColors.syntaxType }
+  static var diffAdded: Color { SoyehtThemeColors.diffAdded }
+  static var urgent: Color { danger }
+  static var agentRose: Color { SoyehtThemeColors.agentRose }
+  static var agentBlue: Color { SoyehtThemeColors.agentBlue }
+  static var agentGreen: Color { SoyehtThemeColors.agentGreen }
+  static var agentSand: Color { SoyehtThemeColors.agentSand }
 
   enum Radius {
     static let compact: CGFloat = 10
@@ -143,13 +146,15 @@ enum MacTheme {
     }
   }
 
-  static let agentConversation = AgentConversationStyle(
-    canvas: face, face: face, well: well, ink: ink, secondary: secondary, muted: muted,
-    accent: accent, shadowDark: shadowDark, shadowLight: shadowLight, success: success,
-    warning: warning, danger: danger, bodyFont: chrome(TypeScale.body),
-    captionFont: chrome(TypeScale.caption), controlFont: chrome(TypeScale.control),
-    headingFont: chrome(TypeScale.caption, weight: .bold), monoFont: mono(TypeScale.control),
-    monoSmallFont: mono(TypeScale.micro), canonicalLayout: true)
+  static var agentConversation: AgentConversationStyle {
+    AgentConversationStyle(
+      canvas: face, face: face, well: well, ink: ink, secondary: secondary, muted: muted,
+      accent: accent, shadowDark: shadowDark, shadowLight: shadowLight, success: success,
+      warning: warning, danger: danger, bodyFont: chrome(TypeScale.body),
+      captionFont: chrome(TypeScale.caption), controlFont: chrome(TypeScale.control),
+      headingFont: chrome(TypeScale.caption, weight: .bold), monoFont: mono(TypeScale.control),
+      monoSmallFont: mono(TypeScale.micro), canonicalLayout: true)
+  }
 }
 
 private struct NeoRaised: ViewModifier {
@@ -181,9 +186,15 @@ private struct NeoWell: ViewModifier {
       RoundedRectangle(cornerRadius: radius, style: .continuous)
         .fill(
           MacTheme.well
-            .shadow(.inner(color: MacTheme.shadowDark, radius: depth, x: depth, y: depth))
-            .shadow(.inner(color: MacTheme.shadowLight, radius: depth, x: -depth, y: -depth))
+            .shadow(.inner(color: MacTheme.wellShadow, radius: depth, x: depth, y: depth))
+            .shadow(.inner(color: MacTheme.wellRim, radius: depth, x: -depth, y: -depth))
         )
+        .overlay {
+          if let lip = MacTheme.wellLip {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+              .strokeBorder(lip, lineWidth: 1)
+          }
+        }
     }
   }
 }
@@ -195,7 +206,7 @@ private struct NeoAccentGlow: ViewModifier {
     content.background {
       RoundedRectangle(cornerRadius: radius, style: .continuous)
         .fill(MacTheme.accent)
-        .shadow(color: MacTheme.accent.opacity(0.4), radius: 5, x: 4, y: 4)
+        .shadow(color: MacTheme.accent.opacity(0.35), radius: 5, x: 4.8, y: 4.8)
         .shadow(color: MacTheme.shadowLight, radius: 3, x: -3, y: -3)
     }
   }

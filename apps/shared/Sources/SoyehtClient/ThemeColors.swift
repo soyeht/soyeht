@@ -1,25 +1,98 @@
 import SwiftUI
 
+public struct SoyehtThemeColorSet {
+  public let canvas: Color
+  public let face: Color
+  public let well: Color
+  public let hover: Color
+  public let ink: Color
+  public let secondary: Color
+  public let muted: Color
+  public let accent: Color
+  public let onAccent: Color
+  public let shadowDark: Color
+  public let shadowLight: Color
+  public let wellShadow: Color
+  public let wellRim: Color
+  public let wellLip: Color?
+  public let selection: Color
+  public let success: Color
+  public let warning: Color
+  public let danger: Color
+  public let syntaxType: Color
+  public let diffAdded: Color
+  public let agentRose: Color
+  public let agentBlue: Color
+  public let agentGreen: Color
+  public let agentSand: Color
+
+  public init(palette: SoyehtThemePalette) {
+    canvas = Self.color(palette.canvas)
+    face = Self.color(palette.face)
+    well = Self.color(palette.well)
+    hover = Self.color(palette.hover)
+    ink = Self.color(palette.ink)
+    secondary = Self.color(palette.secondary)
+    muted = Self.color(palette.muted)
+    accent = Self.color(palette.accent)
+    onAccent = Self.color(palette.onAccent)
+    shadowDark = Self.color(palette.shadowDark)
+    shadowLight = Self.color(palette.shadowLight)
+    wellShadow = Self.color(palette.wellShadow)
+    wellRim = Self.color(palette.wellRim)
+    wellLip = palette.wellLip.map(Self.color)
+    selection = Self.color(palette.selection)
+    success = Self.color(palette.success)
+    warning = Self.color(palette.warning)
+    danger = Self.color(palette.danger)
+    syntaxType = Self.color(palette.syntaxType)
+    diffAdded = Self.color(palette.diffAdded)
+    agentBlue = Self.agentColor(palette, index: 0)
+    agentGreen = Self.agentColor(palette, index: 1)
+    agentRose = Self.agentColor(palette, index: 2)
+    agentSand = Self.agentColor(palette, index: 3)
+  }
+
+  private static func agentColor(_ palette: SoyehtThemePalette, index: Int) -> Color {
+    guard palette.agentPlates.indices.contains(index) else { return color(palette.face) }
+    return color(palette.agentPlates[index])
+  }
+
+  private static func color(_ value: String) -> Color {
+    guard let rgb = ThemeHexColorMath.rgb8(value) else { return Color.clear }
+    return Color(
+      .sRGB, red: Double(rgb.0) / 255, green: Double(rgb.1) / 255,
+      blue: Double(rgb.2) / 255, opacity: 1)
+  }
+}
+
 public enum SoyehtThemeColors {
-  public static let canvas = Color(red: 224 / 255, green: 229 / 255, blue: 236 / 255)
-  public static let face = Color(red: 232 / 255, green: 237 / 255, blue: 244 / 255)
-  public static let well = Color(red: 216 / 255, green: 222 / 255, blue: 232 / 255)
-  public static let hover = Color(red: 220 / 255, green: 226 / 255, blue: 234 / 255)
-  public static let ink = Color(red: 62 / 255, green: 74 / 255, blue: 102 / 255)
-  public static let secondary = Color(red: 110 / 255, green: 122 / 255, blue: 150 / 255)
-  public static let muted = Color(red: 142 / 255, green: 154 / 255, blue: 179 / 255)
-  public static let accent = Color(red: 91 / 255, green: 124 / 255, blue: 250 / 255)
-  public static let onAccent = Color.white
-  public static let shadowDark = Color(red: 166 / 255, green: 180 / 255, blue: 200 / 255)
-  public static let shadowLight = Color.white
-  public static let selection = Color(red: 201 / 255, green: 214 / 255, blue: 238 / 255)
-  public static let success = Color(red: 46 / 255, green: 154 / 255, blue: 115 / 255)
-  public static let warning = Color(red: 185 / 255, green: 138 / 255, blue: 46 / 255)
-  public static let danger = Color(red: 217 / 255, green: 85 / 255, blue: 106 / 255)
-  public static let syntaxType = Color(red: 142 / 255, green: 91 / 255, blue: 250 / 255)
-  public static let diffAdded = Color(red: 63 / 255, green: 156 / 255, blue: 106 / 255)
-  public static let agentRose = Color(red: 246 / 255, green: 214 / 255, blue: 219 / 255)
-  public static let agentBlue = Color(red: 216 / 255, green: 224 / 255, blue: 254 / 255)
-  public static let agentGreen = Color(red: 205 / 255, green: 231 / 255, blue: 221 / 255)
-  public static let agentSand = Color(red: 238 / 255, green: 227 / 255, blue: 205 / 255)
+  public static var palette: SoyehtThemePalette { TerminalColorTheme.seededDefault.palette }
+
+  private static var active: SoyehtThemeColorSet { SoyehtThemeColorSet(palette: palette) }
+
+  public static var canvas: Color { active.canvas }
+  public static var face: Color { active.face }
+  public static var well: Color { active.well }
+  public static var hover: Color { active.hover }
+  public static var ink: Color { active.ink }
+  public static var secondary: Color { active.secondary }
+  public static var muted: Color { active.muted }
+  public static var accent: Color { active.accent }
+  public static var onAccent: Color { active.onAccent }
+  public static var shadowDark: Color { active.shadowDark }
+  public static var shadowLight: Color { active.shadowLight }
+  public static var wellShadow: Color { active.wellShadow }
+  public static var wellRim: Color { active.wellRim }
+  public static var wellLip: Color? { active.wellLip }
+  public static var selection: Color { active.selection }
+  public static var success: Color { active.success }
+  public static var warning: Color { active.warning }
+  public static var danger: Color { active.danger }
+  public static var syntaxType: Color { active.syntaxType }
+  public static var diffAdded: Color { active.diffAdded }
+  public static var agentRose: Color { active.agentRose }
+  public static var agentBlue: Color { active.agentBlue }
+  public static var agentGreen: Color { active.agentGreen }
+  public static var agentSand: Color { active.agentSand }
 }
