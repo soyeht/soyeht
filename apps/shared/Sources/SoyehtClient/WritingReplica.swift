@@ -186,6 +186,65 @@ extension EngineClient {
     return result
   }
 
+  public func requestWritingVariant(
+    fileId: String, lineId: String, agentPaneId: String, instruction: String? = nil
+  ) async throws -> WritingVariantRequestResult {
+    guard let revision = writingDocuments[fileId]?.document.file.revision else {
+      throw ClientFailure.invalidSnapshot
+    }
+    return try await mutation(
+      "writing.variant.request",
+      WritingVariantRequestParams(
+        fileId: fileId, lineId: lineId, baseRevision: revision,
+        agentPaneId: agentPaneId, instruction: instruction,
+        idempotencyKey: UUID().uuidString)
+    )
+    .decoded(WritingVariantRequestResult.self)
+  }
+
+  @discardableResult
+  public func selectWritingVariant(
+    fileId: String, lineId: String, variantId: String
+  ) async throws -> WritingVariantResult {
+    try await changeWritingVariant(
+      "writing.variant.select",
+      WritingVariantSelectParams(
+        fileId: fileId, lineId: lineId, variantId: variantId,
+        baseRevision: try writingRevision(fileId), idempotencyKey: UUID().uuidString))
+  }
+
+  @discardableResult
+  public func removeWritingVariant(
+    fileId: String, lineId: String, variantId: String
+  ) async throws -> WritingVariantResult {
+    try await changeWritingVariant(
+      "writing.variant.remove",
+      WritingVariantRemoveParams(
+        fileId: fileId, lineId: lineId, variantId: variantId,
+        baseRevision: try writingRevision(fileId), idempotencyKey: UUID().uuidString))
+  }
+
+  private func writingRevision(_ fileId: String) throws -> String {
+    guard let revision = writingDocuments[fileId]?.document.file.revision else {
+      throw ClientFailure.invalidSnapshot
+    }
+    return revision
+  }
+
+  private func changeWritingVariant<Parameters: Encodable & Sendable>(
+    _ method: String, _ parameters: Parameters
+  ) async throws -> WritingVariantResult {
+    let result = try await mutation(method, parameters).decoded(WritingVariantResult.self)
+    let fileId = result.document.file.fileId
+    writingDocuments[fileId] = WritingDocumentView(document: result.document)
+    upsertEditor(result.document.file)
+    _ = try await readEditorFile(
+      fileId: fileId, revision: result.document.file.revision, fromLine: 0,
+      lineCount: UInt32(ProtocolLimits.editorViewportLines))
+    _ = try await loadWritingStructure(fileId: fileId)
+    return result
+  }
+
   private func acceptWritingOpen(
     document: WritingDocument, pane: Pane, viewport: FileReadResult
   ) {
