@@ -289,6 +289,7 @@ impl Core {
         method: &str,
         params: &Value,
         prompt_attachments: Vec<soyeht_store::agents::PromptAttachment>,
+        writing_image: Option<crate::writing::attachments::WritingImageAttachment>,
     ) -> Result<Outcome> {
         let result = match method {
             "state.snapshot" => return self.snapshot_parts(connection),
@@ -345,7 +346,7 @@ impl Core {
             "file.format" => return self.language_format(connection, request_id, params),
             "file.diagnostics" | "file.diff" => self.file_inspection(method, params)?,
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
-                self.document_request(connection, method, params)?
+                self.document_request(connection, method, params, writing_image)?
             }
             "task.dispatch" => self.task_dispatch(connection, params)?,
             "task.next" => self.task_next(connection, params)?,
@@ -388,9 +389,7 @@ impl Core {
             "device.pair.start" | "device.pair.decide" | "device.revoke" => {
                 self.device_request(connection, method, params)?
             }
-            _ => {
-                return Err(errors::invalid("Method unavailable"));
-            }
+            _ => return Err(errors::invalid("Method unavailable")),
         };
         if matches!(method, "pane.config.set" | "pane.yolo") {
             return self.native_rpc_result(
@@ -436,12 +435,23 @@ impl Core {
         let prompt_attachments = if method == "pane.prompt" {
             self.prepare_prompt_attachments(connection, &mut params)?
         } else {
+            Vec::new()
+        };
+        let writing_image = if method == "writing.format" {
+            let image = self.prepare_writing_image(connection, &mut params)?;
+            if image.is_none() && self.web_attachment_pending(connection)? {
+                return Err(errors::invalid(
+                    "Binary attachments must be committed by the following request",
+                ));
+            }
+            image
+        } else {
             if self.web_attachment_pending(connection)? {
                 return Err(errors::invalid(
                     "Binary attachments must be committed by the following request",
                 ));
             }
-            Vec::new()
+            None
         };
         if let Some(outcome) =
             self.repeated_result(connection, &request["id"], method, &params, &scope)?
@@ -454,6 +464,7 @@ impl Core {
             method,
             &params,
             prompt_attachments,
+            writing_image,
         )
     }
 

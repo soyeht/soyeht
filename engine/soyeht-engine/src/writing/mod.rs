@@ -1,5 +1,6 @@
 //! Writing document ownership and bounded structural projections.
 
+pub(crate) mod attachments;
 mod documents;
 mod formatting;
 mod structure;
@@ -25,11 +26,12 @@ impl Core {
         connection: &str,
         method: &str,
         params: &Value,
+        writing_image: Option<attachments::WritingImageAttachment>,
     ) -> Result<Value> {
         if crate::editor::handles(method) {
             return self.editor_request(connection, method, params);
         }
-        self.writing_request(connection, method, params)
+        self.writing_request(connection, method, params, writing_image)
     }
 
     pub(crate) fn writing_snapshot(&self) -> Result<Value> {
@@ -51,18 +53,19 @@ impl Core {
         Ok(serde_json::json!(documents))
     }
 
-    pub fn writing_request(
+    pub(crate) fn writing_request(
         &mut self,
         connection: &str,
         method: &str,
         params: &Value,
+        writing_image: Option<attachments::WritingImageAttachment>,
     ) -> Result<Value> {
         match method {
             "writing.section.list" => self.writing_section_list(params),
             "writing.document.create" => self.writing_document_create(connection, params),
             "writing.document.open" => self.writing_document_open(connection, params),
             "writing.structure" => self.writing_structure(params),
-            "writing.format" => self.writing_format(connection, params),
+            "writing.format" => self.writing_format(connection, params, writing_image),
             "writing.preferences.set" => self.writing_preferences(connection, params),
             _ => Err(errors::internal("Unknown writing method")),
         }

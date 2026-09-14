@@ -6,7 +6,12 @@ use soyeht_protocol::{
 use soyeht_store::editor::document;
 
 impl Core {
-    pub(super) fn writing_format(&mut self, connection: &str, params: &Value) -> Result<Value> {
+    pub(super) fn writing_format(
+        &mut self,
+        connection: &str,
+        params: &Value,
+        image: Option<super::attachments::WritingImageAttachment>,
+    ) -> Result<Value> {
         let request: WritingFormatParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid writing format parameters"))?;
         if let Some(result) = self.repeated_mutation(connection, "writing.format", params)? {
@@ -41,6 +46,14 @@ impl Core {
         .map_err(|_| errors::internal("Writing format result cannot be encoded"))?;
         let file = prepared.file.clone();
         let event = super::documents::changed_event(&file, &record)?;
+        if let Some(image) = image.as_ref() {
+            let workspace = crate::model::workspace(&self.store, &current.workspace_id)?;
+            self.editor.create_binary_if_absent_or_matching(
+                std::path::Path::new(&workspace.path),
+                &image.workspace_relative_path,
+                &image.bytes,
+            )?;
+        }
         let mutation = self.mutate(connection, "writing.format", params, |change| {
             change.save_editor_file(&file)?;
             Ok((result, vec![("writing.changed".into(), event)]))

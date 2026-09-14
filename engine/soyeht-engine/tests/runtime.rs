@@ -283,6 +283,75 @@ fn writing_format_uses_the_owned_revisioned_file_and_survives_restart() {
     assert_eq!(repeated["file"]["revision"], "2");
     assert_eq!(restored.section("writing")[0]["file"]["revision"], "2");
 }
+
+#[test]
+fn presentation_image_is_content_addressed_recoverable_and_idempotent() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("presentation-image-repository");
+    fs::create_dir_all(repository.join("Writing/Presentations")).unwrap();
+    fs::write(
+        repository.join("Writing/Presentations/review.md"),
+        "# Review\n\nSlide image\n",
+    )
+    .unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Presentation image","path":repository,"idempotencyKey":"presentation-image-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Presentations/review.md","kind":"presentation","idempotencyKey":"presentation-image-open"}),
+    );
+    let file_id = opened["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let attachment_id = "30415263-7485-496a-bbcc-ddeeff001122";
+    let image = b"\x89PNG\r\n\x1a\npresentation-image";
+    Frame::Attachment {
+        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+        bytes: image.to_vec(),
+    }
+    .write_to(&mut client.socket)
+    .unwrap();
+    let params = json!({
+        "fileId":file_id,"baseRevision":"1",
+        "range":{"start":{"line":2,"column":0},"end":{"line":2,"column":11}},
+        "kind":"image","image":{"attachmentId":attachment_id,"mimeType":"image/png",
+            "name":"slide.png","bytes":image.len().to_string()},
+        "idempotencyKey":"presentation-image-format"
+    });
+    let formatted = client.call("writing.format", params.clone());
+    assert_eq!(formatted["file"]["revision"], "2");
+    let digest = format!("{:x}", Sha256::digest(image));
+    let asset = repository.join(format!("Writing/Presentations/assets/{digest}.png"));
+    assert_eq!(fs::read(&asset).unwrap(), image);
+    let read = client.call(
+        "file.read",
+        json!({"fileId":file_id,"fromLine":0,"lineCount":10}),
+    );
+    assert_eq!(
+        read["lines"][2]["text"],
+        format!("![Slide image](assets/{digest}.png)")
+    );
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut retry = rig.client();
+    Frame::Attachment {
+        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
+        bytes: image.to_vec(),
+    }
+    .write_to(&mut retry.socket)
+    .unwrap();
+    assert_eq!(retry.call("writing.format", params), formatted);
+    assert_eq!(fs::read_dir(asset.parent().unwrap()).unwrap().count(), 1);
+}
 impl Rig {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));

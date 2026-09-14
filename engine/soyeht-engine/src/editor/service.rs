@@ -17,6 +17,12 @@ pub trait FileSystemPort: Send {
     fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool>;
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool>;
     fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf>;
+    fn create_binary_if_absent_or_matching(
+        &self,
+        root: &Path,
+        relative: &Path,
+        bytes: &[u8],
+    ) -> io::Result<PathBuf>;
 }
 
 #[derive(Default)]
@@ -138,6 +144,71 @@ impl FileSystemPort for SystemFiles {
         }
         Ok(canonical)
     }
+
+    fn create_binary_if_absent_or_matching(
+        &self,
+        root: &Path,
+        relative: &Path,
+        bytes: &[u8],
+    ) -> io::Result<PathBuf> {
+        if bytes.is_empty() || bytes.len() > soyeht_protocol::limits::WRITING_IMAGE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "writing image is outside the byte budget",
+            ));
+        }
+        let root = root.canonicalize()?;
+        validate_relative_creation_path(relative)?;
+        let parent = create_contained_directories(&root, relative)?;
+        let filename = relative.file_name().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "image filename is missing")
+        })?;
+        let target = parent.join(filename);
+        let temporary = parent.join(format!(".soyeht-asset-{}", Uuid::new_v4()));
+        let mut temporary_file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        let prepared = (|| {
+            temporary_file.write_all(bytes)?;
+            temporary_file.sync_all()?;
+            match fs::hard_link(&temporary, &target) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    verify_existing_binary(&target, bytes)
+                }
+                Err(error) => Err(error),
+            }
+        })();
+        let _ = fs::remove_file(&temporary);
+        prepared?;
+        fs::File::open(&parent)?.sync_all()?;
+        let canonical = target.canonicalize()?;
+        if !canonical.starts_with(&root) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "writing image leaves the workspace",
+            ));
+        }
+        Ok(canonical)
+    }
+}
+
+fn verify_existing_binary(target: &Path, bytes: &[u8]) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(target)?;
+    let expected_len = u64::try_from(bytes.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "writing image is too large"))?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_file()
+        || metadata.len() != expected_len
+        || fs::read(target)? != bytes
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "writing image target has different content",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_relative_creation_path(relative: &Path) -> io::Result<()> {
@@ -346,6 +417,28 @@ impl Service {
     pub fn create_empty_text(&self, workspace_root: &Path, relative: &str) -> Result<PathBuf> {
         self.files
             .create_empty_text(workspace_root, Path::new(relative))
+            .map_err(|error| {
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::AlreadyExists
+                        | io::ErrorKind::InvalidInput
+                        | io::ErrorKind::PermissionDenied
+                ) {
+                    errors::invalid(error.to_string())
+                } else {
+                    errors::io(error)
+                }
+            })
+    }
+
+    pub fn create_binary_if_absent_or_matching(
+        &self,
+        workspace_root: &Path,
+        relative: &str,
+        bytes: &[u8],
+    ) -> Result<PathBuf> {
+        self.files
+            .create_binary_if_absent_or_matching(workspace_root, Path::new(relative), bytes)
             .map_err(|error| {
                 if matches!(
                     error.kind(),
@@ -763,6 +856,14 @@ mod tests {
         fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf> {
             Ok(root.join(relative))
         }
+        fn create_binary_if_absent_or_matching(
+            &self,
+            root: &Path,
+            relative: &Path,
+            _bytes: &[u8],
+        ) -> io::Result<PathBuf> {
+            Ok(root.join(relative))
+        }
     }
 
     struct SwappingFiles {
@@ -810,6 +911,14 @@ mod tests {
             Ok(false)
         }
         fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf> {
+            Ok(root.join(relative))
+        }
+        fn create_binary_if_absent_or_matching(
+            &self,
+            root: &Path,
+            relative: &Path,
+            _bytes: &[u8],
+        ) -> io::Result<PathBuf> {
             Ok(root.join(relative))
         }
     }
@@ -926,6 +1035,35 @@ mod tests {
 
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[test]
+    fn binary_creation_publishes_exact_content_once_and_never_clobbers() {
+        let root = std::env::temp_dir().join(format!("sn-binary-{}", Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let files = SystemFiles;
+        let relative = Path::new("Writing/Presentations/assets/digest.png");
+        let bytes = b"\x89PNG\r\n\x1a\nfirst";
+
+        let canonical = files
+            .create_binary_if_absent_or_matching(&root, relative, bytes)
+            .unwrap();
+        assert_eq!(fs::read(&canonical).unwrap(), bytes);
+        assert_eq!(
+            files
+                .create_binary_if_absent_or_matching(&root, relative, bytes)
+                .unwrap(),
+            canonical
+        );
+        assert_eq!(
+            files
+                .create_binary_if_absent_or_matching(&root, relative, b"\x89PNG\r\n\x1a\ndifferent")
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(&canonical).unwrap(), bytes);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
