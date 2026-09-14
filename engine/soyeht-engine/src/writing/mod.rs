@@ -2,6 +2,7 @@
 
 mod assets;
 pub(crate) mod attachments;
+mod beats;
 mod documents;
 mod formatting;
 mod structure;
@@ -24,6 +25,9 @@ pub fn handles(method: &str) -> bool {
             | "writing.variant.add"
             | "writing.variant.select"
             | "writing.variant.remove"
+            | "writing.beat.list"
+            | "writing.beat.put"
+            | "writing.beat.delete"
     )
 }
 
@@ -78,6 +82,9 @@ impl Core {
             "writing.variant.add" => self.writing_variant_add(connection, params),
             "writing.variant.select" => self.writing_variant_select(connection, params),
             "writing.variant.remove" => self.writing_variant_remove(connection, params),
+            "writing.beat.list" => self.writing_beat_list(connection, params),
+            "writing.beat.put" => self.writing_beat_put(connection, params),
+            "writing.beat.delete" => self.writing_beat_delete(connection, params),
             _ => Err(errors::internal("Unknown writing method")),
         }
     }

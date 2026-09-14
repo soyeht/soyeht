@@ -224,6 +224,48 @@ extension EngineClient {
         baseRevision: try writingRevision(fileId), idempotencyKey: UUID().uuidString))
   }
 
+  public func listWritingBeats(fileId: String) async throws -> WritingBeatListResult {
+    let revision = try writingRevision(fileId)
+    let result = try await request(
+      "writing.beat.list", .encoded(WritingBeatListParams(fileId: fileId, revision: revision))
+    )
+    .decoded(WritingBeatListResult.self)
+    guard result.beats.count <= ProtocolLimits.writingBeatCards else {
+      throw ClientFailure.invalidFrame
+    }
+    return result
+  }
+
+  @discardableResult
+  public func putWritingBeat(
+    fileId: String, beatId: String? = nil, title: String, body: String,
+    category: BeatCategory, order: UInt32, sceneId: String? = nil
+  ) async throws -> WritingBeatResult {
+    let result = try await mutation(
+      "writing.beat.put",
+      WritingBeatPutParams(
+        fileId: fileId, baseRevision: try writingRevision(fileId), beatId: beatId,
+        title: title, body: body, category: category, order: order, sceneId: sceneId,
+        idempotencyKey: UUID().uuidString)
+    )
+    .decoded(WritingBeatResult.self)
+    try await acceptWritingBeatResult(result, fileId: fileId)
+    return result
+  }
+
+  @discardableResult
+  public func deleteWritingBeat(fileId: String, beatId: String) async throws -> WritingBeatResult {
+    let result = try await mutation(
+      "writing.beat.delete",
+      WritingBeatDeleteParams(
+        fileId: fileId, baseRevision: try writingRevision(fileId), beatId: beatId,
+        idempotencyKey: UUID().uuidString)
+    )
+    .decoded(WritingBeatResult.self)
+    try await acceptWritingBeatResult(result, fileId: fileId)
+    return result
+  }
+
   private func writingRevision(_ fileId: String) throws -> String {
     guard let revision = writingDocuments[fileId]?.document.file.revision else {
       throw ClientFailure.invalidSnapshot
@@ -243,6 +285,13 @@ extension EngineClient {
       lineCount: UInt32(ProtocolLimits.editorViewportLines))
     _ = try await loadWritingStructure(fileId: fileId)
     return result
+  }
+
+  private func acceptWritingBeatResult(_ result: WritingBeatResult, fileId: String) async throws {
+    guard result.document.file.fileId == fileId else { throw ClientFailure.invalidFrame }
+    writingDocuments[fileId] = WritingDocumentView(document: result.document)
+    upsertEditor(result.document.file)
+    _ = try await loadWritingStructure(fileId: fileId)
   }
 
   private func acceptWritingOpen(

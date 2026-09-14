@@ -400,6 +400,120 @@ fn screenplay_variants_are_agent_authored_writer_selected_and_restart_durable() 
     assert_eq!(fs::read_to_string(path).unwrap(), VARIANT_SCREENPLAY);
 }
 
+#[test]
+fn beat_board_is_ordered_linked_idempotent_and_restart_durable() {
+    let mut rig = Rig::new();
+    let repository = rig.path.join("beat-board-repository");
+    fs::create_dir_all(repository.join("Writing/Screenplays")).unwrap();
+    fs::write(
+        repository.join("Writing/Screenplays/episode-one.fountain"),
+        "INT. KITCHEN - DAWN\n\nANA\nWhat time is it?\n\nEXT. STREET - MORNING\n\nThe city wakes.\n",
+    )
+    .unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Beat board","path":repository,"idempotencyKey":"beat-board-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Screenplays/episode-one.fountain",
+            "kind":"screenplay","idempotencyKey":"beat-board-open"}),
+    );
+    let file_id = opened["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let structure = client.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    let first_scene = structure["scenes"][0]["sceneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second_scene = structure["scenes"][1]["sceneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let first = client.call(
+        "writing.beat.put",
+        json!({"fileId":file_id,"baseRevision":"1","title":"Opening image",
+            "body":"Sunlight crosses the kitchen.","category":"setting","order":0,
+            "sceneId":first_scene,"idempotencyKey":"beat-first"}),
+    );
+    let first_id = first["beat"]["beatId"].as_str().unwrap().to_owned();
+    assert_eq!(first["document"]["sidecarRevision"], "1");
+    let second = client.call(
+        "writing.beat.put",
+        json!({"fileId":file_id,"baseRevision":"1","title":"The question",
+            "body":"Time becomes the episode theme.","category":"story","order":1,
+            "sceneId":second_scene,"idempotencyKey":"beat-second"}),
+    );
+    let second_id = second["beat"]["beatId"].as_str().unwrap().to_owned();
+    let unlinked_params = json!({"fileId":file_id,"baseRevision":"1","title":"Loose end",
+        "body":"Decide where this belongs.","category":"research","order":2,
+        "idempotencyKey":"beat-unlinked"});
+    let unlinked = client.call("writing.beat.put", unlinked_params.clone());
+    let unlinked_id = unlinked["beat"]["beatId"].as_str().unwrap().to_owned();
+    assert_eq!(client.call("writing.beat.put", unlinked_params), unlinked);
+
+    let move_params = json!({"fileId":file_id,"baseRevision":"1","beatId":first_id,
+        "title":"Opening image","body":"Sunlight crosses the kitchen.",
+        "category":"setting","order":2,"sceneId":first_scene,
+        "idempotencyKey":"beat-move-first"});
+    let moved = client.call("writing.beat.put", move_params.clone());
+    assert_eq!(client.call("writing.beat.put", move_params), moved);
+    let listed = client.call(
+        "writing.beat.list",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    assert_eq!(listed["beats"][0]["beatId"], second_id);
+    assert_eq!(listed["beats"][0]["order"], 0);
+    assert_eq!(listed["beats"][1]["beatId"], unlinked_id);
+    assert_eq!(listed["beats"][1]["order"], 1);
+    assert_eq!(listed["beats"][2]["beatId"], first_id);
+    assert_eq!(listed["beats"][2]["order"], 2);
+
+    let linked = client.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    assert_eq!(linked["scenes"][0]["linkedBeatIds"][0], first_id);
+    assert_eq!(linked["scenes"][1]["linkedBeatIds"][0], second_id);
+    let stale = client.request(
+        "writing.beat.put",
+        json!({"fileId":file_id,"baseRevision":"2","title":"Stale",
+            "body":"Must not land.","category":"story","order":0,
+            "idempotencyKey":"beat-stale"}),
+    );
+    assert_eq!(stale["error"]["data"]["kind"], "stale_version");
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let after_restart = restored.call(
+        "writing.beat.list",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    assert_eq!(after_restart, listed);
+    let delete_params = json!({"fileId":file_id,"baseRevision":"1","beatId":unlinked_id,
+        "idempotencyKey":"beat-delete-unlinked"});
+    let deleted = restored.call("writing.beat.delete", delete_params.clone());
+    assert!(deleted["beat"].is_null());
+    assert_eq!(restored.call("writing.beat.delete", delete_params), deleted);
+    let remaining = restored.call(
+        "writing.beat.list",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    assert_eq!(remaining["beats"].as_array().unwrap().len(), 2);
+}
+
 const VARIANT_SCREENPLAY: &str = "INT. STATION - NIGHT\n\nANA\nWhat time is it?\n";
 
 fn screenplay_variant_fixture(rig: &Rig) -> (Client, String, String, PathBuf) {
