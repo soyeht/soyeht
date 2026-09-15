@@ -11,6 +11,7 @@ public struct AgentPaneView: Sendable {
   public var hasOlderMessages: Bool { nextTranscriptCursor != nil }
   public var notice: String?
   public var authMethods: [AuthMethod] = []
+  public var harnessSwitch: AgentHarnessSwitchView?
 
   public init() {}
 
@@ -33,6 +34,28 @@ public struct AgentPaneView: Sendable {
     if replacing { messages = [] }
     merge(page.items)
     nextTranscriptCursor = page.nextCursor
+  }
+}
+
+public struct AgentHarnessSwitchView: Sendable {
+  public enum Phase: Sendable, Equatable {
+    case switching
+    case restarted
+    case failed
+  }
+
+  public let fromHarness: String
+  public let toHarness: String
+  public let phase: Phase
+  public let reason: String?
+
+  public init(
+    fromHarness: String, toHarness: String, phase: Phase, reason: String? = nil
+  ) {
+    self.fromHarness = fromHarness
+    self.toHarness = toHarness
+    self.phase = phase
+    self.reason = reason
   }
 }
 
@@ -202,6 +225,30 @@ extension EngineClient {
     case .paneConfigFailed:
       let event = try params.decoded(PaneConfigFailedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
+    case .paneHarnessSwitchStarted:
+      let event = try params.decoded(PaneHarnessSwitchStartedEvent.self)
+      agentPanes[event.paneId, default: AgentPaneView()].harnessSwitch =
+        AgentHarnessSwitchView(
+          fromHarness: event.fromHarness, toHarness: event.toHarness, phase: .switching)
+    case .paneHarnessSwitchDone:
+      let event = try params.decoded(PaneHarnessSwitchDoneEvent.self)
+      var view = agentPanes[event.paneId, default: AgentPaneView()]
+      view.harnessSwitch = AgentHarnessSwitchView(
+        fromHarness: event.fromHarness, toHarness: event.toHarness, phase: .restarted)
+      view.notice = nil
+      view.authMethods = []
+      agentPanes[event.paneId] = view
+    case .paneHarnessSwitchFailed:
+      let event = try params.decoded(PaneHarnessSwitchFailedEvent.self)
+      var view = agentPanes[event.paneId, default: AgentPaneView()]
+      view.harnessSwitch = AgentHarnessSwitchView(
+        fromHarness: event.fromHarness, toHarness: event.toHarness, phase: .failed,
+        reason: event.reason)
+      view.notice =
+        event.restored
+        ? "The switch failed. The original agent is still running."
+        : "The switch failed."
+      agentPanes[event.paneId] = view
     default: break
     }
   }
@@ -520,6 +567,20 @@ extension EngineClient {
           idempotencyKey: UUID().uuidString),
         timeoutSeconds: 95)
     }
+  }
+
+  public func switchAgentHarness(
+    _ paneId: String, harness: String, model: String? = nil, effort: String? = nil
+  ) async throws -> PaneHarnessSwitchResult {
+    let result = try await mutation(
+      "pane.harness.switch",
+      PaneHarnessSwitchParams(
+        paneId: paneId, harness: harness, model: model, effort: effort,
+        idempotencyKey: UUID().uuidString),
+      timeoutSeconds: 95
+    ).decoded(PaneHarnessSwitchResult.self)
+    try await loadAgentPane(paneId, replacing: false)
+    return result
   }
 
   public func setYolo(_ paneId: String, on: Bool) {

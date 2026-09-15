@@ -99,6 +99,41 @@ import Testing
   #expect(view.hasOlderMessages == false)
 }
 
+@MainActor @Test func harnessSwitchEventsStateTheRestartAndPreserveTheFailureFallback() throws {
+  let client = EngineClient(socket: "/tmp/sn-agent-switch-events/engine.sock")
+  let paneId = "pane-agent"
+  try client.applyAgentEvent(
+    .paneHarnessSwitchStarted,
+    .encoded(
+      PaneHarnessSwitchStartedEvent(
+        eventId: "1", at: "2026-09-15T00:00:00Z", paneId: paneId,
+        fromHarness: "first", toHarness: "second")))
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.phase == .switching)
+
+  try client.applyAgentEvent(
+    .paneHarnessSwitchDone,
+    .encoded(
+      PaneHarnessSwitchDoneEvent(
+        eventId: "2", at: "2026-09-15T00:00:01Z", paneId: paneId,
+        fromHarness: "first", toHarness: "second", newSessionId: "new-session",
+        markerSeq: "9")))
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.phase == .restarted)
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.toHarness == "second")
+
+  try client.applyAgentEvent(
+    .paneHarnessSwitchFailed,
+    .encoded(
+      PaneHarnessSwitchFailedEvent(
+        eventId: "3", at: "2026-09-15T00:00:02Z", paneId: paneId,
+        fromHarness: "second", toHarness: "third", reason: "Candidate stopped",
+        restored: true)))
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.phase == .failed)
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.reason == "Candidate stopped")
+  #expect(
+    client.agentPanes[paneId]?.notice
+      == "The switch failed. The original agent is still running.")
+}
+
 @MainActor @Test func remoteClientCannotStartAgentAuthentication() throws {
   let credential = DeviceCredential(
     engineId: "engine", deviceId: "device",
