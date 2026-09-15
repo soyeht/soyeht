@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
+// Generated from contracts/protocol.json (sha256 2925ec6441361dbf3f0b0dcc92a3d1c0c945a3c925e70fa90682d985711ef36b). Do not edit.
 import Foundation
 
 
@@ -99,6 +99,7 @@ public enum ErrorKind: String, Codable, Sendable {
     case `writing_line_not_found` = "writing_line_not_found"
     case `writing_scene_not_found` = "writing_scene_not_found"
     case `writing_section_refused` = "writing_section_refused"
+    case `harness_switch_failed` = "harness_switch_failed"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -1773,6 +1774,89 @@ public struct PaneConfigSetResult: Codable, Sendable {
         self.`applied` = `applied`
         self.`effective` = `effective`
         self.`sessionPreserved` = `sessionPreserved`
+    }
+}
+
+public struct PaneHarnessSwitchParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `harness`: Id
+    public var `model`: String?
+    public var `effort`: String?
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `harness`: Id, `model`: String? = nil, `effort`: String? = nil, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`harness` = `harness`
+        self.`model` = `model`
+        self.`effort` = `effort`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneHarnessSwitchResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `fromHarness`: Id
+    public var `toHarness`: Id
+    public var `newSessionId`: Id
+    public var `markerSeq`: Decimal
+    public init(`paneId`: Id, `fromHarness`: Id, `toHarness`: Id, `newSessionId`: Id, `markerSeq`: Decimal) {
+        self.`paneId` = `paneId`
+        self.`fromHarness` = `fromHarness`
+        self.`toHarness` = `toHarness`
+        self.`newSessionId` = `newSessionId`
+        self.`markerSeq` = `markerSeq`
+    }
+}
+
+public struct PaneHarnessSwitchStartedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `fromHarness`: Id
+    public var `toHarness`: Id
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`fromHarness` = `fromHarness`
+        self.`toHarness` = `toHarness`
+    }
+}
+
+public struct PaneHarnessSwitchDoneEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `fromHarness`: Id
+    public var `toHarness`: Id
+    public var `newSessionId`: Id
+    public var `markerSeq`: Decimal
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id, `newSessionId`: Id, `markerSeq`: Decimal) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`fromHarness` = `fromHarness`
+        self.`toHarness` = `toHarness`
+        self.`newSessionId` = `newSessionId`
+        self.`markerSeq` = `markerSeq`
+    }
+}
+
+public struct PaneHarnessSwitchFailedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `fromHarness`: Id
+    public var `toHarness`: Id
+    public var `reason`: String
+    public var `restored`: Bool
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id, `reason`: String, `restored`: Bool) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`fromHarness` = `fromHarness`
+        self.`toHarness` = `toHarness`
+        self.`reason` = `reason`
+        self.`restored` = `restored`
     }
 }
 
@@ -5555,6 +5639,9 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case paneElicitationAnswered = "pane.elicitation_answered"
     case paneConfigChanging = "pane.config_changing"
     case paneConfigChanged = "pane.config_changed"
+    case paneHarnessSwitchStarted = "pane.harness_switch_started"
+    case paneHarnessSwitchDone = "pane.harness_switch_done"
+    case paneHarnessSwitchFailed = "pane.harness_switch_failed"
     case paneConfigFailed = "pane.config_failed"
     case paneSessionLost = "pane.session_lost"
     case paneNeedsLogin = "pane.needs_login"
@@ -5631,6 +5718,9 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .paneElicitationAnswered: EventDescriptor(paramsType: "PaneElicitationAnsweredEvent", durable: true),
     .paneConfigChanging: EventDescriptor(paramsType: "PaneConfigChangingEvent", durable: true),
     .paneConfigChanged: EventDescriptor(paramsType: "PaneConfigChangedEvent", durable: true),
+    .paneHarnessSwitchStarted: EventDescriptor(paramsType: "PaneHarnessSwitchStartedEvent", durable: true),
+    .paneHarnessSwitchDone: EventDescriptor(paramsType: "PaneHarnessSwitchDoneEvent", durable: true),
+    .paneHarnessSwitchFailed: EventDescriptor(paramsType: "PaneHarnessSwitchFailedEvent", durable: true),
     .paneConfigFailed: EventDescriptor(paramsType: "PaneConfigFailedEvent", durable: true),
     .paneSessionLost: EventDescriptor(paramsType: "PaneSessionLostEvent", durable: true),
     .paneNeedsLogin: EventDescriptor(paramsType: "PaneNeedsLoginEvent", durable: true),

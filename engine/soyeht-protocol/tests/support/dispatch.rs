@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
+// Generated from contracts/protocol.json (sha256 2925ec6441361dbf3f0b0dcc92a3d1c0c945a3c925e70fa90682d985711ef36b). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -161,6 +161,11 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneElicitationAnswerResult" => roundtrip::<PaneElicitationAnswerResult>(value),
         "PaneConfigSetParams" => roundtrip::<PaneConfigSetParams>(value),
         "PaneConfigSetResult" => roundtrip::<PaneConfigSetResult>(value),
+        "PaneHarnessSwitchParams" => roundtrip::<PaneHarnessSwitchParams>(value),
+        "PaneHarnessSwitchResult" => roundtrip::<PaneHarnessSwitchResult>(value),
+        "PaneHarnessSwitchStartedEvent" => roundtrip::<PaneHarnessSwitchStartedEvent>(value),
+        "PaneHarnessSwitchDoneEvent" => roundtrip::<PaneHarnessSwitchDoneEvent>(value),
+        "PaneHarnessSwitchFailedEvent" => roundtrip::<PaneHarnessSwitchFailedEvent>(value),
         "PaneYoloParams" => roundtrip::<PaneYoloParams>(value),
         "PaneYoloResult" => roundtrip::<PaneYoloResult>(value),
         "PaneAuthStartParams" => roundtrip::<PaneAuthStartParams>(value),

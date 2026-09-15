@@ -1,9 +1,10 @@
 use crate::{Error, Result};
 use serde::Serialize;
+use soyeht_protocol::limits;
 use std::fmt::Write;
 
-pub const MAX_BYTES: usize = 15_999;
-pub const MESSAGE_COUNT: usize = 6;
+pub const MAX_BYTES: usize = limits::HARNESS_CONTINUATION_BYTES;
+pub const MESSAGE_COUNT: usize = limits::HARNESS_CONTINUATION_MESSAGES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
