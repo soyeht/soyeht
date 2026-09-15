@@ -41,6 +41,7 @@ pub struct Core {
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
     pub agents: BTreeMap<String, crate::agents::Running>,
+    pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
     pub language_waiters: BTreeMap<String, Vec<(String, Value)>>,
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
@@ -82,6 +83,7 @@ impl Core {
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
             agents: BTreeMap::new(),
+            harness_switches: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
             language_waiters: BTreeMap::new(),
             web_waiters: BTreeMap::new(),
@@ -313,6 +315,8 @@ impl Core {
         let Response::Instances(instances) = self.pty_request(Request::List)? else {
             return Err(errors::ptyd_unavailable("Invalid registry response"));
         };
+        self.recover_harness_switches(&instances)?;
+        self.cleanup_retired_agent_processes()?;
         let reserved_panes: std::collections::BTreeSet<_> = self
             .store
             .dispatch_checkpoints()
@@ -500,6 +504,8 @@ impl Core {
         if self.ptyd.is_none() {
             self.connect_supervisor()?;
         }
+        self.advance_harness_switches()?;
+        self.cleanup_retired_agent_processes()?;
         let ids: Vec<_> = self
             .panes
             .iter()

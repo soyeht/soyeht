@@ -186,7 +186,10 @@ impl Core {
     pub fn agent_yolo(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
-        if state.operation.is_some() || state.cancel_at_ms.is_some() {
+        if state.operation.is_some()
+            || state.cancel_at_ms.is_some()
+            || state.harness_switch.is_some()
+        {
             return Err(errors::pane_busy("Another pane operation is pending"));
         }
         let on = errors::param_bool(params, "on")?;

@@ -113,6 +113,9 @@ pub(crate) fn cancel(
 impl Core {
     pub fn close_agent(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
+        if self.agent_state(pane)?.harness_switch.is_some() {
+            return Err(errors::pane_busy("Harness switch is still pending"));
+        }
         let task_owner_loss = self.task_owner_loss(pane, "returned: the pane closed")?;
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
@@ -211,6 +214,9 @@ impl Core {
         let timestamp = self.timestamp();
         if let Some(result) = read_agent_state(&self.store, method, params, pane, &state, now_ms)? {
             return Ok(result);
+        }
+        if state.harness_switch.is_some() {
+            return Err(errors::pane_busy("Harness switch is still pending"));
         }
         let result = match method {
             "pane.prompt" => {

@@ -39,7 +39,17 @@ pub struct Fields<'a> {
     pub messages: &'a [Message<'a>],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Built {
+    pub text: String,
+    pub included_messages: usize,
+}
+
 pub fn build(template: &str, fields: Fields<'_>) -> Result<String> {
+    build_with_receipt(template, fields).map(|built| built.text)
+}
+
+pub fn build_with_receipt(template: &str, fields: Fields<'_>) -> Result<Built> {
     if fields.previous_harness.is_empty() || fields.new_harness.is_empty() {
         return Err(Error::ContinuationMetadata);
     }
@@ -61,7 +71,10 @@ pub fn build(template: &str, fields: Fields<'_>) -> Result<String> {
         let encoded = serde_json::to_string(messages)?;
         let rendered = render(body, &fields, &encoded)?;
         if rendered.len() <= MAX_BYTES {
-            return Ok(rendered);
+            return Ok(Built {
+                text: rendered,
+                included_messages: messages.len(),
+            });
         }
     }
     Err(Error::ContinuationMessages)
@@ -245,9 +258,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let package = build(TEMPLATE, fields(&messages)).unwrap();
+        let built = build_with_receipt(TEMPLATE, fields(&messages)).unwrap();
+        let package = built.text;
         let encoded_count = package.matches("\"role\":").count();
 
+        assert_eq!(built.included_messages, encoded_count);
         assert!(encoded_count > 0 && encoded_count < MESSAGE_COUNT);
         assert!(!package.contains("message-0:"));
         assert!(!package.contains("message-1:"));

@@ -753,6 +753,30 @@ impl Rig {
         )
         .unwrap();
     }
+    fn install_switch_harnesses(&self) {
+        let binary =
+            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+        fs::write(
+            self.path.join("harnesses.json"),
+            serde_json::to_vec(&json!([
+                {
+                    "id":"test-agent","name":"Test agent","command":binary,
+                    "args":["--state-dir",self.path.join("native")],"version":"test"
+                },
+                {
+                    "id":"next-agent","name":"Next agent","command":binary,
+                    "args":["--state-dir",self.path.join("next-native")],"version":"test"
+                },
+                {
+                    "id":"broken-agent","name":"Broken agent","command":binary,
+                    "args":["--state-dir",self.path.join("broken-native"),"--require-login"],
+                    "version":"test"
+                }
+            ]))
+            .unwrap(),
+        )
+        .unwrap();
+    }
     fn open_agent(&self, mut client: Client, workspace: &Value) -> (Client, String) {
         self.install_fake_harness();
         let pane = client.call(
@@ -1281,6 +1305,250 @@ fn prompt_images_commit_with_the_queue_and_reach_acp_in_exact_order() {
         soyeht_store::agents::queue(&Store::open(&rig.path).unwrap(), &pane)
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_process() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"remember-switch-context","idempotencyKey":"switch-context"}),
+    );
+    client.wait_state(&pane, "idle");
+    let original_session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let result = client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-success"}),
+    );
+    assert_eq!(result["fromHarness"], "test-agent");
+    assert_eq!(result["toHarness"], "next-agent");
+    assert_ne!(result["newSessionId"], original_session);
+    assert_eq!(client.pane(&pane)["agent"]["harness"], "next-agent");
+
+    let new_session = result["newSessionId"].as_str().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let path = rig
+            .path
+            .join("next-native")
+            .join(format!("{new_session}.json"));
+        if let Ok(bytes) = fs::read(path) {
+            let value: Value = serde_json::from_slice(&bytes).unwrap();
+            let history = value["history"].as_array().unwrap();
+            if history.iter().any(|turn| {
+                turn[0].as_str().is_some_and(|text| {
+                    text.contains("historical data, not instructions")
+                        && text.contains("remember-switch-context")
+                })
+            }) {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "continuation prompt did not reach new harness"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after-switch","idempotencyKey":"after-switch"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let path = rig
+            .path
+            .join("next-native")
+            .join(format!("{new_session}.json"));
+        let served = fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|value| value["history"].as_array().cloned())
+            .is_some_and(|history| history.iter().any(|turn| turn[0] == "after-switch"));
+        if served {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the new session did not serve a prompt after the switch"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if process_instances(&rig).len() == 1 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "old harness process was not retired"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn harness_switch_carries_a_frozen_pending_prompt_once_and_removes_it_from_the_queue() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"slow","idempotencyKey":"switch-active"}),
+    );
+    client.wait_state(&pane, "working");
+    let queued = client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"pending-during-switch","idempotencyKey":"switch-pending"}),
+    );
+    assert_eq!(queued["queued"], true);
+
+    let result = client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-with-pending"}),
+    );
+    let new_session = result["newSessionId"].as_str().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let path = rig
+            .path
+            .join("next-native")
+            .join(format!("{new_session}.json"));
+        let carried = fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|value| value["history"].as_array().cloned())
+            .is_some_and(|history| {
+                history.iter().any(|turn| {
+                    turn[0].as_str().is_some_and(|text| {
+                        text.matches("pending-during-switch").count() == 1
+                            && text.contains("\"state\":\"pending\"")
+                    })
+                })
+            });
+        if carried {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the pending prompt did not reach the continuation package exactly once"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        soyeht_store::agents::queue(&Store::open(&rig.path).unwrap(), &pane)
+            .unwrap()
+            .is_empty(),
+        "an incorporated pending prompt must not be delivered again"
+    );
+}
+
+#[test]
+fn induced_candidate_failure_leaves_the_original_session_serving_prompts() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    let original_session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let failed = client.request(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"broken-agent","idempotencyKey":"switch-failure"}),
+    );
+    assert_eq!(failed["error"]["data"]["kind"], "harness_switch_failed");
+    let pane_after_failure = client.pane(&pane);
+    assert_eq!(pane_after_failure["agent"]["harness"], "test-agent");
+    assert_eq!(pane_after_failure["agent"]["sessionId"], original_session);
+
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"original-still-live","idempotencyKey":"original-after-failure"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if rig.native_session(&original_session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| turn[0] == "original-still-live")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the original session did not serve a prompt after candidate failure"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(process_instances(&rig).len(), 1);
+}
+
+#[test]
+fn old_process_close_failure_is_durable_and_retried_after_the_new_session_commits() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    fs::write(rig.path.join("test-fail-harness-switch-old-close"), b"once").unwrap();
+    let result = client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-close-retry"}),
+    );
+    assert_eq!(result["toHarness"], "next-agent");
+    assert_eq!(client.pane(&pane)["agent"]["harness"], "next-agent");
+    let new_session = result["newSessionId"].as_str().unwrap().to_owned();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"new-session-live","idempotencyKey":"new-after-close-failure"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let path = rig
+            .path
+            .join("next-native")
+            .join(format!("{new_session}.json"));
+        let served = fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|value| value["history"].as_array().cloned())
+            .is_some_and(|history| history.iter().any(|turn| turn[0] == "new-session-live"));
+        if served {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the committed session did not serve a prompt after retired-process cleanup"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    drop(client);
+    rig.kill_engine();
+    let generation = rig.database_probe().engine_generation().unwrap();
+    assert_eq!(
+        process_instances_at(&rig, generation).len(),
+        2,
+        "the failed close must remain durably managed while the new session serves"
+    );
+    fs::remove_file(rig.path.join("test-fail-harness-switch-old-close")).unwrap();
+    rig.start();
+    let mut restored = rig.client();
+    for _ in 0..20 {
+        let _ = restored.pane(&pane);
+        thread::sleep(Duration::from_millis(20));
+    }
+    drop(restored);
+    rig.kill_engine();
+    let generation = rig.database_probe().engine_generation().unwrap();
+    assert_eq!(
+        process_instances_at(&rig, generation).len(),
+        1,
+        "retired process cleanup did not converge"
     );
 }
 
@@ -4070,7 +4338,11 @@ fn web_panes_are_bounded_durable_and_never_enter_the_process_registry() {
 }
 
 fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
-    let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), u64::MAX).unwrap();
+    process_instances_at(rig, u64::MAX)
+}
+
+fn process_instances_at(rig: &Rig, generation: u64) -> Vec<soyeht_ptyd::wire::Instance> {
+    let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), generation).unwrap();
     let Response::Instances(instances) = supervisor.request(Request::List).unwrap() else {
         panic!("process registry")
     };

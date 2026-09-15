@@ -9,6 +9,22 @@ use soyeht_protocol::{
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct HarnessSwitchCheckpoint {
+    pub(crate) user: super::pending::UserOperation,
+    pub(crate) from_harness: String,
+    pub(crate) to_harness: String,
+    pub(crate) candidate_instance_key: String,
+    pub(crate) previous_queue_paused: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RetiredAgentProcess {
+    pub(crate) instance_key: String,
+    pub(crate) instance_id: String,
+    pub(crate) supervisor_id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Phase {
     Initializing,
@@ -100,6 +116,10 @@ pub struct State {
     pub has_finished_turn: bool,
     pub permission_rules: BTreeMap<String, bool>,
     pub terminals: BTreeMap<String, super::terminals::Terminal>,
+    #[serde(default)]
+    pub(crate) harness_switch: Option<HarnessSwitchCheckpoint>,
+    #[serde(default)]
+    pub(crate) retired_processes: Vec<RetiredAgentProcess>,
 }
 
 impl State {
@@ -156,6 +176,8 @@ impl State {
             has_finished_turn: false,
             permission_rules: BTreeMap::new(),
             terminals: BTreeMap::new(),
+            harness_switch: None,
+            retired_processes: Vec::new(),
         })
     }
 
