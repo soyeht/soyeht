@@ -240,20 +240,24 @@ fn list_item(line: &str) -> bool {
 }
 
 fn table_line(lines: &[&str], index: usize) -> bool {
-    let has_pipe = lines[index].contains('|');
-    let adjacent_separator = [index.checked_sub(1), Some(index), Some(index + 1)]
-        .into_iter()
-        .flatten()
-        .filter_map(|other| lines.get(other))
-        .any(|line| {
-            line.split('|')
-                .filter(|cell| !cell.trim().is_empty())
-                .all(|cell| {
-                    let cell = cell.trim().trim_matches(':');
-                    cell.len() >= 3 && cell.chars().all(|ch| ch == '-')
-                })
-        });
-    has_pipe && adjacent_separator
+    if !lines[index].contains('|') {
+        return false;
+    }
+    let mut header = index;
+    while header > 0 && lines[header - 1].contains('|') {
+        header -= 1;
+    }
+    lines.get(header + 1).is_some_and(|line| {
+        let cells: Vec<_> = line
+            .split('|')
+            .filter(|cell| !cell.trim().is_empty())
+            .collect();
+        cells.len() >= 2
+            && cells.iter().all(|cell| {
+                let cell = cell.trim().trim_matches(':');
+                cell.len() >= 3 && cell.chars().all(|ch| ch == '-')
+            })
+    })
 }
 
 fn visible_text(line: &str, kind: HybridBlockKind, raw: bool) -> String {

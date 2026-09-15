@@ -23,25 +23,27 @@ import Testing
     | Name | Value |
     | --- | --- |
     | one | two |
+    | three | four |
     ```swift
     let value = 1
     ```
     ![cover](cover.png)
     """
-  let projection = WritingMarkdownProjection.render(source: source, firstLine: 10, activeLine: 17)
+  let projection = WritingMarkdownProjection.render(source: source, firstLine: 10, activeLine: 18)
 
   #expect(
     projection.lines.map(\.kind) == [
       .heading(level: 2), .listItem(depth: 1, ordered: false),
-      .listItem(depth: 1, ordered: true), .table, .table, .table, .codeFence, .code,
+      .listItem(depth: 1, ordered: true), .table, .table, .table, .table, .codeFence, .code,
       .codeFence, .image,
     ])
-  #expect(projection.lines.filter(\.rawSyntax).map(\.line) == [17])
+  #expect(projection.lines.filter(\.rawSyntax).map(\.line) == [18])
   #expect(projection.text.contains("• nested"))
   #expect(projection.text.contains("•\u{200B}\u{200B} ordered item"))
   #expect(!projection.text.contains("**item**"))
   #expect(projection.text.contains("\u{200B} Name \t Value \u{200B}"))
   #expect(projection.text.contains("\u{200B} ─── \t ─── \u{200B}"))
+  #expect(projection.text.contains("\u{200B} three \t four \u{200B}"))
   #expect(!projection.text.contains("```swift"))
   #expect(projection.text.contains("cover"))
   #expect(!projection.text.contains("cover.png"))

@@ -152,6 +152,7 @@ fn hybrid_preview_covers_rich_blocks_and_only_exposes_active_line_syntax() {
         "| Name | Value |\n",
         "| --- | --- |\n",
         "| one | two |\n",
+        "| three | four |\n",
         "```rust\n",
         "let value = 1;\n",
         "```\n",
@@ -169,6 +170,7 @@ fn hybrid_preview_covers_rich_blocks_and_only_exposes_active_line_syntax() {
             HybridBlockKind::Table,
             HybridBlockKind::Table,
             HybridBlockKind::Table,
+            HybridBlockKind::Table,
             HybridBlockKind::CodeFence,
             HybridBlockKind::Code,
             HybridBlockKind::CodeFence,
@@ -179,8 +181,8 @@ fn hybrid_preview_covers_rich_blocks_and_only_exposes_active_line_syntax() {
     assert_eq!(blocks[0].text, "Heading");
     assert_eq!(blocks[2].text, "  - nested item");
     assert_eq!(blocks[3].text, "quoted");
-    assert!(blocks[7].text.is_empty());
-    assert_eq!(blocks[8].text, "let value = 1;");
+    assert!(blocks[8].text.is_empty());
+    assert_eq!(blocks[9].text, "let value = 1;");
 }
 
 #[test]
