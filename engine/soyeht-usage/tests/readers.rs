@@ -89,7 +89,9 @@ fn first_reader_normalizes_two_verified_windows() {
     assert_eq!(source.calls.len(), 1);
     assert_eq!(outcome.reading.state, UsageState::Ok);
     assert_eq!(outcome.reading.primary.unwrap().used, 0.25);
-    assert_eq!(outcome.reading.secondary.unwrap().used, 0.75);
+    let weekly = outcome.reading.secondary.unwrap();
+    assert_eq!(weekly.used, 0.75);
+    assert_eq!(weekly.label, "Weekly");
 }
 
 #[test]

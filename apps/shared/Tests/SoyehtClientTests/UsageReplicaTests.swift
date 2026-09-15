@@ -33,6 +33,16 @@ private func reading(
   #expect(UsagePresentation(reading(.claude, used: 0.4)).fraction == 0.4)
 }
 
+@Test func codexRingFindsWeeklyInEitherWindowPosition() {
+  let reading = UsageReading(
+    provider: .codex, state: .ok,
+    primary: UsageWindow(used: 0.8, resetsAt: "next week", label: "Weekly"),
+    secondary: UsageWindow(used: 0.2, resetsAt: "soon", label: "Current window"),
+    source: .codex_app_server, fetchedAt: "2026-09-15T12:00:00Z")
+  #expect(UsagePresentation(reading).fraction == 0.8)
+  #expect(UsagePresentation(reading).displayedWindow?.label == "Weekly")
+}
+
 @Test func hoverRefreshUsesTheContractedSixtySecondAge() throws {
   let now = try #require(ISO8601DateFormatter().date(from: "2026-09-12T12:01:00Z"))
   #expect(!UsagePresentation(reading()).needsHoverRefresh(now: now))
