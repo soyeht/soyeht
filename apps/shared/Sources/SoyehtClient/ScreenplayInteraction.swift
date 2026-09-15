@@ -25,6 +25,16 @@ public struct ScreenplayTypingEdit: Sendable {
   }
 }
 
+public struct ScreenplayLineProjection: Equatable, Sendable {
+  public let hiddenRanges: [NSRange]
+  public let openingTransition: Bool
+
+  public init(hiddenRanges: [NSRange], openingTransition: Bool) {
+    self.hiddenRanges = hiddenRanges
+    self.openingTransition = openingTransition
+  }
+}
+
 public enum ScreenplayInteraction {
   public static func typingEdit(
     source: String, firstLine: UInt32, range: NSRange, replacement: String
@@ -127,6 +137,31 @@ public enum ScreenplayInteraction {
     return variants.alternates[next]
   }
 
+  public static func lineProjection(
+    source: String, kind: ScreenplayElementKind
+  ) -> ScreenplayLineProjection {
+    let raw = source as NSString
+    var hidden: [NSRange] = []
+    if kind == .action, source.lowercased().hasPrefix("[action]") {
+      let markerLength = min(raw.length, 8 + source.dropFirst(8).prefix(while: { $0 == " " }).count)
+      hidden.append(NSRange(location: 0, length: markerLength))
+    }
+    if [.scene_heading, .character, .transition].contains(kind), let first = source.first,
+      ".@>".contains(first)
+    {
+      hidden.append(NSRange(location: 0, length: 1))
+    }
+    if kind == .transition, source.hasSuffix(">"), raw.length > 0 {
+      hidden.append(NSRange(location: raw.length - 1, length: 1))
+    }
+    if kind == .character, source.hasSuffix(":"), raw.length > 0 {
+      hidden.append(NSRange(location: raw.length - 1, length: 1))
+    }
+    let visible = visibleText(source, hiddenRanges: hidden).uppercased()
+    return ScreenplayLineProjection(
+      hiddenRanges: hidden, openingTransition: kind == .transition && visible == "FADE IN:")
+  }
+
   private static func candidates(
     for kind: ScreenplayElementKind, structure: WritingStructureResult
   ) -> [String] {
@@ -143,6 +178,15 @@ public enum ScreenplayInteraction {
     default:
       return []
     }
+  }
+
+  private static func visibleText(_ source: String, hiddenRanges: [NSRange]) -> String {
+    let mutable = NSMutableString(string: source)
+    for range in hiddenRanges.sorted(by: { $0.location > $1.location }) {
+      guard NSMaxRange(range) <= mutable.length else { continue }
+      mutable.deleteCharacters(in: range)
+    }
+    return String(mutable).trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private static func lineContentRange(_ lineRange: NSRange, in source: NSString) -> NSRange {

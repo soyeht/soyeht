@@ -278,6 +278,44 @@ fn fountain_parser_builds_ordered_elements_scenes_and_smart_type() {
 }
 
 #[test]
+fn dictated_character_cues_and_action_labels_project_as_screenplay_elements() {
+    let source = concat!(
+        "FADE IN:\n",
+        "INT. COFFEE SHOP - MORNING\n",
+        "Rain taps the windows.\n",
+        "BOB:\n\n",
+        "Morning.\n\n",
+        "ANA (quietly):\n\n",
+        "Nothing good.\n\n",
+        "[action] Bob sits.\n",
+        "CUT TO:\n",
+    );
+    let screenplay = soyeht_writing::parse_screenplay(source).expect("dictated screenplay");
+    let kinds: Vec<_> = screenplay
+        .elements
+        .iter()
+        .map(|element| element.kind.clone())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ScreenplayElementKind::Transition,
+            ScreenplayElementKind::SceneHeading,
+            ScreenplayElementKind::Action,
+            ScreenplayElementKind::Character,
+            ScreenplayElementKind::Dialogue,
+            ScreenplayElementKind::Character,
+            ScreenplayElementKind::Dialogue,
+            ScreenplayElementKind::Action,
+            ScreenplayElementKind::Transition,
+        ]
+    );
+    assert_eq!(screenplay.elements[3].text, "BOB");
+    assert_eq!(screenplay.elements[5].text, "ANA (quietly)");
+    assert_eq!(screenplay.elements[7].text, "Bob sits.");
+}
+
+#[test]
 fn forced_character_at_end_of_file_stays_a_character() {
     let screenplay = parse_screenplay(".INT. COFFEE SHOP - DAY\n\n@BOB").unwrap();
     assert_eq!(screenplay.scenes.len(), 1);
