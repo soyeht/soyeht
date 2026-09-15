@@ -44,10 +44,29 @@ import Testing
   #expect(HarnessPickerModel.defaultHarness(in: [unavailable]) == nil)
 }
 
+@Test func sharedPackageRunnerCannotOutrankLocallyInstalledHarness() throws {
+  let runnerBackedStrangers = (0..<26).map { index in
+    harness(
+      id: "registry.runner-\(index)", name: "Agent \(index)", state: .check_setup,
+      installed: false)
+  }
+  let codex = harness(
+    id: "registry.codex-acp", name: "Codex", state: .check_setup, installed: true)
+
+  let sections = HarnessPickerModel.sections(runnerBackedStrangers + [codex])
+  let ordered = sections.flatMap(\.items)
+
+  #expect(ordered.count == 27)
+  #expect(ordered.first?.id == codex.id)
+  #expect(sections.first?.group == .needsSetup)
+  #expect(sections.last?.group == .catalogue)
+  #expect(HarnessPickerModel.defaultHarness(in: runnerBackedStrangers + [codex])?.id == codex.id)
+}
+
 private func harness(
-  id: String, name: String, state: HarnessSetupState
+  id: String, name: String, state: HarnessSetupState, installed: Bool? = nil
 ) -> HarnessInfo {
   HarnessInfo(
-    id: id, name: name, available: state != .not_installed, capabilities: [], options: [],
-    authMethods: [], source: .built_in, setupState: state)
+    id: id, name: name, available: state != .not_installed, installed: installed, capabilities: [],
+    options: [], authMethods: [], source: .built_in, setupState: state)
 }

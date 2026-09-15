@@ -765,7 +765,8 @@ impl Rig {
                 },
                 {
                     "id":"next-agent","name":"Next agent","command":binary,
-                    "args":["--state-dir",self.path.join("next-native")],"version":"test"
+                    "args":["--state-dir",self.path.join("next-native"),
+                        "--initialize-padding-bytes","65000"],"version":"test"
                 },
                 {
                     "id":"broken-agent","name":"Broken agent","command":binary,
@@ -1322,6 +1323,12 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
         .as_str()
         .unwrap()
         .to_owned();
+    fs::write(
+        rig.path
+            .join("test-advance-screen-before-harness-switch-commit"),
+        b"advance",
+    )
+    .unwrap();
     let result = client.call(
         "pane.harness.switch",
         json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-success"}),
@@ -1356,9 +1363,29 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
         );
         thread::sleep(Duration::from_millis(20));
     }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let live = process_registry_instances(&rig);
+        if live.len() == 1 {
+            assert!(
+                live[0]
+                    .spawn
+                    .argv
+                    .iter()
+                    .any(|arg| arg.contains("next-native")),
+                "retired-process cleanup kept the original harness instead of the candidate: {live:?}"
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "old harness process was not retired"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
     client.call(
         "pane.prompt",
-        json!({"paneId":pane,"text":"after-switch","idempotencyKey":"after-switch"}),
+        json!({"paneId":pane,"text":"after-retired-cleanup","idempotencyKey":"after-retired-cleanup"}),
     );
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -1370,24 +1397,73 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .and_then(|value| value["history"].as_array().cloned())
-            .is_some_and(|history| history.iter().any(|turn| turn[0] == "after-switch"));
+            .is_some_and(|history| {
+                history
+                    .iter()
+                    .any(|turn| turn[0] == "after-retired-cleanup")
+            });
         if served {
             break;
         }
         assert!(
             Instant::now() < deadline,
-            "the new session did not serve a prompt after the switch"
+            "the new session did not serve a prompt after retired-process cleanup"
         );
         thread::sleep(Duration::from_millis(20));
     }
-    let deadline = Instant::now() + Duration::from_secs(5);
+}
+
+#[test]
+fn a_missing_current_agent_recovers_before_accepting_more_work() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"before-process-loss","idempotencyKey":"before-process-loss"}),
+    );
+    client.wait_state(&pane, "idle");
+    let before = client.pane(&pane);
+    let generation = before["generation"].as_u64().unwrap();
+
+    fs::write(
+        rig.path.join("test-drop-current-agent-before-poll"),
+        b"drop",
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let session = loop {
+        let current = client.pane(&pane);
+        if current["generation"]
+            .as_u64()
+            .is_some_and(|next| next > generation)
+            && current["agent"]["sessionId"].is_string()
+        {
+            break current["agent"]["sessionId"].as_str().unwrap().to_owned();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the pane did not recover its missing current process"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after-process-loss","idempotencyKey":"after-process-loss"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        if process_instances(&rig).len() == 1 {
+        let served = rig.native_session(&session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| turn[0] == "after-process-loss");
+        if served {
             break;
         }
         assert!(
             Instant::now() < deadline,
-            "old harness process was not retired"
+            "the recovered process did not serve the queued prompt"
         );
         thread::sleep(Duration::from_millis(20));
     }
@@ -2328,6 +2404,15 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
             .unwrap()["setupState"],
         "not_installed"
     );
+    assert_eq!(
+        initial["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "registry.amp-acp")
+            .unwrap()["installed"],
+        false
+    );
 
     let installed_after_start = rig.path.join("bin/amp-acp");
     fs::write(&installed_after_start, "#!/bin/sh\nexit 0\n").unwrap();
@@ -2355,6 +2440,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
         .find(|item| item["id"] == "registry.amp-acp")
         .unwrap();
     assert_eq!(installed["available"], true);
+    assert_eq!(installed["installed"], true);
     assert_eq!(installed["setupState"], "check_setup");
     assert!(registry["nextCursor"].is_null());
 }
@@ -4450,6 +4536,19 @@ fn web_panes_are_bounded_durable_and_never_enter_the_process_registry() {
 
 fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
     process_instances_at(rig, u64::MAX)
+}
+
+fn process_registry_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
+    let bytes = fs::read(rig.path.join("ptyd-registry.json")).unwrap();
+    let registry: Value = serde_json::from_slice(&bytes).unwrap();
+    registry["instances"]
+        .as_object()
+        .unwrap()
+        .values()
+        .cloned()
+        .map(|value| serde_json::from_value(value).unwrap())
+        .filter(|instance: &soyeht_ptyd::wire::Instance| !instance.closed)
+        .collect()
 }
 
 fn process_instances_at(rig: &Rig, generation: u64) -> Vec<soyeht_ptyd::wire::Instance> {

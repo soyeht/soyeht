@@ -57,6 +57,19 @@ impl Screen {
         Ok(())
     }
 
+    pub fn append_data(&mut self, offset: u64, bytes: Vec<u8>) -> Result<()> {
+        if offset != self.next {
+            return Err(errors::internal("Noncontiguous screen bytes"));
+        }
+        for chunk in bytes.chunks(limits::TERMINAL_PAYLOAD_BYTES) {
+            self.append(Record::Data {
+                offset: self.next,
+                bytes: chunk.to_vec(),
+            })?;
+        }
+        Ok(())
+    }
+
     pub fn tail_start(&self) -> u64 {
         let desired = self
             .next
@@ -195,6 +208,27 @@ mod tests {
                     .any(|bytes| bytes == b"private")
             );
         }
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn append_data_splits_bytes_at_the_terminal_record_limit() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, true).unwrap();
+        let bytes = vec![b'x'; limits::TERMINAL_PAYLOAD_BYTES + 17];
+        screen.append_data(0, bytes.clone()).unwrap();
+        let records = screen.read(0, bytes.len() as u64, bytes.len()).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records
+                .into_iter()
+                .flat_map(|record| match record {
+                    Record::Data { bytes, .. } => bytes,
+                    Record::Gap { .. } => Vec::new(),
+                })
+                .collect::<Vec<_>>(),
+            bytes
+        );
         fs::remove_dir_all(path).unwrap();
     }
 }

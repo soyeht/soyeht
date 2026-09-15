@@ -665,6 +665,16 @@ impl Core {
             json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
                 "toHarness":checkpoint.to_harness,"newSessionId":session_id,"markerSeq":marker_seq}),
         ));
+        inject_screen_advance_before_switch_commit(
+            &self.directory,
+            self.panes
+                .get_mut(pane)
+                .ok_or_else(|| errors::internal("Candidate pane disappeared before commit"))?,
+        )?;
+        // The original process can emit output while its replacement starts.
+        // Anchor the candidate generation only after that output is ingested;
+        // the base captured at spawn is necessarily stale in that case.
+        candidate.saved.sequence_base = self.panes[pane].screen.next_offset();
         let candidate_base = candidate.saved.sequence_base;
         self.commit_agent(
             candidate.saved.clone(),
@@ -682,10 +692,7 @@ impl Core {
                 .get_mut(pane)
                 .ok_or_else(|| errors::internal("Candidate pane disappeared after commit"))?
                 .screen
-                .append(Record::Data {
-                    offset: candidate_base,
-                    bytes: std::mem::take(&mut candidate.raw_output),
-                })?;
+                .append_data(candidate_base, std::mem::take(&mut candidate.raw_output))?;
         }
         let _ = self.pty_request(Request::Ack {
             instance_id: candidate.instance.instance_id.clone(),
@@ -932,6 +939,32 @@ fn requested_options(
         requested.push(("permission".into(), mode));
     }
     requested
+}
+
+#[cfg(debug_assertions)]
+fn inject_screen_advance_before_switch_commit(
+    directory: &std::path::Path,
+    pane: &mut crate::model::RunningPane,
+) -> Result<()> {
+    if directory
+        .join("test-advance-screen-before-harness-switch-commit")
+        .exists()
+    {
+        let from = pane.screen.next_offset();
+        pane.screen.append(Record::Gap {
+            from,
+            to: from.saturating_add(1),
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(not(debug_assertions))]
+fn inject_screen_advance_before_switch_commit(
+    _directory: &std::path::Path,
+    _pane: &mut crate::model::RunningPane,
+) -> Result<()> {
+    Ok(())
 }
 
 fn candidate_rpc_error(error: soyeht_acp::RpcError) -> errors::Error {

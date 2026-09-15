@@ -62,6 +62,7 @@ impl Runtime {
         let directory = self.settings.directory.to_string_lossy();
         self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
             "agentCapabilities":{"loadSession":self.settings.load!="unsupported"},
+            "testPadding":"x".repeat(self.settings.initialize_padding_bytes),
             "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--state-dir",directory,"--login"]}]}));
     }
 

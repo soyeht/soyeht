@@ -515,7 +515,9 @@ impl Core {
         for id in ids {
             if self.agents.contains_key(&id) {
                 if let Err(error) = self.poll_agent(&id) {
-                    if matches!(
+                    if errors::missing_supervisor_instance(&error) {
+                        self.recover_missing_agent(&id)?;
+                    } else if matches!(
                         errors::kind(&error),
                         soyeht_protocol::ErrorKind::InvalidParams
                             | soyeht_protocol::ErrorKind::HarnessUnavailable

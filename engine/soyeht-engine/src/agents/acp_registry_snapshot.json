@@ -74,7 +74,10 @@
         "@agentclientprotocol/claude-agent-acp@0.77.0"
       ],
       "environment": [],
-      "userDirectories": []
+      "userDirectories": [],
+      "localCommands": [
+        "claude"
+      ]
     },
     {
       "id": "registry.cline",
@@ -112,7 +115,10 @@
         "@agentclientprotocol/codex-acp@1.11.0"
       ],
       "environment": [],
-      "userDirectories": []
+      "userDirectories": [],
+      "localCommands": [
+        "codex"
+      ]
     },
     {
       "id": "registry.cortex-code",
@@ -258,7 +264,10 @@
         "--acp"
       ],
       "environment": [],
-      "userDirectories": []
+      "userDirectories": [],
+      "localCommands": [
+        "gemini"
+      ]
     },
     {
       "id": "registry.github-copilot-cli",

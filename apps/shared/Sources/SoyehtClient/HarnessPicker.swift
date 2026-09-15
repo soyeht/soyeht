@@ -4,12 +4,14 @@ import SoyehtProtocol
 public enum HarnessPickerGroup: Int, CaseIterable, Sendable {
   case ready
   case needsSetup
+  case catalogue
   case unavailable
 
   public var title: String {
     switch self {
     case .ready: "Ready"
     case .needsSetup: "Needs setup"
+    case .catalogue: "Available from catalogue"
     case .unavailable: "Not installed"
     }
   }
@@ -44,7 +46,7 @@ public enum HarnessPickerModel {
     in harnesses: [HarnessInfo], excluding excludedId: String? = nil
   ) -> HarnessInfo? {
     sections(harnesses)
-      .filter { $0.group != .unavailable }
+      .filter { $0.group == .ready || $0.group == .needsSetup }
       .flatMap(\.items)
       .first { $0.id != excludedId }
   }
@@ -62,10 +64,14 @@ public enum HarnessPickerModel {
   }
 
   public static func pickerGroup(for harness: HarnessInfo) -> HarnessPickerGroup {
+    let installed = harness.installed ?? harness.available
+    if !installed {
+      return harness.available ? .catalogue : .unavailable
+    }
     switch setupState(for: harness) {
-    case .ready: .ready
-    case .sign_in, .check_setup: .needsSetup
-    case .not_installed: .unavailable
+    case .ready: return .ready
+    case .sign_in, .check_setup: return .needsSetup
+    case .not_installed: return .unavailable
     }
   }
 

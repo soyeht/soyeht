@@ -919,6 +919,8 @@ private struct NewPaneSheet: View {
   @State private var permission = PermissionMode.ask
   @State private var showsAgentPicker = false
   @State private var submitting = false
+  @State private var prompt = ""
+  @FocusState private var promptFocused: Bool
 
   private var selectedHarness: HarnessInfo? { client.harnesses.first { $0.id == harness } }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
@@ -950,18 +952,44 @@ private struct NewPaneSheet: View {
         Text("What do you want to do?")
           .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
         VStack(spacing: 0) {
-          HStack(alignment: .top) {
-            Text(
-              mode == .agent
-                ? "Ask anything. Choose a directory and an agent below."
-                : "Open a terminal in the directory selected below."
-            )
-            .font(MacTheme.chrome(MacTheme.TypeScale.body)).foregroundStyle(MacTheme.muted)
+          if mode == .agent {
+            ZStack(alignment: .topLeading) {
+              TextField("", text: $prompt, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...4)
+                .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                .foregroundStyle(MacTheme.ink)
+                .focused($promptFocused)
+                .padding(.trailing, 54)
+                .accessibilityLabel("Ask anything")
+                .accessibilityHint("Type the first message for the new agent")
+              if prompt.isEmpty {
+                Text("Ask anything. Choose a directory and an agent below.")
+                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .foregroundStyle(MacTheme.muted)
+                  .allowsHitTesting(false)
+              }
+              HStack {
+                Spacer()
+                Button("⌘⇧C") { promptFocused = true }
+                  .buttonStyle(.plain)
+                  .keyboardShortcut("c", modifiers: [.command, .shift])
+                  .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+                  .foregroundStyle(MacTheme.muted)
+                  .accessibilityLabel("Focus new agent message")
+              }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { promptFocused = true }
+          } else {
+            HStack(alignment: .top) {
+              Text("Open a terminal in the directory selected below.")
+                .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                .foregroundStyle(MacTheme.muted)
+              Spacer()
+            }
             Spacer()
-            Text("⌘⇧C").font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
-              .foregroundStyle(MacTheme.muted)
           }
-          Spacer()
           HStack(spacing: MacTheme.Space.x8) {
             Button(action: chooseDirectory) {
               Image(systemName: "plus").font(.system(size: 16))
@@ -1002,7 +1030,7 @@ private struct NewPaneSheet: View {
             }
             .disabled(
               directory == nil || (mode == .agent && selectedHarness?.available != true)
-                || submitting
+                || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
             )
             .keyboardShortcut(.return, modifiers: [.command, .shift])
           }
@@ -1017,7 +1045,10 @@ private struct NewPaneSheet: View {
             .foregroundStyle(MacTheme.muted)
           Button {
             mode = mode == .agent ? .terminal : .agent
-            if mode == .agent { showsAgentPicker = true }
+            if mode == .agent {
+              showsAgentPicker = true
+              promptFocused = true
+            }
           } label: {
             Label(
               mode == .agent ? "Open a terminal" : "Open an agent",
@@ -1121,15 +1152,20 @@ private struct NewPaneSheet: View {
 
   private func create() {
     guard let directory, !submitting else { return }
+    let firstPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard firstPrompt.utf8.count <= ProtocolLimits.promptBytes else { return }
     submitting = true
     Task { @MainActor in
       do {
         if mode == .terminal {
           _ = try await client.createTerminalPane(directory: directory)
         } else {
-          _ = try await client.createAgentPaneNow(
+          let paneId = try await client.createAgentPaneNow(
             directory: directory, harness: harness, model: model.isEmpty ? nil : model,
             effort: effort.isEmpty ? nil : effort, permission: permission)
+          if !firstPrompt.isEmpty {
+            try await client.sendPromptNow(paneId, text: firstPrompt)
+          }
         }
         isPresented = false
       } catch {

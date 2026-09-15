@@ -495,24 +495,28 @@ extension EngineClient {
   }
 
   public func sendPrompt(_ paneId: String, text: String) {
+    perform {
+      try await self.sendPromptNow(paneId, text: text)
+    }
+  }
+
+  public func sendPromptNow(_ paneId: String, text: String) async throws {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
-    perform {
-      let draft = self.agentWebDrafts[paneId]
-      let prompt = draft.map { $0.markdown + "\n\n## Request\n\n" + text } ?? text
-      guard prompt.utf8.count <= ProtocolLimits.promptBytes else {
-        throw ClientFailure.invalidFrame
-      }
-      _ = try await self.mutation(
-        "pane.prompt",
-        PanePromptParams(
-          paneId: paneId, text: prompt, origin: .human,
-          attachments: draft?.images.map(\.reference),
-          idempotencyKey: UUID().uuidString),
-        attachments: draft?.images ?? [])
-      self.agentWebDrafts.removeValue(forKey: paneId)
-      try await self.loadAgentPane(paneId, replacing: false)
+    let draft = agentWebDrafts[paneId]
+    let prompt = draft.map { $0.markdown + "\n\n## Request\n\n" + text } ?? text
+    guard prompt.utf8.count <= ProtocolLimits.promptBytes else {
+      throw ClientFailure.invalidFrame
     }
+    _ = try await mutation(
+      "pane.prompt",
+      PanePromptParams(
+        paneId: paneId, text: prompt, origin: .human,
+        attachments: draft?.images.map(\.reference),
+        idempotencyKey: UUID().uuidString),
+      attachments: draft?.images ?? [])
+    agentWebDrafts.removeValue(forKey: paneId)
+    try await loadAgentPane(paneId, replacing: false)
   }
 
   public func attachWebElements(

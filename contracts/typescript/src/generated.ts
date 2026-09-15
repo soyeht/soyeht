@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 8b3edb6e1f6426d9f562935c4eca5d141306c0429d365a602e422fff212d8f50). Do not edit.
+// Generated from contracts/protocol.json (sha256 aa146ae2e37c4ae30d381ba720dfa61fa18d01aedf7fd6471702a17603071692). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -712,6 +712,7 @@ export interface HarnessInfo {
   "id": Id;
   "name": string;
   "available": boolean;
+  "installed"?: boolean;
   "version"?: string;
   "fingerprint"?: string;
   "capabilities": Array<ProbeCapability>;

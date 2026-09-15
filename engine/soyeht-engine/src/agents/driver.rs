@@ -295,6 +295,7 @@ impl Core {
         if self.agents[pane].state.phase == Phase::Faulted {
             return self.close_agent_processes(pane);
         }
+        drop_current_agent_before_poll(self, pane)?;
         self.decode_agent_log(pane)?;
         let saved = self.panes[pane].stored.clone();
         let instance_id = errors::invariant(
@@ -536,6 +537,27 @@ impl Core {
         self.commit_agent(saved, state, changes, None, json!({}))?;
         Ok(())
     }
+}
+
+#[cfg(debug_assertions)]
+fn drop_current_agent_before_poll(core: &mut Core, pane: &str) -> Result<()> {
+    let marker = core.directory.join("test-drop-current-agent-before-poll");
+    if !marker.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(marker).map_err(errors::io)?;
+    let instance_id = core.panes[pane]
+        .stored
+        .instance_id
+        .clone()
+        .ok_or_else(|| errors::internal("Agent process has no adopted instance"))?;
+    core.pty_request(Request::Close { instance_id })?;
+    Ok(())
+}
+
+#[cfg(not(debug_assertions))]
+fn drop_current_agent_before_poll(_core: &mut Core, _pane: &str) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]

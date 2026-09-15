@@ -343,6 +343,13 @@ pub fn kind(error: &Error) -> ErrorKind {
     }
 }
 
+pub fn missing_supervisor_instance(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Supervisor(soyeht_ptyd::Error::Remote { kind, .. }) if kind == "not_found"
+    )
+}
+
 impl From<soyeht_editor::Error> for Error {
     fn from(error: soyeht_editor::Error) -> Self {
         Self::Editor(error)

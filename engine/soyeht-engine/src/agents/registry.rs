@@ -15,13 +15,14 @@ const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
 const BUILTIN_AGENT_COUNT: usize = 41;
 const SOURCE_DIGEST: &str = "2e0ddd7be13f676b48158f266ba8d64a29da7c80e971b493664ed993dd99e295";
-const SNAPSHOT_DIGEST: &str = "fb8be0d034ad67a17e8e13f09a79ea9a40248cdf99e96281cfd475d453f43af3";
+const SNAPSHOT_DIGEST: &str = "d41c4079f196bd29be2ae0f631f673950e8baa22da2e38e331a2d7e3a7a34240";
 
 #[derive(Clone)]
 pub(crate) struct RegistryEntry {
     pub launch: HarnessLaunch,
     pub source: HarnessSource,
     recipe_directories: Vec<PathBuf>,
+    local_commands: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -45,6 +46,8 @@ struct SnapshotEntry {
     environment: Vec<HarnessEnvironmentVariable>,
     #[serde(default)]
     user_directories: Vec<String>,
+    #[serde(default)]
+    local_commands: Vec<String>,
 }
 
 fn valid_environment(environment: &[HarnessEnvironmentVariable]) -> bool {
@@ -161,6 +164,12 @@ fn builtin_entries() -> Result<Vec<RegistryEntry>> {
                             .components()
                             .all(|component| matches!(component, Component::Normal(_)))
                 });
+            let local_commands_valid = entry.local_commands.len() <= 8
+                && entry.local_commands.iter().all(|command| {
+                    !command.is_empty()
+                        && command.len() <= 128
+                        && Path::new(command).components().count() == 1
+                });
             let directories = entry
                 .user_directories
                 .iter()
@@ -184,6 +193,7 @@ fn builtin_entries() -> Result<Vec<RegistryEntry>> {
                 || !valid_launch(&launch)
                 || !valid_builtin_runner(&launch)
                 || !directories_valid
+                || !local_commands_valid
             {
                 return Err(errors::internal("Embedded ACP registry entry is invalid"));
             }
@@ -191,6 +201,7 @@ fn builtin_entries() -> Result<Vec<RegistryEntry>> {
                 launch,
                 source: HarnessSource::BuiltIn,
                 recipe_directories: directories,
+                local_commands: entry.local_commands,
             })
         })
         .collect()
@@ -256,6 +267,7 @@ fn custom_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
             launch,
             source: HarnessSource::Custom,
             recipe_directories: Vec::new(),
+            local_commands: Vec::new(),
         })
         .collect())
 }
@@ -408,6 +420,22 @@ pub(crate) fn resolve_entry(mut entry: RegistryEntry) -> Option<HarnessLaunch> {
     Some(entry.launch)
 }
 
+pub(crate) fn locally_installed(entry: &RegistryEntry, known_session: bool) -> bool {
+    if known_session {
+        return true;
+    }
+    if matches!(entry.source, HarnessSource::Custom)
+        || !matches!(entry.launch.command.as_str(), "npx" | "uvx")
+    {
+        return resolve_entry(entry.clone()).is_some();
+    }
+    let directories = super::environment::candidate_directories(&entry.recipe_directories);
+    entry
+        .local_commands
+        .iter()
+        .any(|command| resolve_executable(command, directories.clone()).is_some())
+}
+
 fn digest_executable(path: &Path) -> Result<String> {
     let mut file = File::open(path).map_err(errors::io)?;
     let mut digest = Sha256::new();
@@ -488,6 +516,7 @@ mod tests {
             .find(|entry| entry.launch.id == "registry.codex-acp")
             .unwrap();
         assert_eq!(codex.launch.command, "npx");
+        assert_eq!(codex.local_commands, ["codex"]);
         assert_eq!(
             codex.launch.args,
             ["--yes", "@agentclientprotocol/codex-acp@1.11.0"]
@@ -499,6 +528,33 @@ mod tests {
                 .iter()
                 .all(|argument| argument != "latest")
         );
+    }
+
+    #[test]
+    fn package_runner_is_launchable_without_claiming_a_local_install() {
+        let fixture = Fixture::new();
+        let evidence = format!("owned-agent-{}", Uuid::new_v4());
+        let runner = RegistryEntry {
+            launch: HarnessLaunch {
+                id: "registry.runner".into(),
+                name: "Runner".into(),
+                command: "npx".into(),
+                args: vec!["--yes".into(), "runner@1.0.0".into()],
+                version: "1.0.0".into(),
+                environment: None,
+            },
+            source: HarnessSource::BuiltIn,
+            recipe_directories: vec![fixture.0.clone()],
+            local_commands: vec![evidence.clone()],
+        };
+        assert!(!locally_installed(&runner, false));
+        fixture.executable(&evidence);
+        assert!(locally_installed(&runner, false));
+
+        let mut unowned = runner.clone();
+        unowned.local_commands.clear();
+        assert!(!locally_installed(&unowned, false));
+        assert!(locally_installed(&unowned, true));
     }
 
     #[test]

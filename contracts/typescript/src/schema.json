@@ -2504,6 +2504,9 @@
         "available": {
           "type": "boolean"
         },
+        "installed": {
+          "type": "boolean"
+        },
         "version": {
           "type": "string"
         },

@@ -10,6 +10,7 @@ pub struct Settings {
     pub version: String,
     pub require_login: bool,
     pub login: bool,
+    pub initialize_padding_bytes: usize,
 }
 impl Settings {
     pub fn parse() -> Result<Self> {
@@ -18,6 +19,7 @@ impl Settings {
         let mut version = "1".to_owned();
         let mut require_login = false;
         let mut login = false;
+        let mut initialize_padding_bytes = 0;
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -26,6 +28,16 @@ impl Settings {
                 "--version-label" => version = args.next().ok_or(Error::MissingVersionLabel)?,
                 "--require-login" => require_login = true,
                 "--login" => login = true,
+                "--initialize-padding-bytes" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| Error::UnknownOption(arg.clone()))?;
+                    initialize_padding_bytes = value
+                        .parse()
+                        .ok()
+                        .filter(|bytes| *bytes <= 128 * 1024)
+                        .ok_or(Error::UnknownOption(value))?;
+                }
                 _ => return Err(Error::UnknownOption(arg)),
             }
         }
@@ -44,6 +56,7 @@ impl Settings {
             version,
             require_login,
             login,
+            initialize_padding_bytes,
         })
     }
     pub fn logged_in(&self) -> bool {

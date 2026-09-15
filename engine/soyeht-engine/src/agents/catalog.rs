@@ -137,6 +137,7 @@ impl Core {
                     }
                 }
                 let initialized = known.and_then(|a| a.state.initialized.as_ref());
+                let installed = registry::locally_installed(&entry, known.is_some());
                 let setup_state = setup_state(
                     &capabilities,
                     initialized.is_some(),
@@ -147,6 +148,7 @@ impl Core {
                     id: entry.launch.id,
                     name: entry.launch.name,
                     available: resolved.is_some(),
+                    installed: Some(installed),
                     version: initialized.map(|i| i.version.clone()).or_else(|| (!entry
                         .launch
                         .version

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 8b3edb6e1f6426d9f562935c4eca5d141306c0429d365a602e422fff212d8f50). Do not edit.
+// Generated from contracts/protocol.json (sha256 aa146ae2e37c4ae30d381ba720dfa61fa18d01aedf7fd6471702a17603071692). Do not edit.
 import Foundation
 
 
@@ -1457,6 +1457,7 @@ public struct HarnessInfo: Codable, Sendable {
     public var `id`: Id
     public var `name`: String
     public var `available`: Bool
+    public var `installed`: Bool?
     public var `version`: String?
     public var `fingerprint`: String?
     public var `capabilities`: [ProbeCapability]
@@ -1464,10 +1465,11 @@ public struct HarnessInfo: Codable, Sendable {
     public var `authMethods`: [AuthMethod]
     public var `source`: HarnessSource?
     public var `setupState`: HarnessSetupState?
-    public init(`id`: Id, `name`: String, `available`: Bool, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil) {
+    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`available` = `available`
+        self.`installed` = `installed`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
         self.`capabilities` = `capabilities`
