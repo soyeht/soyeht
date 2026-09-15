@@ -7,17 +7,25 @@ import SwiftUI
 #endif
 
 struct AgentSilencePresentation: Sendable {
-  let elapsedSeconds: Int
+  let elapsedSeconds: Int?
+  private let paneState: PaneState?
 
-  init(silentSince: String?, now: Date = Date()) {
-    let observed = silentSince.flatMap(UsageTimestamp.date(from:))
-      .map { Int(now.timeIntervalSince($0)) }
-    elapsedSeconds = max(0, observed ?? 0)
+  init(silentSince: String?, paneState: PaneState? = nil, now: Date = Date()) {
+    self.paneState = paneState
+    let interval = silentSince.flatMap(UsageTimestamp.date(from:))
+      .map { now.timeIntervalSince($0) }
+    elapsedSeconds = interval.flatMap { value in
+      value.isFinite && value >= 0 ? Int(value) : nil
+    }
   }
 
-  var escalated: Bool { elapsedSeconds >= ProtocolLimits.noSignalSec }
+  var escalated: Bool {
+    paneState == .no_signal
+      || elapsedSeconds.map { $0 >= ProtocolLimits.noSignalSec } == true
+  }
 
-  var elapsed: String {
+  var elapsed: String? {
+    guard let elapsedSeconds else { return nil }
     let hours = elapsedSeconds / 3_600
     let minutes = (elapsedSeconds % 3_600) / 60
     let seconds = elapsedSeconds % 60
@@ -173,7 +181,7 @@ private struct AgentWell: ViewModifier {
       Divider().opacity(0.35)
       transcript
       if let silentSince = pane?.agent?.silentSince {
-        noOutput(since: silentSince)
+        noOutput(since: silentSince, state: pane?.state)
       }
       if !view.authMethods.isEmpty { authentication }
       if let permission = view.permission {
@@ -288,22 +296,28 @@ private struct AgentWell: ViewModifier {
       .padding(.bottom, 10)
   }
 
-  private func noOutput(since: String) -> some View {
+  private func noOutput(since: String, state: PaneState?) -> some View {
     TimelineView(.periodic(from: .now, by: 1)) { timeline in
-      let presentation = AgentSilencePresentation(silentSince: since, now: timeline.date)
+      let presentation = AgentSilencePresentation(
+        silentSince: since, paneState: state, now: timeline.date)
+      let elapsed = presentation.elapsed
       VStack(alignment: .leading, spacing: 8) {
         Label(
           presentation.escalated
-            ? "No output from the agent for \(presentation.elapsed)"
-            : "Waiting for the first agent output · \(presentation.elapsed)",
+            ? elapsed.map { "No output from the agent for \($0)" }
+              ?? "The agent has produced no output"
+            : elapsed.map { "Waiting for the first agent output · \($0)" }
+              ?? "Waiting for the first agent output",
           systemImage: presentation.escalated ? "clock.badge.exclamationmark" : "clock"
         )
         .font(style.headingFont)
         .foregroundStyle(presentation.escalated ? style.warning : style.secondary)
         Text(
-          presentation.escalated
-            ? "The turn is still active. You can keep waiting or cancel this turn."
-            : "The turn is active. Nothing from the agent has arrived yet."
+          elapsed == nil
+            ? "The turn is active. Elapsed time is unavailable. You can keep waiting or cancel this turn."
+            : presentation.escalated
+              ? "The turn is still active. You can keep waiting or cancel this turn."
+              : "The turn is active. Nothing from the agent has arrived yet."
         )
         .font(style.captionFont).foregroundStyle(style.secondary)
         HStack {

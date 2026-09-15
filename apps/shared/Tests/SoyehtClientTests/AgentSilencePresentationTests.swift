@@ -20,8 +20,20 @@ import Testing
 
   let future = AgentSilencePresentation(
     silentSince: "2026-09-15T18:03:00.000Z", now: after)
-  #expect(future.elapsedSeconds == 0)
+  #expect(future.elapsedSeconds == nil)
+  #expect(future.elapsed == nil)
   #expect(!future.escalated)
+
+  let invalid = AgentSilencePresentation(
+    silentSince: "not-a-timestamp", paneState: .no_signal, now: after)
+  #expect(invalid.elapsedSeconds == nil)
+  #expect(invalid.elapsed == nil)
+  #expect(invalid.escalated)
+
+  let justStarted = AgentSilencePresentation(
+    silentSince: "2026-09-15T18:00:00.000Z", now: start)
+  #expect(justStarted.elapsedSeconds == 0)
+  #expect(justStarted.elapsed == "0m 0s")
 
   let slept = AgentSilencePresentation(
     silentSince: "2026-09-15T18:00:00.000Z", now: start.addingTimeInterval(8 * 3_600))
