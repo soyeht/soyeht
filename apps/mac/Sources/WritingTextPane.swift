@@ -19,8 +19,7 @@ struct WritingTextPane: View {
     return client.editorFiles[fileId]
   }
   private var writingLoadKey: String {
-    guard let file = writing?.document.file else { return "missing" }
-    return "\(file.fileId):\(file.revision)"
+    writing?.loadIdentity ?? "missing"
   }
 
   var body: some View {

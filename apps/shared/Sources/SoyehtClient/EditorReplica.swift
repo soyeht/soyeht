@@ -106,6 +106,11 @@ extension EngineClient {
   func discardEditorPane(_ paneId: String) {
     let discardedFileIds = Set(
       editorFiles.values.lazy.filter { $0.file.paneId == paneId }.map(\.file.fileId))
+    for fileId in discardedFileIds {
+      editorRefreshTasks[fileId]?.cancel()
+      editorRefreshTasks[fileId] = nil
+      editorRefreshGeneration[fileId] = nil
+    }
     editorFiles = editorFiles.filter { $0.value.file.paneId != paneId }
     if let target = editorNavigationTarget, discardedFileIds.contains(target.fileId) {
       editorNavigationTarget = nil
@@ -189,6 +194,7 @@ extension EngineClient {
 
   public func enqueueEditorEdits(fileId: String, edits: [TextEdit]) {
     guard !edits.isEmpty else { return }
+    invalidateEditorRefresh(fileId)
     editorWriteQueues[fileId, default: []].append(edits)
     startEditorWriteTask(fileId)
   }
@@ -459,12 +465,55 @@ extension EngineClient {
       }
     }
     editorWriteQueues[fileId] = nil
-    try? await refreshEditorFile(fileId)
+    scheduleEditorReload(fileId)
   }
 
   private func scheduleEditorReload(_ fileId: String) {
     guard connected, editorFiles[fileId]?.viewport != nil else { return }
-    perform { try await self.refreshEditorFile(fileId) }
+    let generation = nextEditorRefreshGeneration(fileId)
+    editorRefreshTasks[fileId]?.cancel()
+    editorRefreshTasks[fileId] = Task { [weak self] in
+      do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
+      guard let self else { return }
+      await self.settleEditorWrites(fileId)
+      guard self.editorRefreshGeneration[fileId] == generation,
+        self.editorWriteQueues[fileId]?.isEmpty != false,
+        self.editorWriteTasks[fileId] == nil
+      else { return }
+      do {
+        try await self.refreshEditorFile(fileId, generation: generation)
+      } catch is CancellationError {} catch {
+        guard self.editorRefreshGeneration[fileId] == generation else { return }
+        self.problem = error.localizedDescription
+      }
+      if self.editorRefreshGeneration[fileId] == generation {
+        self.editorRefreshTasks[fileId] = nil
+      }
+    }
+  }
+
+  private func invalidateEditorRefresh(_ fileId: String) {
+    _ = nextEditorRefreshGeneration(fileId)
+    editorRefreshTasks[fileId]?.cancel()
+    editorRefreshTasks[fileId] = nil
+  }
+
+  private func nextEditorRefreshGeneration(_ fileId: String) -> UInt64 {
+    let next = (editorRefreshGeneration[fileId] ?? 0) &+ 1
+    editorRefreshGeneration[fileId] = next
+    return next
+  }
+
+  private func refreshEditorFile(_ fileId: String, generation: UInt64) async throws {
+    guard let viewport = editorFiles[fileId]?.viewport else { return }
+    let result = try await previewEditorFile(
+      fileId: fileId, source: .buffer, fromLine: viewport.fromLine,
+      lineCount: max(1, viewport.toLine - viewport.fromLine))
+    guard editorRefreshGeneration[fileId] == generation,
+      editorWriteQueues[fileId]?.isEmpty != false,
+      editorWriteTasks[fileId] == nil
+    else { return }
+    acceptEditorRead(result)
   }
 
   func acceptEditorRead(_ result: FileReadResult) {

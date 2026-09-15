@@ -53,20 +53,27 @@ import Testing
   #expect(client.writingDocuments.isEmpty)
 }
 
-@MainActor @Test func editorWritesAdvanceTheWritingRevisionAndInvalidateItsStructure() {
+@MainActor @Test func editorWritesAdvanceTheWritingRevisionWithoutBlankingItsStructure() {
   let client = EngineClient(socket: "/tmp/writing-editor-sync.sock")
   var document = writingDocument()
   client.editorFiles[document.file.fileId] = EditorFileView(file: document.file)
   client.writingDocuments[document.file.fileId] = WritingDocumentView(
     document: document, structure: writingStructure(document))
+  let loadIdentity = client.writingDocuments[document.file.fileId]?.loadIdentity
 
   document.file.revision = "2"
   document.file.dirty = true
   client.upsertEditor(document.file)
 
-  #expect(client.writingDocuments[document.file.fileId]?.document.file.revision == "2")
+  for revision in 3...402 {
+    document.file.revision = String(revision)
+    client.upsertEditor(document.file)
+  }
+
+  #expect(client.writingDocuments[document.file.fileId]?.document.file.revision == "402")
   #expect(client.writingDocuments[document.file.fileId]?.document.file.dirty == true)
-  #expect(client.writingDocuments[document.file.fileId]?.structure == nil)
+  #expect(client.writingDocuments[document.file.fileId]?.structure != nil)
+  #expect(client.writingDocuments[document.file.fileId]?.loadIdentity == loadIdentity)
 }
 
 private func writingPane() -> Pane {

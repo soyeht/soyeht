@@ -27,8 +27,7 @@ struct WritingScreenplayPane: View {
   }
   private var structure: WritingStructureResult? { writing?.structure }
   private var writingLoadKey: String {
-    guard let file = writing?.document.file else { return "missing" }
-    return "\(file.fileId):\(file.revision)"
+    writing?.loadIdentity ?? "missing"
   }
 
   var body: some View {
@@ -470,7 +469,7 @@ private struct ScreenplayViewport: NSViewRepresentable {
         renderedTheme = SoyehtThemeStore.shared.activeTheme
         render(selection: valid(textView.selectedRange()))
       } else if parent.activeLine != currentLine() || focusApplied != parent.document.focusMode {
-        render(selection: valid(textView.selectedRange()))
+        restyle(selection: valid(textView.selectedRange()))
       }
       if let request = parent.editRequest, request.id != appliedRequest {
         appliedRequest = request.id
@@ -498,7 +497,7 @@ private struct ScreenplayViewport: NSViewRepresentable {
       guard !applying, let position = position(textView.selectedRange().location) else { return }
       if parent.activeLine != position.line {
         parent.activeLine = position.line
-        render(selection: textView.selectedRange())
+        restyle(selection: textView.selectedRange())
       }
     }
 
@@ -554,17 +553,23 @@ private struct ScreenplayViewport: NSViewRepresentable {
     }
 
     private func replace(_ range: NSRange, with replacement: String) {
-      let raw = source as NSString
-      guard NSMaxRange(range) <= raw.length, let start = position(range.location),
-        let end = position(NSMaxRange(range))
+      guard
+        let edit = ScreenplayInteraction.typingEdit(
+          source: source, firstLine: firstLine, range: range, replacement: replacement)
       else { return }
-      source = raw.replacingCharacters(in: range, with: replacement)
-      let cursor = range.location + replacement.utf16.count
+      source = edit.source
+      applyLocalReplacement(range, with: replacement)
       parent.client.enqueueEditorEdits(
-        fileId: parent.view.file.fileId,
-        edits: [TextEdit(range: .init(start: start, end: end), text: replacement)])
-      parent.activeLine = start.line &+ UInt32(clamping: replacement.filter { $0 == "\n" }.count)
-      render(selection: NSRange(location: cursor, length: 0))
+        fileId: parent.view.file.fileId, edits: [edit.wireEdit])
+      parent.activeLine = edit.activeLine
+      restyle(selection: NSRange(location: edit.cursor, length: 0))
+    }
+
+    private func applyLocalReplacement(_ range: NSRange, with replacement: String) {
+      guard let storage = textView.textStorage, NSMaxRange(range) <= storage.length else { return }
+      applying = true
+      storage.replaceCharacters(in: range, with: replacement)
+      applying = false
     }
 
     private func render(selection: NSRange) {
@@ -573,6 +578,30 @@ private struct ScreenplayViewport: NSViewRepresentable {
         ScreenplayStyle.attributed(
           source, firstLine: firstLine, activeLine: parent.activeLine,
           focus: parent.document.focusMode, structure: parent.structure))
+      textView.setSelectedRange(valid(selection))
+      textView.needsDisplay = true
+      applying = false
+    }
+
+    private func restyle(selection: NSRange) {
+      guard let storage = textView.textStorage, storage.string == source else {
+        render(selection: selection)
+        return
+      }
+      let styled = ScreenplayStyle.attributed(
+        source, firstLine: firstLine, activeLine: parent.activeLine,
+        focus: parent.document.focusMode, structure: parent.structure)
+      applying = true
+      storage.beginEditing()
+      if storage.length > 0 {
+        storage.setAttributes([:], range: NSRange(location: 0, length: storage.length))
+        styled.enumerateAttributes(
+          in: NSRange(location: 0, length: styled.length), options: []
+        ) { attributes, range, _ in
+          storage.setAttributes(attributes, range: range)
+        }
+      }
+      storage.endEditing()
       textView.setSelectedRange(valid(selection))
       textView.needsDisplay = true
       applying = false

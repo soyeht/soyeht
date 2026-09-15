@@ -9,6 +9,10 @@ public struct WritingDocumentView: Sendable {
     self.document = document
     self.structure = structure
   }
+
+  public var loadIdentity: String {
+    "\(document.file.paneId):\(document.file.fileId)"
+  }
 }
 
 extension EngineClient {
@@ -46,17 +50,23 @@ extension EngineClient {
     }
     view.document.file.revision = event.revision
     view.document.sidecarRevision = event.sidecarRevision
-    view.structure = nil
     writingDocuments[event.fileId] = view
     if var file = editorFiles[event.fileId] {
       file.file.revision = event.revision
       editorFiles[event.fileId] = file
     }
-    guard connected else { return }
-    perform { try await self.reloadWritingDocument(event.fileId) }
+    scheduleWritingReload(event.fileId)
   }
 
   func discardWritingPane(_ paneId: String) {
+    let fileIds = writingDocuments.values.lazy.filter {
+      $0.document.file.paneId == paneId
+    }.map(\.document.file.fileId)
+    for fileId in fileIds {
+      writingRefreshTasks[fileId]?.cancel()
+      writingRefreshTasks[fileId] = nil
+      writingRefreshGeneration[fileId] = nil
+    }
     writingDocuments = writingDocuments.filter { $0.value.document.file.paneId != paneId }
   }
 
@@ -334,17 +344,43 @@ extension EngineClient {
 
   func synchronizeWritingFile(_ file: FileDocument) {
     guard var view = writingDocuments[file.fileId] else { return }
-    if view.document.file.revision != file.revision { view.structure = nil }
+    let changed = view.document.file.revision != file.revision
     view.document.file = file
     writingDocuments[file.fileId] = view
+    if changed { scheduleWritingReload(file.fileId) }
   }
 
-  private func reloadWritingDocument(_ fileId: String) async throws {
-    guard writingDocuments[fileId] != nil else { return }
-    _ = try await loadWritingStructure(fileId: fileId)
-    guard let revision = writingDocuments[fileId]?.document.file.revision else { return }
-    _ = try await readEditorFile(
-      fileId: fileId, revision: revision, fromLine: 0,
-      lineCount: UInt32(ProtocolLimits.editorViewportLines))
+  private func scheduleWritingReload(_ fileId: String) {
+    guard connected, writingDocuments[fileId]?.structure != nil else { return }
+    let generation = (writingRefreshGeneration[fileId] ?? 0) &+ 1
+    writingRefreshGeneration[fileId] = generation
+    writingRefreshTasks[fileId]?.cancel()
+    writingRefreshTasks[fileId] = Task { [weak self] in
+      do { try await Task.sleep(for: .milliseconds(240)) } catch { return }
+      guard let self else { return }
+      await self.settleEditorWrites(fileId)
+      guard self.writingRefreshGeneration[fileId] == generation else { return }
+      do {
+        try await self.refreshWritingStructure(fileId, generation: generation)
+      } catch is CancellationError {} catch {
+        guard self.writingRefreshGeneration[fileId] == generation else { return }
+        self.problem = error.localizedDescription
+      }
+      if self.writingRefreshGeneration[fileId] == generation {
+        self.writingRefreshTasks[fileId] = nil
+      }
+    }
+  }
+
+  private func refreshWritingStructure(_ fileId: String, generation: UInt64) async throws {
+    let revision = try writingRevision(fileId)
+    let result = try await request(
+      "writing.structure", .encoded(WritingStructureParams(fileId: fileId, revision: revision))
+    ).decoded(WritingStructureResult.self)
+    guard result.document.file.revision == revision,
+      writingRefreshGeneration[fileId] == generation,
+      writingDocuments[fileId]?.document.file.revision == revision
+    else { return }
+    writingDocuments[fileId] = WritingDocumentView(document: result.document, structure: result)
   }
 }

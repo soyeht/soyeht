@@ -47,6 +47,10 @@ public final class EngineClient {
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored var editorRefreshTasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored var editorRefreshGeneration: [String: UInt64] = [:]
+  @ObservationIgnored var writingRefreshTasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored var writingRefreshGeneration: [String: UInt64] = [:]
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
@@ -109,6 +113,12 @@ public final class EngineClient {
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
     editorWriteQueues.removeAll()
+    for task in editorRefreshTasks.values { task.cancel() }
+    editorRefreshTasks.removeAll()
+    editorRefreshGeneration.removeAll()
+    for task in writingRefreshTasks.values { task.cancel() }
+    writingRefreshTasks.removeAll()
+    writingRefreshGeneration.removeAll()
     for task in webHostTasks.values { task.cancel() }
     webHostTasks.removeAll()
     if readOnly {

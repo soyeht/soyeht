@@ -37,6 +37,32 @@ import Testing
   #expect(source + "BOB" == "INT. COFFEE SHOP - DAY\n\n@BOB")
 }
 
+@Test func screenplaySustainedTypingKeepsEveryCharacterAndWireEditInOrder() throws {
+  let paragraph =
+    "The rain rattles against the windows while every customer turns toward the door."
+  var source = ""
+  var cursor = 0
+  var wireText = ""
+  for page in 0..<2 {
+    for line in 0..<55 {
+      let value = String(page + 1) + "." + String(line + 1) + " " + paragraph
+      for character in value + "\n" {
+        let edit = try #require(
+          ScreenplayInteraction.typingEdit(
+            source: source, firstLine: 0, range: NSRange(location: cursor, length: 0),
+            replacement: String(character)))
+        source = edit.source
+        cursor = edit.cursor
+        wireText = apply(edit.wireEdit, to: wireText)
+      }
+    }
+  }
+  #expect(source == wireText)
+  #expect(source.utf8.count > 9_000)
+  #expect(source.split(separator: "\n").count == 110)
+  #expect(cursor == source.utf16.count)
+}
+
 @Test func screenplaySmartTypeUsesOnlyKnownBoundedFacts() {
   let structure = screenplayStructure()
   #expect(ScreenplayInteraction.suggestions(for: .character, prefix: "a", in: structure) == ["ANA"])
@@ -95,3 +121,16 @@ private func screenplayStructure() -> WritingStructureResult {
 
 private let author = FileAuthor(
   actor: Actor(role: .human_local, client: "mac", paneId: "agent-1"), name: "aria")
+
+private func apply(_ edit: TextEdit, to source: String) -> String {
+  let start = utf16Offset(edit.range.start, in: source)
+  let end = utf16Offset(edit.range.end, in: source)
+  return (source as NSString).replacingCharacters(
+    in: NSRange(location: start, length: end - start), with: edit.text)
+}
+
+private func utf16Offset(_ position: TextPosition, in source: String) -> Int {
+  let lines = source.components(separatedBy: "\n")
+  let line = min(Int(position.line), max(0, lines.count - 1))
+  return lines.prefix(line).reduce(0) { $0 + $1.utf16.count + 1 } + Int(position.column)
+}
