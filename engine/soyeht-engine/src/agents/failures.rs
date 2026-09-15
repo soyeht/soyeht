@@ -153,13 +153,23 @@ impl Core {
                 json!({}),
             )?;
         }
+        self.warn_if_progress_is_unconfirmed(pane, state, now)?;
+        Ok(true)
+    }
+
+    fn warn_if_progress_is_unconfirmed(
+        &mut self,
+        pane: &str,
+        state: super::state::State,
+        now: i64,
+    ) -> Result<()> {
         let saved = &self.panes[pane].stored;
-        let waiting_for_reply = state.active.is_some()
-            || state.operation.is_some()
-            || matches!(
-                state.phase,
-                Phase::Initializing | Phase::Opening | Phase::Loading
-            );
+        let waiting_for_non_prompt_reply = state.active.is_none()
+            && (state.operation.is_some()
+                || matches!(
+                    state.phase,
+                    Phase::Initializing | Phase::Opening | Phase::Loading
+                ));
         let last = state.last_update_ms.max(
             state
                 .client
@@ -169,6 +179,13 @@ impl Core {
                 .min()
                 .unwrap_or(0),
         );
+        let silent_since = if state.active.is_some() && !state.active_output_observed {
+            state.active_silent_since_ms
+        } else if waiting_for_non_prompt_reply {
+            Some(last)
+        } else {
+            None
+        };
         let human_question = self
             .store
             .agent_open_requests(pane)
@@ -180,30 +197,52 @@ impl Core {
                     "session/request_permission" | "elicitation/create"
                 )
             });
-        if waiting_for_reply
+        // Parsed protocol state decides whether the turn has produced output.
+        // Elapsed time only escalates a non-destructive presentation; it never
+        // infers activity, cancels, restarts, or otherwise acts on the turn.
+        if silent_since
+            .is_some_and(|at| now.saturating_sub(at) >= limits::NO_SIGNAL_SEC as i64 * 1000)
             && !human_question
-            && now - last >= limits::NO_SIGNAL_SEC as i64 * 1000
             && saved.pane.state != PaneState::NoSignal
         {
             let mut saved = saved.clone();
             saved.pane.state = PaneState::NoSignal;
             saved.pane.source = StateSource::Protocol;
             saved.pane.confidence = 0.0;
-            saved.pane.phrase =
-                "No protocol signal for 90 seconds; process state is unconfirmed".into();
+            let prompt_is_silent = state.active.is_some();
+            saved.pane.phrase = if prompt_is_silent {
+                format!(
+                    "The agent has produced no output for {} seconds; the turn is still active",
+                    limits::NO_SIGNAL_SEC
+                )
+            } else {
+                format!(
+                    "No protocol signal for {} seconds; process state is unconfirmed",
+                    limits::NO_SIGNAL_SEC
+                )
+            };
             let changes = Changes {
                 attention: vec![AttentionItem {
                     attention_id: format!("{pane}:no-signal"),
                     pane_id: pane.into(),
                     request_id: None,
-                    message: "No protocol signal for 90 seconds. The current turn remains active."
-                        .into(),
+                    message: if prompt_is_silent {
+                        format!(
+                            "The agent has produced no output for {} seconds. The current turn remains active.",
+                            limits::NO_SIGNAL_SEC
+                        )
+                    } else {
+                        format!(
+                            "No protocol signal for {} seconds. The current operation remains active.",
+                            limits::NO_SIGNAL_SEC
+                        )
+                    },
                     created_at: self.timestamp(),
                 }],
                 ..Changes::default()
             };
             self.commit_agent(saved, state, changes, None, json!({}))?;
         }
-        Ok(true)
+        Ok(())
     }
 }

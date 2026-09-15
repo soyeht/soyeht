@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aa146ae2e37c4ae30d381ba720dfa61fa18d01aedf7fd6471702a17603071692). Do not edit.
+// Generated from contracts/protocol.json (sha256 23a1f32e9386b64aa63c84f2d90a93141f57dcff75935fb4fa7868fde9646279). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1292,6 +1292,8 @@ pub struct AgentSession {
     pub draft: bool,
     #[serde(rename = "activePromptId", skip_serializing_if = "Option::is_none")]
     pub active_prompt_id: Option<Id>,
+    #[serde(rename = "silentSince", skip_serializing_if = "Option::is_none")]
+    pub silent_since: Option<String>,
     #[serde(rename = "queuePaused", skip_serializing_if = "Option::is_none")]
     pub queue_paused: Option<bool>,
     #[serde(rename = "role")]

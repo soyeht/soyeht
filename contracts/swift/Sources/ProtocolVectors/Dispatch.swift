@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aa146ae2e37c4ae30d381ba720dfa61fa18d01aedf7fd6471702a17603071692). Do not edit.
+// Generated from contracts/protocol.json (sha256 23a1f32e9386b64aa63c84f2d90a93141f57dcff75935fb4fa7868fde9646279). Do not edit.
 import Foundation
 import SoyehtProtocol
 

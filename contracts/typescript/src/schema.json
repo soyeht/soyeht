@@ -2425,6 +2425,9 @@
         "activePromptId": {
           "$ref": "#/$defs/Id"
         },
+        "silentSince": {
+          "type": "string"
+        },
         "queuePaused": {
           "type": "boolean"
         },

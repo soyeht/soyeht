@@ -43,6 +43,10 @@ pub enum Phase {
     Faulted,
 }
 
+fn output_observed() -> bool {
+    true
+}
+
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Binding(String);
 
@@ -103,6 +107,10 @@ pub struct State {
     #[serde(default)]
     pub queue_paused: bool,
     pub active: Option<PromptItem>,
+    #[serde(default = "output_observed")]
+    pub active_output_observed: bool,
+    #[serde(default)]
+    pub active_silent_since_ms: Option<i64>,
     pub draft_until_ms: i64,
     pub cancel_at_ms: Option<i64>,
     pub last_update_ms: i64,
@@ -164,6 +172,8 @@ impl State {
             queue_revision: 0,
             queue_paused: false,
             active: None,
+            active_output_observed: true,
+            active_silent_since_ms: None,
             draft_until_ms: 0,
             cancel_at_ms: None,
             last_update_ms: 0,
@@ -267,6 +277,12 @@ impl State {
                 .collect(),
             draft: self.draft_until_ms > now_ms,
             active_prompt_id: self.active.as_ref().map(|p| p.prompt_id.clone()),
+            silent_since: self
+                .active
+                .as_ref()
+                .and(self.active_silent_since_ms)
+                .and_then(chrono::DateTime::from_timestamp_millis)
+                .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
             queue_paused: Some(self.queue_paused),
             harness_switch: self
                 .harness_switch

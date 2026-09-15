@@ -27,6 +27,9 @@ impl DatabaseProbe {
         )?;
         let mut state: Value = serde_json::from_str(&raw)?;
         state["last_update_ms"] = Value::from(0);
+        if state["active_silent_since_ms"].is_i64() {
+            state["active_silent_since_ms"] = Value::from(0);
+        }
         let pending = state["client"]["pending"]
             .as_object_mut()
             .ok_or(Error::TestFixture("test runtime has no pending calls"))?;
@@ -44,6 +47,46 @@ impl DatabaseProbe {
             params![state.to_string(), pane_id],
         )?;
         Ok(())
+    }
+
+    pub fn set_agent_silent_since(&self, pane_id: &str, value: i64) -> Result<()> {
+        let raw: String = self.connection.query_row(
+            "SELECT payload FROM agent_runtime WHERE pane_id=?1",
+            [pane_id],
+            |row| row.get(0),
+        )?;
+        let mut state: Value = serde_json::from_str(&raw)?;
+        if !state["active_silent_since_ms"].is_i64() {
+            return Err(Error::TestFixture("test agent has no silent prompt"));
+        }
+        state["active_silent_since_ms"] = Value::from(value);
+        self.connection.execute(
+            "UPDATE agent_runtime SET payload=?1 WHERE pane_id=?2",
+            params![state.to_string(), pane_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn agent_outbox_empty(&self, pane_id: &str) -> Result<bool> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM agent_outbox WHERE pane_id=?1",
+            [pane_id],
+            |row| row.get(0),
+        )?;
+        Ok(count == 0)
+    }
+
+    pub fn agent_silence(&self, pane_id: &str) -> Result<(bool, Option<i64>)> {
+        let raw: String = self.connection.query_row(
+            "SELECT payload FROM agent_runtime WHERE pane_id=?1",
+            [pane_id],
+            |row| row.get(0),
+        )?;
+        let state: Value = serde_json::from_str(&raw)?;
+        Ok((
+            state["active_output_observed"].as_bool().unwrap_or(true),
+            state["active_silent_since_ms"].as_i64(),
+        ))
     }
 
     pub fn make_task_retry_due(&self, workspace_id: &str, task_id: &str) -> Result<()> {

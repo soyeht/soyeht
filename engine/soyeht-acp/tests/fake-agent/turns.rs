@@ -210,11 +210,44 @@ fn editor_review_turn(runtime: &Runtime, session: &str, cancelled: &AtomicBool) 
 }
 
 fn ordinary_turn(runtime: &Runtime, session: &str, text: &str, cancelled: &AtomicBool) -> String {
+    if text == "silent-no-output" {
+        while !cancelled.load(Ordering::SeqCst) {
+            runtime.update(
+                session,
+                json!({"sessionUpdate":"usage_update","used":1,"size":1000}),
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+        return String::new();
+    }
     if matches!(text, "silent" | "ignore-cancel") {
         while text == "ignore-cancel" || !cancelled.load(Ordering::SeqCst) {
             thread::sleep(Duration::from_millis(10));
         }
         return String::new();
+    }
+    if text == "quiet-then-resume" {
+        std::fs::write(
+            runtime
+                .settings
+                .directory
+                .join(format!("quiet-then-resume-{session}.started")),
+            b"started",
+        )
+        .expect("fake quiet interval marker");
+        let release = runtime
+            .settings
+            .directory
+            .join(format!("quiet-then-resume-{session}.release"));
+        while !release.exists() && !cancelled.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(10));
+        }
+        if cancelled.load(Ordering::SeqCst) {
+            return String::new();
+        }
+        let output = "Resumed after the quiet interval";
+        emit(runtime, session, output);
+        return output.into();
     }
     let chunks = if text == "slow" {
         (0..30).map(|number| format!("chunk-{number} ")).collect()
@@ -308,7 +341,29 @@ pub fn run(
     if text == "die" {
         std::process::exit(17);
     }
-    runtime.update(&session,json!({"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Checking the test request."}}));
+    if text == "silent-no-output" {
+        std::fs::write(
+            runtime
+                .settings
+                .directory
+                .join(format!("silent-no-output-{session}.started")),
+            b"started",
+        )
+        .expect("fake silence marker");
+        // Mirrors a measured wedged adapter: catalogue and accounting noise
+        // arrive even though the requested turn has produced no output.
+        runtime.update(
+            &session,
+            json!({"sessionUpdate":"available_commands_update","availableCommands":[]}),
+        );
+        runtime.update(
+            &session,
+            json!({"sessionUpdate":"usage_update","used":1,"size":1000}),
+        );
+    }
+    if text != "silent-no-output" {
+        runtime.update(&session,json!({"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Checking the test request."}}));
+    }
     let output = execute_turn(&runtime, &session, &text, &cancelled);
     let mut sessions = runtime.sessions.lock().unwrap();
     if let Some(saved) = sessions.get_mut(&session) {

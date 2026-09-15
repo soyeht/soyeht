@@ -823,6 +823,12 @@ impl Rig {
         assert!(self.engine.is_none());
         self.database_probe().age_agent(pane, cancel).unwrap();
     }
+    fn set_agent_silent_since(&self, pane: &str, value: i64) {
+        assert!(self.engine.is_none());
+        self.database_probe()
+            .set_agent_silent_since(pane, value)
+            .unwrap();
+    }
     fn kill_engine(&mut self) {
         if let Some(mut child) = self.engine.take() {
             child.kill().unwrap();
@@ -2100,6 +2106,8 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
     let mut first = rig.client();
     let mut second = rig.client();
     first.wait_state(&pane, "waiting_for_you");
+    let waiting = first.pane(&pane);
+    assert!(waiting["agent"]["silentSince"].is_null());
     let requests = first.section("requests");
     assert_eq!(requests.len(), 1);
     assert_eq!(requests, second.section("requests"));
@@ -2221,11 +2229,12 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
 }
 
 #[test]
-fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
+fn no_output_is_visible_and_cancel_clears_durable_wait_before_switching() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();
     let initial = client.pane(&pane);
     let pid = initial["pid"].clone();
+    let session = initial["agent"]["sessionId"].as_str().unwrap().to_owned();
     let workspace = initial["workspaceId"].as_str().unwrap().to_owned();
     let created = client.call(
         "task.create",
@@ -2240,20 +2249,13 @@ fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
     );
     let prompt = client.call(
         "pane.prompt",
-        json!({"paneId":pane,"text":"silent","idempotencyKey":"silent"}),
+        json!({"paneId":pane,"text":"silent-no-output","idempotencyKey":"silent"}),
     );
     client.wait_state(&pane, "working");
-    // Wait for the fake's initial thought so no buffered traffic resets the clock.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !client.call("pane.transcript", json!({"paneId":pane}))["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|m| m["kind"] == "thought")
-    {
-        assert!(Instant::now() < deadline);
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_for_silent_prompt_receipt(&rig, &pane, &session);
+    let waiting = client.pane(&pane);
+    assert_eq!(waiting["state"], "working");
+    assert!(waiting["agent"]["silentSince"].is_string());
     rig.kill_engine();
     rig.age_agent(&pane, false);
     rig.start();
@@ -2261,7 +2263,13 @@ fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
     let silent = client.wait_state(&pane, "no_signal");
     assert_eq!(silent["pid"], pid);
     assert_eq!(silent["agent"]["activePromptId"], prompt["promptId"]);
+    assert_eq!(silent["agent"]["silentSince"], "1970-01-01T00:00:00.000Z");
     assert_eq!(client.section("attention").len(), 1);
+    for _ in 0..10 {
+        assert_eq!(client.pane(&pane)["state"], "no_signal");
+        assert_eq!(client.section("attention").len(), 1);
+        thread::sleep(Duration::from_millis(20));
+    }
     let store = Store::open(&rig.path).unwrap();
     let still_owned = store.task(&workspace, &task.task_id).unwrap().unwrap();
     assert_eq!(still_owned.state, soyeht_protocol::TaskState::InProgress);
@@ -2273,6 +2281,59 @@ fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
     client.wait_state(&pane, "idle");
     assert_eq!(client.pane(&pane)["pid"], pid);
     assert!(client.section("attention").is_empty());
+    assert_eq!(process_registry_instances(&rig).len(), 1);
+    assert_eq!(
+        rig.database_probe().agent_silence(&pane).unwrap(),
+        (true, None)
+    );
+    assert!(
+        client.call("pane.transcript", json!({"paneId":pane}))["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["text"] == "Turn cancelled by the user.")
+    );
+    rig.install_switch_harnesses();
+    let switched = client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-after-visible-cancel"}),
+    );
+    assert_eq!(switched["fromHarness"], "test-agent");
+    assert_eq!(switched["toHarness"], "next-agent");
+    assert_eq!(client.pane(&pane)["agent"]["harness"], "next-agent");
+    rig.kill_engine();
+    assert_eq!(process_instances(&rig).len(), 1);
+    rig.start();
+    let mut client = rig.client();
+    assert!(client.pane(&pane)["agent"]["silentSince"].is_null());
+    assert!(
+        client.call("pane.transcript", json!({"paneId":pane}))["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["text"] == "Turn cancelled by the user.")
+    );
+}
+
+#[test]
+fn unconfirmed_cancel_stops_the_process_and_returns_owned_work() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let workspace = client.pane(&pane)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let created = client.call(
+        "task.create",
+        json!({"workspaceId":workspace,"title":"Return work after lost process",
+            "mustNotChange":"Keep recovery atomic","idempotencyKey":"cancel-task"}),
+    );
+    let task = reserve_task(
+        &rig,
+        &workspace,
+        &pane,
+        created["task"]["taskId"].as_str().unwrap(),
+    );
     client.call(
         "pane.queue.resume",
         json!({"paneId":pane,"idempotencyKey":"resume-after-cancel"}),
@@ -2310,6 +2371,163 @@ fn silence_keeps_the_turn_active_but_unconfirmed_cancel_stops_the_process() {
         "dead",
         "faulted process was resurrected"
     );
+}
+
+#[test]
+fn a_turn_that_emits_then_pauses_and_resumes_never_becomes_a_no_output_warning() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"quiet-then-resume","idempotencyKey":"stream-started"}),
+    );
+    let session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let thought_arrived = client.call("pane.transcript", json!({"paneId":pane}))["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["kind"] == "thought");
+        let outbox_empty = rig.database_probe().agent_outbox_empty(&pane).unwrap();
+        let harness_received = rig
+            .path
+            .join("native")
+            .join(format!("quiet-then-resume-{session}.started"))
+            .exists();
+        if thought_arrived && outbox_empty && harness_received {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "healthy quiet turn lacked a real delivery receipt"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        !rig.path
+            .join("native")
+            .join(format!("silent-no-output-{session}.started"))
+            .exists()
+    );
+    rig.kill_engine();
+    rig.age_agent(&pane, false);
+    rig.start();
+    let mut client = rig.client();
+    for _ in 0..20 {
+        let current = client.pane(&pane);
+        assert_eq!(current["state"], "working");
+        assert!(current["agent"]["silentSince"].is_null());
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(client.section("attention").is_empty());
+    fs::write(
+        rig.path
+            .join("native")
+            .join(format!("quiet-then-resume-{session}.release")),
+        b"resume",
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        let resumed = transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| {
+                message["role"] == "assistant"
+                    && message["text"] == "Resumed after the quiet interval"
+            });
+        if resumed && client.pane(&pane)["state"] == "idle" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "healthy turn did not resume after its quiet interval"
+        );
+        assert!(client.section("attention").is_empty());
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn silent_prompt_start_is_durable_and_scoped_per_pane() {
+    let mut rig = Rig::new();
+    let (mut client, first) = rig.agent();
+    let workspace = client.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    let first_session = client.pane(&first)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second_session = client.pane(&second)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for (pane, key) in [(&first, "silent-first"), (&second, "silent-second")] {
+        client.call(
+            "pane.prompt",
+            json!({"paneId":pane,"text":"silent-no-output","idempotencyKey":key}),
+        );
+    }
+    for (pane, session) in [(&first, &first_session), (&second, &second_session)] {
+        wait_for_silent_prompt_receipt(&rig, pane, session);
+    }
+    rig.kill_engine();
+    rig.set_agent_silent_since(&first, 0);
+    rig.set_agent_silent_since(&second, 1_000);
+    rig.start();
+    let mut client = rig.client();
+    let first_view = client.wait_state(&first, "no_signal");
+    let second_view = client.wait_state(&second, "no_signal");
+    assert_eq!(
+        first_view["agent"]["silentSince"],
+        "1970-01-01T00:00:00.000Z"
+    );
+    assert_eq!(
+        second_view["agent"]["silentSince"],
+        "1970-01-01T00:00:01.000Z"
+    );
+    client.call(
+        "pane.cancel",
+        json!({"paneId":first,"idempotencyKey":"cancel-first-silent"}),
+    );
+    client.wait_state(&first, "idle");
+    assert_eq!(client.pane(&second)["state"], "no_signal");
+    assert!(client.pane(&second)["agent"]["activePromptId"].is_string());
+    client.call(
+        "pane.cancel",
+        json!({"paneId":second,"idempotencyKey":"cancel-second-silent"}),
+    );
+    client.wait_state(&second, "idle");
+    assert_eq!(process_instances(&rig).len(), 2);
+}
+
+fn wait_for_silent_prompt_receipt(rig: &Rig, pane: &str, session: &str) {
+    let marker = rig
+        .path
+        .join("native")
+        .join(format!("silent-no-output-{session}.started"));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let bytes_reached_process = rig.database_probe().agent_outbox_empty(pane).unwrap();
+        let harness_received_prompt = marker.exists();
+        if bytes_reached_process && harness_received_prompt {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "prompt has no real delivery receipt: outbox_empty={bytes_reached_process}, harness_marker={harness_received_prompt}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]

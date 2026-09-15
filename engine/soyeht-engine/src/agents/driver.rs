@@ -65,7 +65,7 @@ impl Core {
         message: Message,
         state: &mut super::state::State,
         saved: &mut crate::model::StoredPane,
-    ) -> Result<Changes> {
+    ) -> Result<(Changes, bool)> {
         let NativeContext {
             pane,
             source_seq,
@@ -73,19 +73,22 @@ impl Core {
             timestamp,
         } = context;
         let mut changes = Changes::default();
-        match message {
-            response @ Message::Response { .. } => responses::response(
-                &self.store,
-                &responses::Runtime {
-                    data_directory: &self.directory,
-                    now_ms,
-                    timestamp,
-                },
-                state,
-                saved,
-                response,
-                &mut changes,
-            )?,
+        let observed_turn_activity = match message {
+            response @ Message::Response { .. } => {
+                responses::response(
+                    &self.store,
+                    &responses::Runtime {
+                        data_directory: &self.directory,
+                        now_ms,
+                        timestamp,
+                    },
+                    state,
+                    saved,
+                    response,
+                    &mut changes,
+                )?;
+                true
+            }
             Message::Notification { method, params } => {
                 if method == "session/update" {
                     updates::update(
@@ -95,7 +98,9 @@ impl Core {
                         state,
                         &params,
                         &mut changes,
-                    )?;
+                    )?
+                } else {
+                    false
                 }
             }
             Message::Request { id, method, params } => {
@@ -167,9 +172,10 @@ impl Core {
                         "Client method unavailable".into(),
                     ));
                 }
+                true
             }
-        }
-        Ok(changes)
+        };
+        Ok((changes, observed_turn_activity))
     }
 
     pub(crate) fn native_record(
@@ -181,9 +187,10 @@ impl Core {
         let mut state = self.agent_state(pane)?;
         let mut saved = self.panes[pane].stored.clone();
         let was_no_signal = saved.pane.state == PaneState::NoSignal;
+        let had_active_prompt = state.active.is_some();
         let now_ms = self.now_ms();
         let timestamp = self.timestamp();
-        let mut changes = self.apply_native_message(
+        let (mut changes, observed_turn_activity) = self.apply_native_message(
             NativeContext {
                 pane,
                 source_seq: record.from_seq,
@@ -194,11 +201,20 @@ impl Core {
             &mut state,
             &mut saved,
         )?;
+        // Unknown native frames keep the durable elapsed wait visible. That is
+        // deliberately conservative while the notice is non-destructive: the
+        // observed wedge emits catalogue noise without producing turn output.
+        // Never attach automatic cancellation or restart to this classification.
+        if had_active_prompt && observed_turn_activity {
+            state.active_output_observed = true;
+            state.active_silent_since_ms = None;
+        }
         if advances_stream {
             state.acknowledged_offset = record.to_seq;
         }
         state.last_update_ms = self.now_ms();
-        if saved.pane.state == PaneState::NoSignal {
+        if saved.pane.state == PaneState::NoSignal && (!had_active_prompt || observed_turn_activity)
+        {
             saved.pane.state = if state.active.is_some() {
                 PaneState::Working
             } else {
@@ -206,7 +222,7 @@ impl Core {
             };
             saved.pane.phrase = "Agent protocol resumed".into();
         }
-        if was_no_signal {
+        if was_no_signal && saved.pane.state != PaneState::NoSignal {
             changes.remove_attention.push(format!("{pane}:no-signal"));
         }
         saved.pane.source = soyeht_protocol::StateSource::Protocol;

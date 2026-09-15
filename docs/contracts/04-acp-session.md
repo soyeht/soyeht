@@ -111,9 +111,27 @@ Until logged in, the pane shows “login required” with a button.
 
 ## 8. Derived pane state (input to contract 05)
 
-`working` = between prompt acceptance and `idle`; “waiting for permission”
+`working` = between prompt acceptance and `idle`. From prompt acceptance until the
+first parsed turn output, the pane quietly shows the durable elapsed wait. After
+`noSignalSec` (90 seconds), `no_signal` escalates the presentation
+without ending the turn. Parsed message/thought, tool, plan, agent request or final
+response permanently clears the wait for that turn; a long turn that has started
+streaming remains healthy. Usage, configuration, mode and unknown notifications do
+not clear the wait: a three-minute capture of the observed wedge emitted catalogue
+and accounting updates without producing turn output. This errs toward a
+non-destructive notice; no automatic cancel or restart may be attached to it.
+The parsed protocol activity decides the state; the clock decides only when the
+same state is presented more urgently. An explicit permission or elicitation
+request instead enters `waiting_for_you` and renders its question card, so a turn
+blocked on the person is never reported as merely quiet.
+Wall-clock sleep remains part of the elapsed wait because the prompt stayed active;
+a backward clock jump clamps the display to zero. The person may keep waiting or
+cancel; silence never cancels automatically. The same `noSignalSec` threshold has
+one meaning in both paths: the engine cannot confirm useful progress. Without an
+active prompt that means no protocol signal; during a prompt it means no parsed
+turn output, even when irrelevant protocol noise continues. “waiting for permission”
 = open request; `idle` = `idle`; “cancelling”; “no signal” = live process,
-open turn, no notification for N s (N = 90, configurable); `dead` = process exited.
+open turn, no parsed turn activity for N s; `dead` = process exited.
 `stopReason` and the last message feed the card's state phrase.
 
 ## 9. Client events

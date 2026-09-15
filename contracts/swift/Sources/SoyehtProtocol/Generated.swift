@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aa146ae2e37c4ae30d381ba720dfa61fa18d01aedf7fd6471702a17603071692). Do not edit.
+// Generated from contracts/protocol.json (sha256 23a1f32e9386b64aa63c84f2d90a93141f57dcff75935fb4fa7868fde9646279). Do not edit.
 import Foundation
 
 
@@ -1405,10 +1405,11 @@ public struct AgentSession: Codable, Sendable {
     public var `queue`: [QueuedPromptSummary]
     public var `draft`: Bool
     public var `activePromptId`: Id?
+    public var `silentSince`: String?
     public var `queuePaused`: Bool?
     public var `role`: AgentPaneRole
     public var `harnessSwitch`: AgentHarnessSwitch?
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `silentSince`: String? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
@@ -1423,6 +1424,7 @@ public struct AgentSession: Codable, Sendable {
         self.`queue` = `queue`
         self.`draft` = `draft`
         self.`activePromptId` = `activePromptId`
+        self.`silentSince` = `silentSince`
         self.`queuePaused` = `queuePaused`
         self.`role` = `role`
         self.`harnessSwitch` = `harnessSwitch`

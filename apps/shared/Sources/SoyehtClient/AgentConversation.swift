@@ -6,6 +6,26 @@ import SwiftUI
   import AppKit
 #endif
 
+struct AgentSilencePresentation: Sendable {
+  let elapsedSeconds: Int
+
+  init(silentSince: String?, now: Date = Date()) {
+    let observed = silentSince.flatMap(UsageTimestamp.date(from:))
+      .map { Int(now.timeIntervalSince($0)) }
+    elapsedSeconds = max(0, observed ?? 0)
+  }
+
+  var escalated: Bool { elapsedSeconds >= ProtocolLimits.noSignalSec }
+
+  var elapsed: String {
+    let hours = elapsedSeconds / 3_600
+    let minutes = (elapsedSeconds % 3_600) / 60
+    let seconds = elapsedSeconds % 60
+    if hours > 0 { return "\(hours)h \(minutes)m" }
+    return "\(minutes)m \(seconds)s"
+  }
+}
+
 public struct AgentConversationStyle: Sendable {
   public let canvas: Color
   public let face: Color
@@ -152,6 +172,9 @@ private struct AgentWell: ViewModifier {
       controls
       Divider().opacity(0.35)
       transcript
+      if let silentSince = pane?.agent?.silentSince {
+        noOutput(since: silentSince)
+      }
       if !view.authMethods.isEmpty { authentication }
       if let permission = view.permission {
         PermissionCard(client: client, request: permission, style: style)
@@ -263,6 +286,38 @@ private struct AgentWell: ViewModifier {
     }.padding(12).modifier(AgentRaised(style: style, radius: 12))
       .padding(.horizontal, style.canonicalLayout ? 14 : 16)
       .padding(.bottom, 10)
+  }
+
+  private func noOutput(since: String) -> some View {
+    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+      let presentation = AgentSilencePresentation(silentSince: since, now: timeline.date)
+      VStack(alignment: .leading, spacing: 8) {
+        Label(
+          presentation.escalated
+            ? "No output from the agent for \(presentation.elapsed)"
+            : "Waiting for the first agent output · \(presentation.elapsed)",
+          systemImage: presentation.escalated ? "clock.badge.exclamationmark" : "clock"
+        )
+        .font(style.headingFont)
+        .foregroundStyle(presentation.escalated ? style.warning : style.secondary)
+        Text(
+          presentation.escalated
+            ? "The turn is still active. You can keep waiting or cancel this turn."
+            : "The turn is active. Nothing from the agent has arrived yet."
+        )
+        .font(style.captionFont).foregroundStyle(style.secondary)
+        HStack {
+          Spacer()
+          Button("Cancel turn", role: .destructive) { client.cancelAgent(paneId) }
+            .buttonStyle(.bordered)
+        }
+      }
+      .padding(12)
+      .modifier(AgentRaised(style: style, radius: 12))
+      .padding(.horizontal, style.canonicalLayout ? 14 : 16)
+      .padding(.bottom, 10)
+      .accessibilityIdentifier("agent-no-output")
+    }
   }
 
   private var authentication: some View {

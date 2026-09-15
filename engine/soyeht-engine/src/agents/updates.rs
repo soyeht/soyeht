@@ -265,7 +265,7 @@ pub fn update(
     state: &mut State,
     params: &Value,
     changes: &mut Changes,
-) -> Result<()> {
+) -> Result<bool> {
     let expected = if matches!(
         state.phase,
         Phase::ProbeLoad | Phase::ProbeList | Phase::ProbeConfig
@@ -282,9 +282,11 @@ pub fn update(
         state.phase,
         Phase::ProbeLoad | Phase::ProbeList | Phase::ProbeConfig
     ) {
-        return Ok(());
+        return Ok(false);
     }
-    let Some(update) = update else { return Ok(()) };
+    let Some(update) = update else {
+        return Ok(false);
+    };
     if state.phase == Phase::Loading {
         changes.replay_messages = true;
         let role = match &update {
@@ -298,21 +300,38 @@ pub fn update(
             state.replay_role = Some(role.into());
         }
     }
-    match update {
+    let observed_turn_output = match update {
         Update::UserMessage(content) => {
-            update_user(store, pane, generation, state, content, changes)
+            update_user(store, pane, generation, state, content, changes)?;
+            false
         }
         Update::Message { thought, content } => {
-            update_message(store, pane, generation, state, thought, &content, changes)
+            update_message(store, pane, generation, state, thought, &content, changes)?;
+            true
         }
         Update::Tool { update, fields } => {
-            update_tool(store, pane, generation, state, update, &fields, changes)
+            update_tool(store, pane, generation, state, update, &fields, changes)?;
+            true
         }
-        Update::Plan(entries) => update_plan(pane, generation, state, entries, changes),
-        Update::Usage(value) => update_usage(pane, generation, state, &value, changes),
+        Update::Plan(entries) => {
+            update_plan(pane, generation, state, entries, changes)?;
+            true
+        }
+        // Some adapters emit accounting while a provider is wedged. Usage is
+        // useful transcript data, but it is not evidence that the requested
+        // turn has produced user-visible progress.
+        Update::Usage(value) => {
+            update_usage(pane, generation, state, &value, changes)?;
+            false
+        }
         Update::Configuration(options) => {
-            update_configuration(pane, generation, state, options, changes)
+            update_configuration(pane, generation, state, options, changes)?;
+            false
         }
-        Update::Mode(mode) => update_mode(pane, generation, state, mode, changes),
-    }
+        Update::Mode(mode) => {
+            update_mode(pane, generation, state, mode, changes)?;
+            false
+        }
+    };
+    Ok(observed_turn_output)
 }

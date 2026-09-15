@@ -34,6 +34,10 @@ pub fn call(
     context: &str,
     now_ms: i64,
 ) -> Result<()> {
+    if method == "session/prompt" {
+        state.active_output_observed = false;
+        state.active_silent_since_ms = Some(now_ms);
+    }
     changes.outgoing.push(
         state
             .client
@@ -480,6 +484,7 @@ fn prompt_response(
     {
         return Err(errors::internal("Prompt response belongs to another turn"));
     }
+    let cancel_requested = state.cancel_at_ms.is_some();
     let reason = match result {
         Ok(value) => session::stop_reason(&value)
             .map_err(native_error)?
@@ -514,7 +519,19 @@ fn prompt_response(
         )?;
     }
     transcript::complete(store, &saved.pane.pane_id, state, changes)?;
+    if cancel_requested && reason == "cancelled" {
+        changes.messages.push(transcript::new_message(
+            state,
+            saved.pane.generation,
+            TranscriptRole::System,
+            TranscriptKind::System,
+            "Turn cancelled by the user.".into(),
+            true,
+        )?);
+    }
     state.active = None;
+    state.active_output_observed = true;
+    state.active_silent_since_ms = None;
     state.cancel_at_ms = None;
     state.has_finished_turn = true;
     saved.pane.state = PaneState::Idle;
