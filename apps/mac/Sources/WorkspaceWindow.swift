@@ -4,6 +4,11 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
+enum PaneSplitAxis: Sendable {
+  case columns
+  case rows
+}
+
 struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
@@ -12,6 +17,7 @@ struct WorkspaceWindow: View {
   @State private var webLinkPreferences = WebLinkPreferences()
   @State private var paneToClose: String?
   @State private var showNewPane = false
+  @State private var paneSplitAxis = PaneSplitAxis.columns
   @State private var showPairing = false
   @State private var deviceToRevoke: String?
   @State private var taskWorkspaceId: String?
@@ -164,25 +170,29 @@ struct WorkspaceWindow: View {
       if showNewPane {
         NewPaneWorkspace(
           client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
-          isPresented: $showNewPane,
-          onClose: { paneToClose = $0 }, onTasks: showTasks)
+          splitAxis: paneSplitAxis, isPresented: $showNewPane,
+          onClose: { paneToClose = $0 }, onSplit: presentSplit, onTasks: showTasks)
       } else {
         PaneGrid(
           client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
-          onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
+          splitAxis: paneSplitAxis, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+          onSplit: presentSplit, onTasks: showTasks)
       }
     case .terminal:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
-        onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
+        splitAxis: paneSplitAxis, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        onSplit: presentSplit, onTasks: showTasks)
     case .editor:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .editor,
-        onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onTasks: showTasks)
+        splitAxis: paneSplitAxis, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        onSplit: presentSplit, onTasks: showTasks)
     case .web:
       WebWorkspace(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
-        onClose: { paneToClose = $0 }, onTasks: showTasks)
+        onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onSplit: presentSplit,
+        onTasks: showTasks)
     case .phone:
       phoneWorkspace
     case .texts, .presentations, .screenplays:
@@ -216,6 +226,14 @@ struct WorkspaceWindow: View {
     showPairing = true
   }
   private func presentNewPane() {
+    paneSplitAxis = .columns
+    client.refreshHarnesses()
+    navigation.select(.agents)
+    showNewPane = true
+  }
+  private func presentSplit(_ paneId: String, _ axis: PaneSplitAxis) {
+    client.select(paneId)
+    paneSplitAxis = axis
     client.refreshHarnesses()
     navigation.select(.agents)
     showNewPane = true
@@ -470,8 +488,10 @@ struct PaneGrid: View {
   let webHost: MacWebHost
   let workspaceId: String?
   let mode: PaneMode?
+  let splitAxis: PaneSplitAxis
   let onClose: (String) -> Void
   let onNewPane: () -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
   let onTasks: () -> Void
 
   private var panes: [Pane] {
@@ -501,11 +521,11 @@ struct PaneGrid: View {
       } else if panes.count <= 2 {
         PanePair(
           client: client, webHost: webHost, panes: panes, onClose: onClose, onTasks: onTasks,
-          tint: paneTint)
+          onSplit: onSplit, splitAxis: splitAxis, tint: paneTint)
       } else {
         PaneStrip(
           client: client, webHost: webHost, panes: panes, onClose: onClose, onTasks: onTasks,
-          tint: paneTint)
+          onSplit: onSplit, tint: paneTint)
       }
     }.padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
   }
@@ -549,6 +569,7 @@ private struct PaneStrip: View {
   let panes: [Pane]
   let onClose: (String) -> Void
   let onTasks: () -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
   let tint: (Int) -> Color
 
   private var ordered: [Pane] {
@@ -562,7 +583,7 @@ private struct PaneStrip: View {
           ForEach(Array(ordered.enumerated()), id: \.element.paneId) { index, pane in
             PaneCard(
               client: client, webHost: webHost, pane: pane, tint: tint(index), onClose: onClose,
-              onTasks: onTasks
+              onTasks: onTasks, onSplit: onSplit
             )
             .frame(width: paneWidth(pane, at: index, total: geometry.size.width))
             .frame(height: geometry.size.height)
@@ -601,20 +622,35 @@ private struct PanePair: View {
   let panes: [Pane]
   let onClose: (String) -> Void
   let onTasks: () -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
+  let splitAxis: PaneSplitAxis
   let tint: (Int) -> Color
 
   var body: some View {
     GeometryReader { geometry in
-      HStack(spacing: MacTheme.Space.x18) {
+      splitLayout {
         ForEach(Array(ordered.enumerated()), id: \.element.paneId) { index, pane in
           PaneCard(
             client: client, webHost: webHost, pane: pane, tint: tint(index), onClose: onClose,
-            onTasks: onTasks
+            onTasks: onTasks, onSplit: onSplit
           )
-          .frame(width: width(for: pane, total: geometry.size.width))
+          .frame(
+            width: splitAxis == .columns ? width(for: pane, total: geometry.size.width) : nil,
+            height: splitAxis == .rows ? rowHeight(total: geometry.size.height) : nil)
         }
       }
     }
+  }
+
+  private var splitLayout: AnyLayout {
+    splitAxis == .columns
+      ? AnyLayout(HStackLayout(spacing: MacTheme.Space.x18))
+      : AnyLayout(VStackLayout(spacing: MacTheme.Space.x18))
+  }
+
+  private func rowHeight(total: CGFloat) -> CGFloat? {
+    guard ordered.count == 2 else { return nil }
+    return max(0, total - MacTheme.Space.x18) / 2
   }
 
   private var ordered: [Pane] {
@@ -670,6 +706,7 @@ private struct PaneCard: View {
   let tint: Color
   let onClose: (String) -> Void
   let onTasks: () -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
   @State private var showingAutomation = false
 
   var body: some View {
@@ -721,8 +758,24 @@ private struct PaneCard: View {
       if pane.mode == .agent { PaneAutomationButton(showing: $showingAutomation) }
       Button(action: onTasks) { Image(systemName: "line.3.horizontal.decrease") }
         .help("Open workspace tasks")
-      Image(systemName: "rectangle.split.2x1").accessibilityHidden(true)
-      Image(systemName: "rectangle.split.1x2").accessibilityHidden(true)
+      Button {
+        onSplit(pane.paneId, .columns)
+      } label: {
+        Image(systemName: "rectangle.split.2x1")
+      }
+      .help("Split pane into columns")
+      .accessibilityLabel("Split pane into columns")
+      .accessibilityIdentifier("split-pane-columns-\(pane.paneId)")
+      .disabled(!client.connected)
+      Button {
+        onSplit(pane.paneId, .rows)
+      } label: {
+        Image(systemName: "rectangle.split.1x2")
+      }
+      .help("Split pane into rows")
+      .accessibilityLabel("Split pane into rows")
+      .accessibilityIdentifier("split-pane-rows-\(pane.paneId)")
+      .disabled(!client.connected)
       Button {
         onClose(pane.paneId)
       } label: {
@@ -807,22 +860,30 @@ private struct NewPaneWorkspace: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   let workspaceId: String?
+  let splitAxis: PaneSplitAxis
   @Binding var isPresented: Bool
   let onClose: (String) -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
   let onTasks: () -> Void
 
   var body: some View {
-    HStack(spacing: MacTheme.Space.x18) {
+    splitLayout {
       if let pane = client.selectedPane {
         PaneCard(
           client: client, webHost: webHost, pane: pane, tint: MacTheme.agentRose, onClose: onClose,
-          onTasks: onTasks
+          onTasks: onTasks, onSplit: onSplit
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
       NewPaneSheet(client: client, workspaceId: workspaceId, isPresented: $isPresented)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }.padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
+  }
+
+  private var splitLayout: AnyLayout {
+    splitAxis == .columns
+      ? AnyLayout(HStackLayout(spacing: MacTheme.Space.x18))
+      : AnyLayout(VStackLayout(spacing: MacTheme.Space.x18))
   }
 }
 

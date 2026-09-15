@@ -7,6 +7,8 @@ struct WebWorkspace: View {
   let webHost: MacWebHost
   let workspaceId: String?
   let onClose: (String) -> Void
+  let onNewPane: () -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
   let onTasks: () -> Void
 
   private var panes: [Pane] {
@@ -21,7 +23,8 @@ struct WebWorkspace: View {
     } else {
       PaneGrid(
         client: client, webHost: webHost, workspaceId: workspaceId, mode: .web,
-        onClose: onClose, onNewPane: {}, onTasks: onTasks)
+        splitAxis: .columns, onClose: onClose, onNewPane: onNewPane, onSplit: onSplit,
+        onTasks: onTasks)
     }
   }
 }
