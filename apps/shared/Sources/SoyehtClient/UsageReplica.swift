@@ -96,12 +96,65 @@ extension EngineClient {
   }
 
   public func refreshUsage(_ provider: UsageProvider? = nil) async throws {
+    try await refreshUsage(provider, now: Date()) { [self] provider in
+      try await requestUsageRefresh(provider)
+    }
+  }
+
+  func refreshUsage(
+    _ provider: UsageProvider?, now: Date,
+    operation: @escaping @MainActor @Sendable (UsageProvider?) async throws -> UsageRefreshResult
+  ) async throws {
+    if let task = activeUsageRefreshTask(for: provider) {
+      applyUsageRefresh(try await task.value)
+      return
+    }
+    guard usageRefreshIsDue(provider, now: now) else { return }
+
+    let key = provider?.rawValue ?? "all"
+    let task = Task<UsageRefreshResult, Error> { @MainActor in
+      try await operation(provider)
+    }
+    usageRefreshTasks[key] = task
+    do {
+      let result = try await task.value
+      usageRefreshTasks.removeValue(forKey: key)
+      applyUsageRefresh(result)
+    } catch {
+      usageRefreshTasks.removeValue(forKey: key)
+      throw error
+    }
+  }
+
+  private func requestUsageRefresh(_ provider: UsageProvider?) async throws -> UsageRefreshResult {
     let timeout = provider == nil ? 35.0 : 12.0
-    let result = try await mutation(
+    return try await mutation(
       "usage.refresh",
       UsageRefreshParams(provider: provider, idempotencyKey: UUID().uuidString),
       timeoutSeconds: timeout
     ).decoded(UsageRefreshResult.self)
+  }
+
+  private func activeUsageRefreshTask(
+    for provider: UsageProvider?
+  ) -> Task<UsageRefreshResult, Error>? {
+    if let all = usageRefreshTasks["all"] { return all }
+    if let provider { return usageRefreshTasks[provider.rawValue] }
+    return usageRefreshTasks.values.first
+  }
+
+  private func usageRefreshIsDue(_ provider: UsageProvider?, now: Date) -> Bool {
+    let candidates =
+      provider.map { wanted in
+        usageReadings.filter { $0.provider == wanted }
+      } ?? usageReadings
+    return !candidates.contains { reading in
+      guard let fetched = UsageTimestamp.date(from: reading.fetchedAt) else { return false }
+      return now.timeIntervalSince(fetched) < Double(ProtocolLimits.usageRefreshMinIntervalSec)
+    }
+  }
+
+  private func applyUsageRefresh(_ result: UsageRefreshResult) {
     for reading in result.providers { replaceUsage(reading) }
   }
 

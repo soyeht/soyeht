@@ -53,6 +53,7 @@ public final class EngineClient {
   @ObservationIgnored var editorRefreshGeneration: [String: UInt64] = [:]
   @ObservationIgnored var writingRefreshTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var writingRefreshGeneration: [String: UInt64] = [:]
+  @ObservationIgnored var usageRefreshTasks: [String: Task<UsageRefreshResult, Error>] = [:]
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
@@ -121,6 +122,8 @@ public final class EngineClient {
     for task in writingRefreshTasks.values { task.cancel() }
     writingRefreshTasks.removeAll()
     writingRefreshGeneration.removeAll()
+    for task in usageRefreshTasks.values { task.cancel() }
+    usageRefreshTasks.removeAll()
     for task in webHostTasks.values { task.cancel() }
     webHostTasks.removeAll()
     if readOnly {
