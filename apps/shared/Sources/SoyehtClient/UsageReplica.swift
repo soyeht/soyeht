@@ -8,6 +8,14 @@ public enum UsageBand: Sendable {
   case danger
 }
 
+public enum UsageTimestamp {
+  public static func date(from value: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+  }
+}
+
 public struct UsagePresentation: Sendable {
   public let reading: UsageReading
 
@@ -15,8 +23,17 @@ public struct UsagePresentation: Sendable {
     self.reading = reading
   }
 
+  public var displayedWindow: UsageWindow? {
+    switch reading.provider {
+    case .claude, .codex:
+      reading.secondary ?? reading.primary
+    case .cursor:
+      reading.primary
+    }
+  }
+
   public var fraction: Double? {
-    guard reading.state == .ok, let used = reading.primary?.used else { return nil }
+    guard reading.state == .ok, let used = displayedWindow?.used else { return nil }
     return min(max(used, 0), 1)
   }
 
@@ -33,9 +50,8 @@ public struct UsagePresentation: Sendable {
   }
 
   public func needsHoverRefresh(now: Date = Date()) -> Bool {
-    let timestamp = ISO8601DateFormatter()
     guard reading.state == .ok,
-      let fetched = timestamp.date(from: reading.fetchedAt)
+      let fetched = UsageTimestamp.date(from: reading.fetchedAt)
     else { return true }
     return now.timeIntervalSince(fetched) > 60
   }

@@ -23,10 +23,10 @@ it never creates, closes or focuses panes in the engine.
 One ring per **provider the user is signed in to on this Mac and for
 which a reader exists** (§3), in the order the providers appear in the
 harness catalog of contract 02. Screen 12 shows three as an example; the
-rail grows with the readers. Each ring shows the used fraction of the
-provider's **primary window** (the window the provider itself calls the
-current one; for example the 5-hour session for Claude and Codex). The
-provider glyph sits inside the ring; the percentage sits below it. Band
+rail grows with the readers. Claude and Codex show the used fraction of the
+weekly window by default, falling back to the current window when no weekly
+reading is available. Other providers show their primary reported window.
+The provider glyph sits inside the ring; the percentage sits below it. Band
 colors use the existing tokens: below 50 % `success`, 50–80 % `warning`,
 above 80 % `danger`. A provider with no reading yet, or a reading older
 than 15 minutes, draws a dimmed ring with "—". A provider that is signed in

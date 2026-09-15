@@ -105,7 +105,9 @@ fn second_reader_normalizes_the_verified_app_server_shape() {
     );
     assert_eq!(outcome.reading.state, UsageState::Ok);
     assert_eq!(outcome.reading.primary.unwrap().used, 0.4);
-    assert_eq!(outcome.reading.secondary.unwrap().used, 0.6);
+    let weekly = outcome.reading.secondary.unwrap();
+    assert_eq!(weekly.used, 0.6);
+    assert_eq!(weekly.label, "Weekly");
 }
 
 #[test]

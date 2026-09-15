@@ -110,7 +110,7 @@ struct UsageDetailBalloon: View {
       Text(reading.provider.displayName)
         .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
       Spacer(minLength: MacTheme.Space.x4)
-      Text(UsageTimeText.reset(reading.primary?.resetsAt))
+      Text(UsageTimeText.reset(UsagePresentation(reading).displayedWindow?.resetsAt))
         .font(MacTheme.chrome(MacTheme.TypeScale.micro))
         .foregroundStyle(MacTheme.muted)
     }
@@ -268,7 +268,7 @@ private enum UsageTimeText {
   }
 
   private static func timestamp(_ value: String) -> Date? {
-    ISO8601DateFormatter().date(from: value)
+    UsageTimestamp.date(from: value)
   }
 
   private static func duration(_ seconds: TimeInterval) -> String {
