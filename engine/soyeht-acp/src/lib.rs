@@ -2,6 +2,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 pub mod client;
 pub mod config;
+pub mod continuation;
 pub mod rpc;
 pub mod session;
 

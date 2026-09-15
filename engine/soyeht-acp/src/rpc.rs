@@ -59,6 +59,9 @@ pub enum Error {
     MissingToolCallId,
     MissingPlanEntries,
     MissingModeId,
+    ContinuationTemplate,
+    ContinuationMetadata,
+    ContinuationMessages,
 }
 
 impl std::fmt::Display for Error {
@@ -146,6 +149,13 @@ impl std::fmt::Display for Error {
             Self::MissingToolCallId => formatter.write_str("tool update has no call ID"),
             Self::MissingPlanEntries => formatter.write_str("plan has no entries"),
             Self::MissingModeId => formatter.write_str("mode update has no mode ID"),
+            Self::ContinuationTemplate => formatter.write_str("continuation template is invalid"),
+            Self::ContinuationMetadata => {
+                formatter.write_str("continuation metadata exceeds its bound")
+            }
+            Self::ContinuationMessages => {
+                formatter.write_str("continuation needs one whole message within its bound")
+            }
         }
     }
 }
