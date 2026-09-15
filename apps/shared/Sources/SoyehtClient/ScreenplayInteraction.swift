@@ -1,6 +1,16 @@
 import Foundation
 import SoyehtProtocol
 
+public struct ScreenplayAdvanceEdit: Equatable, Sendable {
+  public let range: NSRange
+  public let replacement: String
+
+  public init(range: NSRange, replacement: String) {
+    self.range = range
+    self.replacement = replacement
+  }
+}
+
 public enum ScreenplayInteraction {
   public static func element(
     at line: UInt32, in structure: WritingStructureResult
@@ -49,6 +59,22 @@ public enum ScreenplayInteraction {
     }
   }
 
+  public static func advanceEdit(
+    source: String, cursor: Int, kind: ScreenplayElementKind, tab: Bool
+  ) -> ScreenplayAdvanceEdit? {
+    let raw = source as NSString
+    guard cursor >= 0, cursor <= raw.length else { return nil }
+    let lineRange = raw.lineRange(for: NSRange(location: cursor, length: 0))
+    let contentRange = lineContentRange(lineRange, in: raw)
+    let content = raw.substring(with: contentRange)
+    let next = nextKind(after: kind, tab: tab)
+    let seed = formattedLine("", as: next)
+    if tab && content.trimmingCharacters(in: .whitespaces).isEmpty {
+      return ScreenplayAdvanceEdit(range: contentRange, replacement: seed)
+    }
+    return ScreenplayAdvanceEdit(range: contentRange, replacement: content + "\n\n" + seed)
+  }
+
   public static func suggestions(
     for kind: ScreenplayElementKind, prefix: String, in structure: WritingStructureResult
   ) -> [String] {
@@ -83,6 +109,16 @@ public enum ScreenplayInteraction {
     default:
       return []
     }
+  }
+
+  private static func lineContentRange(_ lineRange: NSRange, in source: NSString) -> NSRange {
+    var length = lineRange.length
+    while length > 0 {
+      let scalar = source.character(at: lineRange.location + length - 1)
+      guard scalar == 10 || scalar == 13 else { break }
+      length -= 1
+    }
+    return NSRange(location: lineRange.location, length: length)
   }
 
   private static func unique(_ values: [String]) -> [String] {

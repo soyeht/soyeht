@@ -1,3 +1,4 @@
+import Foundation
 import SoyehtProtocol
 import Testing
 
@@ -18,6 +19,22 @@ import Testing
   #expect(ScreenplayInteraction.formattedLine("quietly", as: .parenthetical) == "(quietly)")
   #expect(ScreenplayInteraction.formattedLine("cut to:", as: .transition) == ">CUT TO:")
   #expect(ScreenplayInteraction.formattedLine("close up", as: .shot) == "CLOSE UP:")
+}
+
+@Test func screenplayEnterThenTabCreatesASecondElementWithoutRewritingTheFirst() throws {
+  let heading = "INT. COFFEE SHOP - DAY"
+  let enter = try #require(
+    ScreenplayInteraction.advanceEdit(
+      source: heading, cursor: 4, kind: .scene_heading, tab: false))
+  var source = (heading as NSString).replacingCharacters(in: enter.range, with: enter.replacement)
+  #expect(source == "INT. COFFEE SHOP - DAY\n\n")
+
+  let tab = try #require(
+    ScreenplayInteraction.advanceEdit(
+      source: source, cursor: source.utf16.count, kind: .action, tab: true))
+  source = (source as NSString).replacingCharacters(in: tab.range, with: tab.replacement)
+  #expect(source == "INT. COFFEE SHOP - DAY\n\n@")
+  #expect(source + "BOB" == "INT. COFFEE SHOP - DAY\n\n@BOB")
 }
 
 @Test func screenplaySmartTypeUsesOnlyKnownBoundedFacts() {

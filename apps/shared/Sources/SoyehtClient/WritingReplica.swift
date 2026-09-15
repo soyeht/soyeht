@@ -63,8 +63,9 @@ extension EngineClient {
   public func loadWritingPane(_ paneId: String) async throws {
     guard let view = writingDocuments.values.first(where: { $0.document.file.paneId == paneId })
     else { throw ClientFailure.invalidSnapshot }
+    await settleEditorWrites(view.document.file.fileId)
     _ = try await readEditorFile(
-      fileId: view.document.file.fileId, revision: view.document.file.revision,
+      fileId: view.document.file.fileId,
       fromLine: 0, lineCount: UInt32(ProtocolLimits.editorViewportLines))
     _ = try await loadWritingStructure(fileId: view.document.file.fileId)
   }
@@ -114,14 +115,13 @@ extension EngineClient {
 
   @discardableResult
   public func loadWritingStructure(fileId: String) async throws -> WritingStructureResult {
-    guard let revision = writingDocuments[fileId]?.document.file.revision else {
-      throw ClientFailure.invalidSnapshot
+    let result: WritingStructureResult = try await withWritingRevision(fileId) { revision in
+      let value = try await self.request(
+        "writing.structure", .encoded(WritingStructureParams(fileId: fileId, revision: revision))
+      ).decoded(WritingStructureResult.self)
+      guard value.document.file.revision == revision else { throw ClientFailure.invalidFrame }
+      return value
     }
-    let result = try await request(
-      "writing.structure", .encoded(WritingStructureParams(fileId: fileId, revision: revision))
-    )
-    .decoded(WritingStructureResult.self)
-    guard result.document.file.revision == revision else { throw ClientFailure.invalidFrame }
     writingDocuments[fileId] = WritingDocumentView(document: result.document, structure: result)
     return result
   }
@@ -131,17 +131,16 @@ extension EngineClient {
     fileId: String, range: SoyehtProtocol.TextRange, kind: WritingFormatKind,
     value: String? = nil, image: WebHostAttachment? = nil
   ) async throws -> WritingFormatResult {
-    guard let revision = writingDocuments[fileId]?.document.file.revision else {
-      throw ClientFailure.invalidSnapshot
+    let key = UUID().uuidString
+    let result: WritingFormatResult = try await withWritingRevision(fileId) { revision in
+      try await self.mutation(
+        "writing.format",
+        WritingFormatParams(
+          fileId: fileId, baseRevision: revision, range: range, kind: kind, value: value,
+          image: image?.reference, idempotencyKey: key),
+        attachments: image.map { [$0] } ?? []
+      ).decoded(WritingFormatResult.self)
     }
-    let result = try await mutation(
-      "writing.format",
-      WritingFormatParams(
-        fileId: fileId, baseRevision: revision, range: range, kind: kind, value: value,
-        image: image?.reference, idempotencyKey: UUID().uuidString),
-      attachments: image.map { [$0] } ?? []
-    )
-    .decoded(WritingFormatResult.self)
     acceptWritingFile(result.file)
     _ = try await readEditorFile(
       fileId: result.file.fileId, revision: result.file.revision, fromLine: 0,
@@ -150,38 +149,36 @@ extension EngineClient {
   }
 
   public func readWritingAsset(fileId: String, asset: String) async throws -> Data {
-    guard let revision = writingDocuments[fileId]?.document.file.revision else {
-      throw ClientFailure.invalidSnapshot
+    try await withWritingRevision(fileId) { revision in
+      let response = try await self.requestResponse(
+        "writing.asset.read",
+        .encoded(WritingAssetReadParams(fileId: fileId, revision: revision, asset: asset)))
+      let result = try response.value.decoded(WritingAssetReadResult.self)
+      guard result.fileId == fileId, result.revision == revision,
+        result.image.mimeType == "image/png",
+        result.image.name == String(asset.dropFirst("assets/".count)),
+        let attachment = response.attachment,
+        attachment.reference.attachmentId == result.image.attachmentId,
+        attachment.bytes.starts(with: Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+        attachment.bytes.count <= ProtocolLimits.writingImageBytes
+      else { throw ClientFailure.invalidFrame }
+      return attachment.bytes
     }
-    let response = try await requestResponse(
-      "writing.asset.read",
-      .encoded(WritingAssetReadParams(fileId: fileId, revision: revision, asset: asset)))
-    let result = try response.value.decoded(WritingAssetReadResult.self)
-    guard result.fileId == fileId, result.revision == revision,
-      result.image.mimeType == "image/png",
-      result.image.name == String(asset.dropFirst("assets/".count)),
-      let attachment = response.attachment,
-      attachment.reference.attachmentId == result.image.attachmentId,
-      attachment.bytes.starts(with: Data([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-      attachment.bytes.count <= ProtocolLimits.writingImageBytes
-    else { throw ClientFailure.invalidFrame }
-    return attachment.bytes
   }
 
   @discardableResult
   public func setWritingPreferences(
     fileId: String, font: WritingFont? = nil, focusMode: Bool? = nil
   ) async throws -> WritingPreferencesResult {
-    guard let revision = writingDocuments[fileId]?.document.file.revision else {
-      throw ClientFailure.invalidSnapshot
+    let key = UUID().uuidString
+    let result: WritingPreferencesResult = try await withWritingRevision(fileId) { revision in
+      try await self.mutation(
+        "writing.preferences.set",
+        WritingPreferencesParams(
+          fileId: fileId, baseRevision: revision, font: font, focusMode: focusMode,
+          idempotencyKey: key)
+      ).decoded(WritingPreferencesResult.self)
     }
-    let result = try await mutation(
-      "writing.preferences.set",
-      WritingPreferencesParams(
-        fileId: fileId, baseRevision: revision, font: font, focusMode: focusMode,
-        idempotencyKey: UUID().uuidString)
-    )
-    .decoded(WritingPreferencesResult.self)
     writingDocuments[fileId] = WritingDocumentView(document: result.document)
     return result
   }
@@ -189,47 +186,55 @@ extension EngineClient {
   public func requestWritingVariant(
     fileId: String, lineId: String, agentPaneId: String, instruction: String? = nil
   ) async throws -> WritingVariantRequestResult {
-    guard let revision = writingDocuments[fileId]?.document.file.revision else {
-      throw ClientFailure.invalidSnapshot
+    let key = UUID().uuidString
+    return try await withWritingRevision(fileId) { revision in
+      try await self.mutation(
+        "writing.variant.request",
+        WritingVariantRequestParams(
+          fileId: fileId, lineId: lineId, baseRevision: revision,
+          agentPaneId: agentPaneId, instruction: instruction, idempotencyKey: key)
+      ).decoded(WritingVariantRequestResult.self)
     }
-    return try await mutation(
-      "writing.variant.request",
-      WritingVariantRequestParams(
-        fileId: fileId, lineId: lineId, baseRevision: revision,
-        agentPaneId: agentPaneId, instruction: instruction,
-        idempotencyKey: UUID().uuidString)
-    )
-    .decoded(WritingVariantRequestResult.self)
   }
 
   @discardableResult
   public func selectWritingVariant(
     fileId: String, lineId: String, variantId: String
   ) async throws -> WritingVariantResult {
-    try await changeWritingVariant(
-      "writing.variant.select",
-      WritingVariantSelectParams(
-        fileId: fileId, lineId: lineId, variantId: variantId,
-        baseRevision: try writingRevision(fileId), idempotencyKey: UUID().uuidString))
+    let key = UUID().uuidString
+    let result: WritingVariantResult = try await withWritingRevision(fileId) { revision in
+      try await self.mutation(
+        "writing.variant.select",
+        WritingVariantSelectParams(
+          fileId: fileId, lineId: lineId, variantId: variantId,
+          baseRevision: revision, idempotencyKey: key)
+      ).decoded(WritingVariantResult.self)
+    }
+    return try await acceptWritingVariantResult(result)
   }
 
   @discardableResult
   public func removeWritingVariant(
     fileId: String, lineId: String, variantId: String
   ) async throws -> WritingVariantResult {
-    try await changeWritingVariant(
-      "writing.variant.remove",
-      WritingVariantRemoveParams(
-        fileId: fileId, lineId: lineId, variantId: variantId,
-        baseRevision: try writingRevision(fileId), idempotencyKey: UUID().uuidString))
+    let key = UUID().uuidString
+    let result: WritingVariantResult = try await withWritingRevision(fileId) { revision in
+      try await self.mutation(
+        "writing.variant.remove",
+        WritingVariantRemoveParams(
+          fileId: fileId, lineId: lineId, variantId: variantId,
+          baseRevision: revision, idempotencyKey: key)
+      ).decoded(WritingVariantResult.self)
+    }
+    return try await acceptWritingVariantResult(result)
   }
 
   public func listWritingBeats(fileId: String) async throws -> WritingBeatListResult {
-    let revision = try writingRevision(fileId)
-    let result = try await request(
-      "writing.beat.list", .encoded(WritingBeatListParams(fileId: fileId, revision: revision))
-    )
-    .decoded(WritingBeatListResult.self)
+    let result: WritingBeatListResult = try await withWritingRevision(fileId) { revision in
+      try await self.request(
+        "writing.beat.list", .encoded(WritingBeatListParams(fileId: fileId, revision: revision))
+      ).decoded(WritingBeatListResult.self)
+    }
     guard result.beats.count <= ProtocolLimits.writingBeatCards else {
       throw ClientFailure.invalidFrame
     }
@@ -241,27 +246,30 @@ extension EngineClient {
     fileId: String, beatId: String? = nil, title: String, body: String,
     category: BeatCategory, order: UInt32, sceneId: String? = nil
   ) async throws -> WritingBeatResult {
-    let result = try await mutation(
-      "writing.beat.put",
-      WritingBeatPutParams(
-        fileId: fileId, baseRevision: try writingRevision(fileId), beatId: beatId,
-        title: title, body: body, category: category, order: order, sceneId: sceneId,
-        idempotencyKey: UUID().uuidString)
-    )
-    .decoded(WritingBeatResult.self)
+    let key = UUID().uuidString
+    let result: WritingBeatResult = try await withWritingRevision(fileId) { revision in
+      try await self.mutation(
+        "writing.beat.put",
+        WritingBeatPutParams(
+          fileId: fileId, baseRevision: revision, beatId: beatId,
+          title: title, body: body, category: category, order: order, sceneId: sceneId,
+          idempotencyKey: key)
+      ).decoded(WritingBeatResult.self)
+    }
     try await acceptWritingBeatResult(result, fileId: fileId)
     return result
   }
 
   @discardableResult
   public func deleteWritingBeat(fileId: String, beatId: String) async throws -> WritingBeatResult {
-    let result = try await mutation(
-      "writing.beat.delete",
-      WritingBeatDeleteParams(
-        fileId: fileId, baseRevision: try writingRevision(fileId), beatId: beatId,
-        idempotencyKey: UUID().uuidString)
-    )
-    .decoded(WritingBeatResult.self)
+    let key = UUID().uuidString
+    let result: WritingBeatResult = try await withWritingRevision(fileId) { revision in
+      try await self.mutation(
+        "writing.beat.delete",
+        WritingBeatDeleteParams(
+          fileId: fileId, baseRevision: revision, beatId: beatId, idempotencyKey: key)
+      ).decoded(WritingBeatResult.self)
+    }
     try await acceptWritingBeatResult(result, fileId: fileId)
     return result
   }
@@ -273,10 +281,9 @@ extension EngineClient {
     return revision
   }
 
-  private func changeWritingVariant<Parameters: Encodable & Sendable>(
-    _ method: String, _ parameters: Parameters
+  private func acceptWritingVariantResult(
+    _ result: WritingVariantResult
   ) async throws -> WritingVariantResult {
-    let result = try await mutation(method, parameters).decoded(WritingVariantResult.self)
     let fileId = result.document.file.fileId
     writingDocuments[fileId] = WritingDocumentView(document: result.document)
     upsertEditor(result.document.file)
@@ -285,6 +292,24 @@ extension EngineClient {
       lineCount: UInt32(ProtocolLimits.editorViewportLines))
     _ = try await loadWritingStructure(fileId: fileId)
     return result
+  }
+
+  private func withWritingRevision<Value>(
+    _ fileId: String, operation: (String) async throws -> Value
+  ) async throws -> Value {
+    await settleEditorWrites(fileId)
+    do { return try await operation(try writingRevision(fileId)) } catch {
+      guard case ClientFailure.remote("stale_version", _) = error else { throw error }
+      return try await operation(try await refreshWritingRevision(fileId))
+    }
+  }
+
+  private func refreshWritingRevision(_ fileId: String) async throws -> String {
+    let fromLine = editorFiles[fileId]?.viewport?.fromLine ?? 0
+    let result = try await readEditorFile(
+      fileId: fileId, fromLine: fromLine,
+      lineCount: UInt32(ProtocolLimits.editorViewportLines))
+    return result.file.revision
   }
 
   private func acceptWritingBeatResult(_ result: WritingBeatResult, fileId: String) async throws {
@@ -305,9 +330,12 @@ extension EngineClient {
 
   private func acceptWritingFile(_ file: FileDocument) {
     upsertEditor(file)
+  }
+
+  func synchronizeWritingFile(_ file: FileDocument) {
     guard var view = writingDocuments[file.fileId] else { return }
+    if view.document.file.revision != file.revision { view.structure = nil }
     view.document.file = file
-    view.structure = nil
     writingDocuments[file.fileId] = view
   }
 

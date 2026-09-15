@@ -18,6 +18,10 @@ struct WritingTextPane: View {
     guard let fileId = writing?.document.file.fileId else { return nil }
     return client.editorFiles[fileId]
   }
+  private var writingLoadKey: String {
+    guard let file = writing?.document.file else { return "missing" }
+    return "\(file.fileId):\(file.revision)"
+  }
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x8) {
@@ -37,7 +41,7 @@ struct WritingTextPane: View {
     }
     .padding(MacTheme.Space.x10)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
-    .task(id: writing?.document.file.fileId) { await loadIfNeeded() }
+    .task(id: writingLoadKey) { await loadIfNeeded() }
   }
 
   private var header: some View {

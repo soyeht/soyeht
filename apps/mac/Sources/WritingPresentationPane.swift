@@ -19,6 +19,10 @@ struct WritingPresentationPane: View {
     return client.editorFiles[fileId]
   }
   private var slides: [WritingSlide] { writing?.structure?.slides ?? [] }
+  private var writingLoadKey: String {
+    guard let file = writing?.document.file else { return "missing" }
+    return "\(file.fileId):\(file.revision)"
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -35,7 +39,7 @@ struct WritingPresentationPane: View {
     }
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
-    .task(id: writing?.document.file.fileId) { await loadIfNeeded() }
+    .task(id: writingLoadKey) { await loadIfNeeded() }
     .sheet(isPresented: $presenting) {
       if let fileId = writing?.document.file.fileId {
         WritingSlideShow(

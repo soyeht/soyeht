@@ -193,6 +193,10 @@ extension EngineClient {
     startEditorWriteTask(fileId)
   }
 
+  func settleEditorWrites(_ fileId: String) async {
+    if let task = editorWriteTasks[fileId] { await task.value }
+  }
+
   private func startEditorWriteTask(_ fileId: String) {
     guard editorWriteTasks[fileId] == nil else { return }
     editorWriteTasks[fileId] = Task { [weak self] in
@@ -479,6 +483,7 @@ extension EngineClient {
     view.file = file
     update(&view)
     editorFiles[file.fileId] = view
+    synchronizeWritingFile(file)
   }
 
   private func updateEditor(_ fileId: String, update: (inout EditorFileView) -> Void) {

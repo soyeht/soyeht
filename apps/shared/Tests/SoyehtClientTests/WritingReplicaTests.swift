@@ -53,6 +53,22 @@ import Testing
   #expect(client.writingDocuments.isEmpty)
 }
 
+@MainActor @Test func editorWritesAdvanceTheWritingRevisionAndInvalidateItsStructure() {
+  let client = EngineClient(socket: "/tmp/writing-editor-sync.sock")
+  var document = writingDocument()
+  client.editorFiles[document.file.fileId] = EditorFileView(file: document.file)
+  client.writingDocuments[document.file.fileId] = WritingDocumentView(
+    document: document, structure: writingStructure(document))
+
+  document.file.revision = "2"
+  document.file.dirty = true
+  client.upsertEditor(document.file)
+
+  #expect(client.writingDocuments[document.file.fileId]?.document.file.revision == "2")
+  #expect(client.writingDocuments[document.file.fileId]?.document.file.dirty == true)
+  #expect(client.writingDocuments[document.file.fileId]?.structure == nil)
+}
+
 private func writingPane() -> Pane {
   Pane(
     paneId: "writing-pane", workspaceId: "workspace-1", name: "Opening", cwd: "/repo",
@@ -69,4 +85,10 @@ private func writingDocument() -> WritingDocument {
       lineCount: 12, byteCount: "240", dirty: false, conflicted: false, watching: true),
     kind: .text, section: .texts, sidecarRevision: "0", font: .reading_serif,
     focusMode: false)
+}
+
+private func writingStructure(_ document: WritingDocument) -> WritingStructureResult {
+  WritingStructureResult(
+    document: document, slides: [], scenes: [], elements: [], variants: [], beats: [],
+    truncated: false)
 }
