@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
+// Generated from contracts/protocol.json (sha256 2925ec6441361dbf3f0b0dcc92a3d1c0c945a3c925e70fa90682d985711ef36b). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -164,6 +164,11 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PaneElicitationAnswerResult": return try codec(SoyehtProtocol.PaneElicitationAnswerResult.self, data)
         case "PaneConfigSetParams": return try codec(SoyehtProtocol.PaneConfigSetParams.self, data)
         case "PaneConfigSetResult": return try codec(SoyehtProtocol.PaneConfigSetResult.self, data)
+        case "PaneHarnessSwitchParams": return try codec(SoyehtProtocol.PaneHarnessSwitchParams.self, data)
+        case "PaneHarnessSwitchResult": return try codec(SoyehtProtocol.PaneHarnessSwitchResult.self, data)
+        case "PaneHarnessSwitchStartedEvent": return try codec(SoyehtProtocol.PaneHarnessSwitchStartedEvent.self, data)
+        case "PaneHarnessSwitchDoneEvent": return try codec(SoyehtProtocol.PaneHarnessSwitchDoneEvent.self, data)
+        case "PaneHarnessSwitchFailedEvent": return try codec(SoyehtProtocol.PaneHarnessSwitchFailedEvent.self, data)
         case "PaneYoloParams": return try codec(SoyehtProtocol.PaneYoloParams.self, data)
         case "PaneYoloResult": return try codec(SoyehtProtocol.PaneYoloResult.self, data)
         case "PaneAuthStartParams": return try codec(SoyehtProtocol.PaneAuthStartParams.self, data)

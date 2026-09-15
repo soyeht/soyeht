@@ -11121,5 +11121,144 @@
         "removed": true
       }
     }
+  },
+  {
+    "name": "PaneHarnessSwitchParams",
+    "type": "PaneHarnessSwitchParams",
+    "value": {
+      "paneId": "10000000-0000-4000-8000-000000000001",
+      "harness": "10000000-0000-4000-8000-000000000003",
+      "model": "example-model",
+      "effort": "medium",
+      "idempotencyKey": "10000000-0000-4000-8000-000000000005"
+    }
+  },
+  {
+    "name": "PaneHarnessSwitchResult",
+    "type": "PaneHarnessSwitchResult",
+    "value": {
+      "paneId": "10000000-0000-4000-8000-000000000001",
+      "fromHarness": "10000000-0000-4000-8000-000000000002",
+      "toHarness": "10000000-0000-4000-8000-000000000003",
+      "newSessionId": "10000000-0000-4000-8000-000000000004",
+      "markerSeq": "42"
+    }
+  },
+  {
+    "name": "PaneHarnessSwitchStartedEvent",
+    "type": "PaneHarnessSwitchStartedEvent",
+    "value": {
+      "eventId": "40",
+      "at": "2026-09-15T17:00:00Z",
+      "paneId": "10000000-0000-4000-8000-000000000001",
+      "fromHarness": "10000000-0000-4000-8000-000000000002",
+      "toHarness": "10000000-0000-4000-8000-000000000003"
+    }
+  },
+  {
+    "name": "PaneHarnessSwitchDoneEvent",
+    "type": "PaneHarnessSwitchDoneEvent",
+    "value": {
+      "eventId": "41",
+      "at": "2026-09-15T17:00:01Z",
+      "paneId": "10000000-0000-4000-8000-000000000001",
+      "fromHarness": "10000000-0000-4000-8000-000000000002",
+      "toHarness": "10000000-0000-4000-8000-000000000003",
+      "newSessionId": "10000000-0000-4000-8000-000000000004",
+      "markerSeq": "42"
+    }
+  },
+  {
+    "name": "PaneHarnessSwitchFailedEvent",
+    "type": "PaneHarnessSwitchFailedEvent",
+    "value": {
+      "eventId": "42",
+      "at": "2026-09-15T17:00:02Z",
+      "paneId": "10000000-0000-4000-8000-000000000001",
+      "fromHarness": "10000000-0000-4000-8000-000000000002",
+      "toHarness": "10000000-0000-4000-8000-000000000003",
+      "reason": "Candidate did not initialize",
+      "restored": true
+    }
+  },
+  {
+    "name": "request:pane.harness.switch",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-harness-switch",
+      "method": "pane.harness.switch",
+      "params": {
+        "paneId": "10000000-0000-4000-8000-000000000001",
+        "harness": "10000000-0000-4000-8000-000000000003",
+        "model": "example-model",
+        "effort": "medium",
+        "idempotencyKey": "10000000-0000-4000-8000-000000000005"
+      }
+    }
+  },
+  {
+    "name": "response:pane.harness.switch",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-harness-switch",
+      "result": {
+        "paneId": "10000000-0000-4000-8000-000000000001",
+        "fromHarness": "10000000-0000-4000-8000-000000000002",
+        "toHarness": "10000000-0000-4000-8000-000000000003",
+        "newSessionId": "10000000-0000-4000-8000-000000000004",
+        "markerSeq": "42"
+      }
+    }
+  },
+  {
+    "name": "event:pane.harness_switch_started",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.harness_switch_started",
+      "params": {
+        "eventId": "40",
+        "at": "2026-09-15T17:00:00Z",
+        "paneId": "10000000-0000-4000-8000-000000000001",
+        "fromHarness": "10000000-0000-4000-8000-000000000002",
+        "toHarness": "10000000-0000-4000-8000-000000000003"
+      }
+    }
+  },
+  {
+    "name": "event:pane.harness_switch_done",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.harness_switch_done",
+      "params": {
+        "eventId": "41",
+        "at": "2026-09-15T17:00:01Z",
+        "paneId": "10000000-0000-4000-8000-000000000001",
+        "fromHarness": "10000000-0000-4000-8000-000000000002",
+        "toHarness": "10000000-0000-4000-8000-000000000003",
+        "newSessionId": "10000000-0000-4000-8000-000000000004",
+        "markerSeq": "42"
+      }
+    }
+  },
+  {
+    "name": "event:pane.harness_switch_failed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.harness_switch_failed",
+      "params": {
+        "eventId": "42",
+        "at": "2026-09-15T17:00:02Z",
+        "paneId": "10000000-0000-4000-8000-000000000001",
+        "fromHarness": "10000000-0000-4000-8000-000000000002",
+        "toHarness": "10000000-0000-4000-8000-000000000003",
+        "reason": "Candidate did not initialize",
+        "restored": true
+      }
+    }
   }
 ]

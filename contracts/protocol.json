@@ -122,7 +122,8 @@
         "writing_sidecar_conflict",
         "writing_line_not_found",
         "writing_scene_not_found",
-        "writing_section_refused"
+        "writing_section_refused",
+        "harness_switch_failed"
       ]
     },
     "RpcError": {
@@ -3095,6 +3096,163 @@
         "applied",
         "effective",
         "sessionPreserved"
+      ],
+      "additionalProperties": true
+    },
+    "PaneHarnessSwitchParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "effort": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "harness",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneHarnessSwitchResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fromHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "toHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "newSessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "markerSeq": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "paneId",
+        "fromHarness",
+        "toHarness",
+        "newSessionId",
+        "markerSeq"
+      ],
+      "additionalProperties": true
+    },
+    "PaneHarnessSwitchStartedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fromHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "toHarness": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "fromHarness",
+        "toHarness"
+      ],
+      "additionalProperties": true
+    },
+    "PaneHarnessSwitchDoneEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fromHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "toHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "newSessionId": {
+          "$ref": "#/$defs/Id"
+        },
+        "markerSeq": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "fromHarness",
+        "toHarness",
+        "newSessionId",
+        "markerSeq"
+      ],
+      "additionalProperties": true
+    },
+    "PaneHarnessSwitchFailedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fromHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "toHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "restored": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "fromHarness",
+        "toHarness",
+        "reason",
+        "restored"
       ],
       "additionalProperties": true
     },
@@ -10467,6 +10625,15 @@
       },
       "mutation": true
     },
+    "pane.harness.switch": {
+      "params": {
+        "$ref": "#/$defs/PaneHarnessSwitchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneHarnessSwitchResult"
+      },
+      "mutation": true
+    },
     "pane.yolo": {
       "params": {
         "$ref": "#/$defs/PaneYoloParams"
@@ -11393,6 +11560,24 @@
       },
       "durable": true
     },
+    "pane.harness_switch_started": {
+      "params": {
+        "$ref": "#/$defs/PaneHarnessSwitchStartedEvent"
+      },
+      "durable": true
+    },
+    "pane.harness_switch_done": {
+      "params": {
+        "$ref": "#/$defs/PaneHarnessSwitchDoneEvent"
+      },
+      "durable": true
+    },
+    "pane.harness_switch_failed": {
+      "params": {
+        "$ref": "#/$defs/PaneHarnessSwitchFailedEvent"
+      },
+      "durable": true
+    },
     "pane.config_failed": {
       "params": {
         "$ref": "#/$defs/PaneConfigFailedEvent"
@@ -11688,7 +11873,9 @@
     "writingVariantBytes": 16384,
     "writingSuggestionBytes": 65536,
     "writingSidecarBytes": 1048576,
-    "writingImageBytes": 2097152
+    "writingImageBytes": 2097152,
+    "harnessContinuationBytes": 15999,
+    "harnessContinuationMessages": 6
   },
   "x-settings": {
     "terminal.defaultCols": {
@@ -11765,6 +11952,7 @@
     "writing_sidecar_conflict": -32031,
     "writing_line_not_found": -32032,
     "writing_scene_not_found": -32033,
-    "writing_section_refused": -32034
+    "writing_section_refused": -32034,
+    "harness_switch_failed": -32035
   }
 }

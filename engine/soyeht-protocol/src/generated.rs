@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
+// Generated from contracts/protocol.json (sha256 2925ec6441361dbf3f0b0dcc92a3d1c0c945a3c925e70fa90682d985711ef36b). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -165,6 +165,8 @@ pub enum ErrorKind {
     WritingSceneNotFound,
     #[serde(rename = "writing_section_refused")]
     WritingSectionRefused,
+    #[serde(rename = "harness_switch_failed")]
+    HarnessSwitchFailed,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -1595,6 +1597,79 @@ pub struct PaneConfigSetResult {
     pub effective: ConfigValue,
     #[serde(rename = "sessionPreserved")]
     pub session_preserved: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneHarnessSwitchParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneHarnessSwitchResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+    #[serde(rename = "newSessionId")]
+    pub new_session_id: Id,
+    #[serde(rename = "markerSeq")]
+    pub marker_seq: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneHarnessSwitchStartedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneHarnessSwitchDoneEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+    #[serde(rename = "newSessionId")]
+    pub new_session_id: Id,
+    #[serde(rename = "markerSeq")]
+    pub marker_seq: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneHarnessSwitchFailedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "restored")]
+    pub restored: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneYoloParams {
@@ -5065,6 +5140,8 @@ pub enum Request {
     PaneElicitationAnswer(PaneElicitationAnswerParams),
     #[serde(rename = "pane.config.set")]
     PaneConfigSet(PaneConfigSetParams),
+    #[serde(rename = "pane.harness.switch")]
+    PaneHarnessSwitch(PaneHarnessSwitchParams),
     #[serde(rename = "pane.yolo")]
     PaneYolo(PaneYoloParams),
     #[serde(rename = "pane.auth.start")]
@@ -5373,6 +5450,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "pane.config.set",
         "PaneConfigSetParams",
         "PaneConfigSetResult",
+        true,
+    ),
+    (
+        "pane.harness.switch",
+        "PaneHarnessSwitchParams",
+        "PaneHarnessSwitchResult",
         true,
     ),
     ("pane.yolo", "PaneYoloParams", "PaneYoloResult", true),
@@ -5762,6 +5845,12 @@ pub enum EventName {
     PaneConfigChanging,
     #[serde(rename = "pane.config_changed")]
     PaneConfigChanged,
+    #[serde(rename = "pane.harness_switch_started")]
+    PaneHarnessSwitchStarted,
+    #[serde(rename = "pane.harness_switch_done")]
+    PaneHarnessSwitchDone,
+    #[serde(rename = "pane.harness_switch_failed")]
+    PaneHarnessSwitchFailed,
     #[serde(rename = "pane.config_failed")]
     PaneConfigFailed,
     #[serde(rename = "pane.session_lost")]
@@ -5863,6 +5952,9 @@ impl EventName {
             Self::PaneElicitationAnswered => "pane.elicitation_answered",
             Self::PaneConfigChanging => "pane.config_changing",
             Self::PaneConfigChanged => "pane.config_changed",
+            Self::PaneHarnessSwitchStarted => "pane.harness_switch_started",
+            Self::PaneHarnessSwitchDone => "pane.harness_switch_done",
+            Self::PaneHarnessSwitchFailed => "pane.harness_switch_failed",
             Self::PaneConfigFailed => "pane.config_failed",
             Self::PaneSessionLost => "pane.session_lost",
             Self::PaneNeedsLogin => "pane.needs_login",
@@ -6059,6 +6151,21 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::PaneConfigChanged,
         params_type: "PaneConfigChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneHarnessSwitchStarted,
+        params_type: "PaneHarnessSwitchStartedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneHarnessSwitchDone,
+        params_type: "PaneHarnessSwitchDoneEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::PaneHarnessSwitchFailed,
+        params_type: "PaneHarnessSwitchFailedEvent",
         durable: true,
     },
     EventDescriptor {
@@ -6265,5 +6372,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::WritingLineNotFound => -32032,
         ErrorKind::WritingSceneNotFound => -32033,
         ErrorKind::WritingSectionRefused => -32034,
+        ErrorKind::HarnessSwitchFailed => -32035,
     }
 }

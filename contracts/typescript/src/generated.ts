@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
+// Generated from contracts/protocol.json (sha256 2925ec6441361dbf3f0b0dcc92a3d1c0c945a3c925e70fa90682d985711ef36b). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -19,7 +19,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files" | "writing";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed";
 
 export interface RpcError {
   "code": number;
@@ -880,6 +880,50 @@ export interface PaneConfigSetResult {
   "applied": boolean;
   "effective": ConfigValue;
   "sessionPreserved": boolean;
+}
+
+export interface PaneHarnessSwitchParams {
+  "paneId": Id;
+  "harness": Id;
+  "model"?: string;
+  "effort"?: string;
+  "idempotencyKey": Id;
+}
+
+export interface PaneHarnessSwitchResult {
+  "paneId": Id;
+  "fromHarness": Id;
+  "toHarness": Id;
+  "newSessionId": Id;
+  "markerSeq": Decimal;
+}
+
+export interface PaneHarnessSwitchStartedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "fromHarness": Id;
+  "toHarness": Id;
+}
+
+export interface PaneHarnessSwitchDoneEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "fromHarness": Id;
+  "toHarness": Id;
+  "newSessionId": Id;
+  "markerSeq": Decimal;
+}
+
+export interface PaneHarnessSwitchFailedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "fromHarness": Id;
+  "toHarness": Id;
+  "reason": string;
+  "restored": boolean;
 }
 
 export interface PaneYoloParams {
@@ -2829,6 +2873,7 @@ export interface Methods {
   "pane.permission.answer": { params: PanePermissionAnswerParams; result: PanePermissionAnswerResult };
   "pane.elicitation.answer": { params: PaneElicitationAnswerParams; result: PaneElicitationAnswerResult };
   "pane.config.set": { params: PaneConfigSetParams; result: PaneConfigSetResult };
+  "pane.harness.switch": { params: PaneHarnessSwitchParams; result: PaneHarnessSwitchResult };
   "pane.yolo": { params: PaneYoloParams; result: PaneYoloResult };
   "pane.auth.start": { params: PaneAuthStartParams; result: PaneAuthStartResult };
   "pane.transcript": { params: PaneTranscriptParams; result: PaneTranscriptResult };
@@ -2945,6 +2990,9 @@ export interface Events {
   "pane.elicitation_answered": PaneElicitationAnsweredEvent;
   "pane.config_changing": PaneConfigChangingEvent;
   "pane.config_changed": PaneConfigChangedEvent;
+  "pane.harness_switch_started": PaneHarnessSwitchStartedEvent;
+  "pane.harness_switch_done": PaneHarnessSwitchDoneEvent;
+  "pane.harness_switch_failed": PaneHarnessSwitchFailedEvent;
   "pane.config_failed": PaneConfigFailedEvent;
   "pane.session_lost": PaneSessionLostEvent;
   "pane.needs_login": PaneNeedsLoginEvent;
@@ -3016,6 +3064,9 @@ export const eventRegistry = {
   "pane.elicitation_answered": { paramsType: "PaneElicitationAnsweredEvent", durable: true },
   "pane.config_changing": { paramsType: "PaneConfigChangingEvent", durable: true },
   "pane.config_changed": { paramsType: "PaneConfigChangedEvent", durable: true },
+  "pane.harness_switch_started": { paramsType: "PaneHarnessSwitchStartedEvent", durable: true },
+  "pane.harness_switch_done": { paramsType: "PaneHarnessSwitchDoneEvent", durable: true },
+  "pane.harness_switch_failed": { paramsType: "PaneHarnessSwitchFailedEvent", durable: true },
   "pane.config_failed": { paramsType: "PaneConfigFailedEvent", durable: true },
   "pane.session_lost": { paramsType: "PaneSessionLostEvent", durable: true },
   "pane.needs_login": { paramsType: "PaneNeedsLoginEvent", durable: true },
