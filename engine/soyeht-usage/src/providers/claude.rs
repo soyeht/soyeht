@@ -35,7 +35,7 @@ fn parse_cli(payload: &[u8], source: UsageSource) -> Result<ParsedReading> {
             source: source.clone(),
         })?;
     let primary = parse_line(text, "Current session:", "Current session", source.clone())?;
-    let secondary = parse_line(text, "Current week (all models):", "Current week", source)?;
+    let secondary = parse_line(text, "Current week (all models):", "Weekly", source)?;
     Ok(ParsedReading {
         primary,
         secondary: Some(secondary),

@@ -26,10 +26,16 @@ public struct UsagePresentation: Sendable {
   public var displayedWindow: UsageWindow? {
     switch reading.provider {
     case .claude, .codex:
-      reading.secondary ?? reading.primary
+      weeklyWindow ?? reading.secondary ?? reading.primary
     case .cursor:
       reading.primary
     }
+  }
+
+  private var weeklyWindow: UsageWindow? {
+    [reading.primary, reading.secondary]
+      .compactMap { $0 }
+      .first { $0.label.lowercased().contains("week") }
   }
 
   public var fraction: Double? {
