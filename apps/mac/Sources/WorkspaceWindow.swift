@@ -163,7 +163,8 @@ struct WorkspaceWindow: View {
     case .agents:
       if showNewPane {
         NewPaneWorkspace(
-          client: client, webHost: webHost, isPresented: $showNewPane,
+          client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
+          isPresented: $showNewPane,
           onClose: { paneToClose = $0 }, onTasks: showTasks)
       } else {
         PaneGrid(
@@ -778,6 +779,7 @@ private struct PaneCard: View {
 private struct NewPaneWorkspace: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
+  let workspaceId: String?
   @Binding var isPresented: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
@@ -791,7 +793,7 @@ private struct NewPaneWorkspace: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      NewPaneSheet(client: client, isPresented: $isPresented)
+      NewPaneSheet(client: client, workspaceId: workspaceId, isPresented: $isPresented)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }.padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
   }
@@ -799,6 +801,7 @@ private struct NewPaneWorkspace: View {
 
 private struct NewPaneSheet: View {
   @Bindable var client: EngineClient
+  let workspaceId: String?
   @Binding var isPresented: Bool
   @State private var mode = PaneMode.terminal
   @State private var directory: URL?
@@ -807,6 +810,7 @@ private struct NewPaneSheet: View {
   @State private var effort = ""
   @State private var permission = PermissionMode.ask
   @State private var showsAgentPicker = false
+  @State private var submitting = false
 
   private var availableHarnesses: [HarnessInfo] { client.harnesses.filter(\.available) }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
@@ -882,7 +886,7 @@ private struct NewPaneSheet: View {
                 .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
                 .neoAccent(radius: MacTheme.Radius.pill)
             }
-            .disabled(directory == nil || (mode == .agent && harness.isEmpty))
+            .disabled(directory == nil || (mode == .agent && harness.isEmpty) || submitting)
             .keyboardShortcut(.return, modifiers: [.command, .shift])
           }
         }
@@ -920,6 +924,7 @@ private struct NewPaneSheet: View {
     .onAppear {
       client.refreshHarnesses()
       selectFirstHarness()
+      selectWorkspaceDirectory()
     }
     .onChange(of: client.harnesses.map(\.id)) { _, _ in selectFirstHarness() }
     .onChange(of: harness) { _, value in
@@ -1054,15 +1059,30 @@ private struct NewPaneSheet: View {
     }
   }
 
+  private func selectWorkspaceDirectory() {
+    guard directory == nil,
+      let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId })
+    else { return }
+    directory = URL(fileURLWithPath: workspace.path, isDirectory: true)
+  }
+
   private func create() {
-    guard let directory else { return }
-    if mode == .terminal {
-      client.createPane(directory: directory)
-    } else {
-      client.createAgentPane(
-        directory: directory, harness: harness, model: model.isEmpty ? nil : model,
-        effort: effort.isEmpty ? nil : effort, permission: permission)
+    guard let directory, !submitting else { return }
+    submitting = true
+    Task { @MainActor in
+      do {
+        if mode == .terminal {
+          _ = try await client.createTerminalPane(directory: directory)
+        } else {
+          _ = try await client.createAgentPaneNow(
+            directory: directory, harness: harness, model: model.isEmpty ? nil : model,
+            effort: effort.isEmpty ? nil : effort, permission: permission)
+        }
+        isPresented = false
+      } catch {
+        submitting = false
+        client.problem = error.localizedDescription
+      }
     }
-    isPresented = false
   }
 }

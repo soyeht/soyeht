@@ -112,20 +112,19 @@ extension EngineClient {
     mustNotChange: String, executor: TaskExecutor?, priority: TaskPriority,
     createWorktree: Bool, permission: PermissionMode, dependencies: [String],
     dispatch: Bool
-  ) {
-    perform {
-      let result = try await self.mutation(
-        "task.create",
-        TaskCreateParams(
-          workspaceId: workspaceId, title: title, description: description,
-          howToVerify: howToVerify, mustNotChange: mustNotChange, executor: executor,
-          priority: priority, createWorktree: createWorktree, permission: permission,
-          dependencies: dependencies, dispatch: dispatch,
-          idempotencyKey: UUID().uuidString)
-      ).decoded(TaskCreateResult.self)
-      self.upsertTask(result.task)
-      if let paneId = result.paneId { self.select(paneId) }
-    }
+  ) async throws -> TaskCreateResult {
+    let result = try await mutation(
+      "task.create",
+      TaskCreateParams(
+        workspaceId: workspaceId, title: title, description: description,
+        howToVerify: howToVerify, mustNotChange: mustNotChange, executor: executor,
+        priority: priority, createWorktree: createWorktree, permission: permission,
+        dependencies: dependencies, dispatch: dispatch,
+        idempotencyKey: UUID().uuidString)
+    ).decoded(TaskCreateResult.self)
+    upsertTask(result.task)
+    if let paneId = result.paneId { select(paneId) }
+    return result
   }
 
   public func moveTask(_ task: TaskRecord, to state: TaskState, reason: String) {

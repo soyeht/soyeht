@@ -560,24 +560,29 @@ public final class EngineClient {
     perform { try await self.subscribe(pane) }
   }
   public func createPane(directory: URL) {
-    perform {
-      let path = directory.standardizedFileURL.path
-      var workspaceId = self.workspaces.first { $0.path == path }?.workspaceId
-      if workspaceId == nil {
-        let result = try await self.mutation(
-          "workspace.create",
-          WorkspaceCreateParams(
-            name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
-        workspaceId = try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
-      }
-      guard let workspaceId else { throw ClientFailure.invalidFrame }
-      let result = try await self.mutation(
-        "pane.create",
-        PaneCreateParams(
-          workspaceId: workspaceId,
-          mode: .terminal, cwd: path, name: "Terminal", idempotencyKey: UUID().uuidString))
-      self.select(try result.decoded(PaneCreateResult.self).paneId)
+    perform { _ = try await self.createTerminalPane(directory: directory) }
+  }
+  public func createTerminalPane(directory: URL) async throws -> String {
+    let path = directory.standardizedFileURL.path
+    let workspaceId = try await workspaceId(for: directory, path: path)
+    let result = try await mutation(
+      "pane.create",
+      PaneCreateParams(
+        workspaceId: workspaceId,
+        mode: .terminal, cwd: path, name: "Terminal", idempotencyKey: UUID().uuidString))
+    let paneId = try result.decoded(PaneCreateResult.self).paneId
+    select(paneId)
+    return paneId
+  }
+  func workspaceId(for directory: URL, path: String) async throws -> String {
+    if let existing = workspaces.first(where: { $0.path == path })?.workspaceId {
+      return existing
     }
+    let result = try await mutation(
+      "workspace.create",
+      WorkspaceCreateParams(
+        name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
+    return try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
   }
   public func closePane(_ id: String) {
     perform {
