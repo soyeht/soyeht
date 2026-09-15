@@ -400,6 +400,7 @@ private struct WorkspaceTopBar: View {
           }
         }.padding(.horizontal, 5).padding(.vertical, 5)
       }
+      .scrollClipDisabled()
 
       Button(action: onNewPane) {
         Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
@@ -492,17 +493,9 @@ struct PaneGrid: View {
           client: client, webHost: webHost, panes: panes, onClose: onClose, onTasks: onTasks,
           tint: paneTint)
       } else {
-        LazyVGrid(
-          columns: [GridItem(.adaptive(minimum: 420), spacing: MacTheme.Space.x18)],
-          spacing: MacTheme.Space.x18
-        ) {
-          ForEach(Array(panes.enumerated()), id: \.element.paneId) { index, pane in
-            PaneCard(
-              client: client, webHost: webHost, pane: pane, tint: paneTint(index), onClose: onClose,
-              onTasks: onTasks
-            ).frame(minHeight: 320)
-          }
-        }
+        PaneStrip(
+          client: client, webHost: webHost, panes: panes, onClose: onClose, onTasks: onTasks,
+          tint: paneTint)
       }
     }.padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
   }
@@ -537,6 +530,40 @@ struct PaneGrid: View {
       Array(fileParts.prefix(rootParts.count)) == rootParts
     else { return nil }
     return fileParts.dropFirst(rootParts.count).joined(separator: "/")
+  }
+}
+
+private struct PaneStrip: View {
+  @Bindable var client: EngineClient
+  let webHost: MacWebHost
+  let panes: [Pane]
+  let onClose: (String) -> Void
+  let onTasks: () -> Void
+  let tint: (Int) -> Color
+
+  var body: some View {
+    GeometryReader { geometry in
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: MacTheme.Space.x18) {
+          ForEach(Array(panes.enumerated()), id: \.element.paneId) { index, pane in
+            PaneCard(
+              client: client, webHost: webHost, pane: pane, tint: tint(index), onClose: onClose,
+              onTasks: onTasks
+            )
+            .frame(width: paneWidth(geometry.size.width))
+            .frame(height: geometry.size.height)
+          }
+        }
+        .frame(minWidth: geometry.size.width, alignment: .leading)
+        .frame(height: geometry.size.height, alignment: .top)
+      }
+      .scrollClipDisabled()
+    }
+  }
+
+  private func paneWidth(_ total: CGFloat) -> CGFloat {
+    let gaps = CGFloat(max(0, panes.count - 1)) * MacTheme.Space.x18
+    return max(360, (total - gaps) / CGFloat(max(1, panes.count)))
   }
 }
 

@@ -181,7 +181,7 @@ private struct WritingSectionRow: View {
             .lineLimit(1)
         }
         Spacer()
-        Text((Int64(entry.byteCount) ?? 0).formatted(.byteCount(style: .file)))
+        Text(byteCountLabel)
           .font(MacTheme.chrome(MacTheme.TypeScale.small))
           .foregroundStyle(MacTheme.muted)
         Image(systemName: "chevron.right")
@@ -192,6 +192,11 @@ private struct WritingSectionRow: View {
       .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
     }
     .accessibilityIdentifier("writing-document-\(entry.path)")
+  }
+
+  private var byteCountLabel: String {
+    guard let bytes = Int64(entry.byteCount), bytes > 0 else { return "0 kB" }
+    return bytes.formatted(.byteCount(style: .file))
   }
 }
 

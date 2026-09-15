@@ -263,9 +263,14 @@ extension WritingMarkdownProjection {
   fileprivate static func tableLineIndexes(_ lines: [String]) -> Set<Int> {
     var result: Set<Int> = []
     for index in lines.indices where isTableSeparator(lines[index]) {
+      guard index > 0, lines[index - 1].contains("|") else { continue }
+      result.insert(index - 1)
       result.insert(index)
-      if index > 0, lines[index - 1].contains("|") { result.insert(index - 1) }
-      if index + 1 < lines.count, lines[index + 1].contains("|") { result.insert(index + 1) }
+      var body = index + 1
+      while body < lines.count, lines[body].contains("|") {
+        result.insert(body)
+        body += 1
+      }
     }
     return result
   }
