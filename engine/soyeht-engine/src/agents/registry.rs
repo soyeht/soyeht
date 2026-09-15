@@ -42,18 +42,18 @@ pub fn entries(directory: &Path) -> Result<Vec<HarnessLaunch>> {
     Ok(entries)
 }
 
-pub fn executable(command: &str) -> Option<PathBuf> {
+fn resolve_executable(
+    command: &str,
+    directories: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
     let path = Path::new(command);
     let candidates = if path.is_absolute() {
         vec![path.to_owned()]
     } else if path.components().count() == 1 {
-        std::env::var_os("PATH")
-            .map(|paths| {
-                std::env::split_paths(&paths)
-                    .map(|directory| directory.join(command))
-                    .collect()
-            })
-            .unwrap_or_default()
+        directories
+            .into_iter()
+            .map(|directory| directory.join(command))
+            .collect()
     } else {
         vec![]
     };
@@ -64,6 +64,10 @@ pub fn executable(command: &str) -> Option<PathBuf> {
             path.metadata()
                 .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
         })
+}
+
+pub fn executable(command: &str) -> Option<PathBuf> {
+    resolve_executable(command, super::environment::candidate_directories())
 }
 
 pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
@@ -88,4 +92,49 @@ pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
         .ok_or_else(|| errors::harness_unavailable("Harness path is not UTF-8"))?
         .into();
     Ok((entry, format!("{:x}", digest.finalize())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt};
+    use uuid::Uuid;
+
+    struct Fixture(PathBuf);
+
+    impl Fixture {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("soyeht-harness-path-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn executable(&self, name: &str) -> PathBuf {
+            let path = self.0.join(name);
+            fs::write(&path, b"#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn executable_resolution_uses_order_and_rejects_relative_paths() {
+        let first = Fixture::new();
+        let second = Fixture::new();
+        let expected = second.executable("late-agent").canonicalize().unwrap();
+        assert_eq!(
+            resolve_executable("late-agent", [first.0.clone(), second.0.clone()]),
+            Some(expected)
+        );
+        assert_eq!(
+            resolve_executable("nested/agent", [first.0.clone(), second.0.clone()]),
+            None
+        );
+    }
 }

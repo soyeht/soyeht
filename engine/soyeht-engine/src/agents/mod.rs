@@ -5,6 +5,7 @@ pub mod configuration;
 pub mod delivery;
 pub mod driver;
 pub mod effects;
+pub mod environment;
 pub mod failures;
 pub mod filesystem;
 pub mod forms;

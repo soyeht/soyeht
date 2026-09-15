@@ -115,13 +115,15 @@ impl Core {
         let mut argv = vec![state.launch.command.clone()];
         argv.extend(state.launch.args.clone());
         argv.extend(method.args);
+        let mut environment = method.env;
+        environment.insert("PATH".into(), super::environment::launch_path());
         let launch = Spawn {
             instance_key: child.instance_key.clone(),
             generation: 1,
             kind: ProcessKind::Pty,
             cwd: child.pane.cwd.clone(),
             argv,
-            env: method.env,
+            env: environment,
             cols: child.pane.cols as u16,
             rows: child.pane.rows as u16,
         };
