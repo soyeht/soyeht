@@ -9,6 +9,96 @@ from generated_profile import DEV_ENGINE_LAUNCHD_LABEL
 
 
 class InstallGuardTests(unittest.TestCase):
+    def test_signing_identity_is_unique_and_can_be_selected_explicitly(self):
+        output = """\
+  1) 1111111111111111111111111111111111111111 "Developer ID Application: Example (AAAAAAAAAA)"
+  2) 2222222222222222222222222222222222222222 "Apple Development: Person One (BBBBBBBBBB)"
+  3) 3333333333333333333333333333333333333333 "Apple Development: Person Two (CCCCCCCCCC)"
+"""
+        parsed = install_dev.signing_identities(output)
+        self.assertEqual(len(parsed), 2)
+        run = subprocess.CompletedProcess([], 0, stdout=output)
+        with patch.object(install_dev.subprocess, "run", return_value=run):
+            with self.assertRaisesRegex(SystemExit, "Set SOYEHT"):
+                install_dev.development_signing_identity()
+            self.assertEqual(
+                install_dev.development_signing_identity(
+                    "Apple Development: Person Two (CCCCCCCCCC)"
+                ),
+                (
+                    "3333333333333333333333333333333333333333",
+                    "Apple Development: Person Two (CCCCCCCCCC)",
+                ),
+            )
+
+    def test_signed_binary_requires_stable_identifier_and_team(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            target = root / "target"
+            source.write_bytes(b"binary")
+            identity = ("1" * 40, "Apple Development: Person (ABCDEFGHIJ)")
+            results = [
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess(
+                    [], 0,
+                    stderr=(
+                        f"Identifier={install_dev.BINARY_IDENTIFIERS['engine']}\n"
+                        "Authority=Apple Development: Person (ABCDEFGHIJ)\n"
+                        "TeamIdentifier=ZZZZZZZZZZ\n"
+                    ),
+                ),
+                subprocess.CompletedProcess(
+                    [], 0,
+                    stdout=(
+                        f'designated => identifier "{install_dev.BINARY_IDENTIFIERS["engine"]}" '
+                        "and anchor apple generic\n"
+                    ),
+                    stderr="Executable=/private/tmp/soyeht-engine\n",
+                ),
+            ]
+            with patch.object(install_dev.subprocess, "run", side_effect=results) as run:
+                install_dev.copy_signed_binary(
+                    source, target, install_dev.BINARY_IDENTIFIERS["engine"], identity
+                )
+            self.assertTrue(target.is_file())
+            self.assertEqual(run.call_args_list[0].args[0][0], "codesign")
+            self.assertIn(
+                install_dev.BINARY_IDENTIFIERS["engine"], run.call_args_list[0].args[0]
+            )
+
+    def test_signed_binary_rejects_an_unstable_requirement_before_publish(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            target = root / "target"
+            source.write_bytes(b"binary")
+            identity = ("1" * 40, "Apple Development: Person (ABCDEFGHIJ)")
+            results = [
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess(
+                    [], 0,
+                    stderr=(
+                        f"Identifier={install_dev.BINARY_IDENTIFIERS['engine']}\n"
+                        "Authority=Apple Development: Person (ABCDEFGHIJ)\n"
+                        "TeamIdentifier=ZZZZZZZZZZ\n"
+                    ),
+                ),
+                subprocess.CompletedProcess(
+                    [], 0,
+                    stdout='designated => cdhash H"1234"\n',
+                    stderr="Executable=/private/tmp/soyeht-engine\n",
+                ),
+            ]
+            with patch.object(install_dev.subprocess, "run", side_effect=results):
+                with self.assertRaisesRegex(SystemExit, "stable signing identity"):
+                    install_dev.copy_signed_binary(
+                        source, target, install_dev.BINARY_IDENTIFIERS["engine"], identity
+                    )
+            self.assertFalse(target.exists())
+
     def test_service_path_includes_system_and_user_tool_commands(self):
         environment = install_dev.service_environment()
         paths = environment["PATH"].split(":")

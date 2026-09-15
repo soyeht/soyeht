@@ -18,6 +18,19 @@ engine/target/debug/soyeht --profile dev pane create --shell
 engine/target/debug/soyeht --profile dev pane list
 ```
 
+The installer signs every profile binary with the machine's Apple Development
+identity and a stable `com.soyeht.next.dev.*` identifier. This keeps macOS
+privacy grants attached across rebuilds. When more than one Apple Development
+identity is available, select one explicitly:
+
+```sh
+SOYEHT_DEVELOPMENT_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
+  python3 scripts/install_dev.py
+```
+
+The installer fails before copying a binary if it cannot establish and verify
+the stable identifier, team identifier and designated requirement.
+
 The installer creates only the `com.soyeht.next.dev.ptyd` and
 `com.soyeht.next.dev.engine` services. Executables, database and logs live in
 `~/Library/Application Support/Soyeht.next/dev/`. Service files live in
