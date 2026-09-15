@@ -4880,9 +4880,9 @@ fn create_task_fixture(rig: &Rig, client: &mut Client) -> (String, Value, Value)
 }
 
 #[test]
-fn dispatch_opens_one_task_pane_and_delivers_the_complete_first_prompt() {
+fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt() {
     let rig = Rig::new();
-    rig.install_fake_harness();
+    rig.install_switch_harnesses();
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",
@@ -4902,7 +4902,7 @@ fn dispatch_opens_one_task_pane_and_delivers_the_complete_first_prompt() {
         .clone();
     let params = json!({
         "workspaceId":workspace,"taskId":task["taskId"],
-        "preset":{"workspaceDefault":false,"harness":"test-agent","permission":"ask"},
+        "preset":{"workspaceDefault":false,"harness":"next-agent","permission":"ask"},
         "idempotencyKey":"dispatch-once"
     });
     let dispatched = client.call("task.dispatch", params.clone());
@@ -4926,6 +4926,8 @@ fn dispatch_opens_one_task_pane_and_delivers_the_complete_first_prompt() {
         thread::sleep(Duration::from_millis(20));
     };
     assert_eq!(shown["task"]["ownerPaneId"], pane);
+    assert_eq!(shown["task"]["executor"]["harness"], "next-agent");
+    assert_eq!(client.pane(pane)["agent"]["harness"], "next-agent");
     assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
     let transcript = loop {
         let transcript = client.call("pane.transcript", json!({"paneId":pane}));
