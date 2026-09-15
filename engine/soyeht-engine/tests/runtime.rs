@@ -1394,6 +1394,26 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
 }
 
 #[test]
+fn harness_switch_retry_returns_the_same_session_without_spawning_again() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    let params = json!({
+        "paneId":pane,"harness":"next-agent","idempotencyKey":"switch-retry"
+    });
+
+    let first = client.call("pane.harness.switch", params.clone());
+    let repeated = client.call("pane.harness.switch", params);
+
+    assert_eq!(repeated, first);
+    assert_eq!(
+        client.pane(&pane)["agent"]["sessionId"],
+        first["newSessionId"]
+    );
+    assert_eq!(process_instances(&rig).len(), 1);
+}
+
+#[test]
 fn harness_switch_carries_a_frozen_pending_prompt_once_and_removes_it_from_the_queue() {
     let rig = Rig::new();
     let (mut client, pane) = rig.agent();
@@ -1484,6 +1504,70 @@ fn induced_candidate_failure_leaves_the_original_session_serving_prompts() {
         assert!(
             Instant::now() < deadline,
             "the original session did not serve a prompt after candidate failure"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(process_instances(&rig).len(), 1);
+}
+
+#[test]
+fn continuation_build_failure_leaves_the_original_session_serving_prompts() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    let original_session = client.pane(&pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"slow","idempotencyKey":"continuation-active"}),
+    );
+    client.wait_state(&pane, "working");
+    let oversized = client.call(
+        "pane.prompt",
+        json!({
+            "paneId":pane,"text":"x".repeat(20_000),
+            "idempotencyKey":"continuation-too-large"
+        }),
+    );
+    let failed = client.request(
+        "pane.harness.switch",
+        json!({
+            "paneId":pane,"harness":"next-agent",
+            "idempotencyKey":"switch-continuation-failure"
+        }),
+    );
+    assert_eq!(failed["error"]["data"]["kind"], "harness_switch_failed");
+    assert_eq!(client.pane(&pane)["agent"]["harness"], "test-agent");
+    assert_eq!(client.pane(&pane)["agent"]["sessionId"], original_session);
+    client.call(
+        "pane.queue.remove",
+        json!({
+            "paneId":pane,"promptId":oversized["promptId"],
+            "idempotencyKey":"remove-oversized-continuation"
+        }),
+    );
+    client.call(
+        "pane.prompt",
+        json!({
+            "paneId":pane,"text":"original-after-package-failure",
+            "idempotencyKey":"prompt-after-package-failure"
+        }),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if rig.native_session(&original_session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| turn[0] == "original-after-package-failure")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the original session did not serve a prompt after continuation failure"
         );
         thread::sleep(Duration::from_millis(20));
     }

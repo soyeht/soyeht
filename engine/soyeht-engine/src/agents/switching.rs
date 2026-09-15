@@ -73,6 +73,9 @@ impl Core {
     pub fn agent_harness_switch(&mut self, connection: &str, raw: &Value) -> Result<Value> {
         let params: PaneHarnessSwitchParams = serde_json::from_value(raw.clone())
             .map_err(|_| errors::invalid("Invalid harness switch parameters"))?;
+        if let Some(result) = self.repeated_mutation(connection, "pane.harness.switch", raw)? {
+            return Ok(result);
+        }
         let pane = params.pane_id.as_str();
         let mut state = self.agent_state(pane)?;
         if self.harness_switches.contains_key(pane)
