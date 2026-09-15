@@ -31,6 +31,8 @@ boundary. The final UTF-8 payload is at most 15,999 bytes, which also satisfies 
 limit of fewer than 16,000 characters. It drops oldest whole messages until the payload
 fits, never truncates a message, and fails when metadata or even one whole message cannot
 fit. Tool calls, tool results, thoughts, permissions and native sessions never enter it.
+The template, its historical-data label and its boundary markers form a security boundary;
+editing them requires security review, and tests pin the markers relied on by the framing.
 
 The wire grows additively and remains protocol version 1. Switch events identify the pane,
 old harness and new harness. The completion result identifies the new session. Failure is a

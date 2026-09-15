@@ -1,7 +1,8 @@
 # Harness switch prompt (single source of truth)
 
 The engine loads this file at runtime and fills the placeholders. Editing this
-file changes the prompt for every harness pair; no code change needed.
+file changes a security boundary for every harness pair and requires security
+review. The boundary markers and historical-data label are pinned by tests.
 Lines whose placeholder is empty are dropped whole.
 
 Rules the engine applies before filling (contract 01, decided 2026-09-10):
