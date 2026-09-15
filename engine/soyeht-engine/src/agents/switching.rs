@@ -851,7 +851,14 @@ impl Core {
     pub(crate) fn cleanup_retired_agent_processes(&mut self) -> Result<()> {
         let panes = self.agents.keys().cloned().collect::<Vec<_>>();
         for pane in panes {
-            let mut state = self.agent_state(&pane)?;
+            // Closed agent panes remain in the runtime map so their durable
+            // process-retirement ledger can converge. `agent_state` rejects
+            // closed panes by design, so cleanup must read this internal
+            // state directly instead of turning one closed pane into a
+            // poll-loop error that starves every pane after it.
+            let Some(mut state) = self.agents.get(&pane).map(|agent| agent.state.clone()) else {
+                continue;
+            };
             let current_supervisor = self
                 .ptyd
                 .as_ref()
@@ -946,4 +953,81 @@ fn should_fail_old_close(directory: &std::path::Path) -> bool {
 #[cfg(not(debug_assertions))]
 fn should_fail_old_close(_: &std::path::Path) -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        agents::{Running, state::State},
+        model::{RunningPane, StoredPane},
+        screen::Screen,
+    };
+    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState, PermissionMode, StateSource};
+    use std::fs;
+
+    #[test]
+    fn retired_process_cleanup_does_not_reject_a_closed_agent_pane() {
+        let root = std::env::temp_dir().join(format!("soyeht-closed-agent-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let mut core = Core::open(&root).unwrap();
+        let pane_id = "closed-agent".to_owned();
+        let state = State::new(
+            HarnessLaunch {
+                id: "test".into(),
+                name: "Test".into(),
+                command: "/test".into(),
+                args: Vec::new(),
+                version: "1".into(),
+                environment: None,
+            },
+            "digest".into(),
+            PermissionMode::Ask,
+        )
+        .unwrap();
+        let pane = Pane {
+            pane_id: pane_id.clone(),
+            workspace_id: "workspace".into(),
+            name: "Closed agent".into(),
+            cwd: root.display().to_string(),
+            mode: PaneMode::Agent,
+            state: PaneState::Dead,
+            source: StateSource::Protocol,
+            confidence: 1.0,
+            phrase: "Agent pane closed".into(),
+            generation: 1,
+            cols: 80,
+            rows: 24,
+            record: true,
+            pid: None,
+            stream_id: None,
+            agent: None,
+            url: None,
+            title: None,
+            viewport: None,
+            incognito: None,
+            web_session: None,
+            writing_kind: None,
+            writing_section: None,
+        };
+        let screen = Screen::open(&root.join("sessions").join(&pane_id), true).unwrap();
+        core.panes.insert(
+            pane_id.clone(),
+            RunningPane {
+                stored: StoredPane {
+                    pane,
+                    closed: true,
+                    instance_key: "closed-instance".into(),
+                    instance_id: None,
+                    supervisor_id: None,
+                    sequence_base: 0,
+                },
+                screen,
+            },
+        );
+        core.agents.insert(pane_id, Running::new(state));
+
+        core.cleanup_retired_agent_processes().unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
 }
