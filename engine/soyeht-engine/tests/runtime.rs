@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use soyeht_protocol::{Task, frame::Frame};
 use soyeht_ptyd::{
     client::Client as PtyClient,
-    wire::{Request, Response},
+    wire::{Request, Response, Spawn},
 };
 use soyeht_store::{
     database::Store,
@@ -1908,6 +1908,24 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     assert_ne!(terminal, pane);
     assert_eq!(client.pane(terminal)["mode"], "terminal");
     assert_eq!(client.pane(terminal)["record"], false);
+    let auth_launch: Spawn = Store::open(&rig.path)
+        .unwrap()
+        .pane_launch(terminal)
+        .unwrap()
+        .unwrap();
+    let expected_auth_argv = vec![
+        binary.to_string_lossy().into_owned(),
+        "--state-dir".into(),
+        rig.path.join("native").to_string_lossy().into_owned(),
+        "--login".into(),
+    ];
+    assert_eq!(auth_launch.argv, expected_auth_argv);
+    assert!(
+        !auth_launch
+            .argv
+            .iter()
+            .any(|value| value == "--require-login")
+    );
     let deadline = Instant::now() + Duration::from_secs(10);
     while !client.pane(&pane)["agent"]["sessionId"].is_string() {
         assert!(
@@ -1921,6 +1939,15 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     assert_eq!(models["source"], "native_session");
     assert_eq!(models["items"].as_array().unwrap().len(), 4);
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
+    let repeated = client.request(
+        "pane.auth.start",
+        json!({"paneId":pane,"authMethodId":"login","idempotencyKey":"auth-after-ready"}),
+    );
+    assert_eq!(repeated["error"]["data"]["kind"], "invalid_params");
+    assert_eq!(
+        repeated["error"]["message"],
+        "Sign-in is not required for this pane"
+    );
 }
 
 #[test]
