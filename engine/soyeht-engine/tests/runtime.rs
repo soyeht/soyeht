@@ -3268,10 +3268,18 @@ fn agent_write_refuses_a_dirty_editor_file_without_touching_disk() {
         .to_owned();
     let (mut client, pane) = rig.open_agent(client, &json!(workspace));
     client.call(
+        "file.watch",
+        json!({"fileId":file_id,"watch":false,"idempotencyKey":"dirty-review-watch-off"}),
+    );
+    fs::write(&path, "external\n").unwrap();
+    client.call(
         "file.write",
         json!({"fileId":file_id,"baseRevision":"1","author":local_file_author(),"edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":3}},"text":"human"}],"idempotencyKey":"human-draft-before-agent"}),
     );
-    fs::write(&path, "external\n").unwrap();
+    client.call(
+        "file.watch",
+        json!({"fileId":file_id,"watch":true,"idempotencyKey":"dirty-review-watch-on"}),
+    );
     wait_for_editor_file(&mut client, &file_id, |file| file["conflicted"] == true);
     client.call(
         "pane.prompt",
@@ -4127,6 +4135,11 @@ fn editor_disk_reload_and_conflict_preserve_both_versions_until_resolution() {
     );
     assert_eq!(disk["lines"][0]["text"], "outside");
     client.call(
+        "file.watch",
+        json!({"fileId":file_id,"watch":false,"idempotencyKey":"conflict-watch-off"}),
+    );
+    fs::write(&path, "second external\n").unwrap();
+    client.call(
         "file.write",
         json!({
             "fileId":file_id,"baseRevision":"2","author":local_file_author(),
@@ -4134,7 +4147,10 @@ fn editor_disk_reload_and_conflict_preserve_both_versions_until_resolution() {
             "idempotencyKey":"write-draft"
         }),
     );
-    fs::write(&path, "second external\n").unwrap();
+    client.call(
+        "file.watch",
+        json!({"fileId":file_id,"watch":true,"idempotencyKey":"conflict-watch-on"}),
+    );
     let conflicted = wait_for_editor_file(&mut client, &file_id, |file| file["conflicted"] == true);
     assert_eq!(conflicted["revision"], "3");
     thread::sleep(Duration::from_millis(600));
