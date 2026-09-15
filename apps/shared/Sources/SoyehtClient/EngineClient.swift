@@ -355,8 +355,7 @@ public final class EngineClient {
         request.continuation.resume(
           throwing: ClientFailure.remote(
             message["error"]["data"]["kind"].string ?? "internal_error",
-            "\(request.method): "
-              + (message["error"]["message"].string ?? "Request refused")))
+            message["error"]["message"].string ?? "Request refused"))
         return
       }
       let result = message["result"]

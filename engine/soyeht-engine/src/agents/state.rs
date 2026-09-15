@@ -211,17 +211,20 @@ impl State {
             fingerprint: self.fingerprint.clone(),
             session_id: self.session_id.clone(),
             options: self.options.values.clone(),
-            auth_methods: self
-                .initialized
-                .as_ref()
-                .map(|value| {
-                    value
-                        .auth_methods
-                        .iter()
-                        .map(|method| method.public.clone())
-                        .collect()
-                })
-                .unwrap_or_default(),
+            auth_methods: if self.phase == Phase::NeedsLogin {
+                self.initialized
+                    .as_ref()
+                    .map(|value| {
+                        value
+                            .auth_methods
+                            .iter()
+                            .map(|method| method.public.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            },
             permission: self.permission.clone(),
             yolo: self.yolo,
             previous_permission: self.previous_permission.clone(),
@@ -540,6 +543,20 @@ mod tests {
         assert_eq!(public.auth_methods.len(), 1);
         assert_eq!(public.auth_methods[0].id, "login");
         assert!(public.auth_methods[0].terminal);
+    }
+
+    #[test]
+    fn public_state_hides_advertised_authentication_until_the_agent_requires_it() {
+        let mut state = state();
+        state.phase = Phase::Ready;
+        state.initialized = Some(
+            Initialization::parse(&serde_json::json!({
+                "protocolVersion": 1,
+                "authMethods": [{"id": "login", "name": "Sign in", "type": "terminal"}]
+            }))
+            .unwrap(),
+        );
+        assert!(state.public(0).auth_methods.is_empty());
     }
 
     #[test]

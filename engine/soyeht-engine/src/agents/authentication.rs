@@ -11,6 +11,10 @@ use soyeht_protocol::{PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
 use uuid::Uuid;
 
+fn terminal_auth_argv(command: String, args: Vec<String>) -> Vec<String> {
+    std::iter::once(command).chain(args).collect()
+}
+
 fn auth_pane_created(
     agent_id: &str,
     child_id: &str,
@@ -40,7 +44,7 @@ impl Core {
         let id = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(id)?;
         if state.phase != Phase::NeedsLogin {
-            return Err(errors::pane_busy("This pane is not waiting for sign-in"));
+            return Err(errors::invalid("Sign-in is not required for this pane"));
         }
         if let Some(pane) = state.login_pane_id.as_ref().filter(|pane| {
             self.panes
@@ -112,9 +116,7 @@ impl Core {
             supervisor_id: None,
             sequence_base: 0,
         };
-        let mut argv = vec![state.launch.command.clone()];
-        argv.extend(state.launch.args.clone());
-        argv.extend(method.args);
+        let argv = terminal_auth_argv(state.launch.command.clone(), method.args);
         let mut environment =
             super::environment::launch_environment_with(state.launch.environment.as_deref());
         environment.extend(method.env);
@@ -192,5 +194,20 @@ impl Core {
             json!({}),
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminal_auth_argv;
+
+    #[test]
+    fn terminal_authentication_replaces_the_acp_arguments() {
+        let argv = terminal_auth_argv(
+            "/agent".into(),
+            vec!["--cli".into(), "auth".into(), "login".into()],
+        );
+        assert_eq!(argv, ["/agent", "--cli", "auth", "login"]);
+        assert!(!argv.contains(&"--acp".into()));
     }
 }

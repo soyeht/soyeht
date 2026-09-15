@@ -46,7 +46,7 @@ import Testing
   let authMethod = AuthMethod(id: "login", name: "Sign in", terminal: true)
   let session = AgentSession(
     harness: "agent", version: "1", fingerprint: "fingerprint", options: [],
-    authMethods: [authMethod], permission: .ask, yolo: false, queue: [], draft: false,
+    authMethods: [], permission: .ask, yolo: false, queue: [], draft: false,
     role: .worker)
   let pane = Pane(
     paneId: paneId, workspaceId: "workspace", name: "Agent", cwd: "/tmp",
@@ -55,9 +55,25 @@ import Testing
   try client.applyAgentSnapshot([:], panes: [pane])
   #expect(client.agentPanes[paneId]?.permission == nil)
   #expect(client.agentPanes[paneId]?.queuePaused == false)
-  #expect(client.agentPanes[paneId]?.authMethods.count == 1)
+  #expect(client.agentPanes[paneId]?.authMethods.isEmpty == true)
+
+  try client.applyAgentEvent(
+    .paneNeedsLogin,
+    .encoded(
+      PaneNeedsLoginEvent(
+        eventId: "4", at: "2026-09-11T00:00:03Z", paneId: paneId,
+        harness: "agent", authMethods: [authMethod])))
   #expect(client.agentPanes[paneId]?.authMethods.first?.id == "login")
   #expect(client.agentPanes[paneId]?.authMethods.first?.terminal == true)
+
+  try client.applyAgentSnapshot([:], panes: [pane])
+  #expect(client.agentPanes[paneId]?.authMethods.isEmpty == true)
+}
+
+@Test func remoteFailuresHideWireMethodAndKindFromPeople() {
+  let failure = ClientFailure.remote(
+    "pane_busy", "This pane is not waiting for sign-in")
+  #expect(failure.localizedDescription == "This pane is not waiting for sign-in")
 }
 
 @MainActor @Test func agentTranscriptPagingUsesTheServerCursor() throws {

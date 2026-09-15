@@ -22,7 +22,7 @@ public enum ClientFailure: Error, LocalizedError, Sendable {
     case .timeout: "The engine did not respond in time."
     case .editorCommand(let message): message
     case .webHost(_, let message): message
-    case .remote(let kind, let message): "\(message) (\(kind))"
+    case .remote(_, let message): message
     }
   }
 }

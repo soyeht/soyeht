@@ -59,9 +59,10 @@ impl Runtime {
     }
 
     fn initialize(&self, id: Value) {
+        let directory = self.settings.directory.to_string_lossy();
         self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
             "agentCapabilities":{"loadSession":self.settings.load!="unsupported"},
-            "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--login"]}]}));
+            "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--state-dir",directory,"--login"]}]}));
     }
 
     fn new_session(&self, id: Value, params: &Value) {
