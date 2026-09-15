@@ -1015,7 +1015,7 @@ private struct NewPaneSheet: View {
       }
     }
     .onAppear {
-      client.refreshHarnesses()
+      client.refreshHarnesses(rescan: true)
       selectFirstHarness()
       selectWorkspaceDirectory()
     }

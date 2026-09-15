@@ -125,7 +125,7 @@ impl Core {
             kind: ProcessKind::PipesAcp,
             cwd: saved.pane.cwd.clone(),
             argv,
-            env: super::environment::launch_environment(),
+            env: super::environment::launch_environment_with(state.launch.environment.as_deref()),
             cols: saved.pane.cols as u16,
             rows: saved.pane.rows as u16,
         };

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
+// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -711,6 +711,8 @@ export interface HarnessInfo {
   "capabilities": Array<ProbeCapability>;
   "options": Array<ConfigOption>;
   "authMethods": Array<AuthMethod>;
+  "source"?: HarnessSource;
+  "setupState"?: HarnessSetupState;
 }
 
 export interface ModelInfo {
@@ -727,6 +729,7 @@ export interface HarnessLaunch {
   "command": string;
   "args": Array<string>;
   "version": string;
+  "environment"?: Array<HarnessEnvironmentVariable>;
 }
 
 export type HarnessConfiguration = Array<HarnessLaunch>;
@@ -925,11 +928,13 @@ export interface PaneDraftResult {
 export interface HarnessListParams {
   "cursor"?: Id;
   "limit"?: number;
+  "rescan"?: boolean;
 }
 
 export interface HarnessListResult {
   "items": Array<HarnessInfo>;
   "nextCursor"?: Id;
+  "environmentIssue"?: HarnessEnvironmentIssue;
 }
 
 export interface ModelListParams {
@@ -2744,6 +2749,17 @@ export interface WritingChangedEvent {
   "paneId": Id;
   "revision": Decimal;
   "sidecarRevision": Decimal;
+}
+
+export type HarnessSource = "built_in" | "custom";
+
+export type HarnessSetupState = "ready" | "not_installed" | "sign_in" | "check_setup";
+
+export type HarnessEnvironmentIssue = "missing_shell" | "unsupported_shell" | "unavailable_shell" | "probe_failed" | "probe_timed_out" | "output_too_large" | "invalid_output";
+
+export interface HarnessEnvironmentVariable {
+  "key": string;
+  "value": string;
 }
 
 export interface Methods {

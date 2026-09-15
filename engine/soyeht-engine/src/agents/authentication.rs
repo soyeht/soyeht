@@ -115,8 +115,9 @@ impl Core {
         let mut argv = vec![state.launch.command.clone()];
         argv.extend(state.launch.args.clone());
         argv.extend(method.args);
-        let mut environment = method.env;
-        environment.insert("PATH".into(), super::environment::launch_path());
+        let mut environment =
+            super::environment::launch_environment_with(state.launch.environment.as_deref());
+        environment.extend(method.env);
         let launch = Spawn {
             instance_key: child.instance_key.clone(),
             generation: 1,

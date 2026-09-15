@@ -1,3 +1,4 @@
+use soyeht_protocol::HarnessEnvironmentVariable;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{self, Read},
@@ -207,6 +208,20 @@ pub fn launch_environment() -> BTreeMap<String, String> {
     BTreeMap::from([("PATH".into(), launch_path())])
 }
 
+pub fn launch_environment_with(
+    recipe: Option<&[HarnessEnvironmentVariable]>,
+) -> BTreeMap<String, String> {
+    let mut environment = launch_environment();
+    for variable in recipe.into_iter().flatten() {
+        if !matches!(variable.key.as_str(), "PATH" | "HOME" | "USER" | "LOGNAME")
+            && !variable.key.starts_with("SOYEHT_")
+        {
+            environment.insert(variable.key.clone(), variable.value.clone());
+        }
+    }
+    environment
+}
+
 pub fn candidate_directories(recipe_directories: &[PathBuf]) -> Vec<PathBuf> {
     let mut directories = Vec::new();
     let mut seen = BTreeSet::new();
@@ -255,6 +270,23 @@ mod tests {
     #[test]
     fn launch_environment_carries_the_resolved_path_to_the_child() {
         let environment = launch_environment();
+        assert_eq!(environment.get("PATH"), Some(&launch_path()));
+        assert!(!environment.contains_key("HOME"));
+    }
+
+    #[test]
+    fn recipe_environment_extends_but_cannot_replace_user_identity() {
+        let environment = launch_environment_with(Some(&[
+            HarnessEnvironmentVariable {
+                key: "AGENT_MODE".into(),
+                value: "acp".into(),
+            },
+            HarnessEnvironmentVariable {
+                key: "HOME".into(),
+                value: "/tmp/empty".into(),
+            },
+        ]));
+        assert_eq!(environment.get("AGENT_MODE"), Some(&"acp".into()));
         assert_eq!(environment.get("PATH"), Some(&launch_path()));
         assert!(!environment.contains_key("HOME"));
     }

@@ -322,6 +322,12 @@ private struct PreferencesHarnesses: View {
       .font(MacTheme.chrome(MacTheme.TypeScale.caption))
       .foregroundStyle(MacTheme.secondary)
       .lineSpacing(4)
+      if let issue = client.harnessEnvironmentIssue {
+        Label(environmentIssueText(issue), systemImage: "exclamationmark.triangle")
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+          .foregroundStyle(MacTheme.warning)
+          .accessibilityLabel("Harness setup: \(environmentIssueText(issue))")
+      }
       ScrollView {
         VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
           ForEach(client.harnesses, id: \.id) { harness in
@@ -353,7 +359,25 @@ private struct PreferencesHarnesses: View {
     HStack(spacing: MacTheme.Space.x10) {
       Text("Harnesses").font(MacTheme.chrome(18, weight: .bold))
       Spacer()
-      PreferencePreviewAction(icon: "arrow.down.to.line", title: "Install from ACP registry")
+      Button {
+        client.refreshHarnesses(rescan: true)
+      } label: {
+        Label("Rescan", systemImage: "arrow.clockwise")
+      }
+      .buttonStyle(NeoPillButtonStyle())
+      .help("Read the login-shell environment again and refresh installed harnesses")
+    }
+  }
+
+  private func environmentIssueText(_ issue: HarnessEnvironmentIssue) -> String {
+    switch issue {
+    case .missing_shell: return "No login shell is configured; using the app environment."
+    case .unsupported_shell: return "The configured login shell is not supported."
+    case .unavailable_shell: return "The configured login shell could not be started."
+    case .probe_failed: return "The login-shell environment could not be read."
+    case .probe_timed_out: return "Reading the login-shell environment timed out."
+    case .output_too_large: return "The login shell produced too much startup output."
+    case .invalid_output: return "The login shell returned an invalid environment."
     }
   }
 }
@@ -444,10 +468,21 @@ private struct HarnessPreferenceRow: View {
   private var options: [ConfigOption] { catalogue?.options ?? harness.options }
 
   private var statusLabel: String {
-    if !harness.available { return "not installed" }
-    if harness.capabilities.contains(where: { $0.result == .unauthenticated }) { return "sign in" }
-    if harness.capabilities.contains(where: { $0.result == .inconclusive }) { return "check setup" }
-    return "ready"
+    switch harness.setupState {
+    case .ready: return "ready"
+    case .not_installed: return "not installed"
+    case .sign_in: return "sign in"
+    case .check_setup: return "check setup"
+    case nil:
+      if !harness.available { return "not installed" }
+      if harness.capabilities.contains(where: { $0.result == .unauthenticated }) {
+        return "sign in"
+      }
+      if harness.capabilities.contains(where: { $0.result == .inconclusive }) {
+        return "check setup"
+      }
+      return "ready"
+    }
   }
 
   private var statusColor: Color {

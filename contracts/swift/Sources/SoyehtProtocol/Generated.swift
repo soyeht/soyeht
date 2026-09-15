@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
+// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
 import Foundation
 
 
@@ -1450,7 +1450,9 @@ public struct HarnessInfo: Codable, Sendable {
     public var `capabilities`: [ProbeCapability]
     public var `options`: [ConfigOption]
     public var `authMethods`: [AuthMethod]
-    public init(`id`: Id, `name`: String, `available`: Bool, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod]) {
+    public var `source`: HarnessSource?
+    public var `setupState`: HarnessSetupState?
+    public init(`id`: Id, `name`: String, `available`: Bool, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`available` = `available`
@@ -1459,6 +1461,8 @@ public struct HarnessInfo: Codable, Sendable {
         self.`capabilities` = `capabilities`
         self.`options` = `options`
         self.`authMethods` = `authMethods`
+        self.`source` = `source`
+        self.`setupState` = `setupState`
     }
 }
 
@@ -1484,12 +1488,14 @@ public struct HarnessLaunch: Codable, Sendable {
     public var `command`: String
     public var `args`: [String]
     public var `version`: String
-    public init(`id`: Id, `name`: String, `command`: String, `args`: [String], `version`: String) {
+    public var `environment`: [HarnessEnvironmentVariable]?
+    public init(`id`: Id, `name`: String, `command`: String, `args`: [String], `version`: String, `environment`: [HarnessEnvironmentVariable]? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`command` = `command`
         self.`args` = `args`
         self.`version` = `version`
+        self.`environment` = `environment`
     }
 }
 
@@ -1851,18 +1857,22 @@ public struct PaneDraftResult: Codable, Sendable {
 public struct HarnessListParams: Codable, Sendable {
     public var `cursor`: Id?
     public var `limit`: UInt32?
-    public init(`cursor`: Id? = nil, `limit`: UInt32? = nil) {
+    public var `rescan`: Bool?
+    public init(`cursor`: Id? = nil, `limit`: UInt32? = nil, `rescan`: Bool? = nil) {
         self.`cursor` = `cursor`
         self.`limit` = `limit`
+        self.`rescan` = `rescan`
     }
 }
 
 public struct HarnessListResult: Codable, Sendable {
     public var `items`: [HarnessInfo]
     public var `nextCursor`: Id?
-    public init(`items`: [HarnessInfo], `nextCursor`: Id? = nil) {
+    public var `environmentIssue`: HarnessEnvironmentIssue?
+    public init(`items`: [HarnessInfo], `nextCursor`: Id? = nil, `environmentIssue`: HarnessEnvironmentIssue? = nil) {
         self.`items` = `items`
         self.`nextCursor` = `nextCursor`
+        self.`environmentIssue` = `environmentIssue`
     }
 }
 
@@ -5422,6 +5432,37 @@ public struct WritingChangedEvent: Codable, Sendable {
         self.`paneId` = `paneId`
         self.`revision` = `revision`
         self.`sidecarRevision` = `sidecarRevision`
+    }
+}
+
+public enum HarnessSource: String, Codable, Sendable {
+    case `built_in` = "built_in"
+    case `custom` = "custom"
+}
+
+public enum HarnessSetupState: String, Codable, Sendable {
+    case `ready` = "ready"
+    case `not_installed` = "not_installed"
+    case `sign_in` = "sign_in"
+    case `check_setup` = "check_setup"
+}
+
+public enum HarnessEnvironmentIssue: String, Codable, Sendable {
+    case `missing_shell` = "missing_shell"
+    case `unsupported_shell` = "unsupported_shell"
+    case `unavailable_shell` = "unavailable_shell"
+    case `probe_failed` = "probe_failed"
+    case `probe_timed_out` = "probe_timed_out"
+    case `output_too_large` = "output_too_large"
+    case `invalid_output` = "invalid_output"
+}
+
+public struct HarnessEnvironmentVariable: Codable, Sendable {
+    public var `key`: String
+    public var `value`: String
+    public init(`key`: String, `value`: String) {
+        self.`key` = `key`
+        self.`value` = `value`
     }
 }
 

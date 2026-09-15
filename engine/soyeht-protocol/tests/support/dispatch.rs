@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
+// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -452,6 +452,10 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "WritingBeatDeleteParams" => roundtrip::<WritingBeatDeleteParams>(value),
         "WritingBeatResult" => roundtrip::<WritingBeatResult>(value),
         "WritingChangedEvent" => roundtrip::<WritingChangedEvent>(value),
+        "HarnessSource" => roundtrip::<HarnessSource>(value),
+        "HarnessSetupState" => roundtrip::<HarnessSetupState>(value),
+        "HarnessEnvironmentIssue" => roundtrip::<HarnessEnvironmentIssue>(value),
+        "HarnessEnvironmentVariable" => roundtrip::<HarnessEnvironmentVariable>(value),
         _ => panic!("unknown schema: {name}"),
     }
 }

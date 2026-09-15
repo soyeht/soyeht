@@ -5,12 +5,15 @@ Build the workspace binaries with `cargo build --locked --workspace` from
 absolute `--data-dir` for disposable tests; do not replace a running profile's
 binaries to run a test.
 
-The engine reads `harnesses.json` from its data directory. Entries contain `id`,
-`name`, an executable `command`, `args`, and `version`. The command must resolve
-to an installed executable. The engine hashes that executable and combines its
-reported version and launch configuration when caching native capability probes.
-Authentication is handled by the native session; never put credentials in this
-file or a command-line argument.
+The engine ships a pinned, offline ACP catalogue and merges `harnesses.json`
+from its data directory as the custom extension layer. Custom entries contain
+`id`, `name`, an executable `command`, `args`, `version`, and optional bounded
+environment variables. They cannot use the built-in identifier namespace or
+replace `PATH`, `HOME`, `USER`, `LOGNAME`, or profile-owned variables. The
+command must resolve to an installed executable. The engine hashes that
+executable and combines its reported version and launch configuration when
+caching native capability probes. Authentication is handled by the native
+session; never put credentials in this file or a command-line argument.
 
 ```sh
 soyeht --profile dev harness list

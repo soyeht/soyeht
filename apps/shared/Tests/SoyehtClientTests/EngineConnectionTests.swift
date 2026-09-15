@@ -76,6 +76,7 @@
       Issue.record("Client connection: \(client.connectionText)")
       throw error
     }
+    try await checkEmbeddedHarnessCatalogue(client)
     var screen = Data()
     client.terminalOutput = { bytes, reset in
       if reset { screen.removeAll() }
@@ -121,6 +122,18 @@
     try await until { !client.panes.contains { $0.paneId == web.paneId } }
     client.closePane(paneId)
     try await until { client.panes.isEmpty }
+  }
+
+  @MainActor private func checkEmbeddedHarnessCatalogue(_ client: EngineClient) async throws {
+    client.refreshHarnesses(rescan: true)
+    try await until { client.harnesses.count == 41 }
+    let ids = Set(client.harnesses.map(\.id))
+    for id in [
+      "registry.claude-acp", "registry.codex-acp", "registry.cursor",
+      "registry.opencode", "registry.gemini",
+    ] {
+      #expect(ids.contains(id))
+    }
   }
 
   @MainActor private final class IntegrationWebHost: WebHostPort {
