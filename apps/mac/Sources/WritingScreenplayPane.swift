@@ -744,6 +744,8 @@ private struct ScreenplayViewport: NSViewRepresentable {
     _ kind: ScreenplayElementKind, range: NSRange, in text: NSMutableAttributedString
   ) {
     let paragraph = baseParagraph()
+    let line = text.attributedSubstring(from: range).string
+    let projection = ScreenplayInteraction.lineProjection(source: line, kind: kind)
     switch kind {
     case .scene_heading:
       paragraph.firstLineHeadIndent = 0
@@ -756,23 +758,35 @@ private struct ScreenplayViewport: NSViewRepresentable {
         text.addAttribute(.font, value: MacTheme.screenplayNSFont(16, bold: true), range: range)
       }
     case .character:
-      paragraph.firstLineHeadIndent = 250
-      paragraph.headIndent = 250
+      paragraph.alignment = .center
       text.addAttribute(.font, value: MacTheme.screenplayNSFont(16, bold: true), range: range)
     case .parenthetical:
-      paragraph.firstLineHeadIndent = 205
-      paragraph.headIndent = 205
-      paragraph.tailIndent = -150
+      paragraph.alignment = .center
       text.addAttribute(.foregroundColor, value: NSColor(MacTheme.secondary), range: range)
     case .dialogue:
-      paragraph.firstLineHeadIndent = 145
-      paragraph.headIndent = 145
-      paragraph.tailIndent = -110
+      paragraph.firstLineHeadIndent = 120
+      paragraph.headIndent = 120
+      paragraph.tailIndent = -120
     case .transition:
-      paragraph.alignment = .right
+      paragraph.alignment = projection.openingTransition ? .left : .right
       text.addAttribute(.foregroundColor, value: NSColor(MacTheme.secondary), range: range)
     }
     text.addAttribute(.paragraphStyle, value: paragraph, range: range)
+    hideMarkers(projection.hiddenRanges, lineRange: range, in: text)
+  }
+
+  private static func hideMarkers(
+    _ ranges: [NSRange], lineRange: NSRange, in text: NSMutableAttributedString
+  ) {
+    for marker in ranges {
+      let absolute = NSRange(location: lineRange.location + marker.location, length: marker.length)
+      guard NSMaxRange(absolute) <= NSMaxRange(lineRange) else { continue }
+      text.addAttributes(
+        [
+          .font: MacTheme.screenplayNSFont(0.1),
+          .foregroundColor: NSColor(MacTheme.face),
+        ], range: absolute)
+    }
   }
 
   private static func baseParagraph() -> NSMutableParagraphStyle {

@@ -84,6 +84,31 @@ import Testing
   #expect(variants.selectedIndex == 1)
 }
 
+@Test func screenplayProjectionHidesOnlySourceMarkersAndKeepsOpeningTransitionLeading() {
+  #expect(
+    ScreenplayInteraction.lineProjection(source: ".INT. ROOM - DAY", kind: .scene_heading)
+      == ScreenplayLineProjection(
+        hiddenRanges: [NSRange(location: 0, length: 1)], openingTransition: false))
+  #expect(
+    ScreenplayInteraction.lineProjection(source: "@ANA:", kind: .character)
+      == ScreenplayLineProjection(
+        hiddenRanges: [NSRange(location: 0, length: 1), NSRange(location: 4, length: 1)],
+        openingTransition: false))
+  #expect(
+    ScreenplayInteraction.lineProjection(source: ">FADE IN:", kind: .transition)
+      == ScreenplayLineProjection(
+        hiddenRanges: [NSRange(location: 0, length: 1)], openingTransition: true))
+  #expect(
+    ScreenplayInteraction.lineProjection(source: ">CUT TO:>", kind: .transition)
+      == ScreenplayLineProjection(
+        hiddenRanges: [NSRange(location: 0, length: 1), NSRange(location: 8, length: 1)],
+        openingTransition: false))
+  #expect(
+    ScreenplayInteraction.lineProjection(source: "[action] Bob sits.", kind: .action)
+      == ScreenplayLineProjection(
+        hiddenRanges: [NSRange(location: 0, length: 9)], openingTransition: false))
+}
+
 private func screenplayStructure() -> WritingStructureResult {
   let document = WritingDocument(
     file: FileDocument(

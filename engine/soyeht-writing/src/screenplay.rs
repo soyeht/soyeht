@@ -28,7 +28,12 @@ pub fn parse_screenplay(source: &str) -> Result<Screenplay> {
     for (line_index, raw) in lines.iter().enumerate() {
         let text = raw.trim();
         if text.is_empty() {
-            previous_kind = None;
+            if !matches!(
+                previous_kind,
+                Some(ScreenplayElementKind::Character | ScreenplayElementKind::Parenthetical)
+            ) {
+                previous_kind = None;
+            }
             continue;
         }
         let kind = classify(
@@ -116,9 +121,11 @@ fn classify(
         ScreenplayElementKind::SceneHeading
     } else if transition(text) {
         ScreenplayElementKind::Transition
+    } else if text.starts_with("[action]") {
+        ScreenplayElementKind::Action
     } else if text.starts_with('(') && text.ends_with(')') {
         ScreenplayElementKind::Parenthetical
-    } else if character(text, next) {
+    } else if colon_character(text, next) || character(text, next) {
         ScreenplayElementKind::Character
     } else if matches!(
         previous,
@@ -161,6 +168,24 @@ fn character(text: &str, next: Option<&str>) -> bool {
         && !scene_heading(clean)
 }
 
+fn colon_character(text: &str, next: Option<&str>) -> bool {
+    let Some(clean) = text.strip_suffix(':') else {
+        return false;
+    };
+    let clean = clean.trim_start_matches('@').trim();
+    let name = clean
+        .split_once(" (")
+        .map_or(clean, |(name, _)| name)
+        .trim();
+    next.is_some()
+        && !name.is_empty()
+        && name.len() <= 80
+        && name == name.to_ascii_uppercase()
+        && name
+            .chars()
+            .all(|value| value.is_alphanumeric() || " .'-".contains(value))
+}
+
 fn shot(text: &str) -> bool {
     text.len() <= 80 && text == text.to_ascii_uppercase() && text.ends_with(':')
 }
@@ -175,8 +200,11 @@ fn next_nonempty<'a>(lines: &'a [&str], start: usize) -> Option<&'a str> {
 fn display_text<'a>(text: &'a str, kind: &ScreenplayElementKind) -> &'a str {
     match kind {
         ScreenplayElementKind::SceneHeading => text.trim_start_matches('.'),
-        ScreenplayElementKind::Character => text.trim_start_matches('@'),
+        ScreenplayElementKind::Character => text.trim_start_matches('@').trim_end_matches(':'),
         ScreenplayElementKind::Transition => text.trim_matches('>'),
+        ScreenplayElementKind::Action => {
+            text.strip_prefix("[action]").map_or(text, str::trim_start)
+        }
         _ => text,
     }
 }
