@@ -4,11 +4,12 @@ use sha2::{Digest, Sha256};
 use soyeht_protocol::{HarnessEnvironmentVariable, HarnessLaunch, HarnessSource, limits};
 use std::{
     collections::BTreeSet,
-    fs::File,
-    io::Read,
-    os::unix::fs::PermissionsExt,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Component, Path, PathBuf},
 };
+use uuid::Uuid;
 
 const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
@@ -70,6 +71,21 @@ fn valid_custom_environment(environment: &[HarnessEnvironmentVariable]) -> bool 
         })
 }
 
+fn direct_custom_command(command: &str) -> bool {
+    let path = Path::new(command);
+    let direct = path.is_absolute() || path.components().count() == 1;
+    let blocked_wrapper = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            matches!(
+                name,
+                "env" | "sh" | "bash" | "dash" | "fish" | "ksh" | "zsh"
+            )
+        });
+    direct && !blocked_wrapper
+}
+
 fn valid_launch(entry: &HarnessLaunch) -> bool {
     !entry.id.is_empty()
         && entry.id.chars().count() <= 128
@@ -85,6 +101,16 @@ fn valid_launch(entry: &HarnessLaunch) -> bool {
             .iter()
             .all(|argument| argument.len() <= 4096 && !argument.contains('\0'))
         && entry.environment.as_deref().is_none_or(valid_environment)
+}
+
+fn valid_custom_launch(entry: &HarnessLaunch) -> bool {
+    !entry.id.starts_with(BUILTIN_PREFIX)
+        && valid_launch(entry)
+        && direct_custom_command(&entry.command)
+        && entry
+            .environment
+            .as_deref()
+            .is_none_or(valid_custom_environment)
 }
 
 fn pinned_package(value: &str) -> bool {
@@ -172,12 +198,24 @@ fn builtin_entries() -> Result<Vec<RegistryEntry>> {
 
 /// This file belongs to the local profile. Remote pane creation can select an
 /// entry by ID but cannot supply a command or change this launch configuration.
-fn custom_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
-    let file = match File::open(directory.join("harnesses.json")) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+fn custom_bytes(directory: &Path) -> Result<Option<Vec<u8>>> {
+    let path = directory.join("harnesses.json");
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(errors::io(error)),
     };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(errors::invalid("Harness registry must be a regular file"));
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(errors::io)?;
+    if !file.metadata().map_err(errors::io)?.is_file() {
+        return Err(errors::invalid("Harness registry must be a regular file"));
+    }
     let mut bytes = Vec::new();
     file.take(limits::JSON_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
@@ -185,22 +223,33 @@ fn custom_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
     if bytes.len() > limits::JSON_BYTES {
         return Err(errors::invalid("Harness registry exceeds 1 MiB"));
     }
+    Ok(Some(bytes))
+}
+
+fn parse_custom_entries(bytes: Option<&[u8]>) -> Result<Vec<HarnessLaunch>> {
+    let Some(bytes) = bytes else {
+        return Ok(Vec::new());
+    };
     let entries: Vec<HarnessLaunch> =
-        serde_json::from_slice(&bytes).map_err(|_| errors::invalid("Invalid harness registry"))?;
+        serde_json::from_slice(bytes).map_err(|_| errors::invalid("Invalid harness registry"))?;
     let mut seen = BTreeSet::new();
     if entries.len() > 64
-        || entries.iter().any(|entry| {
-            entry.id.starts_with(BUILTIN_PREFIX)
-                || !seen.insert(entry.id.clone())
-                || !valid_launch(entry)
-                || entry
-                    .environment
-                    .as_deref()
-                    .is_some_and(|items| !valid_custom_environment(items))
-        })
+        || entries
+            .iter()
+            .any(|entry| !seen.insert(entry.id.clone()) || !valid_custom_launch(entry))
     {
         return Err(errors::invalid("Invalid or duplicate harness launch entry"));
     }
+    Ok(entries)
+}
+
+pub(crate) fn custom_launches(directory: &Path) -> Result<Vec<HarnessLaunch>> {
+    let bytes = custom_bytes(directory)?;
+    parse_custom_entries(bytes.as_deref())
+}
+
+fn custom_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
+    let entries = custom_launches(directory)?;
     Ok(entries
         .into_iter()
         .map(|launch| RegistryEntry {
@@ -209,6 +258,104 @@ fn custom_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
             recipe_directories: Vec::new(),
         })
         .collect())
+}
+
+fn encoded_custom_entries(entries: &[HarnessLaunch]) -> Result<Vec<u8>> {
+    let mut bytes = serde_json::to_vec_pretty(entries)
+        .map_err(|_| errors::internal("Harness registry serialization failed"))?;
+    bytes.push(b'\n');
+    if bytes.len() > limits::JSON_BYTES {
+        return Err(errors::invalid("Harness registry exceeds 1 MiB"));
+    }
+    Ok(bytes)
+}
+
+fn registry_unchanged(directory: &Path, expected: Option<&[u8]>) -> Result<bool> {
+    Ok(custom_bytes(directory)?.as_deref() == expected)
+}
+
+fn write_custom_entries(
+    directory: &Path,
+    expected: Option<&[u8]>,
+    entries: &[HarnessLaunch],
+) -> Result<()> {
+    let bytes = encoded_custom_entries(entries)?;
+    let temporary = directory.join(format!(".soyeht-harnesses-{}.tmp", Uuid::new_v4()));
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)
+            .map_err(errors::io)?;
+        file.write_all(&bytes).map_err(errors::io)?;
+        file.sync_all().map_err(errors::io)?;
+        if !registry_unchanged(directory, expected)? {
+            return Err(errors::stale_version(
+                "Harness registry changed while it was being edited",
+            ));
+        }
+        fs::rename(&temporary, directory.join("harnesses.json")).map_err(errors::io)?;
+        File::open(directory)
+            .and_then(|parent| parent.sync_all())
+            .map_err(errors::io)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+pub(crate) fn create_custom(directory: &Path, launch: HarnessLaunch) -> Result<HarnessLaunch> {
+    if !valid_custom_launch(&launch) {
+        return Err(errors::invalid("Invalid custom harness launch entry"));
+    }
+    let prior = custom_bytes(directory)?;
+    let mut entries = parse_custom_entries(prior.as_deref())?;
+    if let Some(existing) = entries.iter().find(|entry| entry.id == launch.id) {
+        return if existing == &launch {
+            Ok(existing.clone())
+        } else {
+            Err(errors::idempotency_conflict(
+                "Custom harness identifier is already in use",
+            ))
+        };
+    }
+    entries.push(launch.clone());
+    write_custom_entries(directory, prior.as_deref(), &entries)?;
+    Ok(launch)
+}
+
+pub(crate) fn update_custom(directory: &Path, launch: HarnessLaunch) -> Result<HarnessLaunch> {
+    if !valid_custom_launch(&launch) {
+        return Err(errors::invalid("Invalid custom harness launch entry"));
+    }
+    let prior = custom_bytes(directory)?;
+    let mut entries = parse_custom_entries(prior.as_deref())?;
+    let existing = entries
+        .iter_mut()
+        .find(|entry| entry.id == launch.id)
+        .ok_or_else(|| errors::not_found("Custom harness not found"))?;
+    if existing == &launch {
+        return Ok(launch);
+    }
+    *existing = launch.clone();
+    write_custom_entries(directory, prior.as_deref(), &entries)?;
+    Ok(launch)
+}
+
+pub(crate) fn remove_custom(directory: &Path, id: &str) -> Result<()> {
+    if id.is_empty() || id.chars().count() > 128 || id.starts_with(BUILTIN_PREFIX) {
+        return Err(errors::invalid("Invalid custom harness identifier"));
+    }
+    let prior = custom_bytes(directory)?;
+    let mut entries = parse_custom_entries(prior.as_deref())?;
+    let count = entries.len();
+    entries.retain(|entry| entry.id != id);
+    if entries.len() == count {
+        return Ok(());
+    }
+    write_custom_entries(directory, prior.as_deref(), &entries)
 }
 
 pub(crate) fn catalogue_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
@@ -393,5 +540,73 @@ mod tests {
             resolve_executable("nested/agent", [first.0.clone(), second.0.clone()]),
             None
         );
+    }
+
+    #[test]
+    fn custom_registry_is_atomic_bounded_and_rejects_identity_wrappers() {
+        let fixture = Fixture::new();
+        let command = fixture.executable("custom-agent");
+        let launch = HarnessLaunch {
+            id: "custom-agent".into(),
+            name: "Custom agent".into(),
+            command: command.to_string_lossy().into_owned(),
+            args: vec!["acp".into()],
+            version: "1".into(),
+            environment: None,
+        };
+        assert_eq!(create_custom(&fixture.0, launch.clone()).unwrap(), launch);
+        assert_eq!(
+            custom_launches(&fixture.0).unwrap(),
+            std::slice::from_ref(&launch)
+        );
+        assert_eq!(
+            fs::metadata(fixture.0.join("harnesses.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert!(
+            create_custom(
+                &fixture.0,
+                HarnessLaunch {
+                    name: "Different".into(),
+                    ..launch.clone()
+                }
+            )
+            .is_err()
+        );
+        let updated = HarnessLaunch {
+            name: "Renamed".into(),
+            ..launch.clone()
+        };
+        assert_eq!(update_custom(&fixture.0, updated.clone()).unwrap(), updated);
+        remove_custom(&fixture.0, &launch.id).unwrap();
+        remove_custom(&fixture.0, &launch.id).unwrap();
+        assert!(custom_launches(&fixture.0).unwrap().is_empty());
+
+        for wrapper in ["/usr/bin/env", "/bin/sh", "/bin/zsh"] {
+            let invalid = HarnessLaunch {
+                id: "isolated".into(),
+                name: "Isolated".into(),
+                command: wrapper.into(),
+                args: vec!["HOME=/tmp/empty".into(), "agent".into()],
+                version: "1".into(),
+                environment: None,
+            };
+            assert!(create_custom(&fixture.0, invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn custom_registry_never_follows_a_symlink() {
+        let fixture = Fixture::new();
+        let outside = Fixture::new();
+        let target = outside.0.join("registry.json");
+        fs::write(&target, b"[]").unwrap();
+        std::os::unix::fs::symlink(&target, fixture.0.join("harnesses.json")).unwrap();
+        assert!(custom_launches(&fixture.0).is_err());
+        assert_eq!(fs::read(target).unwrap(), b"[]");
     }
 }

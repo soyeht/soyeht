@@ -1975,6 +1975,101 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
     assert!(registry["nextCursor"].is_null());
 }
 
+#[test]
+fn custom_harness_management_is_atomic_idempotent_and_protects_bound_panes() {
+    let mut rig = Rig::new();
+    let binary =
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    let mut client = rig.client();
+    let launch = json!({
+        "id":"custom-managed",
+        "name":"Managed agent",
+        "command":binary,
+        "args":["--state-dir",rig.path.join("managed-native")],
+        "version":"1"
+    });
+    let create = json!({"harness":launch,"idempotencyKey":"custom-create"});
+    let created = client.call("harness.custom.create", create.clone());
+    assert_eq!(created, client.call("harness.custom.create", create));
+    let conflicting = client.request(
+        "harness.custom.create",
+        json!({"harness":{
+            "id":"custom-conflict","name":"Conflicting agent","command":binary,
+            "args":["--state-dir",rig.path.join("conflicting-native")],"version":"1"
+        },"idempotencyKey":"custom-create"}),
+    );
+    assert_eq!(conflicting["error"]["data"]["kind"], "idempotency_conflict");
+    assert_eq!(
+        client.call("harness.custom.list", json!({}))["items"][0]["id"],
+        "custom-managed"
+    );
+    assert_eq!(
+        client.call("harness.custom.list", json!({}))["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Custom harness","path":rig.path,"idempotencyKey":"custom-workspace"}),
+    )["workspace"]["workspaceId"]
+        .clone();
+    let pane = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"custom-managed","idempotencyKey":"custom-pane"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let update = client.request(
+        "harness.custom.update",
+        json!({"harness":{
+            "id":"custom-managed","name":"Renamed agent","command":binary,
+            "args":["--state-dir",rig.path.join("managed-native")],"version":"1"
+        },"idempotencyKey":"custom-update-bound"}),
+    );
+    assert_eq!(update["error"]["data"]["kind"], "pane_busy");
+    let remove = client.request(
+        "harness.custom.remove",
+        json!({"harnessId":"custom-managed","idempotencyKey":"custom-remove-bound"}),
+    );
+    assert_eq!(remove["error"]["data"]["kind"], "pane_busy");
+
+    client.call(
+        "pane.close",
+        json!({"paneId":pane,"idempotencyKey":"close-custom-pane"}),
+    );
+    let updated = client.call(
+        "harness.custom.update",
+        json!({"harness":{
+            "id":"custom-managed","name":"Renamed agent","command":binary,
+            "args":["--state-dir",rig.path.join("managed-native")],"version":"1"
+        },"idempotencyKey":"custom-update"}),
+    );
+    assert_eq!(updated["harness"]["name"], "Renamed agent");
+    let removed = client.call(
+        "harness.custom.remove",
+        json!({"harnessId":"custom-managed","idempotencyKey":"custom-remove"}),
+    );
+    assert_eq!(removed["removed"], true);
+    assert!(
+        client.call("harness.custom.list", json!({}))["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    rig.kill_engine();
+    rig.start();
+    assert!(
+        rig.client().call("harness.custom.list", json!({}))["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
 fn start_agent_case(rig: &Rig) -> (Client, String, Value) {
     let binary =
         PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");

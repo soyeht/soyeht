@@ -2,6 +2,7 @@ pub mod attachments;
 pub mod authentication;
 pub mod catalog;
 pub mod configuration;
+pub mod custom;
 pub mod delivery;
 pub mod driver;
 pub mod effects;
