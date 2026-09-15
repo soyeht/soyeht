@@ -44,3 +44,33 @@ func appBarVisibilityPersistsWithoutPersistingTheSelectedView() {
   #expect(restored.appBarOpen)
   #expect(restored.destination == .agents)
 }
+
+@Test func threePaneWritingCompositionPromotesTheSelectedSurfaceAndItsAgent() {
+  let terminal = pane("terminal", mode: .terminal)
+  let agent = pane("agent", mode: .agent)
+  let text = pane("text", mode: .writing, kind: .text, section: .texts)
+  let screenplay = pane(
+    "screenplay", mode: .writing, kind: .screenplay, section: .screenplays)
+
+  let selectedWriting = PanePresentationOrder.arrange(
+    [terminal, agent, text, screenplay], selectedPaneId: screenplay.paneId)
+  #expect(selectedWriting.map(\.paneId) == ["screenplay", "agent", "terminal", "text"])
+
+  let selectedAgent = PanePresentationOrder.arrange(
+    [terminal, text, agent], selectedPaneId: agent.paneId)
+  #expect(selectedAgent.map(\.paneId) == ["text", "agent", "terminal"])
+
+  let selectedTerminal = PanePresentationOrder.arrange(
+    [terminal, agent, text], selectedPaneId: terminal.paneId)
+  #expect(selectedTerminal.map(\.paneId) == ["terminal", "agent", "text"])
+}
+
+private func pane(
+  _ paneId: String, mode: PaneMode, kind: WritingKind? = nil,
+  section: WritingSection? = nil
+) -> Pane {
+  Pane(
+    paneId: paneId, workspaceId: "workspace-1", name: paneId, cwd: "/workspace", mode: mode,
+    state: .idle, source: .protocol, confidence: 1, phrase: "Ready", generation: 1, cols: 80,
+    rows: 24, record: mode == .agent, writingKind: kind, writingSection: section)
+}

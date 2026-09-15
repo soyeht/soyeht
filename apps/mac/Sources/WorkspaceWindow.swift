@@ -28,7 +28,7 @@ struct WorkspaceWindow: View {
         if navigation.appBarOpen {
           AppRail(
             client: client,
-            destination: navigation.destination,
+            destination: railDestination,
             onSelect: selectDestination,
             onSettings: {
               selectedUsageProvider = nil
@@ -223,6 +223,12 @@ struct WorkspaceWindow: View {
   private var selectedTaskWorkspaceId: String? {
     taskWorkspaceId ?? client.selectedPane?.workspaceId ?? client.workspaces.first?.workspaceId
   }
+  private var railDestination: WorkspaceDestination {
+    guard navigation.destination == .agents, client.selectedPane?.mode == .writing,
+      let section = client.selectedPane?.writingSection
+    else { return navigation.destination }
+    return section.destination
+  }
   private func openPane(_ paneId: String) {
     client.select(paneId)
     navigation.select(.agents)
@@ -401,7 +407,10 @@ private struct WorkspaceTopBar: View {
           }
         }.padding(.horizontal, 5).padding(.vertical, 5)
       }
-      .scrollClipDisabled()
+      .clipped()
+      .overlay(alignment: .trailing) {
+        MacTheme.canvas.frame(width: MacTheme.Space.x18).allowsHitTesting(false)
+      }
 
       Button(action: onNewPane) {
         Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
@@ -542,29 +551,47 @@ private struct PaneStrip: View {
   let onTasks: () -> Void
   let tint: (Int) -> Color
 
+  private var ordered: [Pane] {
+    PanePresentationOrder.arrange(panes, selectedPaneId: client.selectedPaneId)
+  }
+
   var body: some View {
     GeometryReader { geometry in
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: MacTheme.Space.x18) {
-          ForEach(Array(panes.enumerated()), id: \.element.paneId) { index, pane in
+          ForEach(Array(ordered.enumerated()), id: \.element.paneId) { index, pane in
             PaneCard(
               client: client, webHost: webHost, pane: pane, tint: tint(index), onClose: onClose,
               onTasks: onTasks
             )
-            .frame(width: paneWidth(geometry.size.width))
+            .frame(width: paneWidth(pane, at: index, total: geometry.size.width))
             .frame(height: geometry.size.height)
           }
         }
         .frame(minWidth: geometry.size.width, alignment: .leading)
         .frame(height: geometry.size.height, alignment: .top)
       }
-      .scrollClipDisabled()
+      .clipped()
     }
   }
 
-  private func paneWidth(_ total: CGFloat) -> CGFloat {
-    let gaps = CGFloat(max(0, panes.count - 1)) * MacTheme.Space.x18
-    return max(360, (total - gaps) / CGFloat(max(1, panes.count)))
+  private func paneWidth(_ pane: Pane, at index: Int, total: CGFloat) -> CGFloat {
+    let pair = Array(ordered.prefix(2))
+    let available = max(0, total - MacTheme.Space.x18)
+    if index < 2, pair.contains(where: { $0.mode == .writing }),
+      pair.contains(where: { $0.mode == .agent })
+    {
+      return pane.mode == .writing ? available * 0.67 : available * 0.33
+    }
+    if index < 2, pair.contains(where: { $0.mode == .editor }),
+      pair.contains(where: { $0.mode == .agent })
+    {
+      return pane.mode == .editor ? available * 0.7 : available * 0.3
+    }
+    if index < 2, Set(pair.map(\.mode)) == Set([.web, .agent]) {
+      return pane.mode == .web ? available * 0.67 : available * 0.33
+    }
+    return pane.mode == .writing ? max(860, total * 0.67) : max(420, total * 0.42)
   }
 }
 

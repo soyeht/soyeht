@@ -53,7 +53,7 @@ struct AppRail: View {
       AppRailItem(destination: .tasks, icon: "checklist", label: "Tasks"),
       AppRailItem(destination: .terminal, icon: "terminal", label: "Terminal"),
       AppRailItem(destination: .phone, icon: "iphone", label: "iPhone"),
-      AppRailItem(destination: .texts, icon: "text.page", label: "Texts"),
+      AppRailItem(destination: .texts, icon: "feather", label: "Texts"),
       AppRailItem(
         destination: .presentations, icon: "rectangle.on.rectangle", label: "Presentations"),
       AppRailItem(destination: .screenplays, icon: "movieclapper", label: "Screenplays"),
