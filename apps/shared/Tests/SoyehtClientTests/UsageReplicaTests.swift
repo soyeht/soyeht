@@ -17,6 +17,22 @@ private func reading(
     source: .claude_cli_usage, fetchedAt: fetchedAt)
 }
 
+@MainActor
+private final class UsageRefreshProbe {
+  private(set) var calls = 0
+  let result: UsageRefreshResult
+
+  init(result: UsageRefreshResult) {
+    self.result = result
+  }
+
+  func run(_ provider: UsageProvider?) async throws -> UsageRefreshResult {
+    calls += 1
+    try await Task.sleep(for: .milliseconds(25))
+    return result
+  }
+}
+
 @Test func usagePresentationClosesThresholdsAndStaleDisplay() {
   #expect(UsagePresentation(reading(used: 0.49)).band == .success)
   #expect(UsagePresentation(reading(used: 0.50)).band == .warning)
@@ -70,4 +86,33 @@ private func reading(
 
   #expect(client.usageReadings.map(\.provider) == [.claude, .codex, .cursor])
   #expect(client.usageReadings[1].primary?.used == 0.7)
+}
+
+@MainActor @Test func usageRefreshCoalescesConcurrentCallsAndHonorsTheWireInterval() async throws {
+  let fetchedAt = "2026-09-15T12:00:00Z"
+  let refreshed = reading(.claude, used: 0.6, fetchedAt: fetchedAt)
+  let probe = UsageRefreshProbe(result: UsageRefreshResult(providers: [refreshed]))
+  let client = EngineClient(socket: "/tmp/sn-usage-refresh/engine.sock")
+  let now = try #require(UsageTimestamp.date(from: fetchedAt))
+
+  async let first: Void = client.refreshUsage(.claude, now: now) { provider in
+    try await probe.run(provider)
+  }
+  async let second: Void = client.refreshUsage(.claude, now: now) { provider in
+    try await probe.run(provider)
+  }
+  _ = try await (first, second)
+
+  #expect(probe.calls == 1)
+  #expect(client.usageReadings.first?.primary?.used == 0.6)
+
+  try await client.refreshUsage(.claude, now: now.addingTimeInterval(29)) { provider in
+    try await probe.run(provider)
+  }
+  #expect(probe.calls == 1)
+
+  try await client.refreshUsage(.claude, now: now.addingTimeInterval(30)) { provider in
+    try await probe.run(provider)
+  }
+  #expect(probe.calls == 2)
 }
