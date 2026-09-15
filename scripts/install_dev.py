@@ -3,6 +3,7 @@
 import argparse
 import os
 import plistlib
+import re
 import shutil
 import socket
 import subprocess
@@ -12,6 +13,7 @@ from pathlib import Path
 from generated_profile import (
     DEV_DATA_DIRECTORY_FROM_HOME,
     DEV_LAUNCHD_LABELS,
+    DEV_LAUNCHD_PREFIX,
     DEV_SOCKET_NAMES,
 )
 
@@ -26,6 +28,14 @@ SYSTEM_PATHS = (
     "/bin",
     "/usr/sbin",
     "/sbin",
+)
+BINARY_IDENTIFIERS = {
+    **DEV_LAUNCHD_LABELS,
+    "mcp": f"{DEV_LAUNCHD_PREFIX}.mcp",
+    "cli": f"{DEV_LAUNCHD_PREFIX}.cli",
+}
+IDENTITY_PATTERN = re.compile(
+    r'^\s*\d+\)\s+([0-9A-F]{40})\s+"(Apple Development:[^"]+\([A-Z0-9]{10}\))"$'
 )
 
 
@@ -43,7 +53,65 @@ def service_environment():
     }
 
 
-def install_components(components, domain="gui"):
+def signing_identities(output):
+    return [match.groups() for line in output.splitlines()
+            if (match := IDENTITY_PATTERN.match(line))]
+
+
+def development_signing_identity(requested=None):
+    result = subprocess.run(
+        ["security", "find-identity", "-v", "-p", "codesigning"],
+        check=True, capture_output=True, text=True, timeout=5,
+    )
+    identities = signing_identities(result.stdout)
+    requested = requested or os.environ.get("SOYEHT_DEVELOPMENT_SIGNING_IDENTITY")
+    if requested:
+        matches = [item for item in identities if requested in item[:2]]
+        if len(matches) != 1:
+            raise SystemExit("The requested Apple Development signing identity is unavailable or ambiguous")
+        return matches[0]
+    if len(identities) != 1:
+        raise SystemExit(
+            "Set SOYEHT_DEVELOPMENT_SIGNING_IDENTITY to one available Apple Development identity"
+        )
+    return identities[0]
+
+
+def copy_signed_binary(source, temporary, identifier, identity):
+    if temporary.is_symlink():
+        raise SystemExit("Dev temporary binary must not be a symlink")
+    shutil.copy2(source, temporary)
+    temporary.chmod(0o700)
+    digest, name = identity
+    subprocess.run(
+        ["codesign", "--force", "--sign", digest, "--identifier", identifier,
+         "--timestamp=none", str(temporary)],
+        check=True, capture_output=True, timeout=30,
+    )
+    subprocess.run(
+        ["codesign", "--verify", "--strict", "--verbose=2", str(temporary)],
+        check=True, capture_output=True, timeout=10,
+    )
+    details = subprocess.run(
+        ["codesign", "-dvvv", str(temporary)], capture_output=True, text=True,
+        timeout=10,
+    )
+    requirement = subprocess.run(
+        ["codesign", "-d", "-r-", str(temporary)], capture_output=True, text=True,
+        timeout=10,
+    )
+    expected = (f"Identifier={identifier}", f"Authority={name}")
+    team = re.search(r"^TeamIdentifier=([A-Z0-9]{10})$", details.stderr, re.MULTILINE)
+    stable = (
+        f'identifier "{identifier}"' in requirement.stdout
+        and "anchor apple generic" in requirement.stdout
+    )
+    if details.returncode or requirement.returncode or not all(part in details.stderr for part in expected) or not team or not stable:
+        temporary.unlink(missing_ok=True)
+        raise SystemExit("Dev binary did not retain its stable signing identity")
+
+
+def install_components(components, domain="gui", signing_identity=None):
     if not set(components).issubset(COMPONENTS) or domain not in ("gui", "user"):
         raise ValueError("Unsupported Dev service")
     if DATA.resolve() != DATA.absolute():
@@ -62,6 +130,7 @@ def install_components(components, domain="gui"):
     for component in support:
         if not (ROOT / f"engine/target/debug/soyeht-{component}").is_file():
             raise SystemExit(f"Build soyeht-{component} first")
+    identity = development_signing_identity(signing_identity)
     DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
     DATA.chmod(0o700)
     for folder in (DATA / "bin", DATA / "logs"):
@@ -72,10 +141,10 @@ def install_components(components, domain="gui"):
     for component in support:
         installed = DATA / f"bin/soyeht-{component}"
         temporary = installed.with_suffix(".new")
-        if temporary.is_symlink():
-            raise SystemExit("Dev temporary binary must not be a symlink")
-        shutil.copy2(ROOT / f"engine/target/debug/soyeht-{component}", temporary)
-        temporary.chmod(0o700)
+        copy_signed_binary(
+            ROOT / f"engine/target/debug/soyeht-{component}", temporary,
+            BINARY_IDENTIFIERS[component], identity,
+        )
         temporary.replace(installed)
     agents = Path.home() / "Library/LaunchAgents"
     agents.mkdir(parents=True, exist_ok=True)
@@ -83,10 +152,10 @@ def install_components(components, domain="gui"):
         label = DEV_LAUNCHD_LABELS[component]
         installed = DATA / f"bin/soyeht-{component}"
         temporary = installed.with_suffix(".new")
-        if temporary.is_symlink():
-            raise SystemExit("Dev temporary binary must not be a symlink")
-        shutil.copy2(ROOT / f"engine/target/debug/soyeht-{component}", temporary)
-        temporary.chmod(0o700)
+        copy_signed_binary(
+            ROOT / f"engine/target/debug/soyeht-{component}", temporary,
+            BINARY_IDENTIFIERS[component], identity,
+        )
         temporary.replace(installed)
         values = plistlib.loads(
             (ROOT / f"engine/soyeht-{component}/launchd/dev.plist").read_bytes()
@@ -124,10 +193,7 @@ def install_components(components, domain="gui"):
     cli = ROOT / "engine/target/debug/soyeht"
     if cli.is_file():
         temporary = DATA / "bin/soyeht.new"
-        if temporary.is_symlink():
-            raise SystemExit("Dev temporary CLI must not be a symlink")
-        shutil.copy2(cli, temporary)
-        temporary.chmod(0o700)
+        copy_signed_binary(cli, temporary, BINARY_IDENTIFIERS["cli"], identity)
         temporary.replace(DATA / "bin/soyeht")
 
 
@@ -135,8 +201,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--component", choices=COMPONENTS, action="append")
     parser.add_argument("--domain", choices=("gui", "user"), default="gui")
+    parser.add_argument("--signing-identity")
     args = parser.parse_args()
-    install_components(args.component or COMPONENTS, args.domain)
+    install_components(args.component or COMPONENTS, args.domain, args.signing_identity)
 
 
 if __name__ == "__main__":
