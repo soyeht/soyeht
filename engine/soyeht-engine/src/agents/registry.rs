@@ -67,7 +67,7 @@ fn resolve_executable(
 }
 
 pub fn executable(command: &str) -> Option<PathBuf> {
-    resolve_executable(command, super::environment::candidate_directories())
+    resolve_executable(command, super::environment::candidate_directories(&[]))
 }
 
 pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
@@ -127,9 +127,10 @@ mod tests {
     fn executable_resolution_uses_order_and_rejects_relative_paths() {
         let first = Fixture::new();
         let second = Fixture::new();
-        let expected = second.executable("late-agent").canonicalize().unwrap();
+        let expected = first.executable("ordered-agent").canonicalize().unwrap();
+        let _later = second.executable("ordered-agent");
         assert_eq!(
-            resolve_executable("late-agent", [first.0.clone(), second.0.clone()]),
+            resolve_executable("ordered-agent", [first.0.clone(), second.0.clone()]),
             Some(expected)
         );
         assert_eq!(
