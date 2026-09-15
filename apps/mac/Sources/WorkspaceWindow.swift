@@ -708,6 +708,7 @@ private struct PaneCard: View {
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   @State private var showingAutomation = false
+  @State private var showingHarnessSwitch = false
 
   var body: some View {
     Group {
@@ -754,6 +755,21 @@ private struct PaneCard: View {
         Text(pane.state.rawValue.replacingOccurrences(of: "_", with: " "))
           .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
           .foregroundStyle(MacTheme.secondary)
+      }
+      if pane.mode == .agent {
+        Button {
+          showingHarnessSwitch = true
+        } label: {
+          Image(systemName: "arrow.triangle.2.circlepath")
+        }
+        .help("Switch agent")
+        .accessibilityLabel("Switch agent")
+        .accessibilityIdentifier("switch-agent-\(pane.paneId)")
+        .disabled(!client.connected || pane.agent?.operation != nil || harnessSwitching)
+        .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
+          AgentHarnessSwitchPicker(
+            client: client, pane: pane, isPresented: $showingHarnessSwitch)
+        }
       }
       if pane.mode == .agent { PaneAutomationButton(showing: $showingAutomation) }
       Button(action: onTasks) { Image(systemName: "line.3.horizontal.decrease") }
@@ -853,6 +869,10 @@ private struct PaneCard: View {
       return nil
     }
     return ([agent.harness] + values).joined(separator: " · ")
+  }
+
+  private var harnessSwitching: Bool {
+    client.agentPanes[pane.paneId]?.harnessSwitch?.phase == .switching
   }
 }
 
@@ -1058,7 +1078,7 @@ private struct NewPaneSheet: View {
   private var agentPicker: some View {
     AgentHarnessPicker(
       client: client, harness: $harness, model: $model, effort: $effort,
-      catalogue: catalogue, effortOption: effortOption)
+      catalogue: catalogue, effortOption: effortOption, excludingHarness: nil)
   }
 
   private var selectedAgentLabel: String {
@@ -1127,10 +1147,12 @@ private struct AgentHarnessPicker: View {
   @Binding var effort: String
   let catalogue: AgentCatalogue?
   let effortOption: ConfigOption?
+  let excludingHarness: String?
   @State private var query = ""
 
   private var sections: [HarnessPickerSection] {
-    HarnessPickerModel.sections(client.harnesses, query: query)
+    HarnessPickerModel.sections(
+      client.harnesses.filter { $0.id != excludingHarness }, query: query)
   }
 
   private var selected: HarnessInfo? { client.harnesses.first { $0.id == harness } }
@@ -1265,6 +1287,99 @@ private struct AgentHarnessPicker: View {
     case .ready: MacTheme.success
     case .sign_in, .check_setup: MacTheme.warning
     case .not_installed: MacTheme.muted
+    }
+  }
+}
+
+private struct AgentHarnessSwitchPicker: View {
+  @Bindable var client: EngineClient
+  let pane: Pane
+  @Binding var isPresented: Bool
+  @State private var harness = ""
+  @State private var model = ""
+  @State private var effort = ""
+  @State private var submitting = false
+
+  private var currentHarness: String { pane.agent?.harness ?? "" }
+  private var selectedHarness: HarnessInfo? { client.harnesses.first { $0.id == harness } }
+  private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
+  private var effortOption: ConfigOption? {
+    catalogue?.options.first { $0.category == "thought_level" || $0.id == "effort" }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+        Text("Switch agent")
+          .font(MacTheme.chrome(MacTheme.TypeScale.body, weight: .bold))
+        Text(
+          "This starts a new agent session. Recent messages and pending prompts are handed "
+            + "over as historical data."
+        )
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.muted)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+      .padding(.horizontal, MacTheme.Space.x14)
+      .padding(.top, MacTheme.Space.x14)
+      AgentHarnessPicker(
+        client: client, harness: $harness, model: $model, effort: $effort,
+        catalogue: catalogue, effortOption: effortOption, excludingHarness: currentHarness)
+      Button(action: switchHarness) {
+        Text(actionLabel)
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          .frame(maxWidth: .infinity)
+      }
+      .buttonStyle(NeoPillButtonStyle(accent: true))
+      .disabled(selectedHarness?.available != true || submitting)
+      .padding(.horizontal, MacTheme.Space.x14)
+      .padding(.bottom, MacTheme.Space.x14)
+    }
+    .frame(width: 448)
+    .background(MacTheme.face)
+    .onAppear {
+      client.refreshHarnesses(rescan: false)
+      selectFirstHarness()
+    }
+    .onChange(
+      of: client.harnesses.map {
+        "\($0.id):\($0.available):\(HarnessPickerModel.statusLabel(for: $0))"
+      }
+    ) { _, _ in selectFirstHarness() }
+    .onChange(of: harness) { _, value in
+      model = ""
+      effort = ""
+      if selectedHarness?.available == true { client.refreshCatalogue(harness: value) }
+    }
+  }
+
+  private var actionLabel: String {
+    guard let selectedHarness else { return "Choose another agent" }
+    return "Restart conversation with \(selectedHarness.name)"
+  }
+
+  private func selectFirstHarness() {
+    guard selectedHarness?.available != true,
+      let first = HarnessPickerModel.defaultHarness(
+        in: client.harnesses, excluding: currentHarness)
+    else { return }
+    harness = first.id
+  }
+
+  private func switchHarness() {
+    guard selectedHarness?.available == true, !submitting else { return }
+    submitting = true
+    Task { @MainActor in
+      do {
+        _ = try await client.switchAgentHarness(
+          pane.paneId, harness: harness, model: model.isEmpty ? nil : model,
+          effort: effort.isEmpty ? nil : effort)
+        submitting = false
+        isPresented = false
+      } catch {
+        submitting = false
+        client.problem = error.localizedDescription
+      }
     }
   }
 }
