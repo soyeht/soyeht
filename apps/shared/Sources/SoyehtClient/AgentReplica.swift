@@ -373,24 +373,26 @@ extension EngineClient {
     directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode
   ) {
     perform {
-      let path = directory.standardizedFileURL.path
-      var workspaceId = self.workspaces.first { $0.path == path }?.workspaceId
-      if workspaceId == nil {
-        let result = try await self.mutation(
-          "workspace.create",
-          WorkspaceCreateParams(
-            name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
-        workspaceId = try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
-      }
-      guard let workspaceId else { throw ClientFailure.invalidFrame }
-      let result = try await self.mutation(
-        "pane.create",
-        PaneCreateParams(
-          workspaceId: workspaceId, mode: .agent, cwd: path, name: "Agent",
-          idempotencyKey: UUID().uuidString, harness: harness, model: model,
-          effort: effort, permission: permission))
-      self.select(try result.decoded(PaneCreateResult.self).paneId)
+      _ = try await self.createAgentPaneNow(
+        directory: directory, harness: harness, model: model, effort: effort,
+        permission: permission)
     }
+  }
+
+  public func createAgentPaneNow(
+    directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode
+  ) async throws -> String {
+    let path = directory.standardizedFileURL.path
+    let workspaceId = try await workspaceId(for: directory, path: path)
+    let result = try await mutation(
+      "pane.create",
+      PaneCreateParams(
+        workspaceId: workspaceId, mode: .agent, cwd: path, name: "Agent",
+        idempotencyKey: UUID().uuidString, harness: harness, model: model,
+        effort: effort, permission: permission))
+    let paneId = try result.decoded(PaneCreateResult.self).paneId
+    select(paneId)
+    return paneId
   }
 
   public func sendPrompt(_ paneId: String, text: String) {

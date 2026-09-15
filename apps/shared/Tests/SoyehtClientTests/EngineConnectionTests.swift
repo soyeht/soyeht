@@ -81,9 +81,9 @@
       if reset { screen.removeAll() }
       screen.append(bytes)
     }
-    client.createPane(directory: directory)
+    let paneId = try await client.createTerminalPane(directory: directory)
     try await until { client.selectedPane?.pid != nil }
-    let paneId = try #require(client.selectedPane?.paneId)
+    #expect(client.selectedPane?.paneId == paneId)
     let pid = try #require(client.selectedPane?.pid)
     try await until { String(decoding: screen, as: UTF8.self).contains("SWIFT_READY>") }
     client.input(Data("printf 'SWIFT_CLIENT_%s\\n' READY\r".utf8))
@@ -102,6 +102,13 @@
     try await until { client.connected && client.selectedPane?.pid == pid }
     try await exerciseEditor(client, directory: directory)
     let workspaceId = try #require(client.panes.first?.workspaceId)
+    let task = try await client.createTask(
+      workspaceId: workspaceId, title: "Native submit", description: "Reach the engine",
+      howToVerify: nil, mustNotChange: "Keep the request typed", executor: nil,
+      priority: .medium, createWorktree: false, permission: .ask, dependencies: [],
+      dispatch: false)
+    #expect(task.task.title == "Native submit")
+    #expect(client.tasks.contains { $0.taskId == task.task.taskId })
     try await exerciseWritingRevision(client, workspaceId: workspaceId)
     let web = try await client.openWeb(workspaceId: workspaceId, url: "localhost:4173")
     let navigation = try await client.navigateWeb(paneId: web.paneId, action: .reload)

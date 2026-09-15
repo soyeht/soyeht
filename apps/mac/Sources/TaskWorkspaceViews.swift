@@ -930,6 +930,7 @@ private struct NewTaskSheet: View {
   @State private var effort = ""
   @State private var dependencies: Set<String> = []
   @State private var showHowToVerify = false
+  @State private var submitting = false
 
   private var valid: Bool {
     !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1102,14 +1103,14 @@ private struct NewTaskSheet: View {
         .foregroundStyle(MacTheme.muted)
       Spacer()
       Button("Create in list") { create(dispatch: false) }
-        .buttonStyle(NeoPillButtonStyle(elevation: .action)).disabled(!valid)
+        .buttonStyle(NeoPillButtonStyle(elevation: .action)).disabled(!valid || submitting)
         .keyboardShortcut(.return, modifiers: [.command])
       Button {
         create(dispatch: true)
       } label: {
         Label("Create and dispatch", systemImage: "paperplane")
       }
-      .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!valid)
+      .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!valid || submitting)
       .keyboardShortcut(.return, modifiers: [.command, .shift])
     }.padding(.top, MacTheme.Space.x6)
   }
@@ -1123,16 +1124,25 @@ private struct NewTaskSheet: View {
   }
 
   private func create(dispatch: Bool) {
+    guard valid, !submitting else { return }
+    submitting = true
     let executor = TaskExecutor(
       workspaceDefault: workspaceDefault,
       harness: workspaceDefault ? nil : harness,
       model: model.nilIfEmpty, effort: effort.nilIfEmpty, permission: permission)
-    client.createTask(
-      workspaceId: workspaceId, title: title, description: description,
-      howToVerify: howToVerify.nilIfEmpty, mustNotChange: mustNotChange,
-      executor: executor, priority: priority, createWorktree: createWorktree,
-      permission: permission, dependencies: dependencies.sorted(), dispatch: dispatch)
-    isPresented = false
+    Task { @MainActor in
+      do {
+        _ = try await client.createTask(
+          workspaceId: workspaceId, title: title, description: description,
+          howToVerify: howToVerify.nilIfEmpty, mustNotChange: mustNotChange,
+          executor: executor, priority: priority, createWorktree: createWorktree,
+          permission: permission, dependencies: dependencies.sorted(), dispatch: dispatch)
+        isPresented = false
+      } catch {
+        submitting = false
+        client.problem = error.localizedDescription
+      }
+    }
   }
 }
 
