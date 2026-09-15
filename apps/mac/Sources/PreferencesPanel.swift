@@ -312,6 +312,9 @@ private struct EditorInputPreferencesPanel: View {
 
 private struct PreferencesHarnesses: View {
   @Bindable var client: EngineClient
+  @State private var showingEditor = false
+  @State private var editingHarness: HarnessLaunch?
+  @State private var pendingRemoval: HarnessLaunch?
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
@@ -333,7 +336,9 @@ private struct PreferencesHarnesses: View {
           ForEach(client.harnesses, id: \.id) { harness in
             HarnessPreferenceRow(
               harness: harness, catalogue: client.agentCatalogues[harness.id],
-              isDefault: harness.id == client.harnesses.first(where: \.available)?.id)
+              isDefault: harness.id == client.harnesses.first(where: \.available)?.id,
+              customLaunch: client.customHarnesses.first { $0.id == harness.id },
+              edit: edit, remove: { pendingRemoval = $0 })
           }
           if client.harnesses.isEmpty {
             EmptyHarnessRow(connected: client.connected)
@@ -353,12 +358,35 @@ private struct PreferencesHarnesses: View {
     .padding(.horizontal, 22)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    .onAppear { client.refreshCustomHarnesses() }
+    .sheet(isPresented: $showingEditor) {
+      CustomHarnessEditor(
+        client: client, original: editingHarness, isPresented: $showingEditor)
+    }
+    .confirmationDialog(
+      "Remove \(pendingRemoval?.name ?? "custom harness")?",
+      isPresented: Binding(
+        get: { pendingRemoval != nil },
+        set: { if !$0 { pendingRemoval = nil } })
+    ) {
+      Button("Remove", role: .destructive) { removePendingHarness() }
+      Button("Cancel", role: .cancel) { pendingRemoval = nil }
+    } message: {
+      Text("Open panes using this harness must be closed first.")
+    }
   }
 
   private var header: some View {
     HStack(spacing: MacTheme.Space.x10) {
       Text("Harnesses").font(MacTheme.chrome(18, weight: .bold))
       Spacer()
+      Button {
+        editingHarness = nil
+        showingEditor = true
+      } label: {
+        Label("Add custom", systemImage: "plus")
+      }
+      .buttonStyle(NeoPillButtonStyle())
       Button {
         client.refreshHarnesses(rescan: true)
       } label: {
@@ -380,12 +408,30 @@ private struct PreferencesHarnesses: View {
     case .invalid_output: return "The login shell returned an invalid environment."
     }
   }
+
+  private func edit(_ harness: HarnessLaunch) {
+    editingHarness = harness
+    showingEditor = true
+  }
+
+  private func removePendingHarness() {
+    guard let harness = pendingRemoval else { return }
+    pendingRemoval = nil
+    Task {
+      do { try await client.removeCustomHarness(harness.id) } catch {
+        client.problem = error.localizedDescription
+      }
+    }
+  }
 }
 
 private struct HarnessPreferenceRow: View {
   let harness: HarnessInfo
   let catalogue: AgentCatalogue?
   let isDefault: Bool
+  let customLaunch: HarnessLaunch?
+  let edit: (HarnessLaunch) -> Void
+  let remove: (HarnessLaunch) -> Void
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -397,10 +443,18 @@ private struct HarnessPreferenceRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       status
-      Image(systemName: "ellipsis")
-        .font(.system(size: 14, weight: .semibold))
-        .foregroundStyle(MacTheme.muted)
-        .accessibilityHidden(true)
+      if let customLaunch {
+        Menu {
+          Button("Edit") { edit(customLaunch) }
+          Button("Remove", role: .destructive) { remove(customLaunch) }
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(MacTheme.muted)
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Manage \(harness.name)")
+      }
     }
     .padding(.horizontal, MacTheme.Space.x16)
     .frame(height: 58)
@@ -488,6 +542,150 @@ private struct HarnessPreferenceRow: View {
   private var statusColor: Color {
     if !harness.available { return MacTheme.muted }
     return statusLabel == "ready" ? MacTheme.success : MacTheme.warning
+  }
+}
+
+private struct CustomHarnessEditor: View {
+  @Bindable var client: EngineClient
+  let original: HarnessLaunch?
+  @Binding var isPresented: Bool
+  @State private var name: String
+  @State private var command: String
+  @State private var arguments: String
+  @State private var version: String
+  @State private var environment: String
+  @State private var submitting = false
+  @State private var failure: String?
+
+  init(client: EngineClient, original: HarnessLaunch?, isPresented: Binding<Bool>) {
+    self.client = client
+    self.original = original
+    _isPresented = isPresented
+    _name = State(initialValue: original?.name ?? "")
+    _command = State(initialValue: original?.command ?? "")
+    _arguments = State(initialValue: original?.args.joined(separator: "\n") ?? "")
+    _version = State(initialValue: original?.version ?? "custom")
+    _environment = State(
+      initialValue: original?.environment?.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
+        ?? "")
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x14) {
+      HStack {
+        VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+          Text(original == nil ? "Add custom harness" : "Edit custom harness")
+            .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+          Text("Use an installed ACP-compatible command. No install command is ever run.")
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+            .foregroundStyle(MacTheme.secondary)
+        }
+        Spacer()
+        Button("Cancel") { isPresented = false }.buttonStyle(NeoPillButtonStyle())
+      }
+      field("DISPLAY NAME · REQUIRED", text: $name, prompt: "My agent")
+      field("COMMAND · REQUIRED", text: $command, prompt: "agent-command")
+      field("VERSION · REQUIRED", text: $version, prompt: "custom")
+      editor(
+        "ARGUMENTS · ONE PER LINE", text: $arguments,
+        prompt: "acp\n--optional-flag")
+      editor(
+        "ENVIRONMENT · KEY=VALUE PER LINE", text: $environment,
+        prompt: "OPTION=value")
+      Text(
+        "The command inherits your login environment. PATH, HOME, USER and Soyeht profile variables cannot be overridden."
+      )
+      .font(MacTheme.chrome(MacTheme.TypeScale.small))
+      .foregroundStyle(MacTheme.muted)
+      if let failure {
+        Text(failure)
+          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          .foregroundStyle(MacTheme.danger)
+      }
+      HStack {
+        Spacer()
+        Button(original == nil ? "Add harness" : "Save changes") { save() }
+          .buttonStyle(NeoPillButtonStyle())
+          .disabled(!valid || submitting)
+      }
+    }
+    .padding(22)
+    .frame(width: 560)
+    .foregroundStyle(MacTheme.ink)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+    .onExitCommand { isPresented = false }
+  }
+
+  private var parsedEnvironment: [HarnessEnvironmentVariable]? {
+    let lines = environment.split(whereSeparator: \.isNewline).map(String.init)
+    guard !lines.isEmpty else { return [] }
+    var values: [HarnessEnvironmentVariable] = []
+    for line in lines {
+      let pieces = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+      guard pieces.count == 2, !pieces[0].isEmpty else { return nil }
+      values.append(HarnessEnvironmentVariable(key: String(pieces[0]), value: String(pieces[1])))
+    }
+    return values
+  }
+
+  private var valid: Bool {
+    !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && parsedEnvironment != nil
+  }
+
+  private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      Text(label).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(MacTheme.secondary)
+      TextField(prompt, text: text).textFieldStyle(.plain).padding(MacTheme.Space.x10)
+        .neoWell(radius: MacTheme.Radius.compact)
+    }
+  }
+
+  private func editor(_ label: String, text: Binding<String>, prompt: String) -> some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      Text(label).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .foregroundStyle(MacTheme.secondary)
+      TextEditor(text: text).font(MacTheme.mono(MacTheme.TypeScale.small)).scrollContentBackground(
+        .hidden
+      )
+      .overlay(alignment: .topLeading) {
+        if text.wrappedValue.isEmpty {
+          Text(prompt).font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
+            .padding(.horizontal, MacTheme.Space.x4).padding(.vertical, MacTheme.Space.x8)
+            .allowsHitTesting(false)
+        }
+      }
+      .padding(MacTheme.Space.x6).frame(height: 72).neoWell(radius: MacTheme.Radius.compact)
+    }
+  }
+
+  private func save() {
+    guard let environment = parsedEnvironment else { return }
+    submitting = true
+    failure = nil
+    let launch = HarnessLaunch(
+      id: original?.id ?? "custom.\(UUID().uuidString.lowercased())",
+      name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+      command: command.trimmingCharacters(in: .whitespacesAndNewlines),
+      args: arguments.split(whereSeparator: \.isNewline).map(String.init),
+      version: version.trimmingCharacters(in: .whitespacesAndNewlines),
+      environment: environment.isEmpty ? nil : environment)
+    Task {
+      do {
+        if original == nil {
+          _ = try await client.createCustomHarness(launch)
+        } else {
+          _ = try await client.updateCustomHarness(launch)
+        }
+        isPresented = false
+      } catch {
+        failure = error.localizedDescription
+        submitting = false
+      }
+    }
   }
 }
 

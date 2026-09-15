@@ -77,6 +77,7 @@
       throw error
     }
     try await checkEmbeddedHarnessCatalogue(client)
+    try await checkCustomHarnessManagement(client)
     var screen = Data()
     client.terminalOutput = { bytes, reset in
       if reset { screen.removeAll() }
@@ -134,6 +135,25 @@
     ] {
       #expect(ids.contains(id))
     }
+  }
+
+  @MainActor private func checkCustomHarnessManagement(_ client: EngineClient) async throws {
+    let launch = HarnessLaunch(
+      id: "custom.swift-client", name: "Swift client agent", command: "/usr/bin/true",
+      args: [], version: "test")
+    let created = try await client.createCustomHarness(launch)
+    #expect(created.id == launch.id)
+    #expect(client.customHarnesses.map(\.id) == [launch.id])
+    #expect(client.harnesses.contains { $0.id == launch.id })
+    let updated = try await client.updateCustomHarness(
+      HarnessLaunch(
+        id: launch.id, name: "Updated Swift client agent", command: launch.command,
+        args: [], version: launch.version))
+    #expect(updated.name == "Updated Swift client agent")
+    #expect(client.customHarnesses.first?.name == updated.name)
+    try await client.removeCustomHarness(launch.id)
+    #expect(client.customHarnesses.isEmpty)
+    #expect(!client.harnesses.contains { $0.id == launch.id })
   }
 
   @MainActor private final class IntegrationWebHost: WebHostPort {
