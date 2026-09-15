@@ -900,7 +900,7 @@ private struct NewPaneSheet: View {
   @State private var showsAgentPicker = false
   @State private var submitting = false
 
-  private var availableHarnesses: [HarnessInfo] { client.harnesses.filter(\.available) }
+  private var selectedHarness: HarnessInfo? { client.harnesses.first { $0.id == harness } }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
   private var effortOption: ConfigOption? {
     catalogue?.options.first { $0.category == "thought_level" || $0.id == "effort" }
@@ -964,6 +964,7 @@ private struct NewPaneSheet: View {
                     .foregroundStyle(MacTheme.muted)
                 }
               }
+              .popover(isPresented: $showsAgentPicker, arrowEdge: .bottom) { agentPicker }
             } else {
               Button(action: create) {
                 Text("Terminal")
@@ -979,7 +980,10 @@ private struct NewPaneSheet: View {
                 .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
                 .neoAccent(radius: MacTheme.Radius.pill)
             }
-            .disabled(directory == nil || (mode == .agent && harness.isEmpty) || submitting)
+            .disabled(
+              directory == nil || (mode == .agent && selectedHarness?.available != true)
+                || submitting
+            )
             .keyboardShortcut(.return, modifiers: [.command, .shift])
           }
         }
@@ -1009,21 +1013,20 @@ private struct NewPaneSheet: View {
       .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
     }
     .padding(MacTheme.Space.x10).neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
-    .overlay(alignment: .topLeading) {
-      if showsAgentPicker {
-        agentPicker.offset(x: 123, y: 420)
-      }
-    }
     .onAppear {
       client.refreshHarnesses(rescan: true)
       selectFirstHarness()
       selectWorkspaceDirectory()
     }
-    .onChange(of: client.harnesses.map(\.id)) { _, _ in selectFirstHarness() }
+    .onChange(
+      of: client.harnesses.map {
+        "\($0.id):\($0.available):\(HarnessPickerModel.statusLabel(for: $0))"
+      }
+    ) { _, _ in selectFirstHarness() }
     .onChange(of: harness) { _, value in
       model = ""
       effort = ""
-      if !value.isEmpty { client.refreshCatalogue(harness: value) }
+      if selectedHarness?.available == true { client.refreshCatalogue(harness: value) }
     }
   }
 
@@ -1053,77 +1056,14 @@ private struct NewPaneSheet: View {
   }
 
   private var agentPicker: some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
-      if availableHarnesses.isEmpty {
-        ContentUnavailableView(
-          "No available agents", systemImage: "person.crop.circle.badge.exclamationmark",
-          description: Text("Install or configure an ACP agent, then try again."))
-      } else {
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: MacTheme.Space.x18) {
-            ForEach(availableHarnesses, id: \.id) { item in
-              Button {
-                harness = item.id
-              } label: {
-                VStack(spacing: MacTheme.Space.x8) {
-                  Text(item.name)
-                    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-                    .foregroundStyle(item.id == harness ? MacTheme.accent : MacTheme.secondary)
-                  Capsule().fill(item.id == harness ? MacTheme.accent : .clear).frame(height: 2)
-                }
-              }
-            }
-          }
-        }
-        Divider().overlay(MacTheme.border)
-        Text("MODEL").pickerHeading()
-        modelRow(id: "", name: "Agent default")
-        ForEach(catalogue?.models ?? [], id: \.id) { item in
-          modelRow(id: item.id, name: item.name)
-        }
-        Text("EFFORT").pickerHeading()
-        HStack(spacing: MacTheme.Space.x2) {
-          ForEach(effortOption?.options ?? [], id: \.value) { choice in
-            Button(choice.name) { effort = choice.value }
-              .font(
-                MacTheme.chrome(
-                  MacTheme.TypeScale.control, weight: effort == choice.value ? .bold : .semibold)
-              )
-              .frame(maxWidth: .infinity).padding(.vertical, MacTheme.Space.x6)
-              .background(effort == choice.value ? MacTheme.face : .clear, in: Capsule())
-          }
-        }.padding(3).background(MacTheme.well, in: Capsule())
-      }
-    }
-    .padding(EdgeInsets(top: 12, leading: 14, bottom: 14, trailing: 14))
-    .frame(width: 360, height: 344, alignment: .top)
-    .foregroundStyle(MacTheme.ink).neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
-  }
-
-  private func modelRow(id: String, name: String) -> some View {
-    Button {
-      model = id
-    } label: {
-      HStack {
-        Text(name)
-        Spacer()
-        if id == model {
-          Image(systemName: "checkmark").foregroundStyle(MacTheme.accent)
-        }
-      }
-      .font(
-        MacTheme.chrome(MacTheme.TypeScale.caption, weight: id == model ? .bold : .semibold)
-      )
-      .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
-      .background(
-        id == model ? MacTheme.well : .clear,
-        in: RoundedRectangle(cornerRadius: MacTheme.Radius.compact))
-    }
+    AgentHarnessPicker(
+      client: client, harness: $harness, model: $model, effort: $effort,
+      catalogue: catalogue, effortOption: effortOption)
   }
 
   private var selectedAgentLabel: String {
     let modelName = catalogue?.models.first { $0.id == model }?.name
-    return modelName ?? availableHarnesses.first { $0.id == harness }?.name ?? "Choose agent"
+    return modelName ?? selectedHarness?.name ?? "Choose agent"
   }
 
   private var permissionLabel: String {
@@ -1135,8 +1075,8 @@ private struct NewPaneSheet: View {
   }
 
   private func selectFirstHarness() {
-    guard !availableHarnesses.contains(where: { $0.id == harness }),
-      let first = availableHarnesses.first
+    guard selectedHarness?.available != true,
+      let first = HarnessPickerModel.defaultHarness(in: client.harnesses)
     else { return }
     harness = first.id
   }
@@ -1176,6 +1116,155 @@ private struct NewPaneSheet: View {
         submitting = false
         client.problem = error.localizedDescription
       }
+    }
+  }
+}
+
+private struct AgentHarnessPicker: View {
+  @Bindable var client: EngineClient
+  @Binding var harness: String
+  @Binding var model: String
+  @Binding var effort: String
+  let catalogue: AgentCatalogue?
+  let effortOption: ConfigOption?
+  @State private var query = ""
+
+  private var sections: [HarnessPickerSection] {
+    HarnessPickerModel.sections(client.harnesses, query: query)
+  }
+
+  private var selected: HarnessInfo? { client.harnesses.first { $0.id == harness } }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      HStack(spacing: MacTheme.Space.x8) {
+        TextField("Search agents", text: $query)
+          .textFieldStyle(.plain)
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+          .padding(.horizontal, MacTheme.Space.x10).frame(height: 32)
+          .neoWell(radius: MacTheme.Radius.compact)
+        Button {
+          client.refreshHarnesses(rescan: true)
+        } label: {
+          Image(systemName: "arrow.clockwise")
+        }
+        .help("Rescan installed agents")
+        .accessibilityLabel("Rescan installed agents")
+      }
+      if sections.isEmpty {
+        ContentUnavailableView.search(text: query)
+          .frame(maxWidth: .infinity, minHeight: 220)
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+            ForEach(sections, id: \.group.rawValue) { section in
+              Text(section.group.title.uppercased()).pickerHeading()
+              ForEach(section.items, id: \.id) { item in harnessRow(item) }
+            }
+          }
+          .padding(.trailing, MacTheme.Space.x4)
+        }
+        .frame(height: 260)
+      }
+      Divider().overlay(MacTheme.border)
+      selectedConfiguration
+    }
+    .padding(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
+    .frame(width: 420, height: 510, alignment: .top)
+    .foregroundStyle(MacTheme.ink)
+    .background(MacTheme.face)
+  }
+
+  private func harnessRow(_ item: HarnessInfo) -> some View {
+    let status = HarnessPickerModel.setupState(for: item)
+    return Button {
+      harness = item.id
+    } label: {
+      HStack(spacing: MacTheme.Space.x10) {
+        Image(systemName: statusSymbol(status))
+          .foregroundStyle(statusColor(status)).frame(width: 18)
+        VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+          Text(item.name)
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
+          Text(HarnessPickerModel.statusLabel(for: item))
+            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+            .foregroundStyle(MacTheme.muted)
+        }
+        Spacer()
+        if item.id == harness { Image(systemName: "checkmark").foregroundStyle(MacTheme.accent) }
+      }
+      .padding(.horizontal, MacTheme.Space.x10).frame(height: 42)
+      .background(
+        item.id == harness ? MacTheme.well : .clear,
+        in: RoundedRectangle(cornerRadius: MacTheme.Radius.compact))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(item.name), \(HarnessPickerModel.statusLabel(for: item))")
+    .accessibilityIdentifier("agent-choice-\(item.id)")
+  }
+
+  @ViewBuilder private var selectedConfiguration: some View {
+    if let selected, selected.available {
+      Text("MODEL").pickerHeading()
+      Menu {
+        Button("Agent default") { model = "" }
+        ForEach(catalogue?.models ?? [], id: \.id) { item in
+          Button(item.name) { model = item.id }
+        }
+      } label: {
+        HStack {
+          Text(selectedModelLabel)
+          Spacer()
+          Image(systemName: "chevron.up.chevron.down")
+            .font(.system(size: 10)).foregroundStyle(MacTheme.muted)
+        }
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
+        .neoWell(radius: MacTheme.Radius.compact)
+      }
+      .menuStyle(.borderlessButton)
+      if let choices = effortOption?.options, !choices.isEmpty {
+        Text("EFFORT").pickerHeading()
+        HStack(spacing: MacTheme.Space.x2) {
+          ForEach(choices, id: \.value) { choice in
+            Button(choice.name) { effort = choice.value }
+              .font(
+                MacTheme.chrome(
+                  MacTheme.TypeScale.control, weight: effort == choice.value ? .bold : .semibold)
+              )
+              .frame(maxWidth: .infinity).padding(.vertical, MacTheme.Space.x6)
+              .background(effort == choice.value ? MacTheme.face : .clear, in: Capsule())
+          }
+        }.padding(3).background(MacTheme.well, in: Capsule())
+      }
+    } else if let selected {
+      Label(
+        "\(selected.name) is not installed.",
+        systemImage: "exclamationmark.circle"
+      )
+      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+      .foregroundStyle(MacTheme.muted)
+    }
+  }
+
+  private var selectedModelLabel: String {
+    catalogue?.models.first { $0.id == model }?.name ?? "Agent default"
+  }
+
+  private func statusSymbol(_ status: HarnessSetupState) -> String {
+    switch status {
+    case .ready: "checkmark.circle.fill"
+    case .sign_in: "person.crop.circle.badge.exclamationmark"
+    case .check_setup: "wrench.and.screwdriver"
+    case .not_installed: "minus.circle"
+    }
+  }
+
+  private func statusColor(_ status: HarnessSetupState) -> Color {
+    switch status {
+    case .ready: MacTheme.success
+    case .sign_in, .check_setup: MacTheme.warning
+    case .not_installed: MacTheme.muted
     }
   }
 }
