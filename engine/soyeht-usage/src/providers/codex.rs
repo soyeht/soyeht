@@ -35,19 +35,29 @@ fn parse_app_server(payload: &[u8], source: UsageSource) -> Result<ParsedReading
         .ok_or_else(|| Error::InvalidResponse {
             source: source.clone(),
         })?;
-    let primary = parse_window(&limits["primary"], "Current window", source.clone())?;
+    let primary = parse_window(
+        &limits["primary"],
+        window_label(&limits["primary"], "Current window"),
+        source.clone(),
+    )?;
     let secondary = limits
         .get("secondary")
         .filter(|value| !value.is_null())
-        .map(|value| parse_window(value, window_label(value), source.clone()))
+        .map(|value| {
+            parse_window(
+                value,
+                window_label(value, "Secondary window"),
+                source.clone(),
+            )
+        })
         .transpose()?;
     Ok(ParsedReading { primary, secondary })
 }
 
-fn window_label(value: &Value) -> &'static str {
+fn window_label(value: &Value, fallback: &'static str) -> &'static str {
     match value["windowDurationMins"].as_u64() {
         Some(10_080) => "Weekly",
-        _ => "Secondary window",
+        _ => fallback,
     }
 }
 
