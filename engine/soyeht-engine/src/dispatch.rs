@@ -281,7 +281,10 @@ impl Core {
                     ));
                 }
                 let value = previous.result;
-                if matches!(method, "pane.config.set" | "pane.yolo") {
+                if matches!(
+                    method,
+                    "pane.config.set" | "pane.yolo" | "pane.harness.switch"
+                ) {
                     return self
                         .native_rpc_result(connection, request_id.clone(), key, value)
                         .map(Some);
@@ -315,6 +318,7 @@ impl Core {
             }
             "pane.input" => self.pane_input(connection, params)?,
             "pane.yolo" => self.agent_yolo(connection, params)?,
+            "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
             "pane.role.set" => self.pane_role_set(connection, params)?,
             "pane.auth.start" => self.agent_auth_start(connection, params)?,
             "harness.list" | "model.list" => self.agent_catalog(method, params)?,
@@ -395,7 +399,10 @@ impl Core {
             }
             _ => return Err(errors::invalid("Method unavailable")),
         };
-        if matches!(method, "pane.config.set" | "pane.yolo") {
+        if matches!(
+            method,
+            "pane.config.set" | "pane.yolo" | "pane.harness.switch"
+        ) {
             return self.native_rpc_result(
                 connection,
                 request_id,

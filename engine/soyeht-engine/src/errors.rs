@@ -22,6 +22,7 @@ pub enum Error {
     },
     IdempotencyConflict(String),
     HarnessUnavailable(String),
+    HarnessSwitchFailed(String),
     NeedsLogin(String),
     CursorTooOld(String),
     ResyncRequired(String),
@@ -90,6 +91,7 @@ constructor!(dependency_cycle, DependencyCycle);
 constructor!(dependency_open, DependencyOpen);
 constructor!(idempotency_conflict, IdempotencyConflict);
 constructor!(harness_unavailable, HarnessUnavailable);
+constructor!(harness_switch_failed, HarnessSwitchFailed);
 constructor!(needs_login, NeedsLogin);
 constructor!(cursor_too_old, CursorTooOld);
 constructor!(resync_required, ResyncRequired);
@@ -296,6 +298,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::HarnessUnavailable(_) | Error::Acp(_) | Error::Lsp(_) => {
             ErrorKind::HarnessUnavailable
         }
+        Error::HarnessSwitchFailed(_) => ErrorKind::HarnessSwitchFailed,
         Error::Editor(error) => editor_kind(error),
         Error::Vcs(error) => vcs_kind(error),
         Error::Web(error) => web_kind(error),
@@ -367,6 +370,7 @@ fn message(error: &Error) -> String {
         | Error::DependencyOpen(message)
         | Error::IdempotencyConflict(message)
         | Error::HarnessUnavailable(message)
+        | Error::HarnessSwitchFailed(message)
         | Error::NeedsLogin(message)
         | Error::CursorTooOld(message)
         | Error::ResyncRequired(message)

@@ -1,0 +1,931 @@
+//! Atomic replacement of one live ACP harness with another.
+//!
+//! The original process and checkpoint remain authoritative while a candidate
+//! initializes beside it. Only a candidate that has opened a native session,
+//! accepted requested configuration, and accepted the bounded continuation
+//! package may replace the pane's durable runtime.
+
+use super::{
+    Changes, native_error,
+    pending::{Completion, UserOperation},
+    state::{HarnessSwitchCheckpoint, Phase, RetiredAgentProcess, State},
+    transcript,
+};
+use crate::{
+    core::Core,
+    errors::{self, Result},
+    ports::StorePort,
+};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use soyeht_acp::{
+    Message,
+    config::Options,
+    continuation::{self, Fields, Message as ContinuationMessage, Role as ContinuationRole},
+    rpc::decode,
+    session,
+};
+use soyeht_protocol::{
+    ConfigValue, PaneHarnessSwitchParams, PaneState, StateSource, TranscriptKind, TranscriptRole,
+    limits, ndjson::Decoder,
+};
+use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
+use soyeht_store::segments::Record;
+use std::time::{Duration, Instant};
+use uuid::Uuid;
+
+const SWITCH_TIMEOUT: Duration = Duration::from_secs(30);
+const CONTINUATION_TEMPLATE: &str =
+    include_str!("../../../../docs/contracts/prompts/harness-switch.en.md");
+
+pub(crate) struct HarnessSwitchRuntime {
+    params: PaneHarnessSwitchParams,
+    launch: soyeht_protocol::HarnessLaunch,
+    binary_digest: String,
+    candidate: Option<Candidate>,
+    deadline: Instant,
+}
+
+struct Candidate {
+    instance: Instance,
+    saved: crate::model::StoredPane,
+    state: State,
+    decoder: Decoder,
+    raw_output: Vec<u8>,
+    phase: CandidatePhase,
+}
+
+enum CandidatePhase {
+    Initializing,
+    Opening,
+    Configuring {
+        option_id: String,
+        desired: ConfigValue,
+        remaining: Vec<(String, String)>,
+    },
+    Continuing {
+        incorporated_pending: Vec<String>,
+    },
+}
+
+impl Core {
+    pub fn agent_harness_switch(&mut self, connection: &str, raw: &Value) -> Result<Value> {
+        let params: PaneHarnessSwitchParams = serde_json::from_value(raw.clone())
+            .map_err(|_| errors::invalid("Invalid harness switch parameters"))?;
+        let pane = params.pane_id.as_str();
+        let mut state = self.agent_state(pane)?;
+        if self.harness_switches.contains_key(pane)
+            || state.harness_switch.is_some()
+            || !state.retired_processes.is_empty()
+            || state.operation.is_some()
+            || matches!(
+                state.phase,
+                Phase::NeedsLogin | Phase::Faulted | Phase::Recovering
+            )
+        {
+            return Err(errors::pane_busy("Another agent operation is pending"));
+        }
+        if state.launch.id == params.harness {
+            return Err(errors::invalid("Choose a different harness"));
+        }
+        let (launch, binary_digest) = super::registry::prepare(&self.directory, &params.harness)?;
+        let checkpoint = HarnessSwitchCheckpoint {
+            user: UserOperation {
+                scope: self.clients[connection].scope.clone(),
+                key: params.idempotency_key.clone(),
+            },
+            from_harness: state.launch.id.clone(),
+            to_harness: launch.id.clone(),
+            candidate_instance_key: Uuid::new_v4().to_string(),
+            previous_queue_paused: state.queue_paused,
+        };
+        state.harness_switch = Some(checkpoint.clone());
+        let mut saved = self.panes[pane].stored.clone();
+        let mut changes = Changes::default();
+        if !state.queue_paused {
+            state.queue_paused = true;
+            changes.events.push((
+                "pane.queue.paused".into(),
+                json!({"paneId":pane,"paused":true,"reason":"harness_switch"}),
+            ));
+        }
+        if state.active.is_some() {
+            super::methods::cancel(
+                &self.store,
+                pane,
+                &mut state,
+                &mut saved,
+                &mut changes,
+                self.now_ms(),
+                &self.timestamp(),
+            )?;
+        }
+        saved.pane.state = PaneState::Starting;
+        saved.pane.phrase = format!("Switching to {}", launch.name);
+        changes.events.push((
+            "pane.harness_switch_started".into(),
+            json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
+                "toHarness":checkpoint.to_harness}),
+        ));
+        let pending = json!({"_nativePending":checkpoint.candidate_instance_key});
+        let result = self
+            .commit_agent(
+                saved,
+                state,
+                changes,
+                Some((connection, "pane.harness.switch", raw)),
+                pending,
+            )?
+            .result;
+        self.harness_switches.insert(
+            pane.into(),
+            HarnessSwitchRuntime {
+                params,
+                launch,
+                binary_digest,
+                candidate: None,
+                deadline: Instant::now() + SWITCH_TIMEOUT,
+            },
+        );
+        Ok(result)
+    }
+
+    pub(crate) fn advance_harness_switches(&mut self) -> Result<()> {
+        let panes = self.harness_switches.keys().cloned().collect::<Vec<_>>();
+        for pane in panes {
+            let runtime = errors::invariant(
+                self.harness_switches.remove(&pane),
+                "Harness switch runtime disappeared",
+            )?;
+            match self.advance_harness_switch(&pane, runtime) {
+                Ok(Some(runtime)) => {
+                    self.harness_switches.insert(pane, runtime);
+                }
+                Ok(None) => {}
+                Err(failure) => {
+                    let (mut runtime, error) = *failure;
+                    if let Some(candidate) = runtime.candidate.take() {
+                        self.retire_failed_candidate(&pane, &candidate.instance)?;
+                    }
+                    let reason = bounded_reason(&error.to_string());
+                    self.restore_failed_switch(&pane, &reason)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn advance_harness_switch(
+        &mut self,
+        pane: &str,
+        mut runtime: HarnessSwitchRuntime,
+    ) -> std::result::Result<Option<HarnessSwitchRuntime>, Box<(HarnessSwitchRuntime, errors::Error)>>
+    {
+        let result = (|| -> Result<bool> {
+            if Instant::now() >= runtime.deadline {
+                return Err(errors::harness_unavailable(
+                    "The selected harness did not become ready in time",
+                ));
+            }
+            if runtime.candidate.is_none() {
+                if self.agent_state(pane)?.active.is_some() {
+                    return Ok(false);
+                }
+                let candidate = self.spawn_switch_candidate(pane, &runtime)?;
+                runtime.candidate = Some(candidate);
+                if let Some(candidate) = runtime.candidate.as_mut() {
+                    self.initialize_switch_candidate(candidate)?;
+                }
+                return Ok(false);
+            }
+            let next_name = runtime.launch.name.clone();
+            let params = runtime.params.clone();
+            let candidate = errors::invariant(
+                runtime.candidate.as_mut(),
+                "Harness switch candidate disappeared",
+            )?;
+            let Some((call, response)) = self.drain_candidate(candidate)? else {
+                return Ok(false);
+            };
+            self.advance_candidate_response(pane, &next_name, &params, candidate, call, response)
+        })();
+        match result {
+            Ok(true) => Ok(None),
+            Ok(false) => Ok(Some(runtime)),
+            Err(error) => Err(Box::new((runtime, error))),
+        }
+    }
+
+    fn advance_candidate_response(
+        &mut self,
+        pane: &str,
+        next_name: &str,
+        params: &PaneHarnessSwitchParams,
+        candidate: &mut Candidate,
+        call: soyeht_acp::client::Call,
+        response: std::result::Result<Value, soyeht_acp::RpcError>,
+    ) -> Result<bool> {
+        match &candidate.phase {
+            CandidatePhase::Initializing if call.context == "switch:initialize" => {
+                let value = response.map_err(candidate_rpc_error)?;
+                let initialized = session::Initialization::parse(&value).map_err(native_error)?;
+                candidate.state.fingerprint = session::fingerprint(
+                    &candidate.state.binary_digest,
+                    &initialized.version,
+                    &json!(candidate.state.launch),
+                )
+                .map_err(native_error)?;
+                candidate.state.initialized = Some(initialized);
+                let servers = if candidate.state.mcp_enabled {
+                    vec![super::mcp::declaration(
+                        &self.store,
+                        &self.directory,
+                        &candidate.state,
+                        &candidate.saved,
+                    )?]
+                } else {
+                    Vec::new()
+                };
+                let request = candidate
+                    .state
+                    .client
+                    .request(
+                        "session/new",
+                        soyeht_acp::client::new_session_with_mcp(
+                            &candidate.saved.pane.cwd,
+                            &servers,
+                        ),
+                        "switch:open",
+                        self.now_ms() as u64,
+                    )
+                    .map_err(native_error)?;
+                self.write_candidate(&candidate.instance.instance_id, request)?;
+                candidate.phase = CandidatePhase::Opening;
+                Ok(false)
+            }
+            CandidatePhase::Opening if call.context == "switch:open" => {
+                let value = response.map_err(candidate_rpc_error)?;
+                candidate.state.session_id =
+                    Some(session::session_id(&value).map_err(native_error)?);
+                candidate.state.options = Options::from_response(&value).map_err(native_error)?;
+                let requested = requested_options(
+                    params,
+                    &candidate.state.permission,
+                    &candidate.state.options,
+                );
+                if requested.is_empty() {
+                    return self.begin_continuation_or_commit(pane, next_name, candidate);
+                }
+                self.send_next_candidate_option(candidate, requested)?;
+                Ok(false)
+            }
+            CandidatePhase::Configuring {
+                option_id,
+                desired,
+                remaining,
+            } if call.context == "switch:config" => {
+                let value = response.map_err(candidate_rpc_error)?;
+                candidate.state.options = candidate
+                    .state
+                    .options
+                    .confirmed(option_id, desired, &value)
+                    .map_err(native_error)?;
+                if let ConfigValue::V0(mode) = desired
+                    && candidate.state.options.values.iter().any(|option| {
+                        option.id == *option_id
+                            && (option.id == "mode" || option.category.as_deref() == Some("mode"))
+                    })
+                {
+                    super::configuration::observe_mode(&mut candidate.state, mode, false)?;
+                }
+                if remaining.is_empty() {
+                    return self.begin_continuation_or_commit(pane, next_name, candidate);
+                }
+                self.send_next_candidate_option(candidate, remaining.clone())?;
+                Ok(false)
+            }
+            CandidatePhase::Continuing {
+                incorporated_pending,
+            } if call.context == "switch:continuation" => {
+                response.map_err(candidate_rpc_error)?;
+                let incorporated_pending = incorporated_pending.clone();
+                self.commit_switch_candidate(pane, next_name, candidate, &incorporated_pending)?;
+                Ok(true)
+            }
+            _ => Err(errors::harness_unavailable(
+                "The selected harness answered out of order",
+            )),
+        }
+    }
+
+    fn spawn_switch_candidate(
+        &mut self,
+        pane: &str,
+        runtime: &HarnessSwitchRuntime,
+    ) -> Result<Candidate> {
+        let original = self.agent_state(pane)?;
+        let checkpoint = errors::invariant(
+            original.harness_switch.clone(),
+            "Harness switch checkpoint disappeared",
+        )?;
+        let old_saved = self.panes[pane].stored.clone();
+        let new_generation = old_saved
+            .pane
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("Pane generation exhausted"))?;
+        let mut saved = old_saved.clone();
+        saved.pane.generation = new_generation;
+        saved.instance_key = checkpoint.candidate_instance_key.clone();
+        saved.instance_id = None;
+        saved.supervisor_id = None;
+        saved.pane.pid = None;
+        saved.sequence_base = self.panes[pane].screen.next_offset();
+        let mut state = State::new(
+            runtime.launch.clone(),
+            runtime.binary_digest.clone(),
+            original.permission.clone(),
+        )?;
+        state.binding = original.binding.clone();
+        state.mcp_role = original.mcp_role.clone();
+        state.mcp_enabled = original.mcp_enabled;
+        state.yolo = original.yolo;
+        state.previous_permission = original.previous_permission.clone();
+        state.previous_effective_mode = original.previous_effective_mode.clone();
+        state.permission_rules = original.permission_rules.clone();
+        state.queue = original.queue.clone();
+        state.queue_revision = original.queue_revision;
+        state.queue_paused = checkpoint.previous_queue_paused;
+        state.next_message_seq = original.next_message_seq;
+        state.has_finished_turn = original.has_finished_turn;
+        let spawn = Spawn {
+            instance_key: checkpoint.candidate_instance_key,
+            generation: new_generation,
+            kind: ProcessKind::PipesAcp,
+            cwd: saved.pane.cwd.clone(),
+            argv: std::iter::once(runtime.launch.command.clone())
+                .chain(runtime.launch.args.clone())
+                .collect(),
+            env: super::environment::launch_environment_with(runtime.launch.environment.as_deref()),
+            cols: saved.pane.cols as u16,
+            rows: saved.pane.rows as u16,
+        };
+        let Response::Instance(instance) = self.pty_request(Request::Spawn(spawn))? else {
+            return Err(errors::ptyd_unavailable("Invalid candidate spawn response"));
+        };
+        Ok(Candidate {
+            instance,
+            saved,
+            state,
+            decoder: Decoder::new(0),
+            raw_output: Vec::new(),
+            phase: CandidatePhase::Initializing,
+        })
+    }
+
+    fn initialize_switch_candidate(&mut self, candidate: &mut Candidate) -> Result<()> {
+        let initialize = candidate
+            .state
+            .client
+            .request(
+                "initialize",
+                json!({"protocolVersion":1,
+                    "clientInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")},
+                    "clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true},
+                        "terminal":true,"auth":{"terminal":true},"elicitation":{"form":{}},
+                        "session":{"configOptions":{"boolean":{}}}}}),
+                "switch:initialize",
+                self.now_ms() as u64,
+            )
+            .map_err(native_error)?;
+        self.write_candidate(&candidate.instance.instance_id, initialize)
+    }
+
+    fn send_next_candidate_option(
+        &mut self,
+        candidate: &mut Candidate,
+        mut requested: Vec<(String, String)>,
+    ) -> Result<()> {
+        let (public_name, requested_value) = requested.remove(0);
+        let category = match public_name.as_str() {
+            "effort" => "thought_level",
+            "permission" => "mode",
+            _ => public_name.as_str(),
+        };
+        let option = candidate
+            .state
+            .options
+            .values
+            .iter()
+            .find(|option| option.id == category || option.category.as_deref() == Some(category))
+            .cloned()
+            .ok_or_else(|| {
+                errors::harness_unavailable(format!(
+                    "The selected harness does not offer {public_name}"
+                ))
+            })?;
+        let desired = ConfigValue::V0(requested_value);
+        let session_id = errors::invariant(
+            candidate.state.session_id.as_deref(),
+            "Candidate configuration has no session",
+        )?;
+        let (method, params) = candidate
+            .state
+            .options
+            .request(session_id, &option.id, &desired)
+            .map_err(native_error)?;
+        let request = candidate
+            .state
+            .client
+            .request(method, params, "switch:config", self.now_ms() as u64)
+            .map_err(native_error)?;
+        self.write_candidate(&candidate.instance.instance_id, request)?;
+        candidate.phase = CandidatePhase::Configuring {
+            option_id: option.id,
+            desired,
+            remaining: requested,
+        };
+        Ok(())
+    }
+
+    fn drain_candidate(
+        &mut self,
+        candidate: &mut Candidate,
+    ) -> Result<
+        Option<(
+            soyeht_acp::client::Call,
+            std::result::Result<Value, soyeht_acp::RpcError>,
+        )>,
+    > {
+        let from = candidate.decoder.next_offset();
+        let Response::Output(output) = self.pty_request(Request::Drain {
+            instance_id: candidate.instance.instance_id.clone(),
+            from_seq: from,
+        })?
+        else {
+            return Err(errors::ptyd_unavailable(
+                "Invalid candidate output response",
+            ));
+        };
+        if output.from_seq != from || output.gap.is_some() {
+            return Err(errors::ptyd_unavailable(
+                "Candidate output is discontinuous",
+            ));
+        }
+        let bytes = STANDARD
+            .decode(output.bytes)
+            .map_err(|_| errors::ptyd_unavailable("Invalid candidate output encoding"))?;
+        if output.next_seq != output.from_seq + bytes.len() as u64 {
+            return Err(errors::ptyd_unavailable(
+                "Candidate output offsets disagree",
+            ));
+        }
+        let mut response = None;
+        if !bytes.is_empty() {
+            candidate.raw_output.extend_from_slice(&bytes);
+            for record in
+                decode(&mut candidate.decoder, output.from_seq, &bytes).map_err(native_error)?
+            {
+                match record.message {
+                    message @ Message::Response { .. } if response.is_none() => {
+                        response = Some(
+                            candidate
+                                .state
+                                .client
+                                .response(message)
+                                .map_err(native_error)?,
+                        );
+                    }
+                    Message::Notification { .. } => {}
+                    Message::Request { .. } | Message::Response { .. } => {
+                        return Err(errors::harness_unavailable(
+                            "The selected harness sent unexpected startup traffic",
+                        ));
+                    }
+                }
+            }
+        }
+        if output.exited {
+            return Err(errors::harness_unavailable(
+                "The selected harness exited during startup",
+            ));
+        }
+        Ok(response)
+    }
+
+    fn write_candidate(&mut self, instance_id: &str, message: Message) -> Result<()> {
+        let encoded = message.encode().map_err(native_error)?;
+        let mut offset = 0;
+        while offset < encoded.len() {
+            let end = (offset + limits::TERMINAL_PAYLOAD_BYTES).min(encoded.len());
+            let bytes = &encoded[offset..end];
+            let operation_key = format!("switch-input:{}", Uuid::new_v4());
+            let Response::Accepted { bytes: accepted } = self.pty_request(Request::Input {
+                instance_id: instance_id.into(),
+                bytes: STANDARD.encode(bytes),
+                operation_key: operation_key.clone(),
+                fingerprint: format!("{:x}", Sha256::digest(bytes)),
+            })?
+            else {
+                return Err(errors::ptyd_unavailable("Invalid candidate input receipt"));
+            };
+            self.pty_request(Request::ConfirmInput { operation_key })?;
+            if accepted == 0 || accepted > bytes.len() {
+                return Err(errors::ptyd_unavailable(
+                    "Candidate did not accept its complete input",
+                ));
+            }
+            offset += accepted;
+        }
+        Ok(())
+    }
+
+    fn begin_continuation_or_commit(
+        &mut self,
+        pane: &str,
+        next_name: &str,
+        candidate: &mut Candidate,
+    ) -> Result<bool> {
+        let original = self.agent_state(pane)?;
+        let Some((package, included_messages)) =
+            self.continuation_package(pane, &original, next_name)?
+        else {
+            self.commit_switch_candidate(pane, next_name, candidate, &[])?;
+            return Ok(true);
+        };
+        let session_id = errors::invariant(
+            candidate.state.session_id.as_deref(),
+            "Candidate continuation has no session",
+        )?;
+        let request = candidate
+            .state
+            .client
+            .request(
+                "session/prompt",
+                soyeht_acp::client::prompt(session_id, &package),
+                "switch:continuation",
+                self.now_ms() as u64,
+            )
+            .map_err(native_error)?;
+        self.write_candidate(&candidate.instance.instance_id, request)?;
+        let incorporated_pending = original
+            .queue
+            .iter()
+            .rev()
+            .take(included_messages.min(original.queue.len()))
+            .map(|prompt| prompt.prompt_id.clone())
+            .collect();
+        candidate.phase = CandidatePhase::Continuing {
+            incorporated_pending,
+        };
+        Ok(false)
+    }
+
+    fn commit_switch_candidate(
+        &mut self,
+        pane: &str,
+        next_name: &str,
+        candidate: &mut Candidate,
+        incorporated_pending: &[String],
+    ) -> Result<()> {
+        let original = self.agent_state(pane)?;
+        let checkpoint = errors::invariant(
+            original.harness_switch.clone(),
+            "Harness switch checkpoint disappeared before commit",
+        )?;
+        let old_saved = self.panes[pane].stored.clone();
+        let session_id = errors::invariant(
+            candidate.state.session_id.clone(),
+            "Candidate session did not open",
+        )?;
+        candidate.state.queue = original.queue.clone();
+        candidate.state.queue_revision = original.queue_revision;
+        for prompt_id in incorporated_pending {
+            candidate.state.remove(prompt_id)?;
+        }
+        candidate.state.harness_switch = None;
+        candidate.state.requested_options.clear();
+        candidate.state.acknowledged_offset = candidate.decoder.next_offset();
+        candidate.state.phase = Phase::Ready;
+        candidate.saved.instance_id = Some(candidate.instance.instance_id.clone());
+        candidate.saved.supervisor_id = Some(candidate.instance.supervisor_id.clone());
+        candidate.saved.pane.pid = Some(candidate.instance.pid);
+        candidate.saved.pane.source = StateSource::Protocol;
+        candidate.saved.pane.confidence = 1.0;
+        candidate.saved.pane.state = PaneState::Idle;
+        candidate.saved.pane.phrase = format!("Restarted with {next_name}");
+        if let Some(retired) = old_saved
+            .instance_id
+            .clone()
+            .zip(old_saved.supervisor_id.clone())
+            .map(|(instance_id, supervisor_id)| RetiredAgentProcess {
+                instance_key: old_saved.instance_key.clone(),
+                instance_id,
+                supervisor_id,
+            })
+        {
+            candidate.state.retired_processes.push(retired);
+        }
+        let marker = format!(
+            "Conversation restarted with {}; recent messages and pending prompts were supplied as historical data.",
+            next_name
+        );
+        let marker_message = transcript::new_message(
+            &mut candidate.state,
+            candidate.saved.pane.generation,
+            TranscriptRole::System,
+            TranscriptKind::System,
+            marker,
+            true,
+        )?;
+        let marker_seq = marker_message.seq.clone();
+        let result = json!({
+            "paneId":pane,"fromHarness":checkpoint.from_harness,
+            "toHarness":checkpoint.to_harness,"newSessionId":session_id,"markerSeq":marker_seq,
+        });
+        let mut changes = Changes {
+            completed_user: Some(Completion {
+                user: checkpoint.user,
+                result: Ok(result.clone()),
+            }),
+            retire_instance: old_saved
+                .instance_id
+                .clone()
+                .zip(old_saved.supervisor_id.clone()),
+            ..Changes::default()
+        };
+        transcript::put(&mut changes, pane, marker_message, "agent_message_chunk")?;
+        changes.events.push((
+            "pane.harness_switch_done".into(),
+            json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
+                "toHarness":checkpoint.to_harness,"newSessionId":session_id,"markerSeq":marker_seq}),
+        ));
+        let candidate_base = candidate.saved.sequence_base;
+        self.commit_agent(
+            candidate.saved.clone(),
+            candidate.state.clone(),
+            changes,
+            None,
+            json!({}),
+        )?;
+        self.agents
+            .get_mut(pane)
+            .ok_or_else(|| errors::internal("Candidate runtime disappeared after commit"))?
+            .decoder = std::mem::replace(&mut candidate.decoder, Decoder::new(0));
+        if !candidate.raw_output.is_empty() {
+            self.panes
+                .get_mut(pane)
+                .ok_or_else(|| errors::internal("Candidate pane disappeared after commit"))?
+                .screen
+                .append(Record::Data {
+                    offset: candidate_base,
+                    bytes: std::mem::take(&mut candidate.raw_output),
+                })?;
+        }
+        let _ = self.pty_request(Request::Ack {
+            instance_id: candidate.instance.instance_id.clone(),
+            seq: self.agents[pane].state.acknowledged_offset,
+        });
+        Ok(())
+    }
+
+    fn continuation_package(
+        &self,
+        pane: &str,
+        state: &State,
+        next_name: &str,
+    ) -> Result<Option<(String, usize)>> {
+        let page = self
+            .store
+            .agent_transcript(pane, None, limits::TRANSCRIPT_PAGE_MESSAGES)
+            .map_err(errors::storage)?;
+        let mut owned: Vec<(ContinuationRole, continuation::State, String)> = page
+            .items
+            .into_iter()
+            .filter(|message| message.complete && message.kind == TranscriptKind::Message)
+            .filter_map(|message| match message.role {
+                TranscriptRole::User => Some((
+                    ContinuationRole::User,
+                    continuation::State::Delivered,
+                    message.text,
+                )),
+                TranscriptRole::Assistant => Some((
+                    ContinuationRole::Assistant,
+                    continuation::State::Delivered,
+                    message.text,
+                )),
+                TranscriptRole::System => None,
+            })
+            .collect();
+        owned.extend(state.queue.iter().map(|prompt| {
+            (
+                ContinuationRole::User,
+                continuation::State::Pending,
+                prompt.text.clone(),
+            )
+        }));
+        if owned.is_empty() {
+            return Ok(None);
+        }
+        let messages = owned
+            .iter()
+            .map(|(role, status, text)| ContinuationMessage {
+                role: *role,
+                state: *status,
+                text,
+            })
+            .collect::<Vec<_>>();
+        let task = crate::tasks::ports::TaskStorePort::active_task_for_pane(&self.store, pane)
+            .map_err(errors::storage)?;
+        continuation::build_with_receipt(
+            CONTINUATION_TEMPLATE,
+            Fields {
+                previous_harness: &state.launch.name,
+                new_harness: next_name,
+                task_title: task.as_ref().map(|task| task.title.as_str()),
+                worktree_path: Some(&self.panes[pane].stored.pane.cwd),
+                branch: None,
+                transcript_path: None,
+                messages: &messages,
+            },
+        )
+        .map(|built| Some((built.text, built.included_messages)))
+        .map_err(native_error)
+    }
+
+    fn restore_failed_switch(&mut self, pane: &str, reason: &str) -> Result<()> {
+        let mut state = self.agent_state(pane)?;
+        let checkpoint = errors::invariant(
+            state.harness_switch.take(),
+            "Failed harness switch has no checkpoint",
+        )?;
+        state.queue_paused = checkpoint.previous_queue_paused;
+        let mut saved = self.panes[pane].stored.clone();
+        saved.pane.state = if state.active.is_some() {
+            PaneState::Working
+        } else {
+            PaneState::Idle
+        };
+        saved.pane.phrase = "Original agent session restored".into();
+        let mut changes = Changes {
+            completed_user: Some(Completion {
+                user: checkpoint.user,
+                result: Err(errors::wire(errors::harness_switch_failed(reason))),
+            }),
+            ..Changes::default()
+        };
+        changes.events.push((
+            "pane.harness_switch_failed".into(),
+            json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
+                "toHarness":checkpoint.to_harness,"reason":reason,"restored":true}),
+        ));
+        self.commit_agent(saved, state, changes, None, json!({}))?;
+        Ok(())
+    }
+
+    fn retire_failed_candidate(&mut self, pane: &str, instance: &Instance) -> Result<()> {
+        if self
+            .pty_request(Request::Close {
+                instance_id: instance.instance_id.clone(),
+            })
+            .is_err()
+        {
+            let mut state = self.agent_state(pane)?;
+            state.retired_processes.push(RetiredAgentProcess {
+                instance_key: instance.spawn.instance_key.clone(),
+                instance_id: instance.instance_id.clone(),
+                supervisor_id: instance.supervisor_id.clone(),
+            });
+            self.commit_agent(
+                self.panes[pane].stored.clone(),
+                state,
+                Changes::default(),
+                None,
+                json!({}),
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn recover_harness_switches(&mut self, instances: &[Instance]) -> Result<()> {
+        let panes = self.agents.keys().cloned().collect::<Vec<_>>();
+        for pane in panes {
+            let state = self.agent_state(&pane)?;
+            let Some(checkpoint) = state.harness_switch.clone() else {
+                continue;
+            };
+            if let Some(candidate) = instances
+                .iter()
+                .find(|instance| {
+                    instance.spawn.instance_key == checkpoint.candidate_instance_key
+                        && !instance.closed
+                })
+                .cloned()
+            {
+                self.retire_failed_candidate(&pane, &candidate)?;
+            }
+            self.restore_failed_switch(&pane, "Engine restarted before the new harness committed")?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cleanup_retired_agent_processes(&mut self) -> Result<()> {
+        let panes = self.agents.keys().cloned().collect::<Vec<_>>();
+        for pane in panes {
+            let mut state = self.agent_state(&pane)?;
+            let current_supervisor = self
+                .ptyd
+                .as_ref()
+                .map(|value| value.supervisor_id().to_owned());
+            let mut keep = Vec::new();
+            for retired in &state.retired_processes {
+                if current_supervisor.as_deref() != Some(&retired.supervisor_id) {
+                    continue;
+                }
+                if should_fail_old_close(&self.directory) {
+                    keep.push(retired.clone());
+                    continue;
+                }
+                if self
+                    .pty_request(Request::Close {
+                        instance_id: retired.instance_id.clone(),
+                    })
+                    .is_err()
+                {
+                    keep.push(retired.clone());
+                }
+            }
+            if keep.len() != state.retired_processes.len() {
+                state.retired_processes = keep;
+                self.commit_agent(
+                    self.panes[&pane].stored.clone(),
+                    state,
+                    Changes::default(),
+                    None,
+                    json!({}),
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn requested_options(
+    params: &PaneHarnessSwitchParams,
+    permission: &soyeht_protocol::PermissionMode,
+    options: &Options,
+) -> Vec<(String, String)> {
+    let mut requested = [
+        ("model", params.model.as_ref()),
+        ("effort", params.effort.as_ref()),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.map(|value| (name.into(), value.clone())))
+    .collect::<Vec<_>>();
+    if let Some(mode) = options
+        .values
+        .iter()
+        .find(|option| option.id == "mode" || option.category.as_deref() == Some("mode"))
+        .and_then(|option| {
+            option
+                .options
+                .iter()
+                .find(|choice| {
+                    super::configuration::native_policy(&choice.value).as_ref() == Some(permission)
+                })
+                .map(|choice| choice.value.clone())
+        })
+    {
+        requested.push(("permission".into(), mode));
+    }
+    requested
+}
+
+fn candidate_rpc_error(error: soyeht_acp::RpcError) -> errors::Error {
+    if error.code == -32000 {
+        errors::harness_unavailable("The selected harness requires sign-in")
+    } else {
+        errors::harness_unavailable(error.message)
+    }
+}
+
+fn bounded_reason(reason: &str) -> String {
+    let mut end = reason.len().min(512);
+    while !reason.is_char_boundary(end) {
+        end -= 1;
+    }
+    reason[..end].to_owned()
+}
+
+#[cfg(debug_assertions)]
+fn should_fail_old_close(directory: &std::path::Path) -> bool {
+    directory
+        .join("test-fail-harness-switch-old-close")
+        .is_file()
+}
+
+#[cfg(not(debug_assertions))]
+fn should_fail_old_close(_: &std::path::Path) -> bool {
+    false
+}
