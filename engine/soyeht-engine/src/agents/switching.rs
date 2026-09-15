@@ -829,6 +829,13 @@ impl Core {
     pub(crate) fn recover_harness_switches(&mut self, instances: &[Instance]) -> Result<()> {
         let panes = self.agents.keys().cloned().collect::<Vec<_>>();
         for pane in panes {
+            // Closing an agent is forbidden while a switch is pending, so a
+            // closed pane has no switch to recover. Keep it out of the
+            // live-pane accessor so one historical pane cannot abort startup
+            // reconciliation for every live process.
+            if self.panes.get(&pane).is_some_and(|pane| pane.stored.closed) {
+                continue;
+            }
             let state = self.agent_state(&pane)?;
             let Some(checkpoint) = state.harness_switch.clone() else {
                 continue;
@@ -967,7 +974,7 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn retired_process_cleanup_does_not_reject_a_closed_agent_pane() {
+    fn closed_agent_does_not_abort_switch_recovery_or_retired_cleanup() {
         let root = std::env::temp_dir().join(format!("soyeht-closed-agent-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let mut core = Core::open(&root).unwrap();
@@ -1027,6 +1034,7 @@ mod tests {
         );
         core.agents.insert(pane_id, Running::new(state));
 
+        core.recover_harness_switches(&[]).unwrap();
         core.cleanup_retired_agent_processes().unwrap();
         fs::remove_dir_all(root).unwrap();
     }
