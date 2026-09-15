@@ -104,10 +104,27 @@ fn second_reader_normalizes_the_verified_app_server_shape() {
         )],
     );
     assert_eq!(outcome.reading.state, UsageState::Ok);
-    assert_eq!(outcome.reading.primary.unwrap().used, 0.4);
+    let current = outcome.reading.primary.unwrap();
+    assert_eq!(current.used, 0.4);
+    assert_eq!(current.label, "Current window");
     let weekly = outcome.reading.secondary.unwrap();
     assert_eq!(weekly.used, 0.6);
     assert_eq!(weekly.label, "Weekly");
+}
+
+#[test]
+fn second_reader_names_a_primary_weekly_window() {
+    let payload = br#"{"result":{"rateLimits":{"primary":{"usedPercent":40,"resetsAt":1800000000,"windowDurationMins":10080},"secondary":null}}}"#.to_vec();
+    let (outcome, _) = refresh(
+        UsageProvider::Codex,
+        vec![(
+            UsageProvider::Codex,
+            UsageSource::CodexAppServer,
+            SourceRead::Payload(payload),
+        )],
+    );
+    assert_eq!(outcome.reading.primary.unwrap().label, "Weekly");
+    assert!(outcome.reading.secondary.is_none());
 }
 
 #[test]
