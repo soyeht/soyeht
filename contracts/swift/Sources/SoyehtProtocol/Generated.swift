@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2925ec6441361dbf3f0b0dcc92a3d1c0c945a3c925e70fa90682d985711ef36b). Do not edit.
+// Generated from contracts/protocol.json (sha256 8b3edb6e1f6426d9f562935c4eca5d141306c0429d365a602e422fff212d8f50). Do not edit.
 import Foundation
 
 
@@ -1381,6 +1381,15 @@ public struct ElicitationRequest: Codable, Sendable {
     }
 }
 
+public struct AgentHarnessSwitch: Codable, Sendable {
+    public var `fromHarness`: Id
+    public var `toHarness`: Id
+    public init(`fromHarness`: Id, `toHarness`: Id) {
+        self.`fromHarness` = `fromHarness`
+        self.`toHarness` = `toHarness`
+    }
+}
+
 public struct AgentSession: Codable, Sendable {
     public var `harness`: Id
     public var `version`: String
@@ -1398,7 +1407,8 @@ public struct AgentSession: Codable, Sendable {
     public var `activePromptId`: Id?
     public var `queuePaused`: Bool?
     public var `role`: AgentPaneRole
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole) {
+    public var `harnessSwitch`: AgentHarnessSwitch?
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
@@ -1415,6 +1425,7 @@ public struct AgentSession: Codable, Sendable {
         self.`activePromptId` = `activePromptId`
         self.`queuePaused` = `queuePaused`
         self.`role` = `role`
+        self.`harnessSwitch` = `harnessSwitch`
     }
 }
 

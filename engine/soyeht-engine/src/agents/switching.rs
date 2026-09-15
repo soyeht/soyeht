@@ -100,6 +100,7 @@ impl Core {
             },
             from_harness: state.launch.id.clone(),
             to_harness: launch.id.clone(),
+            to_name: launch.name.clone(),
             candidate_instance_key: Uuid::new_v4().to_string(),
             previous_queue_paused: state.queue_paused,
         };
@@ -771,6 +772,19 @@ impl Core {
             PaneState::Idle
         };
         saved.pane.phrase = "Original agent session restored".into();
+        let target = if checkpoint.to_name.is_empty() {
+            &checkpoint.to_harness
+        } else {
+            &checkpoint.to_name
+        };
+        let marker_message = transcript::new_message(
+            &mut state,
+            saved.pane.generation,
+            TranscriptRole::System,
+            TranscriptKind::System,
+            format!("The switch to {target} failed. The original agent session is still running."),
+            true,
+        )?;
         let mut changes = Changes {
             completed_user: Some(Completion {
                 user: checkpoint.user,
@@ -778,6 +792,7 @@ impl Core {
             }),
             ..Changes::default()
         };
+        transcript::put(&mut changes, pane, marker_message, "agent_message_chunk")?;
         changes.events.push((
             "pane.harness_switch_failed".into(),
             json!({"paneId":pane,"fromHarness":checkpoint.from_harness,

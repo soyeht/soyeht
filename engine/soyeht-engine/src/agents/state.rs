@@ -2,8 +2,8 @@ use crate::errors::{self, Result};
 use serde::{Deserialize, Serialize};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
-    AgentPaneRole, AgentSession, AttachmentRef, ConfigOperation, ConfigValue, HarnessLaunch,
-    PaneQueueListResult, PermissionMode, PromptItem, PromptOrigin, PromptStatus,
+    AgentHarnessSwitch, AgentPaneRole, AgentSession, AttachmentRef, ConfigOperation, ConfigValue,
+    HarnessLaunch, PaneQueueListResult, PermissionMode, PromptItem, PromptOrigin, PromptStatus,
     QueuedPromptSummary, Role, TaskExecutor, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
@@ -14,6 +14,8 @@ pub(crate) struct HarnessSwitchCheckpoint {
     pub(crate) user: super::pending::UserOperation,
     pub(crate) from_harness: String,
     pub(crate) to_harness: String,
+    #[serde(default)]
+    pub(crate) to_name: String,
     pub(crate) candidate_instance_key: String,
     pub(crate) previous_queue_paused: bool,
 }
@@ -266,6 +268,13 @@ impl State {
             draft: self.draft_until_ms > now_ms,
             active_prompt_id: self.active.as_ref().map(|p| p.prompt_id.clone()),
             queue_paused: Some(self.queue_paused),
+            harness_switch: self
+                .harness_switch
+                .as_ref()
+                .map(|checkpoint| AgentHarnessSwitch {
+                    from_harness: checkpoint.from_harness.clone(),
+                    to_harness: checkpoint.to_harness.clone(),
+                }),
         }
     }
 
@@ -579,6 +588,27 @@ mod tests {
             .unwrap(),
         );
         assert!(state.public(0).auth_methods.is_empty());
+    }
+
+    #[test]
+    fn public_state_restores_an_in_progress_harness_switch() {
+        let mut state = state();
+        state.harness_switch = Some(HarnessSwitchCheckpoint {
+            user: crate::agents::pending::UserOperation {
+                scope: "person".into(),
+                key: "switch-once".into(),
+            },
+            from_harness: "first".into(),
+            to_harness: "second".into(),
+            to_name: "Second".into(),
+            candidate_instance_key: "candidate".into(),
+            previous_queue_paused: false,
+        });
+
+        let public = state.public(0);
+        let switch = public.harness_switch.unwrap();
+        assert_eq!(switch.from_harness, "first");
+        assert_eq!(switch.to_harness, "second");
     }
 
     #[test]

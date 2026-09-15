@@ -47,7 +47,8 @@ import Testing
   let session = AgentSession(
     harness: "agent", version: "1", fingerprint: "fingerprint", options: [],
     authMethods: [], permission: .ask, yolo: false, queue: [], draft: false,
-    role: .worker)
+    role: .worker,
+    harnessSwitch: AgentHarnessSwitch(fromHarness: "first", toHarness: "second"))
   let pane = Pane(
     paneId: paneId, workspaceId: "workspace", name: "Agent", cwd: "/tmp",
     mode: .agent, state: .idle, source: .protocol, confidence: 1, phrase: "Ready",
@@ -56,6 +57,9 @@ import Testing
   #expect(client.agentPanes[paneId]?.permission == nil)
   #expect(client.agentPanes[paneId]?.queuePaused == false)
   #expect(client.agentPanes[paneId]?.authMethods.isEmpty == true)
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.phase == .switching)
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.fromHarness == "first")
+  #expect(client.agentPanes[paneId]?.harnessSwitch?.toHarness == "second")
 
   try client.applyAgentEvent(
     .paneNeedsLogin,

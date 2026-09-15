@@ -153,6 +153,10 @@ extension EngineClient {
       view.elicitation = nil
       view.queuePaused = pane.agent?.queuePaused ?? false
       view.authMethods = pane.agent?.authMethods ?? []
+      view.harnessSwitch = pane.agent?.harnessSwitch.map {
+        AgentHarnessSwitchView(
+          fromHarness: $0.fromHarness, toHarness: $0.toHarness, phase: .switching)
+      }
       agentPanes[pane.paneId] = view
     }
     for entry in sections["requests"] ?? [] {
