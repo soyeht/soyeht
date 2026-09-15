@@ -41,6 +41,37 @@ extension WritingSection {
   }
 }
 
+public enum PanePresentationOrder {
+  public static func arrange(_ panes: [Pane], selectedPaneId: String?) -> [Pane] {
+    guard panes.count > 2 else { return panes }
+    let selected = panes.first { $0.paneId == selectedPaneId }
+    guard selected?.mode != .terminal else { return panes }
+    let surface = preferredSurface(in: panes, selected: selected)
+    let agent = preferredAgent(in: panes, selected: selected)
+    var promoted: [Pane] = []
+    if let surface { promoted.append(surface) }
+    if let agent, !promoted.contains(where: { $0.paneId == agent.paneId }) {
+      promoted.append(agent)
+    }
+    if promoted.isEmpty, let selected { promoted.append(selected) }
+    promoted.append(
+      contentsOf: panes.filter { pane in
+        !promoted.contains { $0.paneId == pane.paneId }
+      })
+    return promoted
+  }
+
+  private static func preferredSurface(in panes: [Pane], selected: Pane?) -> Pane? {
+    if let selected, [.writing, .editor, .web].contains(selected.mode) { return selected }
+    return panes.first { [.writing, .editor, .web].contains($0.mode) }
+  }
+
+  private static func preferredAgent(in panes: [Pane], selected: Pane?) -> Pane? {
+    if selected?.mode == .agent { return selected }
+    return panes.first { $0.mode == .agent }
+  }
+}
+
 public protocol ClientPreferenceStore: AnyObject {
   func bool(forKey key: String) -> Bool
   func set(_ value: Bool, forKey key: String)
