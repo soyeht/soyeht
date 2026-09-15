@@ -233,7 +233,7 @@ private enum PhoneUsageTime {
   }
 
   private static func timestamp(_ value: String) -> Date? {
-    ISO8601DateFormatter().date(from: value)
+    UsageTimestamp.date(from: value)
   }
 
   private static func duration(_ seconds: TimeInterval) -> String {

@@ -39,9 +39,16 @@ fn parse_app_server(payload: &[u8], source: UsageSource) -> Result<ParsedReading
     let secondary = limits
         .get("secondary")
         .filter(|value| !value.is_null())
-        .map(|value| parse_window(value, "Secondary window", source.clone()))
+        .map(|value| parse_window(value, window_label(value), source.clone()))
         .transpose()?;
     Ok(ParsedReading { primary, secondary })
+}
+
+fn window_label(value: &Value) -> &'static str {
+    match value["windowDurationMins"].as_u64() {
+        Some(10_080) => "Weekly",
+        _ => "Secondary window",
+    }
 }
 
 fn parse_window(value: &Value, label: &str, source: UsageSource) -> Result<Window> {
