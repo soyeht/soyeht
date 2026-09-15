@@ -11,7 +11,41 @@ public struct ScreenplayAdvanceEdit: Equatable, Sendable {
   }
 }
 
+public struct ScreenplayTypingEdit: Sendable {
+  public let source: String
+  public let cursor: Int
+  public let activeLine: UInt32
+  public let wireEdit: TextEdit
+
+  public init(source: String, cursor: Int, activeLine: UInt32, wireEdit: TextEdit) {
+    self.source = source
+    self.cursor = cursor
+    self.activeLine = activeLine
+    self.wireEdit = wireEdit
+  }
+}
+
 public enum ScreenplayInteraction {
+  public static func typingEdit(
+    source: String, firstLine: UInt32, range: NSRange, replacement: String
+  ) -> ScreenplayTypingEdit? {
+    let raw = source as NSString
+    guard NSMaxRange(range) <= raw.length,
+      let start = EditorEditing.textPosition(
+        text: source, viewportStartLine: firstLine, utf16Offset: range.location),
+      let end = EditorEditing.textPosition(
+        text: source, viewportStartLine: firstLine, utf16Offset: NSMaxRange(range))
+    else { return nil }
+    let updated = raw.replacingCharacters(in: range, with: replacement)
+    let cursor = range.location + replacement.utf16.count
+    let line =
+      EditorEditing.textPosition(
+        text: updated, viewportStartLine: firstLine, utf16Offset: cursor)?.line ?? start.line
+    return ScreenplayTypingEdit(
+      source: updated, cursor: cursor, activeLine: line,
+      wireEdit: TextEdit(range: .init(start: start, end: end), text: replacement))
+  }
+
   public static func element(
     at line: UInt32, in structure: WritingStructureResult
   ) -> ScreenplayElement? {
