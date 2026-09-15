@@ -430,7 +430,8 @@ public final class EngineClient {
     case .paneUpdate, .panePermissionRequested, .panePermissionAnswered,
       .paneElicitationRequested, .paneElicitationAnswered, .paneQueued,
       .paneQueuePaused, .paneQueueResumed, .paneSessionStarted, .paneTurnEnded,
-      .paneSessionLost, .paneNeedsLogin, .paneAuthFinished, .paneConfigFailed:
+      .paneSessionLost, .paneNeedsLogin, .paneAuthFinished, .paneConfigFailed,
+      .paneHarnessSwitchStarted, .paneHarnessSwitchDone, .paneHarnessSwitchFailed:
       try applyAgentEvent(eventName, params)
     case .taskCreated, .taskMoved, .taskClaimed, .taskReleased, .taskCommented,
       .taskSubitemChanged, .taskBlocked, .taskUnblocked, .taskPhraseChanged,
