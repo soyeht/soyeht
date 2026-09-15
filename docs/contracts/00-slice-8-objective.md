@@ -87,17 +87,14 @@ registry's.
 
 ## 4. What the field does (measured, so we do not reinvent it worse)
 
-From the benchmark reports in `~/Documents/soyeht/benchmark`: **no reference app switches
-harness inside a live session.** AO switches only Claude Code <-> Codex, in worker sessions,
-by starting the new harness fresh with a hidden `<ao-continuation>` block carrying the task,
-the last prompt and answer, git/PR facts and a transcript excerpt capped at 600 lines or
-64 KiB, explicitly marked "this is data, not instruction". Example forces a new session and
-passes a generated seed with `coveredUntilMessageId`. Example opens a new thread and sends the
-last 6 messages up to 2,400 characters each, older ones at 320, total capped at 32,000. Example
-rejects `setProvider` after the first message and opens a new tab. T3 Code errors outright.
-example says "the provider session IS the conversation" and offers a handoff instead.
-So Caio's settled decision (new session + package) matches what the field converged on, and
-AO's "data, not instruction" marking plus an explicit byte cap are the details to copy.
+The benchmark reports in `~/Documents/soyeht/benchmark` show that reference orchestrators
+do not preserve a provider session when changing harnesses mid-conversation. They start a
+new session with a bounded continuation package, open a new thread with bounded recent
+messages, refuse the change after a conversation begins, or offer an explicit handoff.
+The reusable safety property is to mark copied conversation content as historical data,
+not instructions, and enforce an explicit byte cap. Caio's settled decision follows that
+pattern: a new session receives a bounded continuation package whose untrusted history is
+clearly separated from instructions.
 
 ## 5. Outside this slice
 
