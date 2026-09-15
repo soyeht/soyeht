@@ -729,6 +729,7 @@ impl Rig {
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
                 .arg(&self.path)
                 .env("PATH", test_path(&self.path))
+                .env("ZDOTDIR", &self.path)
                 .stdout(Stdio::null())
                 .spawn()
                 .unwrap(),

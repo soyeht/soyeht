@@ -50,6 +50,9 @@ pub struct Core {
 
 impl Core {
     pub fn open(directory: &Path) -> Result<Self> {
+        // Resolve the user's interactive launch path before requests arrive so
+        // catalogue reads and process launches share one environment snapshot.
+        let _ = crate::agents::environment::launch_path();
         let mut store = Store::open(directory).map_err(errors::storage)?;
         let generation = store.next_engine_generation().map_err(errors::storage)?;
         if generation > u32::MAX as u64 {

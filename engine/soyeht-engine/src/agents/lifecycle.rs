@@ -7,7 +7,6 @@ use crate::{
 use serde_json::json;
 use soyeht_protocol::{PaneState, StateSource, ndjson::Decoder};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
-use std::collections::BTreeMap;
 
 impl Core {
     pub(crate) fn recover_missing_agent(&mut self, id: &str) -> Result<()> {
@@ -126,7 +125,7 @@ impl Core {
             kind: ProcessKind::PipesAcp,
             cwd: saved.pane.cwd.clone(),
             argv,
-            env: BTreeMap::new(),
+            env: super::environment::launch_environment(),
             cols: saved.pane.cols as u16,
             rows: saved.pane.rows as u16,
         };
