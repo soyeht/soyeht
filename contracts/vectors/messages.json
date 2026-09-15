@@ -2367,6 +2367,29 @@
     }
   },
   {
+    "name": "HarnessSource",
+    "type": "HarnessSource",
+    "value": "built_in"
+  },
+  {
+    "name": "HarnessSetupState",
+    "type": "HarnessSetupState",
+    "value": "check_setup"
+  },
+  {
+    "name": "HarnessEnvironmentIssue",
+    "type": "HarnessEnvironmentIssue",
+    "value": "probe_timed_out"
+  },
+  {
+    "name": "HarnessEnvironmentVariable",
+    "type": "HarnessEnvironmentVariable",
+    "value": {
+      "key": "LOG_LEVEL",
+      "value": "info"
+    }
+  },
+  {
     "name": "HarnessInfo",
     "type": "HarnessInfo",
     "value": {
@@ -2400,7 +2423,9 @@
           "name": "example",
           "terminal": false
         }
-      ]
+      ],
+      "source": "built_in",
+      "setupState": "check_setup"
     }
   },
   {
@@ -2426,7 +2451,13 @@
       "args": [
         "00000000-0000-4000-8000-000000000001"
       ],
-      "version": "example"
+      "version": "example",
+      "environment": [
+        {
+          "key": "LOG_LEVEL",
+          "value": "info"
+        }
+      ]
     }
   },
   {
@@ -3565,9 +3596,12 @@
                 "name": "example",
                 "terminal": false
               }
-            ]
+            ],
+            "source": "built_in",
+            "setupState": "check_setup"
           }
-        ]
+        ],
+        "environmentIssue": "probe_timed_out"
       }
     }
   },

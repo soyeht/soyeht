@@ -470,6 +470,7 @@ mod tests {
                 command: "/test".into(),
                 args: vec![],
                 version: "1".into(),
+                environment: None,
             },
             "digest".into(),
             PermissionMode::Ask,
@@ -570,6 +571,7 @@ mod tests {
             command: "/task".into(),
             args: vec![],
             version: "2".into(),
+            environment: None,
         };
 
         let restarted = prior

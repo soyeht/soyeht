@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4ba7423cb45084eee1f5751b031ddf20c4958dda627df402f0ba9e5d51dfec56). Do not edit.
+// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1326,6 +1326,10 @@ pub struct HarnessInfo {
     pub options: Vec<ConfigOption>,
     #[serde(rename = "authMethods")]
     pub auth_methods: Vec<AuthMethod>,
+    #[serde(rename = "source", skip_serializing_if = "Option::is_none")]
+    pub source: Option<HarnessSource>,
+    #[serde(rename = "setupState", skip_serializing_if = "Option::is_none")]
+    pub setup_state: Option<HarnessSetupState>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelInfo {
@@ -1355,6 +1359,8 @@ pub struct HarnessLaunch {
     pub args: Vec<String>,
     #[serde(rename = "version")]
     pub version: String,
+    #[serde(rename = "environment", skip_serializing_if = "Option::is_none")]
+    pub environment: Option<Vec<HarnessEnvironmentVariable>>,
 }
 pub type HarnessConfiguration = Vec<HarnessLaunch>;
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1658,6 +1664,8 @@ pub struct HarnessListParams {
     pub cursor: Option<Id>,
     #[serde(rename = "limit", skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    #[serde(rename = "rescan", skip_serializing_if = "Option::is_none")]
+    pub rescan: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HarnessListResult {
@@ -1665,6 +1673,8 @@ pub struct HarnessListResult {
     pub items: Vec<HarnessInfo>,
     #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<Id>,
+    #[serde(rename = "environmentIssue", skip_serializing_if = "Option::is_none")]
+    pub environment_issue: Option<HarnessEnvironmentIssue>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelListParams {
@@ -4901,6 +4911,48 @@ pub struct WritingChangedEvent {
     pub revision: Decimal,
     #[serde(rename = "sidecarRevision")]
     pub sidecar_revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum HarnessSource {
+    #[serde(rename = "built_in")]
+    BuiltIn,
+    #[serde(rename = "custom")]
+    Custom,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum HarnessSetupState {
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "not_installed")]
+    NotInstalled,
+    #[serde(rename = "sign_in")]
+    SignIn,
+    #[serde(rename = "check_setup")]
+    CheckSetup,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum HarnessEnvironmentIssue {
+    #[serde(rename = "missing_shell")]
+    MissingShell,
+    #[serde(rename = "unsupported_shell")]
+    UnsupportedShell,
+    #[serde(rename = "unavailable_shell")]
+    UnavailableShell,
+    #[serde(rename = "probe_failed")]
+    ProbeFailed,
+    #[serde(rename = "probe_timed_out")]
+    ProbeTimedOut,
+    #[serde(rename = "output_too_large")]
+    OutputTooLarge,
+    #[serde(rename = "invalid_output")]
+    InvalidOutput,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessEnvironmentVariable {
+    #[serde(rename = "key")]
+    pub key: String,
+    #[serde(rename = "value")]
+    pub value: String,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]

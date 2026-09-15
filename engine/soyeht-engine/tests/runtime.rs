@@ -1923,6 +1923,31 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
 }
 
+#[test]
+fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
+    let rig = Rig::new();
+    assert!(!rig.path.join("harnesses.json").exists());
+    let mut client = rig.client();
+    let registry = client.call("harness.list", json!({"limit":64,"rescan":true}));
+    let items = registry["items"].as_array().unwrap();
+    assert_eq!(items.len(), 41);
+    for id in [
+        "registry.claude-acp",
+        "registry.codex-acp",
+        "registry.cursor",
+        "registry.opencode",
+        "registry.gemini",
+    ] {
+        let item = items.iter().find(|item| item["id"] == id).unwrap();
+        assert_eq!(item["source"], "built_in");
+        assert!(matches!(
+            item["setupState"].as_str(),
+            Some("ready" | "not_installed" | "check_setup")
+        ));
+    }
+    assert!(registry["nextCursor"].is_null());
+}
+
 fn start_agent_case(rig: &Rig) -> (Client, String, Value) {
     let binary =
         PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");

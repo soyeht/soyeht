@@ -2507,6 +2507,12 @@
           "items": {
             "$ref": "#/$defs/AuthMethod"
           }
+        },
+        "source": {
+          "$ref": "#/$defs/HarnessSource"
+        },
+        "setupState": {
+          "$ref": "#/$defs/HarnessSetupState"
         }
       },
       "required": [
@@ -2565,6 +2571,12 @@
         },
         "version": {
           "type": "string"
+        },
+        "environment": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HarnessEnvironmentVariable"
+          }
         }
       },
       "required": [
@@ -3236,6 +3248,9 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 64
+        },
+        "rescan": {
+          "type": "boolean"
         }
       },
       "required": [],
@@ -3252,6 +3267,9 @@
         },
         "nextCursor": {
           "$ref": "#/$defs/Id"
+        },
+        "environmentIssue": {
+          "$ref": "#/$defs/HarnessEnvironmentIssue"
         }
       },
       "required": [
@@ -9996,6 +10014,50 @@
         "paneId",
         "revision",
         "sidecarRevision"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessSource": {
+      "type": "string",
+      "enum": [
+        "built_in",
+        "custom"
+      ]
+    },
+    "HarnessSetupState": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "not_installed",
+        "sign_in",
+        "check_setup"
+      ]
+    },
+    "HarnessEnvironmentIssue": {
+      "type": "string",
+      "enum": [
+        "missing_shell",
+        "unsupported_shell",
+        "unavailable_shell",
+        "probe_failed",
+        "probe_timed_out",
+        "output_too_large",
+        "invalid_output"
+      ]
+    },
+    "HarnessEnvironmentVariable": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
       ],
       "additionalProperties": true
     }

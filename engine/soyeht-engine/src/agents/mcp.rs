@@ -95,6 +95,7 @@ mod tests {
                 command: "/bin/false".into(),
                 args: Vec::new(),
                 version: "1".into(),
+                environment: None,
             },
             "digest".into(),
             PermissionMode::Ask,

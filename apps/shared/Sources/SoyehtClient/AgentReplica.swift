@@ -329,19 +329,24 @@ extension EngineClient {
     perform { try await self.loadAgentQueue(paneId) }
   }
 
-  public func refreshHarnesses() {
+  public func refreshHarnesses(rescan: Bool = false) {
     perform {
       var cursor: String?
       var items: [HarnessInfo] = []
+      var environmentIssue: HarnessEnvironmentIssue?
       repeat {
         let page = try await self.request(
-          "harness.list", .encoded(HarnessListParams(cursor: cursor, limit: 64))
+          "harness.list",
+          .encoded(
+            HarnessListParams(cursor: cursor, limit: 64, rescan: cursor == nil ? rescan : nil))
         )
         .decoded(HarnessListResult.self)
         items.append(contentsOf: page.items)
+        environmentIssue = environmentIssue ?? page.environmentIssue
         cursor = page.nextCursor
       } while cursor != nil
       self.harnesses = items
+      self.harnessEnvironmentIssue = environmentIssue
     }
   }
 

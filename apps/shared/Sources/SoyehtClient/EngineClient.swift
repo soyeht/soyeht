@@ -11,6 +11,7 @@ public final class EngineClient {
   public internal(set) var agentPanes: [String: AgentPaneView] = [:]
   public internal(set) var agentWebDrafts: [String: AgentWebAttachmentDraft] = [:]
   public internal(set) var harnesses: [HarnessInfo] = []
+  public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public internal(set) var tasks: [TaskRecord] = []
   public internal(set) var taskDetails: [String: TaskShowResult] = [:]

@@ -311,6 +311,7 @@ mod tests {
                 command: "/bin/false".into(),
                 args: vec![],
                 version: "test".into(),
+                environment: None,
             },
             "digest".into(),
             PermissionMode::AllowAll,
