@@ -329,25 +329,68 @@ extension EngineClient {
     perform { try await self.loadAgentQueue(paneId) }
   }
 
+  private func loadHarnesses(rescan: Bool) async throws {
+    var cursor: String?
+    var items: [HarnessInfo] = []
+    var environmentIssue: HarnessEnvironmentIssue?
+    repeat {
+      let page = try await request(
+        "harness.list",
+        .encoded(HarnessListParams(cursor: cursor, limit: 64, rescan: cursor == nil ? rescan : nil))
+      )
+      .decoded(HarnessListResult.self)
+      items.append(contentsOf: page.items)
+      environmentIssue = environmentIssue ?? page.environmentIssue
+      cursor = page.nextCursor
+    } while cursor != nil
+    harnesses = items
+    harnessEnvironmentIssue = environmentIssue
+  }
+
   public func refreshHarnesses(rescan: Bool = false) {
-    perform {
-      var cursor: String?
-      var items: [HarnessInfo] = []
-      var environmentIssue: HarnessEnvironmentIssue?
-      repeat {
-        let page = try await self.request(
-          "harness.list",
-          .encoded(
-            HarnessListParams(cursor: cursor, limit: 64, rescan: cursor == nil ? rescan : nil))
-        )
-        .decoded(HarnessListResult.self)
-        items.append(contentsOf: page.items)
-        environmentIssue = environmentIssue ?? page.environmentIssue
-        cursor = page.nextCursor
-      } while cursor != nil
-      self.harnesses = items
-      self.harnessEnvironmentIssue = environmentIssue
-    }
+    perform { try await self.loadHarnesses(rescan: rescan) }
+  }
+
+  private func loadCustomHarnesses() async throws {
+    customHarnesses = try await request(
+      "harness.custom.list", .encoded(HarnessCustomListParams())
+    ).decoded(HarnessCustomListResult.self).items
+  }
+
+  public func refreshCustomHarnesses() {
+    guard !readOnly else { return }
+    perform { try await self.loadCustomHarnesses() }
+  }
+
+  private func refreshAfterCustomHarnessMutation() async throws {
+    try await loadCustomHarnesses()
+    try await loadHarnesses(rescan: true)
+  }
+
+  public func createCustomHarness(_ harness: HarnessLaunch) async throws -> HarnessLaunch {
+    let result = try await mutation(
+      "harness.custom.create",
+      HarnessCustomCreateParams(harness: harness, idempotencyKey: UUID().uuidString)
+    ).decoded(HarnessCustomMutationResult.self)
+    try await refreshAfterCustomHarnessMutation()
+    return result.harness
+  }
+
+  public func updateCustomHarness(_ harness: HarnessLaunch) async throws -> HarnessLaunch {
+    let result = try await mutation(
+      "harness.custom.update",
+      HarnessCustomUpdateParams(harness: harness, idempotencyKey: UUID().uuidString)
+    ).decoded(HarnessCustomMutationResult.self)
+    try await refreshAfterCustomHarnessMutation()
+    return result.harness
+  }
+
+  public func removeCustomHarness(_ harnessId: String) async throws {
+    _ = try await mutation(
+      "harness.custom.remove",
+      HarnessCustomRemoveParams(harnessId: harnessId, idempotencyKey: UUID().uuidString)
+    ).decoded(HarnessCustomRemoveResult.self)
+    try await refreshAfterCustomHarnessMutation()
   }
 
   public func refreshCatalogue(harness: String, paneId: String? = nil) {
