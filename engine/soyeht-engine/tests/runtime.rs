@@ -1955,6 +1955,21 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
     let rig = Rig::new();
     assert!(!rig.path.join("harnesses.json").exists());
     let mut client = rig.client();
+    let initial = client.call("harness.list", json!({"limit":64}));
+    assert_eq!(
+        initial["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "registry.amp-acp")
+            .unwrap()["setupState"],
+        "not_installed"
+    );
+
+    let installed_after_start = rig.path.join("bin/amp-acp");
+    fs::write(&installed_after_start, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&installed_after_start, fs::Permissions::from_mode(0o700)).unwrap();
+
     let registry = client.call("harness.list", json!({"limit":64,"rescan":true}));
     let items = registry["items"].as_array().unwrap();
     assert_eq!(items.len(), 41);
@@ -1972,6 +1987,12 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
             Some("ready" | "not_installed" | "check_setup")
         ));
     }
+    let installed = items
+        .iter()
+        .find(|item| item["id"] == "registry.amp-acp")
+        .unwrap();
+    assert_eq!(installed["available"], true);
+    assert_eq!(installed["setupState"], "check_setup");
     assert!(registry["nextCursor"].is_null());
 }
 
