@@ -933,10 +933,23 @@ private struct NewTaskSheet: View {
   @State private var submitting = false
 
   private var valid: Bool {
-    !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && !mustNotChange.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && (workspaceDefault || !harness.isEmpty)
+    missingRequiredFields.isEmpty && (workspaceDefault || !harness.isEmpty)
+  }
+  private var missingRequiredFields: [String] {
+    [
+      ("title", title),
+      ("description", description),
+      ("MUST NOT CHANGE", mustNotChange),
+    ].compactMap { name, value in
+      value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? name : nil
+    }
+  }
+  private var actionHint: String {
+    if !missingRequiredFields.isEmpty {
+      return "Required: \(missingRequiredFields.joined(separator: ", "))"
+    }
+    if !workspaceDefault && harness.isEmpty { return "Required: choose an agent" }
+    return "⌘↩ create · ⇧⌘↩ create & dispatch"
   }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
   private var effortOption: ConfigOption? {
@@ -959,9 +972,9 @@ private struct NewTaskSheet: View {
             .foregroundStyle(MacTheme.muted)
         }.buttonStyle(.plain)
       }
-      TaskField(title: "TITLE", text: $title)
+      TaskField(title: "TITLE · REQUIRED", text: $title)
       TaskEditor(
-        title: "DESCRIPTION", text: $description, showsAccessories: true,
+        title: "DESCRIPTION · REQUIRED", text: $description, showsAccessories: true,
         accessoryAction: { showHowToVerify = true }
       )
       .popover(isPresented: $showHowToVerify, arrowEdge: .bottom) { verificationEditor }
@@ -1098,12 +1111,13 @@ private struct NewTaskSheet: View {
 
   private var actions: some View {
     HStack(spacing: MacTheme.Space.x10) {
-      Text("⌘↩ create · ⇧⌘↩ create & dispatch")
+      Text(actionHint)
         .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
-        .foregroundStyle(MacTheme.muted)
+        .foregroundStyle(valid ? MacTheme.muted : MacTheme.warning)
       Spacer()
       Button("Create in list") { create(dispatch: false) }
         .buttonStyle(NeoPillButtonStyle(elevation: .action)).disabled(!valid || submitting)
+        .accessibilityHint(valid ? "Create this task" : actionHint)
         .keyboardShortcut(.return, modifiers: [.command])
       Button {
         create(dispatch: true)
@@ -1111,6 +1125,7 @@ private struct NewTaskSheet: View {
         Label("Create and dispatch", systemImage: "paperplane")
       }
       .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!valid || submitting)
+      .accessibilityHint(valid ? "Create and dispatch this task" : actionHint)
       .keyboardShortcut(.return, modifiers: [.command, .shift])
     }.padding(.top, MacTheme.Space.x6)
   }
