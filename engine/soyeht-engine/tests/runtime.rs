@@ -1512,7 +1512,7 @@ fn induced_candidate_failure_leaves_the_original_session_serving_prompts() {
 
 #[test]
 fn continuation_build_failure_leaves_the_original_session_serving_prompts() {
-    let rig = Rig::new();
+    let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();
     rig.install_switch_harnesses();
     let original_session = client.pane(&pane)["agent"]["sessionId"]
@@ -1572,6 +1572,17 @@ fn continuation_build_failure_leaves_the_original_session_serving_prompts() {
         thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(process_instances(&rig).len(), 1);
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let transcript = restored.call("pane.transcript", json!({"paneId":pane}));
+    assert!(transcript["items"].as_array().unwrap().iter().any(|message| {
+        message["role"] == "system"
+            && message["text"].as_str().is_some_and(|text| {
+                text == "The switch to Next agent failed. The original agent session is still running."
+            })
+    }));
 }
 
 #[test]

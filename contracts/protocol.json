@@ -2355,6 +2355,22 @@
       ],
       "additionalProperties": true
     },
+    "AgentHarnessSwitch": {
+      "type": "object",
+      "properties": {
+        "fromHarness": {
+          "$ref": "#/$defs/Id"
+        },
+        "toHarness": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fromHarness",
+        "toHarness"
+      ],
+      "additionalProperties": true
+    },
     "AgentSession": {
       "type": "object",
       "properties": {
@@ -2414,6 +2430,9 @@
         },
         "role": {
           "$ref": "#/$defs/AgentPaneRole"
+        },
+        "harnessSwitch": {
+          "$ref": "#/$defs/AgentHarnessSwitch"
         }
       },
       "required": [

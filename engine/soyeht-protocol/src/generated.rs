@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2925ec6441361dbf3f0b0dcc92a3d1c0c945a3c925e70fa90682d985711ef36b). Do not edit.
+// Generated from contracts/protocol.json (sha256 8b3edb6e1f6426d9f562935c4eca5d141306c0429d365a602e422fff212d8f50). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1256,6 +1256,13 @@ pub struct ElicitationRequest {
     pub expires_at: String,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentHarnessSwitch {
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentSession {
     #[serde(rename = "harness")]
     pub harness: Id,
@@ -1289,6 +1296,8 @@ pub struct AgentSession {
     pub queue_paused: Option<bool>,
     #[serde(rename = "role")]
     pub role: AgentPaneRole,
+    #[serde(rename = "harnessSwitch", skip_serializing_if = "Option::is_none")]
+    pub harness_switch: Option<AgentHarnessSwitch>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProbeCapability {
