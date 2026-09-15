@@ -877,8 +877,13 @@ private struct NewPaneSheet: View {
                 }
               }
             } else {
-              Text("Terminal")
-                .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+              Button(action: create) {
+                Text("Terminal")
+                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+              }
+              .buttonStyle(.plain)
+              .disabled(directory == nil || submitting)
+              .accessibilityHint("Open a terminal in the selected directory")
             }
             Spacer()
             Button(action: create) {
