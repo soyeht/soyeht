@@ -242,6 +242,7 @@ impl Core {
         if actor.role == Role::HumanDevice
             && (method == "pane.input"
                 || method == "settings.set"
+                || method.starts_with("harness.custom.")
                 || method.starts_with("device.") && method != "device.list")
         {
             return Err(errors::forbidden_role(
@@ -317,21 +318,14 @@ impl Core {
             "pane.role.set" => self.pane_role_set(connection, params)?,
             "pane.auth.start" => self.agent_auth_start(connection, params)?,
             "harness.list" | "model.list" => self.agent_catalog(method, params)?,
+            method if method.starts_with("harness.custom.") => {
+                self.agent_custom_harness(connection, method, params)?
+            }
             "pane.prompt" | "pane.queue.list" | "pane.queue.remove" | "pane.queue.resume"
             | "pane.cancel" | "pane.config.set" | "pane.transcript" | "pane.draft" => {
                 self.agent_method(connection, method, params, prompt_attachments)?
             }
-            "pane.permission.answer" => {
-                let request_id = errors::param_str(params, "requestId")?;
-                if StorePort::web_permission_request(&self.store, request_id)
-                    .map_err(errors::storage)?
-                    .is_some()
-                {
-                    self.web_permission_answer(connection, params)?
-                } else {
-                    self.agent_answer(connection, method, params)?
-                }
-            }
+            "pane.permission.answer" => self.permission_answer(connection, method, params)?,
             "pane.elicitation.answer" => self.agent_answer(connection, method, params)?,
             "task.show" | "task.list" | "task.comments" => {
                 self.task_query(connection, method, params)?
@@ -410,6 +404,23 @@ impl Core {
             );
         }
         Ok(Outcome::Reply(result))
+    }
+
+    fn permission_answer(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Value> {
+        let request_id = errors::param_str(params, "requestId")?;
+        if StorePort::web_permission_request(&self.store, request_id)
+            .map_err(errors::storage)?
+            .is_some()
+        {
+            self.web_permission_answer(connection, params)
+        } else {
+            self.agent_answer(connection, method, params)
+        }
     }
 
     fn snapshot_section(&mut self, section: &str) -> Result<Value> {
