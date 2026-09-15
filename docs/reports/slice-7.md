@@ -1,7 +1,7 @@
 # Slice 7 · neomorphic themes
 
-Date: 2026-09-14. Profile: `Soyeht.next/dev`. License: Apache-2.0. Implementation
-head before this report: `914560bbd9e82d9d6503a2d5d64376d030c7c26e`.
+Date: 2026-09-15. Profile: `Soyeht.next/dev`. License: Apache-2.0. Closing
+implementation head: `ea5d858d87cf2564443a6e28f3526867a412d145`.
 
 Slice 7 is complete. The rewrite now carries the same closed set of nine
 neomorphic themes as production Soyeht, with Neo · Milk as the seeded default.
@@ -78,7 +78,7 @@ source.
 | 4 · live switching and persistence | passed | The reviewer changed the running app to Midnight Teal and observed tabs, rail, Preferences and background panes re-render immediately. A close/relaunch restored the selected theme before any new selection; store tests cover default, unknown identifiers, all nine selections and restart restoration. |
 | 5 · picker | passed | Preferences renders all nine exact names and candidate-colored neomorphic previews from `TerminalColorTheme.allCases`; selecting a card updates the shared store and accessibility state. |
 | 6 · design fidelity | passed, reviewer confirmed | The reviewer confirmed the closing Dev build against production. Real framebuffer pairs for every theme are below; Milk shows the light raised/well recipe and Deep Harbor shows the authored dark-well recipe. |
-| 7 · no regression | passed | 507 repository test declarations, 37 automated acceptances and all 35 gate steps pass. Protocol generation, four hardening ratchets, font/color gates, restricted-vocabulary scan, Rust, Mac and iPhone checks are green; protocol version remains 1. |
+| 7 · no regression | passed | 513 repository test declarations, 37 automated acceptances and all 35 gate steps pass. Protocol generation, four hardening ratchets, font/color gates, restricted-vocabulary scan, Rust, Mac and iPhone checks are green; protocol version remains 1. |
 
 ## Theme comparisons
 
@@ -89,6 +89,10 @@ Workspace content differs, while the compared canvas, face, ink, accents,
 raised shadows and recessed wells are the named theme's own authored values.
 The production preference was restored to its original Neo · Deep Harbor after
 capture; the Dev build was restored to seeded Neo · Milk.
+
+These captures remain the palette-fidelity evidence. The later hands-on QA pass
+changed writing interactions, pane composition, rail marks and agent split
+controls without changing the theme catalogue, palette projection or picker.
 
 The picker itself shows the closed catalogue and theme-specific previews:
 
@@ -179,7 +183,7 @@ Hosted GitHub Actions remains disabled by project decision. Every PR used the
 local gate with the private restricted vocabulary and the implementation base.
 The final implementation gate passed:
 
-- 507 repository test declarations;
+- 513 repository test declarations;
 - 37 automated acceptances;
 - all 35 gate steps, with no removed test, acceptance or step;
 - generated protocol and profile files with no diff;
@@ -194,6 +198,37 @@ The final implementation gate passed:
 - zero raw Mac text fonts or unapproved Mac/iPhone colors.
 
 The report PR repeats the complete gate from the final implementation base.
+
+## Hands-on usability close
+
+Hands-on testing after the first report exposed defects that the automated and
+visual theme checks had not exercised. The slice was reopened until the
+writing workflow and the surrounding pane controls worked under sustained use.
+
+- Writing and beat-board operations now refresh and retry a stale document
+  revision instead of presenting repeated `stale_version` failures.
+- The screenplay editor keeps local input responsive while durable writes are
+  serialized and structure refreshes are coalesced. Caio typed the complete
+  two-page acceptance screenplay by hand: all 991 bytes and 130 lines landed
+  without dropped characters or visible re-rendering.
+- Enter and Tab advance screenplay elements; the selector and scene outline
+  follow the current element; Fountain scene headings, characters, dialogue,
+  parentheticals and transitions use the approved layout.
+- The writing composition stays full-height, the active rail section follows
+  the document, overflowing tabs no longer overlap the add button, Markdown
+  tables retain their final row, and byte counts use a stable numeric label.
+- Required task fields explain why creation is disabled, and both the terminal
+  label and submit arrow perform the same pane-create action.
+- The writing rail uses the approved quill, usage rings render the three
+  provider marks, and the agent pane's column and row split controls are real
+  accessible buttons. The column action keeps the live agent session and opens
+  the existing new-pane composer beside it; the row action changes that
+  composition to top/bottom.
+
+The closing Dev GUI was rebuilt from `ea5d858`. The complete gate passed at
+that commit, and the final column/row split behavior was exercised in the live
+app. The hands-on fixes did not alter the closed theme set, persistence model,
+protocol, engine schema or palette values.
 
 ## Run from scratch on a clean Mac
 
@@ -227,6 +262,16 @@ The report PR repeats the complete gate from the final implementation base.
 3. [#239 · active palette tokens and color gate](https://github.com/soyeht/soyeht/pull/239)
 4. [#240 · persisted live theme store](https://github.com/soyeht/soyeht/pull/240)
 5. [#241 · Appearance theme picker](https://github.com/soyeht/soyeht/pull/241)
+6. [#242 · initial theme report](https://github.com/soyeht/soyeht/pull/242)
+7. [#243 · writing revision and screenplay editing](https://github.com/soyeht/soyeht/pull/243)
+8. [#244 · writing layout and table projection](https://github.com/soyeht/soyeht/pull/244)
+9. [#245 · awaited primary create actions](https://github.com/soyeht/soyeht/pull/245)
+10. [#246 · required task fields and terminal action](https://github.com/soyeht/soyeht/pull/246)
+11. [#247 · responsive local writing input](https://github.com/soyeht/soyeht/pull/247)
+12. [#248 · writing pane composition and rail state](https://github.com/soyeht/soyeht/pull/248)
+13. [#249 · Fountain screenplay rendering](https://github.com/soyeht/soyeht/pull/249)
+14. [#250 · writing and provider rail marks](https://github.com/soyeht/soyeht/pull/250)
+15. [#251 · agent pane split controls](https://github.com/soyeht/soyeht/pull/251)
 
-The report PR records the final gates and reviewer-confirmed visual evidence for
-slice 7.
+This report update records the final gate, the reviewer-confirmed theme
+evidence and the hands-on QA close.
