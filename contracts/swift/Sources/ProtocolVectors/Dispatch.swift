@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
+// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -174,6 +174,13 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PaneDraftResult": return try codec(SoyehtProtocol.PaneDraftResult.self, data)
         case "HarnessListParams": return try codec(SoyehtProtocol.HarnessListParams.self, data)
         case "HarnessListResult": return try codec(SoyehtProtocol.HarnessListResult.self, data)
+        case "HarnessCustomListParams": return try codec(SoyehtProtocol.HarnessCustomListParams.self, data)
+        case "HarnessCustomListResult": return try codec(SoyehtProtocol.HarnessCustomListResult.self, data)
+        case "HarnessCustomCreateParams": return try codec(SoyehtProtocol.HarnessCustomCreateParams.self, data)
+        case "HarnessCustomUpdateParams": return try codec(SoyehtProtocol.HarnessCustomUpdateParams.self, data)
+        case "HarnessCustomMutationResult": return try codec(SoyehtProtocol.HarnessCustomMutationResult.self, data)
+        case "HarnessCustomRemoveParams": return try codec(SoyehtProtocol.HarnessCustomRemoveParams.self, data)
+        case "HarnessCustomRemoveResult": return try codec(SoyehtProtocol.HarnessCustomRemoveResult.self, data)
         case "ModelListParams": return try codec(SoyehtProtocol.ModelListParams.self, data)
         case "ModelListResult": return try codec(SoyehtProtocol.ModelListResult.self, data)
         case "PaneSessionStartedEvent": return try codec(SoyehtProtocol.PaneSessionStartedEvent.self, data)

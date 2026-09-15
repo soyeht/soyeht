@@ -10900,5 +10900,226 @@
         "sidecarRevision": "1"
       }
     }
+  },
+  {
+    "name": "HarnessCustomListParams",
+    "type": "HarnessCustomListParams",
+    "value": {}
+  },
+  {
+    "name": "HarnessCustomListResult",
+    "type": "HarnessCustomListResult",
+    "value": {
+      "items": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Example agent",
+          "command": "example-agent",
+          "args": [
+            "--acp"
+          ],
+          "version": "1.0"
+        }
+      ]
+    }
+  },
+  {
+    "name": "HarnessCustomCreateParams",
+    "type": "HarnessCustomCreateParams",
+    "value": {
+      "harness": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "Example agent",
+        "command": "example-agent",
+        "args": [
+          "--acp"
+        ],
+        "version": "1.0"
+      },
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "HarnessCustomUpdateParams",
+    "type": "HarnessCustomUpdateParams",
+    "value": {
+      "harness": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "Example agent",
+        "command": "example-agent",
+        "args": [
+          "--acp"
+        ],
+        "version": "1.0"
+      },
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "HarnessCustomMutationResult",
+    "type": "HarnessCustomMutationResult",
+    "value": {
+      "harness": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "Example agent",
+        "command": "example-agent",
+        "args": [
+          "--acp"
+        ],
+        "version": "1.0"
+      }
+    }
+  },
+  {
+    "name": "HarnessCustomRemoveParams",
+    "type": "HarnessCustomRemoveParams",
+    "value": {
+      "harnessId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "HarnessCustomRemoveResult",
+    "type": "HarnessCustomRemoveResult",
+    "value": {
+      "harnessId": "00000000-0000-4000-8000-000000000001",
+      "removed": true
+    }
+  },
+  {
+    "name": "request:harness.custom.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "harness.custom.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:harness.custom.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Example agent",
+            "command": "example-agent",
+            "args": [
+              "--acp"
+            ],
+            "version": "1.0"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:harness.custom.create",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "harness.custom.create",
+      "params": {
+        "harness": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Example agent",
+          "command": "example-agent",
+          "args": [
+            "--acp"
+          ],
+          "version": "1.0"
+        },
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:harness.custom.create",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "harness": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Example agent",
+          "command": "example-agent",
+          "args": [
+            "--acp"
+          ],
+          "version": "1.0"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:harness.custom.update",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "harness.custom.update",
+      "params": {
+        "harness": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Example agent",
+          "command": "example-agent",
+          "args": [
+            "--acp"
+          ],
+          "version": "1.0"
+        },
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:harness.custom.update",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "harness": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Example agent",
+          "command": "example-agent",
+          "args": [
+            "--acp"
+          ],
+          "version": "1.0"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:harness.custom.remove",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "harness.custom.remove",
+      "params": {
+        "harnessId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:harness.custom.remove",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "harnessId": "00000000-0000-4000-8000-000000000001",
+        "removed": true
+      }
+    }
   }
 ]

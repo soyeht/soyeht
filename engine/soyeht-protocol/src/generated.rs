@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
+// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1675,6 +1675,46 @@ pub struct HarnessListResult {
     pub next_cursor: Option<Id>,
     #[serde(rename = "environmentIssue", skip_serializing_if = "Option::is_none")]
     pub environment_issue: Option<HarnessEnvironmentIssue>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessCustomListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessCustomListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<HarnessLaunch>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessCustomCreateParams {
+    #[serde(rename = "harness")]
+    pub harness: HarnessLaunch,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessCustomUpdateParams {
+    #[serde(rename = "harness")]
+    pub harness: HarnessLaunch,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessCustomMutationResult {
+    #[serde(rename = "harness")]
+    pub harness: HarnessLaunch,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessCustomRemoveParams {
+    #[serde(rename = "harnessId")]
+    pub harness_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessCustomRemoveResult {
+    #[serde(rename = "harnessId")]
+    pub harness_id: Id,
+    #[serde(rename = "removed")]
+    pub removed: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelListParams {
@@ -5035,6 +5075,14 @@ pub enum Request {
     PaneDraft(PaneDraftParams),
     #[serde(rename = "harness.list")]
     HarnessList(HarnessListParams),
+    #[serde(rename = "harness.custom.list")]
+    HarnessCustomList(HarnessCustomListParams),
+    #[serde(rename = "harness.custom.create")]
+    HarnessCustomCreate(HarnessCustomCreateParams),
+    #[serde(rename = "harness.custom.update")]
+    HarnessCustomUpdate(HarnessCustomUpdateParams),
+    #[serde(rename = "harness.custom.remove")]
+    HarnessCustomRemove(HarnessCustomRemoveParams),
     #[serde(rename = "model.list")]
     ModelList(ModelListParams),
     #[serde(rename = "pane.queue.resume")]
@@ -5346,6 +5394,30 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "HarnessListParams",
         "HarnessListResult",
         false,
+    ),
+    (
+        "harness.custom.list",
+        "HarnessCustomListParams",
+        "HarnessCustomListResult",
+        false,
+    ),
+    (
+        "harness.custom.create",
+        "HarnessCustomCreateParams",
+        "HarnessCustomMutationResult",
+        true,
+    ),
+    (
+        "harness.custom.update",
+        "HarnessCustomUpdateParams",
+        "HarnessCustomMutationResult",
+        true,
+    ),
+    (
+        "harness.custom.remove",
+        "HarnessCustomRemoveParams",
+        "HarnessCustomRemoveResult",
+        true,
     ),
     ("model.list", "ModelListParams", "ModelListResult", false),
     (

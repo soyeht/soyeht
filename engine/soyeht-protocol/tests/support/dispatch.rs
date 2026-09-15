@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
+// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -171,6 +171,13 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneDraftResult" => roundtrip::<PaneDraftResult>(value),
         "HarnessListParams" => roundtrip::<HarnessListParams>(value),
         "HarnessListResult" => roundtrip::<HarnessListResult>(value),
+        "HarnessCustomListParams" => roundtrip::<HarnessCustomListParams>(value),
+        "HarnessCustomListResult" => roundtrip::<HarnessCustomListResult>(value),
+        "HarnessCustomCreateParams" => roundtrip::<HarnessCustomCreateParams>(value),
+        "HarnessCustomUpdateParams" => roundtrip::<HarnessCustomUpdateParams>(value),
+        "HarnessCustomMutationResult" => roundtrip::<HarnessCustomMutationResult>(value),
+        "HarnessCustomRemoveParams" => roundtrip::<HarnessCustomRemoveParams>(value),
+        "HarnessCustomRemoveResult" => roundtrip::<HarnessCustomRemoveResult>(value),
         "ModelListParams" => roundtrip::<ModelListParams>(value),
         "ModelListResult" => roundtrip::<ModelListResult>(value),
         "PaneSessionStartedEvent" => roundtrip::<PaneSessionStartedEvent>(value),
