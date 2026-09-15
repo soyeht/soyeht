@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
+// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -935,6 +935,38 @@ export interface HarnessListResult {
   "items": Array<HarnessInfo>;
   "nextCursor"?: Id;
   "environmentIssue"?: HarnessEnvironmentIssue;
+}
+
+export interface HarnessCustomListParams {
+
+}
+
+export interface HarnessCustomListResult {
+  "items": Array<HarnessLaunch>;
+}
+
+export interface HarnessCustomCreateParams {
+  "harness": HarnessLaunch;
+  "idempotencyKey": Id;
+}
+
+export interface HarnessCustomUpdateParams {
+  "harness": HarnessLaunch;
+  "idempotencyKey": Id;
+}
+
+export interface HarnessCustomMutationResult {
+  "harness": HarnessLaunch;
+}
+
+export interface HarnessCustomRemoveParams {
+  "harnessId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface HarnessCustomRemoveResult {
+  "harnessId": Id;
+  "removed": boolean;
 }
 
 export interface ModelListParams {
@@ -2802,6 +2834,10 @@ export interface Methods {
   "pane.transcript": { params: PaneTranscriptParams; result: PaneTranscriptResult };
   "pane.draft": { params: PaneDraftParams; result: PaneDraftResult };
   "harness.list": { params: HarnessListParams; result: HarnessListResult };
+  "harness.custom.list": { params: HarnessCustomListParams; result: HarnessCustomListResult };
+  "harness.custom.create": { params: HarnessCustomCreateParams; result: HarnessCustomMutationResult };
+  "harness.custom.update": { params: HarnessCustomUpdateParams; result: HarnessCustomMutationResult };
+  "harness.custom.remove": { params: HarnessCustomRemoveParams; result: HarnessCustomRemoveResult };
   "model.list": { params: ModelListParams; result: ModelListResult };
   "pane.queue.resume": { params: PaneQueueResumeParams; result: PaneQueueResumeResult };
   "task.create": { params: TaskCreateParams; result: TaskCreateResult };

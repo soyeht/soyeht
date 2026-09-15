@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 61a46422ef70b2bc73cc57985710f4aeb40f1a831efa9c34ead778dc80210896). Do not edit.
+// Generated from contracts/protocol.json (sha256 e44eca265818163954e2b42cc65f5b52439e384cb032b89b19e1c5dd8c14aa6d). Do not edit.
 import Foundation
 
 
@@ -1873,6 +1873,63 @@ public struct HarnessListResult: Codable, Sendable {
         self.`items` = `items`
         self.`nextCursor` = `nextCursor`
         self.`environmentIssue` = `environmentIssue`
+    }
+}
+
+public struct HarnessCustomListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct HarnessCustomListResult: Codable, Sendable {
+    public var `items`: [HarnessLaunch]
+    public init(`items`: [HarnessLaunch]) {
+        self.`items` = `items`
+    }
+}
+
+public struct HarnessCustomCreateParams: Codable, Sendable {
+    public var `harness`: HarnessLaunch
+    public var `idempotencyKey`: Id
+    public init(`harness`: HarnessLaunch, `idempotencyKey`: Id) {
+        self.`harness` = `harness`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct HarnessCustomUpdateParams: Codable, Sendable {
+    public var `harness`: HarnessLaunch
+    public var `idempotencyKey`: Id
+    public init(`harness`: HarnessLaunch, `idempotencyKey`: Id) {
+        self.`harness` = `harness`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct HarnessCustomMutationResult: Codable, Sendable {
+    public var `harness`: HarnessLaunch
+    public init(`harness`: HarnessLaunch) {
+        self.`harness` = `harness`
+    }
+}
+
+public struct HarnessCustomRemoveParams: Codable, Sendable {
+    public var `harnessId`: Id
+    public var `idempotencyKey`: Id
+    public init(`harnessId`: Id, `idempotencyKey`: Id) {
+        self.`harnessId` = `harnessId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct HarnessCustomRemoveResult: Codable, Sendable {
+    public var `harnessId`: Id
+    public var `removed`: Bool
+    public init(`harnessId`: Id, `removed`: Bool) {
+        self.`harnessId` = `harnessId`
+        self.`removed` = `removed`
     }
 }
 

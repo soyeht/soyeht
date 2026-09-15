@@ -3277,6 +3277,103 @@
       ],
       "additionalProperties": true
     },
+    "HarnessCustomListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "HarnessCustomListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HarnessLaunch"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessCustomCreateParams": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/HarnessLaunch"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "harness",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessCustomUpdateParams": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/HarnessLaunch"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "harness",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessCustomMutationResult": {
+      "type": "object",
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/HarnessLaunch"
+        }
+      },
+      "required": [
+        "harness"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessCustomRemoveParams": {
+      "type": "object",
+      "properties": {
+        "harnessId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "harnessId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessCustomRemoveResult": {
+      "type": "object",
+      "properties": {
+        "harnessId": {
+          "$ref": "#/$defs/Id"
+        },
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "harnessId",
+        "removed"
+      ],
+      "additionalProperties": true
+    },
     "ModelListParams": {
       "type": "object",
       "properties": {
@@ -10414,6 +10511,42 @@
         "$ref": "#/$defs/HarnessListResult"
       },
       "mutation": false
+    },
+    "harness.custom.list": {
+      "params": {
+        "$ref": "#/$defs/HarnessCustomListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/HarnessCustomListResult"
+      },
+      "mutation": false
+    },
+    "harness.custom.create": {
+      "params": {
+        "$ref": "#/$defs/HarnessCustomCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/HarnessCustomMutationResult"
+      },
+      "mutation": true
+    },
+    "harness.custom.update": {
+      "params": {
+        "$ref": "#/$defs/HarnessCustomUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/HarnessCustomMutationResult"
+      },
+      "mutation": true
+    },
+    "harness.custom.remove": {
+      "params": {
+        "$ref": "#/$defs/HarnessCustomRemoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/HarnessCustomRemoveResult"
+      },
+      "mutation": true
     },
     "model.list": {
       "params": {
