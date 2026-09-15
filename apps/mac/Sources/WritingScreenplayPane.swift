@@ -26,6 +26,10 @@ struct WritingScreenplayPane: View {
     return client.editorFiles[fileId]
   }
   private var structure: WritingStructureResult? { writing?.structure }
+  private var writingLoadKey: String {
+    guard let file = writing?.document.file else { return "missing" }
+    return "\(file.fileId):\(file.revision)"
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -40,7 +44,7 @@ struct WritingScreenplayPane: View {
     }
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
-    .task(id: writing?.document.file.fileId) { await loadIfNeeded() }
+    .task(id: writingLoadKey) { await loadIfNeeded() }
   }
 
   @ViewBuilder private var screenplayContent: some View {
@@ -529,13 +533,11 @@ private struct ScreenplayViewport: NSViewRepresentable {
     private func advance(tab: Bool) {
       let line = currentLine()
       let kind = ScreenplayInteraction.element(at: line, in: parent.structure)?.kind ?? .action
-      let next = ScreenplayInteraction.nextKind(after: kind, tab: tab)
-      if tab {
-        replaceCurrentLine(with: nil, as: next)
-      } else {
-        let seed = ScreenplayInteraction.formattedLine("", as: next)
-        replace(textView.selectedRange(), with: "\n\n" + seed)
-      }
+      guard
+        let edit = ScreenplayInteraction.advanceEdit(
+          source: source, cursor: textView.selectedRange().location, kind: kind, tab: tab)
+      else { return }
+      replace(edit.range, with: edit.replacement)
     }
 
     private func apply(_ request: ScreenplayEditRequest) {

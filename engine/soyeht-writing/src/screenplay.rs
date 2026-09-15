@@ -152,10 +152,11 @@ fn transition(text: &str) -> bool {
 
 fn character(text: &str, next: Option<&str>) -> bool {
     let clean = text.trim_start_matches('@');
+    let forced = text.starts_with('@');
     !clean.is_empty()
         && clean.len() <= 80
         && clean == clean.to_ascii_uppercase()
-        && next.is_some()
+        && (forced || next.is_some())
         && !clean.ends_with(':')
         && !scene_heading(clean)
 }

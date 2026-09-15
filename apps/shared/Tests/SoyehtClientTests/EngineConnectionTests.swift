@@ -102,6 +102,7 @@
     try await until { client.connected && client.selectedPane?.pid == pid }
     try await exerciseEditor(client, directory: directory)
     let workspaceId = try #require(client.panes.first?.workspaceId)
+    try await exerciseWritingRevision(client, workspaceId: workspaceId)
     let web = try await client.openWeb(workspaceId: workspaceId, url: "localhost:4173")
     let navigation = try await client.navigateWeb(paneId: web.paneId, action: .reload)
     #expect(navigation.accepted)
@@ -233,6 +234,39 @@
     #expect(try String(contentsOf: source, encoding: .utf8) == "let value = 6\n")
     client.closePane(opened.pane.paneId)
     try await until { !client.panes.contains { $0.paneId == opened.pane.paneId } }
+  }
+
+  @MainActor private func exerciseWritingRevision(
+    _ client: EngineClient, workspaceId: String
+  ) async throws {
+    let created = try await client.createWritingDocument(
+      workspaceId: workspaceId, section: .screenplays, title: "Revision Sync")
+    let fileId = created.document.file.fileId
+    client.enqueueEditorEdits(
+      fileId: fileId,
+      edits: [
+        TextEdit(
+          range: TextRange(
+            start: TextPosition(line: 0, column: 0),
+            end: TextPosition(line: 0, column: 0)),
+          text: ".INT. COFFEE SHOP - DAY\n\n@BOB")
+      ])
+
+    let beats = try await client.listWritingBeats(fileId: fileId)
+    #expect(beats.beats.isEmpty)
+    var stale = try #require(client.writingDocuments[fileId])
+    stale.document.file.revision = created.document.file.revision
+    client.writingDocuments[fileId] = stale
+    #expect(try await client.listWritingBeats(fileId: fileId).beats.isEmpty)
+    let structure = try await client.loadWritingStructure(fileId: fileId)
+    #expect(structure.scenes.map(\.heading) == ["INT. COFFEE SHOP - DAY"])
+    #expect(structure.elements.map(\.kind) == [.scene_heading, .character])
+    let saved = try await client.putWritingBeat(
+      fileId: fileId, title: "Opening", body: "BOB enters", category: .story, order: 0,
+      sceneId: structure.scenes.first?.sceneId)
+    #expect(saved.beat?.title == "Opening")
+    client.closePane(created.pane.paneId)
+    try await until { !client.panes.contains { $0.paneId == created.pane.paneId } }
   }
 
   @MainActor private func until(_ condition: () -> Bool) async throws {

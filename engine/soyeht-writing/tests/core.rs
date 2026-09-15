@@ -276,6 +276,24 @@ fn fountain_parser_builds_ordered_elements_scenes_and_smart_type() {
 }
 
 #[test]
+fn forced_character_at_end_of_file_stays_a_character() {
+    let screenplay = parse_screenplay(".INT. COFFEE SHOP - DAY\n\n@BOB").unwrap();
+    assert_eq!(screenplay.scenes.len(), 1);
+    assert_eq!(screenplay.scenes[0].heading, "INT. COFFEE SHOP - DAY");
+    assert_eq!(
+        screenplay
+            .elements
+            .iter()
+            .map(|element| element.kind.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            ScreenplayElementKind::SceneHeading,
+            ScreenplayElementKind::Character,
+        ]
+    );
+}
+
+#[test]
 fn line_variants_keep_one_canonical_choice_and_survive_restore() {
     let mut variants = VariantSet::new(
         "line-4".to_owned(),
