@@ -15,8 +15,8 @@ pub use format::{
     segment_schema_version,
 };
 pub use metrics::{
-    HarnessMetrics, LatencyMetrics, MetricsReport, Rate, StateMetrics, evaluate,
-    evaluate_with_omitted_panes,
+    HarnessMetrics, LatencyMetrics, MIN_GROUND_TRUTH_TRANSITIONS, MIN_RATE_DENOMINATOR,
+    MetricsReport, Rate, StateDurationMetrics, StateMetrics, evaluate, evaluate_with_omitted_panes,
 };
 pub use model::{
     Confidence, CursorPosition, Detection, Detector, GroundTruthLabel, HarnessIdentity,

@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use soyeht_pane_state::{
-    Confidence, Detection, Detector, GroundTruthLabel, HarnessIdentity, ObservationFrame,
-    ObservationGap, ObservationPaneKind, ObservationReason, RecordedRow, evaluate,
-    evaluate_with_omitted_panes,
+    Confidence, Detection, Detector, GroundTruthLabel, HarnessIdentity,
+    MIN_GROUND_TRUTH_TRANSITIONS, MIN_RATE_DENOMINATOR, ObservationFrame, ObservationGap,
+    ObservationPaneKind, ObservationReason, RecordedRow, evaluate, evaluate_with_omitted_panes,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -43,6 +43,15 @@ fn harness() -> HarnessIdentity {
 }
 
 fn label(sequence: u64, timestamp_ms: i64, state: PaneState) -> RecordedRow {
+    label_from(sequence, timestamp_ms, state, StateSource::Protocol)
+}
+
+fn label_from(
+    sequence: u64,
+    timestamp_ms: i64,
+    state: PaneState,
+    source: StateSource,
+) -> RecordedRow {
     RecordedRow::Label(GroundTruthLabel {
         pane_id: "pane-1".into(),
         pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
@@ -50,8 +59,51 @@ fn label(sequence: u64, timestamp_ms: i64, state: PaneState) -> RecordedRow {
         timestamp_ms,
         sequence,
         state,
-        source: StateSource::Protocol,
+        source,
     })
+}
+
+fn scoring_fixture(source: StateSource) -> Vec<RecordedRow> {
+    let mut rows = Vec::new();
+    let mut sequence = 0;
+    let mut timestamp_ms = 0;
+    rows.push(label_from(
+        sequence,
+        timestamp_ms,
+        PaneState::Idle,
+        source.clone(),
+    ));
+    sequence += 1;
+    timestamp_ms += 10;
+    rows.push(observation(sequence, timestamp_ms, "idle"));
+    sequence += 1;
+    timestamp_ms += 10;
+    for _ in 0..MIN_RATE_DENOMINATOR {
+        for (state, screen) in [
+            (PaneState::Working, "working"),
+            (PaneState::WaitingForYou, "waiting"),
+            (PaneState::Idle, "idle"),
+        ] {
+            rows.push(label_from(sequence, timestamp_ms, state, source.clone()));
+            sequence += 1;
+            timestamp_ms += 10;
+            rows.push(observation(sequence, timestamp_ms, screen));
+            sequence += 1;
+            timestamp_ms += 10;
+        }
+    }
+    rows
+}
+
+fn state_metrics(
+    metrics: &soyeht_pane_state::HarnessMetrics,
+    wanted: PaneState,
+) -> &soyeht_pane_state::StateMetrics {
+    metrics
+        .states
+        .iter()
+        .find(|state| state.state == wanted)
+        .unwrap()
 }
 
 fn observation(sequence: u64, timestamp_ms: i64, screen: &str) -> RecordedRow {
@@ -101,15 +153,20 @@ fn fixture(gap_start: i64, gap_end: i64) -> Vec<RecordedRow> {
 
 #[test]
 fn oracle_reaches_the_ceiling_and_always_unknown_reaches_the_floor() {
-    let oracle = evaluate(&ScreenOracle, &fixture(70, 80)).unwrap();
+    let rows = scoring_fixture(StateSource::Protocol);
+    let oracle = evaluate(&ScreenOracle, &rows).unwrap();
     let harness = &oracle.harnesses[0];
-    assert_eq!(harness.observations, 5);
-    assert_eq!(harness.labeled_observations, 5);
+    assert_eq!(harness.ground_truth_source, Some(StateSource::Protocol));
+    assert_eq!(harness.observations, 61);
+    assert_eq!(harness.labels, 61);
+    assert_eq!(harness.label_transitions, 60);
+    assert_eq!(harness.labeled_observations, 61);
     assert!(harness.scores_available);
     assert_eq!(harness.unknown_rate.value, Some(0.0));
-    assert_eq!(harness.time_coverage.as_ref().unwrap().value, Some(0.9));
+    assert_eq!(harness.time_coverage.as_ref().unwrap().value, Some(1.0));
     assert_eq!(harness.unclassified_gap_ms, 0);
     for state in &harness.states {
+        assert_eq!(state.truth_transitions, MIN_GROUND_TRUTH_TRANSITIONS);
         assert_eq!(state.precision.value, Some(1.0));
         assert_eq!(state.recall.value, Some(1.0));
         assert_eq!(state.latency.median_ms, Some(10));
@@ -119,9 +176,9 @@ fn oracle_reaches_the_ceiling_and_always_unknown_reaches_the_floor() {
         .iter()
         .find(|state| state.state == PaneState::Idle)
         .unwrap();
-    assert_eq!(idle.time_coverage.as_ref().unwrap().value, Some(0.8));
+    assert_eq!(idle.time_coverage.as_ref().unwrap().value, Some(1.0));
 
-    let floor = evaluate(&AlwaysUnknown, &fixture(70, 80)).unwrap();
+    let floor = evaluate(&AlwaysUnknown, &rows).unwrap();
     assert_eq!(floor.harnesses[0].unknown_rate.value, Some(1.0));
     assert!(
         floor.harnesses[0]
@@ -134,7 +191,7 @@ fn oracle_reaches_the_ceiling_and_always_unknown_reaches_the_floor() {
 
 #[test]
 fn pane_populations_stay_separate_and_unlabeled_groups_report_no_scores() {
-    let mut rows = fixture(70, 80);
+    let mut rows = scoring_fixture(StateSource::Protocol);
     let mut agent = match observation(0, 5, "working") {
         RecordedRow::Observation(frame) => frame,
         _ => unreachable!(),
@@ -156,19 +213,23 @@ fn pane_populations_stay_separate_and_unlabeled_groups_report_no_scores() {
         .find(|metrics| metrics.pane_kind == ObservationPaneKind::Terminal)
         .unwrap();
     assert_eq!(agent.harness, terminal.harness);
+    assert_eq!(agent.ground_truth_source, None);
     assert_eq!(agent.observations, 1);
+    assert_eq!(agent.labels, 0);
+    assert_eq!(agent.label_transitions, 0);
     assert_eq!(agent.labeled_observations, 0);
     assert!(!agent.scores_available);
     assert!(agent.states.is_empty());
-    assert_eq!(terminal.observations, 5);
-    assert_eq!(terminal.labeled_observations, 5);
+    assert_eq!(terminal.observations, 61);
+    assert_eq!(terminal.ground_truth_source, Some(StateSource::Protocol));
+    assert_eq!(terminal.labeled_observations, 61);
     assert!(terminal.scores_available);
 }
 
 #[test]
 fn omitted_sources_disable_only_elapsed_coverage_and_mark_the_partial_group() {
-    let mut rows = fixture(70, 80);
-    let mut complete = fixture(70, 80);
+    let mut rows = scoring_fixture(StateSource::Protocol);
+    let mut complete = scoring_fixture(StateSource::Protocol);
     let complete_harness =
         HarnessIdentity::known("registry.complete", Some("1.0.0".into())).unwrap();
     for row in &mut complete {
@@ -223,7 +284,155 @@ fn omitted_sources_disable_only_elapsed_coverage_and_mark_the_partial_group() {
         .find(|metrics| metrics.harness == complete_harness)
         .unwrap();
     assert_eq!(complete.panes_with_omitted_sources, 0);
-    assert_eq!(complete.time_coverage.as_ref().unwrap().value, Some(0.9));
+    assert_eq!(complete.time_coverage.as_ref().unwrap().value, Some(1.0));
+}
+
+#[test]
+fn protocol_and_hook_truth_for_one_harness_never_share_a_rate() {
+    let mut rows = Vec::new();
+    let mut sequence = 0;
+    for row in scoring_fixture(StateSource::Protocol) {
+        match row {
+            RecordedRow::Label(mut label) => {
+                label.sequence = sequence;
+                sequence += 1;
+                let mut hook = label.clone();
+                hook.sequence = sequence;
+                hook.source = StateSource::Hook;
+                hook.state = match hook.state {
+                    PaneState::Working => PaneState::Idle,
+                    PaneState::Idle => PaneState::Working,
+                    state => state,
+                };
+                sequence += 1;
+                rows.push(RecordedRow::Label(label));
+                rows.push(RecordedRow::Label(hook));
+            }
+            RecordedRow::Observation(mut frame) => {
+                frame.sequence = sequence;
+                sequence += 1;
+                rows.push(RecordedRow::Observation(frame));
+            }
+            RecordedRow::Gap(_) => unreachable!(),
+        }
+    }
+
+    let report = evaluate(&ScreenOracle, &rows).unwrap();
+    assert_eq!(report.harnesses.len(), 2);
+    let protocol = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.ground_truth_source == Some(StateSource::Protocol))
+        .unwrap();
+    let hook = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.ground_truth_source == Some(StateSource::Hook))
+        .unwrap();
+    assert_eq!(
+        state_metrics(protocol, PaneState::Working).recall.value,
+        Some(1.0)
+    );
+    assert_eq!(
+        state_metrics(hook, PaneState::Working).recall.value,
+        Some(0.0)
+    );
+    assert_eq!(
+        state_metrics(protocol, PaneState::Idle).recall.value,
+        Some(1.0)
+    );
+    assert_eq!(state_metrics(hook, PaneState::Idle).recall.value, Some(0.0));
+}
+
+#[test]
+fn repeated_labels_and_frames_cannot_replace_twenty_ground_truth_transitions() {
+    let mut rows = Vec::new();
+    for index in 0..=MIN_GROUND_TRUTH_TRANSITIONS {
+        let sequence = index * 2;
+        let timestamp = sequence as i64 * 10;
+        rows.push(label(sequence, timestamp, PaneState::Working));
+        rows.push(observation(sequence + 1, timestamp + 10, "working"));
+    }
+    let metrics = &evaluate(&ScreenOracle, &rows).unwrap().harnesses[0];
+    assert_eq!(metrics.labels, MIN_GROUND_TRUTH_TRANSITIONS + 1);
+    assert_eq!(metrics.label_transitions, 0);
+    assert_eq!(
+        metrics.states[0].recall.denominator,
+        MIN_GROUND_TRUTH_TRANSITIONS + 1
+    );
+    assert_eq!(metrics.states[0].recall.value, None);
+    assert_eq!(metrics.states[0].duration.measured, 0);
+    assert_eq!(metrics.states[0].duration.unavailable, 1);
+    assert!(!metrics.scores_available);
+}
+
+#[test]
+fn twenty_transitions_without_one_publishable_rate_keep_scores_unavailable() {
+    let mut rows = Vec::new();
+    for index in 0..=MIN_GROUND_TRUTH_TRANSITIONS {
+        let (state, screen) = match index % 3 {
+            0 => (PaneState::Working, "working"),
+            1 => (PaneState::WaitingForYou, "waiting"),
+            _ => (PaneState::Idle, "idle"),
+        };
+        let sequence = index * 2;
+        let timestamp = sequence as i64 * 10;
+        rows.push(label(sequence, timestamp, state));
+        rows.push(observation(sequence + 1, timestamp + 10, screen));
+    }
+    let metrics = &evaluate(&ScreenOracle, &rows).unwrap().harnesses[0];
+    assert_eq!(metrics.label_transitions, MIN_GROUND_TRUTH_TRANSITIONS);
+    assert!(
+        metrics
+            .states
+            .iter()
+            .all(|state| { state.precision.value.is_none() && state.recall.value.is_none() })
+    );
+    assert!(!metrics.scores_available);
+}
+
+#[test]
+fn a_ready_group_still_suppresses_each_under_sampled_state_rate() {
+    let mut rows = scoring_fixture(StateSource::Protocol);
+    for row in &mut rows {
+        if let RecordedRow::Observation(frame) = row
+            && frame.lines[0] == "waiting"
+            && frame.sequence > 5
+        {
+            frame.lines[0] = "working".into();
+        }
+    }
+    let metrics = &evaluate(&ScreenOracle, &rows).unwrap().harnesses[0];
+    assert!(metrics.label_transitions >= MIN_GROUND_TRUTH_TRANSITIONS);
+    assert!(metrics.scores_available);
+    let waiting = metrics
+        .states
+        .iter()
+        .find(|state| state.state == PaneState::WaitingForYou)
+        .unwrap();
+    assert_eq!(waiting.precision.denominator, 1);
+    assert_eq!(waiting.precision.value, None);
+    assert_eq!(waiting.recall.denominator, MIN_RATE_DENOMINATOR);
+    assert_eq!(waiting.recall.value, Some(0.05));
+}
+
+#[test]
+fn fast_real_transitions_publish_a_flapping_distribution_without_inventing_a_cutoff() {
+    let metrics = &evaluate(&ScreenOracle, &scoring_fixture(StateSource::Protocol))
+        .unwrap()
+        .harnesses[0];
+    assert!(metrics.scores_available);
+    for state in &metrics.states {
+        assert_eq!(state.duration.measured, MIN_GROUND_TRUTH_TRANSITIONS);
+        assert_eq!(state.duration.minimum_ms, Some(20));
+        assert_eq!(state.duration.median_ms, Some(20));
+        assert_eq!(
+            state.duration.entries_under_one_second,
+            MIN_GROUND_TRUTH_TRANSITIONS
+        );
+    }
+    let idle = state_metrics(metrics, PaneState::Idle);
+    assert_eq!(idle.duration.unavailable, 1);
 }
 
 #[test]

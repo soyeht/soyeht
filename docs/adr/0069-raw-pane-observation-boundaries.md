@@ -25,11 +25,43 @@ It has no filesystem, process, socket, engine or client dependency. A deliberate
 detector can replace the baseline in tests without changing engine or client code. Screen
 change and learned classifiers remain experiment candidates and do not ship in this slice.
 
-Metrics report precision and recall per state, pane kind and harness, detection latency and
-unknown rate. Terminal and agent panes are different populations and are never aggregated,
-even when they use the same harness identity. A group with no labeled observations reports
-scores as unavailable rather than contributing zeros to a total. This prevents dense labels
-from one harness or pane kind from lending apparent evidence to another that has none.
+Metrics report precision and recall per state, pane kind, harness and ground-truth source,
+detection latency and unknown rate. Terminal and agent panes are different populations and
+are never aggregated, even when they use the same harness identity. Protocol bookkeeping and
+a harness hook answer different questions and are never blended into one rate. A group with no
+labels keeps an explicit absent source and reports scores as unavailable rather than disappearing
+or contributing zeros to a total. This prevents dense labels from one source, harness or pane kind
+from lending apparent evidence to another that has none.
+
+Scores require twenty real ground-truth state transitions in their pane-kind, harness and source
+group and twenty transitions into the individual state whose rate would be published. The initial
+label and consecutive repetitions of the same state do not count as transitions. Twenty is a
+descriptive floor declared before collection; it is not a confidence interval or a claim of
+statistical significance. The group flag becomes available only when at least one precision or
+recall rate is publishable. Each individual rate also requires its own denominator of at least
+twenty, so one comparison can move a published rate by at most five percentage points. Below either
+floor its numerator and denominator remain visible while its value is absent. The state floor
+prevents a well-populated group from publishing a perfect-looking rate for a state represented by
+only one or two episodes.
+
+Collection is planned in transitions and comparisons, not elapsed recording time. Each
+pane-kind, harness, source and state cell intended for recall needs at least twenty observations
+under that truth state; precision additionally needs at least twenty detector predictions of that
+state, which collection cannot manufacture. Working and idle can share twenty complete turn
+cycles, while `waiting_for_you` requires twenty separate request episodes. Cancellation,
+no-signal, recovery and death each require their own induced episodes if those cells are to be
+published. A one-episode pilot supplies the duration for each scenario before the full collection;
+twenty times that measured duration per required episode, plus setup, is only a lower bound for
+the scripted session because ordinary use is slower and less regular. The floor is not lowered
+after seeing how long collection takes.
+
+Transition count alone does not prove independent evidence: a harness can flap between two true
+states many times in one short burst. No duration cutoff is invented before observing that data.
+Each state cell therefore publishes the minimum and median completed-state duration and the number
+of entries lasting less than one second. Consecutive duplicate labels do not split a duration, and
+the final open state is counted as unavailable rather than assigned an invented end. This
+distribution exposes flapping without deciding in advance which duration is legitimate; a later
+exclusion threshold must be declared with its measured reason before it is applied.
 `waiting_for_you` is reported separately and never hidden by an aggregate because a
 miss leaves a person blocked. An always-unknown control must score poorly, and a
 perfect-oracle control must reach the metric ceiling. Together they prove the scoring
