@@ -350,6 +350,26 @@ pub fn missing_supervisor_instance(error: &Error) -> bool {
     )
 }
 
+/// Only boundaries shared by every pane may stop one polling cycle.
+///
+/// Native/protocol/state failures belong to the pane that produced them. The
+/// caller records those through `fail_agent` and keeps polling independent
+/// panes. Storage durability, supervisor transport/generation and exhausted
+/// storage are global because continuing could publish state that the engine
+/// cannot durably commit or reconcile.
+pub fn agent_poll_failure_is_global(error: &Error) -> bool {
+    match error {
+        Error::Storage(_)
+        | Error::DiskFull(_)
+        | Error::PtydUnavailable(_)
+        | Error::StaleEngineGeneration(_)
+        | Error::Supervisor(_)
+        | Error::EngineStatePoisoned => true,
+        Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => true,
+        _ => false,
+    }
+}
+
 impl From<soyeht_editor::Error> for Error {
     fn from(error: soyeht_editor::Error) -> Self {
         Self::Editor(error)
@@ -595,5 +615,20 @@ mod tests {
                 .kind,
             ErrorKind::TaskHasOwner
         );
+    }
+
+    #[test]
+    fn agent_poll_scope_uses_the_failing_boundary_instead_of_a_public_kind_allow_list() {
+        assert!(!agent_poll_failure_is_global(&not_found("one pane")));
+        assert!(!agent_poll_failure_is_global(&internal("one pane")));
+        assert!(agent_poll_failure_is_global(&ptyd_unavailable(
+            "shared supervisor"
+        )));
+        assert!(agent_poll_failure_is_global(&Error::Storage(
+            soyeht_store::Error::IdempotencyConflict
+        )));
+        assert!(agent_poll_failure_is_global(&Error::Io(
+            io::Error::from_raw_os_error(libc::ENOSPC)
+        )));
     }
 }

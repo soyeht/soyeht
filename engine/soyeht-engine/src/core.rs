@@ -517,14 +517,13 @@ impl Core {
                 if let Err(error) = self.poll_agent(&id) {
                     if errors::missing_supervisor_instance(&error) {
                         self.recover_missing_agent(&id)?;
-                    } else if matches!(
-                        errors::kind(&error),
-                        soyeht_protocol::ErrorKind::InvalidParams
-                            | soyeht_protocol::ErrorKind::HarnessUnavailable
-                    ) {
-                        self.fail_agent(&id, &error.to_string())?;
-                    } else {
+                    } else if errors::agent_poll_failure_is_global(&error) {
                         return Err(error);
+                    } else {
+                        // A pane-owned failure must not starve panes that sort
+                        // after it. Failure publication and process retirement
+                        // are durable; an error there still stops the cycle.
+                        self.fail_agent(&id, &error.to_string())?;
                     }
                 }
                 continue;
