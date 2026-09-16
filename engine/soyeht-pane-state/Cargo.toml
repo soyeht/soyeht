@@ -9,10 +9,8 @@ publish.workspace = true
 [dependencies]
 regex = "1"
 serde.workspace = true
-soyeht-protocol = { path = "../soyeht-protocol" }
-
-[dev-dependencies]
 serde_json.workspace = true
+soyeht-protocol = { path = "../soyeht-protocol" }
 
 [lints]
 workspace = true

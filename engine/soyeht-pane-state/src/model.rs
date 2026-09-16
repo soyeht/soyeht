@@ -177,7 +177,7 @@ pub trait Detector {
     fn state(&self, frame: &ObservationFrame) -> Detection;
 }
 
-fn bounded_nonempty(value: &str, limit: usize, field: &'static str) -> Result<()> {
+pub(crate) fn bounded_nonempty(value: &str, limit: usize, field: &'static str) -> Result<()> {
     if value.is_empty() {
         return Err(Error::Empty(field));
     }
@@ -194,7 +194,7 @@ fn bounded_optional(value: &Option<String>, limit: usize, field: &'static str) -
     Ok(())
 }
 
-fn valid_timestamp(value: i64) -> Result<()> {
+pub(crate) fn valid_timestamp(value: i64) -> Result<()> {
     if value < 0 {
         return Err(Error::InvalidTimestamp);
     }
