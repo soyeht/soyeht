@@ -1191,6 +1191,17 @@ private struct AgentHarnessPicker: View {
       client.harnesses.filter { $0.id != excludingHarness }, query: query)
   }
 
+  private var contentState: HarnessPickerContentState {
+    HarnessPickerModel.contentState(
+      harnesses: client.harnesses.filter { $0.id != excludingHarness }, query: query,
+      loading: client.harnessesLoading)
+  }
+
+  private var modelContentState: ModelPickerContentState {
+    HarnessPickerModel.modelContentState(
+      catalogue: catalogue, loading: client.agentCatalogueLoading(harness))
+  }
+
   private var selected: HarnessInfo? { client.harnesses.first { $0.id == harness } }
 
   var body: some View {
@@ -1209,7 +1220,22 @@ private struct AgentHarnessPicker: View {
         .help("Rescan installed agents")
         .accessibilityLabel("Rescan installed agents")
       }
-      if sections.isEmpty {
+      if contentState == .loading {
+        VStack(spacing: MacTheme.Space.x10) {
+          ProgressView()
+          Text("Loading agents…")
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+            .foregroundStyle(MacTheme.muted)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .accessibilityIdentifier("agent-picker-loading")
+      } else if contentState == .emptyCatalogue {
+        ContentUnavailableView(
+          "No agents available", systemImage: "cpu",
+          description: Text("Rescan after installing or configuring an agent.")
+        )
+        .frame(maxWidth: .infinity, minHeight: 220)
+      } else if contentState == .noMatches {
         ContentUnavailableView.search(text: query)
           .frame(maxWidth: .infinity, minHeight: 220)
       } else {
@@ -1264,23 +1290,44 @@ private struct AgentHarnessPicker: View {
   @ViewBuilder private var selectedConfiguration: some View {
     if let selected, selected.available {
       Text("MODEL").pickerHeading()
-      Menu {
-        Button("Agent default") { model = "" }
-        ForEach(catalogue?.models ?? [], id: \.id) { item in
-          Button(item.name) { model = item.id }
-        }
-      } label: {
-        HStack {
-          Text(selectedModelLabel)
-          Spacer()
-          Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: 10)).foregroundStyle(MacTheme.muted)
+      if modelContentState == .loading {
+        HStack(spacing: MacTheme.Space.x8) {
+          ProgressView().controlSize(.small)
+          Text("Loading models…")
         }
         .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .foregroundStyle(MacTheme.muted)
         .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
         .neoWell(radius: MacTheme.Radius.compact)
+        .accessibilityIdentifier("model-picker-loading")
+      } else {
+        Menu {
+          Button("Agent default") { model = "" }
+          ForEach(catalogue?.models ?? [], id: \.id) { item in
+            Button(item.name) { model = item.id }
+          }
+        } label: {
+          HStack {
+            Text(selectedModelLabel)
+            Spacer()
+            Image(systemName: "chevron.up.chevron.down")
+              .font(.system(size: 10)).foregroundStyle(MacTheme.muted)
+          }
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+          .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
+          .neoWell(radius: MacTheme.Radius.compact)
+        }
+        .menuStyle(.borderlessButton)
+        if modelContentState == .empty {
+          Text("This agent provided no model choices.")
+            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+            .foregroundStyle(MacTheme.muted)
+        } else if modelContentState == .unavailable {
+          Text("Models will appear after this agent starts.")
+            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+            .foregroundStyle(MacTheme.muted)
+        }
       }
-      .menuStyle(.borderlessButton)
       if let choices = effortOption?.options, !choices.isEmpty {
         Text("EFFORT").pickerHeading()
         HStack(spacing: MacTheme.Space.x2) {

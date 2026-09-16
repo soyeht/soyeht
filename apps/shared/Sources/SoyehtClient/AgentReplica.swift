@@ -381,6 +381,8 @@ extension EngineClient {
   }
 
   private func loadHarnesses(rescan: Bool) async throws {
+    harnessLoadCount += 1
+    defer { harnessLoadCount -= 1 }
     var cursor: String?
     var items: [HarnessInfo] = []
     var environmentIssue: HarnessEnvironmentIssue?
@@ -446,6 +448,15 @@ extension EngineClient {
 
   public func refreshCatalogue(harness: String, paneId: String? = nil) {
     perform {
+      self.agentCatalogueLoadCounts[harness, default: 0] += 1
+      defer {
+        let remaining = self.agentCatalogueLoadCounts[harness, default: 1] - 1
+        if remaining == 0 {
+          self.agentCatalogueLoadCounts.removeValue(forKey: harness)
+        } else {
+          self.agentCatalogueLoadCounts[harness] = remaining
+        }
+      }
       var cursor: String?
       var models: [ModelInfo] = []
       var options: [ConfigOption] = []

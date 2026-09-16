@@ -11,9 +11,11 @@ public final class EngineClient {
   public internal(set) var agentPanes: [String: AgentPaneView] = [:]
   public internal(set) var agentWebDrafts: [String: AgentWebAttachmentDraft] = [:]
   public internal(set) var harnesses: [HarnessInfo] = []
+  public internal(set) var harnessLoadCount = 0
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
+  public internal(set) var agentCatalogueLoadCounts: [String: Int] = [:]
   public internal(set) var tasks: [TaskRecord] = []
   public internal(set) var taskDetails: [String: TaskShowResult] = [:]
   public internal(set) var attentionByWorkspace: [String: [AttentionItem]] = [:]
@@ -58,6 +60,10 @@ public final class EngineClient {
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
   public var readOnly: Bool { credential != nil }
+  public var harnessesLoading: Bool { harnessLoadCount > 0 }
+  public func agentCatalogueLoading(_ harness: String) -> Bool {
+    agentCatalogueLoadCounts[harness, default: 0] > 0
+  }
 
   private struct Pending {
     var method: String

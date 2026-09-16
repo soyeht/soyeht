@@ -63,6 +63,31 @@ import Testing
   #expect(HarnessPickerModel.defaultHarness(in: runnerBackedStrangers + [codex])?.id == codex.id)
 }
 
+@Test func fetchedPickerStatesNeverDescribeLoadingAsAnEmptySearch() {
+  let owned = harness(id: "registry.owned", name: "Owned agent", state: .ready)
+
+  #expect(
+    HarnessPickerModel.contentState(harnesses: [], query: "", loading: true) == .loading)
+  #expect(
+    HarnessPickerModel.contentState(harnesses: [], query: "", loading: false)
+      == .emptyCatalogue)
+  #expect(
+    HarnessPickerModel.contentState(harnesses: [owned], query: "missing", loading: false)
+      == .noMatches)
+  #expect(
+    HarnessPickerModel.contentState(harnesses: [owned], query: "", loading: false) == .results)
+
+  #expect(HarnessPickerModel.modelContentState(catalogue: nil, loading: true) == .loading)
+  #expect(HarnessPickerModel.modelContentState(catalogue: nil, loading: false) == .unavailable)
+  #expect(
+    HarnessPickerModel.modelContentState(catalogue: AgentCatalogue(), loading: false) == .empty)
+  #expect(
+    HarnessPickerModel.modelContentState(
+      catalogue: AgentCatalogue(
+        models: [ModelInfo(id: "model", name: "Model")]), loading: false)
+      == .results)
+}
+
 private func harness(
   id: String, name: String, state: HarnessSetupState, installed: Bool? = nil
 ) -> HarnessInfo {
