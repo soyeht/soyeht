@@ -517,7 +517,6 @@
       "files": 2,
       "bytes": "128",
       "nothingRemained": true,
-      "exportsExcluded": true,
       "exportsPath": "/private/tmp/soyeht/experiments/pane-state/exports"
     }
   },
@@ -1566,7 +1565,6 @@
         "files": 2,
         "bytes": "128",
         "nothingRemained": true,
-        "exportsExcluded": true,
         "exportsPath": "/private/tmp/soyeht/experiments/pane-state/exports"
       }
     }

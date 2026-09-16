@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 f1738da8b5592f56f18d1f64def1302f0ca52fff5869b8e6dcddd2443e477705). Do not edit.
+// Generated from contracts/protocol.json (sha256 dc2e1ec21faafd5cfff626a54193f548d7bbb0060ac2a5c2b48b744324655b4c). Do not edit.
 import Foundation
 
 
@@ -649,13 +649,11 @@ public struct PaneExperimentDeleteResult: Codable, Sendable {
     public var `files`: UInt32
     public var `bytes`: Decimal
     public var `nothingRemained`: Bool
-    public var `exportsExcluded`: Bool?
     public var `exportsPath`: String?
-    public init(`files`: UInt32, `bytes`: Decimal, `nothingRemained`: Bool, `exportsExcluded`: Bool? = nil, `exportsPath`: String? = nil) {
+    public init(`files`: UInt32, `bytes`: Decimal, `nothingRemained`: Bool, `exportsPath`: String? = nil) {
         self.`files` = `files`
         self.`bytes` = `bytes`
         self.`nothingRemained` = `nothingRemained`
-        self.`exportsExcluded` = `exportsExcluded`
         self.`exportsPath` = `exportsPath`
     }
 }

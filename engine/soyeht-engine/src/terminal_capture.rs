@@ -431,7 +431,6 @@ impl Core {
             "files":files,
             "bytes":receipt.bytes.to_string(),
             "nothingRemained":true,
-            "exportsExcluded":true,
             "exportsPath":exports_path
         });
         match self.mutate(connection, "pane.experiment.delete", params, |_tx| {
@@ -716,7 +715,6 @@ mod tests {
         assert!(result["files"].as_u64().unwrap() > 0);
         assert_ne!(result["bytes"], "0");
         assert_eq!(result["nothingRemained"], true);
-        assert_eq!(result["exportsExcluded"], true);
         assert_eq!(result["exportsPath"], exports.to_str().unwrap());
         assert_eq!(fs::read(&export).unwrap(), b"raw terminal export\n");
         fs::remove_dir_all(directory).unwrap();

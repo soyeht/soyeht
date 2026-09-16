@@ -11,7 +11,7 @@ public enum ExperimentCapturePresentation {
     } else {
       deletion = result.nothingRemained ? "No captured data remained." : "No data was deleted."
     }
-    guard result.exportsExcluded == true, let path = result.exportsPath, !path.isEmpty else {
+    guard let path = result.exportsPath, !path.isEmpty else {
       return deletion
     }
     return "\(deletion) Export files were not deleted; review them at \(path)."

@@ -12,10 +12,10 @@ import Testing
   #expect(receipt.hasPrefix("Deleted 3 files · "))
   #expect(receipt != ExperimentCapturePresentation.deletionText(empty))
 
-  let exportsExcluded = PaneExperimentDeleteResult(
-    files: 3, bytes: "2048", nothingRemained: true, exportsExcluded: true,
+  let exportsPathReceipt = PaneExperimentDeleteResult(
+    files: 3, bytes: "2048", nothingRemained: true,
     exportsPath: "/profile/experiments/pane-state/exports")
-  let exclusionReceipt = ExperimentCapturePresentation.deletionText(exportsExcluded)
+  let exclusionReceipt = ExperimentCapturePresentation.deletionText(exportsPathReceipt)
   #expect(exclusionReceipt.hasPrefix("Deleted 3 files · "))
   #expect(
     exclusionReceipt.hasSuffix(
