@@ -420,19 +420,25 @@ impl Core {
             return Ok(result);
         }
         let pane_id = errors::param_str(params, "paneId")?;
+        let exports_path = self.observation_root()?.join("exports");
+        let exports_path = exports_path
+            .to_str()
+            .ok_or_else(|| errors::internal("Experiment export path is not valid text"))?;
         let receipt = self.delete_terminal_capture_files(pane_id)?;
         let files = u32::try_from(receipt.files)
             .map_err(|_| errors::internal("Observation deletion file count is invalid"))?;
         let result = serde_json::json!({
             "files":files,
             "bytes":receipt.bytes.to_string(),
-            "nothingRemained":true
+            "nothingRemained":true,
+            "exportsExcluded":true,
+            "exportsPath":exports_path
         });
         match self.mutate(connection, "pane.experiment.delete", params, |_tx| {
             Ok((result, vec![]))
         }) {
             Ok(mutation) => Ok(mutation.result),
-            Err(error) => Err(deletion_receipt_commit_error(&receipt, error)),
+            Err(error) => Err(deletion_receipt_commit_error(&receipt, exports_path, error)),
         }
     }
 
@@ -545,10 +551,14 @@ impl Core {
     }
 }
 
-fn deletion_receipt_commit_error(receipt: &DeletionReceipt, error: errors::Error) -> errors::Error {
+fn deletion_receipt_commit_error(
+    receipt: &DeletionReceipt,
+    exports_path: &str,
+    error: errors::Error,
+) -> errors::Error {
     errors::internal(format!(
-        "Captured terminal data was removed ({} files, {} bytes), but the record of its removal was not saved: {}",
-        receipt.files, receipt.bytes, error
+        "Captured terminal data was removed ({} files, {} bytes), but the record of its removal was not saved: {}. Export files were not deleted and remain in {}",
+        receipt.files, receipt.bytes, error, exports_path
     ))
 }
 
@@ -556,7 +566,9 @@ fn deletion_receipt_commit_error(receipt: &DeletionReceipt, error: errors::Error
 mod tests {
     use super::*;
     use crate::{
+        dispatch::Outcome,
         model::{RunningPane, StoredPane},
+        outbox,
         pane_observations::label_write_timeout_message,
         ports::{
             PortScanObservation, PortScanPort,
@@ -669,13 +681,44 @@ mod tests {
         assert_eq!(errors::kind(&busy), soyeht_protocol::ErrorKind::PaneBusy);
         drop(core.terminal_captures.remove(pane_id));
 
-        let receipt = core.delete_terminal_capture_files(pane_id).unwrap();
-        assert!(receipt.files > 0);
-        assert!(receipt.bytes > 0);
-        assert_eq!(
-            core.delete_terminal_capture_files(pane_id).unwrap().files,
-            0
-        );
+        let exports = core.observation_root().unwrap().join("exports");
+        fs::create_dir(&exports).unwrap();
+        fs::set_permissions(&exports, fs::Permissions::from_mode(0o700)).unwrap();
+        let export = exports.join("export-preserved.jsonl");
+        fs::write(&export, b"raw terminal export\n").unwrap();
+        fs::set_permissions(&export, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let (sender, _receiver) = outbox::channel();
+        let connection = core.connect(true, true, sender).unwrap();
+        assert!(matches!(
+            core.dispatch(
+                &connection,
+                serde_json::json!({
+                    "jsonrpc":"2.0","id":"hello","method":"hello",
+                    "params":{"client":"delete-test","clientVersion":"1","protocolVersion":1}
+                }),
+            )
+            .unwrap(),
+            Outcome::Reply(_)
+        ));
+        let Outcome::Reply(result) = core
+            .dispatch(
+                &connection,
+                serde_json::json!({
+                    "jsonrpc":"2.0","id":"delete","method":"pane.experiment.delete",
+                    "params":{"paneId":pane_id,"idempotencyKey":"delete-once"}
+                }),
+            )
+            .unwrap()
+        else {
+            panic!("expected deletion reply")
+        };
+        assert!(result["files"].as_u64().unwrap() > 0);
+        assert_ne!(result["bytes"], "0");
+        assert_eq!(result["nothingRemained"], true);
+        assert_eq!(result["exportsExcluded"], true);
+        assert_eq!(result["exportsPath"], exports.to_str().unwrap());
+        assert_eq!(fs::read(&export).unwrap(), b"raw terminal export\n");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -686,11 +729,12 @@ mod tests {
                 files: 3,
                 bytes: 144,
             },
+            "/profile/experiments/pane-state/exports",
             errors::internal("receipt store unavailable"),
         );
         assert_eq!(
             error.to_string(),
-            "Captured terminal data was removed (3 files, 144 bytes), but the record of its removal was not saved: receipt store unavailable"
+            "Captured terminal data was removed (3 files, 144 bytes), but the record of its removal was not saved: receipt store unavailable. Export files were not deleted and remain in /profile/experiments/pane-state/exports"
         );
     }
 

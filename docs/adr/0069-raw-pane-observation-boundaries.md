@@ -47,10 +47,12 @@ recording. It defaults off for every pane and can be enabled only in the Dev pro
 pane shows recording state for the entire time it is active. Capture files remain beneath
 the Dev profile in a dedicated experiment directory; no recorder, export or hook path is
 available in another profile. Enabling capture does not imply export. Disabling capture
-stops collection immediately and offers to erase that pane's existing segments. A separate
-explicit erase action removes the entire experiment directory, including exports. Deletion
-never follows symlinks, reports what was removed, and a failure remains visible rather than
-being presented as successful withdrawal.
+stops collection immediately and offers to erase that pane's existing segments. Pane deletion
+does not erase exported datasets because one export may contain several panes; the confirmation
+and receipt name that exclusion and the local exports directory. This slice adds no
+whole-directory erase command; a person removes exported files from that stated local directory.
+Deletion never follows symlinks, reports what was removed, and a failure remains visible rather
+than being presented as successful withdrawal.
 
 Only the Dev Mac application with a persistent signature may change experiment consent,
 delete captured data or export it. At
@@ -242,6 +244,20 @@ an empty result omits that actual window instead of inventing one. Nothing is up
 outside the profile. Analysis tools may read the returned local file. Only the attested Dev Mac
 application can invoke export; command-line clients, agents and paired phones cannot. Export
 rejects invalid provenance rather than manufacturing it.
+
+An interrupted export may leave raw terminal text in its temporary file. At engine startup and
+before a new export, the engine removes only a regular file whose name is exactly
+`.export-<canonical UUID>.tmp` and whose modification time is at least 24 hours old. Startup
+cleanup means an orphan does not depend on the person attempting another export. The age was
+declared before exercising the control: a bounded 64 MiB export completes far inside that window,
+while the window tolerates sleep, indexing, backup and a slow disk without deleting live work. A
+future modification time has age zero and is preserved. Final `export-<digest>.jsonl` files and
+every noncanonical neighbour are outside the match. The export response reports removed file and
+byte counts; startup cleanup writes the same counts to the engine log. A startup cleanup failure
+writes its reason to the log and does not prevent the engine from opening; an orphan is not grounds
+to make the application unavailable. Cleanup failure during an explicit export still fails that
+request. If cleanup succeeded but the export or its durable receipt then fails, the error still
+states what cleanup removed; a privacy mutation never disappears behind the later failure.
 
 ### State claims
 

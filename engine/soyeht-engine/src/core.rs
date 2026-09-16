@@ -56,6 +56,28 @@ impl Core {
         // Resolve the user's interactive launch path before requests arrive so
         // catalogue reads and process launches share one environment snapshot.
         let _ = crate::agents::environment::launch_path();
+        match crate::experiment_export::cleanup_stale_export_temporaries_on_start(directory) {
+            Ok((cleaned_files, cleaned_bytes)) if cleaned_files > 0 => {
+                eprintln!(
+                    "{}",
+                    json!({
+                        "event":"engine.experiment_export_temporary_cleanup",
+                        "files":cleaned_files,
+                        "bytes":cleaned_bytes.to_string()
+                    })
+                );
+            }
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    json!({
+                        "event":"engine.experiment_export_temporary_cleanup_failed",
+                        "reason":error.to_string()
+                    })
+                );
+            }
+            _ => (),
+        }
         let mut store = Store::open(directory).map_err(errors::storage)?;
         let generation = store.next_engine_generation().map_err(errors::storage)?;
         if generation > u32::MAX as u64 {

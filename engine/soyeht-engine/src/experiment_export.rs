@@ -12,10 +12,12 @@ use soyeht_pane_state::{
 use soyeht_protocol::limits;
 use std::{
     collections::BTreeSet,
+    ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
+    time::{Duration, SystemTime},
 };
 use uuid::Uuid;
 
@@ -23,6 +25,7 @@ const DIRECTORY_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
 const EXPORT_FORMAT_VERSION: u32 = 1;
 const EXPORT_METHOD: &str = "pane.experiment.export";
+const STALE_EXPORT_TEMP_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +71,13 @@ struct ExportReceipt {
     sha256: String,
     actual_from_ms: Option<i64>,
     actual_to_ms: Option<i64>,
+    stale_temporary_cleanup: TemporaryCleanupReceipt,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TemporaryCleanupReceipt {
+    files: usize,
+    bytes: u64,
 }
 
 impl Core {
@@ -92,6 +102,10 @@ impl Core {
         let receipt = build_export(&self.directory, &pane_ids, from_ms, to_ms, &fingerprint)?;
         let rows = u32::try_from(receipt.rows)
             .map_err(|_| errors::internal("Experiment export row count is invalid"))?;
+        let stale_temporary_files_removed = u32::try_from(receipt.stale_temporary_cleanup.files)
+            .map_err(|_| {
+                errors::internal("Stale experiment export temporary file count is invalid")
+            })?;
         let path = receipt
             .path
             .to_str()
@@ -100,7 +114,9 @@ impl Core {
             "path":path,
             "rows":rows,
             "bytes":receipt.bytes.to_string(),
-            "sha256":receipt.sha256
+            "sha256":receipt.sha256,
+            "staleTemporaryFilesRemoved":stale_temporary_files_removed,
+            "staleTemporaryBytesRemoved":receipt.stale_temporary_cleanup.bytes.to_string()
         });
         if let Some(actual) = receipt.actual_from_ms {
             result["actualFromMs"] = json!(actual.to_string());
@@ -112,10 +128,7 @@ impl Core {
             Ok((result, vec![]))
         }) {
             Ok(mutation) => Ok(mutation.result),
-            Err(error) => Err(errors::internal(format!(
-                "The experiment export was written to {}, but its durable receipt was not saved: {error}",
-                receipt.path.display()
-            ))),
+            Err(error) => Err(export_receipt_commit_error(&receipt, error)),
         }
     }
 }
@@ -183,6 +196,24 @@ fn build_export(
     from_ms: i64,
     to_ms: i64,
     fingerprint: &str,
+) -> Result<ExportReceipt> {
+    build_export_at(
+        profile,
+        pane_ids,
+        from_ms,
+        to_ms,
+        fingerprint,
+        SystemTime::now(),
+    )
+}
+
+fn build_export_at(
+    profile: &Path,
+    pane_ids: &[String],
+    from_ms: i64,
+    to_ms: i64,
+    fingerprint: &str,
+    now: SystemTime,
 ) -> Result<ExportReceipt> {
     let root = experiment_root(profile)?;
     let mut selected = Vec::new();
@@ -266,8 +297,11 @@ fn build_export(
     }
     let exports = root.join("exports");
     ensure_private_directory(&exports)?;
+    let stale_temporary_cleanup = cleanup_stale_export_temporaries(&exports, now)?;
     let path = exports.join(format!("export-{fingerprint}.jsonl"));
-    write_atomic(&exports, &path, &bytes)?;
+    if let Err(error) = write_atomic(&exports, &path, &bytes) {
+        return Err(export_after_cleanup_error(stale_temporary_cleanup, error));
+    }
     Ok(ExportReceipt {
         path,
         rows: selected.len(),
@@ -275,7 +309,37 @@ fn build_export(
         sha256: format!("{:x}", Sha256::digest(&bytes)),
         actual_from_ms,
         actual_to_ms,
+        stale_temporary_cleanup,
     })
+}
+
+fn export_receipt_commit_error(receipt: &ExportReceipt, error: errors::Error) -> errors::Error {
+    let cleanup = receipt.stale_temporary_cleanup;
+    if cleanup.files == 0 {
+        return errors::internal(format!(
+            "The experiment export was written to {}, but its durable receipt was not saved: {error}",
+            receipt.path.display()
+        ));
+    }
+    errors::internal(format!(
+        "The experiment export was written to {}, and stale temporary cleanup removed {} files ({} bytes), but its durable receipt was not saved: {error}",
+        receipt.path.display(),
+        cleanup.files,
+        cleanup.bytes
+    ))
+}
+
+fn export_after_cleanup_error(
+    cleanup: TemporaryCleanupReceipt,
+    error: errors::Error,
+) -> errors::Error {
+    if cleanup.files == 0 {
+        return error;
+    }
+    errors::internal(format!(
+        "Stale temporary cleanup removed {} files ({} bytes), but the experiment export failed: {error}",
+        cleanup.files, cleanup.bytes
+    ))
 }
 
 fn row_interval(row: &RecordedRow) -> (i64, i64, u64, u64) {
@@ -334,6 +398,120 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
         }
         Err(error) => Err(error.into()),
     }
+}
+
+fn cleanup_stale_export_temporaries(
+    directory: &Path,
+    now: SystemTime,
+) -> Result<TemporaryCleanupReceipt> {
+    let entries = fs::read_dir(directory).map_err(|error| {
+        errors::internal(format!(
+            "Could not inspect stale experiment export temporaries: {error}"
+        ))
+    })?;
+    let mut paths = Vec::new();
+    for entry in entries {
+        let path = entry
+            .map_err(|error| temporary_cleanup_error(Default::default(), error.into()))?
+            .path();
+        if path
+            .file_name()
+            .is_some_and(is_canonical_export_temporary_name)
+        {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+
+    let mut receipt = TemporaryCleanupReceipt::default();
+    for path in paths {
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(temporary_cleanup_error(receipt, error.into())),
+        };
+        if !metadata.file_type().is_file() {
+            return Err(temporary_cleanup_error(
+                receipt,
+                errors::internal("Experiment export temporary is not a regular file"),
+            ));
+        }
+        let modified = metadata
+            .modified()
+            .map_err(|error| temporary_cleanup_error(receipt, error.into()))?;
+        let Ok(age) = now.duration_since(modified) else {
+            continue;
+        };
+        if age < STALE_EXPORT_TEMP_AGE {
+            continue;
+        }
+        let next_files = receipt.files.checked_add(1).ok_or_else(|| {
+            temporary_cleanup_error(
+                receipt,
+                errors::internal("Stale temporary cleanup file count overflowed"),
+            )
+        })?;
+        let next_bytes = receipt.bytes.checked_add(metadata.len()).ok_or_else(|| {
+            temporary_cleanup_error(
+                receipt,
+                errors::internal("Stale temporary cleanup byte count overflowed"),
+            )
+        })?;
+        fs::remove_file(&path).map_err(|error| temporary_cleanup_error(receipt, error.into()))?;
+        receipt.files = next_files;
+        receipt.bytes = next_bytes;
+    }
+    if receipt.files > 0 {
+        File::open(directory)
+            .map_err(|error| temporary_cleanup_error(receipt, error.into()))?
+            .sync_all()
+            .map_err(|error| temporary_cleanup_error(receipt, error.into()))?;
+    }
+    Ok(receipt)
+}
+
+pub(crate) fn cleanup_stale_export_temporaries_on_start(profile: &Path) -> Result<(usize, u64)> {
+    let expected = profile
+        .join("experiments")
+        .join("pane-state")
+        .join("exports");
+    match fs::symlink_metadata(&expected) {
+        Ok(_) => (),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok((0, 0)),
+        Err(error) => return Err(error.into()),
+    }
+    let exports = experiment_root(profile)?.join("exports");
+    ensure_private_directory(&exports)?;
+    let receipt = cleanup_stale_export_temporaries(&exports, SystemTime::now())?;
+    Ok((receipt.files, receipt.bytes))
+}
+
+fn is_canonical_export_temporary_name(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    let Some(uuid) = name
+        .strip_prefix(".export-")
+        .and_then(|name| name.strip_suffix(".tmp"))
+    else {
+        return false;
+    };
+    Uuid::parse_str(uuid).is_ok_and(|parsed| parsed.hyphenated().to_string() == uuid)
+}
+
+fn temporary_cleanup_error(
+    receipt: TemporaryCleanupReceipt,
+    error: errors::Error,
+) -> errors::Error {
+    if receipt.files == 0 {
+        return errors::internal(format!(
+            "Stale experiment export temporary cleanup failed: {error}"
+        ));
+    }
+    errors::internal(format!(
+        "Stale experiment export temporary cleanup removed {} files ({} bytes) before it failed: {error}",
+        receipt.files, receipt.bytes
+    ))
 }
 
 fn existing_export_matches(path: &Path, bytes: &[u8]) -> Result<bool> {
@@ -452,6 +630,191 @@ mod tests {
             panic!("expected reply")
         };
         value
+    }
+
+    fn write_private(path: &Path, bytes: &[u8]) {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(FILE_MODE)
+            .open(path)
+            .unwrap();
+        file.write_all(bytes).unwrap();
+        file.sync_all().unwrap();
+    }
+
+    #[test]
+    fn export_temporary_match_is_anchored_to_one_canonical_uuid_name() {
+        let uuid = "550e8400-e29b-41d4-a716-446655440000";
+        assert!(is_canonical_export_temporary_name(OsStr::new(&format!(
+            ".export-{uuid}.tmp"
+        ))));
+        for name in [
+            format!("export-{uuid}.tmp"),
+            format!(".export-{uuid}"),
+            format!("prefix.export-{uuid}.tmp"),
+            format!(".export-{uuid}.tmp.tail"),
+            format!(".export-{}.tmp", uuid.to_uppercase()),
+            format!("export-{uuid}.jsonl"),
+        ] {
+            assert!(
+                !is_canonical_export_temporary_name(OsStr::new(&name)),
+                "matched {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn cleanup_preserves_a_canonical_temporary_younger_than_the_declared_age() {
+        let fixture = Fixture::new();
+        let exports = experiment_root(&fixture.profile).unwrap().join("exports");
+        ensure_private_directory(&exports).unwrap();
+        let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
+        write_private(&temporary, b"still live");
+        let modified = fs::symlink_metadata(&temporary)
+            .unwrap()
+            .modified()
+            .unwrap();
+
+        let receipt = cleanup_stale_export_temporaries(&exports, modified).unwrap();
+
+        assert_eq!(receipt.files, 0);
+        assert_eq!(receipt.bytes, 0);
+        assert!(temporary.exists());
+    }
+
+    #[test]
+    fn cleanup_treats_a_future_modification_time_as_age_zero() {
+        let fixture = Fixture::new();
+        let exports = experiment_root(&fixture.profile).unwrap().join("exports");
+        ensure_private_directory(&exports).unwrap();
+        let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
+        write_private(&temporary, b"clock moved backwards");
+        let modified = fs::symlink_metadata(&temporary)
+            .unwrap()
+            .modified()
+            .unwrap();
+        let now = modified - Duration::from_secs(1);
+
+        let receipt = cleanup_stale_export_temporaries(&exports, now).unwrap();
+
+        assert_eq!(receipt.files, 0);
+        assert_eq!(receipt.bytes, 0);
+        assert!(temporary.exists());
+    }
+
+    #[test]
+    fn engine_start_removes_an_old_orphan_without_waiting_for_another_export() {
+        let fixture = Fixture::new();
+        let exports = experiment_root(&fixture.profile).unwrap().join("exports");
+        ensure_private_directory(&exports).unwrap();
+        let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
+        write_private(&temporary, b"abandoned raw terminal");
+        let old = SystemTime::now() - STALE_EXPORT_TEMP_AGE - Duration::from_secs(1);
+        File::options()
+            .write(true)
+            .open(&temporary)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(old))
+            .unwrap();
+
+        let _core = Core::open(&fixture.profile).unwrap();
+
+        assert!(!temporary.exists());
+    }
+
+    #[test]
+    fn startup_cleanup_failure_is_visible_but_does_not_block_the_engine() {
+        let fixture = Fixture::new();
+        let exports = experiment_root(&fixture.profile).unwrap().join("exports");
+        ensure_private_directory(&exports).unwrap();
+        let invalid = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
+        fs::DirBuilder::new()
+            .mode(DIRECTORY_MODE)
+            .create(&invalid)
+            .unwrap();
+
+        let core = Core::open(&fixture.profile);
+
+        assert!(core.is_ok(), "startup cleanup failure blocked the engine");
+        assert!(invalid.is_dir());
+    }
+
+    #[test]
+    fn a_real_export_removes_only_an_old_canonical_temporary_and_reports_it() {
+        let fixture = Fixture::new();
+        let exports = experiment_root(&fixture.profile).unwrap().join("exports");
+        ensure_private_directory(&exports).unwrap();
+        let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
+        let neighbour = exports.join(".export-not-a-uuid.tmp");
+        let final_export = exports.join(format!("export-{}.jsonl", "a".repeat(64)));
+        write_private(&temporary, b"raw terminal");
+        write_private(&neighbour, b"neighbour");
+        write_private(&final_export, b"final\n");
+        let modified = fs::symlink_metadata(&temporary)
+            .unwrap()
+            .modified()
+            .unwrap();
+        let now = modified + STALE_EXPORT_TEMP_AGE + Duration::from_secs(1);
+
+        let receipt = build_export_at(&fixture.profile, &[], 0, 0, "cleanup", now).unwrap();
+
+        assert_eq!(receipt.stale_temporary_cleanup.files, 1);
+        assert_eq!(
+            receipt.stale_temporary_cleanup.bytes,
+            b"raw terminal".len() as u64
+        );
+        assert!(!temporary.exists());
+        assert!(neighbour.exists());
+        assert!(final_export.exists());
+        assert!(receipt.path.exists());
+    }
+
+    #[test]
+    fn a_failure_after_real_cleanup_still_reports_exactly_what_was_removed() {
+        let fixture = Fixture::new();
+        let exports = experiment_root(&fixture.profile).unwrap().join("exports");
+        ensure_private_directory(&exports).unwrap();
+        let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
+        write_private(&temporary, b"raw terminal");
+        write_private(&exports.join("export-after-cleanup.jsonl"), b"conflict\n");
+        let modified = fs::symlink_metadata(&temporary)
+            .unwrap()
+            .modified()
+            .unwrap();
+        let now = modified + STALE_EXPORT_TEMP_AGE + Duration::from_secs(1);
+
+        let error = build_export_at(&fixture.profile, &[], 0, 0, "after-cleanup", now)
+            .err()
+            .expect("conflicting destination must fail")
+            .to_string();
+
+        assert!(!temporary.exists());
+        assert!(error.contains("removed 1 files (12 bytes)"));
+        assert!(error.contains("but the experiment export failed"));
+    }
+
+    #[test]
+    fn receipt_commit_failure_keeps_the_cleanup_receipt_visible() {
+        let receipt = ExportReceipt {
+            path: PathBuf::from("/profile/experiments/pane-state/exports/export-test.jsonl"),
+            rows: 0,
+            bytes: 1,
+            sha256: "a".repeat(64),
+            actual_from_ms: None,
+            actual_to_ms: None,
+            stale_temporary_cleanup: TemporaryCleanupReceipt {
+                files: 2,
+                bytes: 144,
+            },
+        };
+
+        let error =
+            export_receipt_commit_error(&receipt, errors::internal("receipt store unavailable"))
+                .to_string();
+
+        assert!(error.contains("removed 2 files (144 bytes)"));
+        assert!(error.contains("durable receipt was not saved"));
     }
 
     #[test]
@@ -626,6 +989,8 @@ mod tests {
         assert_eq!(first["rows"], 1);
         assert_eq!(first["actualFromMs"], "150");
         assert_eq!(first["actualToMs"], "150");
+        assert_eq!(first["staleTemporaryFilesRemoved"], 0);
+        assert_eq!(first["staleTemporaryBytesRemoved"], "0");
         let path = PathBuf::from(first["path"].as_str().unwrap());
         assert!(path.is_file());
         assert_eq!(

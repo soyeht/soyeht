@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 32e15e66c20702c601a343931616d798fc9024c57e27a264e043d1a17529abfe). Do not edit.
+// Generated from contracts/protocol.json (sha256 f1738da8b5592f56f18d1f64def1302f0ca52fff5869b8e6dcddd2443e477705). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -604,6 +604,10 @@ pub struct PaneExperimentDeleteResult {
     pub bytes: Decimal,
     #[serde(rename = "nothingRemained")]
     pub nothing_remained: bool,
+    #[serde(rename = "exportsExcluded", skip_serializing_if = "Option::is_none")]
+    pub exports_excluded: Option<bool>,
+    #[serde(rename = "exportsPath", skip_serializing_if = "Option::is_none")]
+    pub exports_path: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneExperimentExportParams {
@@ -630,6 +634,16 @@ pub struct PaneExperimentExportResult {
     pub actual_from_ms: Option<Decimal>,
     #[serde(rename = "actualToMs", skip_serializing_if = "Option::is_none")]
     pub actual_to_ms: Option<Decimal>,
+    #[serde(
+        rename = "staleTemporaryFilesRemoved",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub stale_temporary_files_removed: Option<u32>,
+    #[serde(
+        rename = "staleTemporaryBytesRemoved",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub stale_temporary_bytes_removed: Option<Decimal>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartParams {

@@ -749,9 +749,11 @@ private struct PaneCard: View {
       VStack(alignment: .leading, spacing: MacTheme.Space.x18) {
         Text("Keep the captured terminal data?")
           .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .semibold))
-        Text("Recording has stopped. Deletion applies only to this pane's experiment files.")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control))
-          .foregroundStyle(MacTheme.secondary)
+        Text(
+          "Recording has stopped. Delete removes only this pane's recorded segments. Export files remain at \(experimentExportsPath)."
+        )
+        .font(MacTheme.chrome(MacTheme.TypeScale.control))
+        .foregroundStyle(MacTheme.secondary)
         HStack {
           Button("Keep data") {
             captureNotice = "Captured data kept on this Mac."
@@ -966,6 +968,11 @@ private struct PaneCard: View {
         client.problem = error.localizedDescription
       }
     }
+  }
+
+  private var experimentExportsPath: String {
+    DevProfile.dataDirectory
+      .appendingPathComponent("experiments/pane-state/exports", isDirectory: true).path
   }
 
   private func deleteExperimentCaptureData() {

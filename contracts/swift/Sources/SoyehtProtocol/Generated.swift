@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 32e15e66c20702c601a343931616d798fc9024c57e27a264e043d1a17529abfe). Do not edit.
+// Generated from contracts/protocol.json (sha256 f1738da8b5592f56f18d1f64def1302f0ca52fff5869b8e6dcddd2443e477705). Do not edit.
 import Foundation
 
 
@@ -649,10 +649,14 @@ public struct PaneExperimentDeleteResult: Codable, Sendable {
     public var `files`: UInt32
     public var `bytes`: Decimal
     public var `nothingRemained`: Bool
-    public init(`files`: UInt32, `bytes`: Decimal, `nothingRemained`: Bool) {
+    public var `exportsExcluded`: Bool?
+    public var `exportsPath`: String?
+    public init(`files`: UInt32, `bytes`: Decimal, `nothingRemained`: Bool, `exportsExcluded`: Bool? = nil, `exportsPath`: String? = nil) {
         self.`files` = `files`
         self.`bytes` = `bytes`
         self.`nothingRemained` = `nothingRemained`
+        self.`exportsExcluded` = `exportsExcluded`
+        self.`exportsPath` = `exportsPath`
     }
 }
 
@@ -676,13 +680,17 @@ public struct PaneExperimentExportResult: Codable, Sendable {
     public var `sha256`: String
     public var `actualFromMs`: Decimal?
     public var `actualToMs`: Decimal?
-    public init(`path`: String, `rows`: UInt32, `bytes`: Decimal, `sha256`: String, `actualFromMs`: Decimal? = nil, `actualToMs`: Decimal? = nil) {
+    public var `staleTemporaryFilesRemoved`: UInt32?
+    public var `staleTemporaryBytesRemoved`: Decimal?
+    public init(`path`: String, `rows`: UInt32, `bytes`: Decimal, `sha256`: String, `actualFromMs`: Decimal? = nil, `actualToMs`: Decimal? = nil, `staleTemporaryFilesRemoved`: UInt32? = nil, `staleTemporaryBytesRemoved`: Decimal? = nil) {
         self.`path` = `path`
         self.`rows` = `rows`
         self.`bytes` = `bytes`
         self.`sha256` = `sha256`
         self.`actualFromMs` = `actualFromMs`
         self.`actualToMs` = `actualToMs`
+        self.`staleTemporaryFilesRemoved` = `staleTemporaryFilesRemoved`
+        self.`staleTemporaryBytesRemoved` = `staleTemporaryBytesRemoved`
     }
 }
 

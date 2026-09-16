@@ -516,7 +516,9 @@
     "value": {
       "files": 2,
       "bytes": "128",
-      "nothingRemained": true
+      "nothingRemained": true,
+      "exportsExcluded": true,
+      "exportsPath": "/private/tmp/soyeht/experiments/pane-state/exports"
     }
   },
   {
@@ -1562,7 +1564,10 @@
       "id": "request-1",
       "result": {
         "files": 2,
-        "bytes": "128"
+        "bytes": "128",
+        "nothingRemained": true,
+        "exportsExcluded": true,
+        "exportsPath": "/private/tmp/soyeht/experiments/pane-state/exports"
       }
     }
   },
@@ -11396,7 +11401,9 @@
       "bytes": "4096",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "actualFromMs": "1800000000100",
-      "actualToMs": "1800000059900"
+      "actualToMs": "1800000059900",
+      "staleTemporaryFilesRemoved": 1,
+      "staleTemporaryBytesRemoved": "512"
     }
   },
   {
@@ -11428,7 +11435,9 @@
         "bytes": "4096",
         "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "actualFromMs": "1800000000100",
-        "actualToMs": "1800000059900"
+        "actualToMs": "1800000059900",
+        "staleTemporaryFilesRemoved": 1,
+        "staleTemporaryBytesRemoved": "512"
       }
     }
   }

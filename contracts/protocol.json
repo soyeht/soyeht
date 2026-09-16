@@ -1110,6 +1110,14 @@
         },
         "nothingRemained": {
           "type": "boolean"
+        },
+        "exportsExcluded": {
+          "type": "boolean"
+        },
+        "exportsPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         }
       },
       "required": [
@@ -1170,6 +1178,14 @@
           "$ref": "#/$defs/Decimal"
         },
         "actualToMs": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "staleTemporaryFilesRemoved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "staleTemporaryBytesRemoved": {
           "$ref": "#/$defs/Decimal"
         }
       },
