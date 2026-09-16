@@ -111,14 +111,14 @@ queue is preferable to losing the file. Recorder failure disables experiment cap
 pane and publishes a visible reason; terminal output continues. The experiment projection is
 owned by the engine so collection does not depend on an attached or foreground client.
 
-Before cadence measurement, the acceptable bound is fixed: the measurand is wall-clock elapsed
-time for one complete `Core::poll_output` invocation, from function entry to return, using the
-same noisy-terminal fixture with capture off and on. Over ten paired runs, capture may increase
-the median duration by at most 5 percent and p95 duration by at most 5 milliseconds. The bounds
-are evaluated independently, so a fast median cannot hide a long-tail stall. This measures the
-shared loop that recording could slow. Terminal byte-to-client delivery is not the measurand
-because capture observes only a copy after the normal stream has accepted the bytes and cannot
-replace or rechunk that path.
+Before cadence measurement, the acceptable bound is fixed: each sample is the summed wall-clock
+elapsed time for thirty complete `Core::poll_output` invocations, from each function entry to its
+return, with capture-off and capture-on invocations interleaved against the same noisy-terminal
+fixture. Over ten paired samples, capture may increase the median duration by at most 5 percent
+and p95 duration by at most 5 milliseconds. The bounds are evaluated independently, so a fast
+median cannot hide a long-tail stall. This measures the shared loop that recording could slow.
+Terminal byte-to-client delivery is not the measurand because capture observes only a reference
+after the normal stream has accepted the bytes and cannot replace or rechunk that path.
 
 The cadence fixture is intentionally byte-heavy and frame-light: after separate unmeasured
 engine and capture-path setup pairs, it retains ten raw paired samples. Each sample interleaves
@@ -153,12 +153,15 @@ microseconds (+2.36 percent) and p95 moved from 11059 to 11292 microseconds (+23
 Both independent bounds passed. Each sample contains thirty polls, so the median delta is roughly
 8.2 microseconds per
 `Core::poll_output`; that absolute observation is more durable than its percentage, because
-unrelated baseline work changes the denominator. The 5 millisecond p95 criterion is deliberately
-a stall detector, not a relative tail-regression guard. At this millisecond sample scale it
-permits percentage drift and must not be read as protecting against incremental tail drift. The
-5 percent median bound is also a coarse scheduling-sensitive guard: a failure requires
-investigation and is not by itself proof that capture regressed. A future absolute-delta limit must
-be predeclared before the change it evaluates rather than calibrated from this observed sample.
+unrelated baseline work changes the denominator. This replaces the earlier roughly 9 microsecond
+observation because the shipping path stopped cloning the terminal payload; 8.2 microseconds
+describes the new shared-allocation path rather than measurement drift in the old path. At the
+new 30-poll sample scale, the 5 millisecond p95 allowance is about 45 percent of the capture-off
+tail. It therefore guards both moderate tail drift and stalls; shrinking the sample back to one
+poll would silently make that absolute criterion inert again. The 5 percent median bound remains
+a coarse scheduling-sensitive guard: a failure requires investigation and is not by itself proof
+that capture regressed. A future absolute-delta limit must be predeclared before the change it
+evaluates rather than calibrated from this observed sample.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
