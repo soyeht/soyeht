@@ -141,7 +141,12 @@ The first valid dedicated-gate sample after isolation measured raw capture-off p
 318, 328, 327, 342, 335, 360, 349 and 334 microseconds, and capture-on pairs of 511, 363, 337,
 333, 328, 416, 473, 469, 344 and 339 microseconds. After the declared three warm-up pairs, the
 median moved from 335 to 344 microseconds (+2.69 percent) and p95 moved from 360 to 473
-microseconds (+113 microseconds). Both independent bounds passed.
+microseconds (+113 microseconds). Both independent bounds passed. The median delta is roughly
+9 microseconds per `Core::poll_output`; that absolute observation is more durable than its
+percentage, because unrelated baseline work changes the denominator. The 5 millisecond p95
+criterion is deliberately a stall detector, not a relative tail-regression guard. At this
+sub-millisecond baseline it permits a large percentage change and must not be read as protecting
+against incremental tail drift.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
