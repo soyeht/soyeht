@@ -621,7 +621,9 @@ fn encode_recorded_row(row: &RecordedRow) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soyeht_pane_state::{MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame};
+    use soyeht_pane_state::{
+        MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame, ObservationReason,
+    };
     use std::os::unix::fs::symlink;
     use uuid::Uuid;
 
@@ -671,6 +673,7 @@ mod tests {
             harness: harness(),
             timestamp_ms: 1_800_000_000_000 + sequence as i64,
             sequence,
+            reason: ObservationReason::VisualChange,
             osc_title: Some("terminal".into()),
             lines,
             cursor: None,

@@ -54,12 +54,20 @@ pub struct CursorPosition {
     pub column: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationReason {
+    VisualChange,
+    StaticActivity,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationFrame {
     pub pane_id: String,
     pub harness: HarnessIdentity,
     pub timestamp_ms: i64,
     pub sequence: u64,
+    pub reason: ObservationReason,
     pub osc_title: Option<String>,
     pub lines: Vec<String>,
     pub cursor: Option<CursorPosition>,

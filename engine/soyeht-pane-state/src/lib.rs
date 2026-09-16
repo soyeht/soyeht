@@ -16,5 +16,5 @@ pub use model::{
     Confidence, CursorPosition, Detection, Detector, GroundTruthLabel, HarnessIdentity,
     MAX_FOREGROUND_PROCESS_BYTES, MAX_HARNESS_ID_BYTES, MAX_HARNESS_VERSION_BYTES,
     MAX_PANE_ID_BYTES, MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, MAX_TITLE_BYTES, ObservationFrame,
-    ObservationGap, RecordedRow,
+    ObservationGap, ObservationReason, RecordedRow,
 };

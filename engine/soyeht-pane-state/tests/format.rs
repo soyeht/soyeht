@@ -2,8 +2,8 @@
 
 use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, Error, GroundTruthLabel, HarnessIdentity,
-    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow, SegmentMetadata,
-    decode_segment, encode_row,
+    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, ObservationReason, RecordedRow,
+    SegmentMetadata, decode_segment, encode_row,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -31,6 +31,7 @@ fn observation(sequence: u64) -> ObservationFrame {
         harness: harness(),
         timestamp_ms: 1_800_000_000_000 + sequence as i64,
         sequence,
+        reason: ObservationReason::VisualChange,
         osc_title: Some("working".into()),
         lines: vec!["line one".into(), "line two".into()],
         cursor: None,
@@ -70,9 +71,11 @@ fn segment(rows: &[DatasetRow]) -> Vec<u8> {
 
 #[test]
 fn segment_round_trip_keeps_header_observation_label_and_gap_distinct() {
+    let mut static_activity = observation(8);
+    static_activity.reason = ObservationReason::StaticActivity;
     let bytes = segment(&[
         DatasetRow::Metadata(metadata()),
-        DatasetRow::Observation(observation(8)),
+        DatasetRow::Observation(static_activity.clone()),
         DatasetRow::Label(label(9)),
         DatasetRow::Gap(gap(10, 12, 2)),
     ]);
@@ -81,7 +84,7 @@ fn segment_round_trip_keeps_header_observation_label_and_gap_distinct() {
     assert_eq!(
         replayed.rows,
         vec![
-            RecordedRow::Observation(observation(8)),
+            RecordedRow::Observation(static_activity),
             RecordedRow::Label(label(9)),
             RecordedRow::Gap(gap(10, 12, 2)),
         ]

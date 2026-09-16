@@ -93,8 +93,24 @@ replace or rechunk that path.
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
 screen lines, cursor position, foreground process and a bounded bytes-per-second measure.
-Unknown metadata stays absent rather than being guessed. A raw terminal without a known
-harness keeps an explicit unknown harness identity.
+Byte rate is not part of projected-screen equality: otherwise idle retention would fill with
+near-duplicate frames as the rolling rate decayed. Instead, while bytes continue arriving
+without changing title, lines or cursor, the engine records at most one static-activity
+heartbeat per one-second window. No timer produces frames after bytes stop. This preserves
+non-visual terminal activity for the experiment without rotating segments merely because a
+pane is idle. Each row carries the closed emission reason `visual_change` or
+`static_activity`; replay never has to infer what the writer knew by comparing adjacent rows,
+which would be unsound across an explicit gap. The frame records the rolling byte rate at
+either kind of emission. Unknown
+metadata stays absent rather than being guessed. A raw terminal without a known harness keeps
+an explicit unknown harness identity. Capture starts at the consent boundary and never
+backfills the retained screen, because consent cannot authorise earlier terminal contents.
+
+The emission reason is available to every experiment candidate because it is an observation,
+not a ground-truth label. A candidate that uses only the emission reason is scored as its own
+cheap baseline before it is combined with regex or learned features. Later comparisons must
+therefore show what that signal is worth alone instead of crediting another candidate merely
+for reading a precomputed field that all candidates received.
 
 ### Durable format and provenance
 
