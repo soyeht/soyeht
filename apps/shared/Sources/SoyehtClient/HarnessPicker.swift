@@ -27,7 +27,37 @@ public struct HarnessPickerSection: Sendable {
   }
 }
 
+public enum HarnessPickerContentState: Sendable, Equatable {
+  case loading
+  case emptyCatalogue
+  case noMatches
+  case results
+}
+
+public enum ModelPickerContentState: Sendable, Equatable {
+  case loading
+  case unavailable
+  case empty
+  case results
+}
+
 public enum HarnessPickerModel {
+  public static func contentState(
+    harnesses: [HarnessInfo], query: String, loading: Bool
+  ) -> HarnessPickerContentState {
+    if loading && harnesses.isEmpty { return .loading }
+    if harnesses.isEmpty { return .emptyCatalogue }
+    return sections(harnesses, query: query).isEmpty ? .noMatches : .results
+  }
+
+  public static func modelContentState(
+    catalogue: AgentCatalogue?, loading: Bool
+  ) -> ModelPickerContentState {
+    if loading && catalogue == nil { return .loading }
+    guard let catalogue else { return .unavailable }
+    return catalogue.models.isEmpty ? .empty : .results
+  }
+
   public static func sections(
     _ harnesses: [HarnessInfo], query: String = ""
   ) -> [HarnessPickerSection] {
