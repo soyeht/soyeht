@@ -121,7 +121,7 @@ pub(crate) struct TerminalCapture {
     sender: Option<channel::Sender<ProjectionCommand>>,
     overflow: Arc<Mutex<Option<RawByteGap>>>,
     overflow_active: Arc<AtomicBool>,
-    failure: Arc<AtomicBool>,
+    failure: Arc<Mutex<Option<String>>>,
     worker: Option<JoinHandle<()>>,
     #[cfg(test)]
     test_queue_metrics: Arc<TestQueueMetrics>,
@@ -149,7 +149,7 @@ impl TerminalCapture {
         let (sender, receiver) = channel::bounded(PROJECTION_QUEUE_CAPACITY);
         let overflow = Arc::new(Mutex::new(None));
         let overflow_active = Arc::new(AtomicBool::new(false));
-        let failure = Arc::new(AtomicBool::new(false));
+        let failure = Arc::new(Mutex::new(None));
         let worker_overflow = Arc::clone(&overflow);
         let worker_overflow_active = Arc::clone(&overflow_active);
         let worker_failure = Arc::clone(&failure);
@@ -164,7 +164,7 @@ impl TerminalCapture {
         let worker = thread::Builder::new()
             .name("terminal-observation-projector".into())
             .spawn(move || {
-                if let Err(error) = projection_loop(
+                let Err(error) = projection_loop(
                     projection,
                     recorder,
                     receiver,
@@ -174,10 +174,13 @@ impl TerminalCapture {
                     worker_test_queue_metrics,
                     #[cfg(test)]
                     worker_test_projection_gate,
-                ) {
-                    let _ = error;
-                    worker_failure.store(true, Ordering::Release);
-                }
+                ) else {
+                    return;
+                };
+                let Ok(mut failure) = worker_failure.lock() else {
+                    return;
+                };
+                *failure = Some(error.to_string());
             })?;
         Ok(Self {
             sender: Some(sender),
@@ -273,8 +276,12 @@ impl TerminalCapture {
             .map_err(|_| errors::internal("Terminal projection worker stopped"))
     }
 
-    fn failed(&self) -> bool {
-        self.failure.load(Ordering::Acquire)
+    fn failure_reason(&self) -> Result<Option<String>> {
+        Ok(self
+            .failure
+            .lock()
+            .map_err(|_| errors::internal("Terminal capture failure lock was poisoned"))?
+            .clone())
     }
 }
 
@@ -471,7 +478,7 @@ impl Core {
                 Ok(capture) => {
                     self.terminal_captures.insert(id, capture);
                 }
-                Err(_) => self.fail_terminal_capture(&id)?,
+                Err(error) => self.fail_terminal_capture(&id, Some(error.to_string()))?,
             }
         }
         Ok(())
@@ -479,25 +486,26 @@ impl Core {
 
     pub(crate) fn observe_terminal(&mut self, pane_id: &str, bytes: Arc<Vec<u8>>) -> Result<()> {
         let timestamp_ms = self.now_ms();
-        let failed = self
+        let failure = self
             .terminal_captures
             .get_mut(pane_id)
-            .is_some_and(|capture| capture.record(timestamp_ms, bytes).is_err());
-        if failed {
-            self.fail_terminal_capture(pane_id)?;
+            .and_then(|capture| capture.record(timestamp_ms, bytes).err())
+            .map(|error| error.to_string());
+        if let Some(failure) = failure {
+            self.fail_terminal_capture(pane_id, Some(failure))?;
         }
         Ok(())
     }
 
     pub(crate) fn reconcile_terminal_captures(&mut self) -> Result<()> {
-        let failed: Vec<_> = self
-            .terminal_captures
-            .iter()
-            .filter(|(_, capture)| capture.failed())
-            .map(|(pane_id, _)| pane_id.clone())
-            .collect();
-        for pane_id in failed {
-            self.fail_terminal_capture(&pane_id)?;
+        let mut failed = Vec::new();
+        for (pane_id, capture) in &self.terminal_captures {
+            if let Some(failure) = capture.failure_reason()? {
+                failed.push((pane_id.clone(), failure));
+            }
+        }
+        for (pane_id, failure) in failed {
+            self.fail_terminal_capture(&pane_id, Some(failure))?;
         }
         Ok(())
     }
@@ -507,13 +515,17 @@ impl Core {
             return Ok(());
         };
         let pane = &self.panes[pane_id].stored.pane;
-        if capture.resize(pane.rows, pane.cols).is_err() {
-            self.fail_terminal_capture(pane_id)?;
+        if let Err(error) = capture.resize(pane.rows, pane.cols) {
+            self.fail_terminal_capture(pane_id, Some(error.to_string()))?;
         }
         Ok(())
     }
 
-    pub(crate) fn fail_terminal_capture(&mut self, pane_id: &str) -> Result<()> {
+    pub(crate) fn fail_terminal_capture(
+        &mut self,
+        pane_id: &str,
+        failure: Option<String>,
+    ) -> Result<()> {
         self.terminal_captures.remove(pane_id);
         let mut saved = errors::invariant(
             self.panes.get(pane_id),
@@ -523,7 +535,11 @@ impl Core {
         .clone();
         saved.pane.experiment_capture = Some(PaneExperimentCapture {
             on: false,
-            failure: Some(CAPTURE_FAILURE.into()),
+            failure: Some(
+                failure
+                    .map(|failure| format!("Experiment capture stopped: {failure}"))
+                    .unwrap_or_else(|| CAPTURE_FAILURE.into()),
+            ),
         });
         self.save_runtime(pane_id, saved)
     }
@@ -541,6 +557,7 @@ mod tests {
     use super::*;
     use crate::{
         model::{RunningPane, StoredPane},
+        pane_observations::LABEL_WRITE_TIMEOUT_MESSAGE,
         ports::{
             PortScanObservation, PortScanPort,
             testing::{FakeSupervisor, FixedClock},
@@ -583,7 +600,7 @@ mod tests {
             sender: Some(sender),
             overflow: Arc::clone(&overflow),
             overflow_active: Arc::new(AtomicBool::new(false)),
-            failure: Arc::new(AtomicBool::new(false)),
+            failure: Arc::new(Mutex::new(None)),
             worker: None,
             test_queue_metrics: Arc::new(TestQueueMetrics::default()),
             test_projection_gate: Arc::new(TestProjectionGate::default()),
@@ -596,7 +613,7 @@ mod tests {
         assert_eq!(gap.first_timestamp_ms, 20);
         assert_eq!(gap.last_timestamp_ms, 30);
         assert_eq!(gap.dropped_bytes, 11);
-        assert!(!capture.failed());
+        assert_eq!(capture.failure_reason().unwrap(), None);
         assert!(matches!(
             receiver.try_recv().unwrap(),
             ProjectionCommand::Bytes {
@@ -605,6 +622,32 @@ mod tests {
             }
         ));
         drop(receiver);
+    }
+
+    #[test]
+    fn a_slow_observation_writer_reason_reaches_the_durable_pane_state() {
+        let directory = std::env::temp_dir().join(format!("sn-capture-failure-{}", Uuid::new_v4()));
+        let mut core = cadence_core(&directory, &[], true);
+        let failure = Arc::clone(&core.terminal_captures["cadence-pane"].failure);
+        *failure.lock().unwrap() = Some(LABEL_WRITE_TIMEOUT_MESSAGE.into());
+
+        core.reconcile_terminal_captures().unwrap();
+
+        assert!(!core.terminal_captures.contains_key("cadence-pane"));
+        assert_eq!(
+            core.panes["cadence-pane"]
+                .stored
+                .pane
+                .experiment_capture
+                .as_ref(),
+            Some(&PaneExperimentCapture {
+                on: false,
+                failure: Some(format!(
+                    "Experiment capture stopped: {LABEL_WRITE_TIMEOUT_MESSAGE}"
+                )),
+            })
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

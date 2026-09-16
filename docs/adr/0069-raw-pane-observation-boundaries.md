@@ -216,7 +216,13 @@ writer, so file order cannot disagree with their shared sequence. Observation pr
 collapse observations into an explicit gap. A label never enters that lossy path: its producer
 waits until the pending gap is written and the bounded writer has room. Since the projection
 worker is the sole producer, later observations cannot overtake a label whose sequence was
-assigned. An invalid label is rejected before the sequence advances.
+assigned. An invalid label is rejected before the sequence advances. A writer that neither
+accepts the label nor fails within thirty seconds stops capture through the existing durable,
+visible failure path, which names the writer delay and the elapsed bound. Thirty seconds is
+declared before exercising the control: it is six hundred normal 50 millisecond batch windows,
+leaving room for ordinary local-disk contention while bounding a recorder that can no longer
+claim it is collecting. This deadline never infers pane state, cancels harness work or changes
+terminal delivery.
 
 ACP state transitions are protocol labels. An official harness
 hook may add labels only through that harness's documented, bounded child-process interface.

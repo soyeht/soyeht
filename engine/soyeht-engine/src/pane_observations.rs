@@ -23,6 +23,9 @@ const SEGMENT_SUFFIX: &str = ".jsonl";
 pub const OBSERVATION_QUEUE_CAPACITY: usize = 32;
 const OBSERVATION_WRITE_BATCH: usize = 8;
 const OBSERVATION_WRITE_MAX_WAIT: Duration = Duration::from_millis(50);
+const LABEL_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const LABEL_WRITE_TIMEOUT_MESSAGE: &str =
+    "The observation writer stayed too slow to accept a ground-truth label for 30 seconds";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueueOutcome {
@@ -296,6 +299,10 @@ impl ObservationRecorder {
     /// producer, so waiting here also prevents later observations from
     /// overtaking a label whose sequence has already been assigned.
     pub fn record_label(&self, label: GroundTruthLabel) -> Result<()> {
+        self.record_label_with_timeout(label, LABEL_WRITE_TIMEOUT)
+    }
+
+    fn record_label_with_timeout(&self, label: GroundTruthLabel, timeout: Duration) -> Result<()> {
         label.validate()?;
         if label.pane_id != self.pane_id || label.harness != self.harness {
             return Err(errors::invalid(
@@ -306,6 +313,7 @@ impl ObservationRecorder {
         let mut state = lock
             .lock()
             .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+        let deadline = Instant::now() + timeout;
         loop {
             if let Some(failure) = &state.failure {
                 return Err(errors::internal(failure.clone()));
@@ -318,9 +326,16 @@ impl ObservationRecorder {
                 wake.notify_one();
                 return Ok(());
             }
-            state = wake
-                .wait(state)
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                state.failure = Some(LABEL_WRITE_TIMEOUT_MESSAGE.into());
+                state.queue.closed = true;
+                wake.notify_all();
+                return Err(errors::internal(LABEL_WRITE_TIMEOUT_MESSAGE));
+            };
+            let (next, _) = wake
+                .wait_timeout(state, remaining)
                 .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+            state = next;
         }
     }
 
@@ -1204,6 +1219,35 @@ mod tests {
         assert_eq!(label.sequence, 3);
         assert_eq!(label.state, PaneState::WaitingForYou);
         assert_eq!(label.source, StateSource::Hook);
+    }
+
+    #[test]
+    fn a_label_deadline_closes_a_slow_writer_instead_of_stalling_silently() {
+        let fixture = Fixture::new();
+        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 1).unwrap();
+        recorder.try_record(frame(0)).unwrap();
+        let label = GroundTruthLabel {
+            pane_id: "pane-1".into(),
+            harness: harness(),
+            timestamp_ms: 1_800_000_000_001,
+            sequence: 1,
+            state: PaneState::Working,
+            source: StateSource::Protocol,
+        };
+
+        let error = recorder
+            .record_label_with_timeout(label, Duration::from_millis(10))
+            .unwrap_err();
+        assert!(error.to_string().contains(LABEL_WRITE_TIMEOUT_MESSAGE));
+        assert_eq!(
+            recorder.failure().unwrap().as_deref(),
+            Some(LABEL_WRITE_TIMEOUT_MESSAGE)
+        );
+        assert!(recorder.try_record(frame(2)).is_err());
+
+        writer_gate.wait();
+        recorder.finish().unwrap();
     }
 
     #[test]
