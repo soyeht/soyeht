@@ -1107,11 +1107,15 @@
         },
         "bytes": {
           "$ref": "#/$defs/Decimal"
+        },
+        "nothingRemained": {
+          "type": "boolean"
         }
       },
       "required": [
         "files",
-        "bytes"
+        "bytes",
+        "nothingRemained"
       ],
       "additionalProperties": true
     },

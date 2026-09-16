@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 7d7a1fd26528a83ae080c15eeb2cff03a3da0453a2cd83d05e29862937bdc376). Do not edit.
+// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -602,6 +602,8 @@ pub struct PaneExperimentDeleteResult {
     pub files: u32,
     #[serde(rename = "bytes")]
     pub bytes: Decimal,
+    #[serde(rename = "nothingRemained")]
+    pub nothing_remained: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartParams {

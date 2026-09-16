@@ -515,7 +515,8 @@
     "type": "PaneExperimentDeleteResult",
     "value": {
       "files": 2,
-      "bytes": "128"
+      "bytes": "128",
+      "nothingRemained": true
     }
   },
   {

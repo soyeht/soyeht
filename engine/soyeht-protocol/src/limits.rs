@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 7d7a1fd26528a83ae080c15eeb2cff03a3da0453a2cd83d05e29862937bdc376). Do not edit.
+// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;

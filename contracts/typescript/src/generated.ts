@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 7d7a1fd26528a83ae080c15eeb2cff03a3da0453a2cd83d05e29862937bdc376). Do not edit.
+// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -312,6 +312,7 @@ export interface PaneExperimentDeleteParams {
 export interface PaneExperimentDeleteResult {
   "files": number;
   "bytes": Decimal;
+  "nothingRemained": boolean;
 }
 
 export interface DevicePairStartParams {

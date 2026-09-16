@@ -296,16 +296,26 @@ impl Core {
         connection: &str,
         params: &serde_json::Value,
     ) -> Result<serde_json::Value> {
+        if let Some(result) =
+            self.repeated_mutation(connection, "pane.experiment.delete", params)?
+        {
+            return Ok(result);
+        }
         let pane_id = errors::param_str(params, "paneId")?;
         let receipt = self.delete_terminal_capture_files(pane_id)?;
         let files = u32::try_from(receipt.files)
             .map_err(|_| errors::internal("Observation deletion file count is invalid"))?;
-        let result = serde_json::json!({"files":files,"bytes":receipt.bytes.to_string()});
-        Ok(self
-            .mutate(connection, "pane.experiment.delete", params, |_tx| {
-                Ok((result, vec![]))
-            })?
-            .result)
+        let result = serde_json::json!({
+            "files":files,
+            "bytes":receipt.bytes.to_string(),
+            "nothingRemained":true
+        });
+        match self.mutate(connection, "pane.experiment.delete", params, |_tx| {
+            Ok((result, vec![]))
+        }) {
+            Ok(mutation) => Ok(mutation.result),
+            Err(error) => Err(deletion_receipt_commit_error(&receipt, error)),
+        }
     }
 
     fn delete_terminal_capture_files(&mut self, pane_id: &str) -> Result<DeletionReceipt> {
@@ -408,6 +418,13 @@ impl Core {
     }
 }
 
+fn deletion_receipt_commit_error(receipt: &DeletionReceipt, error: errors::Error) -> errors::Error {
+    errors::internal(format!(
+        "Captured terminal data was removed ({} files, {} bytes), but the record of its removal was not saved: {}",
+        receipt.files, receipt.bytes, error
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,6 +504,21 @@ mod tests {
             0
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn deletion_commit_failure_states_that_the_data_was_already_removed() {
+        let error = deletion_receipt_commit_error(
+            &DeletionReceipt {
+                files: 3,
+                bytes: 144,
+            },
+            errors::internal("receipt store unavailable"),
+        );
+        assert_eq!(
+            error.to_string(),
+            "Captured terminal data was removed (3 files, 144 bytes), but the record of its removal was not saved: receipt store unavailable"
+        );
     }
 
     #[test]
