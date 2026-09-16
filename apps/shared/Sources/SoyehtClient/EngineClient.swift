@@ -35,7 +35,15 @@ public final class EngineClient {
   public private(set) var gapText: String?
   public private(set) var pairCode: DevicePairStartResult?
   public private(set) var connectionActor: Actor?
-  @ObservationIgnored public var terminalOutput: ((Data, Bool) -> Void)?
+  @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
+  @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
+  public internal(set) var terminalOutput: ((Data, Bool) -> Void)? {
+    get { terminalOutputSink }
+    set {
+      terminalOutputOwner = nil
+      terminalOutputSink = newValue
+    }
+  }
   @ObservationIgnored private var wire: Wire?
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
@@ -579,6 +587,19 @@ public final class EngineClient {
   public func refreshTerminal() {
     guard let pane = selectedPaneId, selectedPane?.mode == .terminal, connected else { return }
     perform { try await self.subscribe(pane) }
+  }
+  func claimTerminalOutput(
+    owner: AnyObject, sink: @escaping (Data, Bool) -> Void
+  ) {
+    // SwiftUI may install a replacement before dismantling the prior surface.
+    // The owner makes a late teardown unable to clear the replacement sink.
+    terminalOutputOwner = ObjectIdentifier(owner)
+    terminalOutputSink = sink
+  }
+  func releaseTerminalOutput(owner: AnyObject) {
+    guard terminalOutputOwner == ObjectIdentifier(owner) else { return }
+    terminalOutputOwner = nil
+    terminalOutputSink = nil
   }
   public func createPane(directory: URL) {
     perform { _ = try await self.createTerminalPane(directory: directory) }

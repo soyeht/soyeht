@@ -29,4 +29,53 @@
     try await Task.sleep(for: .milliseconds(100))
     #expect(view.getTerminal().cols > cols)
   }
+
+  @MainActor @Test func retiringTerminalCannotDetachItsReplacementOutputSink() {
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    let first = TerminalHost(client: client, acceptsInput: true)
+    let replacement = TerminalHost(client: client, acceptsInput: true)
+    let view = TerminalView(frame: .zero)
+
+    first.attach(view)
+    replacement.attach(view)
+    first.detach(view)
+
+    #expect(view.terminalDelegate === replacement)
+    #expect(client.terminalOutput != nil)
+    replacement.detach(view)
+    #expect(client.terminalOutput == nil)
+  }
+
+  @MainActor @Test func terminalWithoutAnInstalledSinkCannotReleaseTheCurrentSink() {
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    let current = TerminalHost(client: client, acceptsInput: true)
+    let neverAttached = TerminalHost(client: client, acceptsInput: true)
+    let currentView = TerminalView(frame: .zero)
+
+    current.attach(currentView)
+    neverAttached.detach(TerminalView(frame: .zero))
+
+    #expect(client.terminalOutput != nil)
+    current.detach(currentView)
+    #expect(client.terminalOutput == nil)
+  }
+
+  @MainActor @Test func replacementCanClaimOutputAfterPriorOwnerDisappears() {
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    let abandonedView = TerminalView(frame: .zero)
+    weak var abandoned: TerminalHost?
+    do {
+      let host = TerminalHost(client: client, acceptsInput: true)
+      abandoned = host
+      host.attach(abandonedView)
+    }
+    #expect(abandoned == nil)
+
+    let replacement = TerminalHost(client: client, acceptsInput: true)
+    let replacementView = TerminalView(frame: .zero)
+    replacement.attach(replacementView)
+    replacement.detach(replacementView)
+
+    #expect(client.terminalOutput == nil)
+  }
 #endif
