@@ -23,8 +23,32 @@ const FAILURE_CHECK_INTERVAL: Duration = Duration::from_millis(50);
 #[cfg(test)]
 #[derive(Default)]
 struct TestQueueMetrics {
-    outstanding: usize,
-    peak_outstanding: usize,
+    outstanding: std::sync::atomic::AtomicUsize,
+    peak_outstanding: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct TestProjectionGate {
+    paused: Mutex<bool>,
+    wake: std::sync::Condvar,
+}
+
+#[cfg(test)]
+impl TestProjectionGate {
+    fn set_paused(&self, paused: bool) {
+        *self.paused.lock().unwrap() = paused;
+        if !paused {
+            self.wake.notify_all();
+        }
+    }
+
+    fn wait(&self) {
+        let mut paused = self.paused.lock().unwrap();
+        while *paused {
+            paused = self.wake.wait(paused).unwrap();
+        }
+    }
 }
 
 enum ProjectionCommand {
@@ -74,7 +98,9 @@ pub(crate) struct TerminalCapture {
     failure: Arc<Mutex<Option<String>>>,
     worker: Option<JoinHandle<()>>,
     #[cfg(test)]
-    test_queue_metrics: Arc<Mutex<TestQueueMetrics>>,
+    test_queue_metrics: Arc<TestQueueMetrics>,
+    #[cfg(test)]
+    test_projection_gate: Arc<TestProjectionGate>,
 }
 
 impl TerminalCapture {
@@ -93,9 +119,13 @@ impl TerminalCapture {
         let worker_overflow = Arc::clone(&overflow);
         let worker_failure = Arc::clone(&failure);
         #[cfg(test)]
-        let test_queue_metrics = Arc::new(Mutex::new(TestQueueMetrics::default()));
+        let test_queue_metrics = Arc::new(TestQueueMetrics::default());
         #[cfg(test)]
         let worker_test_queue_metrics = Arc::clone(&test_queue_metrics);
+        #[cfg(test)]
+        let test_projection_gate = Arc::new(TestProjectionGate::default());
+        #[cfg(test)]
+        let worker_test_projection_gate = Arc::clone(&test_projection_gate);
         let worker = thread::Builder::new()
             .name("terminal-observation-projector".into())
             .spawn(move || {
@@ -106,6 +136,8 @@ impl TerminalCapture {
                     worker_overflow,
                     #[cfg(test)]
                     worker_test_queue_metrics,
+                    #[cfg(test)]
+                    worker_test_projection_gate,
                 ) && let Ok(mut slot) = worker_failure.lock()
                 {
                     *slot = Some(error.to_string());
@@ -118,6 +150,8 @@ impl TerminalCapture {
             worker: Some(worker),
             #[cfg(test)]
             test_queue_metrics,
+            #[cfg(test)]
+            test_projection_gate,
         })
     }
 
@@ -136,19 +170,21 @@ impl TerminalCapture {
             .sender
             .as_ref()
             .ok_or_else(|| errors::internal("Terminal projection worker is closed"))?;
-        #[cfg(test)]
-        let mut metrics = self.test_queue_metrics.lock().unwrap();
         let outcome = sender.try_send(ProjectionCommand::Bytes {
             timestamp_ms,
             bytes,
         });
         #[cfg(test)]
         if outcome.is_ok() {
-            metrics.outstanding += 1;
-            metrics.peak_outstanding = metrics.peak_outstanding.max(metrics.outstanding);
+            let outstanding = self
+                .test_queue_metrics
+                .outstanding
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            self.test_queue_metrics
+                .peak_outstanding
+                .fetch_max(outstanding, std::sync::atomic::Ordering::Relaxed);
         }
-        #[cfg(test)]
-        drop(metrics);
         match outcome {
             Ok(()) => Ok(()),
             Err(mpsc::TrySendError::Full(ProjectionCommand::Bytes {
@@ -191,6 +227,8 @@ impl TerminalCapture {
 
 impl Drop for TerminalCapture {
     fn drop(&mut self) {
+        #[cfg(test)]
+        self.test_projection_gate.set_paused(false);
         self.sender.take();
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
@@ -203,7 +241,8 @@ fn projection_loop(
     recorder: ObservationRecorder,
     receiver: mpsc::Receiver<ProjectionCommand>,
     overflow: Arc<Mutex<Option<RawByteGap>>>,
-    #[cfg(test)] test_queue_metrics: Arc<Mutex<TestQueueMetrics>>,
+    #[cfg(test)] test_queue_metrics: Arc<TestQueueMetrics>,
+    #[cfg(test)] test_projection_gate: Arc<TestProjectionGate>,
 ) -> Result<()> {
     loop {
         match receiver.recv_timeout(FAILURE_CHECK_INTERVAL) {
@@ -211,6 +250,8 @@ fn projection_loop(
                 timestamp_ms,
                 bytes,
             }) => {
+                #[cfg(test)]
+                test_projection_gate.wait();
                 let result: Result<()> = (|| {
                     if let Some(frame) = projection.process(timestamp_ms, &bytes)? {
                         recorder.try_record(frame)?;
@@ -219,12 +260,17 @@ fn projection_loop(
                 })();
                 #[cfg(test)]
                 {
-                    let mut metrics = test_queue_metrics.lock().unwrap();
-                    metrics.outstanding = metrics.outstanding.saturating_sub(1);
+                    test_queue_metrics
+                        .outstanding
+                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 }
                 result?;
             }
-            Ok(ProjectionCommand::Resize { rows, cols }) => projection.resize(rows, cols)?,
+            Ok(ProjectionCommand::Resize { rows, cols }) => {
+                #[cfg(test)]
+                test_projection_gate.wait();
+                projection.resize(rows, cols)?;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if let Some(gap) = take_raw_gap(&overflow)? {
                     recorder.try_record_gap(projection.record_byte_gap(
@@ -458,7 +504,8 @@ mod tests {
             overflow: Arc::clone(&overflow),
             failure: Arc::new(Mutex::new(None)),
             worker: None,
-            test_queue_metrics: Arc::new(Mutex::new(TestQueueMetrics::default())),
+            test_queue_metrics: Arc::new(TestQueueMetrics::default()),
+            test_projection_gate: Arc::new(TestProjectionGate::default()),
         };
         capture.record(10, vec![b'a']).unwrap();
         capture.record(20, vec![b'b'; 4]).unwrap();
@@ -558,7 +605,8 @@ mod tests {
                 recorder,
                 receiver,
                 worker_overflow,
-                Arc::new(Mutex::new(TestQueueMetrics::default())),
+                Arc::new(TestQueueMetrics::default()),
+                Arc::new(TestProjectionGate::default()),
             )
         });
 
@@ -621,7 +669,7 @@ mod tests {
             .collect()
     }
 
-    fn capture_metrics(core: &Core) -> Arc<Mutex<TestQueueMetrics>> {
+    fn capture_metrics(core: &Core) -> Arc<TestQueueMetrics> {
         Arc::clone(
             &core
                 .terminal_captures
@@ -631,10 +679,14 @@ mod tests {
         )
     }
 
-    fn wait_for_projection_worker(metrics: &Mutex<TestQueueMetrics>) {
+    fn wait_for_projection_worker(metrics: &TestQueueMetrics) {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if metrics.lock().unwrap().outstanding == 0 {
+            if metrics
+                .outstanding
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 0
+            {
                 return;
             }
             assert!(
@@ -643,6 +695,27 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(2));
         }
+    }
+
+    fn set_cadence_projection_paused(core: &Core, paused: bool) {
+        core.terminal_captures["cadence-pane"]
+            .test_projection_gate
+            .set_paused(paused);
+    }
+
+    fn reset_peak_outstanding(metrics: &TestQueueMetrics) {
+        let outstanding = metrics
+            .outstanding
+            .load(std::sync::atomic::Ordering::Relaxed);
+        metrics
+            .peak_outstanding
+            .store(outstanding, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn peak_outstanding(metrics: &TestQueueMetrics) -> usize {
+        metrics
+            .peak_outstanding
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn cadence_core(root: &Path, chunks: &[Vec<u8>], capture: bool) -> Core {
@@ -772,7 +845,7 @@ mod tests {
         }
         let submission_wall_ms = started.elapsed().as_millis();
         drop(capture);
-        let peak_outstanding = metrics.lock().unwrap().peak_outstanding;
+        let peak_outstanding = peak_outstanding(&metrics);
         let rows = SegmentStore::open(
             &directory,
             "frame-dense-pane",
@@ -859,10 +932,8 @@ mod tests {
         on.poll_output().unwrap();
         wait_for_projection_worker(&metrics);
         thread::sleep(CADENCE_WARMUP_DRAIN);
-        {
-            let mut metrics = metrics.lock().unwrap();
-            metrics.peak_outstanding = metrics.outstanding;
-        }
+        set_cadence_projection_paused(&on, true);
+        reset_peak_outstanding(&metrics);
         let mut off_micros = Vec::new();
         let mut on_micros = Vec::new();
         let fixture_started = Instant::now();
@@ -886,8 +957,9 @@ mod tests {
                 off_micros.push(second_micros);
             }
         }
+        set_cadence_projection_paused(&on, false);
         wait_for_projection_worker(&metrics);
-        let peak_outstanding = metrics.lock().unwrap().peak_outstanding;
+        let peak_outstanding = peak_outstanding(&metrics);
         let steady_off = &off_micros[CADENCE_WARMUP_PAIRS..];
         let steady_on = &on_micros[CADENCE_WARMUP_PAIRS..];
         let off_median = percentile(steady_off, 1, 2);
@@ -966,6 +1038,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "measured separately by scripts/check_all.sh without competing tests"]
     fn capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles() {
         let directory = std::env::temp_dir().join(format!("sn-cadence-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();

@@ -4299,6 +4299,8 @@ fn project_replacement_refuses_dirty_files_without_touching_disk() {
         "file.open",
         json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"dirty-open"}),
     );
+    let autosave_pause = rig.path.join("test-pause-editor-autosave");
+    fs::write(&autosave_pause, b"pause").unwrap();
     client.call(
         "file.write",
         json!({
@@ -4317,6 +4319,7 @@ fn project_replacement_refuses_dirty_files_without_touching_disk() {
     );
     assert_eq!(response["error"]["data"]["kind"], "stale_version");
     assert_eq!(fs::read_to_string(path).unwrap(), "clean\n");
+    fs::remove_file(autosave_pause).unwrap();
 }
 
 #[test]

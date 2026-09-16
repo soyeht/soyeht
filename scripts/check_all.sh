@@ -26,6 +26,9 @@ python3 -m unittest discover -s scripts -p 'test_install_dev.py'
     cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo build --locked --workspace
     cargo test --locked --workspace
+    cargo test --locked -p soyeht-engine \
+        terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles \
+        -- --ignored --exact --nocapture --test-threads=1
 )
 python3 scripts/e2e.py --report .cache/e2e.json
 python3 scripts/e2e_agents.py --report .cache/e2e-agents.json

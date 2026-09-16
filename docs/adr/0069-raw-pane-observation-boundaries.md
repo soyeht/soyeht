@@ -125,7 +125,11 @@ capture-off at either the steady median or p95, the measurement is invalid and m
 rather than reported. The test permits at most ten complete attempts; a valid attempt outside
 either performance bound fails immediately and is never retried. This isolates the per-byte
 copy and bounded-handoff cost that remains on
-`Core::poll_output`. The separate 200 Hz
+`Core::poll_output`. The gate runs this measurement separately from concurrent engine tests,
+so unrelated scheduler and disk load are not attributed asymmetrically to capture. During the
+timed pairs, the test-only projection worker is paused while the bounded queue accepts all ten
+frames, then resumed before coverage is read back. That keeps projection, serialisation, write
+and sync costs out of the handoff measurement; the separate 200 Hz
 worker-headroom fixture measures the per-frame projection, serialisation, write and sync costs;
 neither result substitutes for the other. Before closed batching, that fixture retained 334 of
 400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up
