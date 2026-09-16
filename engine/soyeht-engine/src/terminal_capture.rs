@@ -2,7 +2,8 @@ use crate::{
     core::Core,
     errors::{self, Result},
     pane_observations::{
-        ObservationRecorder, SegmentStore, experiment_root, installed_engine_build,
+        DeletionReceipt, ObservationRecorder, SegmentStore, delete_pane, experiment_root,
+        installed_engine_build,
     },
     terminal_projection::TerminalProjection,
 };
@@ -290,6 +291,44 @@ impl Core {
         )
     }
 
+    pub(crate) fn delete_terminal_capture_data(
+        &mut self,
+        connection: &str,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let pane_id = errors::param_str(params, "paneId")?;
+        let receipt = self.delete_terminal_capture_files(pane_id)?;
+        let files = u32::try_from(receipt.files)
+            .map_err(|_| errors::internal("Observation deletion file count is invalid"))?;
+        let result = serde_json::json!({"files":files,"bytes":receipt.bytes.to_string()});
+        Ok(self
+            .mutate(connection, "pane.experiment.delete", params, |_tx| {
+                Ok((result, vec![]))
+            })?
+            .result)
+    }
+
+    fn delete_terminal_capture_files(&mut self, pane_id: &str) -> Result<DeletionReceipt> {
+        let pane = self
+            .panes
+            .get(pane_id)
+            .filter(|pane| !pane.stored.closed && pane.stored.pane.mode == PaneMode::Terminal)
+            .ok_or_else(|| errors::not_found("Terminal pane not found"))?;
+        if pane
+            .stored
+            .pane
+            .experiment_capture
+            .as_ref()
+            .is_some_and(|capture| capture.on)
+            || self.terminal_captures.contains_key(pane_id)
+        {
+            return Err(errors::pane_busy(
+                "Stop experiment capture before deleting its data",
+            ));
+        }
+        delete_pane(&self.observation_root()?, pane_id)
+    }
+
     pub(crate) fn restore_terminal_captures(&mut self) -> Result<()> {
         let ids: Vec<_> = self
             .panes
@@ -421,6 +460,33 @@ mod tests {
             }
         ));
         drop(receiver);
+    }
+
+    #[test]
+    fn pane_capture_data_deletes_only_after_its_worker_stops_and_returns_a_receipt() {
+        let directory = std::env::temp_dir().join(format!("sn-delete-capture-{}", Uuid::new_v4()));
+        let mut core = cadence_core(&directory, &[], false);
+        let pane_id = "cadence-pane";
+        let capture = core.prepare_terminal_capture(pane_id).unwrap();
+        capture
+            .record(1, b"\x1b[2J\x1b[Hcaptured terminal text\r\n".to_vec())
+            .unwrap();
+        drop(capture);
+
+        let active = core.prepare_terminal_capture(pane_id).unwrap();
+        core.terminal_captures.insert(pane_id.into(), active);
+        let busy = core.delete_terminal_capture_files(pane_id).unwrap_err();
+        assert_eq!(errors::kind(&busy), soyeht_protocol::ErrorKind::PaneBusy);
+        drop(core.terminal_captures.remove(pane_id));
+
+        let receipt = core.delete_terminal_capture_files(pane_id).unwrap();
+        assert!(receipt.files > 0);
+        assert!(receipt.bytes > 0);
+        assert_eq!(
+            core.delete_terminal_capture_files(pane_id).unwrap().files,
+            0
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
