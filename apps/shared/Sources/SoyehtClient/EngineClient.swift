@@ -611,6 +611,23 @@ public final class EngineClient {
         "pane.close", PaneCloseParams(paneId: id, idempotencyKey: UUID().uuidString))
     }
   }
+  public func setExperimentCapture(
+    paneId: String, on: Bool
+  ) async throws -> PaneExperimentSetResult {
+    try await mutation(
+      "pane.experiment.set",
+      PaneExperimentSetParams(
+        paneId: paneId, on: on, idempotencyKey: UUID().uuidString)
+    ).decoded(PaneExperimentSetResult.self)
+  }
+  public func deleteExperimentCaptureData(
+    paneId: String
+  ) async throws -> PaneExperimentDeleteResult {
+    try await mutation(
+      "pane.experiment.delete",
+      PaneExperimentDeleteParams(paneId: paneId, idempotencyKey: UUID().uuidString)
+    ).decoded(PaneExperimentDeleteResult.self)
+  }
   public func input(_ data: Data) {
     guard !readOnly, connected, selectedPane?.mode == .terminal,
       let pane = selectedPaneId, !data.isEmpty

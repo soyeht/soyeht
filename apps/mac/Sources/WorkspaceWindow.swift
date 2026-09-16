@@ -709,6 +709,10 @@ private struct PaneCard: View {
   let onSplit: (String, PaneSplitAxis) -> Void
   @State private var showingAutomation = false
   @State private var showingHarnessSwitch = false
+  @State private var showingCaptureConsent = false
+  @State private var showingCaptureDeletion = false
+  @State private var captureMutationInFlight = false
+  @State private var captureNotice: String?
 
   var body: some View {
     Group {
@@ -731,6 +735,24 @@ private struct PaneCard: View {
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .simultaneousGesture(TapGesture().onEnded { client.select(pane.paneId) })
     .contextMenu { Button("Close pane", role: .destructive) { onClose(pane.paneId) } }
+    .confirmationDialog(
+      "Record raw terminal observations?", isPresented: $showingCaptureConsent
+    ) {
+      Button("Start recording") { setExperimentCapture(on: true) }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "This Dev-only experiment stores raw terminal text on this Mac. It can contain tokens, credentials, and private source."
+      )
+    }
+    .confirmationDialog(
+      "Keep the captured terminal data?", isPresented: $showingCaptureDeletion
+    ) {
+      Button("Delete captured data", role: .destructive) { deleteExperimentCaptureData() }
+      Button("Keep data", role: .cancel) { captureNotice = "Captured data kept on this Mac." }
+    } message: {
+      Text("Recording has stopped. Deletion applies only to this pane's experiment files.")
+    }
     .overlay(alignment: .topTrailing) {
       if showingAutomation {
         PaneAutomationPanel(client: client, pane: pane) { showingAutomation = false }
@@ -756,6 +778,43 @@ private struct PaneCard: View {
           .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
           .foregroundStyle(MacTheme.secondary)
       }
+      #if DEBUG
+        if pane.mode == .terminal, let capture = pane.experimentCapture {
+          if capture.on {
+            Label("Recording experiment", systemImage: "record.circle.fill")
+              .foregroundStyle(MacTheme.danger)
+              .accessibilityIdentifier("experiment-recording-\(pane.paneId)")
+          } else if let failure = capture.failure {
+            Label("Capture stopped", systemImage: "exclamationmark.triangle.fill")
+              .foregroundStyle(MacTheme.warning)
+              .help(failure)
+              .accessibilityLabel("Capture stopped: \(failure)")
+          } else if let captureNotice {
+            Text(captureNotice).foregroundStyle(MacTheme.secondary)
+          }
+        }
+        if pane.mode == .terminal {
+          Button {
+            if pane.experimentCapture?.on == true {
+              setExperimentCapture(on: false)
+            } else {
+              showingCaptureConsent = true
+            }
+          } label: {
+            Image(systemName: pane.experimentCapture?.on == true ? "stop.circle" : "record.circle")
+          }
+          .help(
+            pane.experimentCapture?.on == true
+              ? "Stop experiment recording" : "Start experiment recording"
+          )
+          .accessibilityLabel(
+            pane.experimentCapture?.on == true
+              ? "Stop experiment recording" : "Start experiment recording"
+          )
+          .accessibilityIdentifier("experiment-capture-\(pane.paneId)")
+          .disabled(!client.connected || captureMutationInFlight)
+        }
+      #endif
       if pane.mode == .agent {
         Button {
           showingHarnessSwitch = true
@@ -873,6 +932,37 @@ private struct PaneCard: View {
 
   private var harnessSwitching: Bool {
     client.agentPanes[pane.paneId]?.harnessSwitch?.phase == .switching
+  }
+
+  private func setExperimentCapture(on: Bool) {
+    captureMutationInFlight = true
+    Task {
+      defer { captureMutationInFlight = false }
+      do {
+        let result = try await client.setExperimentCapture(paneId: pane.paneId, on: on)
+        if result.capture.on {
+          captureNotice = nil
+        } else {
+          captureNotice = "Recording stopped."
+          showingCaptureDeletion = true
+        }
+      } catch {
+        client.problem = error.localizedDescription
+      }
+    }
+  }
+
+  private func deleteExperimentCaptureData() {
+    captureMutationInFlight = true
+    Task {
+      defer { captureMutationInFlight = false }
+      do {
+        let result = try await client.deleteExperimentCaptureData(paneId: pane.paneId)
+        captureNotice = ExperimentCapturePresentation.deletionText(result)
+      } catch {
+        client.problem = error.localizedDescription
+      }
+    }
   }
 }
 
