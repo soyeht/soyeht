@@ -41,6 +41,7 @@ pub enum Error {
     Acp(soyeht_acp::Error),
     Editor(soyeht_editor::Error),
     Lsp(soyeht_lsp::Error),
+    PaneState(soyeht_pane_state::Error),
     Usage(soyeht_usage::Error),
     Vcs(soyeht_vcs::Error),
     Web(soyeht_web::Error),
@@ -321,6 +322,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::Address(_)
         | Error::Join(_)
         | Error::Usage(_)
+        | Error::PaneState(_)
         | Error::EngineStatePoisoned
         | Error::AlreadyRunning
         | Error::SocketPathNotSocket
@@ -424,6 +426,7 @@ fn message(error: &Error) -> String {
         Error::Acp(error) => error.to_string(),
         Error::Editor(error) => error.to_string(),
         Error::Lsp(error) => error.to_string(),
+        Error::PaneState(error) => error.to_string(),
         Error::Usage(_) => "Usage operation failed".into(),
         Error::Vcs(error) => error.to_string(),
         Error::Web(error) => error.to_string(),
@@ -490,6 +493,7 @@ impl std::error::Error for Error {
             Self::Io(error) => Some(error),
             Self::Acp(error) => Some(error),
             Self::Editor(error) => Some(error),
+            Self::PaneState(error) => Some(error),
             Self::Usage(error) => Some(error),
             Self::Vcs(error) => Some(error),
             Self::Web(error) => Some(error),
@@ -525,6 +529,12 @@ impl From<soyeht_acp::Error> for Error {
 impl From<soyeht_usage::Error> for Error {
     fn from(error: soyeht_usage::Error) -> Self {
         Self::Usage(error)
+    }
+}
+
+impl From<soyeht_pane_state::Error> for Error {
+    fn from(error: soyeht_pane_state::Error) -> Self {
+        Self::PaneState(error)
     }
 }
 
