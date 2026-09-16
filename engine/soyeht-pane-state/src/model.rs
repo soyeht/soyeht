@@ -10,6 +10,13 @@ pub const MAX_SCREEN_LINES: usize = 64;
 pub const MAX_SCREEN_LINE_BYTES: usize = 2_048;
 pub const MAX_FOREGROUND_PROCESS_BYTES: usize = 512;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationPaneKind {
+    Agent,
+    Terminal,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "identity", rename_all = "snake_case")]
 pub enum HarnessIdentity {
@@ -64,6 +71,7 @@ pub enum ObservationReason {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationFrame {
     pub pane_id: String,
+    pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
     pub timestamp_ms: i64,
     pub sequence: u64,
@@ -105,6 +113,7 @@ impl ObservationFrame {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GroundTruthLabel {
     pub pane_id: String,
+    pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
     pub timestamp_ms: i64,
     pub sequence: u64,
@@ -130,6 +139,7 @@ impl GroundTruthLabel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationGap {
     pub pane_id: String,
+    pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
     pub first_timestamp_ms: i64,
     pub last_timestamp_ms: i64,

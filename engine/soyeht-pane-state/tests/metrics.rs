@@ -2,7 +2,8 @@
 
 use soyeht_pane_state::{
     Confidence, Detection, Detector, GroundTruthLabel, HarnessIdentity, ObservationFrame,
-    ObservationGap, ObservationReason, RecordedRow, evaluate,
+    ObservationGap, ObservationPaneKind, ObservationReason, RecordedRow, evaluate,
+    evaluate_with_omitted_panes,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -44,6 +45,7 @@ fn harness() -> HarnessIdentity {
 fn label(sequence: u64, timestamp_ms: i64, state: PaneState) -> RecordedRow {
     RecordedRow::Label(GroundTruthLabel {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         timestamp_ms,
         sequence,
@@ -55,6 +57,7 @@ fn label(sequence: u64, timestamp_ms: i64, state: PaneState) -> RecordedRow {
 fn observation(sequence: u64, timestamp_ms: i64, screen: &str) -> RecordedRow {
     RecordedRow::Observation(ObservationFrame {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         timestamp_ms,
         sequence,
@@ -70,6 +73,7 @@ fn observation(sequence: u64, timestamp_ms: i64, screen: &str) -> RecordedRow {
 fn gap(first_sequence: u64, last_sequence: u64, start: i64, end: i64) -> RecordedRow {
     RecordedRow::Gap(ObservationGap {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         first_timestamp_ms: start,
         last_timestamp_ms: end,
@@ -101,6 +105,7 @@ fn oracle_reaches_the_ceiling_and_always_unknown_reaches_the_floor() {
     let harness = &oracle.harnesses[0];
     assert_eq!(harness.observations, 5);
     assert_eq!(harness.labeled_observations, 5);
+    assert!(harness.scores_available);
     assert_eq!(harness.unknown_rate.value, Some(0.0));
     assert_eq!(harness.time_coverage.as_ref().unwrap().value, Some(0.9));
     assert_eq!(harness.unclassified_gap_ms, 0);
@@ -125,6 +130,100 @@ fn oracle_reaches_the_ceiling_and_always_unknown_reaches_the_floor() {
             .all(|state| state.recall.value == Some(0.0))
     );
     assert!(oracle.can_rank_against(&floor));
+}
+
+#[test]
+fn pane_populations_stay_separate_and_unlabeled_groups_report_no_scores() {
+    let mut rows = fixture(70, 80);
+    let mut agent = match observation(0, 5, "working") {
+        RecordedRow::Observation(frame) => frame,
+        _ => unreachable!(),
+    };
+    agent.pane_id = "agent-pane".into();
+    agent.pane_kind = ObservationPaneKind::Agent;
+    rows.push(RecordedRow::Observation(agent));
+
+    let report = evaluate(&ScreenOracle, &rows).unwrap();
+    assert_eq!(report.harnesses.len(), 2);
+    let agent = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.pane_kind == ObservationPaneKind::Agent)
+        .unwrap();
+    let terminal = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.pane_kind == ObservationPaneKind::Terminal)
+        .unwrap();
+    assert_eq!(agent.harness, terminal.harness);
+    assert_eq!(agent.observations, 1);
+    assert_eq!(agent.labeled_observations, 0);
+    assert!(!agent.scores_available);
+    assert!(agent.states.is_empty());
+    assert_eq!(terminal.observations, 5);
+    assert_eq!(terminal.labeled_observations, 5);
+    assert!(terminal.scores_available);
+}
+
+#[test]
+fn omitted_sources_disable_only_elapsed_coverage_and_mark_the_partial_group() {
+    let mut rows = fixture(70, 80);
+    let mut complete = fixture(70, 80);
+    let complete_harness =
+        HarnessIdentity::known("registry.complete", Some("1.0.0".into())).unwrap();
+    for row in &mut complete {
+        match row {
+            RecordedRow::Observation(frame) => {
+                frame.pane_id = "pane-complete".into();
+                frame.harness = complete_harness.clone();
+            }
+            RecordedRow::Label(label) => {
+                label.pane_id = "pane-complete".into();
+                label.harness = complete_harness.clone();
+            }
+            RecordedRow::Gap(gap) => {
+                gap.pane_id = "pane-complete".into();
+                gap.harness = complete_harness.clone();
+            }
+        }
+    }
+    rows.extend(complete);
+
+    let report = evaluate_with_omitted_panes(&ScreenOracle, &rows, &["pane-1".into()]).unwrap();
+    let partial = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.harness == harness())
+        .unwrap();
+    assert!(partial.scores_available);
+    assert_eq!(partial.panes_with_omitted_sources, 1);
+    assert_eq!(partial.time_coverage, None);
+    assert!(
+        partial
+            .states
+            .iter()
+            .all(|state| state.time_coverage.is_none())
+    );
+    assert!(
+        partial
+            .states
+            .iter()
+            .all(|state| state.precision.value == Some(1.0))
+    );
+    assert!(
+        partial
+            .states
+            .iter()
+            .all(|state| state.recall.value == Some(1.0))
+    );
+
+    let complete = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.harness == complete_harness)
+        .unwrap();
+    assert_eq!(complete.panes_with_omitted_sources, 0);
+    assert_eq!(complete.time_coverage.as_ref().unwrap().value, Some(0.9));
 }
 
 #[test]

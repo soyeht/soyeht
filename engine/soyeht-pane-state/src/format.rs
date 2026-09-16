@@ -1,16 +1,23 @@
 use crate::{
-    Error, GroundTruthLabel, HarnessIdentity, ObservationFrame, ObservationGap, RecordedRow,
-    Result,
+    Error, GroundTruthLabel, HarnessIdentity, ObservationFrame, ObservationGap,
+    ObservationPaneKind, RecordedRow, Result,
     model::{bounded_nonempty, valid_timestamp},
 };
 use serde::{Deserialize, Serialize};
 
-pub const DATASET_SCHEMA_VERSION: u32 = 5;
+pub const DATASET_SCHEMA_VERSION: u32 = 6;
 pub const MAX_DATASET_ROW_BYTES: usize = 256 * 1024;
 pub const MAX_SEGMENT_BYTES: usize = 1024 * 1024;
 pub const MAX_RETAINED_SEGMENTS: usize = 8;
 const MAX_ENGINE_VERSION_BYTES: usize = 128;
 const SHA256_HEX_BYTES: usize = 64;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SegmentSchemaProbe {
+    kind: String,
+    schema_version: u32,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -43,6 +50,7 @@ impl EngineBuild {
 pub struct SegmentMetadata {
     pub schema_version: u32,
     pub pane_id: String,
+    pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
     pub engine: EngineBuild,
     pub segment_sequence: u64,
@@ -53,6 +61,7 @@ pub struct SegmentMetadata {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SegmentEnd {
     pub pane_id: String,
+    pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
     pub ended_at_ms: i64,
     pub last_sequence: u64,
@@ -138,22 +147,25 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
         if clean_close.is_some() {
             return Err(Error::InvalidSegmentEnd);
         }
-        let (pane_id, harness, sequence, recorded) = match row {
+        let (pane_id, pane_kind, harness, sequence, recorded) = match row {
             DatasetRow::Metadata(_) => return Err(Error::InvalidHeader),
             DatasetRow::Observation(frame) => (
                 frame.pane_id.clone(),
+                frame.pane_kind,
                 frame.harness.clone(),
                 frame.sequence,
                 RecordedRow::Observation(frame),
             ),
             DatasetRow::Label(label) => (
                 label.pane_id.clone(),
+                label.pane_kind,
                 label.harness.clone(),
                 label.sequence,
                 RecordedRow::Label(label),
             ),
             DatasetRow::Gap(gap) => (
                 gap.pane_id.clone(),
+                gap.pane_kind,
                 gap.harness.clone(),
                 gap.last_sequence,
                 RecordedRow::Gap(gap),
@@ -161,6 +173,7 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
             DatasetRow::SegmentEnd(end) => {
                 end.validate()?;
                 if end.pane_id != metadata.pane_id
+                    || end.pane_kind != metadata.pane_kind
                     || end.harness != metadata.harness
                     || last_sequence != Some(end.last_sequence)
                 {
@@ -171,7 +184,10 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
             }
         };
         recorded.validate()?;
-        if pane_id != metadata.pane_id || harness != metadata.harness {
+        if pane_id != metadata.pane_id
+            || pane_kind != metadata.pane_kind
+            || harness != metadata.harness
+        {
             return Err(Error::MismatchedProvenance);
         }
         if last_sequence.is_some_and(|previous| sequence <= previous) {
@@ -185,6 +201,28 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
         rows,
         clean_close,
     })
+}
+
+pub fn segment_schema_version(bytes: &[u8]) -> Result<u32> {
+    if bytes.len() > MAX_SEGMENT_BYTES {
+        return Err(Error::Limit("dataset segment"));
+    }
+    let newline = bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .ok_or(Error::IncompleteRecord)?;
+    if newline == 0 {
+        return Err(Error::InvalidHeader);
+    }
+    let first_line = &bytes[..newline];
+    if first_line.len().saturating_add(1) > MAX_DATASET_ROW_BYTES {
+        return Err(Error::Limit("dataset row"));
+    }
+    let probe: SegmentSchemaProbe = serde_json::from_slice(first_line).map_err(|_| Error::Json)?;
+    if probe.kind != "metadata" || probe.schema_version == 0 {
+        return Err(Error::InvalidHeader);
+    }
+    Ok(probe.schema_version)
 }
 
 fn decode_line(bytes: &[u8]) -> Result<DatasetRow> {

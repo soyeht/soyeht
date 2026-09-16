@@ -3,7 +3,7 @@
 use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, Error, GroundTruthLabel, HarnessIdentity,
     MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, ObservationReason, RecordedRow,
-    SegmentEnd, SegmentMetadata, decode_segment, encode_row,
+    SegmentEnd, SegmentMetadata, decode_segment, encode_row, segment_schema_version,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -15,6 +15,7 @@ fn metadata() -> SegmentMetadata {
     SegmentMetadata {
         schema_version: DATASET_SCHEMA_VERSION,
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         engine: EngineBuild {
             package_version: "0.1.0".into(),
@@ -28,6 +29,7 @@ fn metadata() -> SegmentMetadata {
 fn observation(sequence: u64) -> ObservationFrame {
     ObservationFrame {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         timestamp_ms: 1_800_000_000_000 + sequence as i64,
         sequence,
@@ -43,6 +45,7 @@ fn observation(sequence: u64) -> ObservationFrame {
 fn label(sequence: u64) -> GroundTruthLabel {
     GroundTruthLabel {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         timestamp_ms: 1_800_000_000_000 + sequence as i64,
         sequence,
@@ -54,6 +57,7 @@ fn label(sequence: u64) -> GroundTruthLabel {
 fn gap(first_sequence: u64, last_sequence: u64, dropped_observations: u64) -> ObservationGap {
     ObservationGap {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         first_timestamp_ms: 1_800_000_000_100,
         last_timestamp_ms: 1_800_000_000_050,
@@ -67,6 +71,7 @@ fn gap(first_sequence: u64, last_sequence: u64, dropped_observations: u64) -> Ob
 fn byte_gap(sequence: u64, dropped_bytes: u64) -> ObservationGap {
     ObservationGap {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         first_timestamp_ms: 1_800_000_000_100,
         last_timestamp_ms: 1_800_000_000_150,
@@ -80,6 +85,7 @@ fn byte_gap(sequence: u64, dropped_bytes: u64) -> ObservationGap {
 fn segment_end(last_sequence: u64) -> SegmentEnd {
     SegmentEnd {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
         ended_at_ms: 1_800_000_000_200,
         last_sequence,
@@ -207,6 +213,15 @@ fn replay_rejects_mismatched_provenance_nonmonotonic_rows_and_partial_writes() {
         ])),
         Err(Error::MismatchedProvenance)
     );
+    let mut wrong_population = observation(8);
+    wrong_population.pane_kind = soyeht_pane_state::ObservationPaneKind::Agent;
+    assert_eq!(
+        decode_segment(&segment(&[
+            DatasetRow::Metadata(metadata()),
+            DatasetRow::Observation(wrong_population)
+        ])),
+        Err(Error::MismatchedProvenance)
+    );
     assert_eq!(
         decode_segment(&segment(&[
             DatasetRow::Metadata(metadata()),
@@ -231,5 +246,33 @@ fn build_digest_and_schema_are_closed() {
     assert_eq!(
         decode_segment(&vec![b'x'; MAX_SEGMENT_BYTES + 1]),
         Err(Error::Limit("dataset segment"))
+    );
+}
+
+#[test]
+fn schema_probe_reads_only_a_complete_metadata_header() {
+    let current = encode_row(&DatasetRow::Metadata(metadata())).unwrap();
+    assert_eq!(segment_schema_version(&current), Ok(DATASET_SCHEMA_VERSION));
+    let prior = String::from_utf8(current).unwrap().replacen(
+        &format!("\"schemaVersion\":{DATASET_SCHEMA_VERSION}"),
+        &format!("\"schemaVersion\":{}", DATASET_SCHEMA_VERSION - 1),
+        1,
+    );
+    assert_eq!(
+        segment_schema_version(prior.as_bytes()),
+        Ok(DATASET_SCHEMA_VERSION - 1)
+    );
+    assert_eq!(segment_schema_version(b"not json\n"), Err(Error::Json));
+    assert_eq!(
+        segment_schema_version(b"{\"kind\":\"metadata\",\"schemaVersion\":5}"),
+        Err(Error::IncompleteRecord)
+    );
+    assert_eq!(
+        segment_schema_version(b"{\"kind\":\"observation\",\"schemaVersion\":5}\n"),
+        Err(Error::InvalidHeader)
+    );
+    assert_eq!(
+        segment_schema_version(b"{\"kind\":\"metadata\",\"schemaVersion\":0}\n"),
+        Err(Error::InvalidHeader)
     );
 }

@@ -11391,6 +11391,15 @@
     }
   },
   {
+    "name": "PaneExperimentSkippedSource",
+    "type": "PaneExperimentSkippedSource",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000002",
+      "schemaVersion": 5,
+      "segments": 2
+    }
+  },
+  {
     "name": "PaneExperimentExportResult",
     "type": "PaneExperimentExportResult",
     "value": {
@@ -11401,7 +11410,15 @@
       "actualFromMs": "1800000000100",
       "actualToMs": "1800000059900",
       "staleTemporaryFilesRemoved": 1,
-      "staleTemporaryBytesRemoved": "512"
+      "staleTemporaryBytesRemoved": "512",
+      "skippedSources": [
+        {
+          "paneId": "00000000-0000-4000-8000-000000000002",
+          "schemaVersion": 5,
+          "segments": 2
+        }
+      ],
+      "skippedSourceNotice": "Some selected experiment segments were excluded because their dataset schema is unsupported. Delete the named pane's captured data to remove those segments."
     }
   },
   {
@@ -11435,7 +11452,15 @@
         "actualFromMs": "1800000000100",
         "actualToMs": "1800000059900",
         "staleTemporaryFilesRemoved": 1,
-        "staleTemporaryBytesRemoved": "512"
+        "staleTemporaryBytesRemoved": "512",
+        "skippedSources": [
+          {
+            "paneId": "00000000-0000-4000-8000-000000000002",
+            "schemaVersion": 5,
+            "segments": 2
+          }
+        ],
+        "skippedSourceNotice": "Some selected experiment segments were excluded because their dataset schema is unsupported. Delete the named pane's captured data to remove those segments."
       }
     }
   }

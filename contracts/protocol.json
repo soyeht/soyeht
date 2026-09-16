@@ -1151,6 +1151,30 @@
       ],
       "additionalProperties": true
     },
+    "PaneExperimentSkippedSource": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "segments": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "paneId",
+        "schemaVersion",
+        "segments"
+      ],
+      "additionalProperties": true
+    },
     "PaneExperimentExportResult": {
       "type": "object",
       "properties": {
@@ -1184,6 +1208,17 @@
         },
         "staleTemporaryBytesRemoved": {
           "$ref": "#/$defs/Decimal"
+        },
+        "skippedSources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PaneExperimentSkippedSource"
+          }
+        },
+        "skippedSourceNotice": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
         }
       },
       "required": [

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 dc2e1ec21faafd5cfff626a54193f548d7bbb0060ac2a5c2b48b744324655b4c). Do not edit.
+// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -323,6 +323,12 @@ export interface PaneExperimentExportParams {
   "idempotencyKey": Id;
 }
 
+export interface PaneExperimentSkippedSource {
+  "paneId": Id;
+  "schemaVersion": number;
+  "segments": number;
+}
+
 export interface PaneExperimentExportResult {
   "path": string;
   "rows": number;
@@ -332,6 +338,8 @@ export interface PaneExperimentExportResult {
   "actualToMs"?: Decimal;
   "staleTemporaryFilesRemoved"?: number;
   "staleTemporaryBytesRemoved"?: Decimal;
+  "skippedSources"?: Array<PaneExperimentSkippedSource>;
+  "skippedSourceNotice"?: string;
 }
 
 export interface DevicePairStartParams {

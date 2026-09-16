@@ -7,11 +7,12 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_pane_state::{
-    DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, HarnessIdentity, RecordedRow, encode_row,
+    DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, HarnessIdentity, ObservationPaneKind,
+    RecordedRow, encode_row,
 };
 use soyeht_protocol::limits;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -26,6 +27,7 @@ const FILE_MODE: u32 = 0o600;
 const EXPORT_FORMAT_VERSION: u32 = 1;
 const EXPORT_METHOD: &str = "pane.experiment.export";
 const STALE_EXPORT_TEMP_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const SKIPPED_SOURCE_NOTICE: &str = "Some selected experiment segments were excluded because their dataset schema is unsupported. Delete the named pane's captured data to remove those segments.";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,12 +40,21 @@ struct ExportWindow {
 #[serde(rename_all = "camelCase")]
 struct ExportSource {
     pane_id: String,
+    pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
     engine: EngineBuild,
     segment_sequence: u64,
     first_sequence: u64,
     last_sequence: u64,
     clean_close: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SkippedExportSource {
+    pane_id: String,
+    schema_version: u32,
+    segments: u32,
 }
 
 #[derive(Serialize)]
@@ -55,6 +66,9 @@ struct ExportMetadata {
     requested_window: ExportWindow,
     actual_window: Option<ExportWindow>,
     sources: Vec<ExportSource>,
+    skipped_sources: Vec<SkippedExportSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skipped_source_notice: Option<&'static str>,
 }
 
 struct SelectedRow {
@@ -64,6 +78,12 @@ struct SelectedRow {
     row: RecordedRow,
 }
 
+struct ExportSelection {
+    rows: Vec<SelectedRow>,
+    sources: Vec<ExportSource>,
+    skipped_sources: Vec<SkippedExportSource>,
+}
+
 struct ExportReceipt {
     path: PathBuf,
     rows: usize,
@@ -71,6 +91,7 @@ struct ExportReceipt {
     sha256: String,
     actual_from_ms: Option<i64>,
     actual_to_ms: Option<i64>,
+    skipped_sources: Vec<SkippedExportSource>,
     stale_temporary_cleanup: TemporaryCleanupReceipt,
 }
 
@@ -123,6 +144,10 @@ impl Core {
         }
         if let Some(actual) = receipt.actual_to_ms {
             result["actualToMs"] = json!(actual.to_string());
+        }
+        if !receipt.skipped_sources.is_empty() {
+            result["skippedSources"] = json!(receipt.skipped_sources);
+            result["skippedSourceNotice"] = json!(SKIPPED_SOURCE_NOTICE);
         }
         match self.mutate(connection, EXPORT_METHOD, params, |_tx| {
             Ok((result, vec![]))
@@ -216,55 +241,24 @@ fn build_export_at(
     now: SystemTime,
 ) -> Result<ExportReceipt> {
     let root = experiment_root(profile)?;
-    let mut selected = Vec::new();
-    let mut sources = Vec::new();
-    for pane_id in pane_ids {
-        for segment in replay_pane(&root, pane_id)? {
-            let start = selected.len();
-            for row in segment.rows {
-                let (first, last, first_sequence, _) = row_interval(&row);
-                if last < from_ms || first > to_ms {
-                    continue;
-                }
-                enforce_row_limit(selected.len() + 1, pane_id)?;
-                selected.push(SelectedRow {
-                    timestamp_ms: first,
-                    pane_id: pane_id.clone(),
-                    sequence: first_sequence,
-                    row,
-                });
-            }
-            if selected.len() > start {
-                let selected_rows = &selected[start..];
-                sources.push(ExportSource {
-                    pane_id: segment.metadata.pane_id,
-                    harness: segment.metadata.harness,
-                    engine: segment.metadata.engine,
-                    segment_sequence: segment.metadata.segment_sequence,
-                    first_sequence: selected_rows
-                        .iter()
-                        .map(|row| row_interval(&row.row).2)
-                        .min()
-                        .ok_or_else(|| errors::internal("Export source is empty"))?,
-                    last_sequence: selected_rows
-                        .iter()
-                        .map(|row| row_interval(&row.row).3)
-                        .max()
-                        .ok_or_else(|| errors::internal("Export source is empty"))?,
-                    clean_close: segment.clean_close.is_some(),
-                });
-            }
-        }
-    }
-    selected.sort_by(|left, right| {
+    let mut selection = select_export_sources(&root, pane_ids, from_ms, to_ms)?;
+    selection.rows.sort_by(|left, right| {
         (left.timestamp_ms, &left.pane_id, left.sequence).cmp(&(
             right.timestamp_ms,
             &right.pane_id,
             right.sequence,
         ))
     });
-    let actual_from_ms = selected.iter().map(|row| row_interval(&row.row).0).min();
-    let actual_to_ms = selected.iter().map(|row| row_interval(&row.row).1).max();
+    let actual_from_ms = selection
+        .rows
+        .iter()
+        .map(|row| row_interval(&row.row).0)
+        .min();
+    let actual_to_ms = selection
+        .rows
+        .iter()
+        .map(|row| row_interval(&row.row).1)
+        .max();
     let header = ExportMetadata {
         kind: "export_metadata",
         export_format_version: EXPORT_FORMAT_VERSION,
@@ -279,12 +273,15 @@ fn build_export_at(
                 from_ms: from_ms.to_string(),
                 to_ms: to_ms.to_string(),
             }),
-        sources,
+        sources: selection.sources,
+        skipped_source_notice: (!selection.skipped_sources.is_empty())
+            .then_some(SKIPPED_SOURCE_NOTICE),
+        skipped_sources: selection.skipped_sources.clone(),
     };
     let mut bytes = serde_json::to_vec(&header)
         .map_err(|_| errors::internal("Experiment export header serialization failed"))?;
     bytes.push(b'\n');
-    for row in &selected {
+    for row in &selection.rows {
         let dataset = match &row.row {
             RecordedRow::Observation(frame) => DatasetRow::Observation(frame.clone()),
             RecordedRow::Label(label) => DatasetRow::Label(label.clone()),
@@ -304,12 +301,87 @@ fn build_export_at(
     }
     Ok(ExportReceipt {
         path,
-        rows: selected.len(),
+        rows: selection.rows.len(),
         bytes: bytes.len(),
         sha256: format!("{:x}", Sha256::digest(&bytes)),
         actual_from_ms,
         actual_to_ms,
+        skipped_sources: selection.skipped_sources,
         stale_temporary_cleanup,
+    })
+}
+
+fn select_export_sources(
+    root: &Path,
+    pane_ids: &[String],
+    from_ms: i64,
+    to_ms: i64,
+) -> Result<ExportSelection> {
+    let mut selected = Vec::new();
+    let mut sources = Vec::new();
+    let mut skipped_source_counts = BTreeMap::<(String, u32), u32>::new();
+    for pane_id in pane_ids {
+        let replay = replay_pane(root, pane_id)?;
+        for skipped in replay.skipped_segments {
+            let count = skipped_source_counts
+                .entry((skipped.pane_id, skipped.schema_version))
+                .or_default();
+            *count = count
+                .checked_add(1)
+                .ok_or_else(|| errors::internal("Skipped experiment segment count overflowed"))?;
+        }
+        for segment in replay.segments {
+            let start = selected.len();
+            for row in segment.rows {
+                let (first, last, first_sequence, _) = row_interval(&row);
+                if last < from_ms || first > to_ms {
+                    continue;
+                }
+                enforce_row_limit(selected.len() + 1, pane_id)?;
+                selected.push(SelectedRow {
+                    timestamp_ms: first,
+                    pane_id: pane_id.clone(),
+                    sequence: first_sequence,
+                    row,
+                });
+            }
+            if selected.len() > start {
+                let selected_rows = &selected[start..];
+                sources.push(ExportSource {
+                    pane_id: segment.metadata.pane_id,
+                    pane_kind: segment.metadata.pane_kind,
+                    harness: segment.metadata.harness,
+                    engine: segment.metadata.engine,
+                    segment_sequence: segment.metadata.segment_sequence,
+                    first_sequence: selected_rows
+                        .iter()
+                        .map(|row| row_interval(&row.row).2)
+                        .min()
+                        .ok_or_else(|| errors::internal("Export source is empty"))?,
+                    last_sequence: selected_rows
+                        .iter()
+                        .map(|row| row_interval(&row.row).3)
+                        .max()
+                        .ok_or_else(|| errors::internal("Export source is empty"))?,
+                    clean_close: segment.clean_close.is_some(),
+                });
+            }
+        }
+    }
+    let skipped_sources = skipped_source_counts
+        .into_iter()
+        .map(
+            |((pane_id, schema_version), segments)| SkippedExportSource {
+                pane_id,
+                schema_version,
+                segments,
+            },
+        )
+        .collect::<Vec<_>>();
+    Ok(ExportSelection {
+        rows: selected,
+        sources,
+        skipped_sources,
     })
 }
 
@@ -612,6 +684,7 @@ mod tests {
         sequence: u64,
     ) -> RecordedRow {
         RecordedRow::Observation(ObservationFrame {
+            pane_kind: ObservationPaneKind::Terminal,
             pane_id: pane_id.into(),
             harness: harness.clone(),
             timestamp_ms: at,
@@ -641,6 +714,18 @@ mod tests {
             .unwrap();
         file.write_all(bytes).unwrap();
         file.sync_all().unwrap();
+    }
+
+    fn write_schema_only_segment(root: &Path, pane_id: &str, number: u64, schema_version: u32) {
+        let directory = root.join(format!("pane-{:x}", Sha256::digest(pane_id.as_bytes())));
+        fs::DirBuilder::new()
+            .mode(DIRECTORY_MODE)
+            .create(&directory)
+            .unwrap();
+        write_private(
+            &directory.join(format!("{number:016x}.jsonl")),
+            format!("{{\"kind\":\"metadata\",\"schemaVersion\":{schema_version}}}\n").as_bytes(),
+        );
     }
 
     #[test]
@@ -803,6 +888,7 @@ mod tests {
             sha256: "a".repeat(64),
             actual_from_ms: None,
             actual_to_ms: None,
+            skipped_sources: Vec::new(),
             stale_temporary_cleanup: TemporaryCleanupReceipt {
                 files: 2,
                 bytes: 144,
@@ -822,8 +908,14 @@ mod tests {
         let fixture = Fixture::new();
         let root = experiment_root(&fixture.profile).unwrap();
         let first_harness = harness("registry.first");
-        let mut first =
-            SegmentStore::open(&root, "pane-b", first_harness.clone(), engine('a')).unwrap();
+        let mut first = SegmentStore::open(
+            &root,
+            "pane-b",
+            ObservationPaneKind::Terminal,
+            first_harness.clone(),
+            engine('a'),
+        )
+        .unwrap();
         first
             .append(observation("pane-b", &first_harness, 100, 0))
             .unwrap();
@@ -833,14 +925,21 @@ mod tests {
         first.close().unwrap();
 
         let second_harness = harness("registry.second");
-        let mut second =
-            SegmentStore::open(&root, "pane-a", second_harness.clone(), engine('b')).unwrap();
+        let mut second = SegmentStore::open(
+            &root,
+            "pane-a",
+            ObservationPaneKind::Terminal,
+            second_harness.clone(),
+            engine('b'),
+        )
+        .unwrap();
         second
             .append(observation("pane-a", &second_harness, 150, 0))
             .unwrap();
         second
             .append(RecordedRow::Label(GroundTruthLabel {
                 pane_id: "pane-a".into(),
+                pane_kind: ObservationPaneKind::Terminal,
                 harness: second_harness,
                 timestamp_ms: 175,
                 sequence: 1,
@@ -851,6 +950,7 @@ mod tests {
         second
             .append(RecordedRow::Gap(ObservationGap {
                 pane_id: "pane-a".into(),
+                pane_kind: ObservationPaneKind::Terminal,
                 harness: harness("registry.second"),
                 first_timestamp_ms: 180,
                 last_timestamp_ms: 190,
@@ -891,7 +991,8 @@ mod tests {
         assert_eq!(rows[0]["actualWindow"]["toMs"], "200");
         assert_eq!(rows[0]["sources"].as_array().unwrap().len(), 2);
         assert!(rows[0]["sources"].as_array().unwrap().iter().all(|source| {
-            source["cleanClose"] == true
+            source["paneKind"] == "terminal"
+                && source["cleanClose"] == true
                 && source["engine"]["executableSha256"]
                     .as_str()
                     .is_some_and(|digest| digest.len() == 64)
@@ -908,6 +1009,82 @@ mod tests {
         assert_eq!(rows[2]["kind"], "label");
         assert_eq!(rows[3]["kind"], "gap");
         assert_eq!(rows[4]["pane_id"], "pane-b");
+    }
+
+    #[test]
+    fn export_skips_only_incompatible_segments_and_names_the_local_remedy() {
+        let fixture = Fixture::new();
+        let root = experiment_root(&fixture.profile).unwrap();
+        write_schema_only_segment(&root, "pane-old", 0, DATASET_SCHEMA_VERSION - 1);
+
+        let identity = harness("registry.current");
+        let mut current = SegmentStore::open(
+            &root,
+            "pane-current",
+            ObservationPaneKind::Terminal,
+            identity.clone(),
+            engine('c'),
+        )
+        .unwrap();
+        current
+            .append(observation("pane-current", &identity, 150, 0))
+            .unwrap();
+        current.close().unwrap();
+
+        let panes = vec!["pane-old".into(), "pane-current".into()];
+        let receipt = build_export(&fixture.profile, &panes, 100, 200, "mixed-schema")
+            .expect("an old pane must not abort an unrelated current pane");
+
+        assert_eq!(receipt.rows, 1);
+        assert_eq!(
+            receipt.skipped_sources,
+            vec![SkippedExportSource {
+                pane_id: "pane-old".into(),
+                schema_version: DATASET_SCHEMA_VERSION - 1,
+                segments: 1,
+            }]
+        );
+        let header: Value = serde_json::from_str(
+            fs::read_to_string(&receipt.path)
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(header["sources"].as_array().unwrap().len(), 1);
+        assert_eq!(header["sources"][0]["paneId"], "pane-current");
+        assert_eq!(header["skippedSources"][0]["paneId"], "pane-old");
+        assert_eq!(
+            header["skippedSources"][0]["schemaVersion"],
+            DATASET_SCHEMA_VERSION - 1
+        );
+        assert_eq!(header["skippedSources"][0]["segments"], 1);
+        assert!(
+            header["skippedSourceNotice"]
+                .as_str()
+                .unwrap()
+                .contains("Delete the named pane's captured data")
+        );
+    }
+
+    #[test]
+    fn export_still_fails_closed_for_a_malformed_current_schema_segment() {
+        let fixture = Fixture::new();
+        let root = experiment_root(&fixture.profile).unwrap();
+        write_schema_only_segment(&root, "pane-broken", 0, DATASET_SCHEMA_VERSION);
+
+        let error = build_export(
+            &fixture.profile,
+            &["pane-broken".into()],
+            100,
+            200,
+            "broken-current",
+        )
+        .err()
+        .expect("malformed current-schema data must fail closed");
+
+        assert!(error.to_string().contains("valid closed JSON"));
     }
 
     #[test]
@@ -955,9 +1132,16 @@ mod tests {
     fn signed_ui_command_exports_once_and_returns_its_durable_receipt() {
         let fixture = Fixture::new();
         let root = experiment_root(&fixture.profile).unwrap();
+        write_schema_only_segment(&root, "pane-old", 0, DATASET_SCHEMA_VERSION - 1);
         let identity = harness("registry.command");
-        let mut store =
-            SegmentStore::open(&root, "pane-command", identity.clone(), engine('c')).unwrap();
+        let mut store = SegmentStore::open(
+            &root,
+            "pane-command",
+            ObservationPaneKind::Terminal,
+            identity.clone(),
+            engine('c'),
+        )
+        .unwrap();
         store
             .append(observation("pane-command", &identity, 150, 0))
             .unwrap();
@@ -979,7 +1163,7 @@ mod tests {
         let request = json!({
             "jsonrpc":"2.0","id":"export","method":EXPORT_METHOD,
             "params":{
-                "paneIds":["pane-command"],"fromMs":"100","toMs":"200",
+                "paneIds":["pane-command","pane-old"],"fromMs":"100","toMs":"200",
                 "idempotencyKey":"export-once"
             }
         });
@@ -991,6 +1175,18 @@ mod tests {
         assert_eq!(first["actualToMs"], "150");
         assert_eq!(first["staleTemporaryFilesRemoved"], 0);
         assert_eq!(first["staleTemporaryBytesRemoved"], "0");
+        assert_eq!(first["skippedSources"][0]["paneId"], "pane-old");
+        assert_eq!(
+            first["skippedSources"][0]["schemaVersion"],
+            DATASET_SCHEMA_VERSION - 1
+        );
+        assert_eq!(first["skippedSources"][0]["segments"], 1);
+        assert!(
+            first["skippedSourceNotice"]
+                .as_str()
+                .unwrap()
+                .contains("Delete the named pane's captured data")
+        );
         let path = PathBuf::from(first["path"].as_str().unwrap());
         assert!(path.is_file());
         assert_eq!(
