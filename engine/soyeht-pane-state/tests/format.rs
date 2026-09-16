@@ -3,7 +3,7 @@
 use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, Error, GroundTruthLabel, HarnessIdentity,
     MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, ObservationReason, RecordedRow,
-    SegmentMetadata, decode_segment, encode_row,
+    SegmentEnd, SegmentMetadata, decode_segment, encode_row,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -77,6 +77,15 @@ fn byte_gap(sequence: u64, dropped_bytes: u64) -> ObservationGap {
     }
 }
 
+fn segment_end(last_sequence: u64) -> SegmentEnd {
+    SegmentEnd {
+        pane_id: "pane-1".into(),
+        harness: harness(),
+        ended_at_ms: 1_800_000_000_200,
+        last_sequence,
+    }
+}
+
 fn segment(rows: &[DatasetRow]) -> Vec<u8> {
     rows.iter()
         .flat_map(|row| encode_row(row).unwrap())
@@ -106,6 +115,36 @@ fn segment_round_trip_keeps_header_observation_label_and_gap_distinct() {
         ]
     );
     assert!(bytes.starts_with(b"{\"kind\":\"metadata\""));
+    assert_eq!(replayed.clean_close, None);
+}
+
+#[test]
+fn clean_close_is_explicit_and_cannot_precede_or_misname_the_final_row() {
+    let end = segment_end(8);
+    let replayed = decode_segment(&segment(&[
+        DatasetRow::Metadata(metadata()),
+        DatasetRow::Observation(observation(8)),
+        DatasetRow::SegmentEnd(end.clone()),
+    ]))
+    .unwrap();
+    assert_eq!(replayed.clean_close, Some(end));
+    assert_eq!(
+        decode_segment(&segment(&[
+            DatasetRow::Metadata(metadata()),
+            DatasetRow::Observation(observation(8)),
+            DatasetRow::SegmentEnd(segment_end(8)),
+            DatasetRow::Observation(observation(9)),
+        ])),
+        Err(Error::InvalidSegmentEnd)
+    );
+    assert_eq!(
+        decode_segment(&segment(&[
+            DatasetRow::Metadata(metadata()),
+            DatasetRow::Observation(observation(8)),
+            DatasetRow::SegmentEnd(segment_end(7)),
+        ])),
+        Err(Error::InvalidSegmentEnd)
+    );
 }
 
 #[test]

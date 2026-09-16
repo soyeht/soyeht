@@ -116,11 +116,14 @@ shared loop that recording could slow. Terminal byte-to-client delivery is not t
 because capture observes only a copy after the normal stream has accepted the bytes and cannot
 replace or rechunk that path.
 
-The cadence fixture is intentionally byte-heavy and frame-light: after one unmeasured warm-up
-pair, ten paired polls each hand off one distinct VT block, totalling 440,191 bytes and exactly
-ten expected projections. This isolates the per-byte copy and bounded-handoff cost that remains
-on `Core::poll_output`. The separate 200 Hz worker-headroom fixture measures the per-frame
-projection, serialisation, write and sync costs; neither result substitutes for the other.
+The cadence fixture is intentionally byte-heavy and frame-light: after separate unmeasured
+engine and capture-path warm-up pairs, ten paired polls each hand off one distinct VT block,
+totalling 440,192 bytes and exactly ten measured projections. This isolates the per-byte copy
+and bounded-handoff cost that remains on `Core::poll_output`. The separate 200 Hz
+worker-headroom fixture measures the per-frame projection, serialisation, write and sync costs;
+neither result substitutes for the other. Before closed batching, that fixture retained 334 of
+400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up
+to eight rows retained all 400 with no gap and 100 percent time coverage on the same fixture.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
