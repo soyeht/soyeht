@@ -129,11 +129,19 @@ copy and bounded-handoff cost that remains on
 so unrelated scheduler and disk load are not attributed asymmetrically to capture. During the
 timed pairs, the test-only projection worker is paused while the bounded queue accepts all ten
 frames, then resumed before coverage is read back. That keeps projection, serialisation, write
-and sync costs out of the handoff measurement; the separate 200 Hz
+and sync costs out of the handoff measurement. It also deliberately removes producer-versus-worker
+contention that exists in normal use, so this favourable isolation protects the synchronous loop
+and bounded handoff rather than claiming a whole-system capture cost. The separate 200 Hz
 worker-headroom fixture measures the per-frame projection, serialisation, write and sync costs;
 neither result substitutes for the other. Before closed batching, that fixture retained 334 of
 400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up
 to eight rows retained all 400 with no gap and 100 percent time coverage on the same fixture.
+
+The first valid dedicated-gate sample after isolation measured raw capture-off pairs of 539, 331,
+318, 328, 327, 342, 335, 360, 349 and 334 microseconds, and capture-on pairs of 511, 363, 337,
+333, 328, 416, 473, 469, 344 and 339 microseconds. After the declared three warm-up pairs, the
+median moved from 335 to 344 microseconds (+2.69 percent) and p95 moved from 360 to 473
+microseconds (+113 microseconds). Both independent bounds passed.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
