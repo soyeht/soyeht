@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 23a1f32e9386b64aa63c84f2d90a93141f57dcff75935fb4fa7868fde9646279). Do not edit.
+// Generated from contracts/protocol.json (sha256 9ee5085271a7f026186f517bca62f0c7788c27818d644e8200072cba62b57764). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -60,3 +60,5 @@ pub const WRITING_SIDECAR_BYTES: usize = 1048576;
 pub const WRITING_IMAGE_BYTES: usize = 2097152;
 pub const HARNESS_CONTINUATION_BYTES: usize = 15999;
 pub const HARNESS_CONTINUATION_MESSAGES: usize = 6;
+pub const MODEL_REFUSALS: usize = 256;
+pub const MODEL_REFUSAL_REASON_BYTES: usize = 4096;

@@ -1203,6 +1203,15 @@ private struct AgentHarnessPicker: View {
   }
 
   private var selected: HarnessInfo? { client.harnesses.first { $0.id == harness } }
+  private var selectedModel: ModelInfo? { catalogue?.models.first { $0.id == model } }
+  private var excludedQueryMatch: HarnessInfo? {
+    guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      let excludingHarness,
+      let excluded = client.harnesses.first(where: { $0.id == excludingHarness }),
+      HarnessPickerModel.matches(excluded, query: query)
+    else { return nil }
+    return excluded
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
@@ -1236,8 +1245,16 @@ private struct AgentHarnessPicker: View {
         )
         .frame(maxWidth: .infinity, minHeight: 220)
       } else if contentState == .noMatches {
-        ContentUnavailableView.search(text: query)
+        if let excludedQueryMatch {
+          ContentUnavailableView(
+            "\(excludedQueryMatch.name) is already active", systemImage: "checkmark.circle",
+            description: Text("Choose another agent to restart this conversation.")
+          )
           .frame(maxWidth: .infinity, minHeight: 220)
+        } else {
+          ContentUnavailableView.search(text: query)
+            .frame(maxWidth: .infinity, minHeight: 220)
+        }
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: MacTheme.Space.x12) {
@@ -1257,6 +1274,11 @@ private struct AgentHarnessPicker: View {
     .frame(width: 420, height: 510, alignment: .top)
     .foregroundStyle(MacTheme.ink)
     .background(MacTheme.face)
+    .onAppear {
+      if selected?.available == true, !harness.isEmpty {
+        client.refreshCatalogue(harness: harness)
+      }
+    }
   }
 
   private func harnessRow(_ item: HarnessInfo) -> some View {
@@ -1304,7 +1326,17 @@ private struct AgentHarnessPicker: View {
         Menu {
           Button("Agent default") { model = "" }
           ForEach(catalogue?.models ?? [], id: \.id) { item in
-            Button(item.name) { model = item.id }
+            Button {
+              model = item.id
+            } label: {
+              if item.observedRefusal == nil {
+                Text(item.name)
+              } else {
+                Label(
+                  HarnessPickerModel.modelLabel(for: item),
+                  systemImage: "exclamationmark.triangle.fill")
+              }
+            }
           }
         } label: {
           HStack {
@@ -1318,6 +1350,17 @@ private struct AgentHarnessPicker: View {
           .neoWell(radius: MacTheme.Radius.compact)
         }
         .menuStyle(.borderlessButton)
+        if let reason = HarnessPickerModel.modelRefusalReason(for: selectedModel) {
+          Label {
+            Text("This agent previously refused this model: \(reason)")
+          } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+          }
+          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          .foregroundStyle(MacTheme.warning)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("model-observed-refusal")
+        }
         if modelContentState == .empty {
           Text("This agent provided no model choices.")
             .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
@@ -1353,7 +1396,7 @@ private struct AgentHarnessPicker: View {
   }
 
   private var selectedModelLabel: String {
-    catalogue?.models.first { $0.id == model }?.name ?? "Agent default"
+    selectedModel.map { HarnessPickerModel.modelLabel(for: $0) } ?? "Agent default"
   }
 
   private func statusSymbol(_ status: HarnessSetupState) -> String {

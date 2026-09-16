@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 use soyeht_acp::Message;
 use soyeht_protocol::{ProbeCapability, PromptItem, TranscriptMessage, ndjson::Decoder};
 use soyeht_store::{
-    agents::{self, NativeRequest, Outgoing, PromptAttachment},
+    agents::{self, AgentModelRefusal, NativeRequest, Outgoing, PromptAttachment},
     database::{Change, Mutation},
 };
 use state::State;
@@ -71,6 +71,7 @@ pub struct Changes {
     pub outgoing: Vec<Message>,
     pub probes: Vec<ProbeCapability>,
     pub events: Vec<(String, Value)>,
+    pub model_refusal: Option<AgentModelRefusal>,
     pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
@@ -128,6 +129,16 @@ struct AgentPersistence<'a> {
     outgoing: &'a [Outgoing],
 }
 
+fn persist_model_refusal(
+    tx: &Change<'_>,
+    refusal: Option<&AgentModelRefusal>,
+) -> soyeht_store::database::Result<()> {
+    if let Some(refusal) = refusal {
+        agents::save_model_refusal(tx, refusal)?;
+    }
+    Ok(())
+}
+
 impl AgentPersistence<'_> {
     fn apply(
         self,
@@ -174,6 +185,7 @@ impl AgentPersistence<'_> {
         if let Some(write) = &self.changes.editor_agent_write {
             write.persist(tx)?;
         }
+        persist_model_refusal(tx, self.changes.model_refusal.as_ref())?;
         write_pane(tx, self.saved)?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;
         let attention_changed = self.changes.clear_attention

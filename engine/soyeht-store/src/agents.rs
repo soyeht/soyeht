@@ -10,6 +10,72 @@ use soyeht_protocol::{
 };
 use soyeht_protocol::{PromptItem, PromptStatus};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentModelRefusal {
+    pub harness_id: String,
+    pub model_id: String,
+    pub reason: String,
+    pub observed_at: String,
+}
+
+fn validate_model_refusal(refusal: &AgentModelRefusal) -> Result<()> {
+    let valid_id = |value: &str| !value.is_empty() && value.chars().count() <= 128;
+    if !valid_id(&refusal.harness_id)
+        || !valid_id(&refusal.model_id)
+        || refusal.reason.is_empty()
+        || refusal.reason.len() > limits::MODEL_REFUSAL_REASON_BYTES
+        || chrono::DateTime::parse_from_rfc3339(&refusal.observed_at).is_err()
+    {
+        return Err(Error::InvalidAgentModelRefusal);
+    }
+    Ok(())
+}
+
+pub fn model_refusals(store: &Store, harness: &str) -> Result<Vec<AgentModelRefusal>> {
+    if harness.is_empty() || harness.chars().count() > 128 {
+        return Err(Error::InvalidAgentModelRefusal);
+    }
+    let mut statement = store.connection().prepare(
+        "SELECT harness_id,model_id,reason,observed_at FROM agent_model_refusals WHERE harness_id=?1 ORDER BY model_id",
+    )?;
+    let rows = statement.query_map([harness], |row| {
+        Ok(AgentModelRefusal {
+            harness_id: row.get(0)?,
+            model_id: row.get(1)?,
+            reason: row.get(2)?,
+            observed_at: row.get(3)?,
+        })
+    })?;
+    let refusals = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    if refusals.len() > limits::MODEL_REFUSALS {
+        return Err(Error::InvalidAgentModelRefusal);
+    }
+    for refusal in &refusals {
+        validate_model_refusal(refusal)?;
+    }
+    Ok(refusals)
+}
+
+pub fn save_model_refusal(change: &Change<'_>, refusal: &AgentModelRefusal) -> Result<()> {
+    validate_model_refusal(refusal)?;
+    let tx = change.connection();
+    tx.execute(
+        "INSERT INTO agent_model_refusals(harness_id,model_id,reason,observed_at) VALUES (?1,?2,?3,?4) ON CONFLICT(harness_id,model_id) DO UPDATE SET reason=excluded.reason,observed_at=excluded.observed_at",
+        params![refusal.harness_id, refusal.model_id, refusal.reason, refusal.observed_at],
+    )?;
+    let count: i64 = tx.query_row("SELECT COUNT(*) FROM agent_model_refusals", [], |row| {
+        row.get(0)
+    })?;
+    let excess = count.saturating_sub(limits::MODEL_REFUSALS as i64);
+    if excess > 0 {
+        tx.execute(
+            "DELETE FROM agent_model_refusals WHERE rowid IN (SELECT rowid FROM agent_model_refusals ORDER BY observed_at,harness_id,model_id LIMIT ?1)",
+            [excess],
+        )?;
+    }
+    Ok(())
+}
+
 /// Prompt bodies are separate rows, not part of the frequently written ACP
 /// checkpoint. A full waiting queue is never rewritten for each output chunk.
 pub fn queue(store: &Store, pane: &str) -> Result<Vec<PromptItem>> {

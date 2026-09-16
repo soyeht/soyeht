@@ -2437,11 +2437,23 @@
     }
   },
   {
+    "name": "ModelRefusal",
+    "type": "ModelRefusal",
+    "value": {
+      "reason": "Model is disabled",
+      "observedAt": "2026-09-15T21:00:00Z"
+    }
+  },
+  {
     "name": "ModelInfo",
     "type": "ModelInfo",
     "value": {
       "id": "00000000-0000-4000-8000-000000000001",
-      "name": "example"
+      "name": "example",
+      "observedRefusal": {
+        "reason": "Model is disabled",
+        "observedAt": "2026-09-15T21:00:00Z"
+      }
     }
   },
   {

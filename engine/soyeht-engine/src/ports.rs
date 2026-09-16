@@ -16,7 +16,7 @@ use soyeht_ptyd::{
 };
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
-    agents::{NativeRequest, Outgoing, PromptAttachment},
+    agents::{AgentModelRefusal, NativeRequest, Outgoing, PromptAttachment},
     database::{Change, Mutation, Result as StoreResult, Store},
     domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
@@ -166,6 +166,7 @@ pub trait StorePort {
         limit: usize,
     ) -> StoreResult<PaneTranscriptResult>;
     fn agent_probe(&self, fingerprint: &str, method: &str) -> StoreResult<Option<ProbeCapability>>;
+    fn agent_model_refusals(&self, harness: &str) -> StoreResult<Vec<AgentModelRefusal>>;
     fn web_session_grant(
         &self,
         workspace_id: &str,
@@ -353,6 +354,10 @@ impl StorePort for Store {
         soyeht_store::agents::probe(self, fingerprint, method)
     }
 
+    fn agent_model_refusals(&self, harness: &str) -> StoreResult<Vec<AgentModelRefusal>> {
+        soyeht_store::agents::model_refusals(self, harness)
+    }
+
     fn web_session_grant(
         &self,
         workspace_id: &str,
@@ -442,6 +447,7 @@ pub(crate) mod testing {
         pub pair_windows: BTreeMap<String, i64>,
         pub open_requests: BTreeMap<String, Vec<NativeRequest>>,
         pub probes: BTreeMap<(String, String), ProbeCapability>,
+        pub model_refusals: BTreeMap<(String, String), AgentModelRefusal>,
     }
 
     impl StorePort for MemoryStore {
@@ -661,6 +667,15 @@ pub(crate) mod testing {
                 .probes
                 .get(&(fingerprint.into(), method.into()))
                 .cloned())
+        }
+
+        fn agent_model_refusals(&self, harness: &str) -> StoreResult<Vec<AgentModelRefusal>> {
+            Ok(self
+                .model_refusals
+                .values()
+                .filter(|refusal| refusal.harness_id == harness)
+                .cloned()
+                .collect())
         }
 
         fn web_session_grant(
