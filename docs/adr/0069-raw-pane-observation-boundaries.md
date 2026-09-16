@@ -69,7 +69,9 @@ weakening the check.
 
 The engine observes output only after the normal terminal stream has accepted it. The decoded
 byte allocation is reference-counted between the retained screen tail and the capture handoff,
-so enabling capture adds an ownership reference rather than copying the terminal payload.
+so enabling capture adds an ownership reference rather than copying the terminal payload. Before
+this decision was implemented, the shipping poll path cloned that allocation for capture; removing
+that product copy changed the cost being measured rather than merely correcting the fixture.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces
 the bytes sent to clients. `Core::poll_output` only offers that copy to a non-blocking,
 32-chunk projection handoff. A dedicated worker owns the terminal parser and the recorder.
@@ -143,17 +145,20 @@ neither result substitutes for the other. Before closed batching, that fixture r
 400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up
 to eight rows retained all 400 with no gap and 100 percent time coverage on the same fixture.
 
-The first valid dedicated sample with the interleaved estimator measured raw capture-off samples
-of 11598, 10283, 11483, 11385, 10482, 10652, 11452, 10531, 10745 and 10900 microseconds, and
-capture-on samples of 11203, 10684, 11019, 12143, 10509, 11087, 11189, 11295, 11166 and 11235
-microseconds. After the declared three warm-up samples, the median moved from 10745 to 11189
-microseconds (+4.13 percent) and p95 moved from 11452 to 12143 microseconds (+691 microseconds).
+The final full-gate sample with the interleaved estimator measured raw capture-off samples of
+11015, 10679, 10731, 11059, 10410, 10200, 10476, 10793, 10767 and 10395 microseconds, and
+capture-on samples of 10270, 11624, 10204, 10913, 10723, 10087, 10633, 10891, 10681 and 11292
+microseconds. After the declared three warm-up samples, the median moved from 10476 to 10723
+microseconds (+2.36 percent) and p95 moved from 11059 to 11292 microseconds (+233 microseconds).
 Both independent bounds passed. Each sample contains thirty polls, so the median delta is roughly
-14.8 microseconds per
+8.2 microseconds per
 `Core::poll_output`; that absolute observation is more durable than its percentage, because
 unrelated baseline work changes the denominator. The 5 millisecond p95 criterion is deliberately
 a stall detector, not a relative tail-regression guard. At this millisecond sample scale it
-permits percentage drift and must not be read as protecting against incremental tail drift.
+permits percentage drift and must not be read as protecting against incremental tail drift. The
+5 percent median bound is also a coarse scheduling-sensitive guard: a failure requires
+investigation and is not by itself proof that capture regressed. A future absolute-delta limit must
+be predeclared before the change it evaluates rather than calibrated from this observed sample.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
