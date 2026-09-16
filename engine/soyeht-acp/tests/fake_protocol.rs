@@ -19,6 +19,10 @@ use std::{
 };
 use uuid::Uuid;
 
+// Positive asynchronous assertions may use the full failure budget; passing
+// runs stop as soon as the expected signal arrives.
+const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
+
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
@@ -93,7 +97,7 @@ impl Peer {
     }
     fn receive(&mut self) -> Message {
         self.output
-            .recv_timeout(Duration::from_secs(5))
+            .recv_timeout(ASYNC_ASSERTION_TIMEOUT)
             .expect("fake agent response deadline")
     }
     fn response(&mut self, expected: &Value) -> Result<Value, RpcError> {

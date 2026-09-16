@@ -27,6 +27,9 @@ use uuid::Uuid;
 // Process-heavy integration tests share the runner. Wait for the observable
 // effect rather than assuming it will occur within one scheduling quantum.
 const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
+// This is a negative observation window, so increasing it would slow the
+// passing suite and weaken the assertion that backpressure remains bounded.
+const BACKPRESSURE_OBSERVATION_WINDOW: Duration = Duration::from_secs(6);
 
 struct Rig {
     path: PathBuf,
@@ -265,7 +268,7 @@ fn writing_format_uses_the_owned_revisioned_file_and_survives_restart() {
     );
     assert_eq!(stale["error"]["data"]["kind"], "stale_version");
 
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while fs::read_to_string(&path).unwrap() != "# Field notes\n\n**Draft** safely.\n" {
         assert!(
             Instant::now() < deadline,
@@ -746,7 +749,7 @@ impl Rig {
                 .spawn()
                 .unwrap(),
         );
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         while UnixStream::connect(self.path.join("engine.sock")).is_err() {
             assert!(Instant::now() < deadline, "engine ready timeout");
             thread::sleep(Duration::from_millis(10));
@@ -800,7 +803,7 @@ impl Rig {
             .as_str()
             .unwrap()
             .to_owned();
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         while !client.pane(&pane)["agent"]["sessionId"].is_string() {
             assert!(Instant::now() < deadline, "agent session did not open");
             thread::sleep(Duration::from_millis(20));
@@ -861,7 +864,7 @@ impl Rig {
             .stdout(Stdio::null())
             .spawn()
             .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         while UnixStream::connect(self.path.join("ptyd.sock")).is_err() {
             assert!(Instant::now() < deadline, "ptyd ready timeout");
             thread::sleep(Duration::from_millis(10));
@@ -1076,7 +1079,7 @@ impl TaskLifecycleRig {
     }
 
     fn wait_task_state(&mut self, task: &str, state: &str) -> Value {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         loop {
             let shown = self.human.call(
                 "task.show",
@@ -1099,7 +1102,7 @@ impl TaskLifecycleRig {
     }
 
     fn wait_review_stage(&self, task: &Task, stage: ReviewStage) -> TaskReviewRecord<Value> {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         loop {
             let review = self.review(task);
             if review.stage == stage {
@@ -1274,7 +1277,7 @@ fn prompt_images_commit_with_the_queue_and_reach_acp_in_exact_order() {
         "image-report:[{{\"data\":\"{}\",\"hasUri\":false,\"mimeType\":\"image/png\"}}]",
         STANDARD.encode(image)
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let history = rig.native_session(&session)["history"]
             .as_array()
@@ -1357,7 +1360,7 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
     assert_eq!(client.pane(&pane)["agent"]["harness"], "next-agent");
 
     let new_session = result["newSessionId"].as_str().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let path = rig
             .path
@@ -1381,7 +1384,7 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
         );
         thread::sleep(Duration::from_millis(20));
     }
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let live = process_registry_instances(&rig);
         if live.len() == 1 {
@@ -1405,7 +1408,7 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
         "pane.prompt",
         json!({"paneId":pane,"text":"after-retired-cleanup","idempotencyKey":"after-retired-cleanup"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let path = rig
             .path
@@ -1448,7 +1451,7 @@ fn a_missing_current_agent_recovers_before_accepting_more_work() {
         b"drop",
     )
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let session = loop {
         let current = client.pane(&pane);
         if current["generation"]
@@ -1469,7 +1472,7 @@ fn a_missing_current_agent_recovers_before_accepting_more_work() {
         "pane.prompt",
         json!({"paneId":pane,"text":"after-process-loss","idempotencyKey":"after-process-loss"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let served = rig.native_session(&session)["history"]
             .as_array()
@@ -1528,7 +1531,7 @@ fn harness_switch_carries_a_frozen_pending_prompt_once_and_removes_it_from_the_q
         json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-with-pending"}),
     );
     let new_session = result["newSessionId"].as_str().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let path = rig
             .path
@@ -1585,7 +1588,7 @@ fn induced_candidate_failure_leaves_the_original_session_serving_prompts() {
         "pane.prompt",
         json!({"paneId":pane,"text":"original-still-live","idempotencyKey":"original-after-failure"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         if rig.native_session(&original_session)["history"]
             .as_array()
@@ -1649,7 +1652,7 @@ fn continuation_build_failure_leaves_the_original_session_serving_prompts() {
             "idempotencyKey":"prompt-after-package-failure"
         }),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         if rig.native_session(&original_session)["history"]
             .as_array()
@@ -1696,7 +1699,7 @@ fn old_process_close_failure_is_durable_and_retried_after_the_new_session_commit
         "pane.prompt",
         json!({"paneId":pane,"text":"new-session-live","idempotencyKey":"new-after-close-failure"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let path = rig
             .path
@@ -1787,7 +1790,7 @@ fn queued_prompt_image_survives_engine_restart_before_delivery() {
         "image-report:[{{\"data\":\"{}\",\"hasUri\":false,\"mimeType\":\"image/png\"}}]",
         STANDARD.encode(image)
     );
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         if rig.native_session(&session)["history"]
             .as_array()
@@ -1825,7 +1828,7 @@ fn configuration_timeout_preserves_late_confirmation_without_retrying_or_restart
     )
     .write_to(&mut client.socket)
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while !rig.path.join("native/config-waiting").exists() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(10));
@@ -1904,7 +1907,7 @@ fn cancellation_pauses_the_durable_queue_until_explicit_resume() {
         client.call("pane.queue.resume", params.clone()),
         client.call("pane.queue.resume", params)
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let ended = rig
             .database_probe()
@@ -1937,7 +1940,7 @@ fn terminal_spawn_refusal_finishes_the_native_request_without_restarting_the_age
         "pane.prompt",
         json!({"paneId":pane,"text":"terminal-missing","idempotencyKey":"missing"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let ended = rig
             .database_probe()
@@ -1983,7 +1986,7 @@ fn a_lost_output_page_preserves_pending_permission_and_declares_the_gap() {
     );
     client.wait_state(&pane, "working");
     rig.kill_engine();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while !rig.path.join("native/overflow.done").exists() {
         assert!(
             Instant::now() < deadline,
@@ -2090,7 +2093,7 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
         .iter()
         .find(|i| json!(i.pid) == before["pid"])
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let Response::PendingRequests {
             items,
@@ -2165,7 +2168,7 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
         "pane.prompt",
         json!({"paneId":pane,"text":"permission","idempotencyKey":"auto"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         assert!(
             client.section("requests").is_empty(),
@@ -2400,7 +2403,7 @@ fn a_turn_that_emits_then_pauses_and_resumes_never_becomes_a_no_output_warning()
         .as_str()
         .unwrap()
         .to_owned();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let thought_arrived = client.call("pane.transcript", json!({"paneId":pane}))["items"]
             .as_array()
@@ -2446,7 +2449,7 @@ fn a_turn_that_emits_then_pauses_and_resumes_never_becomes_a_no_output_warning()
         b"resume",
     )
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let transcript = client.call("pane.transcript", json!({"paneId":pane}));
         let resumed = transcript["items"]
@@ -2530,7 +2533,7 @@ fn wait_for_silent_prompt_receipt(rig: &Rig, pane: &str, session: &str) {
         .path
         .join("native")
         .join(format!("silent-no-output-{session}.started"));
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let bytes_reached_process = rig.database_probe().agent_outbox_empty(pane).unwrap();
         let harness_received_prompt = marker.exists();
@@ -2565,7 +2568,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     )["workspace"]["workspaceId"]
         .clone();
     let pane = client.call("pane.create",json!({"workspaceId":workspace,"mode":"agent","harness":"auth-test","idempotencyKey":"auth-pane"}))["paneId"].as_str().unwrap().to_owned();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while client.pane(&pane)["phrase"] != "Sign-in required" {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
@@ -2598,7 +2601,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
             .iter()
             .any(|value| value == "--require-login")
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while !client.pane(&pane)["agent"]["sessionId"].is_string() {
         assert!(
             Instant::now() < deadline,
@@ -2786,7 +2789,7 @@ fn start_agent_case(rig: &Rig) -> (Client, String, Value) {
     )["workspace"]["workspaceId"]
         .clone();
     let pane = client.call("pane.create", json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent","idempotencyKey":Uuid::new_v4().to_string()}))["paneId"].as_str().unwrap().to_owned();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let ready = loop {
         let view = client.pane(&pane);
         if view["agent"]["sessionId"].is_string() {
@@ -2890,7 +2893,7 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
     .stdout(Stdio::null())
     .spawn()
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let restored = loop {
         let view = client.pane(&pane);
         if view["generation"].as_u64().unwrap() > before["generation"].as_u64().unwrap()
@@ -2955,7 +2958,7 @@ fn persistent_per_pane_poll_failure_does_not_starve_the_next_agent() {
         "pane.prompt",
         json!({"paneId":survivor,"text":"later-pane-still-serves","idempotencyKey":"poll-isolation"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let served = rig.native_session(&survivor_session)["history"]
             .as_array()
@@ -2990,7 +2993,7 @@ fn observed_model_refusal_is_plain_durable_and_does_not_guess_from_generic_error
         "pane.prompt",
         json!({"paneId":pane,"text":"refuse-disabled-model","idempotencyKey":"disabled-model"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let transcript = loop {
         let transcript = client.call("pane.transcript", json!({"paneId":pane}));
         if transcript["items"]
@@ -3026,7 +3029,7 @@ fn observed_model_refusal_is_plain_durable_and_does_not_guess_from_generic_error
         "pane.config.set",
         json!({"paneId":pane,"configId":"model","value":"model-b","idempotencyKey":"choose-model-b"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let pane_view = client.pane(&pane);
         let selected = pane_view["agent"]["options"]
@@ -3048,7 +3051,7 @@ fn observed_model_refusal_is_plain_durable_and_does_not_guess_from_generic_error
         "pane.prompt",
         json!({"paneId":pane,"text":"refuse-generic-error","idempotencyKey":"generic-error"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let transcript = loop {
         let transcript = client.call("pane.transcript", json!({"paneId":pane}));
         if transcript["items"]
@@ -3153,7 +3156,7 @@ fn request_permission(client: &mut Client, pane: &str) -> Value {
         "pane.prompt",
         json!({"paneId":pane,"text":"permission-null","idempotencyKey":"permission-prompt"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let (_, parts) = client.snapshot();
         if let Some(question) = parts
@@ -3222,7 +3225,7 @@ fn restart_supervisor_and_assert_load(
     .stdout(Stdio::null())
     .spawn()
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let view = client.pane(pane);
         if view["generation"].as_u64().unwrap() > ready_generation && view["state"] == "idle" {
@@ -3301,7 +3304,7 @@ fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
         "pane.prompt",
         json!({"paneId":pane,"text":"elicitation","idempotencyKey":"form-prompt"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let form = loop {
         let (_, parts) = client.snapshot();
         if let Some(form) = parts
@@ -3341,7 +3344,7 @@ fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
         "pane.prompt",
         json!({"paneId":pane,"text":"slow","idempotencyKey":"slow-prompt"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while client.pane(pane)["state"] != "working" {
         assert!(Instant::now() < deadline, "slow turn did not start");
         thread::sleep(Duration::from_millis(20));
@@ -3366,7 +3369,7 @@ fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
         "pane.prompt",
         json!({"paneId":pane,"text":"tools","idempotencyKey":"native-tools"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let transcript = client.call("pane.transcript", json!({"paneId":pane}));
         let has_terminal = transcript["items"].as_array().unwrap().iter().any(|item| {
@@ -3718,7 +3721,7 @@ fn editor_line_comment_is_one_durable_task_change_request() {
         .as_str()
         .unwrap()
         .to_owned();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while native_prompt_count(&lifecycle.rig, &session, expected) != 1 {
         assert!(
             Instant::now() < deadline,
@@ -3830,7 +3833,7 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
     assert_eq!(first["spawn"]["argv"], json!(["rust-analyzer"]));
     assert_eq!(first["spawn"]["kind"], "pipes_lsp");
     let instance_id = first["instance_id"].clone();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while rig.database_probe().event_count("lsp.diagnostics").unwrap() == 0 {
         assert!(
             Instant::now() < deadline,
@@ -4055,7 +4058,7 @@ fn every_editor_revision_is_synchronized_with_the_live_language_server() {
 }
 
 fn wait_for_lsp_revision(rig: &Rig, revision: &str) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         if rig
             .database_probe()
@@ -4074,7 +4077,7 @@ fn wait_for_lsp_revision(rig: &Rig, revision: &str) {
 }
 
 fn wait_lsp_ready(client: &mut Client, workspace: &str, generation: u64) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let result = client.call(
             "lsp.status",
@@ -4715,10 +4718,10 @@ impl Client {
     fn new_with_capabilities(path: PathBuf, capabilities: Value) -> Self {
         let socket = UnixStream::connect(path).unwrap();
         socket
-            .set_read_timeout(Some(Duration::from_secs(10)))
+            .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
             .unwrap();
         socket
-            .set_write_timeout(Some(Duration::from_secs(10)))
+            .set_write_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
             .unwrap();
         let mut client = Self {
             socket,
@@ -4809,7 +4812,7 @@ impl Client {
             .as_str()
             .unwrap()
             .to_owned();
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         while self.pane(&pane)["pid"].is_null() {
             assert!(Instant::now() < deadline);
             thread::sleep(Duration::from_millis(10));
@@ -5058,7 +5061,7 @@ fn backpressured_subscriber_survives_an_answer_from_a_second_subscriber() {
             "idempotencyKey":"backpressure-prompt",
         }),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let request = loop {
         if let Some(entry) = answerer
             .section("requests")
@@ -5083,7 +5086,7 @@ fn backpressured_subscriber_survives_an_answer_from_a_second_subscriber() {
 
     // This exceeds the former per-write deadline while remaining far below
     // the contractual 8 MiB connection budget.
-    thread::sleep(Duration::from_secs(6));
+    thread::sleep(BACKPRESSURE_OBSERVATION_WINDOW);
     observer.call("engine.status", json!({}));
     assert!(observer.messages.iter().any(|frame| {
         let Frame::Json(bytes) = frame else {
@@ -5102,7 +5105,7 @@ fn reconnect_replays_screen_and_duplicate_input_is_not_typed_twice() {
     let input = json!({"paneId":pane,"bytes":STANDARD.encode(b"printf x >> once; printf 'UNIQUE_OUTPUT_42\\n'\n"),"idempotencyKey":"input-1"});
     let receipt = client.call("pane.input", input.clone());
     assert_eq!(client.call("pane.input", input), receipt);
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let (info, frames) = loop {
         let replay = client.tail(&pane);
         let bytes: Vec<_> = replay
@@ -5171,10 +5174,10 @@ impl Phone {
     fn connect(address: &str) -> Self {
         let stream = std::net::TcpStream::connect(address).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(10)))
+            .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
             .unwrap();
         stream
-            .set_write_timeout(Some(Duration::from_secs(10)))
+            .set_write_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
             .unwrap();
         let (socket, _) =
             tokio_tungstenite::tungstenite::client(format!("ws://{address}/"), stream).unwrap();
@@ -5428,7 +5431,7 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
     let dispatched = client.call("task.dispatch", params.clone());
     assert_eq!(client.call("task.dispatch", params), dispatched);
     let pane = dispatched["paneId"].as_str().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let shown = loop {
         let shown = client.call(
             "task.show",
@@ -5531,7 +5534,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     assert_eq!(task["state"], "in_progress");
     assert_eq!(task["ownerPaneId"], pane);
 
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let shown = loop {
         let shown = client.call(
             "task.show",
@@ -5586,7 +5589,7 @@ fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch(
         }),
     );
     let pane = dispatched["paneId"].as_str().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let shown = loop {
         let shown = client.call(
             "task.show",
@@ -5664,7 +5667,7 @@ fn task_next_restarts_the_same_pane_in_the_claimed_worktree() {
         "pane.prompt",
         json!({"paneId":pane,"text":"task-claim","idempotencyKey":"pull-turn"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let shown = client.call(
             "task.show",
@@ -5722,7 +5725,7 @@ fn two_idle_panes_claim_one_task_exactly_once() {
             json!({"paneId":pane,"text":"task-claim","idempotencyKey":key}),
         );
     }
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let shown = client.call(
             "task.show",
@@ -5781,7 +5784,7 @@ fn appoint_chief(rig: &Rig, human: &mut Client, pane: &str) -> String {
         "pane.role.set",
         json!({"paneId":pane,"role":"chief","idempotencyKey":"appoint-lead"}),
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let session = loop {
         let current = human.pane(pane);
         let session = current["agent"]["sessionId"].as_str().unwrap_or_default();
@@ -6317,7 +6320,7 @@ fn cancelled_dependency_requires_a_decision(lifecycle: &mut TaskLifecycleRig, ac
         "cancelled",
         "cancel-dependency",
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let shown = lifecycle.human.call(
             "task.show",
@@ -6347,7 +6350,7 @@ fn wait_for_retry(lifecycle: &mut TaskLifecycleRig, active: &Task, count: u32) {
         .database_probe()
         .make_task_retry_due(&lifecycle.workspace, &active.task_id)
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let shown = lifecycle.human.call(
             "task.show",
@@ -6390,7 +6393,7 @@ fn wait_for_external_escalation(lifecycle: &mut TaskLifecycleRig, active: &Task)
         .database_probe()
         .make_task_retry_due(&lifecycle.workspace, &active.task_id)
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let shown = lifecycle.human.call(
             "task.show",
@@ -6805,7 +6808,7 @@ fn supervisor_overflow_during_engine_outage_produces_an_explicit_replay_gap() {
     client.call("pane.input",json!({"paneId":pane,"bytes":STANDARD.encode(b"sleep 0.2; head -c 9437184 /dev/zero; printf done > overflow.done\n"),"idempotencyKey":"overflow-input"}));
     drop(client);
     rig.kill_engine();
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while fs::read(rig.path.join("overflow.done")).ok().as_deref() != Some(b"done") {
         assert!(
             Instant::now() < deadline,
@@ -6816,7 +6819,7 @@ fn supervisor_overflow_during_engine_outage_produces_an_explicit_replay_gap() {
     rig.start();
     let mut client = rig.client();
     // Wait until the retained output has been durably ingested by the engine.
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let (snapshot, _) = client.tail(&pane);
         if snapshot["nextOffset"]

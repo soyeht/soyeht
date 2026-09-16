@@ -19,6 +19,10 @@ use std::{
     },
 };
 
+// The fake waits for a test-controlled release signal. A larger failure
+// budget does not delay a passing run.
+pub(crate) const FIXTURE_RELEASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub struct Runtime {
     settings: Settings,
     output: Mutex<io::Stdout>,
@@ -193,7 +197,7 @@ impl Runtime {
             let runtime = self.clone();
             std::fs::write(self.settings.directory.join("config-waiting"), b"ready").unwrap();
             std::thread::spawn(move || {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+                let deadline = std::time::Instant::now() + FIXTURE_RELEASE_TIMEOUT;
                 while !runtime.settings.directory.join("config-release").exists() {
                     if std::time::Instant::now() >= deadline {
                         return;

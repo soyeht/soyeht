@@ -1,4 +1,4 @@
-use crate::{Message, Runtime};
+use crate::{FIXTURE_RELEASE_TIMEOUT, Message, Runtime};
 use serde_json::{Value, json};
 use std::{
     sync::{
@@ -68,7 +68,7 @@ fn permission_turn(
             b"waiting",
         )
         .expect("fake permission receipt marker");
-        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let deadline = std::time::Instant::now() + FIXTURE_RELEASE_TIMEOUT;
         while !runtime
             .settings
             .directory

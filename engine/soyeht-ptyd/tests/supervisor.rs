@@ -11,6 +11,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+// Positive asynchronous assertions may use the full failure budget; passing
+// runs stop as soon as the expected signal arrives.
+const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
+
 struct Daemon {
     child: Child,
     directory: PathBuf,
@@ -37,7 +41,7 @@ impl Daemon {
     }
 
     fn connect(&self, generation: u64) -> Client {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         loop {
             match Client::connect(&self.directory.join("ptyd.sock"), generation) {
                 Ok(client) => return client,
@@ -85,7 +89,7 @@ fn input(client: &mut Client, id: &str, text: &str) {
 }
 
 fn wait_text(client: &mut Client, id: &str, from: &mut u64, needle: &str) -> String {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let mut all = Vec::new();
     loop {
         let Response::Output(output) = client
@@ -216,7 +220,7 @@ fn killing_a_command_preserves_its_output_until_explicit_release() {
             Response::Ok
         ));
     }
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let Response::Output(output) = client
             .request(Request::Drain {
@@ -296,7 +300,7 @@ fn output_overflow_is_explicit_and_does_not_block_the_child() {
     drop(client);
     thread::sleep(Duration::from_millis(500));
     let mut client = daemon.connect(2);
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let gap = loop {
         let Response::Output(output) = client
             .request(Request::Drain {
@@ -405,7 +409,7 @@ fn assert_private_diagnostic(daemon: &Daemon, instance_id: &str) {
         .directory
         .join("harness-logs")
         .join(format!("{instance_id}.stderr.log"));
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while !fs::read_to_string(&log)
         .unwrap()
         .contains("private diagnostic")
@@ -593,7 +597,7 @@ fn killing_ptyd_kills_a_pipe_harness_that_ignores_stdin_eof() {
     assert_ne!(guardian, instance.pid);
     daemon.child.kill().unwrap();
     daemon.child.wait().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     for pid in [instance.pid, guardian] {
         loop {
             let status = Command::new("ps")
@@ -620,7 +624,7 @@ fn pipe_guard_preserves_native_exit_code_and_reports_spawn_failure() {
     config.kind = ProcessKind::PipesAcp;
     config.argv = vec!["/bin/sh".into(), "-c".into(), "exit 7".into()];
     let instance = spawn(&mut client, config.clone());
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let Response::Instances(instances) = client.request(Request::List).unwrap() else {
             panic!("expected list");

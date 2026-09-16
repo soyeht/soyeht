@@ -15,6 +15,10 @@ use std::{
 };
 use uuid::Uuid;
 
+// Positive asynchronous assertions may use the full failure budget; passing
+// runs stop as soon as the expected signal arrives.
+const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
+
 struct Rig {
     path: PathBuf,
     engine: Child,
@@ -39,7 +43,7 @@ impl Rig {
             .spawn()
             .unwrap();
         let rig = Self { path, engine, ptyd };
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         while soyeht_cli::Client::connect(&rig.path).is_err() {
             assert!(Instant::now() < deadline);
             thread::sleep(Duration::from_millis(10));
@@ -120,7 +124,7 @@ fn assert_bound_loop_disabled(rig: &Rig, pane: &str, binding: &str) {
 }
 
 fn wait_for_agent_options(rig: &Rig) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let list = rig.command(&["pane", "list"]);
         let current = &list["items"][0];
@@ -263,7 +267,7 @@ fn cli_opens_edits_searches_and_reads_history_from_a_real_editor_pane() {
         rig.command(&["file", "search", workspace, "two"])["items"][0]["path"],
         "note.txt"
     );
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let history = loop {
         let history = rig.command(&["file", "history", file]);
         if !history["items"].as_array().unwrap().is_empty() {
@@ -499,7 +503,7 @@ fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
             "ask"
         ])
     );
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while rig.command(&["pane", "list"])["items"][0]["state"] != "waiting_for_you" {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
