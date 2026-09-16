@@ -268,6 +268,15 @@ means the environment changed enough to obscure the effect being attributed. Thi
 declared after the three-pair control and applies only to future runs. Load average remains recorded
 as context rather than replacing the capture-off arm measured by the same process and clock.
 
+Four observation sets now show a pattern when indexed by the directly measured capture-off
+median rather than load average. The later full gate at `a97bab7` passed from 10.498 milliseconds.
+The three cross-revision pairs ran between 10.503 and 13.470 milliseconds, and the head's median
+increase was never greater than the base's. Current main `2af9040` passed on its first attempt from
+10.468 milliseconds. The only failure was the 14.16 percent increase from 23.133 milliseconds,
+the only set whose capture-off median was more than twice the roughly 10 to 13 millisecond regime.
+With four sets and one failure, this is an observed pattern, not a threshold: it neither locates
+where the behaviour changes nor establishes why the high-baseline run failed.
+
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
 screen lines, cursor position, foreground process and a bounded bytes-per-second measure.
