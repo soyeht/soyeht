@@ -223,7 +223,8 @@ a coarse scheduling-sensitive guard: a failure requires investigation and is not
 that capture regressed. A future absolute-delta limit must be predeclared before the change it
 evaluates rather than calibrated from this observed sample.
 
-A later gate run under sustained machine load reported a 14.16 percent median increase. A
+A later gate run under sustained machine load reported a 14.16 percent median increase from a
+23.133 millisecond capture-off median. A
 cross-revision control then alternated three separately built base and head binaries in one time
 window. Base/head median increases were 4.29/0.99, 3.57/2.04 and 1.50/1.19 percent: no head
 median regression was observed, and the head increase was below the base increase in every pair.
