@@ -130,9 +130,13 @@ fn oracle_reaches_the_ceiling_and_always_unknown_reaches_the_floor() {
 #[test]
 fn candidate_ranking_refuses_materially_different_coverage() {
     let full = evaluate(&ScreenOracle, &fixture(70, 70)).unwrap();
+    let ninety_five = evaluate(&ScreenOracle, &fixture(70, 75)).unwrap();
+    let just_below_ninety_five = evaluate(&ScreenOracle, &fixture(70, 76)).unwrap();
     let ninety = evaluate(&ScreenOracle, &fixture(70, 80)).unwrap();
     let eighty = evaluate(&ScreenOracle, &fixture(70, 90)).unwrap();
     assert!(full.can_rank_against(&full));
+    assert!(full.can_rank_against(&ninety_five));
+    assert!(!full.can_rank_against(&just_below_ninety_five));
     assert!(!full.can_rank_against(&ninety));
     assert!(!ninety.can_rank_against(&eighty));
 }
@@ -153,6 +157,8 @@ fn gaps_are_attributed_only_when_labels_on_both_sides_agree() {
         .find(|state| state.state == PaneState::Idle)
         .unwrap();
     assert_eq!(idle.time_coverage.as_ref().unwrap().value, Some(1.0));
+    assert_eq!(idle.time_coverage.as_ref().unwrap().numerator, 30);
+    assert_eq!(idle.time_coverage.as_ref().unwrap().denominator, 30);
 }
 
 #[test]

@@ -405,6 +405,15 @@ fn score_coverage(
             state.lost_ms = state.lost_ms.saturating_add(duration);
         } else {
             metrics.unclassified_gap_ms = metrics.unclassified_gap_ms.saturating_add(duration);
+            // The label before the gap owns this interval in the ordinary
+            // piecewise timeline. Once the labels around the gap disagree,
+            // however, assigning that missing interval to either state would
+            // guess. Remove it from the per-state denominator and retain it
+            // only as harness-level unclassified coverage loss.
+            if let Some(before) = before {
+                let state = metrics.state_mut(before);
+                state.total_ms = state.total_ms.saturating_sub(duration);
+            }
         }
     }
 }
