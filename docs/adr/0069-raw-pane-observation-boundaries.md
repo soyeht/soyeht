@@ -27,7 +27,9 @@ change and learned classifiers remain experiment candidates and do not ship in t
 
 Metrics report precision and recall per state and per harness, detection latency and unknown
 rate. `waiting_for_you` is reported separately and never hidden by an aggregate because a
-miss leaves a person blocked. An always-unknown control must score poorly.
+miss leaves a person blocked. An always-unknown control must score poorly, and a
+perfect-oracle control must reach the metric ceiling. Together they prove the scoring
+discriminates at both ends.
 
 ### Separate, passive capture
 
@@ -35,7 +37,11 @@ Experiment recording is a new persisted per-pane value, separate from terminal r
 recording. It defaults off for every pane and can be enabled only in the Dev profile. The
 pane shows recording state for the entire time it is active. Capture files remain beneath
 the Dev profile in a dedicated experiment directory; no recorder, export or hook path is
-available in another profile. Enabling capture does not imply export.
+available in another profile. Enabling capture does not imply export. Disabling capture
+stops collection immediately and offers to erase that pane's existing segments. A separate
+explicit erase action removes the entire experiment directory, including exports. Deletion
+never follows symlinks, reports what was removed, and a failure remains visible rather than
+being presented as successful withdrawal.
 
 The engine observes a copy of output only after the normal terminal stream has accepted it.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces
