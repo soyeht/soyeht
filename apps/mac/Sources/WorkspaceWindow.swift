@@ -745,13 +745,29 @@ private struct PaneCard: View {
         "This Dev-only experiment stores raw terminal text on this Mac. It can contain tokens, credentials, and private source."
       )
     }
-    .confirmationDialog(
-      "Keep the captured terminal data?", isPresented: $showingCaptureDeletion
-    ) {
-      Button("Delete captured data", role: .destructive) { deleteExperimentCaptureData() }
-      Button("Keep data", role: .cancel) { captureNotice = "Captured data kept on this Mac." }
-    } message: {
-      Text("Recording has stopped. Deletion applies only to this pane's experiment files.")
+    .sheet(isPresented: $showingCaptureDeletion) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x18) {
+        Text("Keep the captured terminal data?")
+          .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .semibold))
+        Text("Recording has stopped. Deletion applies only to this pane's experiment files.")
+          .font(MacTheme.chrome(MacTheme.TypeScale.control))
+          .foregroundStyle(MacTheme.secondary)
+        HStack {
+          Button("Keep data") {
+            captureNotice = "Captured data kept on this Mac."
+            showingCaptureDeletion = false
+          }
+          Spacer()
+          Button("Delete captured data", role: .destructive) {
+            showingCaptureDeletion = false
+            deleteExperimentCaptureData()
+          }
+          .keyboardShortcut(.defaultAction)
+        }
+      }
+      .padding(MacTheme.Space.x18)
+      .frame(width: 420)
+      .interactiveDismissDisabled()
     }
     .overlay(alignment: .topTrailing) {
       if showingAutomation {
@@ -781,7 +797,7 @@ private struct PaneCard: View {
       #if DEBUG
         if pane.mode == .terminal, let capture = pane.experimentCapture {
           if capture.on {
-            Label("Recording experiment", systemImage: "record.circle.fill")
+            Label("Recording terminal text", systemImage: "record.circle.fill")
               .foregroundStyle(MacTheme.danger)
               .accessibilityIdentifier("experiment-recording-\(pane.paneId)")
           } else if let failure = capture.failure {
