@@ -732,6 +732,8 @@ mod tests {
     const CADENCE_POLLS_PER_SAMPLE: usize = 30;
     const CADENCE_MAX_ATTEMPTS: usize = 10;
     const CADENCE_WARMUP_PAIRS: usize = 3;
+    const CADENCE_MEDIAN_PERCENT_LIMIT: u128 = 5;
+    const CADENCE_TAIL_MICROSECOND_LIMIT: u128 = 5_000;
     const CADENCE_FIXTURE_BYTES: usize = 13_367_794;
     const CADENCE_STEADY_BYTES: usize = 9_406_002;
     const CADENCE_WARMUP_DRAIN: Duration = Duration::from_millis(60);
@@ -773,14 +775,25 @@ mod tests {
             off_micros,
             on_micros,
         );
-        if !capture_is_not_faster(steady_off, steady_on) {
+        if !capture_difference_is_plausible(steady_off, steady_on) {
             eprintln!(
-                "capture cadence attempt={attempt} invalid: capture-on measured faster than capture-off after the declared warm-up"
+                "capture cadence attempt={attempt} invalid: capture-on was faster than capture-off beyond the predeclared noise bounds after the declared warm-up"
             );
             return false;
         }
-        assert!(percentile(steady_on, 1, 2) * 100 <= percentile(steady_off, 1, 2) * 105);
-        assert!(percentile(steady_on, 95, 100) <= percentile(steady_off, 95, 100) + 5_000);
+        let off_median = percentile(steady_off, 1, 2);
+        let on_median = percentile(steady_on, 1, 2);
+        let off_p95 = percentile(steady_off, 95, 100);
+        let on_p95 = percentile(steady_on, 95, 100);
+        assert!(
+            on_median.saturating_mul(100)
+                <= off_median.saturating_mul(100 + CADENCE_MEDIAN_PERCENT_LIMIT)
+        );
+        assert!(on_p95 <= off_p95.saturating_add(CADENCE_TAIL_MICROSECOND_LIMIT));
+        eprintln!(
+            "capture cadence accepted attempt={attempt} invalid_attempts={} steady_off_median_us={off_median} steady_on_median_us={on_median} steady_off_p95_us={off_p95} steady_on_p95_us={on_p95}",
+            attempt - 1
+        );
         true
     }
 
@@ -1333,20 +1346,37 @@ mod tests {
         sorted[index]
     }
 
-    fn capture_is_not_faster(off_micros: &[u128], on_micros: &[u128]) -> bool {
-        percentile(on_micros, 1, 2) >= percentile(off_micros, 1, 2)
-            && percentile(on_micros, 95, 100) >= percentile(off_micros, 95, 100)
+    fn capture_difference_is_plausible(off_micros: &[u128], on_micros: &[u128]) -> bool {
+        let off_median = percentile(off_micros, 1, 2);
+        let on_median = percentile(on_micros, 1, 2);
+        let off_p95 = percentile(off_micros, 95, 100);
+        let on_p95 = percentile(on_micros, 95, 100);
+        on_median.saturating_mul(100)
+            >= off_median.saturating_mul(100 - CADENCE_MEDIAN_PERCENT_LIMIT)
+            && on_p95.saturating_add(CADENCE_TAIL_MICROSECOND_LIMIT) >= off_p95
     }
 
     #[test]
-    fn cadence_sanity_rejects_an_impossibly_faster_capture_run() {
-        assert!(!capture_is_not_faster(
+    fn cadence_sanity_keeps_noise_and_rejects_only_implausible_speedups() {
+        assert!(capture_difference_is_plausible(
             &[331, 333, 345, 352],
             &[329, 330, 341, 350]
         ));
-        assert!(capture_is_not_faster(
+        assert!(capture_difference_is_plausible(
             &[321, 323, 327, 331],
             &[326, 329, 333, 353]
+        ));
+        assert!(capture_difference_is_plausible(
+            &[10_000, 10_000, 10_000, 20_000],
+            &[9_500, 9_500, 9_500, 15_000]
+        ));
+        assert!(!capture_difference_is_plausible(
+            &[10_000, 10_000, 10_000, 10_000],
+            &[9_000, 9_000, 9_000, 9_000]
+        ));
+        assert!(!capture_difference_is_plausible(
+            &[10_000, 10_000, 10_000, 20_000],
+            &[10_000, 10_000, 10_000, 10_000]
         ));
     }
 

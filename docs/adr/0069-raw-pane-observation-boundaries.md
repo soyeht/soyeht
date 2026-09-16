@@ -245,8 +245,15 @@ thirty capture-off and capture-on polls, and each poll hands off one distinct VT
 keeps scheduler drift from landing on one complete series. The first three raw samples are
 declared warm-up and discarded; the seven steady samples used for the acceptance bounds total
 9,406,002 bytes and 210 projections. The complete raw fixture totals 13,367,794 bytes and 300
-projections. If capture-on is faster than capture-off at either the steady median or p95, the
-measurement is invalid and must be rerun rather than reported. The test permits at most ten
+projections. The sanity guard used to invalidate an attempt whenever capture-on was faster than
+capture-off at either the steady median or p95. That sign-only rule selected the positive half of
+near-zero noise and biased accepted overhead upward. From the next run forward, the guard uses
+magnitude: capture-on invalidates an attempt only when it beats capture-off by more than the
+already declared 5 percent median allowance or 5 millisecond p95 allowance in the opposite
+direction. A smaller apparent speedup remains a valid measured sample. These symmetric bounds
+were fixed before exercising the replacement guard; an effect smaller than the experiment's
+existing allowances cannot establish that setup failed. Every accepted result records its attempt
+and the number of earlier invalid attempts beside its median and p95. The test permits at most ten
 complete attempts; a valid attempt outside either performance bound fails immediately and is
 never retried. A fixed clock and an empty in-memory local-server scan keep unrelated discovery
 out of every retry. This isolates the per-byte shared handoff and bounded-channel cost that
@@ -288,6 +295,14 @@ poll would silently make that absolute criterion inert again. The 5 percent medi
 a coarse scheduling-sensitive guard: a failure requires investigation and is not by itself proof
 that capture regressed. A future absolute-delta limit must be predeclared before the change it
 evaluates rather than calibrated from this observed sample.
+
+Every positive capture delta published before the magnitude guard was admitted by the old
+sign-only filter. Those deltas are therefore upper bounds on overhead rather than unbiased point
+estimates. The full gate for `42b4511` invalidated one of two attempts before accepting its result;
+the gate for `ca58a278` invalidated four of five. Earlier accepted measurements did not preserve
+their invalid-attempt counts, so the record does not infer zero attempts for them. Retrying after
+the sanity guard rejects an invalid setup remains distinct from retrying after a valid sample
+fails an acceptance bound; the latter is never allowed.
 
 A later gate run under sustained machine load reported a 14.16 percent median increase from a
 23.133 millisecond capture-off median. A
