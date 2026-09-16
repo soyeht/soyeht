@@ -121,6 +121,11 @@ hook channel and capability digest itself. The raw capability is never written t
 conversation. This provenance is evidence about the connection and current engine state, never
 a claim supplied by the payload.
 
+An exact retry is resolved from its durable idempotency receipt before the engine looks up the
+current session capability. A retry that arrives after capability rotation therefore returns the
+original result without writing another label or attributing it to the replacement generation.
+A new request carrying the retired capability has no receipt and is rejected as unknown.
+
 The capability closes the convenient and accidental path by which an evaluated agent could
 write its own labels. It is not a security boundary against a determined process running as the
 same OS user: that process can inspect the session configuration or arguments and then imitate

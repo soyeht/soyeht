@@ -108,6 +108,10 @@ impl Core {
     pub(crate) fn record_hook_event(&mut self, connection: &str, raw: &Value) -> Result<Value> {
         let params: HookLabelParams = serde_json::from_value(raw.clone())
             .map_err(|_| errors::invalid("Invalid experiment hook parameters"))?;
+        // An exact transport retry may outlive this native session's capability.
+        // Return its durable receipt before resolving the current capability: the
+        // original label remains attributed to its original generation, and the
+        // retry never records a second label against the replacement session.
         if let Some(result) = self.repeated_mutation(connection, "pane.experiment.hook", raw)? {
             return Ok(result);
         }
