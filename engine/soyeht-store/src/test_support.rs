@@ -89,6 +89,18 @@ impl DatabaseProbe {
         ))
     }
 
+    pub fn editor_draft(&self, file_id: &str) -> Result<Option<String>> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT draft_text FROM editor_files WHERE file_id=?1",
+                [file_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
     pub fn make_task_retry_due(&self, workspace_id: &str, task_id: &str) -> Result<()> {
         let changed = self.connection.execute(
             "UPDATE task_block_retries SET due_ms=0 WHERE workspace_id=?1 AND task_id=?2",

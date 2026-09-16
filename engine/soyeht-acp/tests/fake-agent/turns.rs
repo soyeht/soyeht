@@ -62,6 +62,25 @@ fn permission_turn(
     text: &str,
     cancelled: &AtomicBool,
 ) -> String {
+    if text == "permission-gated" {
+        std::fs::write(
+            runtime.settings.directory.join("permission.waiting"),
+            b"waiting",
+        )
+        .expect("fake permission receipt marker");
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !runtime
+            .settings
+            .directory
+            .join("permission.release")
+            .exists()
+        {
+            if cancelled.load(Ordering::SeqCst) || std::time::Instant::now() >= deadline {
+                return String::new();
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
     if matches!(text, "permission-delayed" | "permission-overflow") {
         thread::sleep(Duration::from_millis(500));
     }

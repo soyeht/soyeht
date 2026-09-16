@@ -124,10 +124,12 @@ impl Core {
 
     pub fn advance_editor(&mut self) -> Result<()> {
         let now = self.now_ms();
-        for file_id in self.editor.due_saves(now) {
-            if let Err(error) = self.advance_editor_save(&file_id, now) {
-                self.editor.defer_save(&file_id, now);
-                log_editor_failure("save", &file_id, &error);
+        if !pause_editor_autosave(&self.directory) {
+            for file_id in self.editor.due_saves(now) {
+                if let Err(error) = self.advance_editor_save(&file_id, now) {
+                    self.editor.defer_save(&file_id, now);
+                    log_editor_failure("save", &file_id, &error);
+                }
             }
         }
         for file_id in self.editor.due_watches(now) {
@@ -299,6 +301,16 @@ impl Core {
         };
         Ok(FileAuthor { actor, name })
     }
+}
+
+#[cfg(debug_assertions)]
+fn pause_editor_autosave(directory: &std::path::Path) -> bool {
+    directory.join("test-pause-editor-autosave").is_file()
+}
+
+#[cfg(not(debug_assertions))]
+fn pause_editor_autosave(_: &std::path::Path) -> bool {
+    false
 }
 
 fn parameters<T: serde::de::DeserializeOwned>(params: &Value, name: &str) -> Result<T> {
