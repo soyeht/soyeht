@@ -2,7 +2,7 @@
 
 use soyeht_pane_state::{
     Confidence, Detection, Detector, Error, GroundTruthLabel, HarnessIdentity, ObservationFrame,
-    RecordedRow, RegexBaseline,
+    ObservationReason, RecordedRow, RegexBaseline,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -12,6 +12,7 @@ fn frame(harness: &str, title: &str, screen: &str) -> ObservationFrame {
         harness: HarnessIdentity::known(harness, Some("1".into())).unwrap(),
         timestamp_ms: 1_800_000_000_000,
         sequence: 1,
+        reason: ObservationReason::VisualChange,
         osc_title: (!title.is_empty()).then(|| title.into()),
         lines: screen.lines().map(str::to_owned).collect(),
         cursor: None,

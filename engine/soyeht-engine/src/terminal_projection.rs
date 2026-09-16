@@ -1,11 +1,12 @@
 use crate::errors::{self, Result};
 use soyeht_pane_state::{
     CursorPosition, HarnessIdentity, MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, MAX_TITLE_BYTES,
-    ObservationFrame,
+    ObservationFrame, ObservationReason,
 };
 use std::collections::VecDeque;
 
 const BYTE_RATE_WINDOW_MS: i64 = 1_000;
+const STATIC_ACTIVITY_HEARTBEAT_MS: i64 = 1_000;
 
 #[derive(Default)]
 struct TitleCallbacks {
@@ -35,6 +36,7 @@ pub struct TerminalProjection {
     cols: u16,
     next_sequence: u64,
     previous: Option<ScreenSnapshot>,
+    last_emitted_at_ms: Option<i64>,
     byte_samples: VecDeque<(i64, u64)>,
 }
 
@@ -54,6 +56,7 @@ impl TerminalProjection {
             harness: HarnessIdentity::Unknown,
             timestamp_ms: 0,
             sequence: next_sequence,
+            reason: ObservationReason::VisualChange,
             osc_title: None,
             lines: Vec::new(),
             cursor: None,
@@ -67,6 +70,7 @@ impl TerminalProjection {
             cols,
             next_sequence,
             previous: None,
+            last_emitted_at_ms: None,
             byte_samples: VecDeque::new(),
         })
     }
@@ -86,10 +90,16 @@ impl TerminalProjection {
                 "Observation timestamp must not be negative",
             ));
         }
-        self.record_bytes(timestamp_ms, bytes.len())?;
+        let clock_rolled_back = self.record_bytes(timestamp_ms, bytes.len())?;
         self.parser.process(bytes);
         let snapshot = self.snapshot();
-        if self.previous.as_ref() == Some(&snapshot) {
+        let projection_changed = self.previous.as_ref() != Some(&snapshot);
+        let static_activity_due = !bytes.is_empty()
+            && (clock_rolled_back
+                || self.last_emitted_at_ms.is_none_or(|last| {
+                    timestamp_ms.saturating_sub(last) >= STATIC_ACTIVITY_HEARTBEAT_MS
+                }));
+        if !projection_changed && !static_activity_due {
             return Ok(None);
         }
         let sequence = self.next_sequence;
@@ -97,11 +107,17 @@ impl TerminalProjection {
             .checked_add(1)
             .ok_or_else(|| errors::internal("Observation sequence exhausted"))?;
         self.previous = Some(snapshot.clone());
+        self.last_emitted_at_ms = Some(timestamp_ms);
         let frame = ObservationFrame {
             pane_id: self.pane_id.clone(),
             harness: HarnessIdentity::Unknown,
             timestamp_ms,
             sequence,
+            reason: if projection_changed {
+                ObservationReason::VisualChange
+            } else {
+                ObservationReason::StaticActivity
+            },
             osc_title: snapshot.title,
             lines: snapshot.lines,
             cursor: Some(snapshot.cursor),
@@ -134,13 +150,14 @@ impl TerminalProjection {
         }
     }
 
-    fn record_bytes(&mut self, timestamp_ms: i64, byte_count: usize) -> Result<()> {
-        if self
+    fn record_bytes(&mut self, timestamp_ms: i64, byte_count: usize) -> Result<bool> {
+        let clock_rolled_back = self
             .byte_samples
             .back()
-            .is_some_and(|(previous, _)| timestamp_ms < *previous)
-        {
+            .is_some_and(|(previous, _)| timestamp_ms < *previous);
+        if clock_rolled_back {
             self.byte_samples.clear();
+            self.last_emitted_at_ms = None;
         }
         let byte_count = u64::try_from(byte_count)
             .map_err(|_| errors::internal("Terminal byte count exceeds the supported range"))?;
@@ -153,7 +170,7 @@ impl TerminalProjection {
         {
             self.byte_samples.pop_front();
         }
-        Ok(())
+        Ok(clock_rolled_back)
     }
 
     fn bytes_per_second(&self) -> u64 {
@@ -186,6 +203,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(first.sequence, 7);
+        assert_eq!(first.reason, ObservationReason::VisualChange);
         assert_eq!(first.osc_title.as_deref(), Some("build"));
         assert_eq!(first.lines[0], "hello");
         assert_eq!(first.lines[1], "world");
@@ -197,6 +215,21 @@ mod tests {
         let changed = projection.process(1_100, b"!").unwrap().unwrap();
         assert_eq!(changed.sequence, 8);
         assert_eq!(changed.lines[1], "world!");
+    }
+
+    #[test]
+    fn static_byte_activity_emits_once_per_second_but_absolute_idle_does_not() {
+        let mut projection = TerminalProjection::new("pane-1", 4, 20, 0).unwrap();
+        projection.process(1_000, b"hello").unwrap().unwrap();
+
+        assert_eq!(projection.process(1_500, b"\x1b[5Dhello").unwrap(), None);
+        let heartbeat = projection.process(2_000, b"\x1b[5Dhello").unwrap().unwrap();
+        assert_eq!(heartbeat.sequence, 1);
+        assert_eq!(heartbeat.reason, ObservationReason::StaticActivity);
+        assert_eq!(heartbeat.lines[0], "hello");
+        assert!(heartbeat.bytes_per_second > 0);
+
+        assert_eq!(projection.process(3_500, b"").unwrap(), None);
     }
 
     #[test]
