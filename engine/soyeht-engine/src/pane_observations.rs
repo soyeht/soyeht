@@ -64,14 +64,25 @@ impl ObservationQueue {
             return Ok(QueueOutcome::GapExtended);
         }
         if self.rows.len() == self.capacity {
+            let first = self
+                .rows
+                .front()
+                .ok_or_else(|| errors::internal("Full observation queue was empty"))?;
+            let first_timestamp_ms = first.timestamp_ms;
+            let first_sequence = first.sequence;
+            let dropped_observations = u64::try_from(self.rows.len())
+                .map_err(|_| errors::internal("Observation queue length is invalid"))?
+                .checked_add(1)
+                .ok_or(soyeht_pane_state::Error::InvalidGap)?;
+            self.rows.clear();
             self.gap = Some(ObservationGap {
                 pane_id: frame.pane_id,
                 harness: frame.harness,
-                first_timestamp_ms: frame.timestamp_ms,
+                first_timestamp_ms,
                 last_timestamp_ms: frame.timestamp_ms,
-                first_sequence: frame.sequence,
+                first_sequence,
                 last_sequence: frame.sequence,
-                dropped_observations: 1,
+                dropped_observations,
             });
             return Ok(QueueOutcome::GapExtended);
         }
@@ -676,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_queue_records_pressure_as_a_gap_before_later_frames() {
+    fn bounded_queue_makes_sustained_pressure_the_next_durable_row() {
         let mut queue = ObservationQueue::new(2);
         assert_eq!(queue.push(frame(0)).unwrap(), QueueOutcome::Queued);
         assert_eq!(queue.push(frame(1)).unwrap(), QueueOutcome::Queued);
@@ -684,14 +695,12 @@ mod tests {
         let mut rolled_back = frame(3);
         rolled_back.timestamp_ms -= 100;
         assert_eq!(queue.push(rolled_back).unwrap(), QueueOutcome::GapExtended);
-        assert_eq!(queue.pop(), Some(observation(0, false)));
-        assert_eq!(queue.pop(), Some(observation(1, false)));
         let Some(RecordedRow::Gap(gap)) = queue.pop() else {
             panic!("queue pressure did not leave a gap")
         };
-        assert_eq!(gap.first_sequence, 2);
+        assert_eq!(gap.first_sequence, 0);
         assert_eq!(gap.last_sequence, 3);
-        assert_eq!(gap.dropped_observations, 2);
+        assert_eq!(gap.dropped_observations, 4);
         assert!(gap.last_timestamp_ms < gap.first_timestamp_ms);
         gap.validate().unwrap();
         assert_eq!(queue.push(frame(4)).unwrap(), QueueOutcome::Queued);

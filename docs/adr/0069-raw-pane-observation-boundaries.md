@@ -29,7 +29,13 @@ Metrics report precision and recall per state and per harness, detection latency
 rate. `waiting_for_you` is reported separately and never hidden by an aggregate because a
 miss leaves a person blocked. An always-unknown control must score poorly, and a
 perfect-oracle control must reach the metric ceiling. Together they prove the scoring
-discriminates at both ends.
+discriminates at both ends. Coverage is reported beside precision and recall for every state
+and harness as retained observations divided by retained plus explicitly dropped observations.
+A dropped interval is attributed only where the surrounding ground-truth labels establish its
+state; otherwise it remains unclassified coverage loss rather than being guessed. Candidate
+results whose coverage differs by more than five percentage points are not ranked against one
+another. This prevents queue pressure from flattering a detector by removing the busiest
+intervals from its denominator.
 
 ### Separate, passive capture
 
@@ -61,16 +67,28 @@ weakening the check.
 The engine observes a copy of output only after the normal terminal stream has accepted it.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces
 the bytes sent to clients. A non-blocking per-pane handoff holds at most 32 observation frames;
-a dedicated writer performs segment writes and syncs. Pressure coalesces dropped observations
-into an explicit gap row rather than waiting or pretending the interval was quiet. Recorder
-failure disables experiment capture for that pane and publishes a visible reason; terminal
-output continues. The experiment projection is owned by the engine so collection does not
-depend on an attached or foreground client.
+a dedicated writer performs segment writes and syncs. On first saturation, every observation
+still waiting in memory and the overflowing observation become one explicit gap, making that
+gap the writer's next row rather than placing it behind the backlog. Further pressure extends
+the same bounded row until the writer takes it. A storage operation that never returns cannot
+promise crash durability, but once the writer can make one append, evidence of the loss lands
+before later observations. Pressure therefore cannot be replayed as a quiet interval or wait
+for saturation to end before leaving evidence. This deliberately discards up to 32 observations
+that had already reached the in-memory queue. An opening gap row followed by stale frames and a
+closing row would preserve more frames only when the process survives; a kill between the pair
+would leave an unclosed gap and make the fail-closed reader reject the segment. Losing the bounded
+queue is preferable to losing the file. Recorder failure disables experiment capture for that
+pane and publishes a visible reason; terminal output continues. The experiment projection is
+owned by the engine so collection does not depend on an attached or foreground client.
 
-Before cadence measurement, the acceptable bound is fixed: over ten paired runs of the same
-noisy-terminal fixture, capture may increase median engine poll duration by at most 5 percent
-and p95 duration by at most 5 milliseconds. The bounds are evaluated independently, so a fast
-median cannot hide a long-tail stall.
+Before cadence measurement, the acceptable bound is fixed: the measurand is wall-clock elapsed
+time for one complete `Core::poll_output` invocation, from function entry to return, using the
+same noisy-terminal fixture with capture off and on. Over ten paired runs, capture may increase
+the median duration by at most 5 percent and p95 duration by at most 5 milliseconds. The bounds
+are evaluated independently, so a fast median cannot hide a long-tail stall. This measures the
+shared loop that recording could slow. Terminal byte-to-client delivery is not the measurand
+because capture observes only a copy after the normal stream has accepted the bytes and cannot
+replace or rechunk that path.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
