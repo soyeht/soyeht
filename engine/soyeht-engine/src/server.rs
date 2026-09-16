@@ -362,7 +362,6 @@ async fn read_requests(
                     .map(|entry| entry.0)
             })
             .unwrap_or("unknown");
-        let pane_id = operation_pane_id(method, &request).map(str::to_owned);
         let request_id = request["id"].clone();
         let failed_handshake = request["method"] == "hello";
         let shared = Arc::clone(&core);
@@ -378,7 +377,6 @@ async fn read_requests(
             &operation_id,
             id,
             method,
-            pane_id.as_deref(),
             &outcome,
             started.elapsed().as_millis(),
         );
@@ -462,7 +460,6 @@ fn log_operation(
     operation: &str,
     connection: &str,
     method: &str,
-    pane_id: Option<&str>,
     outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
     duration_ms: u128,
 ) {
@@ -480,7 +477,6 @@ fn log_operation(
             operation,
             connection,
             method,
-            pane_id,
             status,
             kind.as_ref(),
             duration_ms,
@@ -501,7 +497,6 @@ fn operation_record(
     operation: &str,
     connection: &str,
     method: &str,
-    pane_id: Option<&str>,
     outcome: &str,
     kind: Option<&soyeht_protocol::ErrorKind>,
     duration_ms: u128,
@@ -518,20 +513,10 @@ fn operation_record(
         "operationId": operation,
         "connectionId": connection,
         "method": method,
-        "paneId": pane_id,
         "outcome": outcome,
         "kind": kind,
         "durationMs": duration_ms,
     })
-}
-
-fn operation_pane_id<'a>(method: &str, request: &'a Value) -> Option<&'a str> {
-    if !method.starts_with("pane.") {
-        return None;
-    }
-    let pane_id = request.get("params")?.get("paneId")?.as_str()?;
-    let parsed = uuid::Uuid::parse_str(pane_id).ok()?;
-    (parsed.hyphenated().to_string() == pane_id).then_some(pane_id)
 }
 
 #[cfg(test)]
@@ -545,7 +530,6 @@ mod tests {
             &operation,
             &connection,
             "untrusted-private-text",
-            None,
             "error",
             Some(&soyeht_protocol::ErrorKind::InvalidParams),
             12,
@@ -555,44 +539,9 @@ mod tests {
         assert_eq!(record["method"], "unknown");
         assert_eq!(record["kind"], "invalid_params");
         assert!(!record.to_string().contains("untrusted-private-text"));
-        let success = operation_record(
-            &operation,
-            &connection,
-            "pane.create",
-            None,
-            "reply",
-            None,
-            1,
-        );
+        let success = operation_record(&operation, &connection, "pane.create", "reply", None, 1);
         assert_eq!(success["method"], "pane.create");
         assert!(success["kind"].is_null());
-    }
-    #[test]
-    fn operation_log_adds_only_a_validated_pane_route() {
-        let pane_id = uuid::Uuid::new_v4().to_string();
-        let secret = "hook-capability-must-not-enter-the-log";
-        let request = serde_json::json!({
-            "method": "pane.stream.subscribe",
-            "params": {"paneId":pane_id,"capability":secret},
-        });
-        let routed = operation_pane_id("pane.stream.subscribe", &request);
-        let record = operation_record(
-            "operation",
-            "connection",
-            "pane.stream.subscribe",
-            routed,
-            "queued",
-            None,
-            2,
-        );
-        assert_eq!(record["paneId"], pane_id);
-        assert!(!record.to_string().contains(secret));
-
-        let uppercase = serde_json::json!({
-            "params": {"paneId":pane_id.to_uppercase(),"capability":secret},
-        });
-        assert!(operation_pane_id("pane.stream.subscribe", &uppercase).is_none());
-        assert!(operation_pane_id("usage.refresh", &request).is_none());
     }
     #[test]
     fn listener_refuses_public_lan_and_wildcard_addresses() {
