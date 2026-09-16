@@ -1320,6 +1320,7 @@ mod tests {
             sequence: 3,
             state: PaneState::WaitingForYou,
             source: StateSource::Hook,
+            provenance: soyeht_pane_state::GroundTruthProvenance::session_hook(1, "a".repeat(64)),
         };
         let (started_sender, started_receiver) = mpsc::sync_channel(1);
         let (result_sender, result_receiver) = mpsc::sync_channel(1);
@@ -1383,6 +1384,7 @@ mod tests {
             sequence: 1,
             state: PaneState::Working,
             source: StateSource::Protocol,
+            provenance: soyeht_pane_state::GroundTruthProvenance::protocol(1),
         };
 
         let error = recorder

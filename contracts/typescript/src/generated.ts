@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
+// Generated from contracts/protocol.json (sha256 b3fde6a399151997c5d6bc05f346fc719b5e8f3de05db152b319f2a4426fd28b). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -2906,6 +2906,18 @@ export interface HarnessEnvironmentVariable {
   "value": string;
 }
 
+export type ExperimentHookEvent = "UserPromptSubmit" | "PermissionRequest" | "PostToolUse" | "PostToolUseFailure" | "Stop";
+
+export interface PaneExperimentHookParams {
+  "event": ExperimentHookEvent;
+  "capability": string;
+  "idempotencyKey": Id;
+}
+
+export interface PaneExperimentHookResult {
+  "recorded": boolean;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -3027,6 +3039,7 @@ export interface Methods {
   "writing.beat.list": { params: WritingBeatListParams; result: WritingBeatListResult };
   "writing.beat.put": { params: WritingBeatPutParams; result: WritingBeatResult };
   "writing.beat.delete": { params: WritingBeatDeleteParams; result: WritingBeatResult };
+  "pane.experiment.hook": { params: PaneExperimentHookParams; result: PaneExperimentHookResult };
 }
 
 export interface Events {

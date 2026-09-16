@@ -865,6 +865,11 @@ mod tests {
         };
         let agent_names = names(agent.list());
         let chief_names = names(chief.list());
+        assert!(
+            TOOLS
+                .iter()
+                .all(|tool| tool.method != "pane.experiment.hook")
+        );
         assert!(agent_names.contains(&"task_next".into()));
         assert!(agent_names.contains(&"task_complete".into()));
         assert!(!agent_names.contains(&"task_dispatch".into()));

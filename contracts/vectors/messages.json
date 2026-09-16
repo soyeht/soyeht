@@ -11463,5 +11463,51 @@
         "skippedSourceNotice": "Some selected experiment segments were excluded because their dataset schema is unsupported. Delete the named pane's captured data to remove those segments."
       }
     }
+  },
+  {
+    "name": "value:ExperimentHookEvent",
+    "type": "ExperimentHookEvent",
+    "value": "Stop"
+  },
+  {
+    "name": "value:PaneExperimentHookParams",
+    "type": "PaneExperimentHookParams",
+    "value": {
+      "event": "Stop",
+      "capability": "0123456789abcdef0123456789abcdef",
+      "idempotencyKey": "hook-1"
+    }
+  },
+  {
+    "name": "value:PaneExperimentHookResult",
+    "type": "PaneExperimentHookResult",
+    "value": {
+      "recorded": true
+    }
+  },
+  {
+    "name": "request:pane.experiment.hook",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.experiment.hook",
+      "params": {
+        "event": "Stop",
+        "capability": "0123456789abcdef0123456789abcdef",
+        "idempotencyKey": "hook-1"
+      }
+    }
+  },
+  {
+    "name": "response:pane.experiment.hook",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "recorded": true
+      }
+    }
   }
 ]

@@ -343,6 +343,7 @@ impl Core {
             | "pane.experiment.set"
             | "pane.experiment.delete" => self.pane_edit(connection, method, params)?,
             "pane.experiment.export" => self.export_experiment(connection, params)?,
+            "pane.experiment.hook" => self.record_hook_event(connection, params)?,
             "pane.input" => self.pane_input(connection, params)?,
             "pane.yolo" => self.agent_yolo(connection, params)?,
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,

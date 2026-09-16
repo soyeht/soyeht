@@ -24,6 +24,7 @@ pub struct Client {
     next: u64,
     directory: PathBuf,
     binding: Option<String>,
+    client_name: &'static str,
 }
 pub struct Snapshot {
     pub metadata: StateSnapshotResult,
@@ -32,14 +33,22 @@ pub struct Snapshot {
 
 impl Client {
     pub fn connect(directory: &Path) -> Result<Self> {
-        Self::connect_as(directory, None)
+        Self::connect_as(directory, None, "soyeht-cli")
     }
 
     pub fn connect_bound(directory: &Path, binding: &str) -> Result<Self> {
-        Self::connect_as(directory, Some(binding))
+        Self::connect_as(directory, Some(binding), "soyeht-cli")
     }
 
-    fn connect_as(directory: &Path, binding: Option<&str>) -> Result<Self> {
+    pub fn connect_hook(directory: &Path) -> Result<Self> {
+        Self::connect_as(directory, None, "soyeht-hook")
+    }
+
+    fn connect_as(
+        directory: &Path,
+        binding: Option<&str>,
+        client_name: &'static str,
+    ) -> Result<Self> {
         let socket = UnixStream::connect(directory.join(DEV_ENGINE_SOCKET))?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
@@ -48,6 +57,7 @@ impl Client {
             next: 0,
             directory: directory.into(),
             binding: binding.map(str::to_owned),
+            client_name,
         };
         let challenge = client.read()?;
         if challenge["method"] != "auth.challenge" {
@@ -55,7 +65,7 @@ impl Client {
         }
         let _: AuthChallengeEvent = serde_json::from_value(challenge["params"].clone())?;
         let hello = serde_json::to_value(HelloParams {
-            client: "soyeht-cli".into(),
+            client: client_name.into(),
             client_version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: 1,
             device_token: None,
@@ -94,7 +104,7 @@ impl Client {
         for attempt in 0..4 {
             if reconnect {
                 std::thread::sleep(Duration::from_millis(500 * attempt));
-                match Self::connect_as(&self.directory, self.binding.as_deref()) {
+                match Self::connect_as(&self.directory, self.binding.as_deref(), self.client_name) {
                     Ok(client) => *self = client,
                     Err(error) if attempt < 3 && retryable(&error) => continue,
                     Err(error) => return Err(error),

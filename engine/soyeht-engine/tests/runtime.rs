@@ -16,6 +16,7 @@ use soyeht_store::{
 };
 use std::{
     fs,
+    io::Write,
     os::unix::{fs::PermissionsExt, fs::symlink, net::UnixStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -792,6 +793,21 @@ impl Rig {
         )
         .unwrap();
     }
+    fn install_fake_claude_runner(&self) {
+        let binary =
+            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+        let executable = self.path.join("bin/npx");
+        fs::write(
+            &executable,
+            format!(
+                "#!/bin/sh\nexec '{}' --state-dir '{}'\n",
+                binary.display(),
+                self.path.join("claude-native").display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     fn install_switch_harnesses(&self) {
         let binary =
             PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
@@ -896,6 +912,9 @@ impl Rig {
     }
     fn client(&self) -> Client {
         Client::new(self.path.join("engine.sock"))
+    }
+    fn hook_client(&self) -> Client {
+        Client::new_named(self.path.join("engine.sock"), "soyeht-hook", json!([]))
     }
 }
 
@@ -4743,6 +4762,9 @@ impl Client {
         Self::new_with_capabilities(path, json!([]))
     }
     fn new_with_capabilities(path: PathBuf, capabilities: Value) -> Self {
+        Self::new_named(path, "runtime-test", capabilities)
+    }
+    fn new_named(path: PathBuf, name: &str, capabilities: Value) -> Self {
         let socket = UnixStream::connect(path).unwrap();
         socket
             .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
@@ -4764,7 +4786,7 @@ impl Client {
         );
         let welcome = client.call(
             "hello",
-            json!({"client":"runtime-test","clientVersion":"1","protocolVersion":1,
+            json!({"client":name,"clientVersion":"1","protocolVersion":1,
                 "capabilities":capabilities}),
         );
         assert_eq!(welcome["role"], "human_local");
@@ -5408,6 +5430,172 @@ fn persisted_agent_capture_records_real_protocol_transitions_as_labels() {
     assert!(!experiment_text.contains("capture-protocol-labels"));
     assert!(!experiment_text.contains("capture-next-harness"));
     assert!(!rows.iter().any(|row| row["kind"] == "observation"));
+}
+
+fn open_claude_hook_session(rig: &mut Rig, client: &mut Client) -> (String, String, u64) {
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Hook labels","path":rig.path,
+            "idempotencyKey":"hook-label-workspace"}),
+    )["workspace"]["workspaceId"]
+        .clone();
+    let pane = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"registry.claude-acp",
+            "idempotencyKey":"hook-label-pane"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let (session_id, generation) = loop {
+        let view = client.pane(&pane);
+        if let (Some(session_id), Some(generation)) = (
+            view["agent"]["sessionId"].as_str(),
+            view["generation"].as_u64(),
+        ) {
+            break (session_id.to_owned(), generation);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Claude test session did not open"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    let native: Value = serde_json::from_slice(
+        &fs::read(
+            rig.path
+                .join("claude-native")
+                .join(format!("{session_id}.json")),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let handler = &native["session_meta"]["claudeCode"]["options"]["settings"]["hooks"]["PermissionRequest"]
+        [0]["hooks"][0];
+    let capability = handler["args"][3]
+        .as_str()
+        .unwrap_or_else(|| panic!("Claude session metadata lacked the hook handler: {native}"))
+        .to_owned();
+    assert_eq!(handler["type"], "command");
+    assert_eq!(handler["args"][2], "__experiment-hook");
+    (pane, capability, generation)
+}
+
+fn run_claude_hook_command(rig: &Rig, capability: &str) {
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht");
+    let mut command = Command::new(binary)
+        .arg("--data-dir")
+        .arg(&rig.path)
+        .arg("__experiment-hook")
+        .arg(capability)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    command
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"hook_event_name":"PermissionRequest"}"#)
+        .unwrap();
+    let output = command.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "hook command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        json!({})
+    );
+}
+
+fn wait_for_stamped_hook_label(rig: &Rig, pane: &str, generation: u64, capability: &str) {
+    let root = rig.path.join("experiments/pane-state");
+    let expected_digest = format!("{:x}", Sha256::digest(capability.as_bytes()));
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let rows = experiment_rows(&root);
+        if rows.iter().any(|row| {
+            row["kind"] == "label"
+                && row["pane_id"] == pane
+                && row["state"] == "waiting_for_you"
+                && row["source"] == "hook"
+                && row["provenance"]["channel"] == "session_hook_local_rpc"
+                && row["provenance"]["sessionGeneration"] == generation
+                && row["provenance"]["credentialSha256"] == expected_digest
+        }) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Hook label did not reach the dataset"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn claude_session_hook_records_only_engine_stamped_labels_on_its_private_channel() {
+    let mut rig = Rig::new();
+    rig.install_fake_claude_runner();
+    let mut client = rig.client();
+    let (pane, capability, generation) = open_claude_hook_session(&mut rig, &mut client);
+
+    let ordinary = client.request(
+        "pane.experiment.hook",
+        json!({"event":"Stop","capability":capability,"idempotencyKey":"ordinary-hook"}),
+    );
+    assert_eq!(ordinary["error"]["data"]["kind"], "forbidden_role");
+    let mut hook = rig.hook_client();
+    let claimed_source = hook.request(
+        "pane.experiment.hook",
+        json!({"event":"Stop","capability":capability,"idempotencyKey":"claimed-hook","source":"hook"}),
+    );
+    assert_eq!(claimed_source["error"]["data"]["kind"], "invalid_params");
+    let wrong_capability = hook.request(
+        "pane.experiment.hook",
+        json!({"event":"Stop","capability":"x".repeat(capability.len()),"idempotencyKey":"wrong-hook"}),
+    );
+    assert_eq!(wrong_capability["error"]["data"]["kind"], "unauthorized");
+    let capture_off =
+        json!({"event":"Stop","capability":capability,"idempotencyKey":"capture-off-hook"});
+    let first = hook.call("pane.experiment.hook", capture_off.clone());
+    assert_eq!(first["recorded"], false);
+    assert_eq!(hook.call("pane.experiment.hook", capture_off), first);
+    assert!(!rig.path.join("experiments/pane-state").exists());
+
+    drop(hook);
+    drop(client);
+    rig.kill_engine();
+    rig.database_probe()
+        .set_experiment_capture(&pane, true)
+        .unwrap();
+    rig.start();
+    let mut client = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while !client.pane(&pane)["agent"]["sessionId"].is_string() {
+        assert!(
+            Instant::now() < deadline,
+            "Claude test session did not recover"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    run_claude_hook_command(&rig, &capability);
+    wait_for_stamped_hook_label(&rig, &pane, generation, &capability);
+
+    client.call(
+        "pane.close",
+        json!({"paneId":pane,"idempotencyKey":"close-hook-label-pane"}),
+    );
+    let mut hook = rig.hook_client();
+    let stale = hook.request(
+        "pane.experiment.hook",
+        json!({"event":"Stop","capability":capability,"idempotencyKey":"stale-hook"}),
+    );
+    assert_eq!(stale["error"]["data"]["kind"], "unauthorized");
 }
 
 struct Phone {

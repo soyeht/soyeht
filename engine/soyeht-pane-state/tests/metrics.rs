@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use soyeht_pane_state::{
-    Confidence, Detection, Detector, GroundTruthLabel, HarnessIdentity,
+    Confidence, Detection, Detector, GroundTruthLabel, GroundTruthProvenance, HarnessIdentity,
     MIN_GROUND_TRUTH_TRANSITIONS, MIN_RATE_DENOMINATOR, ObservationFrame, ObservationGap,
     ObservationPaneKind, ObservationReason, RecordedRow, evaluate, evaluate_with_omitted_panes,
 };
@@ -59,7 +59,12 @@ fn label_from(
         timestamp_ms,
         sequence,
         state,
-        source,
+        source: source.clone(),
+        provenance: if source == StateSource::Hook {
+            GroundTruthProvenance::session_hook(1, "a".repeat(64))
+        } else {
+            GroundTruthProvenance::protocol(1)
+        },
     })
 }
 
@@ -299,6 +304,7 @@ fn protocol_and_hook_truth_for_one_harness_never_share_a_rate() {
                 let mut hook = label.clone();
                 hook.sequence = sequence;
                 hook.source = StateSource::Hook;
+                hook.provenance = GroundTruthProvenance::session_hook(1, "a".repeat(64));
                 hook.state = match hook.state {
                     PaneState::Working => PaneState::Idle,
                     PaneState::Idle => PaneState::Working,

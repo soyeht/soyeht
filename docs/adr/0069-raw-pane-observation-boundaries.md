@@ -104,6 +104,36 @@ label from a possibly stale checkpoint after an engine restart; it waits for the
 protocol transition. Disabling and deletion use the same signed-UI boundary and per-pane scope
 as raw-terminal capture.
 
+Official session hooks use a separate label channel. The engine adds bounded, inline hook
+settings only while opening or loading a supported native session; it never edits the person's
+shared harness configuration. The hook command receives the harness event on standard input,
+keeps no event body, and submits only the closed event name plus a session capability. That
+method is absent from the agent-facing MCP tool list. Its parameter parser rejects unknown
+fields, so a caller cannot attach an alleged source, pane, harness or credential for the engine
+to ignore or accidentally trust.
+
+The engine mints the capability for one pane and native session, rotates it before every new
+session, and rejects it after the pane closes. The configured hook remains an authenticated
+no-op while experiment capture is off, so enabling consent later does not require restarting the
+conversation and disabling consent writes nothing. On an accepted call the engine maps the
+closed hook event to a pane state and stamps the live pane, harness, session generation, local
+hook channel and capability digest itself. The raw capability is never written to the dataset or
+conversation. This provenance is evidence about the connection and current engine state, never
+a claim supplied by the payload.
+
+An exact retry is resolved from its durable idempotency receipt before the engine looks up the
+current session capability. A retry that arrives after capability rotation therefore returns the
+original result without writing another label or attributing it to the replacement generation.
+A new request carrying the retired capability has no receipt and is rejected as unknown.
+
+The capability closes the convenient and accidental path by which an evaluated agent could
+write its own labels. It is not a security boundary against a determined process running as the
+same OS user: that process can inspect the session configuration or arguments and then imitate
+the local hook client. The persisted channel, generation and credential digest make that route
+auditable, but they do not prove that a same-account process did not copy the capability. This
+residual risk is kept explicit rather than describing same-user secrecy that the platform does
+not provide.
+
 Only the Dev Mac application with a persistent signature may change experiment consent,
 delete captured data or export it. At
 Unix accept time the engine obtains the peer endpoint's kernel audit token, which identifies
@@ -277,6 +307,11 @@ segments and independent panes. The receipt tells the person to delete that pane
 to remove the incompatible files. Malformed current-schema data still fails closed. A new
 recording starts after the highest existing segment filename, including incompatible files, so
 local omission cannot overwrite old data or collide with it.
+Schema version 7 adds mandatory ground-truth provenance: the engine-observed channel, native
+session generation and, for hook labels, the session-capability digest. Protocol labels carry
+the protocol channel with no credential digest. Source, channel and credential shape must agree
+or the label fails closed. Version 6 segments remain local omissions under the same typed
+incompatible-source rule rather than receiving invented provenance.
 
 Observation rows, label rows and overflow gap rows have distinct closed kinds. A gap carries
 its exact available loss unit plus its first and last timestamps and sequences: projected

@@ -32,7 +32,15 @@ fn run() -> Result<Value> {
         }
     }
     let args: Vec<_> = args.collect();
-    let connected = if bound {
+    let hook = args.first().is_some_and(|arg| arg == "__experiment-hook");
+    let connected = if hook {
+        if bound {
+            return Err(Error::InvalidArguments(
+                "Experiment hook cannot use an agent binding".into(),
+            ));
+        }
+        Client::connect_hook(&directory)
+    } else if bound {
         let binding = std::env::var("SOYEHT_MCP_BINDING").map_err(|_| Error::MissingBinding)?;
         Client::connect_bound(&directory, &binding)
     } else {

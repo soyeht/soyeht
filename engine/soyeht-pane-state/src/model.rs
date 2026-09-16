@@ -68,6 +68,55 @@ pub enum ObservationReason {
     StaticActivity,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroundTruthChannel {
+    AcpProtocol,
+    SessionHookLocalRpc,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct GroundTruthProvenance {
+    pub channel: GroundTruthChannel,
+    pub session_generation: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_sha256: Option<String>,
+}
+
+impl GroundTruthProvenance {
+    pub fn protocol(session_generation: u32) -> Self {
+        Self {
+            channel: GroundTruthChannel::AcpProtocol,
+            session_generation,
+            credential_sha256: None,
+        }
+    }
+
+    pub fn session_hook(session_generation: u32, credential_sha256: String) -> Self {
+        Self {
+            channel: GroundTruthChannel::SessionHookLocalRpc,
+            session_generation,
+            credential_sha256: Some(credential_sha256),
+        }
+    }
+
+    fn validate(&self, source: &StateSource) -> Result<()> {
+        if self.session_generation == 0 {
+            return Err(Error::InvalidLabelSource);
+        }
+        match (source, self.channel, &self.credential_sha256) {
+            (StateSource::Protocol, GroundTruthChannel::AcpProtocol, None) => Ok(()),
+            (StateSource::Hook, GroundTruthChannel::SessionHookLocalRpc, Some(digest))
+                if valid_sha256(digest) =>
+            {
+                Ok(())
+            }
+            _ => Err(Error::InvalidLabelSource),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationFrame {
     pub pane_id: String,
@@ -119,6 +168,7 @@ pub struct GroundTruthLabel {
     pub sequence: u64,
     pub state: PaneState,
     pub source: StateSource,
+    pub provenance: GroundTruthProvenance,
 }
 
 impl GroundTruthLabel {
@@ -132,6 +182,7 @@ impl GroundTruthLabel {
         if self.state == PaneState::Unknown {
             return Err(Error::InvalidLabelState);
         }
+        self.provenance.validate(&self.source)?;
         Ok(())
     }
 }
@@ -259,4 +310,11 @@ pub(crate) fn valid_timestamp(value: i64) -> Result<()> {
         return Err(Error::InvalidTimestamp);
     }
     Ok(())
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }

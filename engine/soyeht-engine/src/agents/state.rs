@@ -70,12 +70,21 @@ impl Binding {
     pub(crate) fn expose(&self) -> &str {
         &self.0
     }
+
+    pub(crate) fn sha256(&self) -> String {
+        crate::auth::token_hash(&self.0)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     #[serde(default)]
     pub(crate) binding: Binding,
+    #[serde(default)]
+    pub(crate) hook_binding: Binding,
     #[serde(default = "default_mcp_role")]
     pub(crate) mcp_role: Role,
     #[serde(default = "mcp_enabled")]
@@ -146,6 +155,7 @@ impl State {
         .to_owned();
         Ok(Self {
             binding: Binding::generate()?,
+            hook_binding: Binding::generate()?,
             mcp_role: default_mcp_role(),
             mcp_enabled: true,
             launch,
@@ -194,11 +204,21 @@ impl State {
     }
 
     pub(crate) fn ensure_binding(&mut self) -> Result<bool> {
+        let mut changed = false;
         if self.binding.0.is_empty() {
             self.binding = Binding::generate()?;
-            return Ok(true);
+            changed = true;
         }
-        Ok(false)
+        if self.hook_binding.0.is_empty() {
+            self.hook_binding = Binding::generate()?;
+            changed = true;
+        }
+        Ok(changed)
+    }
+
+    pub(crate) fn rotate_hook_binding(&mut self) -> Result<()> {
+        self.hook_binding = Binding::generate()?;
+        Ok(())
     }
 
     pub(crate) fn disable_mcp(&mut self) {
@@ -664,6 +684,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(restarted.binding, prior.binding);
+        assert_ne!(restarted.hook_binding, prior.hook_binding);
         assert_eq!(restarted.next_message_seq, 17);
         assert!(restarted.session_id.is_none());
         assert!(restarted.queue.is_empty());

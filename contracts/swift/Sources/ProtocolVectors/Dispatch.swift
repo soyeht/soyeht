@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
+// Generated from contracts/protocol.json (sha256 b3fde6a399151997c5d6bc05f346fc719b5e8f3de05db152b319f2a4426fd28b). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -481,6 +481,9 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "HarnessSetupState": return try codec(SoyehtProtocol.HarnessSetupState.self, data)
         case "HarnessEnvironmentIssue": return try codec(SoyehtProtocol.HarnessEnvironmentIssue.self, data)
         case "HarnessEnvironmentVariable": return try codec(SoyehtProtocol.HarnessEnvironmentVariable.self, data)
+        case "ExperimentHookEvent": return try codec(SoyehtProtocol.ExperimentHookEvent.self, data)
+        case "PaneExperimentHookParams": return try codec(SoyehtProtocol.PaneExperimentHookParams.self, data)
+        case "PaneExperimentHookResult": return try codec(SoyehtProtocol.PaneExperimentHookResult.self, data)
     default: throw NSError(domain: "Unknown schema", code: 1)
     }
 }
