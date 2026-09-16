@@ -27,6 +27,9 @@ python3 -m unittest discover -s scripts -p 'test_install_dev.py'
     cargo build --locked --workspace
     cargo test --locked --workspace
     cargo test --locked -p soyeht-engine \
+        terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage \
+        -- --ignored --exact --nocapture --test-threads=1
+    cargo test --locked -p soyeht-engine \
         terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
         -- --ignored --exact --nocapture --test-threads=1
 )

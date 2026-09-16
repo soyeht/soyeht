@@ -908,6 +908,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "measured separately by scripts/check_all.sh without competing tests"]
     fn frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage() {
         let directory = std::env::temp_dir().join(format!("sn-headroom-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
