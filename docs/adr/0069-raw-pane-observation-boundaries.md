@@ -43,6 +43,11 @@ state; otherwise it remains unclassified coverage loss rather than being guessed
 results whose coverage differs by more than five percentage points are not ranked against one
 another. This prevents queue pressure from flattering a detector by removing the busiest
 intervals from its denominator.
+If export omits an incompatible segment, its interval cannot be recovered without decoding a
+schema the current reader refuses. A scorer therefore marks the affected pane-kind and harness
+group with the number of panes whose sources were omitted and makes elapsed coverage unavailable
+for that whole group. Precision and recall remain available over retained labels, with the marker
+making their truncated population explicit. Groups containing only complete panes remain usable.
 
 ### Separate, passive capture
 

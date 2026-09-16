@@ -1,6 +1,7 @@
 use crate::{Detector, HarnessIdentity, ObservationGap, ObservationPaneKind, RecordedRow, Result};
 use serde::Serialize;
 use soyeht_protocol::PaneState;
+use std::collections::BTreeSet;
 
 const COVERAGE_COMPARISON_BASIS_POINTS: u16 = 500;
 
@@ -54,6 +55,7 @@ pub struct HarnessMetrics {
     pub observations: u64,
     pub labeled_observations: u64,
     pub scores_available: bool,
+    pub panes_with_omitted_sources: u64,
     pub unknown_rate: Rate,
     pub time_coverage: Option<Rate>,
     pub unclassified_gap_ms: u64,
@@ -128,6 +130,7 @@ struct MutableHarness {
     panes: u64,
     observations: u64,
     labeled_observations: u64,
+    panes_with_omitted_sources: u64,
     unknown: u64,
     total_ms: u64,
     lost_ms: u64,
@@ -145,6 +148,7 @@ impl MutableHarness {
             panes: 0,
             observations: 0,
             labeled_observations: 0,
+            panes_with_omitted_sources: 0,
             unknown: 0,
             total_ms: 0,
             lost_ms: 0,
@@ -208,6 +212,7 @@ impl MutableHarness {
             observations: self.observations,
             labeled_observations: self.labeled_observations,
             scores_available: self.labeled_observations > 0,
+            panes_with_omitted_sources: self.panes_with_omitted_sources,
             unknown_rate: Rate::new(self.unknown, self.observations),
             time_coverage: self
                 .coverage_available
@@ -222,6 +227,23 @@ impl MutableHarness {
 /// Scores one detector against labels in the same ordered observation stream.
 /// Labels remain separate from frames, so the detector cannot inspect them.
 pub fn evaluate(detector: &dyn Detector, rows: &[RecordedRow]) -> Result<MetricsReport> {
+    evaluate_with_omitted_panes(detector, rows, &[])
+}
+
+/// Scores a detector while retaining explicit knowledge that one or more
+/// panes have sources the current reader omitted. Omitted sources have no
+/// trustworthy timestamps, so their groups lose elapsed coverage. Precision
+/// and recall remain available over retained labels, marked as partial by
+/// `panes_with_omitted_sources`.
+pub fn evaluate_with_omitted_panes(
+    detector: &dyn Detector,
+    rows: &[RecordedRow],
+    omitted_pane_ids: &[String],
+) -> Result<MetricsReport> {
+    let omitted_pane_ids = omitted_pane_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     let mut traces: Vec<PaneTrace> = Vec::new();
     for row in rows {
         row.validate()?;
@@ -269,7 +291,12 @@ pub fn evaluate(detector: &dyn Detector, rows: &[RecordedRow]) -> Result<Metrics
                 harnesses.push(MutableHarness::new(trace.pane_kind, trace.harness.clone()));
                 harnesses.len() - 1
             });
-        score_trace(detector, &trace, &mut harnesses[index]);
+        let metrics = &mut harnesses[index];
+        if omitted_pane_ids.contains(trace.pane_id.as_str()) {
+            metrics.panes_with_omitted_sources += 1;
+            metrics.coverage_available = false;
+        }
+        score_trace(detector, &trace, metrics);
     }
     harnesses.sort_by(|left, right| {
         pane_kind_order(left.pane_kind)

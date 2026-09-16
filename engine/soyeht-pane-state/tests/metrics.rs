@@ -3,6 +3,7 @@
 use soyeht_pane_state::{
     Confidence, Detection, Detector, GroundTruthLabel, HarnessIdentity, ObservationFrame,
     ObservationGap, ObservationPaneKind, ObservationReason, RecordedRow, evaluate,
+    evaluate_with_omitted_panes,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -162,6 +163,67 @@ fn pane_populations_stay_separate_and_unlabeled_groups_report_no_scores() {
     assert_eq!(terminal.observations, 5);
     assert_eq!(terminal.labeled_observations, 5);
     assert!(terminal.scores_available);
+}
+
+#[test]
+fn omitted_sources_disable_only_elapsed_coverage_and_mark_the_partial_group() {
+    let mut rows = fixture(70, 80);
+    let mut complete = fixture(70, 80);
+    let complete_harness =
+        HarnessIdentity::known("registry.complete", Some("1.0.0".into())).unwrap();
+    for row in &mut complete {
+        match row {
+            RecordedRow::Observation(frame) => {
+                frame.pane_id = "pane-complete".into();
+                frame.harness = complete_harness.clone();
+            }
+            RecordedRow::Label(label) => {
+                label.pane_id = "pane-complete".into();
+                label.harness = complete_harness.clone();
+            }
+            RecordedRow::Gap(gap) => {
+                gap.pane_id = "pane-complete".into();
+                gap.harness = complete_harness.clone();
+            }
+        }
+    }
+    rows.extend(complete);
+
+    let report = evaluate_with_omitted_panes(&ScreenOracle, &rows, &["pane-1".into()]).unwrap();
+    let partial = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.harness == harness())
+        .unwrap();
+    assert!(partial.scores_available);
+    assert_eq!(partial.panes_with_omitted_sources, 1);
+    assert_eq!(partial.time_coverage, None);
+    assert!(
+        partial
+            .states
+            .iter()
+            .all(|state| state.time_coverage.is_none())
+    );
+    assert!(
+        partial
+            .states
+            .iter()
+            .all(|state| state.precision.value == Some(1.0))
+    );
+    assert!(
+        partial
+            .states
+            .iter()
+            .all(|state| state.recall.value == Some(1.0))
+    );
+
+    let complete = report
+        .harnesses
+        .iter()
+        .find(|metrics| metrics.harness == complete_harness)
+        .unwrap();
+    assert_eq!(complete.panes_with_omitted_sources, 0);
+    assert_eq!(complete.time_coverage.as_ref().unwrap().value, Some(0.9));
 }
 
 #[test]

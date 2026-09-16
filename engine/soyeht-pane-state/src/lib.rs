@@ -14,7 +14,10 @@ pub use format::{
     MAX_SEGMENT_BYTES, ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment, encode_row,
     segment_schema_version,
 };
-pub use metrics::{HarnessMetrics, LatencyMetrics, MetricsReport, Rate, StateMetrics, evaluate};
+pub use metrics::{
+    HarnessMetrics, LatencyMetrics, MetricsReport, Rate, StateMetrics, evaluate,
+    evaluate_with_omitted_panes,
+};
 pub use model::{
     Confidence, CursorPosition, Detection, Detector, GroundTruthLabel, HarnessIdentity,
     MAX_FOREGROUND_PROCESS_BYTES, MAX_HARNESS_ID_BYTES, MAX_HARNESS_VERSION_BYTES,
