@@ -577,8 +577,11 @@ public final class EngineClient {
     return panes.first { $0.workspaceId == workspaceId && $0.mode == .agent }
   }
   func upsertPane(_ pane: Pane) {
-    panes.removeAll { $0.paneId == pane.paneId }
-    panes.append(pane)
+    if let index = panes.firstIndex(where: { $0.paneId == pane.paneId }) {
+      panes[index] = pane
+    } else {
+      panes.append(pane)
+    }
   }
   private func subscribe(_ pane: String) async throws {
     _ = try await request(
