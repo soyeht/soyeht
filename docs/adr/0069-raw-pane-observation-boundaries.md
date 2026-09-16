@@ -60,9 +60,17 @@ weakening the check.
 
 The engine observes a copy of output only after the normal terminal stream has accepted it.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces
-the bytes sent to clients. Recorder failure disables experiment capture for that pane and
-publishes a visible reason; terminal output continues. The experiment projection is owned
-by the engine so collection does not depend on an attached or foreground client.
+the bytes sent to clients. A non-blocking per-pane handoff holds at most 32 observation frames;
+a dedicated writer performs segment writes and syncs. Pressure coalesces dropped observations
+into an explicit gap row rather than waiting or pretending the interval was quiet. Recorder
+failure disables experiment capture for that pane and publishes a visible reason; terminal
+output continues. The experiment projection is owned by the engine so collection does not
+depend on an attached or foreground client.
+
+Before cadence measurement, the acceptable bound is fixed: over ten paired runs of the same
+noisy-terminal fixture, capture may increase median engine poll duration by at most 5 percent
+and p95 duration by at most 5 milliseconds. The bounds are evaluated independently, so a fast
+median cannot hide a long-tail stall.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
@@ -81,8 +89,10 @@ happens before the next whole row is appended, repeats the metadata row and neit
 nor drops a row. Protocol limits bound lines, line length, row size, segment size and retained
 segments. Expired segments are removed oldest first.
 
-Observation rows and label rows have distinct closed kinds. ACP state transitions are
-protocol labels. An official harness hook may add labels only through that harness's
+Observation rows, label rows and overflow gap rows have distinct closed kinds. A gap carries
+the exact count plus its first and last timestamps and sequences, so queue pressure cannot
+be replayed as a quiet terminal. Gaps feed neither the detector nor ground truth. ACP state
+transitions are protocol labels. An official harness hook may add labels only through that harness's
 documented, bounded child-process interface. Hook configuration is scoped to the launched
 process and is never written into shared user configuration. A harness without a supported
 official hook has no hook label; partial coverage remains explicit.

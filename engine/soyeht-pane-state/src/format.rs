@@ -1,10 +1,11 @@
 use crate::{
-    Error, GroundTruthLabel, HarnessIdentity, ObservationFrame, RecordedRow, Result,
+    Error, GroundTruthLabel, HarnessIdentity, ObservationFrame, ObservationGap, RecordedRow,
+    Result,
     model::{bounded_nonempty, valid_timestamp},
 };
 use serde::{Deserialize, Serialize};
 
-pub const DATASET_SCHEMA_VERSION: u32 = 1;
+pub const DATASET_SCHEMA_VERSION: u32 = 2;
 pub const MAX_DATASET_ROW_BYTES: usize = 256 * 1024;
 pub const MAX_SEGMENT_BYTES: usize = 1024 * 1024;
 pub const MAX_RETAINED_SEGMENTS: usize = 8;
@@ -66,6 +67,7 @@ pub enum DatasetRow {
     Metadata(SegmentMetadata),
     Observation(ObservationFrame),
     Label(GroundTruthLabel),
+    Gap(ObservationGap),
 }
 
 impl DatasetRow {
@@ -74,6 +76,7 @@ impl DatasetRow {
             Self::Metadata(metadata) => metadata.validate(),
             Self::Observation(frame) => frame.validate(),
             Self::Label(label) => label.validate(),
+            Self::Gap(gap) => gap.validate(),
         }
     }
 }
@@ -111,28 +114,29 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
     let mut rows = Vec::new();
     for line in lines {
         let row = decode_line(line)?;
-        let (pane_id, harness, timestamp_ms, sequence, recorded) = match row {
+        let (pane_id, harness, sequence, recorded) = match row {
             DatasetRow::Metadata(_) => return Err(Error::InvalidHeader),
             DatasetRow::Observation(frame) => (
                 frame.pane_id.clone(),
                 frame.harness.clone(),
-                frame.timestamp_ms,
                 frame.sequence,
                 RecordedRow::Observation(frame),
             ),
             DatasetRow::Label(label) => (
                 label.pane_id.clone(),
                 label.harness.clone(),
-                label.timestamp_ms,
                 label.sequence,
                 RecordedRow::Label(label),
             ),
+            DatasetRow::Gap(gap) => (
+                gap.pane_id.clone(),
+                gap.harness.clone(),
+                gap.last_sequence,
+                RecordedRow::Gap(gap),
+            ),
         };
         recorded.validate()?;
-        if pane_id != metadata.pane_id
-            || harness != metadata.harness
-            || timestamp_ms < metadata.started_at_ms
-        {
+        if pane_id != metadata.pane_id || harness != metadata.harness {
             return Err(Error::MismatchedProvenance);
         }
         if last_sequence.is_some_and(|previous| sequence <= previous) {
