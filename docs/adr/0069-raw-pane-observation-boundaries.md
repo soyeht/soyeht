@@ -79,7 +79,21 @@ is measurable loss, not recorder failure. A real worker or recorder failure stop
 publishes a durable visible reason and excludes that capture from candidate ranking.
 
 After projection, a second non-blocking per-pane handoff holds at most 32 observation frames;
-a dedicated writer performs segment writes and syncs. On first saturation, every observation
+a dedicated writer performs segment writes and syncs. Before batching is changed, worker
+headroom is measured separately from engine cadence with 400 visual changes delivered at
+200 Hz. The predeclared acceptance floor is 95 percent time coverage at that frequency. Five
+percentage points is already the boundary at which this ADR refuses to rank two candidates, so
+loss beyond that amount makes the dataset unsuitable for the comparison it exists to support.
+The claimed bound remains explicitly tied to 200 Hz rather than generalised to every workload.
+
+The writer may sync a closed batch instead of every row. This changes crash durability: an
+abrupt process death may lose the unsynced tail even when no in-memory queue saturated. Every
+deliberately closed or rotated segment therefore ends with a synced clean-close marker. Replay
+distinguishes a deliberate end from an abruptly ended segment; it never presents an absent tail
+as a clean stop. A partial final JSONL row still rejects that segment under the existing
+fail-closed rule.
+
+On first saturation, every observation
 still waiting in memory and the overflowing observation become one explicit gap, making that
 gap the writer's next row rather than placing it behind the backlog. Further pressure extends
 the same bounded row until the writer takes it. A storage operation that never returns cannot
@@ -101,6 +115,12 @@ are evaluated independently, so a fast median cannot hide a long-tail stall. Thi
 shared loop that recording could slow. Terminal byte-to-client delivery is not the measurand
 because capture observes only a copy after the normal stream has accepted the bytes and cannot
 replace or rechunk that path.
+
+The cadence fixture is intentionally byte-heavy and frame-light: after one unmeasured warm-up
+pair, ten paired polls each hand off one distinct VT block, totalling 440,191 bytes and exactly
+ten expected projections. This isolates the per-byte copy and bounded-handoff cost that remains
+on `Core::poll_output`. The separate 200 Hz worker-headroom fixture measures the per-frame
+projection, serialisation, write and sync costs; neither result substitutes for the other.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
