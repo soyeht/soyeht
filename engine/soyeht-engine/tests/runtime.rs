@@ -5828,7 +5828,7 @@ fn pane_loop_stops_after_three_empty_task_results_and_explicit_off() {
         }),
     );
 
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let saved = loop_for(&mut client, &pane);
         if saved["config"]["enabled"] == false
@@ -5880,7 +5880,7 @@ fn pane_loop_waits_while_busy_and_dispatches_only_one_due_round() {
     thread::sleep(Duration::from_millis(1200));
     assert_eq!(rig.database_probe().event_count("loop.tick").unwrap(), 0);
 
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let saved = loop_for(&mut client, &pane);
         if saved["config"]["enabled"] == false
