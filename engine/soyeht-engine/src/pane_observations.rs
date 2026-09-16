@@ -662,6 +662,32 @@ pub fn experiment_root(profile: &Path) -> Result<PathBuf> {
     Ok(root)
 }
 
+pub(crate) fn replay_pane(root: &Path, pane_id: &str) -> Result<Vec<ReplayedSegment>> {
+    if pane_id.is_empty() {
+        return Err(errors::invalid(
+            "Pane identity is required for observation replay",
+        ));
+    }
+    validate_private_directory(root)?;
+    let directory = root.join(pane_directory_name(pane_id));
+    match fs::symlink_metadata(&directory) {
+        Ok(_) => validate_private_directory(&directory)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    }
+    let mut numbers = segment_numbers(&directory)?;
+    numbers.sort_unstable();
+    let mut last_sequence = None;
+    numbers
+        .into_iter()
+        .map(|number| {
+            let segment = read_segment(&directory, number)?;
+            validate_loaded_segment(&segment, pane_id, number, &mut last_sequence)?;
+            Ok(segment)
+        })
+        .collect()
+}
+
 pub fn delete_pane(root: &Path, pane_id: &str) -> Result<DeletionReceipt> {
     if pane_id.is_empty() {
         return Err(errors::invalid(

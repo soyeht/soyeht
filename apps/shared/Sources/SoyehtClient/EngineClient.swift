@@ -628,6 +628,16 @@ public final class EngineClient {
       PaneExperimentDeleteParams(paneId: paneId, idempotencyKey: UUID().uuidString)
     ).decoded(PaneExperimentDeleteResult.self)
   }
+  public func exportExperimentData(
+    paneIds: [String], fromMs: String, toMs: String
+  ) async throws -> PaneExperimentExportResult {
+    try await mutation(
+      "pane.experiment.export",
+      PaneExperimentExportParams(
+        paneIds: paneIds, fromMs: fromMs, toMs: toMs,
+        idempotencyKey: UUID().uuidString)
+    ).decoded(PaneExperimentExportResult.self)
+  }
   public func input(_ data: Data) {
     guard !readOnly, connected, selectedPane?.mode == .terminal,
       let pane = selectedPaneId, !data.isEmpty

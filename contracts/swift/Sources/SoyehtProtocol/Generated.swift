@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
+// Generated from contracts/protocol.json (sha256 32e15e66c20702c601a343931616d798fc9024c57e27a264e043d1a17529abfe). Do not edit.
 import Foundation
 
 
@@ -653,6 +653,36 @@ public struct PaneExperimentDeleteResult: Codable, Sendable {
         self.`files` = `files`
         self.`bytes` = `bytes`
         self.`nothingRemained` = `nothingRemained`
+    }
+}
+
+public struct PaneExperimentExportParams: Codable, Sendable {
+    public var `paneIds`: [Id]
+    public var `fromMs`: Decimal
+    public var `toMs`: Decimal
+    public var `idempotencyKey`: Id
+    public init(`paneIds`: [Id], `fromMs`: Decimal, `toMs`: Decimal, `idempotencyKey`: Id) {
+        self.`paneIds` = `paneIds`
+        self.`fromMs` = `fromMs`
+        self.`toMs` = `toMs`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneExperimentExportResult: Codable, Sendable {
+    public var `path`: String
+    public var `rows`: UInt32
+    public var `bytes`: Decimal
+    public var `sha256`: String
+    public var `actualFromMs`: Decimal?
+    public var `actualToMs`: Decimal?
+    public init(`path`: String, `rows`: UInt32, `bytes`: Decimal, `sha256`: String, `actualFromMs`: Decimal? = nil, `actualToMs`: Decimal? = nil) {
+        self.`path` = `path`
+        self.`rows` = `rows`
+        self.`bytes` = `bytes`
+        self.`sha256` = `sha256`
+        self.`actualFromMs` = `actualFromMs`
+        self.`actualToMs` = `actualToMs`
     }
 }
 

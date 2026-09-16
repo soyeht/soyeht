@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
+// Generated from contracts/protocol.json (sha256 32e15e66c20702c601a343931616d798fc9024c57e27a264e043d1a17529abfe). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -313,6 +313,22 @@ export interface PaneExperimentDeleteResult {
   "files": number;
   "bytes": Decimal;
   "nothingRemained": boolean;
+}
+
+export interface PaneExperimentExportParams {
+  "paneIds": Array<Id>;
+  "fromMs": Decimal;
+  "toMs": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface PaneExperimentExportResult {
+  "path": string;
+  "rows": number;
+  "bytes": Decimal;
+  "sha256": string;
+  "actualFromMs"?: Decimal;
+  "actualToMs"?: Decimal;
 }
 
 export interface DevicePairStartParams {
@@ -2900,6 +2916,7 @@ export interface Methods {
   "pane.record.set": { params: PaneRecordSetParams; result: PaneRecordSetResult };
   "pane.experiment.set": { params: PaneExperimentSetParams; result: PaneExperimentSetResult };
   "pane.experiment.delete": { params: PaneExperimentDeleteParams; result: PaneExperimentDeleteResult };
+  "pane.experiment.export": { params: PaneExperimentExportParams; result: PaneExperimentExportResult };
   "device.pair.start": { params: DevicePairStartParams; result: DevicePairStartResult };
   "device.pair.decide": { params: DevicePairDecideParams; result: DevicePairDecideResult };
   "device.list": { params: DeviceListParams; result: DeviceListResult };

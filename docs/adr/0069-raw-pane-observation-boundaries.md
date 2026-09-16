@@ -52,7 +52,8 @@ explicit erase action removes the entire experiment directory, including exports
 never follows symlinks, reports what was removed, and a failure remains visible rather than
 being presented as successful withdrawal.
 
-Only the Dev Mac application with a persistent signature may change experiment consent. At
+Only the Dev Mac application with a persistent signature may change experiment consent,
+delete captured data or export it. At
 Unix accept time the engine obtains the peer endpoint's kernel audit token, which identifies
 the process instance and cannot be confused by PID reuse. Security.framework resolves that
 audit token and validates the live code in process against the application identifier and the
@@ -215,10 +216,17 @@ configuration. A harness without a supported official hook has no hook label; pa
 coverage remains explicit.
 
 An explicit additive engine command exports a caller-selected bounded time window to one
-owner-only file beneath the Dev experiment directory. Its first row states the requested and
-actual window, every included pane and harness, the engine build and the dataset schema.
-Nothing is uploaded or copied outside the profile. Analysis tools may read the returned local
-file. Export rejects incomplete provenance rather than manufacturing it.
+owner-only file beneath the Dev experiment directory. The request is bounded by pane, row and
+byte limits, is idempotent, and is refused while any selected pane is still recording. The file
+is installed atomically without following a destination symlink. Its first row states the
+requested and actual window, every included pane and harness, the exact engine build, dataset
+schema, source-segment sequence range and whether each source segment closed cleanly. An abrupt
+source ending therefore remains visible instead of being presented as a complete recording.
+The response returns the local path, row and byte counts, digest and the actual populated window;
+an empty result omits that actual window instead of inventing one. Nothing is uploaded or copied
+outside the profile. Analysis tools may read the returned local file. Only the attested Dev Mac
+application can invoke export; command-line clients, agents and paired phones cannot. Export
+rejects invalid provenance rather than manufacturing it.
 
 ### State claims
 

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
+// Generated from contracts/protocol.json (sha256 32e15e66c20702c601a343931616d798fc9024c57e27a264e043d1a17529abfe). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -64,6 +64,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PaneExperimentSetResult": return try codec(SoyehtProtocol.PaneExperimentSetResult.self, data)
         case "PaneExperimentDeleteParams": return try codec(SoyehtProtocol.PaneExperimentDeleteParams.self, data)
         case "PaneExperimentDeleteResult": return try codec(SoyehtProtocol.PaneExperimentDeleteResult.self, data)
+        case "PaneExperimentExportParams": return try codec(SoyehtProtocol.PaneExperimentExportParams.self, data)
+        case "PaneExperimentExportResult": return try codec(SoyehtProtocol.PaneExperimentExportResult.self, data)
         case "DevicePairStartParams": return try codec(SoyehtProtocol.DevicePairStartParams.self, data)
         case "DevicePairStartResult": return try codec(SoyehtProtocol.DevicePairStartResult.self, data)
         case "DevicePairDecideParams": return try codec(SoyehtProtocol.DevicePairDecideParams.self, data)

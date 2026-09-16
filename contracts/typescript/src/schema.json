@@ -1119,6 +1119,68 @@
       ],
       "additionalProperties": true
     },
+    "PaneExperimentExportParams": {
+      "type": "object",
+      "properties": {
+        "paneIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "fromMs": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "toMs": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneIds",
+        "fromMs",
+        "toMs",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneExperimentExportResult": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "bytes": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "actualFromMs": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "actualToMs": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "path",
+        "rows",
+        "bytes",
+        "sha256"
+      ],
+      "additionalProperties": true
+    },
     "DevicePairStartParams": {
       "type": "object",
       "properties": {
@@ -10632,6 +10694,15 @@
       },
       "mutation": true
     },
+    "pane.experiment.export": {
+      "params": {
+        "$ref": "#/$defs/PaneExperimentExportParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneExperimentExportResult"
+      },
+      "mutation": true
+    },
     "device.pair.start": {
       "params": {
         "$ref": "#/$defs/DevicePairStartParams"
@@ -12028,7 +12099,10 @@
     "harnessContinuationBytes": 15999,
     "harnessContinuationMessages": 6,
     "modelRefusals": 256,
-    "modelRefusalReasonBytes": 4096
+    "modelRefusalReasonBytes": 4096,
+    "experimentExportPanes": 64,
+    "experimentExportRows": 100000,
+    "experimentExportBytes": 67108864
   },
   "x-settings": {
     "terminal.defaultCols": {

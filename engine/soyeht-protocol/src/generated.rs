@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
+// Generated from contracts/protocol.json (sha256 32e15e66c20702c601a343931616d798fc9024c57e27a264e043d1a17529abfe). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -604,6 +604,32 @@ pub struct PaneExperimentDeleteResult {
     pub bytes: Decimal,
     #[serde(rename = "nothingRemained")]
     pub nothing_remained: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentExportParams {
+    #[serde(rename = "paneIds")]
+    pub pane_ids: Vec<Id>,
+    #[serde(rename = "fromMs")]
+    pub from_ms: Decimal,
+    #[serde(rename = "toMs")]
+    pub to_ms: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentExportResult {
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "rows")]
+    pub rows: u32,
+    #[serde(rename = "bytes")]
+    pub bytes: Decimal,
+    #[serde(rename = "sha256")]
+    pub sha256: String,
+    #[serde(rename = "actualFromMs", skip_serializing_if = "Option::is_none")]
+    pub actual_from_ms: Option<Decimal>,
+    #[serde(rename = "actualToMs", skip_serializing_if = "Option::is_none")]
+    pub actual_to_ms: Option<Decimal>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartParams {
@@ -5173,6 +5199,8 @@ pub enum Request {
     PaneExperimentSet(PaneExperimentSetParams),
     #[serde(rename = "pane.experiment.delete")]
     PaneExperimentDelete(PaneExperimentDeleteParams),
+    #[serde(rename = "pane.experiment.export")]
+    PaneExperimentExport(PaneExperimentExportParams),
     #[serde(rename = "device.pair.start")]
     DevicePairStart(DevicePairStartParams),
     #[serde(rename = "device.pair.decide")]
@@ -5456,6 +5484,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "pane.experiment.delete",
         "PaneExperimentDeleteParams",
         "PaneExperimentDeleteResult",
+        true,
+    ),
+    (
+        "pane.experiment.export",
+        "PaneExperimentExportParams",
+        "PaneExperimentExportResult",
         true,
     ),
     (

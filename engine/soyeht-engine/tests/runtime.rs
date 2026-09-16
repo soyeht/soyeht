@@ -4935,6 +4935,14 @@ fn unsigned_local_client_cannot_change_experiment_consent() {
         json!({"paneId":pane,"idempotencyKey":"unsigned-experiment-delete"}),
     );
     assert_eq!(delete_refused["error"]["data"]["kind"], "forbidden_role");
+    let export_refused = client.request(
+        "pane.experiment.export",
+        json!({
+            "paneIds":[pane],"fromMs":"0","toMs":"1",
+            "idempotencyKey":"unsigned-experiment-export"
+        }),
+    );
+    assert_eq!(export_refused["error"]["data"]["kind"], "forbidden_role");
 
     drop(client);
     rig.kill_engine();

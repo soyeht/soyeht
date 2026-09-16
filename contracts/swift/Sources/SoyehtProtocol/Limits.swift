@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
+// Generated from contracts/protocol.json (sha256 32e15e66c20702c601a343931616d798fc9024c57e27a264e043d1a17529abfe). Do not edit.
 public enum ProtocolLimits {
     public static let jsonBytes = 1048576
     public static let terminalPayloadBytes = 65536
@@ -62,4 +62,7 @@ public enum ProtocolLimits {
     public static let harnessContinuationMessages = 6
     public static let modelRefusals = 256
     public static let modelRefusalReasonBytes = 4096
+    public static let experimentExportPanes = 64
+    public static let experimentExportRows = 100000
+    public static let experimentExportBytes = 67108864
 }

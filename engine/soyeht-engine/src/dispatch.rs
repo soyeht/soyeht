@@ -30,9 +30,13 @@ pub enum Outcome {
 }
 
 fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
-    if matches!(method, "pane.experiment.set" | "pane.experiment.delete") && !signed_ui {
+    if matches!(
+        method,
+        "pane.experiment.set" | "pane.experiment.delete" | "pane.experiment.export"
+    ) && !signed_ui
+    {
         return Err(errors::forbidden_role(
-            "Experiment capture can be changed only in the signed Soyeht app on this Mac",
+            "Raw terminal experiment data can be recorded, deleted, or exported only in the signed Soyeht app on this Mac",
         ));
     }
     Ok(())
@@ -338,6 +342,7 @@ impl Core {
             | "pane.record.set"
             | "pane.experiment.set"
             | "pane.experiment.delete" => self.pane_edit(connection, method, params)?,
+            "pane.experiment.export" => self.export_experiment(connection, params)?,
             "pane.input" => self.pane_input(connection, params)?,
             "pane.yolo" => self.agent_yolo(connection, params)?,
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
@@ -618,12 +623,17 @@ mod experiment_consent_tests {
     fn capture_mutation_requires_the_attested_ui_program() {
         assert!(requires_signed_ui("pane.experiment.set", true).is_ok());
         assert!(requires_signed_ui("pane.experiment.delete", true).is_ok());
+        assert!(requires_signed_ui("pane.experiment.export", true).is_ok());
         assert_eq!(
             errors::kind(&requires_signed_ui("pane.experiment.set", false).unwrap_err()),
             soyeht_protocol::ErrorKind::ForbiddenRole
         );
         assert_eq!(
             errors::kind(&requires_signed_ui("pane.experiment.delete", false).unwrap_err()),
+            soyeht_protocol::ErrorKind::ForbiddenRole
+        );
+        assert_eq!(
+            errors::kind(&requires_signed_ui("pane.experiment.export", false).unwrap_err()),
             soyeht_protocol::ErrorKind::ForbiddenRole
         );
         assert!(requires_signed_ui("pane.focus", false).is_ok());
