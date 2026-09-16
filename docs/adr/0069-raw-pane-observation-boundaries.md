@@ -223,6 +223,20 @@ a coarse scheduling-sensitive guard: a failure requires investigation and is not
 that capture regressed. A future absolute-delta limit must be predeclared before the change it
 evaluates rather than calibrated from this observed sample.
 
+A later gate run under sustained machine load reported a 14.16 percent median increase. A
+cross-revision control then alternated three separately built base and head binaries in one time
+window. Base/head median increases were 4.29/0.99, 3.57/2.04 and 1.50/1.19 percent: no head
+median regression was observed, and the head increase was below the base increase in every pair.
+The corresponding base/head capture-off medians differed by +6.9, -0.7 and +19.9 percent. The
+third head run also exceeded the independent tail allowance by 906 microseconds, with a 5,906
+microsecond tail increase, while its capture-off median was 19.9 percent above the adjacent base.
+These results do not identify the cause of the earlier 14.16 percent result, and no pair is removed
+after seeing its outcome. For future cross-revision attribution, base and head capture-off medians
+must differ by at most 5 percent to be called comparable. Drift larger than the effect allowance
+means the environment changed enough to obscure the effect being attributed. This criterion was
+declared after the three-pair control and applies only to future runs. Load average remains recorded
+as context rather than replacing the capture-off arm measured by the same process and clock.
+
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
 screen lines, cursor position, foreground process and a bounded bytes-per-second measure.
