@@ -29,8 +29,17 @@ pub enum Outcome {
     },
 }
 
+fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
+    if method == "pane.experiment.set" && !signed_ui {
+        return Err(errors::forbidden_role(
+            "Experiment capture can be changed only in the signed Soyeht app on this Mac",
+        ));
+    }
+    Ok(())
+}
+
 impl Core {
-    pub fn connect(&mut self, local: bool, outbox: Outbox) -> Result<String> {
+    pub fn connect(&mut self, local: bool, signed_ui: bool, outbox: Outbox) -> Result<String> {
         let id = Uuid::new_v4().to_string();
         let nonce = auth::random_bytes().map_err(|error| errors::internal(error.to_string()))?;
         outbox.send(model::notification(
@@ -44,6 +53,7 @@ impl Core {
                 actor: None,
                 scope: String::new(),
                 local,
+                signed_ui,
                 nonce,
                 events: false,
                 streams: BTreeMap::new(),
@@ -229,6 +239,7 @@ impl Core {
             .actor
             .as_ref()
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
+        requires_signed_ui(method, client.signed_ui)?;
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method.starts_with("task.")
             && !method.starts_with("web.")
@@ -242,7 +253,6 @@ impl Core {
         if actor.role == Role::HumanDevice
             && (method == "pane.input"
                 || method == "settings.set"
-                || method == "pane.experiment.set"
                 || method.starts_with("harness.custom.")
                 || method.starts_with("device.") && method != "device.list")
         {
@@ -593,4 +603,19 @@ pub fn capabilities() -> Vec<String> {
         "workspace-tasks".into(),
         "subscription-usage".into(),
     ]
+}
+
+#[cfg(test)]
+mod experiment_consent_tests {
+    use super::*;
+
+    #[test]
+    fn capture_mutation_requires_the_attested_ui_program() {
+        assert!(requires_signed_ui("pane.experiment.set", true).is_ok());
+        assert_eq!(
+            errors::kind(&requires_signed_ui("pane.experiment.set", false).unwrap_err()),
+            soyeht_protocol::ErrorKind::ForbiddenRole
+        );
+        assert!(requires_signed_ui("pane.focus", false).is_ok());
+    }
 }

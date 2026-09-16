@@ -4,7 +4,7 @@ use crate::{
     errors::{self, Error},
     model,
     outbox::{self, CloseReason, Outbox},
-    transport,
+    transport, ui_attestation,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -109,7 +109,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
                         tokio::time::timeout(Duration::from_secs(5), transport::websocket(stream))
                             .await
                     {
-                        connection(core, false, reader, writer).await;
+                        connection(core, false, false, reader, writer).await;
                     }
                 });
             }
@@ -135,10 +135,16 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
                     continue;
                 };
                 let core = Arc::clone(&core);
+                let peer_pid = credential.pid();
                 tokio::spawn(async move {
                     let _permit = permit;
+                    let signed_ui = tokio::task::spawn_blocking(move || {
+                        ui_attestation::signed_ui_peer(peer_pid)
+                    })
+                    .await
+                    .unwrap_or(false);
                     let (reader, writer) = transport::unix(stream);
-                    connection(core, true, reader, writer).await;
+                    connection(core, true, signed_ui, reader, writer).await;
                 });
             }
             #[allow(unreachable_code)]
@@ -191,6 +197,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
 async fn connection(
     core: Shared,
     local: bool,
+    signed_ui: bool,
     mut reader: transport::Reader,
     writer: transport::Writer,
 ) {
@@ -198,7 +205,7 @@ async fn connection(
     let id = match core
         .lock()
         .map_err(|_| Error::EngineStatePoisoned)
-        .and_then(|mut state| state.connect(local, outbox.clone()))
+        .and_then(|mut state| state.connect(local, signed_ui, outbox.clone()))
     {
         Ok(id) => id,
         Err(_) => return,

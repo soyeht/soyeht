@@ -36,6 +36,7 @@ pub struct Connected {
     pub actor: Option<Actor>,
     pub scope: String,
     pub local: bool,
+    pub signed_ui: bool,
     pub nonce: [u8; 32],
     pub events: bool,
     pub streams: BTreeMap<String, Subscription>,

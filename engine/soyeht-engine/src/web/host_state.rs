@@ -135,7 +135,7 @@ mod tests {
 
     async fn connect(core: &mut Core, name: &str, host: bool) -> (String, outbox::Receiver) {
         let (sender, mut receiver) = outbox::channel();
-        let connection = core.connect(true, sender).unwrap();
+        let connection = core.connect(true, false, sender).unwrap();
         let _ = next_json(&mut receiver).await;
         reply(
             core,

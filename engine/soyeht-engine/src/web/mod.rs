@@ -170,7 +170,7 @@ mod tests {
             calls: 0,
         }));
         let (outbox, _receiver) = crate::outbox::channel();
-        let connection = core.connect(true, outbox).unwrap();
+        let connection = core.connect(true, false, outbox).unwrap();
         core.dispatch(
             &connection,
             json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"client":"server-test","clientVersion":"1","protocolVersion":1}}),
@@ -214,7 +214,7 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         let mut core = Core::open(&directory).unwrap();
         let (outbox, mut receiver) = outbox::channel();
-        let connection = core.connect(true, outbox).unwrap();
+        let connection = core.connect(true, false, outbox).unwrap();
         let _ = receiver.next().await.unwrap().unwrap();
         core.dispatch(
             &connection,

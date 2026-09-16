@@ -21,6 +21,7 @@ pub mod settings;
 pub mod streams;
 pub mod tasks;
 pub mod transport;
+pub mod ui_attestation;
 pub mod usage;
 pub mod vcs;
 pub mod web;

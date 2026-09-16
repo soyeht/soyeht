@@ -43,6 +43,16 @@ explicit erase action removes the entire experiment directory, including exports
 never follows symlinks, reports what was removed, and a failure remains visible rather than
 being presented as successful withdrawal.
 
+Only the Dev Mac application with a persistent signature may change experiment consent. The
+engine checks the live Unix peer process against the application identifier and the engine's
+own Apple Development team before accepting the mutation. This attests which program called;
+it does not claim that the engine can prove which physical person acted. Same-UID command-line
+clients, bound agents, raw socket clients, paired phones, ad-hoc builds and a signed app from
+another team fail closed. Refusing the paired phone is deliberate policy: consent to record
+a Mac terminal is granted at that Mac, by the person in front of it. Stable signing is part
+of this boundary; reverting either binary to ad-hoc signing makes consent changes unavailable
+rather than silently weakening the check.
+
 The engine observes a copy of output only after the normal terminal stream has accepted it.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces
 the bytes sent to clients. Recorder failure disables experiment capture for that pane and

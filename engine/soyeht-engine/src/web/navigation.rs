@@ -181,7 +181,7 @@ mod tests {
         capabilities: Value,
     ) -> (String, outbox::Receiver) {
         let (sender, mut receiver) = outbox::channel();
-        let connection = core.connect(true, sender).unwrap();
+        let connection = core.connect(true, false, sender).unwrap();
         let _ = next_json(&mut receiver).await;
         let welcome = reply(
             core,
