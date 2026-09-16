@@ -914,6 +914,17 @@ private struct PaneCard: View {
       }.padding(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
     } else if client.selectedPaneId == pane.paneId {
       VStack(spacing: 0) {
+        Label(
+          TerminalStatePresentation.text(for: pane.state),
+          systemImage: terminalStateSystemImage
+        )
+        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+        .foregroundStyle(stateColor)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, MacTheme.Space.x10)
+        .padding(.vertical, MacTheme.Space.x7)
+        .background(tint.opacity(0.55))
+        .accessibilityIdentifier("terminal-state-\(pane.paneId)")
         MacTerminal(client: client)
         if let gap = client.gapText {
           Label(gap, systemImage: "exclamationmark.triangle")
@@ -923,7 +934,11 @@ private struct PaneCard: View {
       }
     } else {
       VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
-        Text(pane.phrase).font(MacTheme.mono(MacTheme.TypeScale.caption))
+        Text(
+          pane.mode == .terminal
+            ? TerminalStatePresentation.text(for: pane.state) : pane.phrase
+        )
+        .font(MacTheme.mono(MacTheme.TypeScale.caption))
         Spacer()
         Text(pane.cwd).font(MacTheme.mono(MacTheme.TypeScale.small))
           .foregroundStyle(MacTheme.muted).lineLimit(1).truncationMode(.middle)
@@ -937,6 +952,19 @@ private struct PaneCard: View {
     case .waiting_for_you: MacTheme.warning
     case .dead, .no_signal: MacTheme.danger
     default: MacTheme.ink.opacity(0.75)
+    }
+  }
+
+  private var terminalStateSystemImage: String {
+    switch pane.state {
+    case .working: "bolt.fill"
+    case .idle: "checkmark.circle.fill"
+    case .waiting_for_you: "person.crop.circle.badge.questionmark"
+    case .no_signal: "exclamationmark.triangle.fill"
+    case .dead: "xmark.circle.fill"
+    case .starting, .recovering: "arrow.triangle.2.circlepath"
+    case .cancelling: "stop.circle.fill"
+    case .unknown: "questionmark.circle.fill"
     }
   }
 
