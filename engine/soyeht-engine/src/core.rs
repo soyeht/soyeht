@@ -40,6 +40,8 @@ pub struct Core {
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
+    pub(crate) terminal_captures: BTreeMap<String, crate::terminal_capture::TerminalCapture>,
+    pub(crate) terminal_capture_build: Option<soyeht_pane_state::EngineBuild>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
@@ -82,6 +84,8 @@ impl Core {
             languages: crate::languages::Service::restore(language_servers)?,
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
+            terminal_captures: BTreeMap::new(),
+            terminal_capture_build: None,
             agents: BTreeMap::new(),
             harness_switches: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
@@ -105,6 +109,7 @@ impl Core {
             core.panes
                 .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
         }
+        core.restore_terminal_captures()?;
         let editor_restore_ms = core.now_ms();
         for file in editor_files {
             core.editor.restore(file, editor_restore_ms);
@@ -506,6 +511,7 @@ impl Core {
         }
         self.advance_harness_switches()?;
         self.cleanup_retired_agent_processes()?;
+        self.reconcile_terminal_captures()?;
         let ids: Vec<_> = self
             .panes
             .iter()
@@ -559,6 +565,10 @@ impl Core {
             let bytes = STANDARD
                 .decode(output.bytes)
                 .map_err(|_| errors::ptyd_unavailable("Invalid output encoding"))?;
+            let capture_bytes = self
+                .terminal_captures
+                .contains_key(&id)
+                .then(|| bytes.clone());
             if !bytes.is_empty() {
                 running.screen.append(Record::Data {
                     offset: from,
@@ -570,6 +580,9 @@ impl Core {
                 instance_id,
                 seq: output.next_seq,
             })?;
+            if let Some(bytes) = capture_bytes {
+                self.observe_terminal(&id, bytes)?;
+            }
             if output.exited && saved.pane.state != PaneState::Dead {
                 let mut dead = saved;
                 dead.pane.state = PaneState::Dead;

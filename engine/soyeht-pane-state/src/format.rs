@@ -5,7 +5,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const DATASET_SCHEMA_VERSION: u32 = 3;
+pub const DATASET_SCHEMA_VERSION: u32 = 4;
 pub const MAX_DATASET_ROW_BYTES: usize = 256 * 1024;
 pub const MAX_SEGMENT_BYTES: usize = 1024 * 1024;
 pub const MAX_RETAINED_SEGMENTS: usize = 8;

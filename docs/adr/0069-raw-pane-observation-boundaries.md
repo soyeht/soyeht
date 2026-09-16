@@ -30,7 +30,10 @@ rate. `waiting_for_you` is reported separately and never hidden by an aggregate 
 miss leaves a person blocked. An always-unknown control must score poorly, and a
 perfect-oracle control must reach the metric ceiling. Together they prove the scoring
 discriminates at both ends. Coverage is reported beside precision and recall for every state
-and harness as retained observations divided by retained plus explicitly dropped observations.
+and harness as the share of session wall-clock time outside explicit gap intervals. Time is
+the unit retained observations, projected-frame gaps and raw-byte gaps all share; a byte gap
+never becomes zero loss merely because its unknowable frame count is absent. A separate byte
+ratio may describe transport loss, but it never substitutes for time coverage.
 A dropped interval is attributed only where the surrounding ground-truth labels establish its
 state; otherwise it remains unclassified coverage loss rather than being guessed. Candidate
 results whose coverage differs by more than five percentage points are not ranked against one
@@ -66,7 +69,16 @@ weakening the check.
 
 The engine observes a copy of output only after the normal terminal stream has accepted it.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces
-the bytes sent to clients. A non-blocking per-pane handoff holds at most 32 observation frames;
+the bytes sent to clients. `Core::poll_output` only offers that copy to a non-blocking,
+32-chunk projection handoff. A dedicated worker owns the terminal parser and the recorder.
+If this raw handoff fills, later bytes are coalesced into one gap carrying the exact byte count
+and first and last timestamps. Its projected-frame count is absent rather than estimated.
+The worker records that gap before accepting more bytes, resets the VT projection epoch rather
+than applying later bytes to a parser that missed input, and then continues capture. Backpressure
+is measurable loss, not recorder failure. A real worker or recorder failure stops capture,
+publishes a durable visible reason and excludes that capture from candidate ranking.
+
+After projection, a second non-blocking per-pane handoff holds at most 32 observation frames;
 a dedicated writer performs segment writes and syncs. On first saturation, every observation
 still waiting in memory and the overflowing observation become one explicit gap, making that
 gap the writer's next row rather than placing it behind the backlog. Further pressure extends
@@ -124,12 +136,15 @@ nor drops a row. Protocol limits bound lines, line length, row size, segment siz
 segments. Expired segments are removed oldest first.
 
 Observation rows, label rows and overflow gap rows have distinct closed kinds. A gap carries
-the exact count plus its first and last timestamps and sequences, so queue pressure cannot
-be replayed as a quiet terminal. Gaps feed neither the detector nor ground truth. ACP state
-transitions are protocol labels. An official harness hook may add labels only through that harness's
-documented, bounded child-process interface. Hook configuration is scoped to the launched
-process and is never written into shared user configuration. A harness without a supported
-official hook has no hook label; partial coverage remains explicit.
+its exact available loss unit plus its first and last timestamps and sequences: projected
+pressure records an observation count, while pre-projection pressure records bytes and leaves
+the frame count absent. The two may coexist only when the writer itself coalesces both losses.
+Queue pressure therefore cannot be replayed as a quiet terminal. Gaps feed neither the
+detector nor ground truth. ACP state transitions are protocol labels. An official harness
+hook may add labels only through that harness's documented, bounded child-process interface.
+Hook configuration is scoped to the launched process and is never written into shared user
+configuration. A harness without a supported official hook has no hook label; partial
+coverage remains explicit.
 
 An explicit additive engine command exports a caller-selected bounded time window to one
 owner-only file beneath the Dev experiment directory. Its first row states the requested and

@@ -20,6 +20,7 @@ pub mod server;
 pub mod settings;
 pub mod streams;
 pub mod tasks;
+mod terminal_capture;
 pub mod terminal_projection;
 pub mod transport;
 pub mod ui_attestation;

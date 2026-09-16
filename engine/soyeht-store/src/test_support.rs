@@ -67,6 +67,21 @@ impl DatabaseProbe {
         Ok(())
     }
 
+    pub fn set_experiment_capture(&self, pane_id: &str, on: bool) -> Result<()> {
+        let raw: String = self.connection.query_row(
+            "SELECT payload FROM panes WHERE id=?1",
+            [pane_id],
+            |row| row.get(0),
+        )?;
+        let mut pane: Value = serde_json::from_str(&raw)?;
+        pane["experimentCapture"] = serde_json::json!({"on": on});
+        self.connection.execute(
+            "UPDATE panes SET payload=?1 WHERE id=?2",
+            params![pane.to_string(), pane_id],
+        )?;
+        Ok(())
+    }
+
     pub fn agent_outbox_empty(&self, pane_id: &str) -> Result<bool> {
         let count: i64 = self.connection.query_row(
             "SELECT COUNT(*) FROM agent_outbox WHERE pane_id=?1",

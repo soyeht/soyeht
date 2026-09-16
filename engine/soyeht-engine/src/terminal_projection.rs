@@ -1,7 +1,7 @@
 use crate::errors::{self, Result};
 use soyeht_pane_state::{
     CursorPosition, HarnessIdentity, MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, MAX_TITLE_BYTES,
-    ObservationFrame, ObservationReason,
+    ObservationFrame, ObservationGap, ObservationReason,
 };
 use std::collections::VecDeque;
 
@@ -33,6 +33,7 @@ struct ScreenSnapshot {
 pub struct TerminalProjection {
     pane_id: String,
     parser: vt100::Parser<TitleCallbacks>,
+    rows: u16,
     cols: u16,
     next_sequence: u64,
     previous: Option<ScreenSnapshot>,
@@ -67,6 +68,7 @@ impl TerminalProjection {
         Ok(Self {
             pane_id,
             parser: vt100::Parser::new_with_callbacks(rows, cols, 0, TitleCallbacks::default()),
+            rows,
             cols,
             next_sequence,
             previous: None,
@@ -80,8 +82,42 @@ impl TerminalProjection {
             return Err(errors::invalid("Terminal dimensions must be positive"));
         }
         self.parser.screen_mut().set_size(rows, cols);
+        self.rows = rows;
         self.cols = cols;
         Ok(())
+    }
+
+    /// Records an interval whose raw bytes could not enter the bounded
+    /// projection handoff. The parser is reset because applying later bytes to
+    /// a VT state that skipped input would manufacture a screen. The gap makes
+    /// that epoch boundary explicit to replay and scoring.
+    pub fn record_byte_gap(
+        &mut self,
+        first_timestamp_ms: i64,
+        last_timestamp_ms: i64,
+        dropped_bytes: u64,
+    ) -> Result<ObservationGap> {
+        if first_timestamp_ms < 0 || last_timestamp_ms < 0 || dropped_bytes == 0 {
+            return Err(errors::invalid("Terminal byte gap is invalid"));
+        }
+        let sequence = self.take_sequence()?;
+        self.parser =
+            vt100::Parser::new_with_callbacks(self.rows, self.cols, 0, TitleCallbacks::default());
+        self.previous = None;
+        self.last_emitted_at_ms = None;
+        self.byte_samples.clear();
+        let gap = ObservationGap {
+            pane_id: self.pane_id.clone(),
+            harness: HarnessIdentity::Unknown,
+            first_timestamp_ms,
+            last_timestamp_ms,
+            first_sequence: sequence,
+            last_sequence: sequence,
+            dropped_observations: None,
+            dropped_bytes: Some(dropped_bytes),
+        };
+        gap.validate()?;
+        Ok(gap)
     }
 
     pub fn process(&mut self, timestamp_ms: i64, bytes: &[u8]) -> Result<Option<ObservationFrame>> {
@@ -102,10 +138,7 @@ impl TerminalProjection {
         if !projection_changed && !static_activity_due {
             return Ok(None);
         }
-        let sequence = self.next_sequence;
-        self.next_sequence = sequence
-            .checked_add(1)
-            .ok_or_else(|| errors::internal("Observation sequence exhausted"))?;
+        let sequence = self.take_sequence()?;
         self.previous = Some(snapshot.clone());
         self.last_emitted_at_ms = Some(timestamp_ms);
         let frame = ObservationFrame {
@@ -148,6 +181,14 @@ impl TerminalProjection {
                 column: u32::from(column),
             },
         }
+    }
+
+    fn take_sequence(&mut self) -> Result<u64> {
+        let sequence = self.next_sequence;
+        self.next_sequence = sequence
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("Observation sequence exhausted"))?;
+        Ok(sequence)
     }
 
     fn record_bytes(&mut self, timestamp_ms: i64, byte_count: usize) -> Result<bool> {
@@ -272,5 +313,21 @@ mod tests {
         assert_eq!(frame.lines.len(), 3);
         assert!(frame.lines.iter().any(|line| line.starts_with('X')));
         assert_eq!(frame.foreground_process, None);
+    }
+
+    #[test]
+    fn raw_byte_gap_resets_projection_and_keeps_frame_count_absent() {
+        let mut projection = TerminalProjection::new("pane-1", 2, 10, 3).unwrap();
+        projection.process(1, b"secret").unwrap().unwrap();
+        let gap = projection.record_byte_gap(2, 5, 4_200_000).unwrap();
+        assert_eq!(gap.first_sequence, 4);
+        assert_eq!(gap.last_sequence, 4);
+        assert_eq!(gap.dropped_observations, None);
+        assert_eq!(gap.dropped_bytes, Some(4_200_000));
+
+        let after = projection.process(6, b"fresh").unwrap().unwrap();
+        assert_eq!(after.sequence, 5);
+        assert_eq!(after.lines[0], "fresh");
+        assert!(!after.lines[0].contains("secret"));
     }
 }

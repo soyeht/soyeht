@@ -59,7 +59,21 @@ fn gap(first_sequence: u64, last_sequence: u64, dropped_observations: u64) -> Ob
         last_timestamp_ms: 1_800_000_000_050,
         first_sequence,
         last_sequence,
-        dropped_observations,
+        dropped_observations: Some(dropped_observations),
+        dropped_bytes: None,
+    }
+}
+
+fn byte_gap(sequence: u64, dropped_bytes: u64) -> ObservationGap {
+    ObservationGap {
+        pane_id: "pane-1".into(),
+        harness: harness(),
+        first_timestamp_ms: 1_800_000_000_100,
+        last_timestamp_ms: 1_800_000_000_150,
+        first_sequence: sequence,
+        last_sequence: sequence,
+        dropped_observations: None,
+        dropped_bytes: Some(dropped_bytes),
     }
 }
 
@@ -78,6 +92,7 @@ fn segment_round_trip_keeps_header_observation_label_and_gap_distinct() {
         DatasetRow::Observation(static_activity.clone()),
         DatasetRow::Label(label(9)),
         DatasetRow::Gap(gap(10, 12, 2)),
+        DatasetRow::Gap(byte_gap(13, 4_200_000)),
     ]);
     let replayed = decode_segment(&bytes).unwrap();
     assert_eq!(replayed.metadata, metadata());
@@ -87,6 +102,7 @@ fn segment_round_trip_keeps_header_observation_label_and_gap_distinct() {
             RecordedRow::Observation(static_activity),
             RecordedRow::Label(label(9)),
             RecordedRow::Gap(gap(10, 12, 2)),
+            RecordedRow::Gap(byte_gap(13, 4_200_000)),
         ]
     );
     assert!(bytes.starts_with(b"{\"kind\":\"metadata\""));
@@ -98,6 +114,11 @@ fn gap_requires_a_nonempty_count_inside_its_sequence_interval() {
     assert_eq!(gap(10, 12, 0).validate(), Err(Error::InvalidGap));
     assert_eq!(gap(10, 12, 4).validate(), Err(Error::InvalidGap));
     assert_eq!(gap(12, 10, 1).validate(), Err(Error::InvalidGap));
+    assert_eq!(byte_gap(13, 4_200_000).validate(), Ok(()));
+    assert_eq!(byte_gap(13, 0).validate(), Err(Error::InvalidGap));
+    let mut combined = byte_gap(13, 1);
+    combined.dropped_observations = Some(1);
+    assert_eq!(combined.validate(), Ok(()));
 }
 
 #[test]

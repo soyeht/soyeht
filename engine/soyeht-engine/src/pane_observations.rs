@@ -29,7 +29,7 @@ pub enum QueueOutcome {
 
 struct ObservationQueue {
     capacity: usize,
-    rows: VecDeque<ObservationFrame>,
+    rows: VecDeque<RecordedRow>,
     gap: Option<ObservationGap>,
     last_submitted_sequence: Option<u64>,
     closed: bool,
@@ -47,20 +47,24 @@ impl ObservationQueue {
     }
 
     fn push(&mut self, frame: ObservationFrame) -> Result<QueueOutcome> {
+        self.push_row(RecordedRow::Observation(frame))
+    }
+
+    fn push_gap(&mut self, gap: ObservationGap) -> Result<QueueOutcome> {
+        self.push_row(RecordedRow::Gap(gap))
+    }
+
+    fn push_row(&mut self, row: RecordedRow) -> Result<QueueOutcome> {
+        let (_, _, _, sequence) = row_identity(&row);
         if self
             .last_submitted_sequence
-            .is_some_and(|last| frame.sequence <= last)
+            .is_some_and(|last| sequence <= last)
         {
             return Err(soyeht_pane_state::Error::InvalidSequence.into());
         }
-        self.last_submitted_sequence = Some(frame.sequence);
+        self.last_submitted_sequence = Some(sequence);
         if let Some(gap) = &mut self.gap {
-            gap.last_timestamp_ms = frame.timestamp_ms;
-            gap.last_sequence = frame.sequence;
-            gap.dropped_observations = gap
-                .dropped_observations
-                .checked_add(1)
-                .ok_or(soyeht_pane_state::Error::InvalidGap)?;
+            extend_gap(gap, &row)?;
             return Ok(QueueOutcome::GapExtended);
         }
         if self.rows.len() == self.capacity {
@@ -68,34 +72,94 @@ impl ObservationQueue {
                 .rows
                 .front()
                 .ok_or_else(|| errors::internal("Full observation queue was empty"))?;
-            let first_timestamp_ms = first.timestamp_ms;
-            let first_sequence = first.sequence;
-            let dropped_observations = u64::try_from(self.rows.len())
-                .map_err(|_| errors::internal("Observation queue length is invalid"))?
-                .checked_add(1)
-                .ok_or(soyeht_pane_state::Error::InvalidGap)?;
-            self.rows.clear();
-            self.gap = Some(ObservationGap {
-                pane_id: frame.pane_id,
-                harness: frame.harness,
+            let (pane_id, harness, first_timestamp_ms, first_sequence) = row_start(first);
+            let pane_id = pane_id.to_owned();
+            let harness = harness.clone();
+            let mut gap = ObservationGap {
+                pane_id,
+                harness,
                 first_timestamp_ms,
-                last_timestamp_ms: frame.timestamp_ms,
+                last_timestamp_ms: first_timestamp_ms,
                 first_sequence,
-                last_sequence: frame.sequence,
-                dropped_observations,
-            });
+                last_sequence: first_sequence,
+                dropped_observations: None,
+                dropped_bytes: None,
+            };
+            let rows = self.rows.drain(..).chain(std::iter::once(row));
+            for lost in rows {
+                extend_gap(&mut gap, &lost)?;
+            }
+            self.rows.clear();
+            gap.validate()?;
+            self.gap = Some(gap);
             return Ok(QueueOutcome::GapExtended);
         }
-        self.rows.push_back(frame);
+        self.rows.push_back(row);
         Ok(QueueOutcome::Queued)
     }
 
     fn pop(&mut self) -> Option<RecordedRow> {
         self.rows
             .pop_front()
-            .map(RecordedRow::Observation)
             .or_else(|| self.gap.take().map(RecordedRow::Gap))
     }
+}
+
+fn row_start(row: &RecordedRow) -> (&str, &HarnessIdentity, i64, u64) {
+    match row {
+        RecordedRow::Observation(frame) => (
+            &frame.pane_id,
+            &frame.harness,
+            frame.timestamp_ms,
+            frame.sequence,
+        ),
+        RecordedRow::Label(label) => (
+            &label.pane_id,
+            &label.harness,
+            label.timestamp_ms,
+            label.sequence,
+        ),
+        RecordedRow::Gap(gap) => (
+            &gap.pane_id,
+            &gap.harness,
+            gap.first_timestamp_ms,
+            gap.first_sequence,
+        ),
+    }
+}
+
+fn add_loss(total: &mut Option<u64>, count: Option<u64>) -> Result<()> {
+    if let Some(count) = count {
+        *total = Some(
+            total
+                .unwrap_or(0)
+                .checked_add(count)
+                .ok_or(soyeht_pane_state::Error::InvalidGap)?,
+        );
+    }
+    Ok(())
+}
+
+fn extend_gap(gap: &mut ObservationGap, row: &RecordedRow) -> Result<()> {
+    let (pane_id, harness, timestamp_ms, sequence) = row_identity(row);
+    if pane_id != gap.pane_id || harness != &gap.harness {
+        return Err(errors::invalid("Observation gap provenance changed"));
+    }
+    gap.last_timestamp_ms = timestamp_ms;
+    gap.last_sequence = sequence;
+    match row {
+        RecordedRow::Observation(_) => add_loss(&mut gap.dropped_observations, Some(1))?,
+        RecordedRow::Gap(next) => {
+            add_loss(&mut gap.dropped_observations, next.dropped_observations)?;
+            add_loss(&mut gap.dropped_bytes, next.dropped_bytes)?;
+        }
+        RecordedRow::Label(_) => {
+            return Err(errors::invalid(
+                "Ground-truth labels cannot enter the observation writer queue",
+            ));
+        }
+    }
+    Ok(())
 }
 
 struct RecorderState {
@@ -164,6 +228,37 @@ impl ObservationRecorder {
         let outcome = state.queue.push(frame)?;
         wake.notify_one();
         Ok(outcome)
+    }
+
+    pub fn try_record_gap(&self, gap: ObservationGap) -> Result<QueueOutcome> {
+        gap.validate()?;
+        if gap.pane_id != self.pane_id || gap.harness != self.harness {
+            return Err(errors::invalid(
+                "Observation gap provenance does not match its recorder",
+            ));
+        }
+        let (lock, wake) = &*self.shared;
+        let mut state = lock
+            .lock()
+            .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+        if let Some(failure) = &state.failure {
+            return Err(errors::internal(failure.clone()));
+        }
+        if state.queue.closed {
+            return Err(errors::internal("Observation recorder is closed"));
+        }
+        let outcome = state.queue.push_gap(gap)?;
+        wake.notify_one();
+        Ok(outcome)
+    }
+
+    pub fn failure(&self) -> Result<Option<String>> {
+        let (lock, _) = &*self.shared;
+        Ok(lock
+            .lock()
+            .map_err(|_| errors::internal("Observation queue lock was poisoned"))?
+            .failure
+            .clone())
     }
 
     pub fn finish(mut self) -> Result<()> {
@@ -293,6 +388,17 @@ impl SegmentStore {
         self.enforce_retention()
     }
 
+    pub fn next_sequence(&self) -> Result<u64> {
+        self.last_sequence
+            .map(|sequence| {
+                sequence
+                    .checked_add(1)
+                    .ok_or_else(|| errors::internal("Observation sequence exhausted"))
+            })
+            .transpose()
+            .map(|next| next.unwrap_or(0))
+    }
+
     pub fn replay(&self) -> Result<Vec<ReplayedSegment>> {
         self.segments
             .iter()
@@ -385,6 +491,35 @@ impl SegmentStore {
         }
         Ok(())
     }
+}
+
+pub fn installed_engine_build() -> Result<EngineBuild> {
+    let executable = std::env::current_exe()?;
+    let mut file = File::open(executable)?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    let digest = digest.finalize();
+    let build = EngineBuild {
+        package_version: env!("CARGO_PKG_VERSION").into(),
+        executable_sha256: format!("{digest:x}"),
+    };
+    build.validate()?;
+    Ok(build)
+}
+
+pub fn experiment_root(profile: &Path) -> Result<PathBuf> {
+    let experiments = profile.join("experiments");
+    ensure_private_directory(&experiments)?;
+    let root = experiments.join("pane-state");
+    ensure_private_directory(&root)?;
+    Ok(root)
 }
 
 pub fn delete_pane(root: &Path, pane_id: &str) -> Result<DeletionReceipt> {
@@ -689,6 +824,19 @@ mod tests {
         frame
     }
 
+    fn byte_gap(sequence: u64, dropped_bytes: u64) -> ObservationGap {
+        ObservationGap {
+            pane_id: "pane-1".into(),
+            harness: harness(),
+            first_timestamp_ms: 1_800_000_000_000 + sequence as i64,
+            last_timestamp_ms: 1_800_000_000_000 + sequence as i64,
+            first_sequence: sequence,
+            last_sequence: sequence,
+            dropped_observations: None,
+            dropped_bytes: Some(dropped_bytes),
+        }
+    }
+
     #[test]
     fn bounded_queue_makes_sustained_pressure_the_next_durable_row() {
         let mut queue = ObservationQueue::new(2);
@@ -703,11 +851,30 @@ mod tests {
         };
         assert_eq!(gap.first_sequence, 0);
         assert_eq!(gap.last_sequence, 3);
-        assert_eq!(gap.dropped_observations, 4);
+        assert_eq!(gap.dropped_observations, Some(4));
+        assert_eq!(gap.dropped_bytes, None);
         assert!(gap.last_timestamp_ms < gap.first_timestamp_ms);
         gap.validate().unwrap();
         assert_eq!(queue.push(frame(4)).unwrap(), QueueOutcome::Queued);
         assert_eq!(queue.pop(), Some(observation(4, false)));
+    }
+
+    #[test]
+    fn writer_pressure_preserves_both_projected_and_raw_loss_units() {
+        let mut queue = ObservationQueue::new(1);
+        assert_eq!(queue.push(frame(0)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(
+            queue.push_gap(byte_gap(1, 4_200_000)).unwrap(),
+            QueueOutcome::GapExtended
+        );
+        let Some(RecordedRow::Gap(gap)) = queue.pop() else {
+            panic!("mixed pressure did not leave a gap")
+        };
+        assert_eq!(gap.first_sequence, 0);
+        assert_eq!(gap.last_sequence, 1);
+        assert_eq!(gap.dropped_observations, Some(1));
+        assert_eq!(gap.dropped_bytes, Some(4_200_000));
+        gap.validate().unwrap();
     }
 
     #[test]

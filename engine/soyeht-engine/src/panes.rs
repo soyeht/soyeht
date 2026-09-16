@@ -212,6 +212,15 @@ impl Core {
             .ok_or_else(|| errors::not_found("Pane not found"))?
             .stored
             .clone();
+        let requested_capture = (method == "pane.experiment.set")
+            .then(|| errors::param_bool(params, "on"))
+            .transpose()?;
+        let prepared_capture =
+            if requested_capture == Some(true) && !self.terminal_captures.contains_key(id) {
+                Some(self.prepare_terminal_capture(id)?)
+            } else {
+                None
+            };
         let mut events = vec![];
         let result = match method {
             "pane.close" => {
@@ -248,7 +257,10 @@ impl Core {
                     ));
                 }
                 saved.pane.experiment_capture = Some(PaneExperimentCapture {
-                    on: errors::param_bool(params, "on")?,
+                    on: errors::invariant(
+                        requested_capture,
+                        "Experiment capture request disappeared",
+                    )?,
                     failure: None,
                 });
                 json!({"capture":saved.pane.experiment_capture})
@@ -283,20 +295,45 @@ impl Core {
             Ok((result, events))
         })?;
         if !mutation.repeated {
-            let running = errors::invariant(
-                self.panes.get_mut(id),
-                "Pane disappeared after its mutation committed",
-            )?;
-            running.screen.recording = saved.pane.record;
-            running.stored = saved.clone();
-            if saved.closed {
-                self.editor.remove_pane(id);
-                self.finish_close(id)?;
-            }
-            if method == "pane.resize"
-                && saved.pane.mode == PaneMode::Terminal
-                && let Some(instance_id) = saved.instance_id
+            self.apply_committed_pane_edit(id, method, saved, prepared_capture)?;
+        }
+        Ok(mutation.result)
+    }
+
+    fn apply_committed_pane_edit(
+        &mut self,
+        id: &str,
+        method: &str,
+        saved: StoredPane,
+        prepared_capture: Option<crate::terminal_capture::TerminalCapture>,
+    ) -> Result<()> {
+        let running = errors::invariant(
+            self.panes.get_mut(id),
+            "Pane disappeared after its mutation committed",
+        )?;
+        running.screen.recording = saved.pane.record;
+        running.stored = saved.clone();
+        if method == "pane.experiment.set" {
+            if saved
+                .pane
+                .experiment_capture
+                .as_ref()
+                .is_some_and(|capture| capture.on)
             {
+                if let Some(capture) = prepared_capture {
+                    self.terminal_captures.insert(id.into(), capture);
+                }
+            } else {
+                self.terminal_captures.remove(id);
+            }
+        }
+        if saved.closed {
+            self.editor.remove_pane(id);
+            self.finish_close(id)?;
+        }
+        if method == "pane.resize" && saved.pane.mode == PaneMode::Terminal {
+            self.resize_terminal_capture(id)?;
+            if let Some(instance_id) = saved.instance_id {
                 let _ = self.pty_request(Request::Resize {
                     instance_id,
                     cols: saved.pane.cols as u16,
@@ -304,10 +341,11 @@ impl Core {
                 });
             }
         }
-        Ok(mutation.result)
+        Ok(())
     }
 
     pub fn finish_close(&mut self, id: &str) -> Result<()> {
+        self.terminal_captures.remove(id);
         for client in self.clients.values_mut() {
             client.streams.remove(id);
         }

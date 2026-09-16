@@ -135,7 +135,10 @@ pub struct ObservationGap {
     pub last_timestamp_ms: i64,
     pub first_sequence: u64,
     pub last_sequence: u64,
-    pub dropped_observations: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dropped_observations: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dropped_bytes: Option<u64>,
 }
 
 impl ObservationGap {
@@ -148,9 +151,15 @@ impl ObservationGap {
             .last_sequence
             .checked_sub(self.first_sequence)
             .and_then(|span| span.checked_add(1));
-        if self.dropped_observations == 0
-            || self.last_sequence < self.first_sequence
-            || sequence_span.is_none_or(|span| self.dropped_observations > span)
+        let valid_observation_loss = self
+            .dropped_observations
+            .is_none_or(|count| count > 0 && sequence_span.is_some_and(|span| count <= span));
+        let valid_byte_loss = self.dropped_bytes.is_none_or(|count| count > 0);
+        let has_loss = self.dropped_observations.is_some() || self.dropped_bytes.is_some();
+        if self.last_sequence < self.first_sequence
+            || !has_loss
+            || !valid_observation_loss
+            || !valid_byte_loss
         {
             return Err(Error::InvalidGap);
         }

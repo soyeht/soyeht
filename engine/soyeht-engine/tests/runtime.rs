@@ -563,6 +563,30 @@ fn wait_for_path(path: &std::path::Path, message: &str) {
     }
 }
 
+fn experiment_rows(root: &std::path::Path) -> Vec<Value> {
+    let Ok(panes) = fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut files = panes
+        .flatten()
+        .flat_map(|pane| fs::read_dir(pane.path()).into_iter().flatten().flatten())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|suffix| suffix == "jsonl"))
+        .collect::<Vec<_>>();
+    files.sort();
+    files
+        .into_iter()
+        .flat_map(|path| {
+            fs::read_to_string(path)
+                .unwrap_or_default()
+                .lines()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter_map(|line| serde_json::from_str(&line).ok())
+        .collect()
+}
+
 #[test]
 fn bound_agent_cannot_read_or_add_variants_in_another_workspace() {
     let rig = Rig::new();
@@ -5191,6 +5215,87 @@ fn reconnect_replays_screen_and_duplicate_input_is_not_typed_twice() {
     assert_eq!(client.pane(&pane)["pid"], pid);
     let (_, replayed) = client.tail(&pane);
     assert!(!replayed.is_empty());
+}
+
+#[test]
+fn persisted_terminal_capture_records_provenance_and_resumes_sequence_after_restart() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    let (_, pane) = client.create(&rig);
+    drop(client);
+    rig.kill_engine();
+    rig.database_probe()
+        .set_experiment_capture(&pane, true)
+        .unwrap();
+    rig.start();
+
+    let root = rig.path.join("experiments/pane-state");
+    let mut client = rig.client();
+    assert_eq!(client.pane(&pane)["experimentCapture"]["on"], true);
+    client.call(
+        "pane.input",
+        json!({"paneId":pane,"bytes":STANDARD.encode(b"printf 'CAPTURE_ONE\\n'\n"),
+            "idempotencyKey":"capture-one"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let first_rows = loop {
+        let rows = experiment_rows(&root);
+        if rows
+            .iter()
+            .any(|row| row["kind"] == "observation" && row.to_string().contains("CAPTURE_ONE"))
+        {
+            break rows;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "captured output was not recorded"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    let metadata = first_rows
+        .iter()
+        .find(|row| row["kind"] == "metadata")
+        .unwrap();
+    let binary = fs::read(env!("CARGO_BIN_EXE_soyeht-engine")).unwrap();
+    assert_eq!(
+        metadata["engine"]["executableSha256"],
+        format!("{:x}", Sha256::digest(binary))
+    );
+    let first_sequence = first_rows
+        .iter()
+        .filter(|row| row["kind"] == "observation")
+        .filter_map(|row| row["sequence"].as_u64())
+        .max()
+        .unwrap();
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut client = rig.client();
+    assert_eq!(client.pane(&pane)["experimentCapture"]["on"], true);
+    client.call(
+        "pane.input",
+        json!({"paneId":pane,"bytes":STANDARD.encode(b"printf 'CAPTURE_TWO\\n'\n"),
+            "idempotencyKey":"capture-two"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let rows = experiment_rows(&root);
+        if rows.iter().any(|row| {
+            row["kind"] == "observation"
+                && row["sequence"]
+                    .as_u64()
+                    .is_some_and(|value| value > first_sequence)
+                && row.to_string().contains("CAPTURE_TWO")
+        }) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "capture did not resume after restart"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 struct Phone {
