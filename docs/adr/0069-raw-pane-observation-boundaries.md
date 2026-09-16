@@ -43,15 +43,20 @@ explicit erase action removes the entire experiment directory, including exports
 never follows symlinks, reports what was removed, and a failure remains visible rather than
 being presented as successful withdrawal.
 
-Only the Dev Mac application with a persistent signature may change experiment consent. The
-engine checks the live Unix peer process against the application identifier and the engine's
-own Apple Development team before accepting the mutation. This attests which program called;
-it does not claim that the engine can prove which physical person acted. Same-UID command-line
-clients, bound agents, raw socket clients, paired phones, ad-hoc builds and a signed app from
-another team fail closed. Refusing the paired phone is deliberate policy: consent to record
-a Mac terminal is granted at that Mac, by the person in front of it. Stable signing is part
-of this boundary; reverting either binary to ad-hoc signing makes consent changes unavailable
-rather than silently weakening the check.
+Only the Dev Mac application with a persistent signature may change experiment consent. At
+Unix accept time the engine obtains the peer endpoint's kernel audit token, which identifies
+the process instance and cannot be confused by PID reuse. Security.framework resolves that
+audit token and validates the live code in process against the application identifier and the
+engine's own Apple Development team. No path, PID or external command mediates the decision.
+This attests which program created the accepted peer endpoint; it does not claim that the engine
+can prove which physical person acted. A Unix stream does not re-attest individual writes after
+a deliberate descriptor transfer, so this boundary also requires the UI to keep its client
+socket private; the app has no descriptor-delegation path. Same-UID command-line clients, bound
+agents, raw socket clients, paired phones, ad-hoc builds and a signed app from another team fail
+closed. Refusing the paired phone is deliberate policy: consent to record a Mac terminal is
+granted at that Mac, by the person in front of it. Stable signing is part of this boundary;
+reverting either binary to ad-hoc signing makes consent changes unavailable rather than silently
+weakening the check.
 
 The engine observes a copy of output only after the normal terminal stream has accepted it.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces

@@ -36,5 +36,9 @@ ed25519-dalek.workspace = true
 [dev-dependencies]
 soyeht-store = { path = "../soyeht-store", features = ["test-support"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation.workspace = true
+security-framework.workspace = true
+
 [lints]
 workspace = true

@@ -23,7 +23,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    net::{TcpListener, UnixListener},
+    net::{TcpListener, UnixListener, UnixStream},
     sync::Semaphore,
 };
 
@@ -39,6 +39,15 @@ fn update_pair_address(shared: &Shared, address: SocketAddr) -> crate::errors::R
         state.pair_address = address.to_string();
     }
     Ok(())
+}
+
+fn local_peer_audit_token(stream: &UnixStream) -> Option<ui_attestation::PeerAuditToken> {
+    let credential = stream.peer_cred().ok()?;
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    if credential.uid() != unsafe { libc::geteuid() } {
+        return None;
+    }
+    ui_attestation::peer_audit_token(stream)
 }
 
 pub struct Config {
@@ -123,23 +132,17 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         tasks.spawn(async move {
             loop {
                 let (stream, _) = unix.accept().await?;
-                // SAFETY: geteuid has no arguments or memory preconditions.
-                let Ok(credential) = stream.peer_cred() else {
+                let Some(peer_audit_token) = local_peer_audit_token(&stream) else {
                     continue;
                 };
-                // SAFETY: geteuid has no arguments or memory preconditions.
-                if credential.uid() != unsafe { libc::geteuid() } {
-                    continue;
-                }
                 let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
                     continue;
                 };
                 let core = Arc::clone(&core);
-                let peer_pid = credential.pid();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let signed_ui = tokio::task::spawn_blocking(move || {
-                        ui_attestation::signed_ui_peer(peer_pid)
+                        ui_attestation::signed_ui_peer(peer_audit_token)
                     })
                     .await
                     .unwrap_or(false);
