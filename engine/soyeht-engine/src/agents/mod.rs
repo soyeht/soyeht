@@ -303,6 +303,20 @@ impl Core {
     ) -> Result<Mutation> {
         let id = saved.pane.pane_id.clone();
         saved.pane.agent = Some(state.public(self.now_ms()));
+        let protocol_label_changed = self.panes.get(&id).is_none_or(|running| {
+            running.stored.pane.state != saved.pane.state
+                || running.stored.pane.source != saved.pane.source
+                || running
+                    .stored
+                    .pane
+                    .agent
+                    .as_ref()
+                    .zip(saved.pane.agent.as_ref())
+                    .is_none_or(|(old, new)| {
+                        old.harness != new.harness || old.version != new.version
+                    })
+        }) && saved.pane.source
+            == soyeht_protocol::StateSource::Protocol;
         let old_queue = self
             .agents
             .get(&id)
@@ -356,6 +370,9 @@ impl Core {
                 self.publish_native_completion(completion)?;
             }
             self.install_committed_agent(&id, saved, state)?;
+            if protocol_label_changed && self.agent_captures.contains_key(&id) {
+                self.record_agent_label(&id)?;
+            }
             if let Some(write) = changes.editor_agent_write {
                 self.install_agent_write(write);
             }

@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod agent_capture;
 pub mod agents;
 pub mod auth;
 pub mod core;

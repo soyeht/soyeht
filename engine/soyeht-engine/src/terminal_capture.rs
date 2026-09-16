@@ -390,16 +390,16 @@ fn take_raw_gap(
 }
 
 impl Core {
-    fn observation_root(&self) -> Result<std::path::PathBuf> {
+    pub(crate) fn observation_root(&self) -> Result<std::path::PathBuf> {
         experiment_root(&self.directory)
     }
 
-    fn capture_build(&mut self) -> Result<EngineBuild> {
-        if let Some(build) = &self.terminal_capture_build {
+    pub(crate) fn capture_build(&mut self) -> Result<EngineBuild> {
+        if let Some(build) = &self.experiment_capture_build {
             return Ok(build.clone());
         }
         let build = installed_engine_build()?;
-        self.terminal_capture_build = Some(build.clone());
+        self.experiment_capture_build = Some(build.clone());
         Ok(build)
     }
 
@@ -422,7 +422,7 @@ impl Core {
         )
     }
 
-    pub(crate) fn delete_terminal_capture_data(
+    pub(crate) fn delete_experiment_capture_data(
         &mut self,
         connection: &str,
         params: &serde_json::Value,
@@ -437,7 +437,7 @@ impl Core {
         let exports_path = exports_path
             .to_str()
             .ok_or_else(|| errors::internal("Experiment export path is not valid text"))?;
-        let receipt = self.delete_terminal_capture_files(pane_id)?;
+        let receipt = self.delete_experiment_capture_files(pane_id)?;
         let files = u32::try_from(receipt.files)
             .map_err(|_| errors::internal("Observation deletion file count is invalid"))?;
         let result = serde_json::json!({
@@ -454,12 +454,15 @@ impl Core {
         }
     }
 
-    fn delete_terminal_capture_files(&mut self, pane_id: &str) -> Result<DeletionReceipt> {
+    fn delete_experiment_capture_files(&mut self, pane_id: &str) -> Result<DeletionReceipt> {
         let pane = self
             .panes
             .get(pane_id)
-            .filter(|pane| !pane.stored.closed && pane.stored.pane.mode == PaneMode::Terminal)
-            .ok_or_else(|| errors::not_found("Terminal pane not found"))?;
+            .filter(|pane| {
+                !pane.stored.closed
+                    && matches!(pane.stored.pane.mode, PaneMode::Terminal | PaneMode::Agent)
+            })
+            .ok_or_else(|| errors::not_found("Experiment pane not found"))?;
         if pane
             .stored
             .pane
@@ -467,6 +470,7 @@ impl Core {
             .as_ref()
             .is_some_and(|capture| capture.on)
             || self.terminal_captures.contains_key(pane_id)
+            || self.agent_captures.contains_key(pane_id)
         {
             return Err(errors::pane_busy(
                 "Stop experiment capture before deleting its data",
@@ -475,13 +479,13 @@ impl Core {
         delete_pane(&self.observation_root()?, pane_id)
     }
 
-    pub(crate) fn restore_terminal_captures(&mut self) -> Result<()> {
+    pub(crate) fn restore_experiment_captures(&mut self) -> Result<()> {
         let ids: Vec<_> = self
             .panes
             .iter()
             .filter(|(_, pane)| {
                 !pane.stored.closed
-                    && pane.stored.pane.mode == PaneMode::Terminal
+                    && matches!(pane.stored.pane.mode, PaneMode::Terminal | PaneMode::Agent)
                     && pane
                         .stored
                         .pane
@@ -492,11 +496,18 @@ impl Core {
             .map(|(id, _)| id.clone())
             .collect();
         for id in ids {
-            match self.prepare_terminal_capture(&id) {
-                Ok(capture) => {
-                    self.terminal_captures.insert(id, capture);
-                }
-                Err(error) => self.fail_terminal_capture(&id, Some(error.to_string()))?,
+            let mode = self.panes[&id].stored.pane.mode.clone();
+            let restored = match mode {
+                PaneMode::Terminal => self.prepare_terminal_capture(&id).map(|capture| {
+                    self.terminal_captures.insert(id.clone(), capture);
+                }),
+                PaneMode::Agent => self.prepare_agent_capture(&id).map(|capture| {
+                    self.agent_captures.insert(id.clone(), capture);
+                }),
+                _ => unreachable!("experiment capture mode was filtered"),
+            };
+            if let Err(error) = restored {
+                self.fail_experiment_capture(&id, Some(error.to_string()))?;
             }
         }
         Ok(())
@@ -510,20 +521,25 @@ impl Core {
             .and_then(|capture| capture.record(timestamp_ms, bytes).err())
             .map(|error| error.to_string());
         if let Some(failure) = failure {
-            self.fail_terminal_capture(pane_id, Some(failure))?;
+            self.fail_experiment_capture(pane_id, Some(failure))?;
         }
         Ok(())
     }
 
-    pub(crate) fn reconcile_terminal_captures(&mut self) -> Result<()> {
+    pub(crate) fn reconcile_experiment_captures(&mut self) -> Result<()> {
         let mut failed = Vec::new();
         for (pane_id, capture) in &self.terminal_captures {
             if let Some(failure) = capture.failure_reason()? {
                 failed.push((pane_id.clone(), failure));
             }
         }
+        for (pane_id, capture) in &self.agent_captures {
+            if let Some(failure) = capture.failure_reason()? {
+                failed.push((pane_id.clone(), failure));
+            }
+        }
         for (pane_id, failure) in failed {
-            self.fail_terminal_capture(&pane_id, Some(failure))?;
+            self.fail_experiment_capture(&pane_id, Some(failure))?;
         }
         Ok(())
     }
@@ -534,17 +550,18 @@ impl Core {
         };
         let pane = &self.panes[pane_id].stored.pane;
         if let Err(error) = capture.resize(pane.rows, pane.cols) {
-            self.fail_terminal_capture(pane_id, Some(error.to_string()))?;
+            self.fail_experiment_capture(pane_id, Some(error.to_string()))?;
         }
         Ok(())
     }
 
-    pub(crate) fn fail_terminal_capture(
+    pub(crate) fn fail_experiment_capture(
         &mut self,
         pane_id: &str,
         failure: Option<String>,
     ) -> Result<()> {
         self.terminal_captures.remove(pane_id);
+        self.agent_captures.remove(pane_id);
         let mut saved = errors::invariant(
             self.panes.get(pane_id),
             "Captured pane disappeared before failure publication",
@@ -569,7 +586,7 @@ fn deletion_receipt_commit_error(
     error: errors::Error,
 ) -> errors::Error {
     errors::internal(format!(
-        "Captured terminal data was removed ({} files, {} bytes), but the record of its removal was not saved: {}. Export files were not deleted and remain in {}",
+        "Captured experiment data was removed ({} files, {} bytes), but the record of its removal was not saved: {}. Export files were not deleted and remain in {}",
         receipt.files, receipt.bytes, error, exports_path
     ))
 }
@@ -604,6 +621,52 @@ mod tests {
     const CADENCE_WARMUP_DRAIN: Duration = Duration::from_millis(60);
     const FRAME_DENSE_INTERVAL: Duration = Duration::from_millis(5);
     const FRAME_DENSE_OBSERVATIONS: usize = 400;
+
+    fn load_average() -> Option<[f64; 3]> {
+        let mut averages = [0.0; 3];
+        // SAFETY: `averages` remains alive and writable for the call, and the
+        // supplied element count exactly matches the three-element buffer.
+        let count = unsafe { libc::getloadavg(averages.as_mut_ptr(), averages.len() as i32) };
+        (count == averages.len() as i32).then_some(averages)
+    }
+
+    fn log_cadence_attempt(
+        attempt: usize,
+        before: Option<[f64; 3]>,
+        after: Option<[f64; 3]>,
+        off: &[u128],
+        on: &[u128],
+    ) {
+        eprintln!(
+            "capture cadence attempt={attempt} load_average_before={before:?} load_average_after={after:?} off_us={off:?} on_us={on:?}"
+        );
+    }
+
+    fn cadence_samples_pass(
+        attempt: usize,
+        load_average_before: Option<[f64; 3]>,
+        off_micros: &[u128],
+        on_micros: &[u128],
+    ) -> bool {
+        let steady_off = &off_micros[CADENCE_WARMUP_PAIRS..];
+        let steady_on = &on_micros[CADENCE_WARMUP_PAIRS..];
+        log_cadence_attempt(
+            attempt,
+            load_average_before,
+            load_average(),
+            off_micros,
+            on_micros,
+        );
+        if !capture_is_not_faster(steady_off, steady_on) {
+            eprintln!(
+                "capture cadence attempt={attempt} invalid: capture-on measured faster than capture-off after the declared warm-up"
+            );
+            return false;
+        }
+        assert!(percentile(steady_on, 1, 2) * 100 <= percentile(steady_off, 1, 2) * 105);
+        assert!(percentile(steady_on, 95, 100) <= percentile(steady_off, 95, 100) + 5_000);
+        true
+    }
 
     fn time_coverage_basis_points(
         first_timestamp_ms: i64,
@@ -717,7 +780,7 @@ mod tests {
         let reason = label_write_timeout_message();
         *failure.lock().unwrap() = Some(reason.clone());
 
-        core.reconcile_terminal_captures().unwrap();
+        core.reconcile_experiment_captures().unwrap();
 
         assert!(!core.terminal_captures.contains_key("cadence-pane"));
         assert_eq!(
@@ -750,7 +813,7 @@ mod tests {
 
         let active = core.prepare_terminal_capture(pane_id).unwrap();
         core.terminal_captures.insert(pane_id.into(), active);
-        let busy = core.delete_terminal_capture_files(pane_id).unwrap_err();
+        let busy = core.delete_experiment_capture_files(pane_id).unwrap_err();
         assert_eq!(errors::kind(&busy), soyeht_protocol::ErrorKind::PaneBusy);
         drop(core.terminal_captures.remove(pane_id));
 
@@ -806,7 +869,7 @@ mod tests {
         );
         assert_eq!(
             error.to_string(),
-            "Captured terminal data was removed (3 files, 144 bytes), but the record of its removal was not saved: receipt store unavailable. Export files were not deleted and remain in /profile/experiments/pane-state/exports"
+            "Captured experiment data was removed (3 files, 144 bytes), but the record of its removal was not saved: receipt store unavailable. Export files were not deleted and remain in /profile/experiments/pane-state/exports"
         );
     }
 
@@ -1189,6 +1252,7 @@ mod tests {
 
     fn run_cadence_attempt(directory: &Path, chunks: &[Vec<u8>], attempt: usize) -> bool {
         fs::create_dir(directory).unwrap();
+        let load_average_before = load_average();
         let fixture_bytes = chunks.iter().skip(2).map(Vec::len).sum::<usize>();
         assert_eq!(fixture_bytes, CADENCE_FIXTURE_BYTES);
         let mut off = cadence_core(&directory.join("off"), chunks, false);
@@ -1240,25 +1304,13 @@ mod tests {
         }
         set_cadence_projection_paused(&on, false);
         wait_for_projection_worker(&metrics);
-        let steady_off = &off_micros[CADENCE_WARMUP_PAIRS..];
-        let steady_on = &on_micros[CADENCE_WARMUP_PAIRS..];
-        let off_median = percentile(steady_off, 1, 2);
-        let on_median = percentile(steady_on, 1, 2);
-        let off_p95 = percentile(steady_off, 95, 100);
-        let on_p95 = percentile(steady_on, 95, 100);
-        eprintln!("capture cadence attempt={attempt} off_us={off_micros:?} on_us={on_micros:?}");
-        if !capture_is_not_faster(steady_off, steady_on) {
-            eprintln!(
-                "capture cadence attempt={attempt} invalid: capture-on measured faster than capture-off after the declared warm-up"
-            );
+        if !cadence_samples_pass(attempt, load_average_before, &off_micros, &on_micros) {
             drop(on);
             drop(off);
             fs::remove_dir_all(directory).unwrap();
             return false;
         }
-        assert!(on_median * 100 <= off_median * 105);
-        assert!(on_p95 <= off_p95 + 5_000);
-        let build = on.terminal_capture_build.clone().unwrap();
+        let build = on.experiment_capture_build.clone().unwrap();
         drop(on);
         let fixture_wall_micros = fixture_started.elapsed().as_micros();
         drop(off);

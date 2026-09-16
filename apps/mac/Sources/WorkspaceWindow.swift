@@ -736,18 +736,17 @@ private struct PaneCard: View {
     .simultaneousGesture(TapGesture().onEnded { client.select(pane.paneId) })
     .contextMenu { Button("Close pane", role: .destructive) { onClose(pane.paneId) } }
     .confirmationDialog(
-      "Record raw terminal observations?", isPresented: $showingCaptureConsent
+      ExperimentCapturePresentation.consentTitle(for: pane.mode),
+      isPresented: $showingCaptureConsent
     ) {
       Button("Start recording") { setExperimentCapture(on: true) }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text(
-        "This Dev-only experiment stores raw terminal text on this Mac. It can contain tokens, credentials, and private source."
-      )
+      Text(ExperimentCapturePresentation.consentMessage(for: pane.mode))
     }
     .sheet(isPresented: $showingCaptureDeletion) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x18) {
-        Text("Keep the captured terminal data?")
+        Text("Keep the captured experiment data?")
           .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .semibold))
         Text(
           "Recording has stopped. Delete removes only this pane's recorded segments. Export files remain at \(experimentExportsPath)."
@@ -797,11 +796,14 @@ private struct PaneCard: View {
           .foregroundStyle(MacTheme.secondary)
       }
       #if DEBUG
-        if pane.mode == .terminal, let capture = pane.experimentCapture {
+        if [.terminal, .agent].contains(pane.mode), let capture = pane.experimentCapture {
           if capture.on {
-            Label("Recording terminal text", systemImage: "record.circle.fill")
-              .foregroundStyle(MacTheme.danger)
-              .accessibilityIdentifier("experiment-recording-\(pane.paneId)")
+            Label(
+              ExperimentCapturePresentation.activeLabel(for: pane.mode),
+              systemImage: "record.circle.fill"
+            )
+            .foregroundStyle(MacTheme.danger)
+            .accessibilityIdentifier("experiment-recording-\(pane.paneId)")
           } else if let failure = capture.failure {
             Label("Capture stopped", systemImage: "exclamationmark.triangle.fill")
               .foregroundStyle(MacTheme.warning)
@@ -811,7 +813,7 @@ private struct PaneCard: View {
             Text(captureNotice).foregroundStyle(MacTheme.secondary)
           }
         }
-        if pane.mode == .terminal {
+        if [.terminal, .agent].contains(pane.mode) {
           Button {
             if pane.experimentCapture?.on == true {
               setExperimentCapture(on: false)

@@ -2,6 +2,23 @@ import Foundation
 import SoyehtProtocol
 
 public enum ExperimentCapturePresentation {
+  public static func consentTitle(for mode: PaneMode) -> String {
+    mode == .agent ? "Record agent state labels?" : "Record raw terminal observations?"
+  }
+
+  public static func consentMessage(for mode: PaneMode) -> String {
+    if mode == .agent {
+      return
+        "This Dev-only experiment stores timestamped agent state labels on this Mac. It does not store the conversation transcript."
+    }
+    return
+      "This Dev-only experiment stores raw terminal text on this Mac. It can contain tokens, credentials, and private source."
+  }
+
+  public static func activeLabel(for mode: PaneMode) -> String {
+    mode == .agent ? "Recording agent state labels" : "Recording terminal text"
+  }
+
   public static func deletionText(_ result: PaneExperimentDeleteResult) -> String {
     let deletion: String
     if result.files > 0 {
