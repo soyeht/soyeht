@@ -1,9 +1,13 @@
 use crate::{Detector, HarnessIdentity, ObservationGap, ObservationPaneKind, RecordedRow, Result};
 use serde::Serialize;
-use soyeht_protocol::PaneState;
+use soyeht_protocol::{PaneState, StateSource};
 use std::collections::BTreeSet;
 
 const COVERAGE_COMPARISON_BASIS_POINTS: u16 = 500;
+/// Descriptive evidence floor for a truth-source group and for each state.
+pub const MIN_GROUND_TRUTH_TRANSITIONS: u64 = 20;
+/// A published precision or recall value needs this many comparisons.
+pub const MIN_RATE_DENOMINATOR: u64 = 20;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +25,15 @@ impl Rate {
             value: (denominator > 0).then(|| numerator as f64 / denominator as f64),
         }
     }
+
+    fn score(numerator: u64, denominator: u64, group_ready: bool) -> Self {
+        Self {
+            numerator,
+            denominator,
+            value: (group_ready && denominator >= MIN_RATE_DENOMINATOR)
+                .then(|| numerator as f64 / denominator as f64),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -35,8 +48,19 @@ pub struct LatencyMetrics {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct StateDurationMetrics {
+    pub measured: u64,
+    pub unavailable: u64,
+    pub minimum_ms: Option<u64>,
+    pub median_ms: Option<u64>,
+    pub entries_under_one_second: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StateMetrics {
     pub state: PaneState,
+    pub truth_transitions: u64,
     pub true_positive: u64,
     pub false_positive: u64,
     pub false_negative: u64,
@@ -44,6 +68,7 @@ pub struct StateMetrics {
     pub recall: Rate,
     pub time_coverage: Option<Rate>,
     pub latency: LatencyMetrics,
+    pub duration: StateDurationMetrics,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -51,8 +76,11 @@ pub struct StateMetrics {
 pub struct HarnessMetrics {
     pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
+    pub ground_truth_source: Option<StateSource>,
     pub panes: u64,
     pub observations: u64,
+    pub labels: u64,
+    pub label_transitions: u64,
     pub labeled_observations: u64,
     pub scores_available: bool,
     pub panes_with_omitted_sources: u64,
@@ -78,11 +106,11 @@ impl MetricsReport {
             return false;
         }
         self.harnesses.iter().all(|left| {
-            let Some(right) = other
-                .harnesses
-                .iter()
-                .find(|right| right.pane_kind == left.pane_kind && right.harness == left.harness)
-            else {
+            let Some(right) = other.harnesses.iter().find(|right| {
+                right.pane_kind == left.pane_kind
+                    && right.harness == left.harness
+                    && right.ground_truth_source == left.ground_truth_source
+            }) else {
                 return false;
             };
             let (Some(left), Some(right)) = (&left.time_coverage, &right.time_coverage) else {
@@ -115,6 +143,7 @@ struct PaneTrace {
 
 #[derive(Default)]
 struct MutableState {
+    truth_transitions: u64,
     true_positive: u64,
     false_positive: u64,
     false_negative: u64,
@@ -122,13 +151,18 @@ struct MutableState {
     lost_ms: u64,
     latencies: Vec<u64>,
     latency_unavailable: u64,
+    durations: Vec<u64>,
+    duration_unavailable: u64,
 }
 
 struct MutableHarness {
     pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
+    ground_truth_source: Option<StateSource>,
     panes: u64,
     observations: u64,
+    labels: u64,
+    label_transitions: u64,
     labeled_observations: u64,
     panes_with_omitted_sources: u64,
     unknown: u64,
@@ -141,12 +175,19 @@ struct MutableHarness {
 }
 
 impl MutableHarness {
-    fn new(pane_kind: ObservationPaneKind, harness: HarnessIdentity) -> Self {
+    fn new(
+        pane_kind: ObservationPaneKind,
+        harness: HarnessIdentity,
+        ground_truth_source: Option<StateSource>,
+    ) -> Self {
         Self {
             pane_kind,
             harness,
+            ground_truth_source,
             panes: 0,
             observations: 0,
+            labels: 0,
+            label_transitions: 0,
             labeled_observations: 0,
             panes_with_omitted_sources: 0,
             unknown: 0,
@@ -169,11 +210,14 @@ impl MutableHarness {
     }
 
     fn finish(mut self) -> HarnessMetrics {
+        let group_ready = self.label_transitions >= MIN_GROUND_TRUTH_TRANSITIONS;
         self.states.sort_by_key(|(state, _)| state_order(state));
         let states = self
             .states
             .into_iter()
             .map(|(state, mut metrics)| {
+                let state_ready =
+                    group_ready && metrics.truth_transitions >= MIN_GROUND_TRUTH_TRANSITIONS;
                 metrics.latencies.sort_unstable();
                 let latency = LatencyMetrics {
                     measured: metrics.latencies.len() as u64,
@@ -182,18 +226,33 @@ impl MutableHarness {
                     p95_ms: percentile(&metrics.latencies, 95),
                     maximum_ms: metrics.latencies.last().copied(),
                 };
+                metrics.durations.sort_unstable();
+                let duration = StateDurationMetrics {
+                    measured: metrics.durations.len() as u64,
+                    unavailable: metrics.duration_unavailable,
+                    minimum_ms: metrics.durations.first().copied(),
+                    median_ms: percentile(&metrics.durations, 50),
+                    entries_under_one_second: metrics
+                        .durations
+                        .iter()
+                        .filter(|duration| **duration < 1_000)
+                        .count() as u64,
+                };
                 StateMetrics {
                     state,
+                    truth_transitions: metrics.truth_transitions,
                     true_positive: metrics.true_positive,
                     false_positive: metrics.false_positive,
                     false_negative: metrics.false_negative,
-                    precision: Rate::new(
+                    precision: Rate::score(
                         metrics.true_positive,
                         metrics.true_positive.saturating_add(metrics.false_positive),
+                        state_ready,
                     ),
-                    recall: Rate::new(
+                    recall: Rate::score(
                         metrics.true_positive,
                         metrics.true_positive.saturating_add(metrics.false_negative),
+                        state_ready,
                     ),
                     time_coverage: self.coverage_available.then(|| {
                         Rate::new(
@@ -202,16 +261,23 @@ impl MutableHarness {
                         )
                     }),
                     latency,
+                    duration,
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let scores_available = states
+            .iter()
+            .any(|state| state.precision.value.is_some() || state.recall.value.is_some());
         HarnessMetrics {
             pane_kind: self.pane_kind,
             harness: self.harness,
+            ground_truth_source: self.ground_truth_source,
             panes: self.panes,
             observations: self.observations,
+            labels: self.labels,
+            label_transitions: self.label_transitions,
             labeled_observations: self.labeled_observations,
-            scores_available: self.labeled_observations > 0,
+            scores_available,
             panes_with_omitted_sources: self.panes_with_omitted_sources,
             unknown_rate: Rate::new(self.unknown, self.observations),
             time_coverage: self
@@ -282,33 +348,51 @@ pub fn evaluate_with_omitted_panes(
 
     let mut harnesses: Vec<MutableHarness> = Vec::new();
     for trace in traces {
-        let index = harnesses
-            .iter()
-            .position(|metrics| {
-                metrics.pane_kind == trace.pane_kind && metrics.harness == trace.harness
-            })
-            .unwrap_or_else(|| {
-                harnesses.push(MutableHarness::new(trace.pane_kind, trace.harness.clone()));
-                harnesses.len() - 1
-            });
-        let metrics = &mut harnesses[index];
-        if omitted_pane_ids.contains(trace.pane_id.as_str()) {
-            metrics.panes_with_omitted_sources += 1;
-            metrics.coverage_available = false;
+        let sources = label_sources(&trace);
+        for source in sources {
+            let index = harnesses
+                .iter()
+                .position(|metrics| {
+                    metrics.pane_kind == trace.pane_kind
+                        && metrics.harness == trace.harness
+                        && metrics.ground_truth_source == source
+                })
+                .unwrap_or_else(|| {
+                    harnesses.push(MutableHarness::new(
+                        trace.pane_kind,
+                        trace.harness.clone(),
+                        source.clone(),
+                    ));
+                    harnesses.len() - 1
+                });
+            let metrics = &mut harnesses[index];
+            if omitted_pane_ids.contains(trace.pane_id.as_str()) {
+                metrics.panes_with_omitted_sources += 1;
+                metrics.coverage_available = false;
+            }
+            score_trace(detector, &trace, source.as_ref(), metrics);
         }
-        score_trace(detector, &trace, metrics);
     }
     harnesses.sort_by(|left, right| {
         pane_kind_order(left.pane_kind)
             .cmp(&pane_kind_order(right.pane_kind))
             .then_with(|| harness_name(&left.harness).cmp(harness_name(&right.harness)))
+            .then_with(|| {
+                source_order(left.ground_truth_source.as_ref())
+                    .cmp(&source_order(right.ground_truth_source.as_ref()))
+            })
     });
     Ok(MetricsReport {
         harnesses: harnesses.into_iter().map(MutableHarness::finish).collect(),
     })
 }
 
-fn score_trace(detector: &dyn Detector, trace: &PaneTrace, metrics: &mut MutableHarness) {
+fn score_trace(
+    detector: &dyn Detector,
+    trace: &PaneTrace,
+    ground_truth_source: Option<&StateSource>,
+    metrics: &mut MutableHarness,
+) {
     metrics.panes += 1;
     let observations: Vec<_> = trace
         .rows
@@ -322,11 +406,23 @@ fn score_trace(detector: &dyn Detector, trace: &PaneTrace, metrics: &mut Mutable
         .rows
         .iter()
         .filter_map(|row| match &row.row {
-            RecordedRow::Label(label) => Some((row.sequence, label)),
+            RecordedRow::Label(label)
+                if ground_truth_source.is_some_and(|source| source == &label.source) =>
+            {
+                Some((row.sequence, label))
+            }
             _ => None,
         })
         .collect();
     metrics.observations += observations.len() as u64;
+    metrics.labels += labels.len() as u64;
+    for pair in labels.windows(2) {
+        if pair[0].1.state == pair[1].1.state {
+            continue;
+        }
+        metrics.label_transitions += 1;
+        metrics.state_mut(&pair[1].1.state).truth_transitions += 1;
+    }
     metrics.unknown += observations
         .iter()
         .filter(|(_, _, detected)| detected.state == PaneState::Unknown)
@@ -351,7 +447,25 @@ fn score_trace(detector: &dyn Detector, trace: &PaneTrace, metrics: &mut Mutable
     }
 
     score_latency(&observations, &labels, metrics);
+    score_state_durations(&labels, metrics);
     score_coverage(trace, &labels, metrics);
+}
+
+fn label_sources(trace: &PaneTrace) -> Vec<Option<StateSource>> {
+    let mut sources = Vec::new();
+    for row in &trace.rows {
+        let RecordedRow::Label(label) = &row.row else {
+            continue;
+        };
+        if !sources.iter().any(|source| source == &label.source) {
+            sources.push(label.source.clone());
+        }
+    }
+    if sources.is_empty() {
+        return vec![None];
+    }
+    sources.sort_by_key(source_order_value);
+    sources.into_iter().map(Some).collect()
 }
 
 fn score_latency(
@@ -379,6 +493,28 @@ fn score_latency(
                 .push((frame.timestamp_ms - label.timestamp_ms) as u64);
         }
     }
+}
+
+fn score_state_durations(labels: &[(u64, &crate::GroundTruthLabel)], metrics: &mut MutableHarness) {
+    let Some((_, first)) = labels.first() else {
+        return;
+    };
+    let mut current = *first;
+    for (_, next) in labels.iter().skip(1) {
+        if next.state == current.state {
+            continue;
+        }
+        let state = metrics.state_mut(&current.state);
+        if next.timestamp_ms < current.timestamp_ms {
+            state.duration_unavailable += 1;
+        } else {
+            state
+                .durations
+                .push((next.timestamp_ms - current.timestamp_ms) as u64);
+        }
+        current = next;
+    }
+    metrics.state_mut(&current.state).duration_unavailable += 1;
 }
 
 fn score_coverage(
@@ -518,6 +654,20 @@ fn pane_kind_order(kind: ObservationPaneKind) -> u8 {
     match kind {
         ObservationPaneKind::Agent => 0,
         ObservationPaneKind::Terminal => 1,
+    }
+}
+
+fn source_order(source: Option<&StateSource>) -> u8 {
+    source.map_or(0, source_order_value)
+}
+
+fn source_order_value(source: &StateSource) -> u8 {
+    match source {
+        StateSource::Protocol => 1,
+        StateSource::Hook => 2,
+        StateSource::Osc => 3,
+        StateSource::Screen => 4,
+        StateSource::None => 5,
     }
 }
 
