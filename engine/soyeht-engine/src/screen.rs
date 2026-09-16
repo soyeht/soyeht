@@ -1,11 +1,32 @@
 use crate::errors::{self, Result};
 use soyeht_protocol::limits;
 use soyeht_store::segments::{Log, Record};
-use std::{collections::VecDeque, path::Path};
+use std::{collections::VecDeque, path::Path, sync::Arc};
+
+enum LiveRecord {
+    Data { offset: u64, bytes: Arc<Vec<u8>> },
+    Gap { from: u64, to: u64 },
+}
+
+impl LiveRecord {
+    fn from(&self) -> u64 {
+        match self {
+            Self::Data { offset, .. } => *offset,
+            Self::Gap { from, .. } => *from,
+        }
+    }
+
+    fn end(&self) -> u64 {
+        match self {
+            Self::Data { offset, bytes } => offset.saturating_add(bytes.len() as u64),
+            Self::Gap { to, .. } => *to,
+        }
+    }
+}
 
 pub struct Screen {
     disk: Log,
-    live: VecDeque<Record>,
+    live: VecDeque<LiveRecord>,
     live_bytes: usize,
     next: u64,
     pub recording: bool,
@@ -28,10 +49,18 @@ impl Screen {
     pub fn first_offset(&self) -> u64 {
         self.disk
             .first_offset()
-            .min(self.live.front().map(Record::from).unwrap_or(self.next))
+            .min(self.live.front().map(LiveRecord::from).unwrap_or(self.next))
     }
 
     pub fn append(&mut self, record: Record) -> Result<()> {
+        match record {
+            Record::Data { offset, bytes } => self.append_shared_data(offset, Arc::new(bytes)),
+            Record::Gap { from, to } => self.append_gap(from, to),
+        }
+    }
+
+    pub fn append_shared_data(&mut self, offset: u64, bytes: Arc<Vec<u8>>) -> Result<()> {
+        let record = LiveRecord::Data { offset, bytes };
         if record.from() != self.next {
             return Err(errors::internal("Noncontiguous screen record"));
         }
@@ -42,15 +71,45 @@ impl Screen {
                     to: record.from(),
                 })?;
             }
-            self.disk.append(record.clone())?;
+            let LiveRecord::Data { offset, bytes } = &record else {
+                unreachable!()
+            };
+            self.disk.append(Record::Data {
+                offset: *offset,
+                bytes: bytes.as_ref().clone(),
+            })?;
         }
         self.next = record.end();
-        if let Record::Data { bytes, .. } = &record {
+        if let LiveRecord::Data { bytes, .. } = &record {
             self.live_bytes += bytes.len();
         }
         self.live.push_back(record);
         while self.live_bytes > limits::TAIL_BYTES || self.live.len() > 1024 {
-            if let Some(Record::Data { bytes, .. }) = self.live.pop_front() {
+            if let Some(LiveRecord::Data { bytes, .. }) = self.live.pop_front() {
+                self.live_bytes -= bytes.len();
+            }
+        }
+        Ok(())
+    }
+
+    fn append_gap(&mut self, from: u64, to: u64) -> Result<()> {
+        let record = LiveRecord::Gap { from, to };
+        if record.from() != self.next {
+            return Err(errors::internal("Noncontiguous screen record"));
+        }
+        if self.recording {
+            if self.disk.next_offset() < from {
+                self.disk.append(Record::Gap {
+                    from: self.disk.next_offset(),
+                    to: from,
+                })?;
+            }
+            self.disk.append(Record::Gap { from, to })?;
+        }
+        self.next = record.end();
+        self.live.push_back(record);
+        while self.live.len() > 1024 {
+            if let Some(LiveRecord::Data { bytes, .. }) = self.live.pop_front() {
                 self.live_bytes -= bytes.len();
             }
         }
@@ -75,14 +134,14 @@ impl Screen {
             .next
             .saturating_sub(limits::TAIL_BYTES as u64)
             .max(self.first_offset());
-        let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
+        let live_first = self.live.front().map(LiveRecord::from).unwrap_or(self.next);
         if desired < live_first {
             self.disk.align_forward(desired).min(live_first)
         } else {
             self.live
                 .iter()
                 .find(|record| record.from() >= desired)
-                .map(Record::from)
+                .map(LiveRecord::from)
                 .unwrap_or(self.next)
         }
     }
@@ -94,7 +153,7 @@ impl Screen {
         let mut result = Vec::new();
         let mut position = from;
         let mut remaining = maximum;
-        let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
+        let live_first = self.live.front().map(LiveRecord::from).unwrap_or(self.next);
         if position < live_first && position < self.disk.next_offset() {
             for record in self.disk.read(
                 position,
@@ -127,7 +186,7 @@ impl Screen {
                 break;
             }
             let record = match record {
-                Record::Data { offset, bytes } => {
+                LiveRecord::Data { offset, bytes } => {
                     let start = position.saturating_sub(*offset) as usize;
                     let end = bytes
                         .len()
@@ -139,7 +198,7 @@ impl Screen {
                         bytes: bytes[start..end].to_vec(),
                     }
                 }
-                Record::Gap { from, to: end } => Record::Gap {
+                LiveRecord::Gap { from, to: end } => Record::Gap {
                     from: position.max(*from),
                     to: to.min(*end),
                 },

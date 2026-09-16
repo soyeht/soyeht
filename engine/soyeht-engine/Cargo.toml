@@ -32,6 +32,7 @@ sha2.workspace = true
 hmac.workspace = true
 ignore = "0.4"
 vt100.workspace = true
+crossbeam-channel.workspace = true
 ed25519-dalek.workspace = true
 
 [dev-dependencies]

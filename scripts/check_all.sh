@@ -27,7 +27,7 @@ python3 -m unittest discover -s scripts -p 'test_install_dev.py'
     cargo build --locked --workspace
     cargo test --locked --workspace
     cargo test --locked -p soyeht-engine \
-        terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles \
+        terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
         -- --ignored --exact --nocapture --test-threads=1
 )
 python3 scripts/e2e.py --report .cache/e2e.json

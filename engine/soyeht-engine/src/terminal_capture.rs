@@ -7,11 +7,15 @@ use crate::{
     },
     terminal_projection::TerminalProjection,
 };
+use crossbeam_channel as channel;
 use soyeht_pane_state::{EngineBuild, HarnessIdentity};
 use soyeht_protocol::{PaneExperimentCapture, PaneMode};
 use std::{
     path::Path,
-    sync::{Arc, Mutex, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -21,10 +25,23 @@ const PROJECTION_QUEUE_CAPACITY: usize = 32;
 const FAILURE_CHECK_INTERVAL: Duration = Duration::from_millis(50);
 
 #[cfg(test)]
-#[derive(Default)]
 struct TestQueueMetrics {
+    enabled: AtomicBool,
     outstanding: std::sync::atomic::AtomicUsize,
     peak_outstanding: std::sync::atomic::AtomicUsize,
+    processed: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(test)]
+impl Default for TestQueueMetrics {
+    fn default() -> Self {
+        Self {
+            enabled: AtomicBool::new(true),
+            outstanding: std::sync::atomic::AtomicUsize::new(0),
+            peak_outstanding: std::sync::atomic::AtomicUsize::new(0),
+            processed: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -52,8 +69,16 @@ impl TestProjectionGate {
 }
 
 enum ProjectionCommand {
-    Bytes { timestamp_ms: i64, bytes: Vec<u8> },
-    Resize { rows: u16, cols: u16 },
+    Bytes {
+        timestamp_ms: i64,
+        bytes: Arc<Vec<u8>>,
+        #[cfg(test)]
+        counted: bool,
+    },
+    Resize {
+        rows: u16,
+        cols: u16,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,9 +118,10 @@ impl RawByteGap {
 }
 
 pub(crate) struct TerminalCapture {
-    sender: Option<mpsc::SyncSender<ProjectionCommand>>,
+    sender: Option<channel::Sender<ProjectionCommand>>,
     overflow: Arc<Mutex<Option<RawByteGap>>>,
-    failure: Arc<Mutex<Option<String>>>,
+    overflow_active: Arc<AtomicBool>,
+    failure: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
     #[cfg(test)]
     test_queue_metrics: Arc<TestQueueMetrics>,
@@ -113,10 +139,12 @@ impl TerminalCapture {
         let sequence = store.next_sequence()?;
         let projection = TerminalProjection::new(pane_id, rows, cols, sequence)?;
         let recorder = ObservationRecorder::open(store)?;
-        let (sender, receiver) = mpsc::sync_channel(PROJECTION_QUEUE_CAPACITY);
+        let (sender, receiver) = channel::bounded(PROJECTION_QUEUE_CAPACITY);
         let overflow = Arc::new(Mutex::new(None));
-        let failure = Arc::new(Mutex::new(None));
+        let overflow_active = Arc::new(AtomicBool::new(false));
+        let failure = Arc::new(AtomicBool::new(false));
         let worker_overflow = Arc::clone(&overflow);
+        let worker_overflow_active = Arc::clone(&overflow_active);
         let worker_failure = Arc::clone(&failure);
         #[cfg(test)]
         let test_queue_metrics = Arc::new(TestQueueMetrics::default());
@@ -134,18 +162,20 @@ impl TerminalCapture {
                     recorder,
                     receiver,
                     worker_overflow,
+                    worker_overflow_active,
                     #[cfg(test)]
                     worker_test_queue_metrics,
                     #[cfg(test)]
                     worker_test_projection_gate,
-                ) && let Ok(mut slot) = worker_failure.lock()
-                {
-                    *slot = Some(error.to_string());
+                ) {
+                    let _ = error;
+                    worker_failure.store(true, Ordering::Release);
                 }
             })?;
         Ok(Self {
             sender: Some(sender),
             overflow,
+            overflow_active,
             failure,
             worker: Some(worker),
             #[cfg(test)]
@@ -155,49 +185,68 @@ impl TerminalCapture {
         })
     }
 
-    fn record(&self, timestamp_ms: i64, bytes: Vec<u8>) -> Result<()> {
+    fn record(&self, timestamp_ms: i64, bytes: Arc<Vec<u8>>) -> Result<()> {
         if bytes.is_empty() {
             return Ok(());
         }
-        let mut overflow = self
-            .overflow
-            .lock()
-            .map_err(|_| errors::internal("Terminal projection gap lock was poisoned"))?;
-        if let Some(gap) = overflow.as_mut() {
-            return gap.extend(timestamp_ms, bytes.len());
+        if self.overflow_active.load(Ordering::Acquire) {
+            let mut overflow = self
+                .overflow
+                .lock()
+                .map_err(|_| errors::internal("Terminal projection gap lock was poisoned"))?;
+            if let Some(gap) = overflow.as_mut() {
+                return gap.extend(timestamp_ms, bytes.len());
+            }
+            self.overflow_active.store(false, Ordering::Release);
         }
         let sender = self
             .sender
             .as_ref()
             .ok_or_else(|| errors::internal("Terminal projection worker is closed"))?;
-        let outcome = sender.try_send(ProjectionCommand::Bytes {
-            timestamp_ms,
-            bytes,
-        });
         #[cfg(test)]
-        if outcome.is_ok() {
+        let counted = self.test_queue_metrics.enabled.load(Ordering::Relaxed);
+        #[cfg(test)]
+        if counted {
             let outstanding = self
                 .test_queue_metrics
                 .outstanding
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                .fetch_add(1, Ordering::Relaxed)
                 + 1;
             self.test_queue_metrics
                 .peak_outstanding
-                .fetch_max(outstanding, std::sync::atomic::Ordering::Relaxed);
+                .fetch_max(outstanding, Ordering::Relaxed);
+        }
+        let outcome = sender.try_send(ProjectionCommand::Bytes {
+            timestamp_ms,
+            bytes,
+            #[cfg(test)]
+            counted,
+        });
+        #[cfg(test)]
+        if outcome.is_err() && counted {
+            self.test_queue_metrics
+                .outstanding
+                .fetch_sub(1, Ordering::Relaxed);
         }
         match outcome {
             Ok(()) => Ok(()),
-            Err(mpsc::TrySendError::Full(ProjectionCommand::Bytes {
+            Err(channel::TrySendError::Full(ProjectionCommand::Bytes {
                 timestamp_ms,
                 bytes,
+                ..
             })) => {
-                *overflow = Some(RawByteGap::new(timestamp_ms, bytes.len())?);
+                *self
+                    .overflow
+                    .lock()
+                    .map_err(|_| errors::internal("Terminal projection gap lock was poisoned"))? =
+                    Some(RawByteGap::new(timestamp_ms, bytes.len())?);
+                self.overflow_active.store(true, Ordering::Release);
                 Ok(())
             }
-            Err(mpsc::TrySendError::Disconnected(_)) => {
+            Err(channel::TrySendError::Disconnected(_)) => {
                 Err(errors::internal("Terminal projection worker stopped"))
             }
-            Err(mpsc::TrySendError::Full(ProjectionCommand::Resize { .. })) => {
+            Err(channel::TrySendError::Full(ProjectionCommand::Resize { .. })) => {
                 Err(errors::internal("Terminal projection command changed kind"))
             }
         }
@@ -218,10 +267,7 @@ impl TerminalCapture {
     }
 
     fn failed(&self) -> bool {
-        match self.failure.lock() {
-            Ok(failure) => failure.is_some(),
-            Err(_) => true,
-        }
+        self.failure.load(Ordering::Acquire)
     }
 }
 
@@ -239,8 +285,9 @@ impl Drop for TerminalCapture {
 fn projection_loop(
     mut projection: TerminalProjection,
     recorder: ObservationRecorder,
-    receiver: mpsc::Receiver<ProjectionCommand>,
+    receiver: channel::Receiver<ProjectionCommand>,
     overflow: Arc<Mutex<Option<RawByteGap>>>,
+    overflow_active: Arc<AtomicBool>,
     #[cfg(test)] test_queue_metrics: Arc<TestQueueMetrics>,
     #[cfg(test)] test_projection_gate: Arc<TestProjectionGate>,
 ) -> Result<()> {
@@ -249,6 +296,8 @@ fn projection_loop(
             Ok(ProjectionCommand::Bytes {
                 timestamp_ms,
                 bytes,
+                #[cfg(test)]
+                counted,
             }) => {
                 #[cfg(test)]
                 test_projection_gate.wait();
@@ -260,9 +309,12 @@ fn projection_loop(
                 })();
                 #[cfg(test)]
                 {
-                    test_queue_metrics
-                        .outstanding
-                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    if counted {
+                        test_queue_metrics
+                            .outstanding
+                            .fetch_sub(1, Ordering::Relaxed);
+                    }
+                    test_queue_metrics.processed.fetch_add(1, Ordering::Release);
                 }
                 result?;
             }
@@ -271,8 +323,8 @@ fn projection_loop(
                 test_projection_gate.wait();
                 projection.resize(rows, cols)?;
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if let Some(gap) = take_raw_gap(&overflow)? {
+            Err(channel::RecvTimeoutError::Timeout) => {
+                if let Some(gap) = take_raw_gap(&overflow, &overflow_active)? {
                     recorder.try_record_gap(projection.record_byte_gap(
                         gap.first_timestamp_ms,
                         gap.last_timestamp_ms,
@@ -284,8 +336,8 @@ fn projection_loop(
                     return Err(errors::internal(failure));
                 }
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                if let Some(gap) = take_raw_gap(&overflow)? {
+            Err(channel::RecvTimeoutError::Disconnected) => {
+                if let Some(gap) = take_raw_gap(&overflow, &overflow_active)? {
                     recorder.try_record_gap(projection.record_byte_gap(
                         gap.first_timestamp_ms,
                         gap.last_timestamp_ms,
@@ -298,11 +350,16 @@ fn projection_loop(
     }
 }
 
-fn take_raw_gap(overflow: &Mutex<Option<RawByteGap>>) -> Result<Option<RawByteGap>> {
-    Ok(overflow
+fn take_raw_gap(
+    overflow: &Mutex<Option<RawByteGap>>,
+    overflow_active: &AtomicBool,
+) -> Result<Option<RawByteGap>> {
+    let gap = overflow
         .lock()
         .map_err(|_| errors::internal("Terminal projection gap lock was poisoned"))?
-        .take())
+        .take();
+    overflow_active.store(false, Ordering::Release);
+    Ok(gap)
 }
 
 impl Core {
@@ -412,7 +469,7 @@ impl Core {
         Ok(())
     }
 
-    pub(crate) fn observe_terminal(&mut self, pane_id: &str, bytes: Vec<u8>) -> Result<()> {
+    pub(crate) fn observe_terminal(&mut self, pane_id: &str, bytes: Arc<Vec<u8>>) -> Result<()> {
         let timestamp_ms = self.now_ms();
         let failed = self
             .terminal_captures
@@ -476,40 +533,56 @@ mod tests {
     use super::*;
     use crate::{
         model::{RunningPane, StoredPane},
-        ports::testing::FakeSupervisor,
+        ports::{
+            PortScanObservation, PortScanPort,
+            testing::{FakeSupervisor, FixedClock},
+        },
         screen::Screen,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use soyeht_pane_state::RecordedRow;
     use soyeht_protocol::{Pane, PaneState, StateSource};
     use soyeht_ptyd::wire::{Output, Response};
-    use std::{collections::VecDeque, fs, os::unix::fs::PermissionsExt, time::Instant};
+    use std::{collections::VecDeque, fs, io, os::unix::fs::PermissionsExt, time::Instant};
     use uuid::Uuid;
 
     const CADENCE_RUNS: usize = 10;
+    const CADENCE_POLLS_PER_SAMPLE: usize = 30;
     const CADENCE_MAX_ATTEMPTS: usize = 10;
     const CADENCE_WARMUP_PAIRS: usize = 3;
-    const CADENCE_FIXTURE_BYTES: usize = 440_192;
-    const CADENCE_STEADY_BYTES: usize = 308_135;
+    const CADENCE_FIXTURE_BYTES: usize = 13_367_794;
+    const CADENCE_STEADY_BYTES: usize = 9_406_002;
     const CADENCE_WARMUP_DRAIN: Duration = Duration::from_millis(60);
     const FRAME_DENSE_INTERVAL: Duration = Duration::from_millis(5);
     const FRAME_DENSE_OBSERVATIONS: usize = 400;
 
+    struct EmptyPortScan;
+
+    impl PortScanPort for EmptyPortScan {
+        fn scan(&mut self) -> io::Result<PortScanObservation> {
+            Ok(PortScanObservation {
+                listeners: Vec::new(),
+                directories: Vec::new(),
+            })
+        }
+    }
+
     #[test]
     fn full_projection_handoff_coalesces_exact_bytes_without_failing_capture() {
-        let (sender, receiver) = mpsc::sync_channel(1);
+        let (sender, receiver) = channel::bounded(1);
         let overflow = Arc::new(Mutex::new(None));
         let capture = TerminalCapture {
             sender: Some(sender),
             overflow: Arc::clone(&overflow),
-            failure: Arc::new(Mutex::new(None)),
+            overflow_active: Arc::new(AtomicBool::new(false)),
+            failure: Arc::new(AtomicBool::new(false)),
             worker: None,
             test_queue_metrics: Arc::new(TestQueueMetrics::default()),
             test_projection_gate: Arc::new(TestProjectionGate::default()),
         };
-        capture.record(10, vec![b'a']).unwrap();
-        capture.record(20, vec![b'b'; 4]).unwrap();
-        capture.record(30, vec![b'c'; 7]).unwrap();
+        capture.record(10, vec![b'a'].into()).unwrap();
+        capture.record(20, vec![b'b'; 4].into()).unwrap();
+        capture.record(30, vec![b'c'; 7].into()).unwrap();
 
         let gap = overflow.lock().unwrap().clone().unwrap();
         assert_eq!(gap.first_timestamp_ms, 20);
@@ -533,7 +606,10 @@ mod tests {
         let pane_id = "cadence-pane";
         let capture = core.prepare_terminal_capture(pane_id).unwrap();
         capture
-            .record(1, b"\x1b[2J\x1b[Hcaptured terminal text\r\n".to_vec())
+            .record(
+                1,
+                b"\x1b[2J\x1b[Hcaptured terminal text\r\n".to_vec().into(),
+            )
             .unwrap();
         drop(capture);
 
@@ -586,11 +662,12 @@ mod tests {
         .unwrap();
         let recorder = ObservationRecorder::open(store).unwrap();
         let projection = TerminalProjection::new("pane-1", 4, 20, 0).unwrap();
-        let (sender, receiver) = mpsc::sync_channel(1);
+        let (sender, receiver) = channel::bounded(1);
         sender
             .send(ProjectionCommand::Bytes {
                 timestamp_ms: 1,
-                bytes: b"before".to_vec(),
+                bytes: b"before".to_vec().into(),
+                counted: false,
             })
             .unwrap();
         let overflow = Arc::new(Mutex::new(Some(RawByteGap {
@@ -599,12 +676,14 @@ mod tests {
             dropped_bytes: 4_200_000,
         })));
         let worker_overflow = Arc::clone(&overflow);
+        let worker_overflow_active = Arc::new(AtomicBool::new(true));
         let worker = thread::spawn(move || {
             projection_loop(
                 projection,
                 recorder,
                 receiver,
                 worker_overflow,
+                worker_overflow_active,
                 Arc::new(TestQueueMetrics::default()),
                 Arc::new(TestProjectionGate::default()),
             )
@@ -621,7 +700,8 @@ mod tests {
         sender
             .send(ProjectionCommand::Bytes {
                 timestamp_ms: 4,
-                bytes: b"after".to_vec(),
+                bytes: b"after".to_vec().into(),
+                counted: false,
             })
             .unwrap();
         drop(sender);
@@ -653,7 +733,7 @@ mod tests {
     }
 
     fn noisy_chunks() -> Vec<Vec<u8>> {
-        (0..CADENCE_RUNS + 2)
+        (0..CADENCE_RUNS * CADENCE_POLLS_PER_SAMPLE + 2)
             .map(|run| {
                 let mut bytes = format!("\x1b]2;build-{run}\x07\x1b[2J\x1b[H").into_bytes();
                 for line in 0..800 {
@@ -697,19 +777,24 @@ mod tests {
         }
     }
 
+    fn wait_for_processed(metrics: &TestQueueMetrics, expected: usize) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if metrics.processed.load(Ordering::Acquire) >= expected {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "terminal projection worker did not process the measured sample"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+
     fn set_cadence_projection_paused(core: &Core, paused: bool) {
         core.terminal_captures["cadence-pane"]
             .test_projection_gate
             .set_paused(paused);
-    }
-
-    fn reset_peak_outstanding(metrics: &TestQueueMetrics) {
-        let outstanding = metrics
-            .outstanding
-            .load(std::sync::atomic::Ordering::Relaxed);
-        metrics
-            .peak_outstanding
-            .store(outstanding, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn peak_outstanding(metrics: &TestQueueMetrics) -> usize {
@@ -721,6 +806,10 @@ mod tests {
     fn cadence_core(root: &Path, chunks: &[Vec<u8>], capture: bool) -> Core {
         fs::create_dir(root).unwrap();
         let mut core = Core::open(root).unwrap();
+        // This benchmark measures poll_output and the capture handoff. Keep
+        // unrelated local-server discovery deterministic across retries.
+        core.clock = Arc::new(FixedClock(0));
+        core.web = crate::web::Service::new(Box::new(EmptyPortScan));
         let pane_id = "cadence-pane".to_owned();
         let pane = Pane {
             pane_id: pane_id.clone(),
@@ -840,7 +929,10 @@ mod tests {
             let bytes = format!("\rcompile frame {index:04}").into_bytes();
             submitted_bytes += bytes.len();
             capture
-                .record(i64::try_from(started.elapsed().as_millis()).unwrap(), bytes)
+                .record(
+                    i64::try_from(started.elapsed().as_millis()).unwrap(),
+                    bytes.into(),
+                )
                 .unwrap();
         }
         let submission_wall_ms = started.elapsed().as_millis();
@@ -931,11 +1023,12 @@ mod tests {
         off.poll_output().unwrap();
         on.poll_output().unwrap();
         wait_for_projection_worker(&metrics);
+        metrics.enabled.store(false, Ordering::Relaxed);
         thread::sleep(CADENCE_WARMUP_DRAIN);
         set_cadence_projection_paused(&on, true);
-        reset_peak_outstanding(&metrics);
         let mut off_micros = Vec::new();
         let mut on_micros = Vec::new();
+        let mut expected_processed = metrics.processed.load(Ordering::Acquire);
         let fixture_started = Instant::now();
         for pair in 0..CADENCE_RUNS {
             let (first, second) = if pair % 2 == 0 {
@@ -943,12 +1036,16 @@ mod tests {
             } else {
                 (&mut on, &mut off)
             };
-            let started = Instant::now();
-            first.poll_output().unwrap();
-            let first_micros = started.elapsed().as_micros();
-            let started = Instant::now();
-            second.poll_output().unwrap();
-            let second_micros = started.elapsed().as_micros();
+            let mut first_micros = 0_u128;
+            let mut second_micros = 0_u128;
+            for _ in 0..CADENCE_POLLS_PER_SAMPLE {
+                let started = Instant::now();
+                first.poll_output().unwrap();
+                first_micros += started.elapsed().as_micros();
+                let started = Instant::now();
+                second.poll_output().unwrap();
+                second_micros += started.elapsed().as_micros();
+            }
             if pair % 2 == 0 {
                 off_micros.push(first_micros);
                 on_micros.push(second_micros);
@@ -956,10 +1053,15 @@ mod tests {
                 on_micros.push(first_micros);
                 off_micros.push(second_micros);
             }
+            // Drain outside the timed sample so each pair starts with the
+            // same empty bounded queue and never measures saturation.
+            set_cadence_projection_paused(&on, false);
+            expected_processed += CADENCE_POLLS_PER_SAMPLE;
+            wait_for_processed(&metrics, expected_processed);
+            set_cadence_projection_paused(&on, true);
         }
         set_cadence_projection_paused(&on, false);
         wait_for_projection_worker(&metrics);
-        let peak_outstanding = peak_outstanding(&metrics);
         let steady_off = &off_micros[CADENCE_WARMUP_PAIRS..];
         let steady_on = &on_micros[CADENCE_WARMUP_PAIRS..];
         let off_median = percentile(steady_off, 1, 2);
@@ -1018,17 +1120,18 @@ mod tests {
             })
             .sum::<u64>();
         eprintln!(
-            "capture fixture bytes={fixture_bytes} wall_us={fixture_wall_micros} expected_measured_observations={CADENCE_RUNS} peak_outstanding={peak_outstanding}"
+            "capture fixture bytes={fixture_bytes} wall_us={fixture_wall_micros} expected_measured_observations={}",
+            CADENCE_RUNS * CADENCE_POLLS_PER_SAMPLE
         );
         eprintln!(
             "capture coverage observations={observations} gaps={gaps} dropped_observations={dropped_observations} dropped_bytes={dropped_bytes} time_coverage_percent=100"
         );
-        assert_eq!(observations, CADENCE_RUNS + 1);
+        assert_eq!(observations, CADENCE_RUNS * CADENCE_POLLS_PER_SAMPLE + 1);
         assert_eq!(gaps, 0);
         assert_eq!(
             chunks
                 .iter()
-                .skip(2 + CADENCE_WARMUP_PAIRS)
+                .skip(2 + CADENCE_WARMUP_PAIRS * CADENCE_POLLS_PER_SAMPLE)
                 .map(Vec::len)
                 .sum::<usize>(),
             CADENCE_STEADY_BYTES
@@ -1039,7 +1142,7 @@ mod tests {
 
     #[test]
     #[ignore = "measured separately by scripts/check_all.sh without competing tests"]
-    fn capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles() {
+    fn capture_cadence_measurement_uses_ten_paired_noisy_samples() {
         let directory = std::env::temp_dir().join(format!("sn-cadence-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
         let chunks = noisy_chunks();

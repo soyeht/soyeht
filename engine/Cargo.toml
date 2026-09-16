@@ -28,6 +28,7 @@ url = "2.5"
 core-foundation = "0.9"
 security-framework = "2.11"
 vt100 = "0.16.2"
+crossbeam-channel = "0.5"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

@@ -565,16 +565,21 @@ impl Core {
             let bytes = STANDARD
                 .decode(output.bytes)
                 .map_err(|_| errors::ptyd_unavailable("Invalid output encoding"))?;
-            let capture_bytes = self
-                .terminal_captures
-                .contains_key(&id)
-                .then(|| bytes.clone());
-            if !bytes.is_empty() {
+            let capture_bytes = if !bytes.is_empty() && self.terminal_captures.contains_key(&id) {
+                let shared = Arc::new(bytes);
+                running
+                    .screen
+                    .append_shared_data(from, Arc::clone(&shared))?;
+                Some(shared)
+            } else if !bytes.is_empty() {
                 running.screen.append(Record::Data {
                     offset: from,
                     bytes,
                 })?;
-            }
+                None
+            } else {
+                None
+            };
             // Segment sync completed before returning ownership to the supervisor.
             self.pty_request(Request::Ack {
                 instance_id,

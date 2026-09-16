@@ -67,7 +67,9 @@ granted at that Mac, by the person in front of it. Stable signing is part of thi
 reverting either binary to ad-hoc signing makes consent changes unavailable rather than silently
 weakening the check.
 
-The engine observes a copy of output only after the normal terminal stream has accepted it.
+The engine observes output only after the normal terminal stream has accepted it. The decoded
+byte allocation is reference-counted between the retained screen tail and the capture handoff,
+so enabling capture adds an ownership reference rather than copying the terminal payload.
 It never delays an acknowledgement, changes chunking, changes screen cadence or replaces
 the bytes sent to clients. `Core::poll_output` only offers that copy to a non-blocking,
 32-chunk projection handoff. A dedicated worker owns the terminal parser and the recorder.
@@ -117,19 +119,23 @@ because capture observes only a copy after the normal stream has accepted the by
 replace or rechunk that path.
 
 The cadence fixture is intentionally byte-heavy and frame-light: after separate unmeasured
-engine and capture-path setup pairs, it retains ten raw paired polls, each handing off one
-distinct VT block. The first three raw pairs are declared warm-up and discarded; the seven
-steady pairs used for the acceptance bounds total 308,135 bytes and seven projections. The
-complete raw fixture totals 440,192 bytes and ten projections. If capture-on is faster than
-capture-off at either the steady median or p95, the measurement is invalid and must be rerun
-rather than reported. The test permits at most ten complete attempts; a valid attempt outside
-either performance bound fails immediately and is never retried. This isolates the per-byte
-copy and bounded-handoff cost that remains on
-`Core::poll_output`. The gate runs this measurement separately from concurrent engine tests,
-so unrelated scheduler and disk load are not attributed asymmetrically to capture. During the
-timed pairs, the test-only projection worker is paused while the bounded queue accepts all ten
-frames, then resumed before coverage is read back. That keeps projection, serialisation, write
-and sync costs out of the handoff measurement. It also deliberately removes producer-versus-worker
+engine and capture-path setup pairs, it retains ten raw paired samples. Each sample interleaves
+thirty capture-off and capture-on polls, and each poll hands off one distinct VT block. Interleaving
+keeps scheduler drift from landing on one complete series. The first three raw samples are
+declared warm-up and discarded; the seven steady samples used for the acceptance bounds total
+9,406,002 bytes and 210 projections. The complete raw fixture totals 13,367,794 bytes and 300
+projections. If capture-on is faster than capture-off at either the steady median or p95, the
+measurement is invalid and must be rerun rather than reported. The test permits at most ten
+complete attempts; a valid attempt outside either performance bound fails immediately and is
+never retried. A fixed clock and an empty in-memory local-server scan keep unrelated discovery
+out of every retry. This isolates the per-byte shared handoff and bounded-channel cost that
+remains on `Core::poll_output`. Test-only queue counters are disabled during the timed samples,
+so the benchmark does not charge instrumentation that is absent from the shipping path. The
+gate runs this measurement separately from concurrent engine tests, so unrelated scheduler and
+disk load are not attributed asymmetrically to capture. During each timed sample, the test-only
+projection worker is paused while the bounded queue accepts thirty frames, then resumed and fully
+drained before the next sample. That keeps projection, serialisation, write and sync costs out
+of the handoff measurement. It also deliberately removes producer-versus-worker
 contention that exists in normal use, so this favourable isolation protects the synchronous loop
 and bounded handoff rather than claiming a whole-system capture cost. The separate 200 Hz
 worker-headroom fixture measures the per-frame projection, serialisation, write and sync costs;
@@ -137,16 +143,17 @@ neither result substitutes for the other. Before closed batching, that fixture r
 400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up
 to eight rows retained all 400 with no gap and 100 percent time coverage on the same fixture.
 
-The first valid dedicated-gate sample after isolation measured raw capture-off pairs of 539, 331,
-318, 328, 327, 342, 335, 360, 349 and 334 microseconds, and capture-on pairs of 511, 363, 337,
-333, 328, 416, 473, 469, 344 and 339 microseconds. After the declared three warm-up pairs, the
-median moved from 335 to 344 microseconds (+2.69 percent) and p95 moved from 360 to 473
-microseconds (+113 microseconds). Both independent bounds passed. The median delta is roughly
-9 microseconds per `Core::poll_output`; that absolute observation is more durable than its
-percentage, because unrelated baseline work changes the denominator. The 5 millisecond p95
-criterion is deliberately a stall detector, not a relative tail-regression guard. At this
-sub-millisecond baseline it permits a large percentage change and must not be read as protecting
-against incremental tail drift.
+The first valid dedicated sample with the interleaved estimator measured raw capture-off samples
+of 11598, 10283, 11483, 11385, 10482, 10652, 11452, 10531, 10745 and 10900 microseconds, and
+capture-on samples of 11203, 10684, 11019, 12143, 10509, 11087, 11189, 11295, 11166 and 11235
+microseconds. After the declared three warm-up samples, the median moved from 10745 to 11189
+microseconds (+4.13 percent) and p95 moved from 11452 to 12143 microseconds (+691 microseconds).
+Both independent bounds passed. Each sample contains thirty polls, so the median delta is roughly
+14.8 microseconds per
+`Core::poll_output`; that absolute observation is more durable than its percentage, because
+unrelated baseline work changes the denominator. The 5 millisecond p95 criterion is deliberately
+a stall detector, not a relative tail-regression guard. At this millisecond sample scale it
+permits percentage drift and must not be read as protecting against incremental tail drift.
 
 On each projected screen change the engine records a bounded observation containing pane,
 harness identity and version when known, an absolute timestamp, OSC title, the last bounded
