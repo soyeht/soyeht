@@ -63,6 +63,15 @@ whole-directory erase command; a person removes exported files from that stated 
 Deletion never follows symlinks, reports what was removed, and a failure remains visible rather
 than being presented as successful withdrawal.
 
+The same purpose-bound consent may enable a label-only recording on an agent pane. That
+recording stores timestamped protocol states and harness provenance; it stores neither the
+conversation transcript nor terminal text. The Mac UI names those different payloads in both
+the consent prompt and the persistent indicator. Enabling an agent recording writes the exact
+current protocol state at the consent boundary. A restored recorder does not manufacture that
+label from a possibly stale checkpoint after an engine restart; it waits for the next durable
+protocol transition. Disabling and deletion use the same signed-UI boundary and per-pane scope
+as raw-terminal capture.
+
 Only the Dev Mac application with a persistent signature may change experiment consent,
 delete captured data or export it. At
 Unix accept time the engine obtains the peer endpoint's kernel audit token, which identifies
@@ -242,7 +251,12 @@ leaving room for ordinary local-disk contention while bounding a recorder that c
 claim it is collecting. This deadline never infers pane state, cancels harness work or changes
 terminal delivery.
 
-ACP state transitions are protocol labels. An official harness
+ACP state transitions are protocol labels. The engine records one only after the corresponding
+pane transition commits durably, and only when its source is `protocol`; a phrase-only update
+does not create a duplicate label. The label-only recorder shares the same monotonic sequence,
+rotation, retention and fail-visible writer as terminal observations. A live harness switch
+cleanly closes the old harness segment before the first label opens a segment with the new
+harness provenance. An official harness
 hook may add labels only through that harness's documented, bounded child-process interface.
 Hook configuration is scoped to the launched process and is never written into shared user
 configuration. A harness without a supported official hook has no hook label; partial

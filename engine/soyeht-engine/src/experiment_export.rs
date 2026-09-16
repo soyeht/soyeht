@@ -107,10 +107,9 @@ impl Core {
             return Ok(result);
         }
         let pane_ids = parse_pane_ids(params)?;
-        if pane_ids
-            .iter()
-            .any(|pane| self.terminal_captures.contains_key(pane))
-        {
+        if pane_ids.iter().any(|pane| {
+            self.terminal_captures.contains_key(pane) || self.agent_captures.contains_key(pane)
+        }) {
             return Err(errors::pane_busy(
                 "Stop experiment capture before exporting its data",
             ));

@@ -5315,6 +5315,101 @@ fn persisted_terminal_capture_records_provenance_and_resumes_sequence_after_rest
     }
 }
 
+#[test]
+fn persisted_agent_capture_records_real_protocol_transitions_as_labels() {
+    let mut rig = Rig::new();
+    let (client, pane) = rig.agent();
+    drop(client);
+    rig.kill_engine();
+    rig.database_probe()
+        .set_experiment_capture(&pane, true)
+        .unwrap();
+    rig.start();
+
+    let root = rig.path.join("experiments/pane-state");
+    let mut client = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while !client.pane(&pane)["agent"]["sessionId"].is_string() {
+        assert!(Instant::now() < deadline, "agent session did not recover");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(client.pane(&pane)["experimentCapture"]["on"], true);
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"capture-protocol-labels",
+            "idempotencyKey":"capture-protocol-labels"}),
+    );
+
+    let labels = loop {
+        let rows = experiment_rows(&root);
+        let labels = rows
+            .into_iter()
+            .filter(|row| row["kind"] == "label" && row["pane_id"] == pane)
+            .collect::<Vec<_>>();
+        let states = labels
+            .iter()
+            .filter_map(|row| row["state"].as_str())
+            .collect::<Vec<_>>();
+        if states.contains(&"working") && states.contains(&"idle") {
+            break labels;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "ACP transitions did not reach experiment labels: {states:?}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(labels.iter().all(|row| row["pane_kind"] == "agent"));
+    assert!(labels.iter().all(|row| row["source"] == "protocol"));
+    assert!(labels.iter().all(|row| {
+        row["harness"]["identity"] == "known" && row["harness"]["id"] == "test-agent"
+    }));
+    assert!(labels.windows(2).all(|rows| {
+        rows[0]["sequence"].as_u64().unwrap() < rows[1]["sequence"].as_u64().unwrap()
+    }));
+
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent",
+            "idempotencyKey":"captured-harness-switch"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"capture-next-harness",
+            "idempotencyKey":"capture-next-harness"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let rows = loop {
+        let rows = experiment_rows(&root);
+        let new_states = rows
+            .iter()
+            .filter(|row| row["kind"] == "label" && row["harness"]["id"] == "next-agent")
+            .filter_map(|row| row["state"].as_str())
+            .collect::<Vec<_>>();
+        if new_states.contains(&"working") && new_states.contains(&"idle") {
+            break rows;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "switched harness labels did not reach their own segment: {new_states:?}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(
+        rows.iter()
+            .any(|row| { row["kind"] == "segment_end" && row["harness"]["id"] == "test-agent" })
+    );
+    assert!(
+        rows.iter()
+            .any(|row| { row["kind"] == "metadata" && row["harness"]["id"] == "next-agent" })
+    );
+    let experiment_text = serde_json::to_string(&rows).unwrap();
+    assert!(!experiment_text.contains("capture-protocol-labels"));
+    assert!(!experiment_text.contains("capture-next-harness"));
+    assert!(!rows.iter().any(|row| row["kind"] == "observation"));
+}
+
 struct Phone {
     socket: tokio_tungstenite::tungstenite::WebSocket<std::net::TcpStream>,
     challenge: Value,

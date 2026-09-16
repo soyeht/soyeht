@@ -19,6 +19,11 @@ struct PaneDefaults {
     record: bool,
 }
 
+enum PreparedExperimentCapture {
+    Terminal(crate::terminal_capture::TerminalCapture),
+    Agent(crate::agent_capture::AgentCapture),
+}
+
 fn pane_defaults(store: &impl StorePort) -> Result<PaneDefaults> {
     let cols = settings::read(store, "terminal.defaultCols")?
         .as_u64()
@@ -202,7 +207,7 @@ impl Core {
 
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         if method == "pane.experiment.delete" {
-            return self.delete_terminal_capture_data(connection, params);
+            return self.delete_experiment_capture_data(connection, params);
         }
         let id = errors::param_str(params, "paneId")?;
         if method == "pane.close" && self.agents.contains_key(id) {
@@ -218,12 +223,25 @@ impl Core {
         let requested_capture = (method == "pane.experiment.set")
             .then(|| errors::param_bool(params, "on"))
             .transpose()?;
-        let prepared_capture =
-            if requested_capture == Some(true) && !self.terminal_captures.contains_key(id) {
-                Some(self.prepare_terminal_capture(id)?)
-            } else {
-                None
-            };
+        let capture_is_active =
+            self.terminal_captures.contains_key(id) || self.agent_captures.contains_key(id);
+        let prepared_capture = if requested_capture == Some(true) && !capture_is_active {
+            Some(match saved.pane.mode {
+                PaneMode::Terminal => {
+                    PreparedExperimentCapture::Terminal(self.prepare_terminal_capture(id)?)
+                }
+                PaneMode::Agent => {
+                    PreparedExperimentCapture::Agent(self.prepare_agent_capture(id)?)
+                }
+                _ => {
+                    return Err(errors::invalid(
+                        "Experiment capture requires a terminal or agent pane",
+                    ));
+                }
+            })
+        } else {
+            None
+        };
         let mut events = vec![];
         let result = match method {
             "pane.close" => {
@@ -254,9 +272,9 @@ impl Core {
                 json!({"on":saved.pane.record})
             }
             "pane.experiment.set" => {
-                if saved.pane.mode != PaneMode::Terminal {
+                if !matches!(saved.pane.mode, PaneMode::Terminal | PaneMode::Agent) {
                     return Err(errors::invalid(
-                        "Experiment capture is available only for raw terminal panes",
+                        "Experiment capture requires a terminal or agent pane",
                     ));
                 }
                 saved.pane.experiment_capture = Some(PaneExperimentCapture {
@@ -308,7 +326,7 @@ impl Core {
         id: &str,
         method: &str,
         saved: StoredPane,
-        prepared_capture: Option<crate::terminal_capture::TerminalCapture>,
+        prepared_capture: Option<PreparedExperimentCapture>,
     ) -> Result<()> {
         let running = errors::invariant(
             self.panes.get_mut(id),
@@ -324,10 +342,19 @@ impl Core {
                 .is_some_and(|capture| capture.on)
             {
                 if let Some(capture) = prepared_capture {
-                    self.terminal_captures.insert(id.into(), capture);
+                    match capture {
+                        PreparedExperimentCapture::Terminal(capture) => {
+                            self.terminal_captures.insert(id.into(), capture);
+                        }
+                        PreparedExperimentCapture::Agent(capture) => {
+                            self.agent_captures.insert(id.into(), capture);
+                            self.record_agent_label(id)?;
+                        }
+                    }
                 }
             } else {
                 self.terminal_captures.remove(id);
+                self.agent_captures.remove(id);
             }
         }
         if saved.closed {
@@ -349,6 +376,7 @@ impl Core {
 
     pub fn finish_close(&mut self, id: &str) -> Result<()> {
         self.terminal_captures.remove(id);
+        self.agent_captures.remove(id);
         for client in self.clients.values_mut() {
             client.streams.remove(id);
         }

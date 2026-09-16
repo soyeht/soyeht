@@ -41,7 +41,8 @@ pub struct Core {
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
     pub(crate) terminal_captures: BTreeMap<String, crate::terminal_capture::TerminalCapture>,
-    pub(crate) terminal_capture_build: Option<soyeht_pane_state::EngineBuild>,
+    pub(crate) agent_captures: BTreeMap<String, crate::agent_capture::AgentCapture>,
+    pub(crate) experiment_capture_build: Option<soyeht_pane_state::EngineBuild>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
@@ -107,7 +108,8 @@ impl Core {
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
             terminal_captures: BTreeMap::new(),
-            terminal_capture_build: None,
+            agent_captures: BTreeMap::new(),
+            experiment_capture_build: None,
             agents: BTreeMap::new(),
             harness_switches: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
@@ -131,7 +133,7 @@ impl Core {
             core.panes
                 .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
         }
-        core.restore_terminal_captures()?;
+        core.restore_experiment_captures()?;
         let editor_restore_ms = core.now_ms();
         for file in editor_files {
             core.editor.restore(file, editor_restore_ms);
@@ -533,7 +535,7 @@ impl Core {
         }
         self.advance_harness_switches()?;
         self.cleanup_retired_agent_processes()?;
-        self.reconcile_terminal_captures()?;
+        self.reconcile_experiment_captures()?;
         let ids: Vec<_> = self
             .panes
             .iter()

@@ -36,7 +36,7 @@ fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
     ) && !signed_ui
     {
         return Err(errors::forbidden_role(
-            "Raw terminal experiment data can be recorded, deleted, or exported only in the signed Soyeht app on this Mac",
+            "Pane-state experiment data can be recorded, deleted, or exported only in the signed Soyeht app on this Mac",
         ));
     }
     Ok(())

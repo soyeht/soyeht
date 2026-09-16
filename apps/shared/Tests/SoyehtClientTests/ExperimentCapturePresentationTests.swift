@@ -3,6 +3,24 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func experimentCaptureNamesWhatEachPaneStores() {
+  #expect(
+    ExperimentCapturePresentation.consentTitle(for: .terminal)
+      == "Record raw terminal observations?")
+  #expect(
+    ExperimentCapturePresentation.consentMessage(for: .terminal).contains("credentials"))
+  #expect(
+    ExperimentCapturePresentation.activeLabel(for: .terminal) == "Recording terminal text")
+  #expect(
+    ExperimentCapturePresentation.consentTitle(for: .agent) == "Record agent state labels?")
+  #expect(
+    ExperimentCapturePresentation.consentMessage(for: .agent)
+      == "This Dev-only experiment stores timestamped agent state labels on this Mac. It does not store the conversation transcript."
+  )
+  #expect(
+    ExperimentCapturePresentation.activeLabel(for: .agent) == "Recording agent state labels")
+}
+
 @Test func captureDeletionTextDistinguishesVerifiedAbsenceFromDeletedFiles() {
   let empty = PaneExperimentDeleteResult(files: 0, bytes: "0", nothingRemained: true)
   #expect(ExperimentCapturePresentation.deletionText(empty) == "No captured data remained.")
