@@ -209,7 +209,16 @@ its exact available loss unit plus its first and last timestamps and sequences: 
 pressure records an observation count, while pre-projection pressure records bytes and leaves
 the frame count absent. The two may coexist only when the writer itself coalesces both losses.
 Queue pressure therefore cannot be replayed as a quiet terminal. Gaps feed neither the
-detector nor ground truth. ACP state transitions are protocol labels. An official harness
+detector nor ground truth.
+
+Observations and labels obtain one sequence from the pane projection and enter one segment
+writer, so file order cannot disagree with their shared sequence. Observation pressure may
+collapse observations into an explicit gap. A label never enters that lossy path: its producer
+waits until the pending gap is written and the bounded writer has room. Since the projection
+worker is the sole producer, later observations cannot overtake a label whose sequence was
+assigned. An invalid label is rejected before the sequence advances.
+
+ACP state transitions are protocol labels. An official harness
 hook may add labels only through that harness's documented, bounded child-process interface.
 Hook configuration is scoped to the launched process and is never written into shared user
 configuration. A harness without a supported official hook has no hook label; partial

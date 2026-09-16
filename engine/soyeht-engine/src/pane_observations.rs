@@ -1,9 +1,9 @@
 use crate::errors::{self, Result};
 use sha2::{Digest, Sha256};
 use soyeht_pane_state::{
-    DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, HarnessIdentity, MAX_RETAINED_SEGMENTS,
-    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow, ReplayedSegment, SegmentEnd,
-    SegmentMetadata, decode_segment, encode_row,
+    DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, GroundTruthLabel, HarnessIdentity,
+    MAX_RETAINED_SEGMENTS, MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow,
+    ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment, encode_row,
 };
 use std::{
     collections::VecDeque,
@@ -291,6 +291,39 @@ impl ObservationRecorder {
         Ok(outcome)
     }
 
+    /// Labels share the observation writer and sequence but may never be
+    /// folded into an overflow gap. The projection worker is the sole
+    /// producer, so waiting here also prevents later observations from
+    /// overtaking a label whose sequence has already been assigned.
+    pub fn record_label(&self, label: GroundTruthLabel) -> Result<()> {
+        label.validate()?;
+        if label.pane_id != self.pane_id || label.harness != self.harness {
+            return Err(errors::invalid(
+                "Ground-truth label provenance does not match its recorder",
+            ));
+        }
+        let (lock, wake) = &*self.shared;
+        let mut state = lock
+            .lock()
+            .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+        loop {
+            if let Some(failure) = &state.failure {
+                return Err(errors::internal(failure.clone()));
+            }
+            if state.queue.closed {
+                return Err(errors::internal("Observation recorder is closed"));
+            }
+            if state.queue.gap.is_none() && state.queue.rows.len() < state.queue.capacity {
+                state.queue.push_row(RecordedRow::Label(label))?;
+                wake.notify_one();
+                return Ok(());
+            }
+            state = wake
+                .wait(state)
+                .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+        }
+    }
+
     pub fn failure(&self) -> Result<Option<String>> {
         let (lock, _) = &*self.shared;
         Ok(lock
@@ -352,23 +385,31 @@ fn next_recorded_rows(shared: &SharedRecorder) -> Result<Option<Vec<RecordedRow>
     let mut deadline = None;
     loop {
         if state.queue.gap.is_some() || state.queue.pending() >= OBSERVATION_WRITE_BATCH {
-            return Ok(Some(state.queue.drain_batch()));
+            let rows = state.queue.drain_batch();
+            wake.notify_all();
+            return Ok(Some(rows));
         }
         if state.queue.closed {
-            return Ok((state.queue.pending() > 0).then(|| state.queue.drain_batch()));
+            let rows = (state.queue.pending() > 0).then(|| state.queue.drain_batch());
+            wake.notify_all();
+            return Ok(rows);
         }
         if state.queue.pending() > 0 {
             let deadline =
                 *deadline.get_or_insert_with(|| Instant::now() + OBSERVATION_WRITE_MAX_WAIT);
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                return Ok(Some(state.queue.drain_batch()));
+                let rows = state.queue.drain_batch();
+                wake.notify_all();
+                return Ok(Some(rows));
             };
             let (next, timeout) = wake
                 .wait_timeout(state, remaining)
                 .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
             state = next;
             if timeout.timed_out() && state.queue.pending() > 0 {
-                return Ok(Some(state.queue.drain_batch()));
+                let rows = state.queue.drain_batch();
+                wake.notify_all();
+                return Ok(Some(rows));
             }
             continue;
         }
@@ -933,7 +974,9 @@ mod tests {
     use soyeht_pane_state::{
         MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame, ObservationReason,
     };
+    use soyeht_protocol::{PaneState, StateSource};
     use std::os::unix::fs::symlink;
+    use std::sync::mpsc;
     use uuid::Uuid;
 
     struct Fixture {
@@ -1107,6 +1150,60 @@ mod tests {
         assert_eq!(gap.last_sequence, 2);
         assert_eq!(gap.dropped_observations, Some(3));
         assert_eq!(gap.dropped_bytes, None);
+    }
+
+    #[test]
+    fn a_label_waits_for_a_saturated_writer_and_is_never_folded_into_its_gap() {
+        let fixture = Fixture::new();
+        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 2).unwrap();
+        recorder.try_record(frame(0)).unwrap();
+        recorder.try_record(frame(1)).unwrap();
+        assert_eq!(
+            recorder.try_record(frame(2)).unwrap(),
+            QueueOutcome::GapExtended
+        );
+        let label = GroundTruthLabel {
+            pane_id: "pane-1".into(),
+            harness: harness(),
+            timestamp_ms: 1_800_000_000_003,
+            sequence: 3,
+            state: PaneState::WaitingForYou,
+            source: StateSource::Hook,
+        };
+        let (started_sender, started_receiver) = mpsc::sync_channel(1);
+        let (result_sender, result_receiver) = mpsc::sync_channel(1);
+
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                started_sender.send(()).unwrap();
+                result_sender.send(recorder.record_label(label)).unwrap();
+            });
+            started_receiver.recv().unwrap();
+            assert!(
+                matches!(result_receiver.try_recv(), Err(mpsc::TryRecvError::Empty)),
+                "label bypassed the pending loss row"
+            );
+            writer_gate.wait();
+            result_receiver.recv().unwrap().unwrap();
+        });
+        recorder.finish().unwrap();
+
+        let rows = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
+            .unwrap()
+            .replay()
+            .unwrap()
+            .into_iter()
+            .flat_map(|segment| segment.rows)
+            .collect::<Vec<_>>();
+        let [RecordedRow::Gap(gap), RecordedRow::Label(label)] = rows.as_slice() else {
+            panic!("writer pressure did not preserve the gap before the label")
+        };
+        assert_eq!((gap.first_sequence, gap.last_sequence), (0, 2));
+        assert_eq!(gap.dropped_observations, Some(3));
+        assert_eq!(label.sequence, 3);
+        assert_eq!(label.state, PaneState::WaitingForYou);
+        assert_eq!(label.source, StateSource::Hook);
     }
 
     #[test]

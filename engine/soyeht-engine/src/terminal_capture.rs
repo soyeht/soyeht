@@ -130,14 +130,21 @@ pub(crate) struct TerminalCapture {
 }
 
 impl TerminalCapture {
-    fn open(root: &Path, pane_id: &str, rows: u32, cols: u32, build: EngineBuild) -> Result<Self> {
+    fn open(
+        root: &Path,
+        pane_id: &str,
+        harness: HarnessIdentity,
+        rows: u32,
+        cols: u32,
+        build: EngineBuild,
+    ) -> Result<Self> {
         let rows = u16::try_from(rows)
             .map_err(|_| errors::invalid("Pane rows exceed the observation range"))?;
         let cols = u16::try_from(cols)
             .map_err(|_| errors::invalid("Pane columns exceed the observation range"))?;
-        let store = SegmentStore::open(root, pane_id, HarnessIdentity::Unknown, build)?;
+        let store = SegmentStore::open(root, pane_id, harness.clone(), build)?;
         let sequence = store.next_sequence()?;
-        let projection = TerminalProjection::new(pane_id, rows, cols, sequence)?;
+        let projection = TerminalProjection::new(pane_id, harness, rows, cols, sequence)?;
         let recorder = ObservationRecorder::open(store)?;
         let (sender, receiver) = channel::bounded(PROJECTION_QUEUE_CAPACITY);
         let overflow = Arc::new(Mutex::new(None));
@@ -388,6 +395,7 @@ impl Core {
         TerminalCapture::open(
             &self.observation_root()?,
             pane_id,
+            HarnessIdentity::Unknown,
             stored.pane.rows,
             stored.pane.cols,
             build,
@@ -661,7 +669,8 @@ mod tests {
         )
         .unwrap();
         let recorder = ObservationRecorder::open(store).unwrap();
-        let projection = TerminalProjection::new("pane-1", 4, 20, 0).unwrap();
+        let projection =
+            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 4, 20, 0).unwrap();
         let (sender, receiver) = channel::bounded(1);
         sender
             .send(ProjectionCommand::Bytes {
@@ -917,8 +926,15 @@ mod tests {
             package_version: "0.1.0".into(),
             executable_sha256: "b".repeat(64),
         };
-        let capture =
-            TerminalCapture::open(&directory, "frame-dense-pane", 40, 120, build.clone()).unwrap();
+        let capture = TerminalCapture::open(
+            &directory,
+            "frame-dense-pane",
+            HarnessIdentity::Unknown,
+            40,
+            120,
+            build.clone(),
+        )
+        .unwrap();
         let metrics = Arc::clone(&capture.test_queue_metrics);
         let started = Instant::now();
         let mut submitted_bytes = 0_usize;
