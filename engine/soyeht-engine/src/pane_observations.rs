@@ -22,10 +22,22 @@ const FILE_MODE: u32 = 0o600;
 const SEGMENT_SUFFIX: &str = ".jsonl";
 pub const OBSERVATION_QUEUE_CAPACITY: usize = 32;
 const OBSERVATION_WRITE_BATCH: usize = 8;
-const OBSERVATION_WRITE_MAX_WAIT: Duration = Duration::from_millis(50);
-const LABEL_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
-pub(crate) const LABEL_WRITE_TIMEOUT_MESSAGE: &str =
-    "The observation writer stayed too slow to accept a ground-truth label for 30 seconds";
+const OBSERVATION_WRITE_MAX_WAIT_MS: u64 = 50;
+const OBSERVATION_WRITE_MAX_WAIT: Duration = Duration::from_millis(OBSERVATION_WRITE_MAX_WAIT_MS);
+const LABEL_WRITE_TIMEOUT_SECONDS: u64 = 30;
+const LABEL_WRITE_TIMEOUT_WINDOWS: u64 = 600;
+const LABEL_WRITE_TIMEOUT: Duration = Duration::from_secs(LABEL_WRITE_TIMEOUT_SECONDS);
+const _: () = assert!(
+    LABEL_WRITE_TIMEOUT_SECONDS * 1_000
+        == OBSERVATION_WRITE_MAX_WAIT_MS * LABEL_WRITE_TIMEOUT_WINDOWS
+);
+
+pub(crate) fn label_write_timeout_message() -> String {
+    format!(
+        "The observation writer stayed too slow to accept a ground-truth label for {} seconds",
+        LABEL_WRITE_TIMEOUT.as_secs()
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueueOutcome {
@@ -327,10 +339,11 @@ impl ObservationRecorder {
                 return Ok(());
             }
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                state.failure = Some(LABEL_WRITE_TIMEOUT_MESSAGE.into());
+                let failure = label_write_timeout_message();
+                state.failure = Some(failure.clone());
                 state.queue.closed = true;
                 wake.notify_all();
-                return Err(errors::internal(LABEL_WRITE_TIMEOUT_MESSAGE));
+                return Err(errors::internal(failure));
             };
             let (next, _) = wake
                 .wait_timeout(state, remaining)
@@ -1239,10 +1252,11 @@ mod tests {
         let error = recorder
             .record_label_with_timeout(label, Duration::from_millis(10))
             .unwrap_err();
-        assert!(error.to_string().contains(LABEL_WRITE_TIMEOUT_MESSAGE));
+        let failure = label_write_timeout_message();
+        assert!(error.to_string().contains(&failure));
         assert_eq!(
             recorder.failure().unwrap().as_deref(),
-            Some(LABEL_WRITE_TIMEOUT_MESSAGE)
+            Some(failure.as_str())
         );
         assert!(recorder.try_record(frame(2)).is_err());
 

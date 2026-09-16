@@ -557,7 +557,7 @@ mod tests {
     use super::*;
     use crate::{
         model::{RunningPane, StoredPane},
-        pane_observations::LABEL_WRITE_TIMEOUT_MESSAGE,
+        pane_observations::label_write_timeout_message,
         ports::{
             PortScanObservation, PortScanPort,
             testing::{FakeSupervisor, FixedClock},
@@ -629,7 +629,8 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("sn-capture-failure-{}", Uuid::new_v4()));
         let mut core = cadence_core(&directory, &[], true);
         let failure = Arc::clone(&core.terminal_captures["cadence-pane"].failure);
-        *failure.lock().unwrap() = Some(LABEL_WRITE_TIMEOUT_MESSAGE.into());
+        let reason = label_write_timeout_message();
+        *failure.lock().unwrap() = Some(reason.clone());
 
         core.reconcile_terminal_captures().unwrap();
 
@@ -642,9 +643,7 @@ mod tests {
                 .as_ref(),
             Some(&PaneExperimentCapture {
                 on: false,
-                failure: Some(format!(
-                    "Experiment capture stopped: {LABEL_WRITE_TIMEOUT_MESSAGE}"
-                )),
+                failure: Some(format!("Experiment capture stopped: {reason}")),
             })
         );
         fs::remove_dir_all(directory).unwrap();
