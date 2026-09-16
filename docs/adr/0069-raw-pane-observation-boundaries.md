@@ -117,9 +117,15 @@ because capture observes only a copy after the normal stream has accepted the by
 replace or rechunk that path.
 
 The cadence fixture is intentionally byte-heavy and frame-light: after separate unmeasured
-engine and capture-path warm-up pairs, ten paired polls each hand off one distinct VT block,
-totalling 440,192 bytes and exactly ten measured projections. This isolates the per-byte copy
-and bounded-handoff cost that remains on `Core::poll_output`. The separate 200 Hz
+engine and capture-path setup pairs, it retains ten raw paired polls, each handing off one
+distinct VT block. The first three raw pairs are declared warm-up and discarded; the seven
+steady pairs used for the acceptance bounds total 308,135 bytes and seven projections. The
+complete raw fixture totals 440,192 bytes and ten projections. If capture-on is faster than
+capture-off at either the steady median or p95, the measurement is invalid and must be rerun
+rather than reported. The test permits at most ten complete attempts; a valid attempt outside
+either performance bound fails immediately and is never retried. This isolates the per-byte
+copy and bounded-handoff cost that remains on
+`Core::poll_output`. The separate 200 Hz
 worker-headroom fixture measures the per-frame projection, serialisation, write and sync costs;
 neither result substitutes for the other. Before closed batching, that fixture retained 334 of
 400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up

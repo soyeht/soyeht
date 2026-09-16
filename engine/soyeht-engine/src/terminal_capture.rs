@@ -385,7 +385,10 @@ mod tests {
     use uuid::Uuid;
 
     const CADENCE_RUNS: usize = 10;
+    const CADENCE_MAX_ATTEMPTS: usize = 10;
+    const CADENCE_WARMUP_PAIRS: usize = 3;
     const CADENCE_FIXTURE_BYTES: usize = 440_192;
+    const CADENCE_STEADY_BYTES: usize = 308_135;
     const CADENCE_WARMUP_DRAIN: Duration = Duration::from_millis(60);
     const FRAME_DENSE_INTERVAL: Duration = Duration::from_millis(5);
     const FRAME_DENSE_OBSERVATIONS: usize = 400;
@@ -627,6 +630,23 @@ mod tests {
         sorted[index]
     }
 
+    fn capture_is_not_faster(off_micros: &[u128], on_micros: &[u128]) -> bool {
+        percentile(on_micros, 1, 2) >= percentile(off_micros, 1, 2)
+            && percentile(on_micros, 95, 100) >= percentile(off_micros, 95, 100)
+    }
+
+    #[test]
+    fn cadence_sanity_rejects_an_impossibly_faster_capture_run() {
+        assert!(!capture_is_not_faster(
+            &[331, 333, 345, 352],
+            &[329, 330, 341, 350]
+        ));
+        assert!(capture_is_not_faster(
+            &[321, 323, 327, 331],
+            &[326, 329, 333, 353]
+        ));
+    }
+
     #[test]
     fn frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage() {
         let directory = std::env::temp_dir().join(format!("sn-headroom-{}", Uuid::new_v4()));
@@ -726,15 +746,12 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    #[test]
-    fn capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles() {
-        let directory = std::env::temp_dir().join(format!("sn-cadence-{}", Uuid::new_v4()));
-        fs::create_dir(&directory).unwrap();
-        let chunks = noisy_chunks();
+    fn run_cadence_attempt(directory: &Path, chunks: &[Vec<u8>], attempt: usize) -> bool {
+        fs::create_dir(directory).unwrap();
         let fixture_bytes = chunks.iter().skip(2).map(Vec::len).sum::<usize>();
         assert_eq!(fixture_bytes, CADENCE_FIXTURE_BYTES);
-        let mut off = cadence_core(&directory.join("off"), &chunks, false);
-        let mut on = cadence_core(&directory.join("on"), &chunks, false);
+        let mut off = cadence_core(&directory.join("off"), chunks, false);
+        let mut on = cadence_core(&directory.join("on"), chunks, false);
         off.poll_output().unwrap();
         on.poll_output().unwrap();
         let runtime = on.prepare_terminal_capture("cadence-pane").unwrap();
@@ -773,11 +790,22 @@ mod tests {
         }
         wait_for_projection_worker(&metrics);
         let peak_outstanding = metrics.lock().unwrap().peak_outstanding;
-        let off_median = percentile(&off_micros, 1, 2);
-        let on_median = percentile(&on_micros, 1, 2);
-        let off_p95 = percentile(&off_micros, 95, 100);
-        let on_p95 = percentile(&on_micros, 95, 100);
-        eprintln!("capture cadence off_us={off_micros:?} on_us={on_micros:?}");
+        let steady_off = &off_micros[CADENCE_WARMUP_PAIRS..];
+        let steady_on = &on_micros[CADENCE_WARMUP_PAIRS..];
+        let off_median = percentile(steady_off, 1, 2);
+        let on_median = percentile(steady_on, 1, 2);
+        let off_p95 = percentile(steady_off, 95, 100);
+        let on_p95 = percentile(steady_on, 95, 100);
+        eprintln!("capture cadence attempt={attempt} off_us={off_micros:?} on_us={on_micros:?}");
+        if !capture_is_not_faster(steady_off, steady_on) {
+            eprintln!(
+                "capture cadence attempt={attempt} invalid: capture-on measured faster than capture-off after the declared warm-up"
+            );
+            drop(on);
+            drop(off);
+            fs::remove_dir_all(directory).unwrap();
+            return false;
+        }
         assert!(on_median * 100 <= off_median * 105);
         assert!(on_p95 <= off_p95 + 5_000);
         let build = on.terminal_capture_build.clone().unwrap();
@@ -827,6 +855,34 @@ mod tests {
         );
         assert_eq!(observations, CADENCE_RUNS + 1);
         assert_eq!(gaps, 0);
+        assert_eq!(
+            chunks
+                .iter()
+                .skip(2 + CADENCE_WARMUP_PAIRS)
+                .map(Vec::len)
+                .sum::<usize>(),
+            CADENCE_STEADY_BYTES
+        );
         fs::remove_dir_all(directory).unwrap();
+        true
+    }
+
+    #[test]
+    fn capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles() {
+        let directory = std::env::temp_dir().join(format!("sn-cadence-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let chunks = noisy_chunks();
+        for attempt in 1..=CADENCE_MAX_ATTEMPTS {
+            if run_cadence_attempt(
+                &directory.join(format!("attempt-{attempt}")),
+                &chunks,
+                attempt,
+            ) {
+                fs::remove_dir_all(directory).unwrap();
+                return;
+            }
+        }
+        fs::remove_dir_all(directory).unwrap();
+        panic!("cadence did not produce a steady sample in {CADENCE_MAX_ATTEMPTS} attempts");
     }
 }
