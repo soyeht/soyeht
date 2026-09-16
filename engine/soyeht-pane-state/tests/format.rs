@@ -2,7 +2,8 @@
 
 use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, Error, GroundTruthLabel, HarnessIdentity,
-    MAX_SEGMENT_BYTES, ObservationFrame, RecordedRow, SegmentMetadata, decode_segment, encode_row,
+    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow, SegmentMetadata,
+    decode_segment, encode_row,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -49,6 +50,18 @@ fn label(sequence: u64) -> GroundTruthLabel {
     }
 }
 
+fn gap(first_sequence: u64, last_sequence: u64, dropped_observations: u64) -> ObservationGap {
+    ObservationGap {
+        pane_id: "pane-1".into(),
+        harness: harness(),
+        first_timestamp_ms: 1_800_000_000_100,
+        last_timestamp_ms: 1_800_000_000_050,
+        first_sequence,
+        last_sequence,
+        dropped_observations,
+    }
+}
+
 fn segment(rows: &[DatasetRow]) -> Vec<u8> {
     rows.iter()
         .flat_map(|row| encode_row(row).unwrap())
@@ -56,11 +69,12 @@ fn segment(rows: &[DatasetRow]) -> Vec<u8> {
 }
 
 #[test]
-fn segment_round_trip_keeps_header_observation_and_label_distinct() {
+fn segment_round_trip_keeps_header_observation_label_and_gap_distinct() {
     let bytes = segment(&[
         DatasetRow::Metadata(metadata()),
         DatasetRow::Observation(observation(8)),
         DatasetRow::Label(label(9)),
+        DatasetRow::Gap(gap(10, 12, 2)),
     ]);
     let replayed = decode_segment(&bytes).unwrap();
     assert_eq!(replayed.metadata, metadata());
@@ -68,10 +82,31 @@ fn segment_round_trip_keeps_header_observation_and_label_distinct() {
         replayed.rows,
         vec![
             RecordedRow::Observation(observation(8)),
-            RecordedRow::Label(label(9))
+            RecordedRow::Label(label(9)),
+            RecordedRow::Gap(gap(10, 12, 2)),
         ]
     );
     assert!(bytes.starts_with(b"{\"kind\":\"metadata\""));
+}
+
+#[test]
+fn gap_requires_a_nonempty_count_inside_its_sequence_interval() {
+    assert_eq!(gap(10, 12, 2).validate(), Ok(()));
+    assert_eq!(gap(10, 12, 0).validate(), Err(Error::InvalidGap));
+    assert_eq!(gap(10, 12, 4).validate(), Err(Error::InvalidGap));
+    assert_eq!(gap(12, 10, 1).validate(), Err(Error::InvalidGap));
+}
+
+#[test]
+fn replay_uses_sequence_when_the_wall_clock_moves_backwards() {
+    let mut rolled_back = observation(8);
+    rolled_back.timestamp_ms = metadata().started_at_ms - 1_000;
+    let replayed = decode_segment(&segment(&[
+        DatasetRow::Metadata(metadata()),
+        DatasetRow::Observation(rolled_back.clone()),
+    ]))
+    .unwrap();
+    assert_eq!(replayed.rows, vec![RecordedRow::Observation(rolled_back)]);
 }
 
 #[test]

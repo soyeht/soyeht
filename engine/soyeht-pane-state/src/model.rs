@@ -119,11 +119,43 @@ impl GroundTruthLabel {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObservationGap {
+    pub pane_id: String,
+    pub harness: HarnessIdentity,
+    pub first_timestamp_ms: i64,
+    pub last_timestamp_ms: i64,
+    pub first_sequence: u64,
+    pub last_sequence: u64,
+    pub dropped_observations: u64,
+}
+
+impl ObservationGap {
+    pub fn validate(&self) -> Result<()> {
+        bounded_nonempty(&self.pane_id, MAX_PANE_ID_BYTES, "pane id")?;
+        self.harness.validate()?;
+        valid_timestamp(self.first_timestamp_ms)?;
+        valid_timestamp(self.last_timestamp_ms)?;
+        let sequence_span = self
+            .last_sequence
+            .checked_sub(self.first_sequence)
+            .and_then(|span| span.checked_add(1));
+        if self.dropped_observations == 0
+            || self.last_sequence < self.first_sequence
+            || sequence_span.is_none_or(|span| self.dropped_observations > span)
+        {
+            return Err(Error::InvalidGap);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RecordedRow {
     Observation(ObservationFrame),
     Label(GroundTruthLabel),
+    Gap(ObservationGap),
 }
 
 impl RecordedRow {
@@ -131,6 +163,7 @@ impl RecordedRow {
         match self {
             Self::Observation(frame) => frame.validate(),
             Self::Label(label) => label.validate(),
+            Self::Gap(gap) => gap.validate(),
         }
     }
 }

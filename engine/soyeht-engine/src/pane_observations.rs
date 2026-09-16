@@ -2,7 +2,8 @@ use crate::errors::{self, Result};
 use sha2::{Digest, Sha256};
 use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, HarnessIdentity, MAX_RETAINED_SEGMENTS,
-    MAX_SEGMENT_BYTES, RecordedRow, ReplayedSegment, SegmentMetadata, decode_segment, encode_row,
+    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow, ReplayedSegment,
+    SegmentMetadata, decode_segment, encode_row,
 };
 use std::{
     collections::VecDeque,
@@ -11,11 +12,208 @@ use std::{
     io::{Read, Write},
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
+    sync::{Arc, Condvar, Mutex},
+    thread::{self, JoinHandle},
 };
 
 const DIRECTORY_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
 const SEGMENT_SUFFIX: &str = ".jsonl";
+pub const OBSERVATION_QUEUE_CAPACITY: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueOutcome {
+    Queued,
+    GapExtended,
+}
+
+struct ObservationQueue {
+    capacity: usize,
+    rows: VecDeque<ObservationFrame>,
+    gap: Option<ObservationGap>,
+    last_submitted_sequence: Option<u64>,
+    closed: bool,
+}
+
+impl ObservationQueue {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            rows: VecDeque::with_capacity(capacity),
+            gap: None,
+            last_submitted_sequence: None,
+            closed: false,
+        }
+    }
+
+    fn push(&mut self, frame: ObservationFrame) -> Result<QueueOutcome> {
+        if self
+            .last_submitted_sequence
+            .is_some_and(|last| frame.sequence <= last)
+        {
+            return Err(soyeht_pane_state::Error::InvalidSequence.into());
+        }
+        self.last_submitted_sequence = Some(frame.sequence);
+        if let Some(gap) = &mut self.gap {
+            gap.last_timestamp_ms = frame.timestamp_ms;
+            gap.last_sequence = frame.sequence;
+            gap.dropped_observations = gap
+                .dropped_observations
+                .checked_add(1)
+                .ok_or(soyeht_pane_state::Error::InvalidGap)?;
+            return Ok(QueueOutcome::GapExtended);
+        }
+        if self.rows.len() == self.capacity {
+            self.gap = Some(ObservationGap {
+                pane_id: frame.pane_id,
+                harness: frame.harness,
+                first_timestamp_ms: frame.timestamp_ms,
+                last_timestamp_ms: frame.timestamp_ms,
+                first_sequence: frame.sequence,
+                last_sequence: frame.sequence,
+                dropped_observations: 1,
+            });
+            return Ok(QueueOutcome::GapExtended);
+        }
+        self.rows.push_back(frame);
+        Ok(QueueOutcome::Queued)
+    }
+
+    fn pop(&mut self) -> Option<RecordedRow> {
+        self.rows
+            .pop_front()
+            .map(RecordedRow::Observation)
+            .or_else(|| self.gap.take().map(RecordedRow::Gap))
+    }
+}
+
+struct RecorderState {
+    queue: ObservationQueue,
+    failure: Option<String>,
+}
+
+type SharedRecorder = Arc<(Mutex<RecorderState>, Condvar)>;
+
+pub struct ObservationRecorder {
+    pane_id: String,
+    harness: HarnessIdentity,
+    shared: SharedRecorder,
+    worker: Option<JoinHandle<Result<()>>>,
+}
+
+impl ObservationRecorder {
+    pub fn open(store: SegmentStore) -> Result<Self> {
+        Self::open_with_capacity(store, OBSERVATION_QUEUE_CAPACITY)
+    }
+
+    fn open_with_capacity(store: SegmentStore, capacity: usize) -> Result<Self> {
+        if capacity == 0 {
+            return Err(errors::invalid(
+                "Observation queue capacity must be positive",
+            ));
+        }
+        let pane_id = store.pane_id.clone();
+        let harness = store.harness.clone();
+        let shared = Arc::new((
+            Mutex::new(RecorderState {
+                queue: ObservationQueue::new(capacity),
+                failure: None,
+            }),
+            Condvar::new(),
+        ));
+        let worker_shared = Arc::clone(&shared);
+        let worker = thread::Builder::new()
+            .name("pane-observation-writer".into())
+            .spawn(move || recorder_loop(store, worker_shared))?;
+        Ok(Self {
+            pane_id,
+            harness,
+            shared,
+            worker: Some(worker),
+        })
+    }
+
+    pub fn try_record(&self, frame: ObservationFrame) -> Result<QueueOutcome> {
+        frame.validate()?;
+        if frame.pane_id != self.pane_id || frame.harness != self.harness {
+            return Err(errors::invalid(
+                "Observation frame provenance does not match its recorder",
+            ));
+        }
+        let (lock, wake) = &*self.shared;
+        let mut state = lock
+            .lock()
+            .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+        if let Some(failure) = &state.failure {
+            return Err(errors::internal(failure.clone()));
+        }
+        if state.queue.closed {
+            return Err(errors::internal("Observation recorder is closed"));
+        }
+        let outcome = state.queue.push(frame)?;
+        wake.notify_one();
+        Ok(outcome)
+    }
+
+    pub fn finish(mut self) -> Result<()> {
+        self.stop_worker()
+    }
+
+    fn stop_worker(&mut self) -> Result<()> {
+        let Some(worker) = self.worker.take() else {
+            return Ok(());
+        };
+        let (lock, wake) = &*self.shared;
+        lock.lock()
+            .map_err(|_| errors::internal("Observation queue lock was poisoned"))?
+            .queue
+            .closed = true;
+        wake.notify_one();
+        worker
+            .join()
+            .map_err(|_| errors::internal("Observation writer thread panicked"))?
+    }
+}
+
+impl Drop for ObservationRecorder {
+    fn drop(&mut self) {
+        let _ = self.stop_worker();
+    }
+}
+
+fn recorder_loop(mut store: SegmentStore, shared: SharedRecorder) -> Result<()> {
+    loop {
+        let row = next_recorded_row(&shared)?;
+        let Some(row) = row else { return Ok(()) };
+        if let Err(error) = store.append(row) {
+            let (lock, wake) = &*shared;
+            if let Ok(mut state) = lock.lock() {
+                state.failure = Some(error.to_string());
+                state.queue.closed = true;
+                wake.notify_all();
+            }
+            return Err(error);
+        }
+    }
+}
+
+fn next_recorded_row(shared: &SharedRecorder) -> Result<Option<RecordedRow>> {
+    let (lock, wake) = &**shared;
+    let mut state = lock
+        .lock()
+        .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+    loop {
+        if let Some(row) = state.queue.pop() {
+            return Ok(Some(row));
+        }
+        if state.queue.closed {
+            return Ok(None);
+        }
+        state = wake
+            .wait(state)
+            .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeletionReceipt {
@@ -392,6 +590,12 @@ fn row_identity(row: &RecordedRow) -> (&str, &HarnessIdentity, i64, u64) {
             label.timestamp_ms,
             label.sequence,
         ),
+        RecordedRow::Gap(gap) => (
+            &gap.pane_id,
+            &gap.harness,
+            gap.last_timestamp_ms,
+            gap.last_sequence,
+        ),
     }
 }
 
@@ -399,6 +603,7 @@ fn encode_recorded_row(row: &RecordedRow) -> Result<Vec<u8>> {
     match row {
         RecordedRow::Observation(frame) => Ok(encode_row(&DatasetRow::Observation(frame.clone()))?),
         RecordedRow::Label(label) => Ok(encode_row(&DatasetRow::Label(label.clone()))?),
+        RecordedRow::Gap(gap) => Ok(encode_row(&DatasetRow::Gap(gap.clone()))?),
     }
 }
 
@@ -461,6 +666,64 @@ mod tests {
             foreground_process: Some("test".into()),
             bytes_per_second: 42,
         })
+    }
+
+    fn frame(sequence: u64) -> ObservationFrame {
+        let RecordedRow::Observation(frame) = observation(sequence, false) else {
+            unreachable!()
+        };
+        frame
+    }
+
+    #[test]
+    fn bounded_queue_records_pressure_as_a_gap_before_later_frames() {
+        let mut queue = ObservationQueue::new(2);
+        assert_eq!(queue.push(frame(0)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(queue.push(frame(1)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(queue.push(frame(2)).unwrap(), QueueOutcome::GapExtended);
+        let mut rolled_back = frame(3);
+        rolled_back.timestamp_ms -= 100;
+        assert_eq!(queue.push(rolled_back).unwrap(), QueueOutcome::GapExtended);
+        assert_eq!(queue.pop(), Some(observation(0, false)));
+        assert_eq!(queue.pop(), Some(observation(1, false)));
+        let Some(RecordedRow::Gap(gap)) = queue.pop() else {
+            panic!("queue pressure did not leave a gap")
+        };
+        assert_eq!(gap.first_sequence, 2);
+        assert_eq!(gap.last_sequence, 3);
+        assert_eq!(gap.dropped_observations, 2);
+        assert!(gap.last_timestamp_ms < gap.first_timestamp_ms);
+        gap.validate().unwrap();
+        assert_eq!(queue.push(frame(4)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(queue.pop(), Some(observation(4, false)));
+    }
+
+    #[test]
+    fn asynchronous_writer_drains_without_losing_a_frame() {
+        let fixture = Fixture::new();
+        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let recorder = ObservationRecorder::open(store).unwrap();
+        for sequence in 0..8 {
+            assert_eq!(
+                recorder.try_record(frame(sequence)).unwrap(),
+                QueueOutcome::Queued
+            );
+        }
+        recorder.finish().unwrap();
+        let replayed = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
+            .unwrap()
+            .replay()
+            .unwrap();
+        assert_eq!(
+            replayed
+                .iter()
+                .flat_map(|segment| segment.rows.iter())
+                .cloned()
+                .collect::<Vec<_>>(),
+            (0..8)
+                .map(|sequence| observation(sequence, false))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
