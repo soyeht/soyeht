@@ -1100,6 +1100,7 @@ dependencies = [
  "soyeht-acp",
  "soyeht-editor",
  "soyeht-lsp",
+ "soyeht-pane-state",
  "soyeht-protocol",
  "soyeht-ptyd",
  "soyeht-store",

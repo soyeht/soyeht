@@ -12,6 +12,7 @@ pub mod model;
 pub mod network;
 pub mod outbox;
 pub mod pairing;
+pub mod pane_observations;
 pub mod panes;
 pub mod ports;
 pub mod screen;

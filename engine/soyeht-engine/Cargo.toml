@@ -10,6 +10,7 @@ publish.workspace = true
 soyeht-acp = { path = "../soyeht-acp" }
 soyeht-editor = { path = "../soyeht-editor" }
 soyeht-lsp = { path = "../soyeht-lsp" }
+soyeht-pane-state = { path = "../soyeht-pane-state" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 soyeht-ptyd = { path = "../soyeht-ptyd" }
 soyeht-store = { path = "../soyeht-store" }
