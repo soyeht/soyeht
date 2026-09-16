@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 dc2e1ec21faafd5cfff626a54193f548d7bbb0060ac2a5c2b48b744324655b4c). Do not edit.
+// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -619,6 +619,15 @@ pub struct PaneExperimentExportParams {
     pub idempotency_key: Id,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentSkippedSource {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: u32,
+    #[serde(rename = "segments")]
+    pub segments: u32,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneExperimentExportResult {
     #[serde(rename = "path")]
     pub path: String,
@@ -642,6 +651,13 @@ pub struct PaneExperimentExportResult {
         skip_serializing_if = "Option::is_none"
     )]
     pub stale_temporary_bytes_removed: Option<Decimal>,
+    #[serde(rename = "skippedSources", skip_serializing_if = "Option::is_none")]
+    pub skipped_sources: Option<Vec<PaneExperimentSkippedSource>>,
+    #[serde(
+        rename = "skippedSourceNotice",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub skipped_source_notice: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartParams {

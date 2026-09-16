@@ -25,8 +25,12 @@ It has no filesystem, process, socket, engine or client dependency. A deliberate
 detector can replace the baseline in tests without changing engine or client code. Screen
 change and learned classifiers remain experiment candidates and do not ship in this slice.
 
-Metrics report precision and recall per state and per harness, detection latency and unknown
-rate. `waiting_for_you` is reported separately and never hidden by an aggregate because a
+Metrics report precision and recall per state, pane kind and harness, detection latency and
+unknown rate. Terminal and agent panes are different populations and are never aggregated,
+even when they use the same harness identity. A group with no labeled observations reports
+scores as unavailable rather than contributing zeros to a total. This prevents dense labels
+from one harness or pane kind from lending apparent evidence to another that has none.
+`waiting_for_you` is reported separately and never hidden by an aggregate because a
 miss leaves a person blocked. An always-unknown control must score poorly, and a
 perfect-oracle control must reach the metric ceiling. Together they prove the scoring
 discriminates at both ends. Coverage is reported beside precision and recall for every state
@@ -199,12 +203,19 @@ for reading a precomputed field that all candidates received.
 
 Each pane has rotated JSONL segments created with owner-only permissions and no followed
 symlinks. Every segment begins with a metadata row containing the schema version, pane,
-harness identity and version, engine package version, digest of the installed engine
+pane kind, harness identity and version, engine package version, digest of the installed engine
 executable, and segment start time. Every observation and label row also carries an absolute
 timestamp and a monotonic sequence for stable ordering when the wall clock changes. Rotation
 happens before the next whole row is appended, repeats the metadata row and neither splits
 nor drops a row. Protocol limits bound lines, line length, row size, segment size and retained
-segments. Expired segments are removed oldest first.
+segments. Expired segments are removed oldest first. Schema version 6 adds pane kind to the
+header, every data row, the clean-close marker and export provenance. A segment from another
+schema is never assigned a pane population that it did not record. Replay omits only that
+identified segment, reports its pane, schema version and count, and continues with compatible
+segments and independent panes. The receipt tells the person to delete that pane's captured data
+to remove the incompatible files. Malformed current-schema data still fails closed. A new
+recording starts after the highest existing segment filename, including incompatible files, so
+local omission cannot overwrite old data or collide with it.
 
 Observation rows, label rows and overflow gap rows have distinct closed kinds. A gap carries
 its exact available loss unit plus its first and last timestamps and sequences: projected
@@ -243,7 +254,9 @@ The response returns the local path, row and byte counts, digest and the actual 
 an empty result omits that actual window instead of inventing one. Nothing is uploaded or copied
 outside the profile. Analysis tools may read the returned local file. Only the attested Dev Mac
 application can invoke export; command-line clients, agents and paired phones cannot. Export
-rejects invalid provenance rather than manufacturing it.
+rejects invalid provenance rather than manufacturing it. Incompatible source schemas are a
+local, explicit omission in both the export header and receipt; one old pane cannot abort an
+export of unrelated current panes.
 
 An interrupted export may leave raw terminal text in its temporary file. At engine startup and
 before a new export, the engine removes only a regular file whose name is exactly

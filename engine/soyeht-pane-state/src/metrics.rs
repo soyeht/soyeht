@@ -1,4 +1,4 @@
-use crate::{Detector, HarnessIdentity, ObservationGap, RecordedRow, Result};
+use crate::{Detector, HarnessIdentity, ObservationGap, ObservationPaneKind, RecordedRow, Result};
 use serde::Serialize;
 use soyeht_protocol::PaneState;
 
@@ -48,10 +48,12 @@ pub struct StateMetrics {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessMetrics {
+    pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
     pub panes: u64,
     pub observations: u64,
     pub labeled_observations: u64,
+    pub scores_available: bool,
     pub unknown_rate: Rate,
     pub time_coverage: Option<Rate>,
     pub unclassified_gap_ms: u64,
@@ -77,7 +79,7 @@ impl MetricsReport {
             let Some(right) = other
                 .harnesses
                 .iter()
-                .find(|right| right.harness == left.harness)
+                .find(|right| right.pane_kind == left.pane_kind && right.harness == left.harness)
             else {
                 return false;
             };
@@ -104,6 +106,7 @@ struct TraceRow {
 
 struct PaneTrace {
     pane_id: String,
+    pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
     rows: Vec<TraceRow>,
 }
@@ -120,6 +123,7 @@ struct MutableState {
 }
 
 struct MutableHarness {
+    pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
     panes: u64,
     observations: u64,
@@ -134,8 +138,9 @@ struct MutableHarness {
 }
 
 impl MutableHarness {
-    fn new(harness: HarnessIdentity) -> Self {
+    fn new(pane_kind: ObservationPaneKind, harness: HarnessIdentity) -> Self {
         Self {
+            pane_kind,
             harness,
             panes: 0,
             observations: 0,
@@ -197,10 +202,12 @@ impl MutableHarness {
             })
             .collect();
         HarnessMetrics {
+            pane_kind: self.pane_kind,
             harness: self.harness,
             panes: self.panes,
             observations: self.observations,
             labeled_observations: self.labeled_observations,
+            scores_available: self.labeled_observations > 0,
             unknown_rate: Rate::new(self.unknown, self.observations),
             time_coverage: self
                 .coverage_available
@@ -218,13 +225,18 @@ pub fn evaluate(detector: &dyn Detector, rows: &[RecordedRow]) -> Result<Metrics
     let mut traces: Vec<PaneTrace> = Vec::new();
     for row in rows {
         row.validate()?;
-        let (pane_id, harness, sequence) = identity(row);
+        let (pane_id, pane_kind, harness, sequence) = identity(row);
         let index = traces
             .iter()
-            .position(|trace| trace.pane_id == pane_id && trace.harness == *harness)
+            .position(|trace| {
+                trace.pane_id == pane_id
+                    && trace.pane_kind == pane_kind
+                    && trace.harness == *harness
+            })
             .unwrap_or_else(|| {
                 traces.push(PaneTrace {
                     pane_id: pane_id.into(),
+                    pane_kind,
                     harness: harness.clone(),
                     rows: Vec::new(),
                 });
@@ -250,14 +262,20 @@ pub fn evaluate(detector: &dyn Detector, rows: &[RecordedRow]) -> Result<Metrics
     for trace in traces {
         let index = harnesses
             .iter()
-            .position(|metrics| metrics.harness == trace.harness)
+            .position(|metrics| {
+                metrics.pane_kind == trace.pane_kind && metrics.harness == trace.harness
+            })
             .unwrap_or_else(|| {
-                harnesses.push(MutableHarness::new(trace.harness.clone()));
+                harnesses.push(MutableHarness::new(trace.pane_kind, trace.harness.clone()));
                 harnesses.len() - 1
             });
         score_trace(detector, &trace, &mut harnesses[index]);
     }
-    harnesses.sort_by(|left, right| harness_name(&left.harness).cmp(harness_name(&right.harness)));
+    harnesses.sort_by(|left, right| {
+        pane_kind_order(left.pane_kind)
+            .cmp(&pane_kind_order(right.pane_kind))
+            .then_with(|| harness_name(&left.harness).cmp(harness_name(&right.harness)))
+    });
     Ok(MetricsReport {
         harnesses: harnesses.into_iter().map(MutableHarness::finish).collect(),
     })
@@ -423,11 +441,21 @@ fn gap_duration(gap: &ObservationGap) -> Option<u64> {
         .then(|| (gap.last_timestamp_ms - gap.first_timestamp_ms) as u64)
 }
 
-fn identity(row: &RecordedRow) -> (&str, &HarnessIdentity, u64) {
+fn identity(row: &RecordedRow) -> (&str, ObservationPaneKind, &HarnessIdentity, u64) {
     match row {
-        RecordedRow::Observation(frame) => (&frame.pane_id, &frame.harness, frame.sequence),
-        RecordedRow::Label(label) => (&label.pane_id, &label.harness, label.sequence),
-        RecordedRow::Gap(gap) => (&gap.pane_id, &gap.harness, gap.last_sequence),
+        RecordedRow::Observation(frame) => (
+            &frame.pane_id,
+            frame.pane_kind,
+            &frame.harness,
+            frame.sequence,
+        ),
+        RecordedRow::Label(label) => (
+            &label.pane_id,
+            label.pane_kind,
+            &label.harness,
+            label.sequence,
+        ),
+        RecordedRow::Gap(gap) => (&gap.pane_id, gap.pane_kind, &gap.harness, gap.last_sequence),
     }
 }
 
@@ -457,6 +485,13 @@ fn percentile(values: &[u64], percent: usize) -> Option<u64> {
 
 fn harness_name(harness: &HarnessIdentity) -> &str {
     harness.id().unwrap_or("")
+}
+
+fn pane_kind_order(kind: ObservationPaneKind) -> u8 {
+    match kind {
+        ObservationPaneKind::Agent => 0,
+        ObservationPaneKind::Terminal => 1,
+    }
 }
 
 fn state_order(state: &PaneState) -> u8 {

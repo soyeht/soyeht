@@ -9,6 +9,7 @@ use soyeht_protocol::{PaneState, StateSource};
 fn frame(harness: &str, title: &str, screen: &str) -> ObservationFrame {
     ObservationFrame {
         pane_id: "pane-1".into(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: HarnessIdentity::known(harness, Some("1".into())).unwrap(),
         timestamp_ms: 1_800_000_000_000,
         sequence: 1,
@@ -166,6 +167,7 @@ fn observations_and_labels_are_bounded_and_have_distinct_row_kinds() {
     );
     let label = GroundTruthLabel {
         pane_id: observation.pane_id.clone(),
+        pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: observation.harness.clone(),
         timestamp_ms: observation.timestamp_ms,
         sequence: 2,

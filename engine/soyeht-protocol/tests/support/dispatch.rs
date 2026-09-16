@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 dc2e1ec21faafd5cfff626a54193f548d7bbb0060ac2a5c2b48b744324655b4c). Do not edit.
+// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -62,6 +62,7 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneExperimentDeleteParams" => roundtrip::<PaneExperimentDeleteParams>(value),
         "PaneExperimentDeleteResult" => roundtrip::<PaneExperimentDeleteResult>(value),
         "PaneExperimentExportParams" => roundtrip::<PaneExperimentExportParams>(value),
+        "PaneExperimentSkippedSource" => roundtrip::<PaneExperimentSkippedSource>(value),
         "PaneExperimentExportResult" => roundtrip::<PaneExperimentExportResult>(value),
         "DevicePairStartParams" => roundtrip::<DevicePairStartParams>(value),
         "DevicePairStartResult" => roundtrip::<DevicePairStartResult>(value),

@@ -1,7 +1,7 @@
 use crate::errors::{self, Result};
 use soyeht_pane_state::{
     CursorPosition, GroundTruthLabel, HarnessIdentity, MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES,
-    MAX_TITLE_BYTES, ObservationFrame, ObservationGap, ObservationReason,
+    MAX_TITLE_BYTES, ObservationFrame, ObservationGap, ObservationPaneKind, ObservationReason,
 };
 use soyeht_protocol::{PaneState, StateSource};
 use std::collections::VecDeque;
@@ -33,6 +33,7 @@ struct ScreenSnapshot {
 /// is admitted to the asynchronous recorder.
 pub struct TerminalProjection {
     pane_id: String,
+    pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
     parser: vt100::Parser<TitleCallbacks>,
     rows: u16,
@@ -46,6 +47,7 @@ pub struct TerminalProjection {
 impl TerminalProjection {
     pub fn new(
         pane_id: impl Into<String>,
+        pane_kind: ObservationPaneKind,
         harness: HarnessIdentity,
         rows: u16,
         cols: u16,
@@ -57,6 +59,7 @@ impl TerminalProjection {
         let pane_id = pane_id.into();
         let probe = ObservationFrame {
             pane_id: pane_id.clone(),
+            pane_kind,
             harness: harness.clone(),
             timestamp_ms: 0,
             sequence: next_sequence,
@@ -70,6 +73,7 @@ impl TerminalProjection {
         probe.validate()?;
         Ok(Self {
             pane_id,
+            pane_kind,
             harness,
             parser: vt100::Parser::new_with_callbacks(rows, cols, 0, TitleCallbacks::default()),
             rows,
@@ -112,6 +116,7 @@ impl TerminalProjection {
         self.byte_samples.clear();
         let gap = ObservationGap {
             pane_id: self.pane_id.clone(),
+            pane_kind: self.pane_kind,
             harness: self.harness.clone(),
             first_timestamp_ms,
             last_timestamp_ms,
@@ -147,6 +152,7 @@ impl TerminalProjection {
         self.last_emitted_at_ms = Some(timestamp_ms);
         let frame = ObservationFrame {
             pane_id: self.pane_id.clone(),
+            pane_kind: self.pane_kind,
             harness: self.harness.clone(),
             timestamp_ms,
             sequence,
@@ -176,6 +182,7 @@ impl TerminalProjection {
         let sequence = self.next_sequence;
         let label = GroundTruthLabel {
             pane_id: self.pane_id.clone(),
+            pane_kind: self.pane_kind,
             harness: self.harness.clone(),
             timestamp_ms,
             sequence,
@@ -264,8 +271,15 @@ mod tests {
 
     #[test]
     fn ansi_projection_tracks_title_cursor_and_only_emits_screen_changes() {
-        let mut projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 4, 20, 7).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            4,
+            20,
+            7,
+        )
+        .unwrap();
         let first = projection
             .process(1_000, b"\x1b]2;build\x07hello\r\nworld")
             .unwrap()
@@ -287,8 +301,15 @@ mod tests {
 
     #[test]
     fn static_byte_activity_emits_once_per_second_but_absolute_idle_does_not() {
-        let mut projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 4, 20, 0).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            4,
+            20,
+            0,
+        )
+        .unwrap();
         projection.process(1_000, b"hello").unwrap().unwrap();
 
         assert_eq!(projection.process(1_500, b"\x1b[5Dhello").unwrap(), None);
@@ -303,8 +324,15 @@ mod tests {
 
     #[test]
     fn projection_bounds_unicode_title_and_visible_lines() {
-        let mut projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 70, 2_100, 0).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            70,
+            2_100,
+            0,
+        )
+        .unwrap();
         let title = "é".repeat(MAX_TITLE_BYTES);
         let long_line = "é".repeat(MAX_SCREEN_LINE_BYTES);
         let bytes = format!("\x1b]2;{title}\x07{long_line}");
@@ -322,8 +350,15 @@ mod tests {
 
     #[test]
     fn byte_rate_uses_one_second_window_and_resets_on_clock_rollback() {
-        let mut projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 2, 20, 0).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            2,
+            20,
+            0,
+        )
+        .unwrap();
         let first = projection.process(1_000, b"a").unwrap().unwrap();
         assert_eq!(first.bytes_per_second, 1);
         let second = projection.process(1_999, b"b").unwrap().unwrap();
@@ -336,8 +371,15 @@ mod tests {
 
     #[test]
     fn resize_changes_the_bounded_projection_without_guessing_metadata() {
-        let mut projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 2, 10, 3).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            2,
+            10,
+            3,
+        )
+        .unwrap();
         projection.process(1, b"1234567890").unwrap().unwrap();
         projection.resize(3, 5).unwrap();
         let frame = projection.process(2, b"\rX").unwrap().unwrap();
@@ -348,8 +390,15 @@ mod tests {
 
     #[test]
     fn raw_byte_gap_resets_projection_and_keeps_frame_count_absent() {
-        let mut projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 2, 10, 3).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            2,
+            10,
+            3,
+        )
+        .unwrap();
         projection.process(1, b"secret").unwrap().unwrap();
         let gap = projection.record_byte_gap(2, 5, 4_200_000).unwrap();
         assert_eq!(gap.first_sequence, 4);
@@ -366,7 +415,15 @@ mod tests {
     #[test]
     fn observations_and_labels_share_provenance_and_one_sequence() {
         let harness = HarnessIdentity::known("registry.test", Some("1.2.3".into())).unwrap();
-        let mut projection = TerminalProjection::new("pane-1", harness.clone(), 2, 20, 0).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness.clone(),
+            2,
+            20,
+            0,
+        )
+        .unwrap();
 
         let before = projection.process(1, b"before").unwrap().unwrap();
         let label = projection
@@ -384,8 +441,15 @@ mod tests {
 
     #[test]
     fn an_invalid_label_does_not_consume_the_shared_sequence() {
-        let mut projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 2, 20, 7).unwrap();
+        let mut projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            2,
+            20,
+            7,
+        )
+        .unwrap();
 
         projection
             .label(1, PaneState::Unknown, StateSource::Hook)

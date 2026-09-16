@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 dc2e1ec21faafd5cfff626a54193f548d7bbb0060ac2a5c2b48b744324655b4c). Do not edit.
+// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
 import Foundation
 
 
@@ -671,6 +671,17 @@ public struct PaneExperimentExportParams: Codable, Sendable {
     }
 }
 
+public struct PaneExperimentSkippedSource: Codable, Sendable {
+    public var `paneId`: Id
+    public var `schemaVersion`: UInt32
+    public var `segments`: UInt32
+    public init(`paneId`: Id, `schemaVersion`: UInt32, `segments`: UInt32) {
+        self.`paneId` = `paneId`
+        self.`schemaVersion` = `schemaVersion`
+        self.`segments` = `segments`
+    }
+}
+
 public struct PaneExperimentExportResult: Codable, Sendable {
     public var `path`: String
     public var `rows`: UInt32
@@ -680,7 +691,9 @@ public struct PaneExperimentExportResult: Codable, Sendable {
     public var `actualToMs`: Decimal?
     public var `staleTemporaryFilesRemoved`: UInt32?
     public var `staleTemporaryBytesRemoved`: Decimal?
-    public init(`path`: String, `rows`: UInt32, `bytes`: Decimal, `sha256`: String, `actualFromMs`: Decimal? = nil, `actualToMs`: Decimal? = nil, `staleTemporaryFilesRemoved`: UInt32? = nil, `staleTemporaryBytesRemoved`: Decimal? = nil) {
+    public var `skippedSources`: [PaneExperimentSkippedSource]?
+    public var `skippedSourceNotice`: String?
+    public init(`path`: String, `rows`: UInt32, `bytes`: Decimal, `sha256`: String, `actualFromMs`: Decimal? = nil, `actualToMs`: Decimal? = nil, `staleTemporaryFilesRemoved`: UInt32? = nil, `staleTemporaryBytesRemoved`: Decimal? = nil, `skippedSources`: [PaneExperimentSkippedSource]? = nil, `skippedSourceNotice`: String? = nil) {
         self.`path` = `path`
         self.`rows` = `rows`
         self.`bytes` = `bytes`
@@ -689,6 +702,8 @@ public struct PaneExperimentExportResult: Codable, Sendable {
         self.`actualToMs` = `actualToMs`
         self.`staleTemporaryFilesRemoved` = `staleTemporaryFilesRemoved`
         self.`staleTemporaryBytesRemoved` = `staleTemporaryBytesRemoved`
+        self.`skippedSources` = `skippedSources`
+        self.`skippedSourceNotice` = `skippedSourceNotice`
     }
 }
 

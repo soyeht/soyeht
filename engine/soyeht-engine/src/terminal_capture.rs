@@ -8,7 +8,7 @@ use crate::{
     terminal_projection::TerminalProjection,
 };
 use crossbeam_channel as channel;
-use soyeht_pane_state::{EngineBuild, HarnessIdentity};
+use soyeht_pane_state::{EngineBuild, HarnessIdentity, ObservationPaneKind};
 use soyeht_protocol::{PaneExperimentCapture, PaneMode};
 use std::{
     path::Path,
@@ -142,9 +142,22 @@ impl TerminalCapture {
             .map_err(|_| errors::invalid("Pane rows exceed the observation range"))?;
         let cols = u16::try_from(cols)
             .map_err(|_| errors::invalid("Pane columns exceed the observation range"))?;
-        let store = SegmentStore::open(root, pane_id, harness.clone(), build)?;
+        let store = SegmentStore::open(
+            root,
+            pane_id,
+            ObservationPaneKind::Terminal,
+            harness.clone(),
+            build,
+        )?;
         let sequence = store.next_sequence()?;
-        let projection = TerminalProjection::new(pane_id, harness, rows, cols, sequence)?;
+        let projection = TerminalProjection::new(
+            pane_id,
+            ObservationPaneKind::Terminal,
+            harness,
+            rows,
+            cols,
+            sequence,
+        )?;
         let recorder = ObservationRecorder::open(store)?;
         let (sender, receiver) = channel::bounded(PROJECTION_QUEUE_CAPACITY);
         let overflow = Arc::new(Mutex::new(None));
@@ -809,13 +822,21 @@ mod tests {
         let store = SegmentStore::open(
             &directory,
             "pane-1",
+            ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
             build.clone(),
         )
         .unwrap();
         let recorder = ObservationRecorder::open(store).unwrap();
-        let projection =
-            TerminalProjection::new("pane-1", HarnessIdentity::Unknown, 4, 20, 0).unwrap();
+        let projection = TerminalProjection::new(
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            4,
+            20,
+            0,
+        )
+        .unwrap();
         let (sender, receiver) = channel::bounded(1);
         sender
             .send(ProjectionCommand::Bytes {
@@ -861,13 +882,19 @@ mod tests {
         drop(sender);
         worker.join().unwrap().unwrap();
 
-        let rows = SegmentStore::open(&directory, "pane-1", HarnessIdentity::Unknown, build)
-            .unwrap()
-            .replay()
-            .unwrap()
-            .into_iter()
-            .flat_map(|segment| segment.rows)
-            .collect::<Vec<_>>();
+        let rows = SegmentStore::open(
+            &directory,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            build,
+        )
+        .unwrap()
+        .replay()
+        .unwrap()
+        .into_iter()
+        .flat_map(|segment| segment.rows)
+        .collect::<Vec<_>>();
         assert_eq!(rows.len(), 3);
         let RecordedRow::Observation(before) = &rows[0] else {
             panic!("first projected frame was not recorded")
@@ -955,6 +982,22 @@ mod tests {
         metrics
             .peak_outstanding
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn replay_cadence_rows(directory: &Path, build: EngineBuild) -> Vec<RecordedRow> {
+        SegmentStore::open(
+            &directory.join("on/experiments/pane-state"),
+            "cadence-pane",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
+            build,
+        )
+        .unwrap()
+        .replay()
+        .unwrap()
+        .into_iter()
+        .flat_map(|segment| segment.rows)
+        .collect()
     }
 
     fn cadence_core(root: &Path, chunks: &[Vec<u8>], capture: bool) -> Core {
@@ -1103,6 +1146,7 @@ mod tests {
         let rows = SegmentStore::open(
             &directory,
             "frame-dense-pane",
+            ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
             build,
         )
@@ -1218,19 +1262,7 @@ mod tests {
         drop(on);
         let fixture_wall_micros = fixture_started.elapsed().as_micros();
         drop(off);
-        let replayed = SegmentStore::open(
-            &directory.join("on/experiments/pane-state"),
-            "cadence-pane",
-            HarnessIdentity::Unknown,
-            build,
-        )
-        .unwrap()
-        .replay()
-        .unwrap();
-        let rows = replayed
-            .iter()
-            .flat_map(|segment| segment.rows.iter())
-            .collect::<Vec<_>>();
+        let rows = replay_cadence_rows(directory, build);
         let observations = rows
             .iter()
             .filter(|row| matches!(row, RecordedRow::Observation(_)))
@@ -1253,7 +1285,8 @@ mod tests {
                 _ => None,
             })
             .sum::<u64>();
-        let coverage_basis_points = recorded_time_coverage_basis_points(&rows);
+        let row_refs = rows.iter().collect::<Vec<_>>();
+        let coverage_basis_points = recorded_time_coverage_basis_points(&row_refs);
         eprintln!(
             "capture fixture bytes={fixture_bytes} wall_us={fixture_wall_micros} expected_measured_observations={}",
             CADENCE_RUNS * CADENCE_POLLS_PER_SAMPLE

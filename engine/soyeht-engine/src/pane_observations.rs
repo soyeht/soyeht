@@ -2,8 +2,9 @@ use crate::errors::{self, Result};
 use sha2::{Digest, Sha256};
 use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, GroundTruthLabel, HarnessIdentity,
-    MAX_RETAINED_SEGMENTS, MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow,
-    ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment, encode_row,
+    MAX_RETAINED_SEGMENTS, MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap,
+    ObservationPaneKind, RecordedRow, ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment,
+    encode_row, segment_schema_version,
 };
 use std::{
     collections::VecDeque,
@@ -73,7 +74,7 @@ impl ObservationQueue {
     }
 
     fn push_row(&mut self, row: RecordedRow) -> Result<QueueOutcome> {
-        let (_, _, _, sequence) = row_identity(&row);
+        let (_, _, _, _, sequence) = row_identity(&row);
         if self
             .last_submitted_sequence
             .is_some_and(|last| sequence <= last)
@@ -90,11 +91,13 @@ impl ObservationQueue {
                 .rows
                 .front()
                 .ok_or_else(|| errors::internal("Full observation queue was empty"))?;
-            let (pane_id, harness, first_timestamp_ms, first_sequence) = row_start(first);
+            let (pane_id, pane_kind, harness, first_timestamp_ms, first_sequence) =
+                row_start(first);
             let pane_id = pane_id.to_owned();
             let harness = harness.clone();
             let mut gap = ObservationGap {
                 pane_id,
+                pane_kind,
                 harness,
                 first_timestamp_ms,
                 last_timestamp_ms: first_timestamp_ms,
@@ -132,22 +135,25 @@ impl ObservationQueue {
     }
 }
 
-fn row_start(row: &RecordedRow) -> (&str, &HarnessIdentity, i64, u64) {
+fn row_start(row: &RecordedRow) -> (&str, ObservationPaneKind, &HarnessIdentity, i64, u64) {
     match row {
         RecordedRow::Observation(frame) => (
             &frame.pane_id,
+            frame.pane_kind,
             &frame.harness,
             frame.timestamp_ms,
             frame.sequence,
         ),
         RecordedRow::Label(label) => (
             &label.pane_id,
+            label.pane_kind,
             &label.harness,
             label.timestamp_ms,
             label.sequence,
         ),
         RecordedRow::Gap(gap) => (
             &gap.pane_id,
+            gap.pane_kind,
             &gap.harness,
             gap.first_timestamp_ms,
             gap.first_sequence,
@@ -168,8 +174,8 @@ fn add_loss(total: &mut Option<u64>, count: Option<u64>) -> Result<()> {
 }
 
 fn extend_gap(gap: &mut ObservationGap, row: &RecordedRow) -> Result<()> {
-    let (pane_id, harness, timestamp_ms, sequence) = row_identity(row);
-    if pane_id != gap.pane_id || harness != &gap.harness {
+    let (pane_id, pane_kind, harness, timestamp_ms, sequence) = row_identity(row);
+    if pane_id != gap.pane_id || pane_kind != gap.pane_kind || harness != &gap.harness {
         return Err(errors::invalid("Observation gap provenance changed"));
     }
     gap.last_timestamp_ms = timestamp_ms;
@@ -198,6 +204,7 @@ type SharedRecorder = Arc<(Mutex<RecorderState>, Condvar)>;
 
 pub struct ObservationRecorder {
     pane_id: String,
+    pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
     shared: SharedRecorder,
     worker: Option<JoinHandle<Result<()>>>,
@@ -226,6 +233,7 @@ impl ObservationRecorder {
             ));
         }
         let pane_id = store.pane_id.clone();
+        let pane_kind = store.pane_kind;
         let harness = store.harness.clone();
         let shared = Arc::new((
             Mutex::new(RecorderState {
@@ -243,6 +251,7 @@ impl ObservationRecorder {
             })?;
         Ok(Self {
             pane_id,
+            pane_kind,
             harness,
             shared,
             worker: Some(worker),
@@ -264,7 +273,10 @@ impl ObservationRecorder {
 
     pub fn try_record(&self, frame: ObservationFrame) -> Result<QueueOutcome> {
         frame.validate()?;
-        if frame.pane_id != self.pane_id || frame.harness != self.harness {
+        if frame.pane_id != self.pane_id
+            || frame.pane_kind != self.pane_kind
+            || frame.harness != self.harness
+        {
             return Err(errors::invalid(
                 "Observation frame provenance does not match its recorder",
             ));
@@ -286,7 +298,10 @@ impl ObservationRecorder {
 
     pub fn try_record_gap(&self, gap: ObservationGap) -> Result<QueueOutcome> {
         gap.validate()?;
-        if gap.pane_id != self.pane_id || gap.harness != self.harness {
+        if gap.pane_id != self.pane_id
+            || gap.pane_kind != self.pane_kind
+            || gap.harness != self.harness
+        {
             return Err(errors::invalid(
                 "Observation gap provenance does not match its recorder",
             ));
@@ -316,7 +331,10 @@ impl ObservationRecorder {
 
     fn record_label_with_timeout(&self, label: GroundTruthLabel, timeout: Duration) -> Result<()> {
         label.validate()?;
-        if label.pane_id != self.pane_id || label.harness != self.harness {
+        if label.pane_id != self.pane_id
+            || label.pane_kind != self.pane_kind
+            || label.harness != self.harness
+        {
             return Err(errors::invalid(
                 "Ground-truth label provenance does not match its recorder",
             ));
@@ -454,6 +472,22 @@ pub struct DeletionReceipt {
     pub bytes: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SkippedSegment {
+    pub pane_id: String,
+    pub schema_version: u32,
+}
+
+pub(crate) struct PaneReplay {
+    pub segments: Vec<ReplayedSegment>,
+    pub skipped_segments: Vec<SkippedSegment>,
+}
+
+enum SegmentRead {
+    Current(Box<ReplayedSegment>),
+    UnsupportedSchema(u32),
+}
+
 #[derive(Debug)]
 struct Segment {
     number: u64,
@@ -467,33 +501,38 @@ pub struct SegmentStore {
     root: PathBuf,
     directory: PathBuf,
     pane_id: String,
+    pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
     engine: EngineBuild,
     segments: VecDeque<Segment>,
     last_sequence: Option<u64>,
+    next_segment_number: u64,
 }
 
 impl SegmentStore {
     pub fn open(
         root: &Path,
         pane_id: impl Into<String>,
+        pane_kind: ObservationPaneKind,
         harness: HarnessIdentity,
         engine: EngineBuild,
     ) -> Result<Self> {
         let pane_id = pane_id.into();
-        validate_identity(&pane_id, &harness, &engine)?;
+        validate_identity(&pane_id, pane_kind, &harness, &engine)?;
         ensure_private_directory(root)?;
         let directory = root.join(pane_directory_name(&pane_id));
         ensure_private_directory(&directory)?;
-        let (segments, last_sequence) = load_segments(&directory, &pane_id)?;
+        let (segments, last_sequence, next_segment_number) = load_segments(&directory, &pane_id)?;
         Ok(Self {
             root: root.into(),
             directory,
             pane_id,
+            pane_kind,
             harness,
             engine,
             segments,
             last_sequence,
+            next_segment_number,
         })
     }
 
@@ -505,8 +544,8 @@ impl SegmentStore {
         let mut wrote = false;
         for row in rows {
             row.validate()?;
-            let (pane_id, harness, timestamp_ms, sequence) = row_identity(&row);
-            if pane_id != self.pane_id || harness != &self.harness {
+            let (pane_id, pane_kind, harness, timestamp_ms, sequence) = row_identity(&row);
+            if pane_id != self.pane_id || pane_kind != self.pane_kind || harness != &self.harness {
                 return Err(errors::invalid(
                     "Observation row provenance does not match its pane",
                 ));
@@ -568,6 +607,7 @@ impl SegmentStore {
     fn needs_rotation(&self, row_bytes: usize, footer_bytes: usize) -> bool {
         self.segments.back().is_none_or(|segment| {
             !segment.appendable
+                || segment.metadata.pane_kind != self.pane_kind
                 || segment.metadata.harness != self.harness
                 || segment.metadata.engine != self.engine
                 || segment
@@ -581,6 +621,7 @@ impl SegmentStore {
     fn encoded_segment_end(&self, ended_at_ms: i64, last_sequence: u64) -> Result<Vec<u8>> {
         Ok(encode_row(&DatasetRow::SegmentEnd(SegmentEnd {
             pane_id: self.pane_id.clone(),
+            pane_kind: self.pane_kind,
             harness: self.harness.clone(),
             ended_at_ms,
             last_sequence,
@@ -608,20 +649,14 @@ impl SegmentStore {
     }
 
     fn create_segment(&mut self, started_at_ms: i64) -> Result<()> {
-        let number = self
-            .segments
-            .back()
-            .map(|segment| {
-                segment
-                    .number
-                    .checked_add(1)
-                    .ok_or_else(|| errors::internal("Observation segment sequence exhausted"))
-            })
-            .transpose()?
-            .unwrap_or(0);
+        let number = self.next_segment_number;
+        let next_segment_number = number
+            .checked_add(1)
+            .ok_or_else(|| errors::internal("Observation segment sequence exhausted"))?;
         let metadata = SegmentMetadata {
             schema_version: DATASET_SCHEMA_VERSION,
             pane_id: self.pane_id.clone(),
+            pane_kind: self.pane_kind,
             harness: self.harness.clone(),
             engine: self.engine.clone(),
             segment_sequence: number,
@@ -634,6 +669,7 @@ impl SegmentStore {
             ));
         }
         create_segment_file(&self.directory, number, &header)?;
+        self.next_segment_number = next_segment_number;
         self.segments.push_back(Segment {
             number,
             size: header.len(),
@@ -731,7 +767,7 @@ pub fn experiment_root(profile: &Path) -> Result<PathBuf> {
     Ok(root)
 }
 
-pub(crate) fn replay_pane(root: &Path, pane_id: &str) -> Result<Vec<ReplayedSegment>> {
+pub(crate) fn replay_pane(root: &Path, pane_id: &str) -> Result<PaneReplay> {
     if pane_id.is_empty() {
         return Err(errors::invalid(
             "Pane identity is required for observation replay",
@@ -741,20 +777,38 @@ pub(crate) fn replay_pane(root: &Path, pane_id: &str) -> Result<Vec<ReplayedSegm
     let directory = root.join(pane_directory_name(pane_id));
     match fs::symlink_metadata(&directory) {
         Ok(_) => validate_private_directory(&directory)?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(PaneReplay {
+                segments: Vec::new(),
+                skipped_segments: Vec::new(),
+            });
+        }
         Err(error) => return Err(error.into()),
     }
     let mut numbers = segment_numbers(&directory)?;
     numbers.sort_unstable();
     let mut last_sequence = None;
-    numbers
-        .into_iter()
-        .map(|number| {
-            let segment = read_segment(&directory, number)?;
-            validate_loaded_segment(&segment, pane_id, number, &mut last_sequence)?;
-            Ok(segment)
-        })
-        .collect()
+    let mut segments = Vec::new();
+    let mut skipped_segments = Vec::new();
+    for number in numbers {
+        match read_segment_entry(&directory, number)? {
+            SegmentRead::Current(segment) => {
+                let segment = *segment;
+                validate_loaded_segment(&segment, pane_id, number, &mut last_sequence)?;
+                segments.push(segment);
+            }
+            SegmentRead::UnsupportedSchema(schema_version) => {
+                skipped_segments.push(SkippedSegment {
+                    pane_id: pane_id.to_owned(),
+                    schema_version,
+                });
+            }
+        }
+    }
+    Ok(PaneReplay {
+        segments,
+        skipped_segments,
+    })
 }
 
 pub fn delete_pane(root: &Path, pane_id: &str) -> Result<DeletionReceipt> {
@@ -784,10 +838,16 @@ pub fn delete_pane(root: &Path, pane_id: &str) -> Result<DeletionReceipt> {
     Ok(receipt)
 }
 
-fn validate_identity(pane_id: &str, harness: &HarnessIdentity, engine: &EngineBuild) -> Result<()> {
+fn validate_identity(
+    pane_id: &str,
+    pane_kind: ObservationPaneKind,
+    harness: &HarnessIdentity,
+    engine: &EngineBuild,
+) -> Result<()> {
     let metadata = SegmentMetadata {
         schema_version: DATASET_SCHEMA_VERSION,
         pane_id: pane_id.into(),
+        pane_kind,
         harness: harness.clone(),
         engine: engine.clone(),
         segment_sequence: 0,
@@ -796,19 +856,31 @@ fn validate_identity(pane_id: &str, harness: &HarnessIdentity, engine: &EngineBu
     Ok(metadata.validate()?)
 }
 
-fn load_segments(directory: &Path, pane_id: &str) -> Result<(VecDeque<Segment>, Option<u64>)> {
+fn load_segments(directory: &Path, pane_id: &str) -> Result<(VecDeque<Segment>, Option<u64>, u64)> {
     let mut numbers = segment_numbers(directory)?;
     numbers.sort_unstable();
+    let next_segment_number = numbers
+        .last()
+        .map(|number| {
+            number
+                .checked_add(1)
+                .ok_or_else(|| errors::internal("Observation segment sequence exhausted"))
+        })
+        .transpose()?
+        .unwrap_or(0);
     let mut segments = VecDeque::new();
     let mut last_sequence = None;
     for number in numbers {
-        let replayed = read_segment(directory, number)?;
+        let SegmentRead::Current(replayed) = read_segment_entry(directory, number)? else {
+            continue;
+        };
+        let replayed = *replayed;
         validate_loaded_segment(&replayed, pane_id, number, &mut last_sequence)?;
         let last_timestamp_ms = replayed
             .clean_close
             .as_ref()
             .map(|end| end.ended_at_ms)
-            .or_else(|| replayed.rows.last().map(|row| row_identity(row).2))
+            .or_else(|| replayed.rows.last().map(|row| row_identity(row).3))
             .unwrap_or(replayed.metadata.started_at_ms);
         let size = usize::try_from(fs::metadata(directory.join(segment_filename(number)))?.len())
             .map_err(|_| errors::internal("Observation segment size is invalid"))?;
@@ -820,7 +892,7 @@ fn load_segments(directory: &Path, pane_id: &str) -> Result<(VecDeque<Segment>, 
             last_timestamp_ms,
         });
     }
-    Ok((segments, last_sequence))
+    Ok((segments, last_sequence, next_segment_number))
 }
 
 fn validate_loaded_segment(
@@ -833,7 +905,7 @@ fn validate_loaded_segment(
         return Err(soyeht_pane_state::Error::MismatchedProvenance.into());
     }
     for row in &segment.rows {
-        let sequence = row_identity(row).3;
+        let sequence = row_identity(row).4;
         if last_sequence.is_some_and(|last| sequence <= last) {
             return Err(soyeht_pane_state::Error::InvalidSequence.into());
         }
@@ -843,6 +915,13 @@ fn validate_loaded_segment(
 }
 
 fn read_segment(directory: &Path, number: u64) -> Result<ReplayedSegment> {
+    match read_segment_entry(directory, number)? {
+        SegmentRead::Current(segment) => Ok(*segment),
+        SegmentRead::UnsupportedSchema(_) => Err(soyeht_pane_state::Error::SchemaVersion.into()),
+    }
+}
+
+fn read_segment_entry(directory: &Path, number: u64) -> Result<SegmentRead> {
     let path = directory.join(segment_filename(number));
     let mut file = OpenOptions::new()
         .read(true)
@@ -853,7 +932,11 @@ fn read_segment(directory: &Path, number: u64) -> Result<ReplayedSegment> {
     Read::by_ref(&mut file)
         .take(MAX_SEGMENT_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
-    Ok(decode_segment(&bytes)?)
+    let schema_version = segment_schema_version(&bytes)?;
+    if schema_version != DATASET_SCHEMA_VERSION {
+        return Ok(SegmentRead::UnsupportedSchema(schema_version));
+    }
+    Ok(SegmentRead::Current(Box::new(decode_segment(&bytes)?)))
 }
 
 fn segment_numbers(directory: &Path) -> Result<Vec<u64>> {
@@ -965,22 +1048,25 @@ fn parse_segment_name(name: &OsStr) -> Option<u64> {
         .flatten()
 }
 
-fn row_identity(row: &RecordedRow) -> (&str, &HarnessIdentity, i64, u64) {
+fn row_identity(row: &RecordedRow) -> (&str, ObservationPaneKind, &HarnessIdentity, i64, u64) {
     match row {
         RecordedRow::Observation(frame) => (
             &frame.pane_id,
+            frame.pane_kind,
             &frame.harness,
             frame.timestamp_ms,
             frame.sequence,
         ),
         RecordedRow::Label(label) => (
             &label.pane_id,
+            label.pane_kind,
             &label.harness,
             label.timestamp_ms,
             label.sequence,
         ),
         RecordedRow::Gap(gap) => (
             &gap.pane_id,
+            gap.pane_kind,
             &gap.harness,
             gap.last_timestamp_ms,
             gap.last_sequence,
@@ -1050,6 +1136,7 @@ mod tests {
         };
         RecordedRow::Observation(ObservationFrame {
             pane_id: "pane-1".into(),
+            pane_kind: ObservationPaneKind::Terminal,
             harness: harness(),
             timestamp_ms: 1_800_000_000_000 + sequence as i64,
             sequence,
@@ -1072,6 +1159,7 @@ mod tests {
     fn byte_gap(sequence: u64, dropped_bytes: u64) -> ObservationGap {
         ObservationGap {
             pane_id: "pane-1".into(),
+            pane_kind: ObservationPaneKind::Terminal,
             harness: harness(),
             first_timestamp_ms: 1_800_000_000_000 + sequence as i64,
             last_timestamp_ms: 1_800_000_000_000 + sequence as i64,
@@ -1125,7 +1213,14 @@ mod tests {
     #[test]
     fn asynchronous_writer_drains_without_losing_a_frame() {
         let fixture = Fixture::new();
-        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         let recorder = ObservationRecorder::open(store).unwrap();
         for sequence in 0..8 {
             assert_eq!(
@@ -1134,10 +1229,16 @@ mod tests {
             );
         }
         recorder.finish().unwrap();
-        let replayed = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
-            .unwrap()
-            .replay()
-            .unwrap();
+        let replayed = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap()
+        .replay()
+        .unwrap();
         assert!(replayed.iter().all(|segment| segment.clean_close.is_some()));
         assert_eq!(
             replayed
@@ -1154,7 +1255,14 @@ mod tests {
     #[test]
     fn saturated_real_recorder_persists_the_declared_loss_as_its_next_row() {
         let fixture = Fixture::new();
-        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 2).unwrap();
         assert_eq!(recorder.try_record(frame(0)).unwrap(), QueueOutcome::Queued);
         assert_eq!(recorder.try_record(frame(1)).unwrap(), QueueOutcome::Queued);
@@ -1165,10 +1273,16 @@ mod tests {
         writer_gate.wait();
         recorder.finish().unwrap();
 
-        let replayed = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
-            .unwrap()
-            .replay()
-            .unwrap();
+        let replayed = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap()
+        .replay()
+        .unwrap();
         assert_eq!(replayed.len(), 1);
         assert!(replayed[0].clean_close.is_some());
         let [RecordedRow::Gap(gap)] = replayed[0].rows.as_slice() else {
@@ -1183,7 +1297,14 @@ mod tests {
     #[test]
     fn a_label_waits_for_a_saturated_writer_and_is_never_folded_into_its_gap() {
         let fixture = Fixture::new();
-        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 2).unwrap();
         recorder.try_record(frame(0)).unwrap();
         recorder.try_record(frame(1)).unwrap();
@@ -1193,6 +1314,7 @@ mod tests {
         );
         let label = GroundTruthLabel {
             pane_id: "pane-1".into(),
+            pane_kind: ObservationPaneKind::Terminal,
             harness: harness(),
             timestamp_ms: 1_800_000_000_003,
             sequence: 3,
@@ -1217,13 +1339,19 @@ mod tests {
         });
         recorder.finish().unwrap();
 
-        let rows = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
-            .unwrap()
-            .replay()
-            .unwrap()
-            .into_iter()
-            .flat_map(|segment| segment.rows)
-            .collect::<Vec<_>>();
+        let rows = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap()
+        .replay()
+        .unwrap()
+        .into_iter()
+        .flat_map(|segment| segment.rows)
+        .collect::<Vec<_>>();
         let [RecordedRow::Gap(gap), RecordedRow::Label(label)] = rows.as_slice() else {
             panic!("writer pressure did not preserve the gap before the label")
         };
@@ -1237,11 +1365,19 @@ mod tests {
     #[test]
     fn a_label_deadline_closes_a_slow_writer_instead_of_stalling_silently() {
         let fixture = Fixture::new();
-        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 1).unwrap();
         recorder.try_record(frame(0)).unwrap();
         let label = GroundTruthLabel {
             pane_id: "pane-1".into(),
+            pane_kind: ObservationPaneKind::Terminal,
             harness: harness(),
             timestamp_ms: 1_800_000_000_001,
             sequence: 1,
@@ -1267,8 +1403,14 @@ mod tests {
     #[test]
     fn rotation_replays_every_whole_row_and_repeats_exact_provenance() {
         let fixture = Fixture::new();
-        let mut store =
-            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let mut store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         for sequence in 0..9 {
             store.append(observation(sequence, true)).unwrap();
         }
@@ -1297,12 +1439,24 @@ mod tests {
     #[test]
     fn restart_keeps_sequence_and_build_change_starts_a_self_describing_segment() {
         let fixture = Fixture::new();
-        let mut first =
-            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let mut first = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         first.append(observation(0, false)).unwrap();
         drop(first);
-        let mut second =
-            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('b')).unwrap();
+        let mut second = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('b'),
+        )
+        .unwrap();
         second.append(observation(1, false)).unwrap();
         let replayed = second.replay().unwrap();
         assert_eq!(replayed.len(), 2);
@@ -1315,27 +1469,90 @@ mod tests {
     }
 
     #[test]
+    fn incompatible_segment_is_skipped_locally_and_a_new_segment_does_not_collide() {
+        let fixture = Fixture::new();
+        ensure_private_directory(&fixture.root).unwrap();
+        let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
+        ensure_private_directory(&pane_directory).unwrap();
+        create_segment_file(
+            &pane_directory,
+            0,
+            b"{\"kind\":\"metadata\",\"schemaVersion\":5}\n",
+        )
+        .unwrap();
+
+        let mut store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
+        assert_eq!(store.next_sequence().unwrap(), 0);
+        store.append(observation(0, false)).unwrap();
+        drop(store);
+
+        let replay = replay_pane(&fixture.root, "pane-1").unwrap();
+        assert_eq!(
+            replay.skipped_segments,
+            vec![SkippedSegment {
+                pane_id: "pane-1".into(),
+                schema_version: 5,
+            }]
+        );
+        assert_eq!(replay.segments.len(), 1);
+        assert_eq!(replay.segments[0].metadata.segment_sequence, 1);
+        assert_eq!(replay.segments[0].rows, vec![observation(0, false)]);
+    }
+
+    #[test]
     fn clean_close_and_abrupt_end_remain_distinguishable_after_reopen() {
         let fixture = Fixture::new();
-        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         let recorder = ObservationRecorder::open(store).unwrap();
         recorder.try_record(frame(0)).unwrap();
         recorder.finish().unwrap();
-        let clean = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
-            .unwrap()
-            .replay()
-            .unwrap();
+        let clean = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap()
+        .replay()
+        .unwrap();
         assert_eq!(clean.len(), 1);
         assert_eq!(clean[0].clean_close.as_ref().unwrap().last_sequence, 0);
 
-        let mut abrupt =
-            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let mut abrupt = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         abrupt.append(observation(1, false)).unwrap();
         drop(abrupt);
-        let replayed = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
-            .unwrap()
-            .replay()
-            .unwrap();
+        let replayed = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap()
+        .replay()
+        .unwrap();
         assert_eq!(replayed.len(), 2);
         assert!(replayed[0].clean_close.is_some());
         assert_eq!(replayed[1].clean_close, None);
@@ -1344,8 +1561,14 @@ mod tests {
     #[test]
     fn retention_removes_only_whole_old_segments() {
         let fixture = Fixture::new();
-        let mut store =
-            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let mut store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         for sequence in 0..70 {
             store.append(observation(sequence, true)).unwrap();
         }
@@ -1362,8 +1585,14 @@ mod tests {
     #[test]
     fn private_permissions_and_delete_refuse_symlinks_before_removing_anything() {
         let fixture = Fixture::new();
-        let mut store =
-            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let mut store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         store.append(observation(0, false)).unwrap();
         let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
         assert_eq!(
@@ -1391,8 +1620,14 @@ mod tests {
     #[test]
     fn partial_tail_and_dangling_pane_symlink_fail_closed() {
         let fixture = Fixture::new();
-        let mut store =
-            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let mut store = SegmentStore::open(
+            &fixture.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine('a'),
+        )
+        .unwrap();
         store.append(observation(0, false)).unwrap();
         let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
         let segment = validated_segment_files(&pane_directory).unwrap().remove(0);
@@ -1404,7 +1639,16 @@ mod tests {
             .set_len(length - 1)
             .unwrap();
         drop(store);
-        assert!(SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).is_err());
+        assert!(
+            SegmentStore::open(
+                &fixture.root,
+                "pane-1",
+                ObservationPaneKind::Terminal,
+                harness(),
+                engine('a')
+            )
+            .is_err()
+        );
 
         let dangling = fixture.root.join(pane_directory_name("pane-2"));
         symlink(fixture.directory.join("missing"), &dangling).unwrap();
