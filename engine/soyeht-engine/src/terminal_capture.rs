@@ -592,6 +592,67 @@ mod tests {
     const FRAME_DENSE_INTERVAL: Duration = Duration::from_millis(5);
     const FRAME_DENSE_OBSERVATIONS: usize = 400;
 
+    fn time_coverage_basis_points(
+        first_timestamp_ms: i64,
+        last_timestamp_ms: i64,
+        gaps: impl Iterator<Item = (i64, i64)>,
+    ) -> u64 {
+        let session_ms =
+            u64::try_from(last_timestamp_ms.saturating_sub(first_timestamp_ms)).unwrap_or_default();
+        let gap_ms = gaps.fold(0_u64, |total, (first, last)| {
+            total.saturating_add(u64::try_from(last.saturating_sub(first)).unwrap_or_default())
+        });
+        session_ms
+            .saturating_sub(gap_ms)
+            .saturating_mul(10_000)
+            .checked_div(session_ms)
+            .unwrap_or(10_000)
+    }
+
+    fn recorded_time_coverage_basis_points(rows: &[&RecordedRow]) -> u64 {
+        let first_timestamp = rows
+            .iter()
+            .map(|row| match row {
+                RecordedRow::Observation(frame) => frame.timestamp_ms,
+                RecordedRow::Gap(gap) => gap.first_timestamp_ms,
+                RecordedRow::Label(label) => label.timestamp_ms,
+            })
+            .min()
+            .unwrap();
+        let last_timestamp = rows
+            .iter()
+            .map(|row| match row {
+                RecordedRow::Observation(frame) => frame.timestamp_ms,
+                RecordedRow::Gap(gap) => gap.last_timestamp_ms,
+                RecordedRow::Label(label) => label.timestamp_ms,
+            })
+            .max()
+            .unwrap();
+        time_coverage_basis_points(
+            first_timestamp,
+            last_timestamp,
+            rows.iter().filter_map(|row| match row {
+                RecordedRow::Gap(gap) => Some((gap.first_timestamp_ms, gap.last_timestamp_ms)),
+                _ => None,
+            }),
+        )
+    }
+
+    fn assert_complete_cadence_coverage(observations: usize, gaps: usize, coverage: u64) {
+        assert_eq!(observations, CADENCE_RUNS * CADENCE_POLLS_PER_SAMPLE + 1);
+        assert_eq!(gaps, 0);
+        assert_eq!(coverage, 10_000);
+    }
+
+    #[test]
+    fn time_coverage_is_derived_from_the_recorded_gap_intervals() {
+        assert_eq!(time_coverage_basis_points(0, 100, [].into_iter()), 10_000);
+        assert_eq!(
+            time_coverage_basis_points(0, 100, [(20, 30), (50, 60)].into_iter()),
+            8_000
+        );
+    }
+
     struct EmptyPortScan;
 
     impl PortScanPort for EmptyPortScan {
@@ -1067,36 +1128,8 @@ mod tests {
             .filter_map(|gap| gap.dropped_observations)
             .sum::<u64>();
         let dropped_bytes = gaps.iter().filter_map(|gap| gap.dropped_bytes).sum::<u64>();
-        let first_timestamp = rows
-            .iter()
-            .map(|row| match row {
-                RecordedRow::Observation(frame) => frame.timestamp_ms,
-                RecordedRow::Gap(gap) => gap.first_timestamp_ms,
-                RecordedRow::Label(label) => label.timestamp_ms,
-            })
-            .min()
-            .unwrap();
-        let last_timestamp = rows
-            .iter()
-            .map(|row| match row {
-                RecordedRow::Observation(frame) => frame.timestamp_ms,
-                RecordedRow::Gap(gap) => gap.last_timestamp_ms,
-                RecordedRow::Label(label) => label.timestamp_ms,
-            })
-            .max()
-            .unwrap();
-        let session_ms = u64::try_from(last_timestamp.saturating_sub(first_timestamp)).unwrap();
-        let gap_ms = gaps.iter().fold(0_u64, |total, gap| {
-            total.saturating_add(
-                u64::try_from(gap.last_timestamp_ms.saturating_sub(gap.first_timestamp_ms))
-                    .unwrap(),
-            )
-        });
-        let coverage_basis_points = session_ms
-            .saturating_sub(gap_ms)
-            .saturating_mul(10_000)
-            .checked_div(session_ms)
-            .unwrap_or(10_000);
+        let row_refs = rows.iter().collect::<Vec<_>>();
+        let coverage_basis_points = recorded_time_coverage_basis_points(&row_refs);
         eprintln!(
             "capture headroom submitted_bytes={submitted_bytes} submission_wall_ms={submission_wall_ms} observations={observations} gaps={} dropped_observations={dropped_observations} dropped_bytes={dropped_bytes} peak_outstanding={peak_outstanding} time_coverage_basis_points={coverage_basis_points}",
             gaps.len()
@@ -1220,15 +1253,15 @@ mod tests {
                 _ => None,
             })
             .sum::<u64>();
+        let coverage_basis_points = recorded_time_coverage_basis_points(&rows);
         eprintln!(
             "capture fixture bytes={fixture_bytes} wall_us={fixture_wall_micros} expected_measured_observations={}",
             CADENCE_RUNS * CADENCE_POLLS_PER_SAMPLE
         );
         eprintln!(
-            "capture coverage observations={observations} gaps={gaps} dropped_observations={dropped_observations} dropped_bytes={dropped_bytes} time_coverage_percent=100"
+            "capture coverage observations={observations} gaps={gaps} dropped_observations={dropped_observations} dropped_bytes={dropped_bytes} time_coverage_basis_points={coverage_basis_points}"
         );
-        assert_eq!(observations, CADENCE_RUNS * CADENCE_POLLS_PER_SAMPLE + 1);
-        assert_eq!(gaps, 0);
+        assert_complete_cadence_coverage(observations, gaps, coverage_basis_points);
         assert_eq!(
             chunks
                 .iter()
