@@ -144,6 +144,12 @@ worker-headroom fixture measures the per-frame projection, serialisation, write 
 neither result substitutes for the other. Before closed batching, that fixture retained 334 of
 400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up
 to eight rows retained all 400 with no gap and 100 percent time coverage on the same fixture.
+That 95 percent floor describes the gate's isolated, otherwise idle measurement condition. When
+the same post-batching fixture accidentally ran beside the parallel Rust suite, it retained 365
+of 400 frames and reported 91.54 percent time coverage. The difference between the 91.25 percent
+frame ratio and time coverage is expected because coverage is measured by elapsed interval. The
+contended result remains part of the evidence because a developer machine is often busy; the
+isolated result proves writer capacity without presenting it as a whole-machine guarantee.
 
 The final full-gate sample with the interleaved estimator measured raw capture-off samples of
 11015, 10679, 10731, 11059, 10410, 10200, 10476, 10793, 10767 and 10395 microseconds, and

@@ -74,10 +74,14 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
         self.assertEqual(result.panic_calls, 2)
 
     def test_verification_drop_requires_an_explicit_reason_line(self):
-        base = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 5, 16, 12)
-        head = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 4, 16, 12)
+        base = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 5, 16, 12, 1)
+        head = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 4, 16, 12, 1)
         self.assertTrue(gate.check_verification(base, head, False))
         self.assertFalse(gate.check_verification(base, head, True))
+
+        ignored = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 5, 16, 12, 2)
+        self.assertTrue(gate.check_verification(base, ignored, False))
+        self.assertFalse(gate.check_verification(base, ignored, True))
 
         with tempfile.TemporaryDirectory() as directory:
             event = Path(directory) / "event.json"
@@ -97,11 +101,12 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             "scripts/check_all.sh": "# cargo test\ncargo test --locked\n",
         }))
         self.assertEqual(result.tests, 2)
+        self.assertEqual(result.ignored_tests, 0)
         self.assertEqual(result.acceptances, 1)
         self.assertEqual(result.gate_steps, 1)
 
     def test_ratchets_reject_new_sql_panics_and_long_functions(self):
-        empty = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 0, 0, 0)
+        empty = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 0, 0, 0, 0)
         long = gate.Function("engine/a.rs", "large", 1, 201)
         head = gate.Metrics(
             frozenset({"engine/Cargo.toml"}),
@@ -112,10 +117,21 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             0,
             0,
             0,
+            0,
         )
         self.assertTrue(gate.check_sql(empty, head))
         self.assertTrue(gate.check_panic(empty, head))
         self.assertTrue(gate.check_lengths(empty, head))
+
+    def test_ignored_rust_tests_are_counted_without_comment_padding(self):
+        result = gate.metrics(MemoryTree({
+            "engine/tool/src/lib.rs": (
+                "// #[ignore]\n"
+                "#[test]\n#[ignore = \"measured separately\"]\nfn isolated() {}\n"
+            ),
+        }))
+        self.assertEqual(result.tests, 1)
+        self.assertEqual(result.ignored_tests, 1)
 
 
 if __name__ == "__main__":

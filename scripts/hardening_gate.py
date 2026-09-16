@@ -80,6 +80,7 @@ class Metrics:
     tests: int
     acceptances: int
     gate_steps: int
+    ignored_tests: int
 
 
 def git(*arguments: str) -> bytes:
@@ -278,6 +279,13 @@ def count_tests(path: str, source: str) -> int:
     return 0
 
 
+def count_ignored_tests(path: str, source: str) -> int:
+    if Path(path).suffix != ".rs":
+        return 0
+    clean, _ = mask(source)
+    return len(re.findall(r"#\s*\[\s*ignore(?:\s*=[^]]*)?\s*\]", clean))
+
+
 def count_gate_steps(source: str) -> int:
     commands = (
         r"python3\s+(?:-m\s+unittest|scripts/|contracts/)",
@@ -316,7 +324,7 @@ def metrics(tree: Tree) -> Metrics:
     manifests: set[str] = set()
     sql_sources: set[str] = set()
     functions: list[Function] = []
-    panic_calls = tests = acceptances = gate_steps = sql_statements = 0
+    panic_calls = tests = ignored_tests = acceptances = gate_steps = sql_statements = 0
     for path in tree.paths():
         try:
             source = tree.read(path)
@@ -342,6 +350,7 @@ def metrics(tree: Tree) -> Metrics:
         if Path(path).suffix in SOURCE_SUFFIXES and not generated:
             functions.extend(source_functions(path, source))
             tests += count_tests(path, source)
+            ignored_tests += count_ignored_tests(path, source)
         if path.startswith("scripts/e2e") and path.endswith(".py"):
             acceptances += count_acceptances(source)
         if path == "scripts/check_all.sh":
@@ -355,6 +364,7 @@ def metrics(tree: Tree) -> Metrics:
         tests,
         acceptances,
         gate_steps,
+        ignored_tests,
     )
 
 
@@ -409,6 +419,16 @@ def check_verification(base: Metrics, head: Metrics, allowed: bool) -> bool:
                 file=sys.stderr,
             )
             failed = True
+    print(
+        "check-verification-not-weakened: ignored tests "
+        f"base={base.ignored_tests} head={head.ignored_tests}"
+    )
+    if head.ignored_tests > base.ignored_tests and not allowed:
+        print(
+            "check-verification-not-weakened: ignored tests increased without a Verification change line",
+            file=sys.stderr,
+        )
+        failed = True
     return failed
 
 

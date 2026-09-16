@@ -5,12 +5,19 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 : "${FORBIDDEN_TERMS:?Provide the restricted vocabulary through the environment}"
 
+run_exact_rust_test() {
+    local expected="$1"
+    shift
+    "$@" 2>&1 | python3 "$repo_root/scripts/require_one_rust_test.py" "$expected"
+}
+
 # Optional scanner arguments cover the exact PR base and final title/body.
 python3 -m unittest discover -s scripts -p 'test_forbidden_terms.py'
 python3 scripts/forbidden_terms.py "$@"
 unset FORBIDDEN_TERMS
 
 python3 -m unittest discover -s scripts -p 'test_hardening_gate.py'
+python3 -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
 python3 scripts/hardening_gate.py check-no-sql-outside-store "$@"
 python3 scripts/hardening_gate.py check-no-panic-in-production "$@"
 python3 scripts/hardening_gate.py check-verification-not-weakened "$@"
@@ -26,10 +33,14 @@ python3 -m unittest discover -s scripts -p 'test_install_dev.py'
     cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo build --locked --workspace
     cargo test --locked --workspace
-    cargo test --locked -p soyeht-engine \
+    run_exact_rust_test \
+        terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage \
+        cargo test --locked -p soyeht-engine \
         terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage \
         -- --ignored --exact --nocapture --test-threads=1
-    cargo test --locked -p soyeht-engine \
+    run_exact_rust_test \
+        terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
+        cargo test --locked -p soyeht-engine \
         terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
         -- --ignored --exact --nocapture --test-threads=1
 )
