@@ -5,7 +5,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const DATASET_SCHEMA_VERSION: u32 = 4;
+pub const DATASET_SCHEMA_VERSION: u32 = 5;
 pub const MAX_DATASET_ROW_BYTES: usize = 256 * 1024;
 pub const MAX_SEGMENT_BYTES: usize = 1024 * 1024;
 pub const MAX_RETAINED_SEGMENTS: usize = 8;
@@ -49,6 +49,23 @@ pub struct SegmentMetadata {
     pub started_at_ms: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct SegmentEnd {
+    pub pane_id: String,
+    pub harness: HarnessIdentity,
+    pub ended_at_ms: i64,
+    pub last_sequence: u64,
+}
+
+impl SegmentEnd {
+    pub fn validate(&self) -> Result<()> {
+        bounded_nonempty(&self.pane_id, crate::MAX_PANE_ID_BYTES, "pane id")?;
+        self.harness.validate()?;
+        valid_timestamp(self.ended_at_ms)
+    }
+}
+
 impl SegmentMetadata {
     pub fn validate(&self) -> Result<()> {
         if self.schema_version != DATASET_SCHEMA_VERSION {
@@ -68,6 +85,7 @@ pub enum DatasetRow {
     Observation(ObservationFrame),
     Label(GroundTruthLabel),
     Gap(ObservationGap),
+    SegmentEnd(SegmentEnd),
 }
 
 impl DatasetRow {
@@ -77,6 +95,7 @@ impl DatasetRow {
             Self::Observation(frame) => frame.validate(),
             Self::Label(label) => label.validate(),
             Self::Gap(gap) => gap.validate(),
+            Self::SegmentEnd(end) => end.validate(),
         }
     }
 }
@@ -85,6 +104,7 @@ impl DatasetRow {
 pub struct ReplayedSegment {
     pub metadata: SegmentMetadata,
     pub rows: Vec<RecordedRow>,
+    pub clean_close: Option<SegmentEnd>,
 }
 
 pub fn encode_row(row: &DatasetRow) -> Result<Vec<u8>> {
@@ -112,8 +132,12 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
     metadata.validate()?;
     let mut last_sequence = None;
     let mut rows = Vec::new();
+    let mut clean_close = None;
     for line in lines {
         let row = decode_line(line)?;
+        if clean_close.is_some() {
+            return Err(Error::InvalidSegmentEnd);
+        }
         let (pane_id, harness, sequence, recorded) = match row {
             DatasetRow::Metadata(_) => return Err(Error::InvalidHeader),
             DatasetRow::Observation(frame) => (
@@ -134,6 +158,17 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
                 gap.last_sequence,
                 RecordedRow::Gap(gap),
             ),
+            DatasetRow::SegmentEnd(end) => {
+                end.validate()?;
+                if end.pane_id != metadata.pane_id
+                    || end.harness != metadata.harness
+                    || last_sequence != Some(end.last_sequence)
+                {
+                    return Err(Error::InvalidSegmentEnd);
+                }
+                clean_close = Some(end);
+                continue;
+            }
         };
         recorded.validate()?;
         if pane_id != metadata.pane_id || harness != metadata.harness {
@@ -145,7 +180,11 @@ pub fn decode_segment(bytes: &[u8]) -> Result<ReplayedSegment> {
         last_sequence = Some(sequence);
         rows.push(recorded);
     }
-    Ok(ReplayedSegment { metadata, rows })
+    Ok(ReplayedSegment {
+        metadata,
+        rows,
+        clean_close,
+    })
 }
 
 fn decode_line(bytes: &[u8]) -> Result<DatasetRow> {

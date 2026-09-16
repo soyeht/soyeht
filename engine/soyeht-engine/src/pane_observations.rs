@@ -2,7 +2,7 @@ use crate::errors::{self, Result};
 use sha2::{Digest, Sha256};
 use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, HarnessIdentity, MAX_RETAINED_SEGMENTS,
-    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow, ReplayedSegment,
+    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, RecordedRow, ReplayedSegment, SegmentEnd,
     SegmentMetadata, decode_segment, encode_row,
 };
 use std::{
@@ -14,12 +14,15 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex},
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
 const DIRECTORY_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
 const SEGMENT_SUFFIX: &str = ".jsonl";
 pub const OBSERVATION_QUEUE_CAPACITY: usize = 32;
+const OBSERVATION_WRITE_BATCH: usize = 8;
+const OBSERVATION_WRITE_MAX_WAIT: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueueOutcome {
@@ -103,6 +106,15 @@ impl ObservationQueue {
             .pop_front()
             .or_else(|| self.gap.take().map(RecordedRow::Gap))
     }
+
+    fn pending(&self) -> usize {
+        self.rows.len() + usize::from(self.gap.is_some())
+    }
+
+    fn drain_batch(&mut self) -> Vec<RecordedRow> {
+        let count = self.pending().min(OBSERVATION_WRITE_BATCH);
+        (0..count).filter_map(|_| self.pop()).collect()
+    }
 }
 
 fn row_start(row: &RecordedRow) -> (&str, &HarnessIdentity, i64, u64) {
@@ -182,6 +194,17 @@ impl ObservationRecorder {
     }
 
     fn open_with_capacity(store: SegmentStore, capacity: usize) -> Result<Self> {
+        Self::open_with_capacity_and_start(store, capacity, || {})
+    }
+
+    fn open_with_capacity_and_start<F>(
+        store: SegmentStore,
+        capacity: usize,
+        before_worker: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce() + Send + 'static,
+    {
         if capacity == 0 {
             return Err(errors::invalid(
                 "Observation queue capacity must be positive",
@@ -199,13 +222,29 @@ impl ObservationRecorder {
         let worker_shared = Arc::clone(&shared);
         let worker = thread::Builder::new()
             .name("pane-observation-writer".into())
-            .spawn(move || recorder_loop(store, worker_shared))?;
+            .spawn(move || {
+                before_worker();
+                recorder_loop(store, worker_shared)
+            })?;
         Ok(Self {
             pane_id,
             harness,
             shared,
             worker: Some(worker),
         })
+    }
+
+    #[cfg(test)]
+    fn open_paused(
+        store: SegmentStore,
+        capacity: usize,
+    ) -> Result<(Self, Arc<std::sync::Barrier>)> {
+        let gate = Arc::new(std::sync::Barrier::new(2));
+        let worker_gate = Arc::clone(&gate);
+        let recorder = Self::open_with_capacity_and_start(store, capacity, move || {
+            worker_gate.wait();
+        })?;
+        Ok((recorder, gate))
     }
 
     pub fn try_record(&self, frame: ObservationFrame) -> Result<QueueOutcome> {
@@ -289,9 +328,11 @@ impl Drop for ObservationRecorder {
 
 fn recorder_loop(mut store: SegmentStore, shared: SharedRecorder) -> Result<()> {
     loop {
-        let row = next_recorded_row(&shared)?;
-        let Some(row) = row else { return Ok(()) };
-        if let Err(error) = store.append(row) {
+        let rows = next_recorded_rows(&shared)?;
+        let Some(rows) = rows else {
+            return store.close();
+        };
+        if let Err(error) = store.append_batch(rows) {
             let (lock, wake) = &*shared;
             if let Ok(mut state) = lock.lock() {
                 state.failure = Some(error.to_string());
@@ -303,18 +344,35 @@ fn recorder_loop(mut store: SegmentStore, shared: SharedRecorder) -> Result<()> 
     }
 }
 
-fn next_recorded_row(shared: &SharedRecorder) -> Result<Option<RecordedRow>> {
+fn next_recorded_rows(shared: &SharedRecorder) -> Result<Option<Vec<RecordedRow>>> {
     let (lock, wake) = &**shared;
     let mut state = lock
         .lock()
         .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+    let mut deadline = None;
     loop {
-        if let Some(row) = state.queue.pop() {
-            return Ok(Some(row));
+        if state.queue.gap.is_some() || state.queue.pending() >= OBSERVATION_WRITE_BATCH {
+            return Ok(Some(state.queue.drain_batch()));
         }
         if state.queue.closed {
-            return Ok(None);
+            return Ok((state.queue.pending() > 0).then(|| state.queue.drain_batch()));
         }
+        if state.queue.pending() > 0 {
+            let deadline =
+                *deadline.get_or_insert_with(|| Instant::now() + OBSERVATION_WRITE_MAX_WAIT);
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return Ok(Some(state.queue.drain_batch()));
+            };
+            let (next, timeout) = wake
+                .wait_timeout(state, remaining)
+                .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
+            state = next;
+            if timeout.timed_out() && state.queue.pending() > 0 {
+                return Ok(Some(state.queue.drain_batch()));
+            }
+            continue;
+        }
+        deadline = None;
         state = wake
             .wait(state)
             .map_err(|_| errors::internal("Observation queue lock was poisoned"))?;
@@ -332,6 +390,8 @@ struct Segment {
     number: u64,
     size: usize,
     metadata: SegmentMetadata,
+    appendable: bool,
+    last_timestamp_ms: i64,
 }
 
 pub struct SegmentStore {
@@ -369,23 +429,42 @@ impl SegmentStore {
     }
 
     pub fn append(&mut self, row: RecordedRow) -> Result<()> {
-        row.validate()?;
-        let (pane_id, harness, timestamp_ms, sequence) = row_identity(&row);
-        if pane_id != self.pane_id || harness != &self.harness {
-            return Err(errors::invalid(
-                "Observation row provenance does not match its pane",
-            ));
+        self.append_batch([row])
+    }
+
+    pub fn append_batch(&mut self, rows: impl IntoIterator<Item = RecordedRow>) -> Result<()> {
+        let mut wrote = false;
+        for row in rows {
+            row.validate()?;
+            let (pane_id, harness, timestamp_ms, sequence) = row_identity(&row);
+            if pane_id != self.pane_id || harness != &self.harness {
+                return Err(errors::invalid(
+                    "Observation row provenance does not match its pane",
+                ));
+            }
+            if self.last_sequence.is_some_and(|last| sequence <= last) {
+                return Err(soyeht_pane_state::Error::InvalidSequence.into());
+            }
+            let encoded = encode_recorded_row(&row)?;
+            let footer = self.encoded_segment_end(timestamp_ms, sequence)?;
+            if self.needs_rotation(encoded.len(), footer.len()) {
+                self.close_current()?;
+                self.create_segment(timestamp_ms)?;
+            }
+            self.append_bytes(&encoded)?;
+            let segment = self
+                .segments
+                .back_mut()
+                .ok_or_else(|| errors::internal("Observation segment is missing"))?;
+            segment.last_timestamp_ms = timestamp_ms;
+            self.last_sequence = Some(sequence);
+            wrote = true;
         }
-        if self.last_sequence.is_some_and(|last| sequence <= last) {
-            return Err(soyeht_pane_state::Error::InvalidSequence.into());
+        if wrote {
+            self.sync_current()?;
+            self.enforce_retention()?;
         }
-        let encoded = encode_recorded_row(&row)?;
-        if self.needs_rotation(encoded.len()) {
-            self.create_segment(timestamp_ms)?;
-        }
-        self.append_bytes(&encoded)?;
-        self.last_sequence = Some(sequence);
-        self.enforce_retention()
+        Ok(())
     }
 
     pub fn next_sequence(&self) -> Result<u64> {
@@ -413,12 +492,50 @@ impl SegmentStore {
         delete_pane(&root, &pane_id)
     }
 
-    fn needs_rotation(&self, row_bytes: usize) -> bool {
+    pub fn close(&mut self) -> Result<()> {
+        self.close_current()
+    }
+
+    fn needs_rotation(&self, row_bytes: usize, footer_bytes: usize) -> bool {
         self.segments.back().is_none_or(|segment| {
-            segment.metadata.harness != self.harness
+            !segment.appendable
+                || segment.metadata.harness != self.harness
                 || segment.metadata.engine != self.engine
-                || segment.size.saturating_add(row_bytes) > MAX_SEGMENT_BYTES
+                || segment
+                    .size
+                    .saturating_add(row_bytes)
+                    .saturating_add(footer_bytes)
+                    > MAX_SEGMENT_BYTES
         })
+    }
+
+    fn encoded_segment_end(&self, ended_at_ms: i64, last_sequence: u64) -> Result<Vec<u8>> {
+        Ok(encode_row(&DatasetRow::SegmentEnd(SegmentEnd {
+            pane_id: self.pane_id.clone(),
+            harness: self.harness.clone(),
+            ended_at_ms,
+            last_sequence,
+        }))?)
+    }
+
+    fn close_current(&mut self) -> Result<()> {
+        let Some(segment) = self.segments.back() else {
+            return Ok(());
+        };
+        if !segment.appendable {
+            return Ok(());
+        }
+        let last_sequence = self
+            .last_sequence
+            .ok_or_else(|| errors::internal("Observation segment has no final sequence"))?;
+        let footer = self.encoded_segment_end(segment.last_timestamp_ms, last_sequence)?;
+        self.append_bytes(&footer)?;
+        self.sync_current()?;
+        self.segments
+            .back_mut()
+            .ok_or_else(|| errors::internal("Observation segment disappeared"))?
+            .appendable = false;
+        Ok(())
     }
 
     fn create_segment(&mut self, started_at_ms: i64) -> Result<()> {
@@ -452,6 +569,8 @@ impl SegmentStore {
             number,
             size: header.len(),
             metadata,
+            appendable: true,
+            last_timestamp_ms: started_at_ms,
         });
         Ok(())
     }
@@ -475,8 +594,29 @@ impl SegmentStore {
             ));
         }
         file.write_all(bytes)?;
-        file.sync_all()?;
         segment.size = segment.size.saturating_add(bytes.len());
+        Ok(())
+    }
+
+    fn sync_current(&self) -> Result<()> {
+        let segment = self
+            .segments
+            .back()
+            .ok_or_else(|| errors::internal("Observation segment is missing"))?;
+        let path = self.directory.join(segment_filename(segment.number));
+        let file = OpenOptions::new()
+            .append(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)?;
+        validate_private_file(&file)?;
+        let actual = usize::try_from(file.metadata()?.len())
+            .map_err(|_| errors::internal("Observation segment size is invalid"))?;
+        if actual != segment.size {
+            return Err(errors::internal(
+                "Observation segment changed outside the recorder",
+            ));
+        }
+        file.sync_all()?;
         Ok(())
     }
 
@@ -569,12 +709,20 @@ fn load_segments(directory: &Path, pane_id: &str) -> Result<(VecDeque<Segment>, 
     for number in numbers {
         let replayed = read_segment(directory, number)?;
         validate_loaded_segment(&replayed, pane_id, number, &mut last_sequence)?;
+        let last_timestamp_ms = replayed
+            .clean_close
+            .as_ref()
+            .map(|end| end.ended_at_ms)
+            .or_else(|| replayed.rows.last().map(|row| row_identity(row).2))
+            .unwrap_or(replayed.metadata.started_at_ms);
         let size = usize::try_from(fs::metadata(directory.join(segment_filename(number)))?.len())
             .map_err(|_| errors::internal("Observation segment size is invalid"))?;
         segments.push_back(Segment {
             number,
             size,
             metadata: replayed.metadata,
+            appendable: false,
+            last_timestamp_ms,
         });
     }
     Ok((segments, last_sequence))
@@ -893,6 +1041,7 @@ mod tests {
             .unwrap()
             .replay()
             .unwrap();
+        assert!(replayed.iter().all(|segment| segment.clean_close.is_some()));
         assert_eq!(
             replayed
                 .iter()
@@ -903,6 +1052,35 @@ mod tests {
                 .map(|sequence| observation(sequence, false))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn saturated_real_recorder_persists_the_declared_loss_as_its_next_row() {
+        let fixture = Fixture::new();
+        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 2).unwrap();
+        assert_eq!(recorder.try_record(frame(0)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(recorder.try_record(frame(1)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(
+            recorder.try_record(frame(2)).unwrap(),
+            QueueOutcome::GapExtended
+        );
+        writer_gate.wait();
+        recorder.finish().unwrap();
+
+        let replayed = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
+            .unwrap()
+            .replay()
+            .unwrap();
+        assert_eq!(replayed.len(), 1);
+        assert!(replayed[0].clean_close.is_some());
+        let [RecordedRow::Gap(gap)] = replayed[0].rows.as_slice() else {
+            panic!("saturated recorder did not make its loss the next durable row")
+        };
+        assert_eq!(gap.first_sequence, 0);
+        assert_eq!(gap.last_sequence, 2);
+        assert_eq!(gap.dropped_observations, Some(3));
+        assert_eq!(gap.dropped_bytes, None);
     }
 
     #[test]
@@ -922,6 +1100,12 @@ mod tests {
                 .sum::<usize>(),
             9
         );
+        assert!(
+            replayed[..replayed.len() - 1]
+                .iter()
+                .all(|segment| segment.clean_close.is_some())
+        );
+        assert_eq!(replayed.last().unwrap().clean_close, None);
         for segment in replayed {
             assert_eq!(segment.metadata.pane_id, "pane-1");
             assert_eq!(segment.metadata.harness, harness());
@@ -945,6 +1129,35 @@ mod tests {
         assert_eq!(replayed[1].metadata.engine, engine('b'));
         assert_eq!(replayed[0].rows, vec![observation(0, false)]);
         assert_eq!(replayed[1].rows, vec![observation(1, false)]);
+        assert_eq!(replayed[0].clean_close, None);
+        assert_eq!(replayed[1].clean_close, None);
+    }
+
+    #[test]
+    fn clean_close_and_abrupt_end_remain_distinguishable_after_reopen() {
+        let fixture = Fixture::new();
+        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let recorder = ObservationRecorder::open(store).unwrap();
+        recorder.try_record(frame(0)).unwrap();
+        recorder.finish().unwrap();
+        let clean = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
+            .unwrap()
+            .replay()
+            .unwrap();
+        assert_eq!(clean.len(), 1);
+        assert_eq!(clean[0].clean_close.as_ref().unwrap().last_sequence, 0);
+
+        let mut abrupt =
+            SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        abrupt.append(observation(1, false)).unwrap();
+        drop(abrupt);
+        let replayed = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
+            .unwrap()
+            .replay()
+            .unwrap();
+        assert_eq!(replayed.len(), 2);
+        assert!(replayed[0].clean_close.is_some());
+        assert_eq!(replayed[1].clean_close, None);
     }
 
     #[test]

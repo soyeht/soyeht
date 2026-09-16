@@ -10,7 +10,7 @@ pub use baseline::RegexBaseline;
 pub use error::{Error, Result};
 pub use format::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, MAX_DATASET_ROW_BYTES, MAX_RETAINED_SEGMENTS,
-    MAX_SEGMENT_BYTES, ReplayedSegment, SegmentMetadata, decode_segment, encode_row,
+    MAX_SEGMENT_BYTES, ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment, encode_row,
 };
 pub use model::{
     Confidence, CursorPosition, Detection, Detector, GroundTruthLabel, HarnessIdentity,

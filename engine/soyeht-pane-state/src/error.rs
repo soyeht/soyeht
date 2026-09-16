@@ -13,6 +13,7 @@ pub enum Error {
     InvalidLabelSource,
     InvalidLabelState,
     InvalidScreenLine,
+    InvalidSegmentEnd,
     InvalidSequence,
     InvalidTimestamp,
     Json,
@@ -39,6 +40,9 @@ impl Display for Error {
             }
             Self::InvalidScreenLine => {
                 formatter.write_str("screen lines must not contain line breaks")
+            }
+            Self::InvalidSegmentEnd => {
+                formatter.write_str("dataset segment close marker is invalid")
             }
             Self::InvalidSequence => {
                 formatter.write_str("dataset sequences must increase monotonically")

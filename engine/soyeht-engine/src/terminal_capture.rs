@@ -19,6 +19,13 @@ const CAPTURE_FAILURE: &str = "Experiment capture stopped because its private re
 const PROJECTION_QUEUE_CAPACITY: usize = 32;
 const FAILURE_CHECK_INTERVAL: Duration = Duration::from_millis(50);
 
+#[cfg(test)]
+#[derive(Default)]
+struct TestQueueMetrics {
+    outstanding: usize,
+    peak_outstanding: usize,
+}
+
 enum ProjectionCommand {
     Bytes { timestamp_ms: i64, bytes: Vec<u8> },
     Resize { rows: u16, cols: u16 },
@@ -65,6 +72,8 @@ pub(crate) struct TerminalCapture {
     overflow: Arc<Mutex<Option<RawByteGap>>>,
     failure: Arc<Mutex<Option<String>>>,
     worker: Option<JoinHandle<()>>,
+    #[cfg(test)]
+    test_queue_metrics: Arc<Mutex<TestQueueMetrics>>,
 }
 
 impl TerminalCapture {
@@ -82,11 +91,21 @@ impl TerminalCapture {
         let failure = Arc::new(Mutex::new(None));
         let worker_overflow = Arc::clone(&overflow);
         let worker_failure = Arc::clone(&failure);
+        #[cfg(test)]
+        let test_queue_metrics = Arc::new(Mutex::new(TestQueueMetrics::default()));
+        #[cfg(test)]
+        let worker_test_queue_metrics = Arc::clone(&test_queue_metrics);
         let worker = thread::Builder::new()
             .name("terminal-observation-projector".into())
             .spawn(move || {
-                if let Err(error) = projection_loop(projection, recorder, receiver, worker_overflow)
-                    && let Ok(mut slot) = worker_failure.lock()
+                if let Err(error) = projection_loop(
+                    projection,
+                    recorder,
+                    receiver,
+                    worker_overflow,
+                    #[cfg(test)]
+                    worker_test_queue_metrics,
+                ) && let Ok(mut slot) = worker_failure.lock()
                 {
                     *slot = Some(error.to_string());
                 }
@@ -96,6 +115,8 @@ impl TerminalCapture {
             overflow,
             failure,
             worker: Some(worker),
+            #[cfg(test)]
+            test_queue_metrics,
         })
     }
 
@@ -114,10 +135,20 @@ impl TerminalCapture {
             .sender
             .as_ref()
             .ok_or_else(|| errors::internal("Terminal projection worker is closed"))?;
-        match sender.try_send(ProjectionCommand::Bytes {
+        #[cfg(test)]
+        let mut metrics = self.test_queue_metrics.lock().unwrap();
+        let outcome = sender.try_send(ProjectionCommand::Bytes {
             timestamp_ms,
             bytes,
-        }) {
+        });
+        #[cfg(test)]
+        if outcome.is_ok() {
+            metrics.outstanding += 1;
+            metrics.peak_outstanding = metrics.peak_outstanding.max(metrics.outstanding);
+        }
+        #[cfg(test)]
+        drop(metrics);
+        match outcome {
             Ok(()) => Ok(()),
             Err(mpsc::TrySendError::Full(ProjectionCommand::Bytes {
                 timestamp_ms,
@@ -171,6 +202,7 @@ fn projection_loop(
     recorder: ObservationRecorder,
     receiver: mpsc::Receiver<ProjectionCommand>,
     overflow: Arc<Mutex<Option<RawByteGap>>>,
+    #[cfg(test)] test_queue_metrics: Arc<Mutex<TestQueueMetrics>>,
 ) -> Result<()> {
     loop {
         match receiver.recv_timeout(FAILURE_CHECK_INTERVAL) {
@@ -178,9 +210,18 @@ fn projection_loop(
                 timestamp_ms,
                 bytes,
             }) => {
-                if let Some(frame) = projection.process(timestamp_ms, &bytes)? {
-                    recorder.try_record(frame)?;
+                let result: Result<()> = (|| {
+                    if let Some(frame) = projection.process(timestamp_ms, &bytes)? {
+                        recorder.try_record(frame)?;
+                    }
+                    Ok(())
+                })();
+                #[cfg(test)]
+                {
+                    let mut metrics = test_queue_metrics.lock().unwrap();
+                    metrics.outstanding = metrics.outstanding.saturating_sub(1);
                 }
+                result?;
             }
             Ok(ProjectionCommand::Resize { rows, cols }) => projection.resize(rows, cols)?,
             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -344,6 +385,13 @@ mod tests {
     use uuid::Uuid;
 
     const CADENCE_RUNS: usize = 10;
+    const CADENCE_MAX_ATTEMPTS: usize = 10;
+    const CADENCE_WARMUP_PAIRS: usize = 3;
+    const CADENCE_FIXTURE_BYTES: usize = 440_192;
+    const CADENCE_STEADY_BYTES: usize = 308_135;
+    const CADENCE_WARMUP_DRAIN: Duration = Duration::from_millis(60);
+    const FRAME_DENSE_INTERVAL: Duration = Duration::from_millis(5);
+    const FRAME_DENSE_OBSERVATIONS: usize = 400;
 
     #[test]
     fn full_projection_handoff_coalesces_exact_bytes_without_failing_capture() {
@@ -354,6 +402,7 @@ mod tests {
             overflow: Arc::clone(&overflow),
             failure: Arc::new(Mutex::new(None)),
             worker: None,
+            test_queue_metrics: Arc::new(Mutex::new(TestQueueMetrics::default())),
         };
         capture.record(10, vec![b'a']).unwrap();
         capture.record(20, vec![b'b'; 4]).unwrap();
@@ -405,8 +454,15 @@ mod tests {
             dropped_bytes: 4_200_000,
         })));
         let worker_overflow = Arc::clone(&overflow);
-        let worker =
-            thread::spawn(move || projection_loop(projection, recorder, receiver, worker_overflow));
+        let worker = thread::spawn(move || {
+            projection_loop(
+                projection,
+                recorder,
+                receiver,
+                worker_overflow,
+                Arc::new(Mutex::new(TestQueueMetrics::default())),
+            )
+        });
 
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
         while overflow.lock().unwrap().is_some() {
@@ -451,7 +507,7 @@ mod tests {
     }
 
     fn noisy_chunks() -> Vec<Vec<u8>> {
-        (0..CADENCE_RUNS)
+        (0..CADENCE_RUNS + 2)
             .map(|run| {
                 let mut bytes = format!("\x1b]2;build-{run}\x07\x1b[2J\x1b[H").into_bytes();
                 for line in 0..800 {
@@ -465,6 +521,30 @@ mod tests {
                 bytes
             })
             .collect()
+    }
+
+    fn capture_metrics(core: &Core) -> Arc<Mutex<TestQueueMetrics>> {
+        Arc::clone(
+            &core
+                .terminal_captures
+                .get("cadence-pane")
+                .unwrap()
+                .test_queue_metrics,
+        )
+    }
+
+    fn wait_for_projection_worker(metrics: &Mutex<TestQueueMetrics>) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if metrics.lock().unwrap().outstanding == 0 {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "terminal projection worker did not drain"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
     }
 
     fn cadence_core(root: &Path, chunks: &[Vec<u8>], capture: bool) -> Core {
@@ -550,15 +630,144 @@ mod tests {
         sorted[index]
     }
 
+    fn capture_is_not_faster(off_micros: &[u128], on_micros: &[u128]) -> bool {
+        percentile(on_micros, 1, 2) >= percentile(off_micros, 1, 2)
+            && percentile(on_micros, 95, 100) >= percentile(off_micros, 95, 100)
+    }
+
     #[test]
-    fn capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles() {
-        let directory = std::env::temp_dir().join(format!("sn-cadence-{}", Uuid::new_v4()));
+    fn cadence_sanity_rejects_an_impossibly_faster_capture_run() {
+        assert!(!capture_is_not_faster(
+            &[331, 333, 345, 352],
+            &[329, 330, 341, 350]
+        ));
+        assert!(capture_is_not_faster(
+            &[321, 323, 327, 331],
+            &[326, 329, 333, 353]
+        ));
+    }
+
+    #[test]
+    fn frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage() {
+        let directory = std::env::temp_dir().join(format!("sn-headroom-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
-        let chunks = noisy_chunks();
-        let mut off = cadence_core(&directory.join("off"), &chunks, false);
-        let mut on = cadence_core(&directory.join("on"), &chunks, true);
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let build = EngineBuild {
+            package_version: "0.1.0".into(),
+            executable_sha256: "b".repeat(64),
+        };
+        let capture =
+            TerminalCapture::open(&directory, "frame-dense-pane", 40, 120, build.clone()).unwrap();
+        let metrics = Arc::clone(&capture.test_queue_metrics);
+        let started = Instant::now();
+        let mut submitted_bytes = 0_usize;
+        for index in 0..FRAME_DENSE_OBSERVATIONS {
+            let target = started + FRAME_DENSE_INTERVAL * u32::try_from(index).unwrap();
+            if let Some(remaining) = target.checked_duration_since(Instant::now()) {
+                thread::sleep(remaining);
+            }
+            let bytes = format!("\rcompile frame {index:04}").into_bytes();
+            submitted_bytes += bytes.len();
+            capture
+                .record(i64::try_from(started.elapsed().as_millis()).unwrap(), bytes)
+                .unwrap();
+        }
+        let submission_wall_ms = started.elapsed().as_millis();
+        drop(capture);
+        let peak_outstanding = metrics.lock().unwrap().peak_outstanding;
+        let rows = SegmentStore::open(
+            &directory,
+            "frame-dense-pane",
+            HarnessIdentity::Unknown,
+            build,
+        )
+        .unwrap()
+        .replay()
+        .unwrap()
+        .into_iter()
+        .flat_map(|segment| segment.rows)
+        .collect::<Vec<_>>();
+        let observations = rows
+            .iter()
+            .filter(|row| matches!(row, RecordedRow::Observation(_)))
+            .count();
+        let gaps = rows
+            .iter()
+            .filter_map(|row| match row {
+                RecordedRow::Gap(gap) => Some(gap),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let dropped_observations = gaps
+            .iter()
+            .filter_map(|gap| gap.dropped_observations)
+            .sum::<u64>();
+        let dropped_bytes = gaps.iter().filter_map(|gap| gap.dropped_bytes).sum::<u64>();
+        let first_timestamp = rows
+            .iter()
+            .map(|row| match row {
+                RecordedRow::Observation(frame) => frame.timestamp_ms,
+                RecordedRow::Gap(gap) => gap.first_timestamp_ms,
+                RecordedRow::Label(label) => label.timestamp_ms,
+            })
+            .min()
+            .unwrap();
+        let last_timestamp = rows
+            .iter()
+            .map(|row| match row {
+                RecordedRow::Observation(frame) => frame.timestamp_ms,
+                RecordedRow::Gap(gap) => gap.last_timestamp_ms,
+                RecordedRow::Label(label) => label.timestamp_ms,
+            })
+            .max()
+            .unwrap();
+        let session_ms = u64::try_from(last_timestamp.saturating_sub(first_timestamp)).unwrap();
+        let gap_ms = gaps.iter().fold(0_u64, |total, gap| {
+            total.saturating_add(
+                u64::try_from(gap.last_timestamp_ms.saturating_sub(gap.first_timestamp_ms))
+                    .unwrap(),
+            )
+        });
+        let coverage_basis_points = session_ms
+            .saturating_sub(gap_ms)
+            .saturating_mul(10_000)
+            .checked_div(session_ms)
+            .unwrap_or(10_000);
+        eprintln!(
+            "capture headroom submitted_bytes={submitted_bytes} submission_wall_ms={submission_wall_ms} observations={observations} gaps={} dropped_observations={dropped_observations} dropped_bytes={dropped_bytes} peak_outstanding={peak_outstanding} time_coverage_basis_points={coverage_basis_points}",
+            gaps.len()
+        );
+        assert!(!rows.is_empty());
+        assert!(peak_outstanding <= PROJECTION_QUEUE_CAPACITY + 1);
+        assert!(
+            coverage_basis_points >= 9_500,
+            "frame-dense capture fell below the predeclared 95 percent coverage floor"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn run_cadence_attempt(directory: &Path, chunks: &[Vec<u8>], attempt: usize) -> bool {
+        fs::create_dir(directory).unwrap();
+        let fixture_bytes = chunks.iter().skip(2).map(Vec::len).sum::<usize>();
+        assert_eq!(fixture_bytes, CADENCE_FIXTURE_BYTES);
+        let mut off = cadence_core(&directory.join("off"), chunks, false);
+        let mut on = cadence_core(&directory.join("on"), chunks, false);
+        off.poll_output().unwrap();
+        on.poll_output().unwrap();
+        let runtime = on.prepare_terminal_capture("cadence-pane").unwrap();
+        on.terminal_captures.insert("cadence-pane".into(), runtime);
+        let metrics = capture_metrics(&on);
+        off.poll_output().unwrap();
+        on.poll_output().unwrap();
+        wait_for_projection_worker(&metrics);
+        thread::sleep(CADENCE_WARMUP_DRAIN);
+        {
+            let mut metrics = metrics.lock().unwrap();
+            metrics.peak_outstanding = metrics.outstanding;
+        }
         let mut off_micros = Vec::new();
         let mut on_micros = Vec::new();
+        let fixture_started = Instant::now();
         for pair in 0..CADENCE_RUNS {
             let (first, second) = if pair % 2 == 0 {
                 (&mut off, &mut on)
@@ -579,15 +788,29 @@ mod tests {
                 off_micros.push(second_micros);
             }
         }
-        let off_median = percentile(&off_micros, 1, 2);
-        let on_median = percentile(&on_micros, 1, 2);
-        let off_p95 = percentile(&off_micros, 95, 100);
-        let on_p95 = percentile(&on_micros, 95, 100);
-        eprintln!("capture cadence off_us={off_micros:?} on_us={on_micros:?}");
+        wait_for_projection_worker(&metrics);
+        let peak_outstanding = metrics.lock().unwrap().peak_outstanding;
+        let steady_off = &off_micros[CADENCE_WARMUP_PAIRS..];
+        let steady_on = &on_micros[CADENCE_WARMUP_PAIRS..];
+        let off_median = percentile(steady_off, 1, 2);
+        let on_median = percentile(steady_on, 1, 2);
+        let off_p95 = percentile(steady_off, 95, 100);
+        let on_p95 = percentile(steady_on, 95, 100);
+        eprintln!("capture cadence attempt={attempt} off_us={off_micros:?} on_us={on_micros:?}");
+        if !capture_is_not_faster(steady_off, steady_on) {
+            eprintln!(
+                "capture cadence attempt={attempt} invalid: capture-on measured faster than capture-off after the declared warm-up"
+            );
+            drop(on);
+            drop(off);
+            fs::remove_dir_all(directory).unwrap();
+            return false;
+        }
         assert!(on_median * 100 <= off_median * 105);
         assert!(on_p95 <= off_p95 + 5_000);
         let build = on.terminal_capture_build.clone().unwrap();
         drop(on);
+        let fixture_wall_micros = fixture_started.elapsed().as_micros();
         drop(off);
         let replayed = SegmentStore::open(
             &directory.join("on/experiments/pane-state"),
@@ -625,10 +848,41 @@ mod tests {
             })
             .sum::<u64>();
         eprintln!(
+            "capture fixture bytes={fixture_bytes} wall_us={fixture_wall_micros} expected_measured_observations={CADENCE_RUNS} peak_outstanding={peak_outstanding}"
+        );
+        eprintln!(
             "capture coverage observations={observations} gaps={gaps} dropped_observations={dropped_observations} dropped_bytes={dropped_bytes} time_coverage_percent=100"
         );
-        assert!(observations > 0);
+        assert_eq!(observations, CADENCE_RUNS + 1);
         assert_eq!(gaps, 0);
+        assert_eq!(
+            chunks
+                .iter()
+                .skip(2 + CADENCE_WARMUP_PAIRS)
+                .map(Vec::len)
+                .sum::<usize>(),
+            CADENCE_STEADY_BYTES
+        );
         fs::remove_dir_all(directory).unwrap();
+        true
+    }
+
+    #[test]
+    fn capture_cadence_measurement_uses_ten_paired_noisy_poll_cycles() {
+        let directory = std::env::temp_dir().join(format!("sn-cadence-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let chunks = noisy_chunks();
+        for attempt in 1..=CADENCE_MAX_ATTEMPTS {
+            if run_cadence_attempt(
+                &directory.join(format!("attempt-{attempt}")),
+                &chunks,
+                attempt,
+            ) {
+                fs::remove_dir_all(directory).unwrap();
+                return;
+            }
+        }
+        fs::remove_dir_all(directory).unwrap();
+        panic!("cadence did not produce a steady sample in {CADENCE_MAX_ATTEMPTS} attempts");
     }
 }
