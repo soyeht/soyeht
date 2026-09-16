@@ -194,6 +194,17 @@ impl ObservationRecorder {
     }
 
     fn open_with_capacity(store: SegmentStore, capacity: usize) -> Result<Self> {
+        Self::open_with_capacity_and_start(store, capacity, || {})
+    }
+
+    fn open_with_capacity_and_start<F>(
+        store: SegmentStore,
+        capacity: usize,
+        before_worker: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce() + Send + 'static,
+    {
         if capacity == 0 {
             return Err(errors::invalid(
                 "Observation queue capacity must be positive",
@@ -211,13 +222,29 @@ impl ObservationRecorder {
         let worker_shared = Arc::clone(&shared);
         let worker = thread::Builder::new()
             .name("pane-observation-writer".into())
-            .spawn(move || recorder_loop(store, worker_shared))?;
+            .spawn(move || {
+                before_worker();
+                recorder_loop(store, worker_shared)
+            })?;
         Ok(Self {
             pane_id,
             harness,
             shared,
             worker: Some(worker),
         })
+    }
+
+    #[cfg(test)]
+    fn open_paused(
+        store: SegmentStore,
+        capacity: usize,
+    ) -> Result<(Self, Arc<std::sync::Barrier>)> {
+        let gate = Arc::new(std::sync::Barrier::new(2));
+        let worker_gate = Arc::clone(&gate);
+        let recorder = Self::open_with_capacity_and_start(store, capacity, move || {
+            worker_gate.wait();
+        })?;
+        Ok((recorder, gate))
     }
 
     pub fn try_record(&self, frame: ObservationFrame) -> Result<QueueOutcome> {
@@ -1025,6 +1052,35 @@ mod tests {
                 .map(|sequence| observation(sequence, false))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn saturated_real_recorder_persists_the_declared_loss_as_its_next_row() {
+        let fixture = Fixture::new();
+        let store = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a')).unwrap();
+        let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 2).unwrap();
+        assert_eq!(recorder.try_record(frame(0)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(recorder.try_record(frame(1)).unwrap(), QueueOutcome::Queued);
+        assert_eq!(
+            recorder.try_record(frame(2)).unwrap(),
+            QueueOutcome::GapExtended
+        );
+        writer_gate.wait();
+        recorder.finish().unwrap();
+
+        let replayed = SegmentStore::open(&fixture.root, "pane-1", harness(), engine('a'))
+            .unwrap()
+            .replay()
+            .unwrap();
+        assert_eq!(replayed.len(), 1);
+        assert!(replayed[0].clean_close.is_some());
+        let [RecordedRow::Gap(gap)] = replayed[0].rows.as_slice() else {
+            panic!("saturated recorder did not make its loss the next durable row")
+        };
+        assert_eq!(gap.first_sequence, 0);
+        assert_eq!(gap.last_sequence, 2);
+        assert_eq!(gap.dropped_observations, Some(3));
+        assert_eq!(gap.dropped_bytes, None);
     }
 
     #[test]
