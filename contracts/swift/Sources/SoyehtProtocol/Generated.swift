@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 047c98606a008aa43a54b3db6090084eee774d807e01b7ddc35ad14d4a2b8f10). Do not edit.
+// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
 import Foundation
 
 
@@ -633,6 +633,26 @@ public struct PaneExperimentSetResult: Codable, Sendable {
     public var `capture`: PaneExperimentCapture
     public init(`capture`: PaneExperimentCapture) {
         self.`capture` = `capture`
+    }
+}
+
+public struct PaneExperimentDeleteParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneExperimentDeleteResult: Codable, Sendable {
+    public var `files`: UInt32
+    public var `bytes`: Decimal
+    public var `nothingRemained`: Bool
+    public init(`files`: UInt32, `bytes`: Decimal, `nothingRemained`: Bool) {
+        self.`files` = `files`
+        self.`bytes` = `bytes`
+        self.`nothingRemained` = `nothingRemained`
     }
 }
 

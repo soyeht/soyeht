@@ -201,6 +201,9 @@ impl Core {
     }
 
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
+        if method == "pane.experiment.delete" {
+            return self.delete_terminal_capture_data(connection, params);
+        }
         let id = errors::param_str(params, "paneId")?;
         if method == "pane.close" && self.agents.contains_key(id) {
             return self.close_agent(connection, params);

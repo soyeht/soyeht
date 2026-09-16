@@ -30,12 +30,19 @@ pub enum Outcome {
 }
 
 fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
-    if method == "pane.experiment.set" && !signed_ui {
+    if matches!(method, "pane.experiment.set" | "pane.experiment.delete") && !signed_ui {
         return Err(errors::forbidden_role(
             "Experiment capture can be changed only in the signed Soyeht app on this Mac",
         ));
     }
     Ok(())
+}
+
+fn uses_native_rpc_result(method: &str) -> bool {
+    matches!(
+        method,
+        "pane.config.set" | "pane.yolo" | "pane.harness.switch"
+    )
 }
 
 impl Core {
@@ -329,7 +336,8 @@ impl Core {
             | "pane.rename"
             | "pane.resize"
             | "pane.record.set"
-            | "pane.experiment.set" => self.pane_edit(connection, method, params)?,
+            | "pane.experiment.set"
+            | "pane.experiment.delete" => self.pane_edit(connection, method, params)?,
             "pane.input" => self.pane_input(connection, params)?,
             "pane.yolo" => self.agent_yolo(connection, params)?,
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
@@ -413,10 +421,7 @@ impl Core {
             }
             _ => return Err(errors::invalid("Method unavailable")),
         };
-        if matches!(
-            method,
-            "pane.config.set" | "pane.yolo" | "pane.harness.switch"
-        ) {
+        if uses_native_rpc_result(method) {
             return self.native_rpc_result(
                 connection,
                 request_id,
@@ -612,8 +617,13 @@ mod experiment_consent_tests {
     #[test]
     fn capture_mutation_requires_the_attested_ui_program() {
         assert!(requires_signed_ui("pane.experiment.set", true).is_ok());
+        assert!(requires_signed_ui("pane.experiment.delete", true).is_ok());
         assert_eq!(
             errors::kind(&requires_signed_ui("pane.experiment.set", false).unwrap_err()),
+            soyeht_protocol::ErrorKind::ForbiddenRole
+        );
+        assert_eq!(
+            errors::kind(&requires_signed_ui("pane.experiment.delete", false).unwrap_err()),
             soyeht_protocol::ErrorKind::ForbiddenRole
         );
         assert!(requires_signed_ui("pane.focus", false).is_ok());

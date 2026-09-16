@@ -1081,6 +1081,44 @@
       ],
       "additionalProperties": true
     },
+    "PaneExperimentDeleteParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneExperimentDeleteResult": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "bytes": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "nothingRemained": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "files",
+        "bytes",
+        "nothingRemained"
+      ],
+      "additionalProperties": true
+    },
     "DevicePairStartParams": {
       "type": "object",
       "properties": {
@@ -10582,6 +10620,15 @@
       },
       "result": {
         "$ref": "#/$defs/PaneExperimentSetResult"
+      },
+      "mutation": true
+    },
+    "pane.experiment.delete": {
+      "params": {
+        "$ref": "#/$defs/PaneExperimentDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneExperimentDeleteResult"
       },
       "mutation": true
     },

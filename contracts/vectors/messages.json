@@ -503,6 +503,23 @@
     }
   },
   {
+    "name": "PaneExperimentDeleteParams",
+    "type": "PaneExperimentDeleteParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneExperimentDeleteResult",
+    "type": "PaneExperimentDeleteResult",
+    "value": {
+      "files": 2,
+      "bytes": "128",
+      "nothingRemained": true
+    }
+  },
+  {
     "name": "DevicePairStartParams",
     "type": "DevicePairStartParams",
     "value": {
@@ -1521,6 +1538,31 @@
         "capture": {
           "on": true
         }
+      }
+    }
+  },
+  {
+    "name": "request:pane.experiment.delete",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.experiment.delete",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.experiment.delete",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "files": 2,
+        "bytes": "128"
       }
     }
   },

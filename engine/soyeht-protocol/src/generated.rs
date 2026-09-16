@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 047c98606a008aa43a54b3db6090084eee774d807e01b7ddc35ad14d4a2b8f10). Do not edit.
+// Generated from contracts/protocol.json (sha256 6a3d8835f9436a138b0fd10911e961d4d3f0fa8765f7ee08b980a55379f0eacd). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -588,6 +588,22 @@ pub struct PaneExperimentSetParams {
 pub struct PaneExperimentSetResult {
     #[serde(rename = "capture")]
     pub capture: PaneExperimentCapture,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentDeleteParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentDeleteResult {
+    #[serde(rename = "files")]
+    pub files: u32,
+    #[serde(rename = "bytes")]
+    pub bytes: Decimal,
+    #[serde(rename = "nothingRemained")]
+    pub nothing_remained: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartParams {
@@ -5155,6 +5171,8 @@ pub enum Request {
     PaneRecordSet(PaneRecordSetParams),
     #[serde(rename = "pane.experiment.set")]
     PaneExperimentSet(PaneExperimentSetParams),
+    #[serde(rename = "pane.experiment.delete")]
+    PaneExperimentDelete(PaneExperimentDeleteParams),
     #[serde(rename = "device.pair.start")]
     DevicePairStart(DevicePairStartParams),
     #[serde(rename = "device.pair.decide")]
@@ -5432,6 +5450,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "pane.experiment.set",
         "PaneExperimentSetParams",
         "PaneExperimentSetResult",
+        true,
+    ),
+    (
+        "pane.experiment.delete",
+        "PaneExperimentDeleteParams",
+        "PaneExperimentDeleteResult",
         true,
     ),
     (

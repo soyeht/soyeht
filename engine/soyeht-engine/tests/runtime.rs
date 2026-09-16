@@ -4927,6 +4927,12 @@ fn unsigned_local_client_cannot_change_experiment_consent() {
     assert_eq!(client.pane(&pane)["experimentCapture"]["on"], false);
     assert_eq!(client.pane(&pane)["record"], replay_recording);
 
+    let delete_refused = client.request(
+        "pane.experiment.delete",
+        json!({"paneId":pane,"idempotencyKey":"unsigned-experiment-delete"}),
+    );
+    assert_eq!(delete_refused["error"]["data"]["kind"], "forbidden_role");
+
     drop(client);
     rig.kill_engine();
     rig.start();
