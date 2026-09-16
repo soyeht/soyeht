@@ -24,6 +24,10 @@ use std::{
 };
 use uuid::Uuid;
 
+// Process-heavy integration tests share the runner. Wait for the observable
+// effect rather than assuming it will occur within one scheduling quantum.
+const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
+
 struct Rig {
     path: PathBuf,
     engine: Option<Child>,
@@ -541,9 +545,17 @@ fn screenplay_variant_fixture(rig: &Rig) -> (Client, String, String, PathBuf) {
 }
 
 fn wait_for_path_text(path: &std::path::Path, expected: &str) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while fs::read_to_string(path).unwrap() != expected {
         assert!(Instant::now() < deadline, "writing draft did not autosave");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn wait_for_path(path: &std::path::Path, message: &str) {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while !path.exists() {
+        assert!(Instant::now() < deadline, "{message}");
         thread::sleep(Duration::from_millis(20));
     }
 }
@@ -2056,11 +2068,19 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
     let before = client.pane(&pane);
     client.call(
         "pane.prompt",
-        json!({"paneId":pane,"text":"permission-delayed","idempotencyKey":"during-outage"}),
+        json!({"paneId":pane,"text":"permission-gated","idempotencyKey":"during-outage"}),
     );
-    client.wait_state(&pane, "working");
-    assert!(client.section("requests").is_empty());
+    wait_for_path(
+        &rig.path.join("native/permission.waiting"),
+        "fake did not receive the permission prompt",
+    );
     rig.kill_engine();
+    let persisted = rig
+        .database_probe()
+        .request_count("session/request_permission")
+        .unwrap();
+    assert_eq!(persisted, 0, "request predates engine outage");
+    fs::write(rig.path.join("native/permission.release"), b"continue").unwrap();
     let generation = rig.database_probe().engine_generation().unwrap();
     let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), generation).unwrap();
     let Response::Instances(instances) = supervisor.request(Request::List).unwrap() else {
@@ -2096,11 +2116,6 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    let persisted = rig
-        .database_probe()
-        .request_count("session/request_permission")
-        .unwrap();
-    assert_eq!(persisted, 0, "request predates engine outage");
     drop(supervisor);
     rig.start();
     let mut first = rig.client();
@@ -4451,7 +4466,7 @@ fn wait_for_editor_file(
     file_id: &str,
     condition: impl Fn(&Value) -> bool,
 ) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let file = client
             .section("files")
@@ -4487,6 +4502,8 @@ fn editor_draft_survives_restart_then_autosaves_versions_and_reverts() {
         json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"open-save"}),
     );
     let file_id = opened["file"]["fileId"].as_str().unwrap().to_owned();
+    let autosave_pause = rig.path.join("test-pause-editor-autosave");
+    fs::write(&autosave_pause, b"pause").unwrap();
     let write_params = json!({
         "fileId":file_id,"baseRevision":"1","author":local_file_author(),
         "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":5}},"text":"bravo"}],
@@ -4514,13 +4531,15 @@ fn editor_draft_survives_restart_then_autosaves_versions_and_reverts() {
     assert_eq!(stale["error"]["data"]["kind"], "stale_version");
     assert_eq!(fs::read_to_string(&path).unwrap(), "alpha\n");
     rig.kill_engine();
+    assert_eq!(
+        rig.database_probe().editor_draft(&file_id).unwrap(),
+        Some("bravo\n".into())
+    );
+    fs::remove_file(autosave_pause).unwrap();
     rig.start();
     let mut restored = rig.client();
-    assert_eq!(
-        wait_for_editor_file(&mut restored, &file_id, |file| file["dirty"] == true)["revision"],
-        "2"
-    );
     let saved = wait_for_editor_file(&mut restored, &file_id, |file| file["dirty"] == false);
+    assert_eq!(saved["revision"], "2");
     assert_eq!(saved["diskRevision"], "2");
     assert_eq!(fs::read_to_string(&path).unwrap(), "bravo\n");
     let history = restored.call("file.history", json!({"fileId":file_id,"limit":1}));
@@ -4672,7 +4691,7 @@ fn editor_disk_reload_and_conflict_preserve_both_versions_until_resolution() {
 
 impl Client {
     fn wait_state(&mut self, pane: &str, state: &str) -> Value {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         loop {
             let view = self.pane(pane);
             if view["state"] == state {
@@ -5867,6 +5886,7 @@ fn pane_loop_waits_while_busy_and_dispatches_only_one_due_round() {
         if saved["config"]["enabled"] == false
             && saved["config"]["rounds"] == 1
             && client.pane(&pane)["state"] == "idle"
+            && native_prompt_count(&rig, &session, "loop-after-idle") == 1
         {
             break;
         }
