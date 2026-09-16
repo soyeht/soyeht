@@ -151,6 +151,10 @@ fn web_pane(
         cols: 0,
         rows: 0,
         record: false,
+        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
+            on: false,
+            failure: None,
+        }),
         pid: None,
         stream_id: None,
         agent: None,

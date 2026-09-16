@@ -595,6 +595,10 @@ fn prepare_new_pane(
         cols: 80,
         rows: 24,
         record: true,
+        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
+            on: false,
+            failure: None,
+        }),
         pid: None,
         stream_id: None,
         agent: Some(state.public(core.now_ms())),

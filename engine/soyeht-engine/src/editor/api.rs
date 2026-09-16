@@ -381,6 +381,10 @@ fn editor_pane(workspace: &soyeht_protocol::Workspace, relative_path: &str) -> P
         cols: 0,
         rows: 0,
         record: false,
+        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
+            on: false,
+            failure: None,
+        }),
         pid: None,
         stream_id: None,
         agent: None,

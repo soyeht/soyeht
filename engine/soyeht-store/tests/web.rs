@@ -60,6 +60,7 @@ fn web_pane() -> PaneRecord {
             cols: 80,
             rows: 24,
             record: false,
+            experiment_capture: None,
             pid: None,
             stream_id: None,
             agent: None,

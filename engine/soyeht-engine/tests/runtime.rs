@@ -4885,6 +4885,60 @@ fn creation_retries_and_close_survive_engine_restart_without_resurrection() {
 }
 
 #[test]
+fn experiment_consent_is_separate_idempotent_and_survives_restart() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    let (workspace, pane) = client.create(&rig);
+    let before = client.pane(&pane);
+    assert_eq!(before["experimentCapture"]["on"], false);
+    let replay_recording = before["record"].clone();
+
+    let enable = json!({
+        "paneId":pane,"on":true,"idempotencyKey":"enable-experiment-capture"
+    });
+    let enabled = client.call("pane.experiment.set", enable.clone());
+    assert_eq!(enabled["capture"]["on"], true);
+    assert_eq!(client.call("pane.experiment.set", enable), enabled);
+    let after = client.pane(&pane);
+    assert_eq!(after["experimentCapture"]["on"], true);
+    assert_eq!(after["record"], replay_recording);
+
+    let web = client.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,"mode":"web","idempotencyKey":"experiment-web-pane"
+        }),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let refused = client.request(
+        "pane.experiment.set",
+        json!({
+            "paneId":web,"on":true,"idempotencyKey":"enable-web-experiment"
+        }),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut client = rig.client();
+    let restored = client.pane(&pane);
+    assert_eq!(restored["experimentCapture"]["on"], true);
+    assert_eq!(restored["record"], replay_recording);
+
+    let disabled = client.call(
+        "pane.experiment.set",
+        json!({
+            "paneId":pane,"on":false,"idempotencyKey":"disable-experiment-capture"
+        }),
+    );
+    assert_eq!(disabled["capture"]["on"], false);
+    assert_eq!(client.pane(&pane)["experimentCapture"]["on"], false);
+}
+
+#[test]
 fn web_panes_are_bounded_durable_and_never_enter_the_process_registry() {
     let mut rig = Rig::new();
     let mut client = rig.client();

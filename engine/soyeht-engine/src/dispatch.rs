@@ -242,6 +242,7 @@ impl Core {
         if actor.role == Role::HumanDevice
             && (method == "pane.input"
                 || method == "settings.set"
+                || method == "pane.experiment.set"
                 || method.starts_with("harness.custom.")
                 || method.starts_with("device.") && method != "device.list")
         {
@@ -313,9 +314,12 @@ impl Core {
                 self.workspace_edit(connection, method, params)?
             }
             "pane.create" => self.pane_create(connection, params)?,
-            "pane.close" | "pane.focus" | "pane.rename" | "pane.resize" | "pane.record.set" => {
-                self.pane_edit(connection, method, params)?
-            }
+            "pane.close"
+            | "pane.focus"
+            | "pane.rename"
+            | "pane.resize"
+            | "pane.record.set"
+            | "pane.experiment.set" => self.pane_edit(connection, method, params)?,
             "pane.input" => self.pane_input(connection, params)?,
             "pane.yolo" => self.agent_yolo(connection, params)?,
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,

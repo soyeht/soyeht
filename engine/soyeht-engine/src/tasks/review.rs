@@ -658,6 +658,10 @@ fn reviewer_pane(core: &Core, task: &Task, state: &State, repository: &Path) -> 
         cols: executor.stored.pane.cols,
         rows: executor.stored.pane.rows,
         record: true,
+        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
+            on: false,
+            failure: None,
+        }),
         pid: None,
         stream_id: None,
         agent: Some(state.public(core.now_ms())),
