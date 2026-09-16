@@ -589,7 +589,7 @@ mod tests {
 
     async fn connect(core: &mut Core, capabilities: Value) -> (String, outbox::Receiver) {
         let (sender, mut receiver) = outbox::channel();
-        let connection = core.connect(true, sender).unwrap();
+        let connection = core.connect(true, false, sender).unwrap();
         let challenge = next_json(&mut receiver).await;
         assert_eq!(challenge["method"], "auth.challenge");
         let welcome = reply(
@@ -724,7 +724,7 @@ mod tests {
         let mut core = Core::open(&root).unwrap();
         let (_host, _host_receiver) = connect(&mut core, json!(["web_host"])).await;
         let (sender, mut receiver) = outbox::channel();
-        let second = core.connect(true, sender).unwrap();
+        let second = core.connect(true, false, sender).unwrap();
         let _ = next_json(&mut receiver).await;
         let duplicate = core.dispatch(
             &second,
@@ -740,7 +740,7 @@ mod tests {
         };
         assert_eq!(errors::kind(&duplicate), ErrorKind::Unauthorized);
         let (sender, mut receiver) = outbox::channel();
-        let remote = core.connect(false, sender).unwrap();
+        let remote = core.connect(false, false, sender).unwrap();
         let _ = next_json(&mut receiver).await;
         let rejected = core.dispatch(
             &remote,

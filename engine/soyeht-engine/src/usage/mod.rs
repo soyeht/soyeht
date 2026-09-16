@@ -349,7 +349,7 @@ mod tests {
         core.clock = Arc::new(FixedClock(100_000));
         core.usage = service(vec![payload(25)]);
         let (outbox, _receiver) = crate::outbox::channel();
-        let connection = core.connect(true, outbox).unwrap();
+        let connection = core.connect(true, false, outbox).unwrap();
         core.dispatch(
             &connection,
             json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"client":"usage-test","clientVersion":"1","protocolVersion":1}}),
@@ -406,7 +406,7 @@ mod tests {
             SourceRead::Unavailable,
         ]);
         let (outbox, _receiver) = crate::outbox::channel();
-        let connection = core.connect(true, outbox).unwrap();
+        let connection = core.connect(true, false, outbox).unwrap();
         core.dispatch(
             &connection,
             json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"client":"usage-test","clientVersion":"1","protocolVersion":1}}),
