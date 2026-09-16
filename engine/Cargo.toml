@@ -25,6 +25,8 @@ sha2 = "0.10"
 hmac = "0.12"
 ed25519-dalek = "2"
 url = "2.5"
+core-foundation = "0.9"
+security-framework = "2.11"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
