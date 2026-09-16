@@ -2917,6 +2917,57 @@ fn a_legacy_agent_checkpoint_gets_one_binding_that_survives_the_next_restart() {
 }
 
 #[test]
+fn persistent_per_pane_poll_failure_does_not_starve_the_next_agent() {
+    let rig = Rig::new();
+    let (mut client, first) = rig.agent();
+    let workspace = client.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    let (faulted, survivor) = if first < second {
+        (&first, &second)
+    } else {
+        (&second, &first)
+    };
+    let survivor_session = client.pane(survivor)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let marker = rig.path.join("test-fail-agent-poll");
+    fs::write(&marker, faulted).unwrap();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":survivor,"text":"later-pane-still-serves","idempotencyKey":"poll-isolation"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let served = rig.native_session(&survivor_session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| turn[0] == "later-pane-still-serves");
+        if served && client.pane(faulted)["state"] == "dead" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a persistent earlier-pane failure starved the later pane"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    fs::remove_file(marker).unwrap();
+    assert_eq!(process_instances(&rig).len(), 1);
+    assert!(
+        client.call("pane.transcript", json!({"paneId":faulted}))["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["text"] == "Injected per-pane polling failure")
+    );
+}
+
+#[test]
 fn observed_model_refusal_is_plain_durable_and_does_not_guess_from_generic_errors() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();

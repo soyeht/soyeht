@@ -311,6 +311,7 @@ impl Core {
         if self.agents[pane].state.phase == Phase::Faulted {
             return self.close_agent_processes(pane);
         }
+        inject_per_pane_poll_failure(self, pane)?;
         drop_current_agent_before_poll(self, pane)?;
         self.decode_agent_log(pane)?;
         let saved = self.panes[pane].stored.clone();
@@ -553,6 +554,23 @@ impl Core {
         self.commit_agent(saved, state, changes, None, json!({}))?;
         Ok(())
     }
+}
+
+#[cfg(debug_assertions)]
+fn inject_per_pane_poll_failure(core: &Core, pane: &str) -> Result<()> {
+    let marker = core.directory.join("test-fail-agent-poll");
+    let Ok(target) = std::fs::read_to_string(marker) else {
+        return Ok(());
+    };
+    if target.trim() == pane {
+        return Err(errors::not_found("Injected per-pane polling failure"));
+    }
+    Ok(())
+}
+
+#[cfg(not(debug_assertions))]
+fn inject_per_pane_poll_failure(_core: &Core, _pane: &str) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(debug_assertions)]
