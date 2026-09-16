@@ -128,10 +128,26 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             "engine/tool/src/lib.rs": (
                 "// #[ignore]\n"
                 "#[test]\n#[ignore = \"measured separately\"]\nfn isolated() {}\n"
+                "// #[cfg_attr(not(feature = \"fast\"), ignore)]\n"
+                "#[test]\n#[cfg_attr(not(feature = \"fast\"), ignore)]\nfn conditional() {}\n"
             ),
         }))
-        self.assertEqual(result.tests, 1)
-        self.assertEqual(result.ignored_tests, 1)
+        self.assertEqual(result.tests, 2)
+        self.assertEqual(result.ignored_tests, 2)
+
+    def test_conditional_ignore_increase_trips_verification_ratchet(self):
+        base = gate.metrics(MemoryTree({
+            "engine/tool/src/lib.rs": "#[test]\nfn conditional() {}\n",
+        }))
+        head = gate.metrics(MemoryTree({
+            "engine/tool/src/lib.rs": (
+                "#[test]\n"
+                "#[cfg_attr(not(feature = \"fast\"), ignore)]\n"
+                "fn conditional() {}\n"
+            ),
+        }))
+        self.assertEqual((base.ignored_tests, head.ignored_tests), (0, 1))
+        self.assertTrue(gate.check_verification(base, head, False))
 
 
 if __name__ == "__main__":

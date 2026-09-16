@@ -283,7 +283,15 @@ def count_ignored_tests(path: str, source: str) -> int:
     if Path(path).suffix != ".rs":
         return 0
     clean, _ = mask(source)
-    return len(re.findall(r"#\s*\[\s*ignore(?:\s*=[^]]*)?\s*\]", clean))
+    attributes = re.findall(r"#\s*\[([^]]*)\]", clean)
+    return sum(
+        bool(re.fullmatch(r"\s*ignore(?:\s*=.*)?\s*", attribute))
+        or bool(
+            re.match(r"\s*cfg_attr\s*\(", attribute)
+            and re.search(r"\bignore\b", attribute)
+        )
+        for attribute in attributes
+    )
 
 
 def count_gate_steps(source: str) -> int:

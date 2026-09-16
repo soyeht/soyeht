@@ -145,7 +145,8 @@ neither result substitutes for the other. Before closed batching, that fixture r
 400 frames in two explicit gaps and measured 85.06 percent time coverage. Closed batches of up
 to eight rows retained all 400 with no gap and 100 percent time coverage on the same fixture.
 That 95 percent floor describes the gate's isolated, otherwise idle measurement condition. When
-the same post-batching fixture accidentally ran beside the parallel Rust suite, it retained 365
+the same post-batching fixture ran beside the parallel Rust suite, which was the gate arrangement
+until the isolated step was introduced, it retained 365
 of 400 frames and reported 91.54 percent time coverage. The difference between the 91.25 percent
 frame ratio and time coverage is expected because coverage is measured by elapsed interval. The
 contended result remains part of the evidence because a developer machine is often busy; the
