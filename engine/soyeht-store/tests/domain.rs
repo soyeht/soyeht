@@ -57,6 +57,7 @@ fn pane() -> PaneRecord {
             cols: 80,
             rows: 24,
             record: true,
+            experiment_capture: None,
             pid: None,
             stream_id: None,
             agent: None,

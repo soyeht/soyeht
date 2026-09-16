@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9ee5085271a7f026186f517bca62f0c7788c27818d644e8200072cba62b57764). Do not edit.
+// Generated from contracts/protocol.json (sha256 047c98606a008aa43a54b3db6090084eee774d807e01b7ddc35ad14d4a2b8f10). Do not edit.
 import Foundation
 
 
@@ -164,6 +164,7 @@ public struct Pane: Codable, Sendable {
     public var `cols`: UInt32
     public var `rows`: UInt32
     public var `record`: Bool
+    public var `experimentCapture`: PaneExperimentCapture?
     public var `pid`: UInt32?
     public var `streamId`: Id?
     public var `agent`: AgentSession?
@@ -174,7 +175,7 @@ public struct Pane: Codable, Sendable {
     public var `webSession`: WebSessionState?
     public var `writingKind`: WritingKind?
     public var `writingSection`: WritingSection?
-    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `pid`: UInt32? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
+    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `experimentCapture`: PaneExperimentCapture? = nil, `pid`: UInt32? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
         self.`paneId` = `paneId`
         self.`workspaceId` = `workspaceId`
         self.`name` = `name`
@@ -188,6 +189,7 @@ public struct Pane: Codable, Sendable {
         self.`cols` = `cols`
         self.`rows` = `rows`
         self.`record` = `record`
+        self.`experimentCapture` = `experimentCapture`
         self.`pid` = `pid`
         self.`streamId` = `streamId`
         self.`agent` = `agent`
@@ -604,6 +606,33 @@ public struct PaneRecordSetResult: Codable, Sendable {
     public var `on`: Bool
     public init(`on`: Bool) {
         self.`on` = `on`
+    }
+}
+
+public struct PaneExperimentCapture: Codable, Sendable {
+    public var `on`: Bool
+    public var `failure`: String?
+    public init(`on`: Bool, `failure`: String? = nil) {
+        self.`on` = `on`
+        self.`failure` = `failure`
+    }
+}
+
+public struct PaneExperimentSetParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `on`: Bool
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `on`: Bool, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`on` = `on`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneExperimentSetResult: Codable, Sendable {
+    public var `capture`: PaneExperimentCapture
+    public init(`capture`: PaneExperimentCapture) {
+        self.`capture` = `capture`
     }
 }
 

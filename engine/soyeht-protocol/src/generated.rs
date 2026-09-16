@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9ee5085271a7f026186f517bca62f0c7788c27818d644e8200072cba62b57764). Do not edit.
+// Generated from contracts/protocol.json (sha256 047c98606a008aa43a54b3db6090084eee774d807e01b7ddc35ad14d4a2b8f10). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -236,6 +236,8 @@ pub struct Pane {
     pub rows: u32,
     #[serde(rename = "record")]
     pub record: bool,
+    #[serde(rename = "experimentCapture", skip_serializing_if = "Option::is_none")]
+    pub experiment_capture: Option<PaneExperimentCapture>,
     #[serde(rename = "pid", skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
     #[serde(rename = "streamId", skip_serializing_if = "Option::is_none")]
@@ -565,6 +567,27 @@ pub struct PaneRecordSetParams {
 pub struct PaneRecordSetResult {
     #[serde(rename = "on")]
     pub on: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentCapture {
+    #[serde(rename = "on")]
+    pub on: bool,
+    #[serde(rename = "failure", skip_serializing_if = "Option::is_none")]
+    pub failure: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentSetParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "on")]
+    pub on: bool,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentSetResult {
+    #[serde(rename = "capture")]
+    pub capture: PaneExperimentCapture,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartParams {
@@ -5130,6 +5153,8 @@ pub enum Request {
     PaneStreamUnsubscribe(PaneStreamUnsubscribeParams),
     #[serde(rename = "pane.record.set")]
     PaneRecordSet(PaneRecordSetParams),
+    #[serde(rename = "pane.experiment.set")]
+    PaneExperimentSet(PaneExperimentSetParams),
     #[serde(rename = "device.pair.start")]
     DevicePairStart(DevicePairStartParams),
     #[serde(rename = "device.pair.decide")]
@@ -5401,6 +5426,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "pane.record.set",
         "PaneRecordSetParams",
         "PaneRecordSetResult",
+        true,
+    ),
+    (
+        "pane.experiment.set",
+        "PaneExperimentSetParams",
+        "PaneExperimentSetResult",
         true,
     ),
     (

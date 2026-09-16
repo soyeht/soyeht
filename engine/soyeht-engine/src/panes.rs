@@ -7,7 +7,7 @@ use crate::{
     settings,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource};
+use soyeht_protocol::{Pane, PaneExperimentCapture, PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
@@ -154,6 +154,10 @@ impl Core {
                 .as_u64()
                 .map_or(defaults.rows, |value| value as u32),
             record: agent_mode || defaults.record,
+            experiment_capture: Some(PaneExperimentCapture {
+                on: false,
+                failure: None,
+            }),
             pid: None,
             stream_id: (!agent_mode).then(|| Uuid::new_v4().to_string()),
         };
@@ -237,6 +241,18 @@ impl Core {
                 saved.pane.record = errors::param_bool(params, "on")?;
                 json!({"on":saved.pane.record})
             }
+            "pane.experiment.set" => {
+                if saved.pane.mode != PaneMode::Terminal {
+                    return Err(errors::invalid(
+                        "Experiment capture is available only for raw terminal panes",
+                    ));
+                }
+                saved.pane.experiment_capture = Some(PaneExperimentCapture {
+                    on: errors::param_bool(params, "on")?,
+                    failure: None,
+                });
+                json!({"capture":saved.pane.experiment_capture})
+            }
             "pane.focus" => {
                 let scope =
                     errors::invariant(self.clients.get(connection), "Pane connection disappeared")?
@@ -253,7 +269,10 @@ impl Core {
                 return Err(errors::invalid("Unknown pane mutation"));
             }
         };
-        if matches!(method, "pane.resize" | "pane.record.set") {
+        if matches!(
+            method,
+            "pane.resize" | "pane.record.set" | "pane.experiment.set"
+        ) {
             events.push(("pane.updated".into(), json!({"pane":saved.pane})));
         }
         let mutation = self.mutate(connection, method, params, |tx| {

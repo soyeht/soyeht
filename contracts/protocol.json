@@ -262,6 +262,9 @@
         "record": {
           "type": "boolean"
         },
+        "experimentCapture": {
+          "$ref": "#/$defs/PaneExperimentCapture"
+        },
         "pid": {
           "type": "integer",
           "minimum": 0,
@@ -1027,6 +1030,54 @@
       },
       "required": [
         "on"
+      ],
+      "additionalProperties": true
+    },
+    "PaneExperimentCapture": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        },
+        "failure": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "additionalProperties": true
+    },
+    "PaneExperimentSetParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "on": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "on",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneExperimentSetResult": {
+      "type": "object",
+      "properties": {
+        "capture": {
+          "$ref": "#/$defs/PaneExperimentCapture"
+        }
+      },
+      "required": [
+        "capture"
       ],
       "additionalProperties": true
     },
@@ -10522,6 +10573,15 @@
       },
       "result": {
         "$ref": "#/$defs/PaneRecordSetResult"
+      },
+      "mutation": true
+    },
+    "pane.experiment.set": {
+      "params": {
+        "$ref": "#/$defs/PaneExperimentSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneExperimentSetResult"
       },
       "mutation": true
     },
