@@ -8,8 +8,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
     HarnessEnvironmentIssue, HarnessInfo, HarnessSetupState, ModelInfo, ModelListSource,
-    ProbeResult, limits,
+    ModelRefusal, ProbeResult, limits,
 };
+use soyeht_store::agents::AgentModelRefusal;
 
 fn wire_environment_issue(issue: super::environment::LaunchPathIssue) -> HarnessEnvironmentIssue {
     use super::environment::LaunchPathIssue;
@@ -96,6 +97,37 @@ fn page(items: Vec<Value>, mut fixed: Value, params: &Value) -> Result<Value> {
     }
     fixed["items"] = json!(accepted);
     Ok(fixed)
+}
+
+fn model_items(
+    options: &[soyeht_protocol::ConfigOption],
+    refusals: &[AgentModelRefusal],
+) -> Vec<Value> {
+    options
+        .iter()
+        .find(|option| option.category.as_deref() == Some("model") || option.id == "model")
+        .map(|option| {
+            option
+                .options
+                .iter()
+                .map(|choice| {
+                    let observed_refusal = refusals
+                        .iter()
+                        .find(|refusal| refusal.model_id == choice.value)
+                        .map(|refusal| ModelRefusal {
+                            reason: refusal.reason.clone(),
+                            observed_at: refusal.observed_at.clone(),
+                        });
+                    json!(ModelInfo {
+                        id: choice.value.clone(),
+                        name: choice.name.clone(),
+                        description: choice.description.clone(),
+                        observed_refusal,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl Core {
@@ -193,23 +225,11 @@ impl Core {
         let options = known
             .map(|a| a.state.options.values.clone())
             .unwrap_or_default();
-        let items = options
-            .iter()
-            .find(|o| o.category.as_deref() == Some("model") || o.id == "model")
-            .map(|option| {
-                option
-                    .options
-                    .iter()
-                    .map(|choice| {
-                        json!(ModelInfo {
-                            id: choice.value.clone(),
-                            name: choice.name.clone(),
-                            description: choice.description.clone()
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let refusals = self
+            .store
+            .agent_model_refusals(harness)
+            .map_err(errors::storage)?;
+        let items = model_items(&options, &refusals);
         page(
             items,
             json!({"options":options,"source":if known.is_some() {ModelListSource::NativeSession} else {ModelListSource::NotProbed}}),

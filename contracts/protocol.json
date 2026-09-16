@@ -2551,6 +2551,22 @@
       ],
       "additionalProperties": true
     },
+    "ModelRefusal": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "observedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "observedAt"
+      ],
+      "additionalProperties": true
+    },
     "ModelInfo": {
       "type": "object",
       "properties": {
@@ -2562,6 +2578,9 @@
         },
         "description": {
           "type": "string"
+        },
+        "observedRefusal": {
+          "$ref": "#/$defs/ModelRefusal"
         }
       },
       "required": [
@@ -11900,7 +11919,9 @@
     "writingSidecarBytes": 1048576,
     "writingImageBytes": 2097152,
     "harnessContinuationBytes": 15999,
-    "harnessContinuationMessages": 6
+    "harnessContinuationMessages": 6,
+    "modelRefusals": 256,
+    "modelRefusalReasonBytes": 4096
   },
   "x-settings": {
     "terminal.defaultCols": {

@@ -2916,6 +2916,123 @@ fn a_legacy_agent_checkpoint_gets_one_binding_that_survives_the_next_restart() {
     assert_eq!(rig.database_probe().agent_binding(&pane).unwrap(), repaired);
 }
 
+#[test]
+fn observed_model_refusal_is_plain_durable_and_does_not_guess_from_generic_errors() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"refuse-disabled-model","idempotencyKey":"disabled-model"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let transcript = loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| {
+                message["text"] == "The agent refused model \"model-a\": Model is disabled"
+            })
+        {
+            break transcript;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "refusal was not published: {transcript}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(!transcript.to_string().contains("Internal error:"));
+    let models = client.call(
+        "model.list",
+        json!({"harness":"test-agent","paneId":pane,"limit":64}),
+    );
+    let refused = models["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|model| model["id"] == "model-a")
+        .unwrap();
+    assert_eq!(refused["observedRefusal"]["reason"], "Model is disabled");
+
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"model","value":"model-b","idempotencyKey":"choose-model-b"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let pane_view = client.pane(&pane);
+        let selected = pane_view["agent"]["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|option| option["id"] == "model")
+            .map(|option| &option["currentValue"]);
+        if selected == Some(&json!("model-b")) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "model did not change: {pane_view}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"refuse-generic-error","idempotencyKey":"generic-error"}),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let transcript = loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["text"] == "Agent error: Temporary upstream failure")
+        {
+            break transcript;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "generic error was not published: {transcript}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(!transcript.to_string().contains("Internal error:"));
+    let models = client.call(
+        "model.list",
+        json!({"harness":"test-agent","paneId":pane,"limit":64}),
+    );
+    assert!(
+        models["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|model| model["id"] == "model-b")
+            .unwrap()["observedRefusal"]
+            .is_null()
+    );
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let models = restored.call(
+        "model.list",
+        json!({"harness":"test-agent","paneId":pane,"limit":64}),
+    );
+    assert_eq!(
+        models["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|model| model["id"] == "model-a")
+            .unwrap()["observedRefusal"]["reason"],
+        "Model is disabled"
+    );
+}
+
 fn configure_and_run_first_turn(
     client: &mut Client,
     pane: &str,

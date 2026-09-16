@@ -233,6 +233,14 @@ impl Runtime {
                 .collect();
             text = format!("image-report:{}", Value::Array(images));
         }
+        if text == "refuse-disabled-model" {
+            self.error(id, -32603, "Internal error: Model is disabled");
+            return;
+        }
+        if text == "refuse-generic-error" {
+            self.error(id, -32603, "Internal error: Temporary upstream failure");
+            return;
+        }
         let mut active = self.active.lock().unwrap();
         if active.contains_key(&session) {
             self.error(id, -32600, "Session already has an active turn");

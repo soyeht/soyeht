@@ -58,18 +58,28 @@ public enum HarnessPickerModel {
     return catalogue.models.isEmpty ? .empty : .results
   }
 
+  public static func modelLabel(for model: ModelInfo) -> String {
+    model.observedRefusal == nil ? model.name : "\(model.name) — refused"
+  }
+
+  public static func modelRefusalReason(for model: ModelInfo?) -> String? {
+    model?.observedRefusal?.reason
+  }
+
   public static func sections(
     _ harnesses: [HarnessInfo], query: String = ""
   ) -> [HarnessPickerSection] {
-    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let filtered = harnesses.filter { harness in
-      needle.isEmpty || harness.name.localizedCaseInsensitiveContains(needle)
-        || harness.id.localizedCaseInsensitiveContains(needle)
-    }
+    let filtered = harnesses.filter { matches($0, query: query) }
     return HarnessPickerGroup.allCases.compactMap { group in
       let items = filtered.filter { pickerGroup(for: $0) == group }.sorted(by: ordered)
       return items.isEmpty ? nil : HarnessPickerSection(group: group, items: items)
     }
+  }
+
+  public static func matches(_ harness: HarnessInfo, query: String) -> Bool {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    return needle.isEmpty || harness.name.localizedCaseInsensitiveContains(needle)
+      || harness.id.localizedCaseInsensitiveContains(needle)
   }
 
   public static func defaultHarness(

@@ -86,6 +86,19 @@ import Testing
       catalogue: AgentCatalogue(
         models: [ModelInfo(id: "model", name: "Model")]), loading: false)
       == .results)
+  #expect(HarnessPickerModel.matches(owned, query: "owned"))
+  #expect(!HarnessPickerModel.matches(owned, query: "another"))
+}
+
+@Test func observedModelRefusalStaysVisibleWithoutHidingTheChoice() {
+  let refused = ModelInfo(
+    id: "model-a", name: "Model A",
+    observedRefusal: ModelRefusal(reason: "Model is disabled", observedAt: "2026-09-15T21:00:00Z"))
+
+  #expect(HarnessPickerModel.modelLabel(for: refused) == "Model A — refused")
+  #expect(HarnessPickerModel.modelRefusalReason(for: refused) == "Model is disabled")
+  #expect(
+    HarnessPickerModel.modelLabel(for: ModelInfo(id: "model-b", name: "Model B")) == "Model B")
 }
 
 private func harness(

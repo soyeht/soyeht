@@ -16,6 +16,7 @@ use soyeht_acp::{
     session::{self, Initialization},
 };
 use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole};
+use soyeht_store::agents::AgentModelRefusal;
 use std::path::Path;
 
 pub const PROBED_METHODS: [&str; 3] = ["session/list", "session/load", "session/set_config_option"];
@@ -207,6 +208,52 @@ fn fingerprint(state: &State, version: &str) -> Result<String> {
 }
 
 type NativeResult = std::result::Result<Value, soyeht_acp::RpcError>;
+
+fn clean_agent_error(message: &str) -> String {
+    const INTERNAL_PREFIX: &str = "Internal error:";
+    message
+        .get(..INTERNAL_PREFIX.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(INTERNAL_PREFIX))
+        .and_then(|_| message.get(INTERNAL_PREFIX.len()..))
+        .unwrap_or(message)
+        .trim()
+        .to_owned()
+}
+
+fn selected_model(state: &State) -> Option<&str> {
+    state
+        .options
+        .values
+        .iter()
+        .find(|option| option.category.as_deref() == Some("model") || option.id == "model")
+        .and_then(|option| match &option.current_value {
+            soyeht_protocol::ConfigValue::V0(value) => Some(value.as_str()),
+            _ => None,
+        })
+}
+
+fn observed_model_refusal(code: i32, reason: &str) -> bool {
+    if code != -32603 {
+        return false;
+    }
+    let reason = reason.to_ascii_lowercase();
+    reason.contains("model is disabled")
+        || (reason.contains("package has expired") && reason.contains("unavailable"))
+}
+
+fn bounded_refusal_reason(reason: &str) -> Option<String> {
+    if reason.is_empty() {
+        return None;
+    }
+    let mut end = reason
+        .len()
+        .min(soyeht_protocol::limits::MODEL_REFUSAL_REASON_BYTES);
+    while !reason.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    let reason = reason.get(..end)?.trim_end();
+    (!reason.is_empty()).then(|| reason.to_owned())
+}
 
 fn auth_response(
     state: &mut State,
@@ -490,12 +537,30 @@ fn prompt_response(
             .map_err(native_error)?
             .to_owned(),
         Err(error) => {
+            let clean = clean_agent_error(&error.message);
+            let model = selected_model(state).map(str::to_owned);
+            let refusal = model
+                .as_ref()
+                .filter(|_| observed_model_refusal(error.code, &clean));
+            let text = if let Some(model) = refusal {
+                if let Some(reason) = bounded_refusal_reason(&clean) {
+                    changes.model_refusal = Some(AgentModelRefusal {
+                        harness_id: state.launch.id.clone(),
+                        model_id: model.clone(),
+                        reason,
+                        observed_at: timestamp.to_owned(),
+                    });
+                }
+                format!("The agent refused model \"{model}\": {clean}")
+            } else {
+                format!("Agent error: {clean}")
+            };
             changes.messages.push(transcript::new_message(
                 state,
                 saved.pane.generation,
                 TranscriptRole::System,
                 TranscriptKind::System,
-                error.message,
+                text,
                 true,
             )?);
             "error".into()
@@ -604,4 +669,33 @@ pub fn response(
         return Ok(());
     }
     Err(errors::invalid("Unexpected ACP response context"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clean_agent_error, observed_model_refusal};
+
+    #[test]
+    fn provider_subscription_refusal_keeps_the_actionable_message() {
+        let raw = "Internal error: Your coding plan package has expired and is temporarily unavailable. Renew the subscription on the provider website.";
+        let clean = clean_agent_error(raw);
+
+        assert_eq!(
+            clean,
+            "Your coding plan package has expired and is temporarily unavailable. Renew the subscription on the provider website."
+        );
+        assert!(observed_model_refusal(-32603, &clean));
+    }
+
+    #[test]
+    fn generic_internal_errors_do_not_mark_a_model_as_refused() {
+        let clean = clean_agent_error("Internal error: Temporary upstream failure");
+
+        assert_eq!(clean, "Temporary upstream failure");
+        assert!(!observed_model_refusal(-32603, &clean));
+        assert!(!observed_model_refusal(
+            -32000,
+            "Model is disabled for this account"
+        ));
+    }
 }

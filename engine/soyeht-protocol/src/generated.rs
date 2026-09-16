@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 23a1f32e9386b64aa63c84f2d90a93141f57dcff75935fb4fa7868fde9646279). Do not edit.
+// Generated from contracts/protocol.json (sha256 9ee5085271a7f026186f517bca62f0c7788c27818d644e8200072cba62b57764). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1347,6 +1347,13 @@ pub struct HarnessInfo {
     pub setup_state: Option<HarnessSetupState>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ModelRefusal {
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "observedAt")]
+    pub observed_at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelInfo {
     #[serde(rename = "id")]
     pub id: Id,
@@ -1354,6 +1361,8 @@ pub struct ModelInfo {
     pub name: String,
     #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(rename = "observedRefusal", skip_serializing_if = "Option::is_none")]
+    pub observed_refusal: Option<ModelRefusal>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ModelListSource {

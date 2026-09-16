@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 23a1f32e9386b64aa63c84f2d90a93141f57dcff75935fb4fa7868fde9646279). Do not edit.
+// Generated from contracts/protocol.json (sha256 9ee5085271a7f026186f517bca62f0c7788c27818d644e8200072cba62b57764). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -723,10 +723,16 @@ export interface HarnessInfo {
   "setupState"?: HarnessSetupState;
 }
 
+export interface ModelRefusal {
+  "reason": string;
+  "observedAt": string;
+}
+
 export interface ModelInfo {
   "id": Id;
   "name": string;
   "description"?: string;
+  "observedRefusal"?: ModelRefusal;
 }
 
 export type ModelListSource = "not_probed" | "native_session";

@@ -7,7 +7,7 @@ use soyeht_protocol::{
     PromptOrigin, PromptStatus, StateSource, TranscriptMessage, Workspace, limits,
 };
 use soyeht_store::{
-    agents::{self, NativeRequest, Outgoing},
+    agents::{self, AgentModelRefusal, NativeRequest, Outgoing},
     database::{Error, SCHEMA_VERSION, Store},
     domain::PaneRecord,
 };
@@ -104,6 +104,105 @@ fn outgoing() -> Outgoing {
 }
 fn message(seq: u64, text: &str, complete: bool) -> TranscriptMessage {
     serde_json::from_value(json!({"localId":format!("m-{seq}"),"generation":1,"seq":seq.to_string(),"role":"assistant","kind":"message","text":text,"complete":complete,"promptId":"prompt-1"})).unwrap()
+}
+
+#[test]
+fn observed_model_refusals_are_bounded_upserted_and_survive_reopen() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    store
+        .mutate("test", "refusals", "refusals", |tx| {
+            for index in 0..=limits::MODEL_REFUSALS {
+                let observed_at = chrono::DateTime::from_timestamp(1_700_000_000 + index as i64, 0)
+                    .unwrap()
+                    .to_rfc3339();
+                agents::save_model_refusal(
+                    tx,
+                    &AgentModelRefusal {
+                        harness_id: "test-agent".into(),
+                        model_id: format!("model-{index:03}"),
+                        reason: "Model is disabled".into(),
+                        observed_at,
+                    },
+                )?;
+            }
+            agents::save_model_refusal(
+                tx,
+                &AgentModelRefusal {
+                    harness_id: "test-agent".into(),
+                    model_id: format!("model-{:03}", limits::MODEL_REFUSALS),
+                    reason: "Subscription expired".into(),
+                    observed_at: "2026-09-15T21:00:00Z".into(),
+                },
+            )?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+
+    let store = profile.store();
+    let refusals = agents::model_refusals(&store, "test-agent").unwrap();
+    assert_eq!(refusals.len(), limits::MODEL_REFUSALS);
+    assert!(!refusals.iter().any(|item| item.model_id == "model-000"));
+    assert_eq!(
+        refusals
+            .iter()
+            .find(|item| item.model_id == format!("model-{:03}", limits::MODEL_REFUSALS))
+            .unwrap()
+            .reason,
+        "Subscription expired"
+    );
+}
+
+#[test]
+fn observed_model_refusal_rejects_an_over_budget_reason() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    let result = store.mutate("test", "refusal", "refusal", |tx| {
+        agents::save_model_refusal(
+            tx,
+            &AgentModelRefusal {
+                harness_id: "test-agent".into(),
+                model_id: "model-a".into(),
+                reason: "x".repeat(limits::MODEL_REFUSAL_REASON_BYTES + 1),
+                observed_at: "2026-09-15T21:00:00Z".into(),
+            },
+        )?;
+        Ok((json!({}), vec![]))
+    });
+    assert!(matches!(result, Err(Error::InvalidAgentModelRefusal)));
+}
+
+#[test]
+fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    drop(store);
+
+    let connection = Connection::open(profile.0.join("soyeht.db")).unwrap();
+    connection
+        .execute_batch("DROP TABLE agent_model_refusals; PRAGMA user_version=21;")
+        .unwrap();
+    drop(connection);
+
+    let mut store = profile.store();
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        SCHEMA_VERSION
+    );
+    assert_eq!(
+        store.snapshot().unwrap().sections[0].1[0]["workspaceId"],
+        "w"
+    );
+    assert!(
+        agents::model_refusals(&store, "test-agent")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

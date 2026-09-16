@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 23a1f32e9386b64aa63c84f2d90a93141f57dcff75935fb4fa7868fde9646279). Do not edit.
+// Generated from contracts/protocol.json (sha256 9ee5085271a7f026186f517bca62f0c7788c27818d644e8200072cba62b57764). Do not edit.
 import Foundation
 
 
@@ -1482,14 +1482,25 @@ public struct HarnessInfo: Codable, Sendable {
     }
 }
 
+public struct ModelRefusal: Codable, Sendable {
+    public var `reason`: String
+    public var `observedAt`: String
+    public init(`reason`: String, `observedAt`: String) {
+        self.`reason` = `reason`
+        self.`observedAt` = `observedAt`
+    }
+}
+
 public struct ModelInfo: Codable, Sendable {
     public var `id`: Id
     public var `name`: String
     public var `description`: String?
-    public init(`id`: Id, `name`: String, `description`: String? = nil) {
+    public var `observedRefusal`: ModelRefusal?
+    public init(`id`: Id, `name`: String, `description`: String? = nil, `observedRefusal`: ModelRefusal? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`description` = `description`
+        self.`observedRefusal` = `observedRefusal`
     }
 }
 
