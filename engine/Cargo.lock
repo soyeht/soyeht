@@ -1134,6 +1134,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "soyeht-pane-state"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+ "soyeht-protocol",
+]
+
+[[package]]
 name = "soyeht-protocol"
 version = "0.1.0"
 dependencies = [
