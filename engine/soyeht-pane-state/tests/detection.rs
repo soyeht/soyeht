@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use soyeht_pane_state::{
-    Confidence, Detection, Detector, Error, GroundTruthLabel, HarnessIdentity, ObservationFrame,
-    ObservationReason, RecordedRow, RegexBaseline,
+    Confidence, Detection, Detector, Error, GroundTruthLabel, GroundTruthProvenance,
+    HarnessIdentity, ObservationFrame, ObservationReason, RecordedRow, RegexBaseline,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -173,6 +173,7 @@ fn observations_and_labels_are_bounded_and_have_distinct_row_kinds() {
         sequence: 2,
         state: PaneState::Idle,
         source: StateSource::Protocol,
+        provenance: GroundTruthProvenance::protocol(1),
     };
     assert_eq!(RecordedRow::Label(label.clone()).validate(), Ok(()));
     let observation_json = serde_json::to_value(RecordedRow::Observation(observation.clone()))
@@ -199,12 +200,26 @@ fn observations_and_labels_are_bounded_and_have_distinct_row_kinds() {
         Err(Error::Empty("foreground process"))
     );
 
-    let mut invalid_label = label;
+    let mut invalid_label = label.clone();
     invalid_label.state = PaneState::Unknown;
     assert_eq!(invalid_label.validate(), Err(Error::InvalidLabelState));
     invalid_label.state = PaneState::Idle;
     invalid_label.source = StateSource::Screen;
     assert_eq!(invalid_label.validate(), Err(Error::InvalidLabelSource));
+
+    let mut claimed_hook = label.clone();
+    claimed_hook.source = StateSource::Hook;
+    assert_eq!(claimed_hook.validate(), Err(Error::InvalidLabelSource));
+    claimed_hook.provenance = GroundTruthProvenance::session_hook(1, "a".repeat(64));
+    assert_eq!(claimed_hook.validate(), Ok(()));
+    claimed_hook.provenance = GroundTruthProvenance::session_hook(0, "a".repeat(64));
+    assert_eq!(claimed_hook.validate(), Err(Error::InvalidLabelSource));
+    claimed_hook.provenance = GroundTruthProvenance::session_hook(1, "A".repeat(64));
+    assert_eq!(claimed_hook.validate(), Err(Error::InvalidLabelSource));
+
+    let mut claimed_protocol = label;
+    claimed_protocol.provenance = GroundTruthProvenance::session_hook(1, "a".repeat(64));
+    assert_eq!(claimed_protocol.validate(), Err(Error::InvalidLabelSource));
     assert_eq!(
         Confidence::from_basis_points(10_001),
         Err(Error::InvalidConfidence)

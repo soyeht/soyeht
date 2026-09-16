@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
+// Generated from contracts/protocol.json (sha256 b3fde6a399151997c5d6bc05f346fc719b5e8f3de05db152b319f2a4426fd28b). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -5184,6 +5184,33 @@ pub struct HarnessEnvironmentVariable {
     #[serde(rename = "value")]
     pub value: String,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ExperimentHookEvent {
+    #[serde(rename = "UserPromptSubmit")]
+    UserPromptSubmit,
+    #[serde(rename = "PermissionRequest")]
+    PermissionRequest,
+    #[serde(rename = "PostToolUse")]
+    PostToolUse,
+    #[serde(rename = "PostToolUseFailure")]
+    PostToolUseFailure,
+    #[serde(rename = "Stop")]
+    Stop,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentHookParams {
+    #[serde(rename = "event")]
+    pub event: ExperimentHookEvent,
+    #[serde(rename = "capability")]
+    pub capability: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneExperimentHookResult {
+    #[serde(rename = "recorded")]
+    pub recorded: bool,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -5427,6 +5454,8 @@ pub enum Request {
     WritingBeatPut(WritingBeatPutParams),
     #[serde(rename = "writing.beat.delete")]
     WritingBeatDelete(WritingBeatDeleteParams),
+    #[serde(rename = "pane.experiment.hook")]
+    PaneExperimentHook(PaneExperimentHookParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -5917,6 +5946,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "writing.beat.delete",
         "WritingBeatDeleteParams",
         "WritingBeatResult",
+        true,
+    ),
+    (
+        "pane.experiment.hook",
+        "PaneExperimentHookParams",
+        "PaneExperimentHookResult",
         true,
     ),
 ];

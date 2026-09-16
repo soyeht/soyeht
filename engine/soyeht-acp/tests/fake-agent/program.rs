@@ -83,7 +83,7 @@ impl Runtime {
             return;
         }
         let servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
-        let session = Session::new(cwd.into(), servers);
+        let session = Session::new(cwd.into(), servers, params.get("_meta").cloned());
         let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
             Ok(mcp) => mcp,
             Err(_) => {
@@ -128,6 +128,7 @@ impl Runtime {
         match Session::load(&self.settings, session_id) {
             Ok(mut session) => {
                 session.mcp_servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
+                session.session_meta = params.get("_meta").cloned();
                 let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
                     Ok(mcp) => mcp,
                     Err(_) => {

@@ -3,7 +3,10 @@ use crate::{
     errors::{self, Result},
     pane_observations::{ObservationRecorder, SegmentStore},
 };
-use soyeht_pane_state::{EngineBuild, GroundTruthLabel, HarnessIdentity, ObservationPaneKind};
+use soyeht_pane_state::{
+    EngineBuild, GroundTruthChannel, GroundTruthLabel, GroundTruthProvenance, HarnessIdentity,
+    ObservationPaneKind,
+};
 use soyeht_protocol::{PaneMode, StateSource};
 use std::path::Path;
 
@@ -41,7 +44,13 @@ impl AgentCapture {
         &self.harness
     }
 
-    fn record(&mut self, timestamp_ms: i64, state: soyeht_protocol::PaneState) -> Result<()> {
+    fn record(
+        &mut self,
+        timestamp_ms: i64,
+        state: soyeht_protocol::PaneState,
+        source: StateSource,
+        provenance: GroundTruthProvenance,
+    ) -> Result<()> {
         let label = GroundTruthLabel {
             pane_id: self.pane_id.clone(),
             pane_kind: ObservationPaneKind::Agent,
@@ -49,7 +58,8 @@ impl AgentCapture {
             timestamp_ms,
             sequence: self.next_sequence,
             state,
-            source: StateSource::Protocol,
+            source,
+            provenance,
         };
         self.recorder.record_label(label)?;
         self.next_sequence = self
@@ -94,6 +104,7 @@ impl Core {
             return Ok(());
         }
         let state = pane.stored.pane.state.clone();
+        let generation = pane.stored.pane.generation;
         let expected_harness = self
             .agents
             .get(pane_id)
@@ -130,7 +141,58 @@ impl Core {
         let failure = self
             .agent_captures
             .get_mut(pane_id)
-            .and_then(|capture| capture.record(timestamp_ms, state).err())
+            .and_then(|capture| {
+                capture
+                    .record(
+                        timestamp_ms,
+                        state,
+                        StateSource::Protocol,
+                        GroundTruthProvenance {
+                            channel: GroundTruthChannel::AcpProtocol,
+                            session_generation: generation,
+                            credential_sha256: None,
+                        },
+                    )
+                    .err()
+            })
+            .map(|error| error.to_string());
+        if let Some(failure) = failure {
+            self.fail_experiment_capture(pane_id, Some(failure))?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn record_agent_hook_label(
+        &mut self,
+        pane_id: &str,
+        state: soyeht_protocol::PaneState,
+        credential_sha256: String,
+    ) -> Result<()> {
+        let generation = self
+            .panes
+            .get(pane_id)
+            .ok_or_else(|| errors::internal("Captured agent pane disappeared"))?
+            .stored
+            .pane
+            .generation;
+        let timestamp_ms = self.now_ms();
+        let failure = self
+            .agent_captures
+            .get_mut(pane_id)
+            .and_then(|capture| {
+                capture
+                    .record(
+                        timestamp_ms,
+                        state,
+                        StateSource::Hook,
+                        GroundTruthProvenance {
+                            channel: GroundTruthChannel::SessionHookLocalRpc,
+                            session_generation: generation,
+                            credential_sha256: Some(credential_sha256),
+                        },
+                    )
+                    .err()
+            })
             .map(|error| error.to_string());
         if let Some(failure) = failure {
             self.fail_experiment_capture(pane_id, Some(failure))?;

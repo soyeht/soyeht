@@ -256,10 +256,14 @@ impl Core {
                     .client
                     .request(
                         "session/new",
-                        soyeht_acp::client::new_session_with_mcp(
-                            &candidate.saved.pane.cwd,
-                            &servers,
-                        ),
+                        super::hooks::session_parameters(
+                            &self.directory,
+                            &candidate.state,
+                            soyeht_acp::client::new_session_with_mcp(
+                                &candidate.saved.pane.cwd,
+                                &servers,
+                            ),
+                        )?,
                         "switch:open",
                         self.now_ms() as u64,
                     )

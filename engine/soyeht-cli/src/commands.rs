@@ -2,7 +2,10 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
 use soyeht_protocol::*;
-use std::path::PathBuf;
+use std::{
+    io::{self, Read},
+    path::PathBuf,
+};
 use uuid::Uuid;
 
 use crate::{editor_commands, task_commands};
@@ -77,8 +80,7 @@ fn options(rest: &[&str], allowed: &[(&str, &str)]) -> Result<Value> {
 pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
     let mut args: Vec<_> = args.iter().map(String::as_str).collect();
     let mut key = Uuid::new_v4().to_string();
-    // Read the optional suffix without treating literal prompt text or a
-    // configuration value as a command-line flag.
+    // Read the optional suffix without treating prompt text or a value as a flag.
     if args.len() >= 2 && args[args.len() - 2] == "--idempotency-key" {
         key = args
             .last()
@@ -88,6 +90,7 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
     }
     match args.as_slice() {
         ["status"] => rpc::<EngineStatusResult>(client, "engine.status", json!({})),
+        ["__experiment-hook", capability] => experiment_hook(client, capability),
         ["pane", "list"] => {
             Ok(json!({"items":client.snapshot()?.sections.remove("panes").unwrap_or_default()}))
         }
@@ -193,6 +196,34 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
         ["loop", rest @ ..] => task_commands::execute_loop(client, rest, &key),
         _ => Err(invalid(USAGE)),
     }
+}
+
+fn experiment_hook(client: &mut Client, capability: &str) -> Result<Value> {
+    const MAX_HOOK_INPUT_BYTES: u64 = 64 * 1024;
+    let mut bytes = Vec::new();
+    io::stdin()
+        .take(MAX_HOOK_INPUT_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_HOOK_INPUT_BYTES {
+        return Err(invalid("Hook input exceeds its bound"));
+    }
+    let input: Value = serde_json::from_slice(&bytes)?;
+    let event = input["hook_event_name"]
+        .as_str()
+        .ok_or_else(|| invalid("Hook input has no event name"))?;
+    let event: ExperimentHookEvent =
+        serde_json::from_value(json!(event)).map_err(|_| invalid("Unsupported hook event"))?;
+    let _: PaneExperimentHookResult = client.request(
+        "pane.experiment.hook",
+        serde_json::to_value(PaneExperimentHookParams {
+            event,
+            capability: capability.into(),
+            idempotency_key: Uuid::new_v4().to_string(),
+        })?,
+    )?;
+    // Command hooks treat a JSON object on stdout as a control response. An
+    // empty object records the event without changing or blocking the turn.
+    Ok(json!({}))
 }
 
 fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {

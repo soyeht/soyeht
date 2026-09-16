@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a2331d88db3def1071f2a5fc9cc84f32bc8b89dec808c3856bc146aca29e845a). Do not edit.
+// Generated from contracts/protocol.json (sha256 b3fde6a399151997c5d6bc05f346fc719b5e8f3de05db152b319f2a4426fd28b). Do not edit.
 import Foundation
 
 
@@ -5730,6 +5730,32 @@ public struct HarnessEnvironmentVariable: Codable, Sendable {
     public init(`key`: String, `value`: String) {
         self.`key` = `key`
         self.`value` = `value`
+    }
+}
+
+public enum ExperimentHookEvent: String, Codable, Sendable {
+    case `user_prompt_submit` = "UserPromptSubmit"
+    case `permission_request` = "PermissionRequest"
+    case `post_tool_use` = "PostToolUse"
+    case `post_tool_use_failure` = "PostToolUseFailure"
+    case `stop` = "Stop"
+}
+
+public struct PaneExperimentHookParams: Codable, Sendable {
+    public var `event`: ExperimentHookEvent
+    public var `capability`: String
+    public var `idempotencyKey`: Id
+    public init(`event`: ExperimentHookEvent, `capability`: String, `idempotencyKey`: Id) {
+        self.`event` = `event`
+        self.`capability` = `capability`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneExperimentHookResult: Codable, Sendable {
+    public var `recorded`: Bool
+    public init(`recorded`: Bool) {
+        self.`recorded` = `recorded`
     }
 }
 

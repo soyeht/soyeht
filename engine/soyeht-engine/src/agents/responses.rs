@@ -74,17 +74,29 @@ fn open(
             state,
             changes,
             "session/load",
-            client::load_session_with_mcp(&saved.pane.cwd, &id, &servers),
+            super::hooks::session_parameters(
+                runtime.data_directory,
+                state,
+                client::load_session_with_mcp(&saved.pane.cwd, &id, &servers),
+            )?,
             "load",
             runtime.now_ms,
         )
     } else {
+        // A hook capability belongs to one native session. Rotating before
+        // session/new makes the prior session's command unusable immediately,
+        // including the recovery path after session/load reports it missing.
+        state.rotate_hook_binding()?;
         state.phase = Phase::Opening;
         call(
             state,
             changes,
             "session/new",
-            client::new_session_with_mcp(&saved.pane.cwd, &servers),
+            super::hooks::session_parameters(
+                runtime.data_directory,
+                state,
+                client::new_session_with_mcp(&saved.pane.cwd, &servers),
+            )?,
             "open",
             runtime.now_ms,
         )

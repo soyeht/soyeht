@@ -944,6 +944,7 @@ mod tests {
                 sequence: 1,
                 state: PaneState::Working,
                 source: StateSource::Protocol,
+                provenance: soyeht_pane_state::GroundTruthProvenance::protocol(1),
             }))
             .unwrap();
         second

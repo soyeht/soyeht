@@ -1,9 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use soyeht_pane_state::{
-    DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, Error, GroundTruthLabel, HarnessIdentity,
-    MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap, ObservationReason, RecordedRow,
-    SegmentEnd, SegmentMetadata, decode_segment, encode_row, segment_schema_version,
+    DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, Error, GroundTruthLabel,
+    GroundTruthProvenance, HarnessIdentity, MAX_SEGMENT_BYTES, ObservationFrame, ObservationGap,
+    ObservationReason, RecordedRow, SegmentEnd, SegmentMetadata, decode_segment, encode_row,
+    segment_schema_version,
 };
 use soyeht_protocol::{PaneState, StateSource};
 
@@ -51,6 +52,7 @@ fn label(sequence: u64) -> GroundTruthLabel {
         sequence,
         state: PaneState::Working,
         source: StateSource::Protocol,
+        provenance: GroundTruthProvenance::protocol(1),
     }
 }
 

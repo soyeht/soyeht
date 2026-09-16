@@ -10558,6 +10558,50 @@
         "value"
       ],
       "additionalProperties": true
+    },
+    "ExperimentHookEvent": {
+      "type": "string",
+      "enum": [
+        "UserPromptSubmit",
+        "PermissionRequest",
+        "PostToolUse",
+        "PostToolUseFailure",
+        "Stop"
+      ]
+    },
+    "PaneExperimentHookParams": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/ExperimentHookEvent"
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "event",
+        "capability",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneExperimentHookResult": {
+      "type": "object",
+      "properties": {
+        "recorded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "recorded"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": 1,
@@ -11639,6 +11683,15 @@
       },
       "result": {
         "$ref": "#/$defs/WritingBeatResult"
+      },
+      "mutation": true
+    },
+    "pane.experiment.hook": {
+      "params": {
+        "$ref": "#/$defs/PaneExperimentHookParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneExperimentHookResult"
       },
       "mutation": true
     }

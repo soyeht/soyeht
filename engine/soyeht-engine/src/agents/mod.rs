@@ -10,6 +10,7 @@ pub mod environment;
 pub mod failures;
 pub mod filesystem;
 pub mod forms;
+pub mod hooks;
 pub mod lifecycle;
 pub mod mcp;
 pub mod methods;

@@ -1,7 +1,8 @@
 use crate::errors::{self, Result};
 use soyeht_pane_state::{
-    CursorPosition, GroundTruthLabel, HarnessIdentity, MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES,
-    MAX_TITLE_BYTES, ObservationFrame, ObservationGap, ObservationPaneKind, ObservationReason,
+    CursorPosition, GroundTruthLabel, GroundTruthProvenance, HarnessIdentity,
+    MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, MAX_TITLE_BYTES, ObservationFrame, ObservationGap,
+    ObservationPaneKind, ObservationReason,
 };
 use soyeht_protocol::{PaneState, StateSource};
 use std::collections::VecDeque;
@@ -178,6 +179,7 @@ impl TerminalProjection {
         timestamp_ms: i64,
         state: PaneState,
         source: StateSource,
+        provenance: GroundTruthProvenance,
     ) -> Result<GroundTruthLabel> {
         let sequence = self.next_sequence;
         let label = GroundTruthLabel {
@@ -188,6 +190,7 @@ impl TerminalProjection {
             sequence,
             state,
             source,
+            provenance,
         };
         label.validate()?;
         self.next_sequence = sequence
@@ -427,7 +430,12 @@ mod tests {
 
         let before = projection.process(1, b"before").unwrap().unwrap();
         let label = projection
-            .label(2, PaneState::WaitingForYou, StateSource::Hook)
+            .label(
+                2,
+                PaneState::WaitingForYou,
+                StateSource::Hook,
+                GroundTruthProvenance::session_hook(1, "a".repeat(64)),
+            )
             .unwrap();
         let after = projection.process(3, b" after").unwrap().unwrap();
 
@@ -452,10 +460,20 @@ mod tests {
         .unwrap();
 
         projection
-            .label(1, PaneState::Unknown, StateSource::Hook)
+            .label(
+                1,
+                PaneState::Unknown,
+                StateSource::Hook,
+                GroundTruthProvenance::session_hook(1, "a".repeat(64)),
+            )
             .unwrap_err();
         projection
-            .label(1, PaneState::Working, StateSource::Screen)
+            .label(
+                1,
+                PaneState::Working,
+                StateSource::Screen,
+                GroundTruthProvenance::protocol(1),
+            )
             .unwrap_err();
 
         let frame = projection.process(2, b"still-seven").unwrap().unwrap();

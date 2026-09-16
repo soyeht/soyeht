@@ -19,8 +19,9 @@ pub use metrics::{
     MetricsReport, Rate, StateDurationMetrics, StateMetrics, evaluate, evaluate_with_omitted_panes,
 };
 pub use model::{
-    Confidence, CursorPosition, Detection, Detector, GroundTruthLabel, HarnessIdentity,
-    MAX_FOREGROUND_PROCESS_BYTES, MAX_HARNESS_ID_BYTES, MAX_HARNESS_VERSION_BYTES,
-    MAX_PANE_ID_BYTES, MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, MAX_TITLE_BYTES, ObservationFrame,
-    ObservationGap, ObservationPaneKind, ObservationReason, RecordedRow,
+    Confidence, CursorPosition, Detection, Detector, GroundTruthChannel, GroundTruthLabel,
+    GroundTruthProvenance, HarnessIdentity, MAX_FOREGROUND_PROCESS_BYTES, MAX_HARNESS_ID_BYTES,
+    MAX_HARNESS_VERSION_BYTES, MAX_PANE_ID_BYTES, MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES,
+    MAX_TITLE_BYTES, ObservationFrame, ObservationGap, ObservationPaneKind, ObservationReason,
+    RecordedRow,
 };
