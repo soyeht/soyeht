@@ -4,6 +4,7 @@
 mod baseline;
 mod error;
 mod format;
+mod metrics;
 mod model;
 
 pub use baseline::RegexBaseline;
@@ -12,6 +13,7 @@ pub use format::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, MAX_DATASET_ROW_BYTES, MAX_RETAINED_SEGMENTS,
     MAX_SEGMENT_BYTES, ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment, encode_row,
 };
+pub use metrics::{HarnessMetrics, LatencyMetrics, MetricsReport, Rate, StateMetrics, evaluate};
 pub use model::{
     Confidence, CursorPosition, Detection, Detector, GroundTruthLabel, HarnessIdentity,
     MAX_FOREGROUND_PROCESS_BYTES, MAX_HARNESS_ID_BYTES, MAX_HARNESS_VERSION_BYTES,
