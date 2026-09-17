@@ -32,7 +32,7 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
 
   func attach(_ view: TerminalView) {
     view.terminalDelegate = self
-    client.terminalOutput = { [weak self, weak view] bytes, reset in
+    client.claimTerminalOutput(owner: self) { [weak self, weak view] bytes, reset in
       guard let self, let view else { return }
       feeding = true
       defer { feeding = false }
@@ -57,8 +57,8 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   }
 
   func detach(_ view: TerminalView) {
-    view.terminalDelegate = nil
-    client.terminalOutput = nil
+    if view.terminalDelegate === self { view.terminalDelegate = nil }
+    client.releaseTerminalOutput(owner: self)
   }
 
   public func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {

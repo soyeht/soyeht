@@ -65,6 +65,23 @@ func appBarVisibilityPersistsWithoutPersistingTheSelectedView() {
   #expect(selectedTerminal.map(\.paneId) == ["terminal", "agent", "text"])
 }
 
+@Test @MainActor func paneUpdatePreservesVisiblePaneOrder() {
+  let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+  let left = pane("left", mode: .terminal)
+  let right = pane("right", mode: .terminal)
+  client.upsertPane(left)
+  client.upsertPane(right)
+
+  var updatedLeft = left
+  updatedLeft.state = .working
+  updatedLeft.phrase = "Working"
+  client.upsertPane(updatedLeft)
+
+  #expect(client.panes.map(\.paneId) == ["left", "right"])
+  #expect(client.panes.first?.state == .working)
+  #expect(client.panes.first?.phrase == "Working")
+}
+
 private func pane(
   _ paneId: String, mode: PaneMode, kind: WritingKind? = nil,
   section: WritingSection? = nil
