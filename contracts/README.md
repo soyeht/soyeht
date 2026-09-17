@@ -10,6 +10,8 @@ Methods whose parameters declare `paneId` use it as their operation-log route.
 `x-paneNonRouteIds` lists every other parameter name whose type is `Id` or an
 array of `Id`. Generation fails when an identifier name is neither the route
 nor explicitly classified, and also fails when a listed name becomes unused.
+This exhaustiveness covers only `Id`-typed parameters: a future pane route
+represented as a plain string under another name must be declared separately.
 
 `profiles.json` is the single source for installed profile values. It defines
 the Dev data directory, socket names, TCP port and launchd labels. The same
