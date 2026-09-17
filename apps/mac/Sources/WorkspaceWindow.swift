@@ -51,7 +51,11 @@ struct WorkspaceWindow: View {
         workspaceContent
       }
     }
-    .padding(EdgeInsets(top: 14, leading: 18, bottom: 18, trailing: 18))
+    .padding(
+      EdgeInsets(
+        top: MacTheme.Space.x8, leading: MacTheme.Space.x18,
+        bottom: MacTheme.Space.x18, trailing: MacTheme.Space.x18)
+    )
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
     .environment(editorInputPreferences)
     .environment(webLinkPreferences)
@@ -437,6 +441,13 @@ private struct PairedPhoneRow: View {
 }
 
 private struct WorkspaceTopBar: View {
+  private var tabShadowClearance: CGFloat {
+    let elevation = MacTheme.Elevation.pill
+    return max(
+      elevation.lightOffset + elevation.lightBlur,
+      elevation.darkOffset + elevation.darkBlur)
+  }
+
   @Bindable var client: EngineClient
   let workspaceId: String?
   let onSelectWorkspace: (String) -> Void
@@ -462,11 +473,27 @@ private struct WorkspaceTopBar: View {
               name: workspace.name, selected: workspace.workspaceId == workspaceId,
               action: { onSelectWorkspace(workspace.workspaceId) })
           }
-        }.padding(.horizontal, 5).padding(.vertical, 5)
+        }
+        .padding(tabShadowClearance)
       }
+      .frame(height: 36 + (tabShadowClearance * 2))
       .clipped()
-      .overlay(alignment: .trailing) {
-        MacTheme.canvas.frame(width: MacTheme.Space.x18).allowsHitTesting(false)
+      .overlay {
+        HStack(spacing: 0) {
+          LinearGradient(
+            colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
+            startPoint: .leading, endPoint: .trailing
+          )
+          .frame(width: MacTheme.Space.x18)
+          Spacer(minLength: 0)
+          LinearGradient(
+            colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
+            startPoint: .leading, endPoint: .trailing
+          )
+          .frame(width: MacTheme.Space.x18)
+        }
+        .frame(height: 36 + (tabShadowClearance * 2))
+        .allowsHitTesting(false)
       }
 
       Button(action: onNewPane) {
@@ -475,16 +502,14 @@ private struct WorkspaceTopBar: View {
       }
       .help("Open a terminal or agent pane").disabled(!client.connected)
       Spacer(minLength: MacTheme.Space.x10)
-      HStack(spacing: MacTheme.Space.x6) {
-        Circle().fill(client.connected ? MacTheme.success : MacTheme.warning).frame(
-          width: 7, height: 7)
-        Text(client.connected ? "Connected" : "Reconnecting")
-          .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
-          .foregroundStyle(MacTheme.secondary)
+      if !client.connected {
+        HStack(spacing: MacTheme.Space.x6) {
+          Circle().fill(MacTheme.warning).frame(width: 7, height: 7)
+          Text("Reconnecting")
+            .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
+            .foregroundStyle(MacTheme.secondary)
+        }
       }
-      Button(action: onTasks) {
-        Label("Tasks", systemImage: "cpu")
-      }.buttonStyle(NeoPillButtonStyle())
     }.frame(height: 42)
   }
 }
