@@ -20,6 +20,7 @@ use std::{
     os::unix::{fs::PermissionsExt, fs::symlink, net::UnixStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
+    sync::{Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
 };
@@ -31,8 +32,18 @@ const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
 // This is a negative observation window, so increasing it would slow the
 // passing suite and weaken the assertion that backpressure remains bounded.
 const BACKPRESSURE_OBSERVATION_WINDOW: Duration = Duration::from_secs(6);
+// Every Rig owns an engine and supervisor process. Keep those process-heavy
+// controls in one queue without reducing the parallelism of pure tests.
+static RUNTIME_RIG_SLOT: Mutex<()> = Mutex::new(());
+
+fn runtime_rig_slot() -> MutexGuard<'static, ()> {
+    RUNTIME_RIG_SLOT
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 struct Rig {
+    _runtime_slot: MutexGuard<'static, ()>,
     path: PathBuf,
     engine: Option<Child>,
     ptyd: Child,
@@ -740,8 +751,25 @@ fn presentation_image_is_content_addressed_recoverable_and_idempotent() {
     assert_eq!(retry.call("writing.format", params), formatted);
     assert_eq!(fs::read_dir(asset.parent().unwrap()).unwrap().count(), 1);
 }
+
+#[test]
+fn runtime_rig_slot_keeps_owner_failure_visible_and_recovers_the_queue() {
+    let failed_owner = thread::spawn(|| {
+        let _runtime_slot = runtime_rig_slot();
+        panic!("intentional runtime slot owner failure");
+    })
+    .join();
+
+    assert!(
+        failed_owner.is_err(),
+        "the owner failure must stay observable"
+    );
+    drop(runtime_rig_slot());
+}
+
 impl Rig {
     fn new() -> Self {
+        let runtime_slot = runtime_rig_slot();
         let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         install_fake_worktrunk(&path);
@@ -756,6 +784,7 @@ impl Rig {
             .spawn()
             .expect("build workspace binaries before engine integration tests");
         let mut rig = Self {
+            _runtime_slot: runtime_slot,
             path,
             engine: None,
             ptyd,
