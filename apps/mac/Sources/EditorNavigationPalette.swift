@@ -62,7 +62,13 @@ struct EditorNavigationPalette: View {
     .padding(MacTheme.Space.x14).frame(width: 620).frame(maxHeight: 520)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
     .task(id: searchKey) { await updateResults() }
-    .onAppear { queryFocused = true }
+    .task {
+      // The overlay is inserted in the same update that opens the palette. Wait until SwiftUI
+      // has installed its field before assigning focus; an onAppear assignment is too early.
+      await Task.yield()
+      guard mode != nil else { return }
+      queryFocused = true
+    }
     .onExitCommand { mode = nil }
     .accessibilityIdentifier("editor-navigation-palette")
   }
