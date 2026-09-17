@@ -211,7 +211,10 @@ fn every_row_is_bound_to_exactly_one_source_build() {
 #[test]
 fn report_comparability_requires_the_same_engine_builds() {
     let dataset = EvaluationDataset::new(vec![source('a')], rows(), vec![]).unwrap();
-    let report = DetectorRegistry::shipped().unwrap().evaluate(&dataset).unwrap();
+    let report = DetectorRegistry::shipped()
+        .unwrap()
+        .evaluate(&dataset)
+        .unwrap();
     let mut different_build = report.clone();
     different_build.engine_builds = vec![build('b')];
 
@@ -222,7 +225,10 @@ fn report_comparability_requires_the_same_engine_builds() {
 #[test]
 fn report_comparability_requires_the_same_counts() {
     let dataset = EvaluationDataset::new(vec![source('a')], rows(), vec![]).unwrap();
-    let report = DetectorRegistry::shipped().unwrap().evaluate(&dataset).unwrap();
+    let report = DetectorRegistry::shipped()
+        .unwrap()
+        .evaluate(&dataset)
+        .unwrap();
     let mut different_counts = report.clone();
     different_counts.counts.rows += 1;
 
