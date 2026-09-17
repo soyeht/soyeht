@@ -79,7 +79,7 @@ struct EditorHistorySheet: View {
           Text(version.author.name)
             .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
           Spacer()
-          Text("r\(version.revision)").font(MacTheme.mono(MacTheme.TypeScale.micro))
+          Text("r\(identifier: version.revision)").font(MacTheme.mono(MacTheme.TypeScale.micro))
         }
         Text(historyTime(version.createdAt))
           .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
@@ -237,8 +237,10 @@ private struct EditorVersionPreview: View {
             .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .topLeading)
         }
         if viewport.toLine < viewport.file.lineCount {
-          Text("Preview limited to \(viewport.toLine) of \(viewport.file.lineCount) lines")
-            .font(MacTheme.chrome(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
+          Text(
+            "Preview limited to \(identifier: viewport.toLine) of \(viewport.file.lineCount) lines"
+          )
+          .font(MacTheme.chrome(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
         }
       } else {
         Text(placeholder)

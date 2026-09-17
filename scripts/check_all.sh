@@ -57,6 +57,8 @@ fi
 bash scripts/check_swift.sh
 python3 -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'
 python3 scripts/check_mac_text_fonts.py
+python3 -m unittest discover -s scripts -p 'test_check_mac_identifier_text.py'
+python3 scripts/check_mac_identifier_text.py
 python3 -m unittest discover -s scripts -p 'test_check_mac_view_colors.py'
 python3 scripts/check_mac_view_colors.py
 swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources

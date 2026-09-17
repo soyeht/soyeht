@@ -266,7 +266,8 @@ private struct BeatEditorSheet: View {
         Picker("Scene", selection: $sceneId) {
           Text("No scene").tag(String?.none)
           ForEach(scenes, id: \.sceneId) { scene in
-            Text("Scene \(scene.ordinal + 1) · \(scene.heading)").tag(String?.some(scene.sceneId))
+            Text("Scene \(identifier: scene.ordinal + 1) · \(scene.heading)")
+              .tag(String?.some(scene.sceneId))
           }
         }
       }
