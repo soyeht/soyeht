@@ -722,7 +722,7 @@ private struct TaskDetailSheet: View {
     DetailGroup(title: "ATTEMPTS") {
       ForEach(detail?.attempts ?? [], id: \.n) { attempt in
         VStack(alignment: .leading, spacing: 3) {
-          Text("Attempt \(attempt.n) · \(attempt.harness) · \(attempt.model)").font(
+          Text("Attempt \(identifier: attempt.n) · \(attempt.harness) · \(attempt.model)").font(
             MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
           Text(attempt.result?.title ?? "active").font(
             MacTheme.chrome(MacTheme.TypeScale.small)

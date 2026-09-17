@@ -452,11 +452,11 @@ private struct WebStatusBar: View {
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
       if let server {
-        Text("Local server · port \(server.port) · pid \(server.pid)")
+        Text("Local server · port \(identifier: server.port) · pid \(identifier: server.pid)")
           .font(MacTheme.mono(MacTheme.TypeScale.micro))
       }
       if let viewport {
-        Text("\(viewport.width) × \(viewport.height)")
+        Text("\(identifier: viewport.width) × \(identifier: viewport.height)")
           .font(MacTheme.mono(MacTheme.TypeScale.micro))
       }
       Spacer(minLength: 0)

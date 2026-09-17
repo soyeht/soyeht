@@ -276,14 +276,14 @@ private struct ScreenplaySceneRail: View {
     } label: {
       VStack(alignment: .leading, spacing: MacTheme.Space.x6) {
         HStack(alignment: .firstTextBaseline, spacing: MacTheme.Space.x7) {
-          Text("\(scene.ordinal + 1)")
+          Text("\(identifier: scene.ordinal + 1)")
             .font(MacTheme.mono(MacTheme.TypeScale.control, weight: .bold))
             .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
           Text(scene.heading)
             .font(MacTheme.screenplay(MacTheme.TypeScale.caption, weight: .bold))
             .foregroundStyle(MacTheme.ink).lineLimit(2)
           Spacer(minLength: 2)
-          Text("p. \(page(for: scene))")
+          Text("p. \(identifier: page(for: scene))")
             .font(MacTheme.chrome(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
         }
         if let summary = summary(for: scene) {
@@ -342,9 +342,11 @@ private struct ScreenplayVariantControl: View {
       }
       HStack(spacing: MacTheme.Space.x6) {
         variantButton("chevron.left") { cycle(-1) }
-        Text("\(Int(variants.selectedIndex) + 1) / \(variants.alternates.count)")
-          .font(MacTheme.screenplay(MacTheme.TypeScale.control, weight: .bold))
-          .foregroundStyle(MacTheme.ink)
+        Text(
+          "\(identifier: Int(variants.selectedIndex) + 1) / \(variants.alternates.count)"
+        )
+        .font(MacTheme.screenplay(MacTheme.TypeScale.control, weight: .bold))
+        .foregroundStyle(MacTheme.ink)
         variantButton("chevron.right") { cycle(1) }
         Divider().frame(height: 20)
         variantButton("plus") { requestAnother() }

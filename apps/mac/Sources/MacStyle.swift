@@ -4,6 +4,16 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
+extension LocalizedStringKey.StringInterpolation {
+  mutating func appendInterpolation<Value: BinaryInteger>(identifier value: Value) {
+    appendInterpolation(String(value))
+  }
+
+  mutating func appendInterpolation(identifier value: String) {
+    appendInterpolation(value)
+  }
+}
+
 @MainActor enum MacTheme {
   static var canvas: Color { SoyehtThemeColors.canvas }
   static var face: Color { SoyehtThemeColors.face }

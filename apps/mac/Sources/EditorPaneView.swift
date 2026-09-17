@@ -579,7 +579,7 @@ private struct EditorAgentReviewHunkCard: View {
   var body: some View {
     HStack(spacing: MacTheme.Space.x8) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
-        Text("\(hunk.authorName) · line \(UInt64(hunk.line) + 1)")
+        Text("\(hunk.authorName) · line \(identifier: UInt64(hunk.line) + 1)")
           .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
           .foregroundStyle(MacTheme.ink)
         Text(hunk.summary.isEmpty ? "Agent change" : hunk.summary)
@@ -613,7 +613,7 @@ private struct EditorReviewCommentSheet: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
-      Text("Request a change on line \(UInt64(line ?? 0) + 1)")
+      Text("Request a change on line \(identifier: UInt64(line ?? 0) + 1)")
         .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
       Text("The request goes to the agent that authored the pending change.")
         .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
@@ -653,7 +653,7 @@ private struct EditorStatusBar: View {
           .foregroundStyle(MacTheme.accent)
       }
       Text(
-        "Ln \(UInt64(selectedPosition?.line ?? view.viewport?.fromLine ?? 0) + 1), Col \(UInt64(selectedPosition?.column ?? 0) + 1)"
+        "Ln \(identifier: UInt64(selectedPosition?.line ?? view.viewport?.fromLine ?? 0) + 1), Col \(identifier: UInt64(selectedPosition?.column ?? 0) + 1)"
       )
       .font(MacTheme.chrome(MacTheme.TypeScale.small))
       Spacer(minLength: 0)

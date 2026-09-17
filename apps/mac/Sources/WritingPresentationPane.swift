@@ -154,7 +154,7 @@ private struct WritingSlideThumbnail: View {
     Button(action: action) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x6) {
         HStack(alignment: .top) {
-          Text("\(slide.index + 1)")
+          Text("\(identifier: slide.index + 1)")
             .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold))
             .foregroundStyle(selected ? MacTheme.onAccent : MacTheme.secondary)
             .frame(width: 22, height: 22)
@@ -205,7 +205,7 @@ private struct WritingSlideShow: View {
   var body: some View {
     VStack(spacing: MacTheme.Space.x18) {
       HStack {
-        Text("\(index + 1) / \(slides.count)")
+        Text("\(identifier: index + 1) / \(slides.count)")
           .font(MacTheme.mono(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.muted)
         Spacer()
         Button("Done") { dismiss() }.buttonStyle(NeoPillButtonStyle(accent: true))

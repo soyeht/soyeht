@@ -136,7 +136,7 @@ private struct LocalServerRow: View {
         Text(server.title ?? server.command)
           .font(MacTheme.mono(MacTheme.TypeScale.caption, weight: .bold))
           .lineLimit(1)
-        Text("\(server.cwd) · port \(server.port) · pid \(server.pid)")
+        Text("\(server.cwd) · port \(identifier: server.port) · pid \(identifier: server.pid)")
           .font(MacTheme.chrome(MacTheme.TypeScale.micro))
           .foregroundStyle(MacTheme.secondary)
           .lineLimit(1)

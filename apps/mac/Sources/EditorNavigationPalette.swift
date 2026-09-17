@@ -157,8 +157,10 @@ struct EditorNavigationPalette: View {
           }
         }
         Spacer()
-        Text("\(UInt64(match.range.start.line) + 1):\(UInt64(match.range.start.column) + 1)")
-          .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
+        Text(
+          "\(identifier: UInt64(match.range.start.line) + 1):\(identifier: UInt64(match.range.start.column) + 1)"
+        )
+        .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
       }
       .padding(.horizontal, MacTheme.Space.x10).frame(height: 46)
       .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
@@ -178,7 +180,7 @@ struct EditorNavigationPalette: View {
             .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
         }
         Spacer()
-        Text("\(UInt64(symbol.selectionRange.start.line) + 1)")
+        Text("\(identifier: UInt64(symbol.selectionRange.start.line) + 1)")
           .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
       }
       .padding(.horizontal, MacTheme.Space.x10).frame(height: 46)
