@@ -50,11 +50,12 @@ their code. The ranked recipe it produced:
 5. **"No signal"** with a 90 s grace, only for harnesses with full coverage.
 
 Field evidence worth carrying: state/hook bugs are the **most common bug
-category** in every audited app — respectively 204 issues of ~4,900, 353 of
-5,345, 185 of the last 1,000, 29 of 310, and 23 of 413. The benchmark keeps
-cnvs rebuilt its status around what a harness can honestly report precisely
-because screen+timer guessing failed in **both** directions: agents stuck on
-"working" after finishing, and false "done" during a long silent tool run.
+category** in every audited app: 204 issues of ~4,900, 353 of 5,345, 185 of the
+last 1,000, 29 of 310, and 23 of 413. The per-app attribution stays in the
+benchmark, outside this repository. One audited product rebuilt its status
+reporting around what a harness can honestly report, precisely because
+screen+timer guessing failed in **both** directions: agents stuck on "working"
+after finishing, and false "done" during a long silent tool run.
 
 ## Eight constraints the field already paid for
 
@@ -70,7 +71,7 @@ From `estado-da-pane.md`, lessons drawn from issues rather than code:
    the state.
 6. Partial hook coverage must surface as **"I don't know"**, never as "idle".
 7. Regex breaks every release: fallback only, advisory, versioned manifest.
-8. Engine separate from the app avoids the zombie class AO hit.
+8. Engine separate from the app avoids the zombie class one audited harness hit.
 
 ## What a result must say
 
