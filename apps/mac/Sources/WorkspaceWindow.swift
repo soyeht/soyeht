@@ -55,6 +55,7 @@ struct WorkspaceWindow: View {
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
     .environment(editorInputPreferences)
     .environment(webLinkPreferences)
+    .environment(\.terminalKeyboardInputEnabled, editorPaletteMode == nil)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
     .alert(
       "Close pane?",
@@ -115,7 +116,6 @@ struct WorkspaceWindow: View {
           EditorNavigationPalette(
             client: client, workspaceId: selectedTaskWorkspaceId, mode: $editorPaletteMode
           )
-          .onTapGesture {}
         }
         .zIndex(60)
       }

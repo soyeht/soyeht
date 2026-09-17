@@ -4,7 +4,8 @@ import SwiftTerm
 @MainActor
 public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate {
   let client: EngineClient
-  private let acceptsInput: Bool
+  private var acceptsInput: Bool
+  private let sendInput: (Data) -> Void
   private let ringBell: () -> Void
   private var openFile: (String, FilePathReference) -> Void
   private var openWeb: (String, URL) -> Void
@@ -15,10 +16,12 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   init(
     client: EngineClient, acceptsInput: Bool, ringBell: @escaping () -> Void = {},
     openFile: @escaping (String, FilePathReference) -> Void = { _, _ in },
-    openWeb: @escaping (String, URL) -> Void = { _, _ in }
+    openWeb: @escaping (String, URL) -> Void = { _, _ in },
+    sendInput: ((Data) -> Void)? = nil
   ) {
     self.client = client
     self.acceptsInput = acceptsInput
+    self.sendInput = sendInput ?? { client.input($0) }
     self.ringBell = ringBell
     self.openFile = openFile
     self.openWeb = openWeb
@@ -29,6 +32,8 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   }
 
   func updateOpenWeb(_ action: @escaping (String, URL) -> Void) { openWeb = action }
+
+  func updateAcceptsInput(_ acceptsInput: Bool) { self.acceptsInput = acceptsInput }
 
   func attach(_ view: TerminalView) {
     view.terminalDelegate = self
@@ -67,7 +72,7 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
 
   public func send(source: TerminalView, data: ArraySlice<UInt8>) {
     // Replayed control sequences must not become new input to the shell.
-    if acceptsInput && !feeding { client.input(Data(data)) }
+    if acceptsInput && !feeding { sendInput(Data(data)) }
   }
 
   public func setTerminalTitle(source: TerminalView, title: String) {}

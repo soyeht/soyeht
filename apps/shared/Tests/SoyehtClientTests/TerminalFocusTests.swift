@@ -30,6 +30,86 @@
     #expect(view.getTerminal().cols > cols)
   }
 
+  @MainActor @Test func terminalLifecycleUpdateDoesNotStealFieldFocus() async throws {
+    _ = NSApplication.shared
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
+      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    let host = NSHostingView(rootView: MacTerminal(client: client))
+    let field = NSTextField(frame: NSRect(x: 20, y: 20, width: 300, height: 30))
+    window.contentView = host
+    host.addSubview(field)
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    func terminal(in view: NSView) -> TerminalView? {
+      if let terminal = view as? TerminalView { return terminal }
+      return view.subviews.lazy.compactMap { terminal(in: $0) }.first
+    }
+    let view = try #require(terminal(in: host))
+    #expect(window.makeFirstResponder(field))
+    #expect(window.firstResponder is NSTextView)
+
+    view.viewDidMoveToWindow()
+
+    #expect(window.firstResponder is NSTextView)
+  }
+
+  @MainActor @Test func fieldKeepsEveryKeyAcrossTerminalLifecycleUpdate() async throws {
+    _ = NSApplication.shared
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
+      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    let host = NSHostingView(rootView: MacTerminal(client: client))
+    let field = NSTextField(frame: NSRect(x: 20, y: 20, width: 300, height: 30))
+    window.contentView = host
+    host.addSubview(field)
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    func terminal(in view: NSView) -> TerminalView? {
+      if let terminal = view as? TerminalView { return terminal }
+      return view.subviews.lazy.compactMap { terminal(in: $0) }.first
+    }
+    let view = try #require(terminal(in: host))
+    #expect(window.makeFirstResponder(field))
+    view.viewDidMoveToWindow()
+
+    let text = "controle-foco"
+    for (index, character) in text.enumerated() {
+      let event = try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: [],
+          timestamp: Double(index), windowNumber: window.windowNumber, context: nil,
+          characters: String(character), charactersIgnoringModifiers: String(character),
+          isARepeat: false, keyCode: 0))
+      window.sendEvent(event)
+    }
+
+    #expect(field.stringValue == text)
+  }
+
+  @MainActor @Test func disabledTerminalDropsKeyboardInputUntilReenabled() {
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    var forwarded: [Data] = []
+    let host = TerminalHost(
+      client: client, acceptsInput: true, sendInput: { forwarded.append($0) })
+    let view = TerminalView(frame: .zero)
+    let bytes = Array("echo unsafe\n".utf8)
+
+    host.send(source: view, data: bytes[...])
+    host.updateAcceptsInput(false)
+    host.send(source: view, data: bytes[...])
+    host.updateAcceptsInput(true)
+    host.send(source: view, data: bytes[...])
+
+    #expect(forwarded == [Data(bytes), Data(bytes)])
+  }
+
   @MainActor @Test func retiringTerminalCannotDetachItsReplacementOutputSink() {
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
     let first = TerminalHost(client: client, acceptsInput: true)
