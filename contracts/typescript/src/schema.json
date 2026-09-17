@@ -188,6 +188,116 @@
       ],
       "additionalProperties": true
     },
+    "WorkspacePaneLayoutMode": {
+      "type": "string",
+      "enum": [
+        "automatic",
+        "custom"
+      ]
+    },
+    "WorkspacePaneLayoutKind": {
+      "type": "string",
+      "enum": [
+        "terminal",
+        "agent",
+        "editor",
+        "web",
+        "text",
+        "presentation",
+        "screenplay",
+        "unknown_writing"
+      ]
+    },
+    "WorkspacePaneLayoutAxis": {
+      "type": "string",
+      "enum": [
+        "horizontal",
+        "vertical"
+      ]
+    },
+    "WorkspacePaneLayoutLeaf": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/WorkspacePaneLayoutKind"
+        }
+      },
+      "required": [
+        "paneId",
+        "kind"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspacePaneLayoutBranch": {
+      "type": "object",
+      "properties": {
+        "weight": {
+          "type": "number",
+          "minimum": 0
+        },
+        "node": {
+          "$ref": "#/$defs/WorkspacePaneLayoutNode"
+        }
+      },
+      "required": [
+        "weight",
+        "node"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspacePaneLayoutSplit": {
+      "type": "object",
+      "properties": {
+        "axis": {
+          "$ref": "#/$defs/WorkspacePaneLayoutAxis"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspacePaneLayoutBranch"
+          }
+        }
+      },
+      "required": [
+        "axis",
+        "children"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspacePaneLayoutNode": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/WorkspacePaneLayoutLeaf"
+        },
+        {
+          "$ref": "#/$defs/WorkspacePaneLayoutSplit"
+        }
+      ]
+    },
+    "WorkspacePaneLayoutEnvelope": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1
+        },
+        "mode": {
+          "$ref": "#/$defs/WorkspacePaneLayoutMode"
+        },
+        "tree": {
+          "$ref": "#/$defs/WorkspacePaneLayoutNode"
+        }
+      },
+      "required": [
+        "version",
+        "mode"
+      ],
+      "additionalProperties": true
+    },
     "Workspace": {
       "type": "object",
       "properties": {
@@ -658,6 +768,38 @@
       "additionalProperties": true
     },
     "WorkspaceRenameResult": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceLayoutSetParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "layout": {
+          "$ref": "#/$defs/WorkspacePaneLayoutEnvelope"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "layout",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceLayoutSetResult": {
       "type": "object",
       "properties": {
         "workspace": {
@@ -1599,6 +1741,29 @@
         "eventId",
         "at",
         "workspace"
+      ],
+      "additionalProperties": true
+    },
+    "WorkspaceLayoutUpdatedEvent": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "$ref": "#/$defs/Workspace"
+        },
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        }
+      },
+      "required": [
+        "workspace",
+        "eventId",
+        "at"
       ],
       "additionalProperties": true
     },
@@ -10689,6 +10854,15 @@
       },
       "mutation": true
     },
+    "workspace.layout.set": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceLayoutSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WorkspaceLayoutSetResult"
+      },
+      "mutation": true
+    },
     "workspace.close": {
       "params": {
         "$ref": "#/$defs/WorkspaceCloseParams"
@@ -11748,6 +11922,12 @@
     "workspace.renamed": {
       "params": {
         "$ref": "#/$defs/WorkspaceRenamedEvent"
+      },
+      "durable": true
+    },
+    "workspace.layout_updated": {
+      "params": {
+        "$ref": "#/$defs/WorkspaceLayoutUpdatedEvent"
       },
       "durable": true
     },

@@ -243,7 +243,7 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
   }
 }
 
-public enum PaneLayoutInsertionRule: Sendable {
+public enum PaneLayoutInsertionRule: Equatable, Sendable {
   /// P1: primary panes are laid out left-to-right; auxiliaries stack in the right region.
   case initialByType
   /// Preserve the user's existing shares and split the last canonical pane of the same role.

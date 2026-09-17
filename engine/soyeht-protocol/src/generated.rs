@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -196,6 +196,75 @@ pub struct Actor {
     pub device_id: Option<Id>,
     #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
     pub pane_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WorkspacePaneLayoutMode {
+    #[serde(rename = "automatic")]
+    Automatic,
+    #[serde(rename = "custom")]
+    Custom,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WorkspacePaneLayoutKind {
+    #[serde(rename = "terminal")]
+    Terminal,
+    #[serde(rename = "agent")]
+    Agent,
+    #[serde(rename = "editor")]
+    Editor,
+    #[serde(rename = "web")]
+    Web,
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "presentation")]
+    Presentation,
+    #[serde(rename = "screenplay")]
+    Screenplay,
+    #[serde(rename = "unknown_writing")]
+    UnknownWriting,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WorkspacePaneLayoutAxis {
+    #[serde(rename = "horizontal")]
+    Horizontal,
+    #[serde(rename = "vertical")]
+    Vertical,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutLeaf {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "kind")]
+    pub kind: WorkspacePaneLayoutKind,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutBranch {
+    #[serde(rename = "weight")]
+    pub weight: f64,
+    #[serde(rename = "node")]
+    pub node: WorkspacePaneLayoutNode,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutSplit {
+    #[serde(rename = "axis")]
+    pub axis: WorkspacePaneLayoutAxis,
+    #[serde(rename = "children")]
+    pub children: Vec<WorkspacePaneLayoutBranch>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum WorkspacePaneLayoutNode {
+    V0(WorkspacePaneLayoutLeaf),
+    V1(WorkspacePaneLayoutSplit),
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutEnvelope {
+    #[serde(rename = "version")]
+    pub version: u32,
+    #[serde(rename = "mode")]
+    pub mode: WorkspacePaneLayoutMode,
+    #[serde(rename = "tree", skip_serializing_if = "Option::is_none")]
+    pub tree: Option<WorkspacePaneLayoutNode>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Workspace {
@@ -405,6 +474,20 @@ pub struct WorkspaceRenameParams {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceRenameResult {
+    #[serde(rename = "workspace")]
+    pub workspace: Workspace,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceLayoutSetParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "layout")]
+    pub layout: WorkspacePaneLayoutEnvelope,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceLayoutSetResult {
     #[serde(rename = "workspace")]
     pub workspace: Workspace,
 }
@@ -818,6 +901,17 @@ pub struct WorkspaceRenamedEvent {
     pub at: String,
     #[serde(rename = "workspace")]
     pub workspace: Workspace,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceLayoutUpdatedEvent {
+    #[serde(rename = "workspace")]
+    pub workspace: Workspace,
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceClosedEvent {
@@ -5226,6 +5320,8 @@ pub enum Request {
     WorkspaceCreate(WorkspaceCreateParams),
     #[serde(rename = "workspace.rename")]
     WorkspaceRename(WorkspaceRenameParams),
+    #[serde(rename = "workspace.layout.set")]
+    WorkspaceLayoutSet(WorkspaceLayoutSetParams),
     #[serde(rename = "workspace.close")]
     WorkspaceClose(WorkspaceCloseParams),
     #[serde(rename = "workspace.focus")]
@@ -5487,6 +5583,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "workspace.rename",
         "WorkspaceRenameParams",
         "WorkspaceRenameResult",
+        true,
+    ),
+    (
+        "workspace.layout.set",
+        "WorkspaceLayoutSetParams",
+        "WorkspaceLayoutSetResult",
         true,
     ),
     (
@@ -6020,6 +6122,8 @@ pub enum EventName {
     WorkspaceCreated,
     #[serde(rename = "workspace.renamed")]
     WorkspaceRenamed,
+    #[serde(rename = "workspace.layout_updated")]
+    WorkspaceLayoutUpdated,
     #[serde(rename = "workspace.closed")]
     WorkspaceClosed,
     #[serde(rename = "pane.created")]
@@ -6154,6 +6258,7 @@ impl EventName {
             Self::StateSnapshotPart => "state.snapshot_part",
             Self::WorkspaceCreated => "workspace.created",
             Self::WorkspaceRenamed => "workspace.renamed",
+            Self::WorkspaceLayoutUpdated => "workspace.layout_updated",
             Self::WorkspaceClosed => "workspace.closed",
             Self::PaneCreated => "pane.created",
             Self::PaneRenamed => "pane.renamed",
@@ -6245,6 +6350,11 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::WorkspaceRenamed,
         params_type: "WorkspaceRenamedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::WorkspaceLayoutUpdated,
+        params_type: "WorkspaceLayoutUpdatedEvent",
         durable: true,
     },
     EventDescriptor {

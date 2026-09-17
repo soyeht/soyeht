@@ -10,7 +10,7 @@ elif [[ $# -gt 0 ]]; then
     echo 'Usage: scripts/check_mac.sh [--sign]' >&2
     exit 2
 fi
-swift test --package-path apps/shared --filter PaneLayoutTree
+swift test --package-path apps/shared --filter PaneLayout
 
 shared_log=$(mktemp -t soyeht-shared-tests.XXXXXX)
 cleanup() {

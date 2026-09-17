@@ -331,6 +331,7 @@ impl Core {
             "events.subscribe" => self.subscribe_events(connection, params)?,
             "workspace.list" => json!({"items":self.snapshot_section("workspaces")?}),
             "workspace.create" => self.workspace_create(connection, params)?,
+            "workspace.layout.set" => self.workspace_layout_set(connection, params)?,
             "workspace.rename" | "workspace.close" | "workspace.focus" => {
                 self.workspace_edit(connection, method, params)?
             }

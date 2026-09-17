@@ -5,7 +5,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::Workspace;
+use soyeht_protocol::{Workspace, WorkspacePaneLayoutEnvelope};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -115,6 +115,36 @@ impl Core {
             self.finish_close(&pane.pane.pane_id)?;
         }
         Ok(result)
+    }
+
+    pub fn workspace_layout_set(&mut self, connection: &str, params: &Value) -> Result<Value> {
+        let id = errors::param_str(params, "workspaceId")?;
+        let layout: WorkspacePaneLayoutEnvelope = serde_json::from_value(params["layout"].clone())
+            .map_err(|_| errors::invalid("Workspace pane layout is invalid"))?;
+        crate::workspace_layout::validate(
+            id,
+            &layout,
+            self.panes
+                .values()
+                .filter(|pane| !pane.stored.closed)
+                .map(|pane| pane.stored.pane.clone()),
+        )
+        .map_err(errors::invalid)?;
+        let mut workspace = workspace_for_action(&self.store, id, None)?;
+        workspace.layout = serde_json::to_value(layout)
+            .map_err(|_| errors::internal("Workspace pane layout serialization failed"))?;
+        Ok(self
+            .mutate(connection, "workspace.layout.set", params, |tx| {
+                tx.update_workspace(&workspace)?;
+                Ok((
+                    json!({"workspace":workspace}),
+                    vec![(
+                        "workspace.layout_updated".into(),
+                        json!({"workspace":workspace}),
+                    )],
+                ))
+            })?
+            .result)
     }
 }
 

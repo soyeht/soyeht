@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
 import Foundation
 
 
@@ -134,6 +134,83 @@ public struct Actor: Codable, Sendable {
         self.`client` = `client`
         self.`deviceId` = `deviceId`
         self.`paneId` = `paneId`
+    }
+}
+
+public enum WorkspacePaneLayoutMode: String, Codable, Sendable {
+    case `automatic` = "automatic"
+    case `custom` = "custom"
+}
+
+public enum WorkspacePaneLayoutKind: String, Codable, Sendable {
+    case `terminal` = "terminal"
+    case `agent` = "agent"
+    case `editor` = "editor"
+    case `web` = "web"
+    case `text` = "text"
+    case `presentation` = "presentation"
+    case `screenplay` = "screenplay"
+    case `unknown_writing` = "unknown_writing"
+}
+
+public enum WorkspacePaneLayoutAxis: String, Codable, Sendable {
+    case `horizontal` = "horizontal"
+    case `vertical` = "vertical"
+}
+
+public struct WorkspacePaneLayoutLeaf: Codable, Sendable {
+    public var `paneId`: Id
+    public var `kind`: WorkspacePaneLayoutKind
+    public init(`paneId`: Id, `kind`: WorkspacePaneLayoutKind) {
+        self.`paneId` = `paneId`
+        self.`kind` = `kind`
+    }
+}
+
+public struct WorkspacePaneLayoutBranch: Codable, Sendable {
+    public var `weight`: Double
+    public var `node`: WorkspacePaneLayoutNode
+    public init(`weight`: Double, `node`: WorkspacePaneLayoutNode) {
+        self.`weight` = `weight`
+        self.`node` = `node`
+    }
+}
+
+public struct WorkspacePaneLayoutSplit: Codable, Sendable {
+    public var `axis`: WorkspacePaneLayoutAxis
+    public var `children`: [WorkspacePaneLayoutBranch]
+    public init(`axis`: WorkspacePaneLayoutAxis, `children`: [WorkspacePaneLayoutBranch]) {
+        self.`axis` = `axis`
+        self.`children` = `children`
+    }
+}
+
+public enum WorkspacePaneLayoutNode: Codable, Sendable {
+    case v0(WorkspacePaneLayoutLeaf)
+    case v1(WorkspacePaneLayoutSplit)
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(WorkspacePaneLayoutLeaf.self) { self = .v0(value); return }
+        if let value = try? container.decode(WorkspacePaneLayoutSplit.self) { self = .v1(value); return }
+        throw DecodingError.dataCorruptedError(in: container, debugDescription: "No matching WorkspacePaneLayoutNode variant")
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .v0(let value): try container.encode(value)
+        case .v1(let value): try container.encode(value)
+        }
+    }
+}
+
+public struct WorkspacePaneLayoutEnvelope: Codable, Sendable {
+    public var `version`: UInt32
+    public var `mode`: WorkspacePaneLayoutMode
+    public var `tree`: WorkspacePaneLayoutNode?
+    public init(`version`: UInt32, `mode`: WorkspacePaneLayoutMode, `tree`: WorkspacePaneLayoutNode? = nil) {
+        self.`version` = `version`
+        self.`mode` = `mode`
+        self.`tree` = `tree`
     }
 }
 
@@ -403,6 +480,24 @@ public struct WorkspaceRenameParams: Codable, Sendable {
 }
 
 public struct WorkspaceRenameResult: Codable, Sendable {
+    public var `workspace`: Workspace
+    public init(`workspace`: Workspace) {
+        self.`workspace` = `workspace`
+    }
+}
+
+public struct WorkspaceLayoutSetParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `layout`: WorkspacePaneLayoutEnvelope
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `layout`: WorkspacePaneLayoutEnvelope, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`layout` = `layout`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WorkspaceLayoutSetResult: Codable, Sendable {
     public var `workspace`: Workspace
     public init(`workspace`: Workspace) {
         self.`workspace` = `workspace`
@@ -914,6 +1009,19 @@ public struct WorkspaceRenamedEvent: Codable, Sendable {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`workspace` = `workspace`
+    }
+}
+
+public struct WorkspaceLayoutUpdatedEvent: Codable, Sendable {
+    public var `workspace`: Workspace
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `actor`: Actor?
+    public init(`workspace`: Workspace, `eventId`: Decimal, `at`: String, `actor`: Actor? = nil) {
+        self.`workspace` = `workspace`
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`actor` = `actor`
     }
 }
 
@@ -5764,6 +5872,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case stateSnapshotPart = "state.snapshot_part"
     case workspaceCreated = "workspace.created"
     case workspaceRenamed = "workspace.renamed"
+    case workspaceLayoutUpdated = "workspace.layout_updated"
     case workspaceClosed = "workspace.closed"
     case paneCreated = "pane.created"
     case paneRenamed = "pane.renamed"
@@ -5843,6 +5952,7 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .stateSnapshotPart: EventDescriptor(paramsType: "StateSnapshotPartEvent", durable: false),
     .workspaceCreated: EventDescriptor(paramsType: "WorkspaceCreatedEvent", durable: true),
     .workspaceRenamed: EventDescriptor(paramsType: "WorkspaceRenamedEvent", durable: true),
+    .workspaceLayoutUpdated: EventDescriptor(paramsType: "WorkspaceLayoutUpdatedEvent", durable: true),
     .workspaceClosed: EventDescriptor(paramsType: "WorkspaceClosedEvent", durable: true),
     .paneCreated: EventDescriptor(paramsType: "PaneCreatedEvent", durable: true),
     .paneRenamed: EventDescriptor(paramsType: "PaneRenamedEvent", durable: true),

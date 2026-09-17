@@ -83,6 +83,76 @@
     }
   },
   {
+    "name": "WorkspacePaneLayoutMode",
+    "type": "WorkspacePaneLayoutMode",
+    "value": "custom"
+  },
+  {
+    "name": "WorkspacePaneLayoutKind",
+    "type": "WorkspacePaneLayoutKind",
+    "value": "terminal"
+  },
+  {
+    "name": "WorkspacePaneLayoutAxis",
+    "type": "WorkspacePaneLayoutAxis",
+    "value": "horizontal"
+  },
+  {
+    "name": "WorkspacePaneLayoutLeaf",
+    "type": "WorkspacePaneLayoutLeaf",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "kind": "terminal"
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutBranch",
+    "type": "WorkspacePaneLayoutBranch",
+    "value": {
+      "weight": 1.0,
+      "node": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "kind": "terminal"
+      }
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutSplit",
+    "type": "WorkspacePaneLayoutSplit",
+    "value": {
+      "axis": "horizontal",
+      "children": [
+        {
+          "weight": 1.0,
+          "node": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutNode",
+    "type": "WorkspacePaneLayoutNode",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "kind": "terminal"
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutEnvelope",
+    "type": "WorkspacePaneLayoutEnvelope",
+    "value": {
+      "version": 1,
+      "mode": "custom",
+      "tree": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "kind": "terminal"
+      }
+    }
+  },
+  {
     "name": "Workspace",
     "type": "Workspace",
     "value": {
@@ -285,6 +355,41 @@
         "path": "/tmp/soyeht-test",
         "layout": {
           "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "WorkspaceLayoutSetParams",
+    "type": "WorkspaceLayoutSetParams",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "layout": {
+        "version": 1,
+        "mode": "custom",
+        "tree": {
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "kind": "terminal"
+        }
+      },
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "WorkspaceLayoutSetResult",
+    "type": "WorkspaceLayoutSetResult",
+    "value": {
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "version": 1,
+          "mode": "custom",
+          "tree": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
         }
       }
     }
@@ -730,6 +835,27 @@
         "path": "/tmp/soyeht-test",
         "layout": {
           "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "WorkspaceLayoutUpdatedEvent",
+    "type": "WorkspaceLayoutUpdatedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "version": 1,
+          "mode": "custom",
+          "tree": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
         }
       }
     }
@@ -1197,6 +1323,50 @@
           "path": "/tmp/soyeht-test",
           "layout": {
             "example": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "request:workspace.layout.set",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "workspace.layout.set",
+      "params": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "layout": {
+          "version": 1,
+          "mode": "custom",
+          "tree": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
+        },
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:workspace.layout.set",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "version": 1,
+            "mode": "custom",
+            "tree": {
+              "paneId": "00000000-0000-4000-8000-000000000001",
+              "kind": "terminal"
+            }
           }
         }
       }
@@ -1875,6 +2045,31 @@
           "path": "/tmp/soyeht-test",
           "layout": {
             "example": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "event:workspace.layout_updated",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "workspace.layout_updated",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "version": 1,
+            "mode": "custom",
+            "tree": {
+              "paneId": "00000000-0000-4000-8000-000000000001",
+              "kind": "terminal"
+            }
           }
         }
       }
