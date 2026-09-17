@@ -28,6 +28,10 @@ Client tests use disposable processes and never the installed socket:
 swift test --package-path apps/shared
 ```
 
+Workspace layout follows one invariant: populated operational content starts at
+the top leading edge. Empty states expand across the whole available workspace
+and center within that surface; they do not inherit a content column's width.
+
 An agent pane is created from the same new-pane sheet by selecting agent mode,
 an installed harness, its advertised model and effort, a permission mode and a
 working directory. The conversation view renders normalized messages, thoughts,
