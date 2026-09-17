@@ -7,6 +7,7 @@ pub enum Error {
     Empty(&'static str),
     IncompleteRecord,
     InvalidConfidence,
+    InvalidDetectorName,
     InvalidDigest,
     InvalidGap,
     InvalidGeneration,
@@ -17,6 +18,7 @@ pub enum Error {
     InvalidSegmentEnd,
     InvalidSequence,
     InvalidTimestamp,
+    DuplicateDetectorName,
     Json,
     Limit(&'static str),
     MismatchedProvenance,
@@ -30,6 +32,7 @@ impl Display for Error {
             Self::Empty(field) => write!(formatter, "{field} must not be empty"),
             Self::IncompleteRecord => formatter.write_str("dataset record is incomplete"),
             Self::InvalidConfidence => formatter.write_str("confidence is outside 0 through 1"),
+            Self::InvalidDetectorName => formatter.write_str("detector name is not canonical"),
             Self::InvalidDigest => formatter.write_str("engine digest is not canonical SHA-256"),
             Self::InvalidGap => formatter.write_str("observation gap is not a complete interval"),
             Self::InvalidGeneration => formatter.write_str("session generation must be positive"),
@@ -50,6 +53,9 @@ impl Display for Error {
                 formatter.write_str("dataset sequences must increase monotonically")
             }
             Self::InvalidTimestamp => formatter.write_str("timestamp must be non-negative"),
+            Self::DuplicateDetectorName => {
+                formatter.write_str("detector registry contains a duplicate name")
+            }
             Self::Json => formatter.write_str("dataset record is not valid closed JSON"),
             Self::Limit(field) => write!(formatter, "{field} exceeds its bound"),
             Self::MismatchedProvenance => {

@@ -170,6 +170,17 @@ Every evaluation runs all registered detectors over the same dataset fingerprint
 engine build and per-cell counts. Adding a detector extends the registry; it does not replace a
 prior candidate or require editing that candidate.
 
+The evaluation boundary computes that fingerprint rather than accepting one from its caller. Its
+domain-separated input is the dataset schema version, each sorted source with its pane, harness,
+sequence range and engine build, every structured omitted source, and the exact ordered recorded
+rows. Every row must match exactly one source range, so a build cannot be listed without proving
+which rows it produced. Changing an observation, label, gap, omission, source boundary or engine
+build therefore changes the fingerprint. Set ordering alone does not. One report carries that
+fingerprint, the attributed sources, all contributing engine builds, the row-kind counts and one
+metrics report per registered detector; per-cell denominators remain in each metrics report. A
+detector still receives only `ObservationFrame`, so sharing one evaluation envelope does not give
+any candidate access to labels or to another candidate's result.
+
 Only the Dev Mac application with a persistent signature may change experiment consent,
 delete captured data or export it. At
 Unix accept time the engine obtains the peer endpoint's kernel audit token, which identifies

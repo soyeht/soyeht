@@ -3,12 +3,17 @@
 
 mod baseline;
 mod error;
+mod evaluation;
 mod format;
 mod metrics;
 mod model;
 
 pub use baseline::RegexBaseline;
 pub use error::{Error, Result};
+pub use evaluation::{
+    DatasetCounts, DetectorEvaluation, DetectorRegistry, EvaluationDataset,
+    EvaluationOmittedSource, EvaluationReport, EvaluationSource, evaluate_shipped,
+};
 pub use format::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, MAX_DATASET_ROW_BYTES, MAX_RETAINED_SEGMENTS,
     MAX_SEGMENT_BYTES, ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment, encode_row,
