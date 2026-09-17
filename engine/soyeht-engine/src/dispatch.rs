@@ -330,10 +330,8 @@ impl Core {
             "state.snapshot" => return self.snapshot_parts(connection),
             "events.subscribe" => self.subscribe_events(connection, params)?,
             "workspace.list" => json!({"items":self.snapshot_section("workspaces")?}),
-            "workspace.create" => self.workspace_create(connection, params)?,
-            "workspace.layout.set" => self.workspace_layout_set(connection, params)?,
-            "workspace.rename" | "workspace.close" | "workspace.focus" => {
-                self.workspace_edit(connection, method, params)?
+            method if crate::workspaces::handles(method) => {
+                self.workspace_request(connection, method, params)?
             }
             "pane.create" => self.pane_create(connection, params)?,
             "pane.close"

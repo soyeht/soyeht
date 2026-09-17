@@ -9,6 +9,17 @@ use soyeht_protocol::{Workspace, WorkspacePaneLayoutEnvelope};
 use std::path::Path;
 use uuid::Uuid;
 
+pub fn handles(method: &str) -> bool {
+    matches!(
+        method,
+        "workspace.create"
+            | "workspace.layout.set"
+            | "workspace.rename"
+            | "workspace.close"
+            | "workspace.focus"
+    )
+}
+
 fn workspace_for_action(
     store: &impl StorePort,
     id: &str,
@@ -22,6 +33,22 @@ fn workspace_for_action(
 }
 
 impl Core {
+    pub fn workspace_request(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Value> {
+        match method {
+            "workspace.create" => self.workspace_create(connection, params),
+            "workspace.layout.set" => self.workspace_layout_set(connection, params),
+            "workspace.rename" | "workspace.close" | "workspace.focus" => {
+                self.workspace_edit(connection, method, params)
+            }
+            _ => Err(errors::invalid("Workspace method unavailable")),
+        }
+    }
+
     pub fn workspace_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let path = errors::param_str(params, "path")?;
         if !Path::new(path).is_absolute() || !Path::new(path).is_dir() {
