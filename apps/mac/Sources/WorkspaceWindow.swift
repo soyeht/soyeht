@@ -358,34 +358,20 @@ struct WorkspaceWindow: View {
         Button("Pair iPhone", action: beginPairing)
           .buttonStyle(NeoPillButtonStyle(accent: true))
       }
+      .frame(maxWidth: 760, alignment: .leading)
       if client.devices.isEmpty {
         EmptyWorkspaceView(icon: "iphone", title: "No paired iPhone")
       } else {
         VStack(spacing: MacTheme.Space.x10) {
           ForEach(client.devices, id: \.deviceId) { device in
-            HStack(spacing: MacTheme.Space.x12) {
-              Image(systemName: "iphone")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(MacTheme.accent)
-              VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
-                Text(device.name)
-                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-                Text(device.fingerprint)
-                  .font(MacTheme.mono(MacTheme.TypeScale.small))
-                  .foregroundStyle(MacTheme.secondary)
-              }
-              Spacer()
-              Text(device.revoked ? "Revoked" : "Paired")
-                .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
-                .foregroundStyle(device.revoked ? MacTheme.danger : MacTheme.success)
-            }
-            .padding(MacTheme.Space.x14)
-            .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
+            PairedPhoneRow(device: device)
           }
         }
+        .frame(maxWidth: 760, alignment: .leading)
       }
     }
     .padding(EdgeInsets(top: 8, leading: 14, bottom: 6, trailing: 6))
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
   private func qr(_ value: String) -> NSImage? {
     let filter = CIFilter.qrCodeGenerator()
@@ -394,6 +380,59 @@ struct WorkspaceWindow: View {
       let cg = CIContext().createCGImage(image, from: image.extent)
     else { return nil }
     return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+  }
+}
+
+private struct PairedPhoneRow: View {
+  let device: Device
+  @State private var showingFingerprint = false
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x12) {
+      Image(systemName: "iphone")
+        .font(.system(size: 18, weight: .medium))
+        .foregroundStyle(MacTheme.accent)
+      VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
+        Text(device.name)
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        Button {
+          showingFingerprint = true
+        } label: {
+          HStack(spacing: MacTheme.Space.x4) {
+            Text(compactFingerprint)
+              .font(MacTheme.mono(MacTheme.TypeScale.small))
+            Image(systemName: "ellipsis.circle")
+              .font(.system(size: MacTheme.TypeScale.small, weight: .medium))
+          }
+          .foregroundStyle(MacTheme.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Show full device fingerprint")
+        .accessibilityLabel("Show full fingerprint for \(device.name)")
+        .popover(isPresented: $showingFingerprint, arrowEdge: .bottom) {
+          VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
+            Text("Device fingerprint")
+              .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            Text(device.fingerprint)
+              .font(MacTheme.mono(MacTheme.TypeScale.small))
+              .textSelection(.enabled)
+          }
+          .padding(MacTheme.Space.x16)
+          .frame(width: 520, alignment: .leading)
+        }
+      }
+      Spacer()
+      Text(device.revoked ? "Revoked" : "Paired")
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        .foregroundStyle(device.revoked ? MacTheme.danger : MacTheme.success)
+    }
+    .padding(MacTheme.Space.x14)
+    .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
+  }
+
+  private var compactFingerprint: String {
+    guard device.fingerprint.count > 17 else { return device.fingerprint }
+    return "\(device.fingerprint.prefix(8))…\(device.fingerprint.suffix(8))"
   }
 }
 
