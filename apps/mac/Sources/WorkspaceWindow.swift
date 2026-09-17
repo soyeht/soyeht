@@ -358,6 +358,7 @@ struct WorkspaceWindow: View {
         Button("Pair iPhone", action: beginPairing)
           .buttonStyle(NeoPillButtonStyle(accent: true))
       }
+      .frame(maxWidth: 760, alignment: .leading)
       if client.devices.isEmpty {
         EmptyWorkspaceView(icon: "iphone", title: "No paired iPhone")
       } else {
