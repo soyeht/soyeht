@@ -1,12 +1,15 @@
-import Foundation
 import SoyehtProtocol
 
-public enum PaneLayoutRole: String, Codable, Sendable {
+public enum PaneLayoutRole: String, Sendable {
   case primary
   case auxiliary
 }
 
-public enum PaneLayoutKind: String, CaseIterable, Codable, Hashable, Sendable {
+/// The in-memory pane classification used by layout policy.
+///
+/// Web panes are primary surfaces, alongside editors and writing panes. Layout persistence must
+/// wrap this model in a versioned envelope before adding `Codable` conformance.
+public enum PaneLayoutKind: String, CaseIterable, Hashable, Sendable {
   case terminal
   case agent
   case editor
@@ -46,12 +49,12 @@ public enum PaneLayoutKind: String, CaseIterable, Codable, Hashable, Sendable {
   }
 }
 
-public enum PaneLayoutAxis: String, Codable, Sendable {
+public enum PaneLayoutAxis: String, Sendable {
   case horizontal
   case vertical
 }
 
-public struct PaneLayoutLeaf: Codable, Equatable, Sendable {
+public struct PaneLayoutLeaf: Equatable, Sendable {
   public var paneId: String
   public var kind: PaneLayoutKind
 
@@ -67,7 +70,7 @@ public struct PaneLayoutLeaf: Codable, Equatable, Sendable {
   }
 }
 
-public struct PaneLayoutBranch: Codable, Equatable, Sendable {
+public struct PaneLayoutBranch: Equatable, Sendable {
   public static let defaultWeight = 1.0
 
   public var weight: Double
@@ -79,7 +82,7 @@ public struct PaneLayoutBranch: Codable, Equatable, Sendable {
   }
 }
 
-public struct PaneLayoutSplit: Codable, Equatable, Sendable {
+public struct PaneLayoutSplit: Equatable, Sendable {
   public var axis: PaneLayoutAxis
   public var children: [PaneLayoutBranch]
 
@@ -89,7 +92,7 @@ public struct PaneLayoutSplit: Codable, Equatable, Sendable {
   }
 }
 
-public indirect enum PaneLayoutTree: Codable, Equatable, Sendable {
+public indirect enum PaneLayoutTree: Equatable, Sendable {
   case leaf(PaneLayoutLeaf)
   case split(PaneLayoutSplit)
 
@@ -121,104 +124,64 @@ public indirect enum PaneLayoutTree: Codable, Equatable, Sendable {
       case 1:
         return remaining[0].tree
       default:
-        return .split(PaneLayoutSplit(axis: split.axis, children: remaining))
+        return PaneLayoutTree.split(
+          PaneLayoutSplit(axis: split.axis, children: remaining)
+        ).normalized()
       }
     }
   }
 
-  fileprivate func containsOnly(role: PaneLayoutRole) -> Bool {
-    let leaves = leavesInCanonicalOrder
-    return !leaves.isEmpty && leaves.allSatisfy { $0.kind.role == role }
-  }
-}
-
-public enum PaneLayoutInitialArrangement {
-  public static func inserting(
-    _ leaf: PaneLayoutLeaf,
-    into tree: PaneLayoutTree?
-  ) -> PaneLayoutTree {
-    guard let tree else { return .leaf(leaf) }
-    guard !tree.paneIdsInCanonicalOrder.contains(leaf.paneId) else { return tree }
-
-    switch leaf.kind.role {
-    case .primary:
-      return insertingPrimary(leaf, into: tree)
-    case .auxiliary:
-      return insertingAuxiliary(leaf, into: tree)
+  fileprivate func replacingLastLeaf(
+    with role: PaneLayoutRole,
+    transform: (PaneLayoutTree) throws -> PaneLayoutTree
+  ) rethrows -> (tree: PaneLayoutTree, replaced: Bool) {
+    switch self {
+    case .leaf(let leaf):
+      guard leaf.kind.role == role else { return (self, false) }
+      return (try transform(self), true)
+    case .split(let split):
+      var children = split.children
+      for index in children.indices.reversed() {
+        let result = try children[index].tree.replacingLastLeaf(
+          with: role, transform: transform)
+        guard result.replaced else { continue }
+        children[index].tree = result.tree
+        return (.split(PaneLayoutSplit(axis: split.axis, children: children)), true)
+      }
+      return (self, false)
     }
   }
 
-  private static func insertingPrimary(
-    _ leaf: PaneLayoutLeaf,
-    into tree: PaneLayoutTree
-  ) -> PaneLayoutTree {
-    if let regions = separatedRegions(in: tree) {
-      var children = regions.split.children
-      children[regions.primaryIndex].tree = appending(
-        leaf, to: children[regions.primaryIndex].tree, along: .horizontal)
-      return .split(PaneLayoutSplit(axis: .horizontal, children: children))
+  /// Flattens child splits that use their parent's axis without changing the parent's share.
+  fileprivate func normalized() -> PaneLayoutTree {
+    switch self {
+    case .leaf:
+      return self
+    case .split(let split):
+      var flattened: [PaneLayoutBranch] = []
+      for branch in split.children {
+        let child = branch.tree.normalized()
+        guard case .split(let childSplit) = child, childSplit.axis == split.axis else {
+          flattened.append(PaneLayoutBranch(weight: branch.weight, tree: child))
+          continue
+        }
+        let childWeight = childSplit.children.reduce(0) { $0 + $1.weight }
+        for nested in childSplit.children {
+          flattened.append(
+            PaneLayoutBranch(
+              weight: branch.weight * nested.weight / childWeight,
+              tree: nested.tree))
+        }
+      }
+      switch flattened.count {
+      case 0:
+        return self
+      case 1:
+        return flattened[0].tree
+      default:
+        return .split(PaneLayoutSplit(axis: split.axis, children: flattened))
+      }
     }
-    if tree.containsOnly(role: .auxiliary) {
-      return split(.horizontal, [.leaf(leaf), tree])
-    }
-    if tree.containsOnly(role: .primary) {
-      return appending(leaf, to: tree, along: .horizontal)
-    }
-    return split(.horizontal, [tree, .leaf(leaf)])
-  }
-
-  private static func insertingAuxiliary(
-    _ leaf: PaneLayoutLeaf,
-    into tree: PaneLayoutTree
-  ) -> PaneLayoutTree {
-    if let regions = separatedRegions(in: tree) {
-      var children = regions.split.children
-      children[regions.auxiliaryIndex].tree = appending(
-        leaf, to: children[regions.auxiliaryIndex].tree, along: .vertical)
-      return .split(PaneLayoutSplit(axis: .horizontal, children: children))
-    }
-    if tree.containsOnly(role: .primary) {
-      return split(.horizontal, [tree, .leaf(leaf)])
-    }
-    if tree.containsOnly(role: .auxiliary) {
-      return appending(leaf, to: tree, along: .vertical)
-    }
-    return split(.horizontal, [tree, .leaf(leaf)])
-  }
-
-  private static func appending(
-    _ leaf: PaneLayoutLeaf,
-    to tree: PaneLayoutTree,
-    along axis: PaneLayoutAxis
-  ) -> PaneLayoutTree {
-    if case .split(let existing) = tree, existing.axis == axis {
-      var children = existing.children
-      children.append(PaneLayoutBranch(tree: .leaf(leaf)))
-      return .split(PaneLayoutSplit(axis: axis, children: children))
-    }
-    return split(axis, [tree, .leaf(leaf)])
-  }
-
-  private static func split(
-    _ axis: PaneLayoutAxis,
-    _ trees: [PaneLayoutTree]
-  ) -> PaneLayoutTree {
-    .split(
-      PaneLayoutSplit(
-        axis: axis,
-        children: trees.map { PaneLayoutBranch(tree: $0) }))
-  }
-
-  private static func separatedRegions(
-    in tree: PaneLayoutTree
-  ) -> (split: PaneLayoutSplit, primaryIndex: Int, auxiliaryIndex: Int)? {
-    guard case .split(let split) = tree,
-      split.axis == .horizontal,
-      split.children.count == 2,
-      split.children[0].tree.containsOnly(role: .primary),
-      split.children[1].tree.containsOnly(role: .auxiliary)
-    else { return nil }
-    return (split, 0, 1)
   }
 }
 
@@ -242,23 +205,123 @@ public struct PaneLayoutGaps: Equatable, Sendable {
   }
 }
 
+public enum PaneLayoutSizingError: Error, Equatable, Sendable {
+  case missingFloor(PaneLayoutKind)
+}
+
+/// One named proportion rule: each branch receives the minimum width or height its subtree needs.
+public struct PaneLayoutSizingPolicy: Equatable, Sendable {
+  public var floors: [PaneLayoutKind: PaneLayoutSize]
+  public var gaps: PaneLayoutGaps
+
+  public init(floors: [PaneLayoutKind: PaneLayoutSize], gaps: PaneLayoutGaps) {
+    self.floors = floors
+    self.gaps = gaps
+  }
+
+  fileprivate func branches(
+    for trees: [PaneLayoutTree], along axis: PaneLayoutAxis
+  ) throws -> [PaneLayoutBranch] {
+    try trees.map { tree in
+      let minimum = try PaneLayoutMinimumSize.require(
+        for: tree, floors: floors, gaps: gaps)
+      return PaneLayoutBranch(
+        weight: axis == .horizontal ? minimum.width : minimum.height,
+        tree: tree)
+    }
+  }
+
+  fileprivate func reweighting(_ tree: PaneLayoutTree) throws -> PaneLayoutTree {
+    switch tree {
+    case .leaf:
+      return tree
+    case .split(let split):
+      let children = try split.children.map { try reweighting($0.tree) }
+      return .split(
+        PaneLayoutSplit(axis: split.axis, children: try branches(for: children, along: split.axis)))
+    }
+  }
+}
+
+public enum PaneLayoutInsertionRule: Sendable {
+  /// P1: primary panes are laid out left-to-right; auxiliaries stack in the right region.
+  case initialByType
+  /// Preserve the user's existing shares and split the last canonical pane of the same role.
+  case preservingUserArrangement
+}
+
+public enum PaneLayoutArrangement {
+  public static func inserting(
+    _ leaf: PaneLayoutLeaf,
+    into tree: PaneLayoutTree?,
+    rule: PaneLayoutInsertionRule,
+    sizing: PaneLayoutSizingPolicy
+  ) throws -> PaneLayoutTree {
+    guard let tree else { return .leaf(leaf) }
+    guard !tree.paneIdsInCanonicalOrder.contains(leaf.paneId) else { return tree }
+
+    let axis = splitAxis(for: leaf.kind.role)
+    let replacement = try tree.replacingLastLeaf(with: leaf.kind.role) { existing in
+      try split(axis, [existing, .leaf(leaf)], sizing: sizing)
+    }
+    let inserted: PaneLayoutTree
+    if replacement.replaced {
+      inserted = replacement.tree.normalized()
+    } else {
+      let ordered =
+        leaf.kind.role == .primary ? [PaneLayoutTree.leaf(leaf), tree] : [tree, .leaf(leaf)]
+      inserted = try split(.horizontal, ordered, sizing: sizing).normalized()
+    }
+
+    switch rule {
+    case .initialByType:
+      return try sizing.reweighting(inserted)
+    case .preservingUserArrangement:
+      return inserted
+    }
+  }
+
+  private static func splitAxis(for role: PaneLayoutRole) -> PaneLayoutAxis {
+    role == .primary ? .horizontal : .vertical
+  }
+
+  private static func split(
+    _ axis: PaneLayoutAxis,
+    _ trees: [PaneLayoutTree],
+    sizing: PaneLayoutSizingPolicy
+  ) throws -> PaneLayoutTree {
+    .split(
+      PaneLayoutSplit(
+        axis: axis,
+        children: try sizing.branches(for: trees, along: axis)))
+  }
+}
+
 public enum PaneLayoutMinimumSize {
   public static func derive(
     for tree: PaneLayoutTree,
     floors: [PaneLayoutKind: PaneLayoutSize],
     gaps: PaneLayoutGaps
   ) -> PaneLayoutSize? {
+    try? require(for: tree, floors: floors, gaps: gaps)
+  }
+
+  fileprivate static func require(
+    for tree: PaneLayoutTree,
+    floors: [PaneLayoutKind: PaneLayoutSize],
+    gaps: PaneLayoutGaps
+  ) throws -> PaneLayoutSize {
     switch tree {
     case .leaf(let leaf):
-      return floors[leaf.kind]
+      guard let floor = floors[leaf.kind] else {
+        throw PaneLayoutSizingError.missingFloor(leaf.kind)
+      }
+      return floor
     case .split(let split):
-      let childSizes = split.children.compactMap {
-        derive(for: $0.tree, floors: floors, gaps: gaps)
+      let childSizes = try split.children.map {
+        try require(for: $0.tree, floors: floors, gaps: gaps)
       }
-      guard childSizes.count == split.children.count, !childSizes.isEmpty else {
-        return nil
-      }
-      let gapCount = Double(childSizes.count - 1)
+      let gapCount = Double(max(0, childSizes.count - 1))
       switch split.axis {
       case .horizontal:
         return PaneLayoutSize(
