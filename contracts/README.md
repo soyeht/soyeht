@@ -5,6 +5,12 @@ to its parameters and result. `x-events` binds each notification to its paramete
 and declares whether it has a durable cursor. `x-limits` defines shared limits;
 `x-framing` describes binary frame integers.
 
+Methods whose parameters declare `paneId` use it as their operation-log route.
+`x-paneRoute` names a differently spelled singular pane identifier.
+`x-paneNonRouteIds` lists every other parameter name whose type is `Id` or an
+array of `Id`. Generation fails when an identifier name is neither the route
+nor explicitly classified, and also fails when a listed name becomes unused.
+
 `profiles.json` is the single source for installed profile values. It defines
 the Dev data directory, socket names, TCP port and launchd labels. The same
 generator emits constants for Rust, Swift and Python, plus the launchd service

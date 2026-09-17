@@ -10605,6 +10605,35 @@
     }
   },
   "x-protocolVersion": 1,
+  "x-paneNonRouteIds": [
+    "agent",
+    "authMethodId",
+    "beatId",
+    "before",
+    "configId",
+    "cursor",
+    "dependencyTaskId",
+    "deviceId",
+    "fileId",
+    "harness",
+    "harnessId",
+    "hunkId",
+    "idempotencyKey",
+    "lineId",
+    "operationKey",
+    "optionId",
+    "paneIds",
+    "plannedOwner",
+    "promptId",
+    "ref",
+    "requestId",
+    "sceneId",
+    "subitemId",
+    "taskId",
+    "variantId",
+    "versionId",
+    "workspaceId"
+  ],
   "x-methods": {
     "hello": {
       "params": {
@@ -11630,7 +11659,8 @@
       "result": {
         "$ref": "#/$defs/WritingVariantRequestResult"
       },
-      "mutation": true
+      "mutation": true,
+      "x-paneRoute": "agentPaneId"
     },
     "writing.variant.add": {
       "params": {

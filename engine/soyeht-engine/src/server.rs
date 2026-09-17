@@ -526,10 +526,10 @@ fn operation_record(
 }
 
 fn operation_pane_id<'a>(method: &str, request: &'a Value) -> Option<&'a str> {
-    if !method.starts_with("pane.") {
-        return None;
-    }
-    let pane_id = request.get("params")?.get("paneId")?.as_str()?;
+    let route = soyeht_protocol::PANE_ROUTE_METHODS
+        .iter()
+        .find_map(|(candidate, property)| (*candidate == method).then_some(*property))?;
+    let pane_id = request.get("params")?.get(route)?.as_str()?;
     let parsed = uuid::Uuid::parse_str(pane_id).ok()?;
     (parsed.hyphenated().to_string() == pane_id).then_some(pane_id)
 }
@@ -592,7 +592,34 @@ mod tests {
             "params": {"paneId":pane_id.to_uppercase(),"capability":secret},
         });
         assert!(operation_pane_id("pane.stream.subscribe", &uppercase).is_none());
-        assert!(operation_pane_id("usage.refresh", &request).is_none());
+        assert!(operation_pane_id("unknown", &request).is_none());
+
+        let all_routes = serde_json::json!({
+            "params": {"paneId":pane_id,"agentPaneId":pane_id},
+        });
+        let expected_methods = soyeht_protocol::PANE_ROUTE_METHODS
+            .iter()
+            .map(|(method, _)| *method)
+            .collect::<Vec<_>>();
+        let routed_methods = soyeht_protocol::METHODS
+            .iter()
+            .filter_map(|(method, _, _, _)| operation_pane_id(method, &all_routes).map(|_| *method))
+            .collect::<Vec<_>>();
+        assert_eq!(routed_methods, expected_methods);
+
+        let writing = serde_json::json!({
+            "params": {"agentPaneId":pane_id},
+        });
+        assert_eq!(
+            operation_pane_id("writing.variant.request", &writing),
+            Some(pane_id.as_str())
+        );
+
+        let usage = serde_json::json!({
+            "method": "usage.refresh",
+            "params": {"paneId":pane_id},
+        });
+        assert!(operation_pane_id("usage.refresh", &usage).is_none());
     }
     #[test]
     fn listener_refuses_public_lan_and_wildcard_addresses() {
