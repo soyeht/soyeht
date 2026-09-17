@@ -351,8 +351,7 @@ async fn read_requests(
             }
             continue;
         }
-        let started = Instant::now();
-        let operation_id = uuid::Uuid::new_v4().to_string();
+        let operation = OperationTimer::start();
         let method = request["method"]
             .as_str()
             .and_then(|name| {
@@ -374,14 +373,7 @@ async fn read_requests(
                 .dispatch(&connection, request)
         })
         .await;
-        log_operation(
-            &operation_id,
-            id,
-            method,
-            pane_id.as_deref(),
-            &outcome,
-            started.elapsed().as_millis(),
-        );
+        operation.log(id, method, pane_id.as_deref(), &outcome);
         match outcome {
             Ok(Ok(Outcome::Reply(result))) => {
                 let Ok(frame) = model::response(request_id, result) else {
@@ -458,13 +450,57 @@ fn send_attachment_response(
     Ok(())
 }
 
+struct OperationTiming {
+    started_at: chrono::DateTime<chrono::Utc>,
+    finished_at: chrono::DateTime<chrono::Utc>,
+    duration_ms: u128,
+}
+
+struct OperationTimer {
+    operation_id: String,
+    started_at: chrono::DateTime<chrono::Utc>,
+    started: Instant,
+}
+
+impl OperationTimer {
+    fn start() -> Self {
+        Self {
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            started_at: chrono::Utc::now(),
+            started: Instant::now(),
+        }
+    }
+
+    fn log(
+        self,
+        connection: &str,
+        method: &str,
+        pane_id: Option<&str>,
+        outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+    ) {
+        let timing = OperationTiming {
+            started_at: self.started_at,
+            finished_at: chrono::Utc::now(),
+            duration_ms: self.started.elapsed().as_millis(),
+        };
+        log_operation(
+            &self.operation_id,
+            connection,
+            method,
+            pane_id,
+            outcome,
+            &timing,
+        );
+    }
+}
+
 fn log_operation(
     operation: &str,
     connection: &str,
     method: &str,
     pane_id: Option<&str>,
     outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
-    duration_ms: u128,
+    timing: &OperationTiming,
 ) {
     let (status, kind) = match outcome {
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
@@ -483,7 +519,7 @@ fn log_operation(
             pane_id,
             status,
             kind.as_ref(),
-            duration_ms,
+            timing,
         )
     );
 }
@@ -504,7 +540,7 @@ fn operation_record(
     pane_id: Option<&str>,
     outcome: &str,
     kind: Option<&soyeht_protocol::ErrorKind>,
-    duration_ms: u128,
+    timing: &OperationTiming,
 ) -> Value {
     // Only an allowlisted method name is retained. Request IDs and parameters
     // may contain credentials or terminal bytes and never enter this record.
@@ -521,7 +557,9 @@ fn operation_record(
         "paneId": pane_id,
         "outcome": outcome,
         "kind": kind,
-        "durationMs": duration_ms,
+        "startedAt": timing.started_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "finishedAt": timing.finished_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "durationMs": timing.duration_ms,
     })
 }
 
@@ -537,10 +575,22 @@ fn operation_pane_id<'a>(method: &str, request: &'a Value) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .expect("valid test timestamp")
+            .with_timezone(&chrono::Utc)
+    }
+
     #[test]
     fn operation_log_keeps_identity_but_never_unknown_method_text() {
         let operation = uuid::Uuid::new_v4().to_string();
         let connection = uuid::Uuid::new_v4().to_string();
+        let timing = OperationTiming {
+            started_at: timestamp("2026-09-17T10:00:00.123Z"),
+            finished_at: timestamp("2026-09-17T10:00:00.135Z"),
+            duration_ms: 12,
+        };
         let record = operation_record(
             &operation,
             &connection,
@@ -548,12 +598,15 @@ mod tests {
             None,
             "error",
             Some(&soyeht_protocol::ErrorKind::InvalidParams),
-            12,
+            &timing,
         );
         assert_eq!(record["operationId"], operation);
         assert_eq!(record["connectionId"], connection);
         assert_eq!(record["method"], "unknown");
         assert_eq!(record["kind"], "invalid_params");
+        assert_eq!(record["startedAt"], "2026-09-17T10:00:00.123Z");
+        assert_eq!(record["finishedAt"], "2026-09-17T10:00:00.135Z");
+        assert_eq!(record["durationMs"], 12);
         assert!(!record.to_string().contains("untrusted-private-text"));
         let success = operation_record(
             &operation,
@@ -562,7 +615,7 @@ mod tests {
             None,
             "reply",
             None,
-            1,
+            &timing,
         );
         assert_eq!(success["method"], "pane.create");
         assert!(success["kind"].is_null());
@@ -576,6 +629,11 @@ mod tests {
             "params": {"paneId":pane_id,"capability":secret},
         });
         let routed = operation_pane_id("pane.stream.subscribe", &request);
+        let timing = OperationTiming {
+            started_at: timestamp("2026-09-17T10:00:01.000Z"),
+            finished_at: timestamp("2026-09-17T10:00:01.002Z"),
+            duration_ms: 2,
+        };
         let record = operation_record(
             "operation",
             "connection",
@@ -583,7 +641,7 @@ mod tests {
             routed,
             "queued",
             None,
-            2,
+            &timing,
         );
         assert_eq!(record["paneId"], pane_id);
         assert!(!record.to_string().contains(secret));

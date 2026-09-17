@@ -4,12 +4,13 @@ import SoyehtProtocol
 
 public enum ClientFailure: Error, LocalizedError, Sendable {
   case disconnected, invalidFrame, invalidSnapshot, invalidStream, timeout
+  case requestTimeout(String)
   case editorCommand(String)
   case webHost(ErrorKind, String)
   case remote(String, String)
   var canRetry: Bool {
     switch self {
-    case .disconnected, .timeout: true
+    case .disconnected, .timeout, .requestTimeout: true
     default: false
     }
   }
@@ -20,6 +21,7 @@ public enum ClientFailure: Error, LocalizedError, Sendable {
     case .invalidSnapshot: "Received state is incomplete."
     case .invalidStream: "The screen needs to synchronize again."
     case .timeout: "The engine did not respond in time."
+    case .requestTimeout(let method): "The engine did not respond to \(method) in time."
     case .editorCommand(let message): message
     case .webHost(_, let message): message
     case .remote(_, let message): message

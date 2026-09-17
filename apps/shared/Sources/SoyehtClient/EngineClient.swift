@@ -85,6 +85,22 @@ public final class EngineClient {
     var attachment: WebHostAttachment?
   }
 
+  static func requestTimeoutDeadline(
+    method: String, timeoutSeconds: Double,
+    waitForTimeout: @escaping @Sendable (String, Double) async throws -> Void,
+    onTimeout: @escaping @MainActor @Sendable (ClientFailure) -> Void
+  ) -> Task<Void, Never> {
+    Task {
+      do { try await waitForTimeout(method, timeoutSeconds) } catch { return }
+      onTimeout(.requestTimeout(method))
+    }
+  }
+
+  private static func waitForRequestTimeout(_ method: String, _ seconds: Double) async throws {
+    _ = method
+    try await Task.sleep(for: .seconds(seconds))
+  }
+
   public init(socket: String = DevProfile.socketPath, webHost: (any WebHostPort)? = nil) {
     self.socket = socket
     credential = nil
@@ -242,23 +258,36 @@ public final class EngineClient {
     attachments: [WebHostAttachment] = []
   ) async throws -> EngineResponse {
     guard let wire else { throw ClientFailure.disconnected }
+    return try await pendingResponse(
+      method, params, timeoutSeconds: timeoutSeconds,
+      waitForTimeout: Self.waitForRequestTimeout
+    ) { id in
+      try await wire.send(
+        .object([
+          "jsonrpc": .string("2.0"), "id": .string(id),
+          "method": .string(method), "params": params,
+        ]), attachments: attachments)
+    }
+  }
+  func pendingResponse(
+    _ method: String, _ params: JsonValue, timeoutSeconds: Double,
+    waitForTimeout: @escaping @Sendable (String, Double) async throws -> Void,
+    send: @escaping @MainActor (String) async throws -> Void
+  ) async throws -> EngineResponse {
     let id = UUID().uuidString
     return try await withCheckedThrowingContinuation { continuation in
-      let timeout = Task { [weak self] in
-        do { try await Task.sleep(for: .seconds(timeoutSeconds)) } catch { return }
+      let timeout = Self.requestTimeoutDeadline(
+        method: method, timeoutSeconds: timeoutSeconds, waitForTimeout: waitForTimeout
+      ) { [weak self] failure in
         guard let request = self?.pending.removeValue(forKey: id) else { return }
-        request.continuation.resume(throwing: ClientFailure.timeout)
+        request.continuation.resume(throwing: failure)
         self?.wire?.close()
       }
       pending[id] = Pending(
         method: method, params: params, continuation: continuation, timeout: timeout)
       Task {
         do {
-          try await wire.send(
-            .object([
-              "jsonrpc": .string("2.0"), "id": .string(id),
-              "method": .string(method), "params": params,
-            ]), attachments: attachments)
+          try await send(id)
         } catch {
           if let request = self.pending.removeValue(forKey: id) {
             request.timeout.cancel()
