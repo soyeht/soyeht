@@ -90,35 +90,35 @@ fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::s
 }
 
 impl Core {
-    pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if params["mode"] == "editor" {
-            return self.editor_pane_create(connection, params);
-        }
-        if params["mode"] == "web" {
-            return self.web_pane_create(connection, params);
-        }
-        if params["mode"] == "writing" {
-            return self.writing_pane_create(connection, params);
-        }
-        let defaults = pane_defaults(&self.store)?;
+    fn prepare_process_pane(
+        &self,
+        params: &Value,
+        defaults: &PaneDefaults,
+        agent: Option<&crate::agents::state::State>,
+    ) -> Result<(
+        StoredPane,
+        Option<(crate::terminal_harness::TerminalHarnessSession, String)>,
+    )> {
         let agent_mode = params["mode"] == "agent";
-        let agent = new_agent(&self.directory, params)?;
         let workspace = model::workspace(&self.store, errors::param_str(params, "workspaceId")?)?;
-        let cwd = params["cwd"].as_str().unwrap_or(&workspace.path);
-        if !Path::new(cwd).is_absolute() || !Path::new(cwd).is_dir() {
+        let requested_cwd = params["cwd"].as_str().unwrap_or(&workspace.path);
+        if !Path::new(requested_cwd).is_absolute() || !Path::new(requested_cwd).is_dir() {
             return Err(errors::invalid("Pane directory must exist and be absolute"));
         }
         let canonical;
         let cwd = if agent_mode {
-            canonical = Path::new(cwd).canonicalize().map_err(errors::io)?;
+            canonical = Path::new(requested_cwd)
+                .canonicalize()
+                .map_err(errors::io)?;
             canonical
                 .to_str()
                 .ok_or_else(|| errors::invalid("Working directory must be UTF-8"))?
         } else {
-            cwd
+            requested_cwd
         };
-        let pane = Pane {
-            agent: agent.as_ref().map(|agent| agent.public(self.now_ms())),
+        let instance_key = Uuid::new_v4().to_string();
+        let mut pane = Pane {
+            agent: agent.map(|state| state.public(self.now_ms())),
             url: None,
             title: None,
             viewport: None,
@@ -166,14 +166,55 @@ impl Core {
             pid: None,
             stream_id: (!agent_mode).then(|| Uuid::new_v4().to_string()),
         };
-        let saved = StoredPane {
-            pane,
-            closed: false,
-            instance_key: Uuid::new_v4().to_string(),
-            instance_id: None,
-            supervisor_id: None,
-            sequence_base: 0,
-        };
+        let terminal_harness = params["harness"]
+            .as_str()
+            .filter(|_| !agent_mode && params["mode"] == "terminal")
+            .map(|harness| {
+                crate::terminal_harness::TerminalHarnessSession::prepare(
+                    &self.directory,
+                    harness,
+                    instance_key.clone(),
+                    pane.generation,
+                    pane.cwd.clone(),
+                    u16::try_from(pane.cols)
+                        .map_err(|_| errors::invalid("Pane columns exceed the terminal range"))?,
+                    u16::try_from(pane.rows)
+                        .map_err(|_| errors::invalid("Pane rows exceed the terminal range"))?,
+                )
+            })
+            .transpose()?;
+        if params["name"].as_str().is_none()
+            && let Some((_, harness_name)) = &terminal_harness
+        {
+            pane.name = format!("{harness_name} Terminal");
+        }
+        Ok((
+            StoredPane {
+                pane,
+                closed: false,
+                instance_key,
+                instance_id: None,
+                supervisor_id: None,
+                sequence_base: 0,
+            },
+            terminal_harness,
+        ))
+    }
+
+    pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
+        if params["mode"] == "editor" {
+            return self.editor_pane_create(connection, params);
+        }
+        if params["mode"] == "web" {
+            return self.web_pane_create(connection, params);
+        }
+        if params["mode"] == "writing" {
+            return self.writing_pane_create(connection, params);
+        }
+        let defaults = pane_defaults(&self.store)?;
+        let agent = new_agent(&self.directory, params)?;
+        let (saved, terminal_harness) =
+            self.prepare_process_pane(params, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
@@ -181,6 +222,9 @@ impl Core {
         )?;
         let mutation = self.mutate(connection, "pane.create", params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
+            if let Some((session, _)) = &terminal_harness {
+                tx.insert_pane_launch(&saved.pane.pane_id, session)?;
+            }
             Ok(pane_created(&saved))
         })?;
         if !mutation.repeated {
@@ -195,6 +239,9 @@ impl Core {
             if let Some(agent) = agent {
                 self.agents
                     .insert(id.clone(), crate::agents::Running::new(agent));
+            }
+            if let Some((session, _)) = terminal_harness {
+                self.terminal_harnesses.insert(id.clone(), session);
             }
             // A disconnected supervisor leaves a durable creation intent for
             // reconciliation, never a second process on an RPC retry.

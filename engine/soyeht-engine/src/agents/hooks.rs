@@ -61,6 +61,20 @@ pub(crate) fn session_parameters(
     if state.launch.id != CLAUDE_HARNESS_ID {
         return Ok(params);
     }
+    params["_meta"] = json!({
+        "claudeCode":{
+            "options":{
+                "settings":terminal_hook_settings(data_directory, &state.hook_binding)?
+            }
+        }
+    });
+    Ok(params)
+}
+
+pub(crate) fn terminal_hook_settings(
+    data_directory: &Path,
+    binding: &super::state::Binding,
+) -> Result<Value> {
     let executable = sibling_cli()?;
     let handler = json!({
         "type":"command",
@@ -69,27 +83,20 @@ pub(crate) fn session_parameters(
             "--data-dir",
             path_text(data_directory)?,
             "__experiment-hook",
-            state.hook_binding.expose()
+            binding.expose()
         ],
         "timeout":HOOK_TIMEOUT_SECONDS
     });
     let group = |handler: &Value| json!([{"hooks":[handler]}]);
-    params["_meta"] = json!({
-        "claudeCode":{
-            "options":{
-                "settings":{
-                    "hooks":{
-                        "UserPromptSubmit":group(&handler),
-                        "PermissionRequest":group(&handler),
-                        "PostToolUse":group(&handler),
-                        "PostToolUseFailure":group(&handler),
-                        "Stop":group(&handler)
-                    }
-                }
-            }
+    Ok(json!({
+        "hooks":{
+            "UserPromptSubmit":group(&handler),
+            "PermissionRequest":group(&handler),
+            "PostToolUse":group(&handler),
+            "PostToolUseFailure":group(&handler),
+            "Stop":group(&handler)
         }
-    });
-    Ok(params)
+    }))
 }
 
 fn sibling_cli() -> Result<PathBuf> {
@@ -129,16 +136,35 @@ impl Core {
         let mut matched = self
             .agents
             .iter()
-            .filter(|(_, running)| running.state.hook_binding.matches(&params.capability));
-        let Some((pane_id, running)) = matched.next() else {
+            .filter(|(_, running)| running.state.hook_binding.matches(&params.capability))
+            .map(|(pane_id, running)| {
+                (
+                    pane_id.clone(),
+                    running.state.launch.id.clone(),
+                    running.state.hook_binding.sha256(),
+                    false,
+                )
+            })
+            .chain(
+                self.terminal_harnesses
+                    .iter()
+                    .filter(|(_, session)| session.hook_binding.matches(&params.capability))
+                    .map(|(pane_id, session)| {
+                        (
+                            pane_id.clone(),
+                            session.harness.id().unwrap_or("").to_owned(),
+                            session.hook_binding.sha256(),
+                            true,
+                        )
+                    }),
+            );
+        let Some((pane_id, harness_id, credential_sha256, terminal)) = matched.next() else {
             return Err(errors::unauthorized("Unknown experiment hook capability"));
         };
         if matched.next().is_some() {
             return Err(errors::internal("Experiment hook capability is not unique"));
         }
-        let pane_id = pane_id.clone();
-        let credential_sha256 = running.state.hook_binding.sha256();
-        if running.state.launch.id != CLAUDE_HARNESS_ID {
+        if harness_id != CLAUDE_HARNESS_ID {
             return Err(errors::unauthorized(
                 "Experiment hook capability has no supported harness",
             ));
@@ -148,13 +174,28 @@ impl Core {
             .get(&pane_id)
             .filter(|pane| !pane.stored.closed)
             .ok_or_else(|| errors::unauthorized("Experiment hook session is closed"))?;
+        if terminal
+            && self.terminal_harnesses.get(&pane_id).is_none_or(|session| {
+                session.spawn.instance_key != pane.stored.instance_key
+                    || session.spawn.generation != pane.stored.pane.generation
+                    || pane.stored.instance_id.is_none()
+            })
+        {
+            return Err(errors::unauthorized(
+                "Experiment hook terminal session is no longer active",
+            ));
+        }
         let active_capture = pane
             .stored
             .pane
             .experiment_capture
             .as_ref()
             .is_some_and(|capture| capture.on && capture.failure.is_none())
-            && self.agent_captures.contains_key(&pane_id);
+            && if terminal {
+                self.terminal_captures.contains_key(&pane_id)
+            } else {
+                self.agent_captures.contains_key(&pane_id)
+            };
         if !active_capture {
             // Hooks are installed when the session opens so later consent can
             // begin recording without restarting the conversation. An inactive
@@ -166,7 +207,11 @@ impl Core {
                 })?
                 .result);
         }
-        self.record_agent_hook_label(&pane_id, params.event.state(), credential_sha256)?;
+        if terminal {
+            self.record_terminal_hook_label(&pane_id, params.event.state(), credential_sha256)?;
+        } else {
+            self.record_agent_hook_label(&pane_id, params.event.state(), credential_sha256)?;
+        }
         let result = json!({"recorded":true});
         Ok(self
             .mutate(connection, "pane.experiment.hook", raw, |_| {

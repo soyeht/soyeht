@@ -686,6 +686,7 @@ mod tests {
             pane_kind: ObservationPaneKind::Terminal,
             pane_id: pane_id.into(),
             harness: harness.clone(),
+            session_generation: 1,
             timestamp_ms: at,
             sequence,
             reason: ObservationReason::VisualChange,

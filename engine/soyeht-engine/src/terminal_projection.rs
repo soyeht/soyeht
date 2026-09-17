@@ -36,6 +36,7 @@ pub struct TerminalProjection {
     pane_id: String,
     pane_kind: ObservationPaneKind,
     harness: HarnessIdentity,
+    session_generation: u32,
     parser: vt100::Parser<TitleCallbacks>,
     rows: u16,
     cols: u16,
@@ -50,6 +51,7 @@ impl TerminalProjection {
         pane_id: impl Into<String>,
         pane_kind: ObservationPaneKind,
         harness: HarnessIdentity,
+        session_generation: u32,
         rows: u16,
         cols: u16,
         next_sequence: u64,
@@ -62,6 +64,7 @@ impl TerminalProjection {
             pane_id: pane_id.clone(),
             pane_kind,
             harness: harness.clone(),
+            session_generation,
             timestamp_ms: 0,
             sequence: next_sequence,
             reason: ObservationReason::VisualChange,
@@ -76,6 +79,7 @@ impl TerminalProjection {
             pane_id,
             pane_kind,
             harness,
+            session_generation,
             parser: vt100::Parser::new_with_callbacks(rows, cols, 0, TitleCallbacks::default()),
             rows,
             cols,
@@ -155,6 +159,7 @@ impl TerminalProjection {
             pane_id: self.pane_id.clone(),
             pane_kind: self.pane_kind,
             harness: self.harness.clone(),
+            session_generation: self.session_generation,
             timestamp_ms,
             sequence,
             reason: if projection_changed {
@@ -181,6 +186,11 @@ impl TerminalProjection {
         source: StateSource,
         provenance: GroundTruthProvenance,
     ) -> Result<GroundTruthLabel> {
+        if provenance.session_generation != self.session_generation {
+            return Err(errors::invalid(
+                "Ground-truth label does not belong to the observed terminal generation",
+            ));
+        }
         let sequence = self.next_sequence;
         let label = GroundTruthLabel {
             pane_id: self.pane_id.clone(),
@@ -278,6 +288,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             4,
             20,
             7,
@@ -308,6 +319,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             4,
             20,
             0,
@@ -331,6 +343,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             70,
             2_100,
             0,
@@ -357,6 +370,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             2,
             20,
             0,
@@ -378,6 +392,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             2,
             10,
             3,
@@ -397,6 +412,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             2,
             10,
             3,
@@ -422,6 +438,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             harness.clone(),
+            1,
             2,
             20,
             0,
@@ -453,6 +470,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             2,
             20,
             7,
@@ -473,6 +491,14 @@ mod tests {
                 PaneState::Working,
                 StateSource::Screen,
                 GroundTruthProvenance::protocol(1),
+            )
+            .unwrap_err();
+        projection
+            .label(
+                1,
+                PaneState::Working,
+                StateSource::Hook,
+                GroundTruthProvenance::session_hook(2, "a".repeat(64)),
             )
             .unwrap_err();
 

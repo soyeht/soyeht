@@ -122,6 +122,7 @@ pub struct ObservationFrame {
     pub pane_id: String,
     pub pane_kind: ObservationPaneKind,
     pub harness: HarnessIdentity,
+    pub session_generation: u32,
     pub timestamp_ms: i64,
     pub sequence: u64,
     pub reason: ObservationReason,
@@ -136,6 +137,9 @@ impl ObservationFrame {
     pub fn validate(&self) -> Result<()> {
         bounded_nonempty(&self.pane_id, MAX_PANE_ID_BYTES, "pane id")?;
         self.harness.validate()?;
+        if self.session_generation == 0 {
+            return Err(Error::InvalidGeneration);
+        }
         valid_timestamp(self.timestamp_ms)?;
         bounded_optional(&self.osc_title, MAX_TITLE_BYTES, "OSC title")?;
         if self.lines.len() > MAX_SCREEN_LINES {

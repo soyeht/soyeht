@@ -43,6 +43,8 @@ pub struct Core {
     pub(crate) terminal_captures: BTreeMap<String, crate::terminal_capture::TerminalCapture>,
     pub(crate) agent_captures: BTreeMap<String, crate::agent_capture::AgentCapture>,
     pub(crate) experiment_capture_build: Option<soyeht_pane_state::EngineBuild>,
+    pub(crate) terminal_harnesses:
+        BTreeMap<String, crate::terminal_harness::TerminalHarnessSession>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
     pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
@@ -110,6 +112,7 @@ impl Core {
             terminal_captures: BTreeMap::new(),
             agent_captures: BTreeMap::new(),
             experiment_capture_build: None,
+            terminal_harnesses: BTreeMap::new(),
             agents: BTreeMap::new(),
             harness_switches: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
@@ -125,6 +128,24 @@ impl Core {
                     stored.pane.pane_id.clone(),
                     crate::agents::Running::new(state),
                 );
+            }
+            if stored.pane.mode == soyeht_protocol::PaneMode::Terminal
+                && let Some(value) = core
+                    .store
+                    .pane_launch::<Value>(&stored.pane.pane_id)
+                    .map_err(errors::storage)?
+                && let Some(session) =
+                    crate::terminal_harness::TerminalHarnessSession::decode(value)?
+            {
+                if session.spawn.instance_key != stored.instance_key
+                    || session.spawn.generation != stored.pane.generation
+                {
+                    return Err(errors::internal(
+                        "Stored terminal harness session does not match its pane generation",
+                    ));
+                }
+                core.terminal_harnesses
+                    .insert(stored.pane.pane_id.clone(), session);
             }
             let screen = Screen::open(
                 &directory.join("sessions").join(&stored.pane.pane_id),
@@ -358,90 +379,101 @@ impl Core {
             .collect();
         let ids: Vec<_> = self.panes.keys().cloned().collect();
         for id in ids {
-            let saved = self.panes[&id].stored.clone();
-            if matches!(
-                saved.pane.mode,
-                soyeht_protocol::PaneMode::Editor
-                    | soyeht_protocol::PaneMode::Web
-                    | soyeht_protocol::PaneMode::Writing
-            ) {
-                continue;
-            }
-            if saved.instance_id.is_none() && reserved_panes.contains(&id) {
-                continue;
-            }
-            let existing = instances
-                .iter()
-                .find(|i| i.spawn.instance_key == saved.instance_key);
-            if saved.closed {
-                let child_keys: Vec<_> = self
-                    .agents
-                    .get(&id)
-                    .map(|a| {
-                        a.state
-                            .terminals
-                            .values()
-                            .map(|t| t.spawn.instance_key.clone())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                for instance in instances
-                    .iter()
-                    .filter(|i| !i.closed && child_keys.contains(&i.spawn.instance_key))
-                {
-                    self.pty_request(Request::Close {
-                        instance_id: instance.instance_id.clone(),
-                    })?;
-                }
-                if let Some(instance) = existing.filter(|i| !i.closed) {
-                    self.pty_request(Request::Close {
-                        instance_id: instance.instance_id.clone(),
-                    })?;
-                }
-            } else if let Some(instance) = existing.filter(|i| !i.closed) {
-                self.adopt(&id, instance)?;
-            } else {
-                if self.agents.contains_key(&id) {
-                    if self.agents[&id].state.phase == crate::agents::state::Phase::Faulted {
-                        self.close_agent_processes(&id)?;
-                        continue;
-                    }
-                    self.recover_missing_agent(&id)?;
-                    continue;
-                }
-                let auth_launch =
-                    StorePort::has_pane_launch(&self.store, &id).map_err(errors::storage)?;
-                if auth_launch && saved.instance_id.is_some() {
-                    let mut stopped = saved;
-                    stopped.pane.pid = None;
-                    stopped.pane.state = PaneState::Dead;
-                    stopped.pane.phrase = "Sign-in process was lost".into();
-                    self.save_runtime(&id, stopped)?;
-                    continue;
-                }
-                if saved.instance_id.is_some() {
-                    // A new supervisor cannot adopt an old process identifier.
-                    // Reserve the replacement identity durably before spawning.
-                    let mut next = saved;
-                    next.pane.generation = next
-                        .pane
-                        .generation
-                        .checked_add(1)
-                        .ok_or_else(|| errors::internal("Pane generation exhausted"))?;
-                    next.pane.stream_id = Some(Uuid::new_v4().to_string());
-                    next.pane.pid = None;
-                    next.pane.state = PaneState::Recovering;
-                    next.pane.phrase = "Restoring shell after process loss".into();
-                    next.instance_key = Uuid::new_v4().to_string();
-                    next.instance_id = None;
-                    next.supervisor_id = None;
-                    next.sequence_base = self.panes[&id].screen.next_offset();
-                    self.save_runtime(&id, next)?;
-                }
-                self.spawn(&id)?;
-            }
+            self.reconcile_pane(&id, &instances, &reserved_panes)?;
         }
         self.reconcile_language_servers(&instances)
+    }
+
+    fn reconcile_pane(
+        &mut self,
+        id: &str,
+        instances: &[Instance],
+        reserved_panes: &std::collections::BTreeSet<String>,
+    ) -> Result<()> {
+        let saved = self.panes[id].stored.clone();
+        if matches!(
+            saved.pane.mode,
+            soyeht_protocol::PaneMode::Editor
+                | soyeht_protocol::PaneMode::Web
+                | soyeht_protocol::PaneMode::Writing
+        ) || (saved.instance_id.is_none() && reserved_panes.contains(id))
+        {
+            return Ok(());
+        }
+        let existing = instances
+            .iter()
+            .find(|instance| instance.spawn.instance_key == saved.instance_key);
+        if saved.closed {
+            let child_keys: Vec<_> = self
+                .agents
+                .get(id)
+                .map(|agent| {
+                    agent
+                        .state
+                        .terminals
+                        .values()
+                        .map(|terminal| terminal.spawn.instance_key.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            for instance in instances.iter().filter(|instance| {
+                !instance.closed && child_keys.contains(&instance.spawn.instance_key)
+            }) {
+                self.pty_request(Request::Close {
+                    instance_id: instance.instance_id.clone(),
+                })?;
+            }
+            if let Some(instance) = existing.filter(|instance| !instance.closed) {
+                self.pty_request(Request::Close {
+                    instance_id: instance.instance_id.clone(),
+                })?;
+            }
+            return Ok(());
+        }
+        if let Some(instance) = existing.filter(|instance| !instance.closed) {
+            return self.adopt(id, instance);
+        }
+        if self.agents.contains_key(id) {
+            if self.agents[id].state.phase == crate::agents::state::Phase::Faulted {
+                return self.close_agent_processes(id);
+            }
+            return self.recover_missing_agent(id);
+        }
+        if self.terminal_harnesses.contains_key(id) && saved.instance_id.is_some() {
+            let mut stopped = saved;
+            stopped.pane.pid = None;
+            stopped.pane.state = PaneState::Dead;
+            stopped.pane.phrase = "Terminal harness exited".into();
+            return self.save_runtime(id, stopped);
+        }
+        let auth_launch = StorePort::has_pane_launch(&self.store, id).map_err(errors::storage)?;
+        if auth_launch && saved.instance_id.is_some() {
+            let mut stopped = saved;
+            stopped.pane.pid = None;
+            stopped.pane.state = PaneState::Dead;
+            stopped.pane.phrase = "Sign-in process was lost".into();
+            return self.save_runtime(id, stopped);
+        }
+        if saved.instance_id.is_some() {
+            // A new supervisor cannot adopt an old process identifier.
+            // Reserve the replacement identity durably before spawning.
+            let mut next = saved;
+            next.pane.generation = next
+                .pane
+                .generation
+                .checked_add(1)
+                .ok_or_else(|| errors::internal("Pane generation exhausted"))?;
+            next.pane.stream_id = Some(Uuid::new_v4().to_string());
+            next.pane.pid = None;
+            next.pane.state = PaneState::Recovering;
+            next.pane.phrase = "Restoring shell after process loss".into();
+            next.instance_key = Uuid::new_v4().to_string();
+            next.instance_id = None;
+            next.supervisor_id = None;
+            next.sequence_base = self.panes[id].screen.next_offset();
+            self.save_runtime(id, next)?;
+        }
+        self.spawn(id)
     }
 
     pub fn spawn(&mut self, id: &str) -> Result<()> {
@@ -449,8 +481,15 @@ impl Core {
             return self.spawn_agent(id);
         }
         let pane = &self.panes[id].stored;
-        let launch: Option<Spawn> =
-            StorePort::pane_launch(&self.store, id).map_err(errors::storage)?;
+        let managed = self
+            .terminal_harnesses
+            .get(id)
+            .map(|session| session.spawn.clone());
+        let launch: Option<Spawn> = if managed.is_some() {
+            managed
+        } else {
+            StorePort::pane_launch(&self.store, id).map_err(errors::storage)?
+        };
         let config = Spawn {
             instance_key: pane.instance_key.clone(),
             generation: pane.pane.generation,

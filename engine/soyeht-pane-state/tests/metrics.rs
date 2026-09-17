@@ -116,6 +116,7 @@ fn observation(sequence: u64, timestamp_ms: i64, screen: &str) -> RecordedRow {
         pane_id: "pane-1".into(),
         pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
+        session_generation: 1,
         timestamp_ms,
         sequence,
         reason: ObservationReason::VisualChange,
