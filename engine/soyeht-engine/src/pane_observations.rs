@@ -27,7 +27,7 @@ const OBSERVATION_WRITE_MAX_WAIT_MS: u64 = 50;
 const OBSERVATION_WRITE_MAX_WAIT: Duration = Duration::from_millis(OBSERVATION_WRITE_MAX_WAIT_MS);
 const LABEL_WRITE_TIMEOUT_SECONDS: u64 = 30;
 const LABEL_WRITE_TIMEOUT_WINDOWS: u64 = 600;
-const LABEL_WRITE_TIMEOUT: Duration = Duration::from_secs(LABEL_WRITE_TIMEOUT_SECONDS);
+pub(crate) const LABEL_WRITE_TIMEOUT: Duration = Duration::from_secs(LABEL_WRITE_TIMEOUT_SECONDS);
 const _: () = assert!(
     LABEL_WRITE_TIMEOUT_SECONDS * 1_000
         == OBSERVATION_WRITE_MAX_WAIT_MS * LABEL_WRITE_TIMEOUT_WINDOWS
@@ -1138,6 +1138,7 @@ mod tests {
             pane_id: "pane-1".into(),
             pane_kind: ObservationPaneKind::Terminal,
             harness: harness(),
+            session_generation: 1,
             timestamp_ms: 1_800_000_000_000 + sequence as i64,
             sequence,
             reason: ObservationReason::VisualChange,

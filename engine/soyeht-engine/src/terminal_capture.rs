@@ -2,14 +2,14 @@ use crate::{
     core::Core,
     errors::{self, Result},
     pane_observations::{
-        DeletionReceipt, ObservationRecorder, SegmentStore, delete_pane, experiment_root,
-        installed_engine_build,
+        DeletionReceipt, LABEL_WRITE_TIMEOUT, ObservationRecorder, SegmentStore, delete_pane,
+        experiment_root, installed_engine_build,
     },
     terminal_projection::TerminalProjection,
 };
 use crossbeam_channel as channel;
-use soyeht_pane_state::{EngineBuild, HarnessIdentity, ObservationPaneKind};
-use soyeht_protocol::{PaneExperimentCapture, PaneMode};
+use soyeht_pane_state::{EngineBuild, GroundTruthProvenance, HarnessIdentity, ObservationPaneKind};
+use soyeht_protocol::{PaneExperimentCapture, PaneMode, PaneState, StateSource};
 use std::{
     path::Path,
     sync::{
@@ -17,7 +17,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const CAPTURE_FAILURE: &str = "Experiment capture stopped because its private recorder failed";
@@ -79,6 +79,13 @@ enum ProjectionCommand {
         rows: u16,
         cols: u16,
     },
+    Label {
+        timestamp_ms: i64,
+        state: PaneState,
+        source: StateSource,
+        provenance: GroundTruthProvenance,
+        reply: channel::Sender<std::result::Result<(), String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,6 +141,7 @@ impl TerminalCapture {
         root: &Path,
         pane_id: &str,
         harness: HarnessIdentity,
+        session_generation: u32,
         rows: u32,
         cols: u32,
         build: EngineBuild,
@@ -154,6 +162,7 @@ impl TerminalCapture {
             pane_id,
             ObservationPaneKind::Terminal,
             harness,
+            session_generation,
             rows,
             cols,
             sequence,
@@ -272,6 +281,46 @@ impl TerminalCapture {
             Err(channel::TrySendError::Full(ProjectionCommand::Resize { .. })) => {
                 Err(errors::internal("Terminal projection command changed kind"))
             }
+            Err(channel::TrySendError::Full(ProjectionCommand::Label { .. })) => {
+                Err(errors::internal("Terminal projection command changed kind"))
+            }
+        }
+    }
+
+    fn record_label(
+        &self,
+        timestamp_ms: i64,
+        state: PaneState,
+        source: StateSource,
+        provenance: GroundTruthProvenance,
+    ) -> Result<()> {
+        let deadline = Instant::now() + LABEL_WRITE_TIMEOUT;
+        let sender = self
+            .sender
+            .as_ref()
+            .ok_or_else(|| errors::internal("Terminal projection worker is closed"))?;
+        let (reply, result) = channel::bounded(1);
+        sender
+            .send_timeout(
+                ProjectionCommand::Label {
+                    timestamp_ms,
+                    state,
+                    source,
+                    provenance,
+                    reply,
+                },
+                LABEL_WRITE_TIMEOUT,
+            )
+            .map_err(|_| {
+                errors::internal("Terminal projection stayed too slow to accept a label")
+            })?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match result.recv_timeout(remaining) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(errors::internal(error)),
+            Err(_) => Err(errors::internal(
+                "Terminal projection stayed too slow to record a label",
+            )),
         }
     }
 
@@ -350,6 +399,34 @@ fn projection_loop(
                 test_projection_gate.wait();
                 projection.resize(rows, cols)?;
             }
+            Ok(ProjectionCommand::Label {
+                timestamp_ms,
+                state,
+                source,
+                provenance,
+                reply,
+            }) => {
+                #[cfg(test)]
+                test_projection_gate.wait();
+                let result = (|| {
+                    if let Some(gap) = take_raw_gap(&overflow, &overflow_active)? {
+                        recorder.try_record_gap(projection.record_byte_gap(
+                            gap.first_timestamp_ms,
+                            gap.last_timestamp_ms,
+                            gap.dropped_bytes,
+                        )?)?;
+                    }
+                    recorder.record_label(projection.label(
+                        timestamp_ms,
+                        state,
+                        source,
+                        provenance,
+                    )?)
+                })();
+                let reply_result = result.as_ref().map(|_| ()).map_err(ToString::to_string);
+                let _ = reply.send(reply_result);
+                result?;
+            }
             Err(channel::RecvTimeoutError::Timeout) => {
                 if let Some(gap) = take_raw_gap(&overflow, &overflow_active)? {
                     recorder.try_record_gap(projection.record_byte_gap(
@@ -412,10 +489,15 @@ impl Core {
             .stored
             .clone();
         let build = self.capture_build()?;
+        let harness = self
+            .terminal_harnesses
+            .get(pane_id)
+            .map_or(HarnessIdentity::Unknown, |session| session.harness.clone());
         TerminalCapture::open(
             &self.observation_root()?,
             pane_id,
-            HarnessIdentity::Unknown,
+            harness,
+            stored.pane.generation,
             stored.pane.rows,
             stored.pane.cols,
             build,
@@ -519,6 +601,40 @@ impl Core {
             .terminal_captures
             .get_mut(pane_id)
             .and_then(|capture| capture.record(timestamp_ms, bytes).err())
+            .map(|error| error.to_string());
+        if let Some(failure) = failure {
+            self.fail_experiment_capture(pane_id, Some(failure))?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn record_terminal_hook_label(
+        &mut self,
+        pane_id: &str,
+        state: PaneState,
+        credential_sha256: String,
+    ) -> Result<()> {
+        let generation = self
+            .panes
+            .get(pane_id)
+            .ok_or_else(|| errors::internal("Captured terminal pane disappeared"))?
+            .stored
+            .pane
+            .generation;
+        let timestamp_ms = self.now_ms();
+        let failure = self
+            .terminal_captures
+            .get(pane_id)
+            .and_then(|capture| {
+                capture
+                    .record_label(
+                        timestamp_ms,
+                        state,
+                        StateSource::Hook,
+                        GroundTruthProvenance::session_hook(generation, credential_sha256),
+                    )
+                    .err()
+            })
             .map(|error| error.to_string());
         if let Some(failure) = failure {
             self.fail_experiment_capture(pane_id, Some(failure))?;
@@ -773,6 +889,72 @@ mod tests {
     }
 
     #[test]
+    fn terminal_observation_and_hook_label_share_one_attributable_stream() {
+        let directory = std::env::temp_dir().join(format!("sn-terminal-label-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let harness = HarnessIdentity::known("test.terminal", None).unwrap();
+        let build = EngineBuild {
+            package_version: "0.1.0".into(),
+            executable_sha256: "a".repeat(64),
+        };
+        let capture = TerminalCapture::open(
+            &directory,
+            "pane-1",
+            harness.clone(),
+            7,
+            4,
+            40,
+            build.clone(),
+        )
+        .unwrap();
+        capture
+            .record(10, Arc::new(b"working\r\n".to_vec()))
+            .unwrap();
+        capture
+            .record_label(
+                11,
+                PaneState::Working,
+                StateSource::Hook,
+                GroundTruthProvenance::session_hook(7, "b".repeat(64)),
+            )
+            .unwrap();
+        drop(capture);
+
+        let rows: Vec<_> = SegmentStore::open(
+            &directory,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness.clone(),
+            build,
+        )
+        .unwrap()
+        .replay()
+        .unwrap()
+        .into_iter()
+        .flat_map(|segment| segment.rows)
+        .collect();
+        assert!(matches!(
+            &rows[0],
+            RecordedRow::Observation(frame)
+                if frame.pane_id == "pane-1"
+                    && frame.pane_kind == ObservationPaneKind::Terminal
+                    && frame.harness == harness
+                    && frame.session_generation == 7
+        ));
+        assert!(matches!(
+            &rows[1],
+            RecordedRow::Label(label)
+                if label.pane_id == "pane-1"
+                    && label.pane_kind == ObservationPaneKind::Terminal
+                    && label.harness == harness
+                    && label.provenance.session_generation == 7
+                    && label.provenance.credential_sha256.as_deref() == Some(&"b".repeat(64))
+        ));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn a_slow_observation_writer_reason_reaches_the_durable_pane_state() {
         let directory = std::env::temp_dir().join(format!("sn-capture-failure-{}", Uuid::new_v4()));
         let mut core = cadence_core(&directory, &[], true);
@@ -895,6 +1077,7 @@ mod tests {
             "pane-1",
             ObservationPaneKind::Terminal,
             HarnessIdentity::Unknown,
+            1,
             4,
             20,
             0,
@@ -1181,6 +1364,7 @@ mod tests {
             &directory,
             "frame-dense-pane",
             HarnessIdentity::Unknown,
+            1,
             40,
             120,
             build.clone(),

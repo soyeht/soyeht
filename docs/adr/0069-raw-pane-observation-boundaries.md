@@ -134,6 +134,42 @@ auditable, but they do not prove that a same-account process did not copy the ca
 residual risk is kept explicit rather than describing same-user secrecy that the platform does
 not provide.
 
+### Same-population observation and truth
+
+The first instrument revision recorded terminal observations and agent-pane labels in separate
+populations. Each component was valid in isolation, but no production recording could place a
+frame and its truth in the same metrics group. Synthetic fixtures could score a detector while
+real recordings could not. Detector work therefore remains blocked until this composition is
+proved in a production path.
+
+Three bridges were considered. Joining terminal frames to agent labels in metrics was rejected
+because two panes and two sessions do not establish a correspondence; the scorer would be
+inventing the relation it claims to measure. Projecting agent panes as raw terminals was rejected
+because an ACP transcript and a terminal screen are different populations. The chosen bridge is
+a managed terminal session whose recorder accepts labels from that same terminal harness.
+
+Creating such a terminal resolves a reviewed local command for a supported harness, mints a
+capability for that pane generation, and supplies the harness's documented hook configuration
+inline for that launched process. It never edits shared configuration. The stored launch binds
+the executable, pane instance key, generation, dimensions, harness identity and capability. A
+missing process makes that managed terminal durably dead; it is not silently replaced under the
+old capability. Raw terminal versions remain absent unless the launched program reports one;
+the ACP adapter version is not reused as a claim about a different executable.
+
+Terminal frames carry their pane generation. Hook labels already carry the engine-stamped
+session generation and capability digest. The projection rejects a label whose generation differs
+from the observed terminal generation before assigning a sequence. Accepted observations and
+labels pass through the same per-pane projection and segment writer, so pane, generation,
+harness and ordering are directly recorded rather than reconstructed by the scorer. An integration
+control restores a managed terminal around a deterministic local program, records real screen
+output, submits a hook event through the shipped local command, and reads both rows back from one
+segment with equal pane, generation and harness identity.
+
+Several detectors may remain registered and be scored again as this attributed dataset grows.
+Every evaluation runs all registered detectors over the same dataset fingerprint and reports the
+engine build and per-cell counts. Adding a detector extends the registry; it does not replace a
+prior candidate or require editing that candidate.
+
 Only the Dev Mac application with a persistent signature may change experiment consent,
 delete captured data or export it. At
 Unix accept time the engine obtains the peer endpoint's kernel audit token, which identifies
@@ -321,6 +357,9 @@ session generation and, for hook labels, the session-capability digest. Protocol
 the protocol channel with no credential digest. Source, channel and credential shape must agree
 or the label fails closed. Version 6 segments remain local omissions under the same typed
 incompatible-source rule rather than receiving invented provenance.
+Schema version 8 adds a mandatory session generation to every observation frame. Version 7
+segments remain explicit incompatible-source omissions; the reader never assigns them the label
+generation merely because their timestamps or sequences are nearby.
 
 Observation rows, label rows and overflow gap rows have distinct closed kinds. A gap carries
 its exact available loss unit plus its first and last timestamps and sequences: projected

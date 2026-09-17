@@ -32,6 +32,7 @@ fn observation(sequence: u64) -> ObservationFrame {
         pane_id: "pane-1".into(),
         pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: harness(),
+        session_generation: 1,
         timestamp_ms: 1_800_000_000_000 + sequence as i64,
         sequence,
         reason: ObservationReason::VisualChange,
@@ -124,6 +125,13 @@ fn segment_round_trip_keeps_header_observation_label_and_gap_distinct() {
     );
     assert!(bytes.starts_with(b"{\"kind\":\"metadata\""));
     assert_eq!(replayed.clean_close, None);
+}
+
+#[test]
+fn observation_requires_an_attributable_session_generation() {
+    let mut frame = observation(8);
+    frame.session_generation = 0;
+    assert_eq!(frame.validate(), Err(Error::InvalidGeneration));
 }
 
 #[test]

@@ -9,6 +9,7 @@ pub enum Error {
     InvalidConfidence,
     InvalidDigest,
     InvalidGap,
+    InvalidGeneration,
     InvalidHeader,
     InvalidLabelSource,
     InvalidLabelState,
@@ -31,6 +32,7 @@ impl Display for Error {
             Self::InvalidConfidence => formatter.write_str("confidence is outside 0 through 1"),
             Self::InvalidDigest => formatter.write_str("engine digest is not canonical SHA-256"),
             Self::InvalidGap => formatter.write_str("observation gap is not a complete interval"),
+            Self::InvalidGeneration => formatter.write_str("session generation must be positive"),
             Self::InvalidHeader => formatter.write_str("dataset segment header is invalid"),
             Self::InvalidLabelSource => {
                 formatter.write_str("ground truth must come from protocol or hook")

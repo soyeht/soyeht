@@ -82,6 +82,65 @@ impl DatabaseProbe {
         Ok(())
     }
 
+    pub fn install_terminal_harness_session(
+        &self,
+        pane_id: &str,
+        command: &Path,
+        capability: &str,
+    ) -> Result<u32> {
+        let raw: String = self.connection.query_row(
+            "SELECT payload FROM panes WHERE id=?1",
+            [pane_id],
+            |row| row.get(0),
+        )?;
+        let instance_key = format!("managed-terminal-{capability}");
+        let mut pane: Value = serde_json::from_str(&raw)?;
+        let generation = pane["generation"]
+            .as_u64()
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or(Error::TestFixture("test terminal has no generation"))?;
+        let cwd = pane["cwd"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or(Error::TestFixture("test terminal has no directory"))?;
+        let cols = pane["cols"]
+            .as_u64()
+            .ok_or(Error::TestFixture("test terminal has no columns"))?;
+        let rows = pane["rows"]
+            .as_u64()
+            .ok_or(Error::TestFixture("test terminal has no rows"))?;
+        pane["pid"] = Value::Null;
+        pane["state"] = Value::from("starting");
+        pane["phrase"] = Value::from("Starting terminal harness");
+        pane["experimentCapture"] = serde_json::json!({"on": true});
+        let launch = serde_json::json!({
+            "launchType":"terminal_harness",
+            "spawn":{
+                "instance_key":instance_key,
+                "generation":generation,
+                "kind":"pty",
+                "cwd":cwd,
+                "argv":[command,"--settings","{}"],
+                "env":{},
+                "cols":cols,
+                "rows":rows
+            },
+            "harness":{"identity":"known","id":"registry.claude-acp","version":null},
+            "hookBinding":capability
+        });
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "UPDATE panes SET payload=?1,instance_key=?2,instance_id=NULL,supervisor_id=NULL WHERE id=?3",
+            params![pane.to_string(), instance_key, pane_id],
+        )?;
+        transaction.execute(
+            "INSERT INTO pane_launches(pane_id,payload) VALUES (?1,?2) ON CONFLICT(pane_id) DO UPDATE SET payload=excluded.payload",
+            params![pane_id, launch.to_string()],
+        )?;
+        transaction.commit()?;
+        Ok(generation)
+    }
+
     pub fn agent_outbox_empty(&self, pane_id: &str) -> Result<bool> {
         let count: i64 = self.connection.query_row(
             "SELECT COUNT(*) FROM agent_outbox WHERE pane_id=?1",

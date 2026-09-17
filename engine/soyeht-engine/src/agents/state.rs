@@ -57,7 +57,7 @@ impl std::fmt::Debug for Binding {
 }
 
 impl Binding {
-    fn generate() -> Result<Self> {
+    pub(crate) fn generate() -> Result<Self> {
         Ok(Self(crate::auth::token()?))
     }
 

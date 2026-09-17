@@ -465,6 +465,25 @@ pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
     prepare_entry(entry)
 }
 
+pub(crate) fn prepare_local_terminal(
+    directory: &Path,
+    id: &str,
+) -> Result<(HarnessLaunch, PathBuf)> {
+    let entry = catalogue_entries(directory)?
+        .into_iter()
+        .find(|entry| entry.launch.id == id)
+        .ok_or_else(|| errors::harness_unavailable("Harness is not configured in this profile"))?;
+    let directories = super::environment::candidate_directories(&entry.recipe_directories);
+    let command = entry
+        .local_commands
+        .iter()
+        .find_map(|command| resolve_executable(command, directories.clone()))
+        .ok_or_else(|| {
+            errors::harness_unavailable("Harness has no local terminal command available")
+        })?;
+    Ok((entry.launch, command))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

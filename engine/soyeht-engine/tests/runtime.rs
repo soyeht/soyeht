@@ -5512,6 +5512,113 @@ fn run_claude_hook_command(rig: &Rig, capability: &str) {
     );
 }
 
+fn wait_for_terminal_text(client: &mut Client, pane: &str, expected: &str) {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let (_, frames) = client.tail(pane);
+        let bytes = frames
+            .into_iter()
+            .filter_map(|frame| match frame {
+                Frame::Terminal { bytes, .. } => Some(bytes),
+                _ => None,
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        if String::from_utf8_lossy(&bytes).contains(expected) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "terminal output did not reach the real stream"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn managed_terminal_hook_and_screen_observation_share_one_recording() {
+    let mut rig = Rig::new();
+    let terminal = rig.path.join("managed-terminal");
+    fs::write(
+        &terminal,
+        "#!/bin/sh\nprintf 'terminal-ready\\n'\nwhile IFS= read -r line; do printf 'screen:%s\\n' \"$line\"; done\n",
+    )
+    .unwrap();
+    fs::set_permissions(&terminal, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Terminal bridge","path":rig.path,
+            "idempotencyKey":"terminal-bridge-workspace"}),
+    )["workspace"]["workspaceId"]
+        .clone();
+    let pane = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"terminal",
+            "idempotencyKey":"terminal-bridge-pane"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["pid"].is_null() {
+        assert!(Instant::now() < deadline, "initial terminal did not open");
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    drop(client);
+    rig.kill_engine();
+    let capability = "c".repeat(64);
+    let generation = rig
+        .database_probe()
+        .install_terminal_harness_session(&pane, &terminal, &capability)
+        .unwrap();
+    rig.start();
+    let mut client = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["pid"].is_null() {
+        assert!(Instant::now() < deadline, "managed terminal did not open");
+        thread::sleep(Duration::from_millis(20));
+    }
+    client.call(
+        "pane.input",
+        json!({"paneId":pane,"bytes":STANDARD.encode(b"bridge-frame\n"),
+            "idempotencyKey":"terminal-bridge-input"}),
+    );
+    wait_for_terminal_text(&mut client, &pane, "screen:bridge-frame");
+    run_claude_hook_command(&rig, &capability);
+
+    let root = rig.path.join("experiments/pane-state");
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let rows = experiment_rows(&root);
+        let observation = rows.iter().find(|row| {
+            row["kind"] == "observation"
+                && row["pane_id"].as_str() == Some(&pane)
+                && row["pane_kind"] == "terminal"
+                && row["harness"]["id"] == "registry.claude-acp"
+                && row["session_generation"].as_u64() == Some(u64::from(generation))
+        });
+        let label = rows.iter().find(|row| {
+            row["kind"] == "label"
+                && row["pane_id"].as_str() == Some(&pane)
+                && row["pane_kind"] == "terminal"
+                && row["harness"]["id"] == "registry.claude-acp"
+                && row["state"] == "waiting_for_you"
+                && row["provenance"]["sessionGeneration"].as_u64() == Some(u64::from(generation))
+        });
+        if let (Some(observation), Some(label)) = (observation, label) {
+            assert!(observation["sequence"].as_u64() < label["sequence"].as_u64());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "terminal bridge rows did not land: {rows:?}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn wait_for_stamped_hook_label(rig: &Rig, pane: &str, generation: u64, capability: &str) {
     let root = rig.path.join("experiments/pane-state");
     let expected_digest = format!("{:x}", Sha256::digest(capability.as_bytes()));

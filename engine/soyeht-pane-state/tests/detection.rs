@@ -11,6 +11,7 @@ fn frame(harness: &str, title: &str, screen: &str) -> ObservationFrame {
         pane_id: "pane-1".into(),
         pane_kind: soyeht_pane_state::ObservationPaneKind::Terminal,
         harness: HarnessIdentity::known(harness, Some("1".into())).unwrap(),
+        session_generation: 1,
         timestamp_ms: 1_800_000_000_000,
         sequence: 1,
         reason: ObservationReason::VisualChange,
