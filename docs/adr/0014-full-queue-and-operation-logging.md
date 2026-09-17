@@ -20,6 +20,12 @@ and duration. It contains no parameters, client-supplied IDs, free-form error te
 keystrokes, challenges, codes, tokens or keys. A method outside the schema appears
 as `unknown`, without copying the received text.
 
+The UTC `startedAt` and `finishedAt` fields come from the wall clock so operations
+can be correlated across logs. `durationMs` comes independently from a monotonic
+clock so wall-clock adjustments cannot corrupt elapsed time. Consequently,
+subtracting the timestamps need not equal `durationMs`, especially across a clock
+adjustment.
+
 The queue control checks the memory limit, numeric error before end of stream,
 release of bytes and retention of the first close reason. The logging control
 checks that arbitrary text in a method name does not enter the log. Every accepted
