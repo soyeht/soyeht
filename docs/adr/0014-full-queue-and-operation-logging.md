@@ -14,11 +14,25 @@ time deadline. Closing remains mandatory. The client treats both the error and
 the disconnect as reasons to fetch a snapshot and subscribe to events again. No
 continuity is promised for bytes left in the discarded queue.
 
-Each request receives an operation identifier created by the engine. The JSON
-log contains that identifier, connection, schema-known method, result, error kind
-and duration. It contains no parameters, client-supplied IDs, free-form error text,
-keystrokes, challenges, codes, tokens or keys. A method outside the schema appears
-as `unknown`, without copying the received text.
+Each request receives an operation identifier created by the engine. Before
+dispatch, the engine writes `engine.operation_started` with that identifier,
+connection, schema-known method, validated pane route and UTC start time. A
+completed request writes `engine.operation` with the same identity plus its
+result, error kind, finish time and duration. An unmatched start therefore remains
+visible if dispatch never returns. Neither record contains parameters,
+client-supplied IDs, free-form error text, keystrokes, challenges, codes, tokens
+or keys. A method outside the schema appears as `unknown`, without copying the
+received text.
+
+An unmatched start is not itself a failed request: ordinary work may still be in
+progress. For the ordinary `EngineClient` path, this diagnostic calls an interval
+overdue only after the existing twelve-second client deadline has elapsed. The
+classification is declared before the next Harnesses reproduction. Pairing uses
+its separate timeout and is not classified by that threshold. Pairing start and
+finish records is also confined to the current engine life, beginning at the last
+`engine.ready` line; records from earlier lives in the append-only log never match
+the current life. If the engine life ends first, an unmatched start is recorded as
+interrupted by shutdown rather than a client timeout.
 
 The UTC `startedAt` and `finishedAt` fields come from the wall clock so operations
 can be correlated across logs. `durationMs` comes independently from a monotonic

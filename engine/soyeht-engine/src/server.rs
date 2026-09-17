@@ -351,7 +351,6 @@ async fn read_requests(
             }
             continue;
         }
-        let operation = OperationTimer::start();
         let method = request["method"]
             .as_str()
             .and_then(|name| {
@@ -362,6 +361,7 @@ async fn read_requests(
             })
             .unwrap_or("unknown");
         let pane_id = operation_pane_id(method, &request).map(str::to_owned);
+        let operation = OperationTimer::start(id, method, pane_id);
         let request_id = request["id"].clone();
         let failed_handshake = request["method"] == "hello";
         let shared = Arc::clone(&core);
@@ -373,7 +373,7 @@ async fn read_requests(
                 .dispatch(&connection, request)
         })
         .await;
-        operation.log(id, method, pane_id.as_deref(), &outcome);
+        operation.finish(&outcome);
         match outcome {
             Ok(Ok(Outcome::Reply(result))) => {
                 let Ok(frame) = model::response(request_id, result) else {
@@ -458,50 +458,95 @@ struct OperationTiming {
 
 struct OperationTimer {
     operation_id: String,
+    connection_id: String,
+    method: &'static str,
+    pane_id: Option<String>,
     started_at: chrono::DateTime<chrono::Utc>,
     started: Instant,
 }
 
 impl OperationTimer {
-    fn start() -> Self {
-        Self {
-            operation_id: uuid::Uuid::new_v4().to_string(),
-            started_at: chrono::Utc::now(),
-            started: Instant::now(),
-        }
-    }
-
-    fn log(
-        self,
-        connection: &str,
-        method: &str,
-        pane_id: Option<&str>,
-        outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
-    ) {
-        let timing = OperationTiming {
-            started_at: self.started_at,
-            finished_at: chrono::Utc::now(),
-            duration_ms: self.started.elapsed().as_millis(),
-        };
-        log_operation(
-            &self.operation_id,
+    fn start(connection: &str, method: &'static str, pane_id: Option<String>) -> Self {
+        Self::start_with(
             connection,
             method,
             pane_id,
+            chrono::Utc::now(),
+            Instant::now(),
+            emit_operation_record,
+        )
+    }
+
+    fn start_with(
+        connection: &str,
+        method: &'static str,
+        pane_id: Option<String>,
+        started_at: chrono::DateTime<chrono::Utc>,
+        started: Instant,
+        emit: impl FnOnce(Value),
+    ) -> Self {
+        let timer = Self {
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            connection_id: connection.to_owned(),
+            method,
+            pane_id,
+            started_at,
+            started,
+        };
+        emit(timer.started_record());
+        timer
+    }
+
+    fn started_record(&self) -> Value {
+        operation_started_record(
+            &self.operation_id,
+            &self.connection_id,
+            self.method,
+            self.pane_id.as_deref(),
+            self.started_at,
+        )
+    }
+
+    fn finish(
+        self,
+        outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+    ) {
+        let finished_at = chrono::Utc::now();
+        let duration_ms = self.started.elapsed().as_millis();
+        self.finish_with(outcome, finished_at, duration_ms, emit_operation_record);
+    }
+
+    fn finish_with(
+        self,
+        outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+        finished_at: chrono::DateTime<chrono::Utc>,
+        duration_ms: u128,
+        emit: impl FnOnce(Value),
+    ) {
+        let record = operation_finished_record(
+            &self.operation_id,
+            &self.connection_id,
+            self.method,
+            self.pane_id.as_deref(),
             outcome,
-            &timing,
+            &OperationTiming {
+                started_at: self.started_at,
+                finished_at,
+                duration_ms,
+            },
         );
+        emit(record);
     }
 }
 
-fn log_operation(
+fn operation_finished_record(
     operation: &str,
     connection: &str,
     method: &str,
     pane_id: Option<&str>,
     outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
     timing: &OperationTiming,
-) {
+) -> Value {
     let (status, kind) = match outcome {
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
         Ok(Ok(Outcome::Attachment { .. })) => ("attachment", None),
@@ -510,18 +555,44 @@ fn log_operation(
         Ok(Err(error)) => ("error", Some(errors::kind(error))),
         Err(_) => ("worker_failed", None),
     };
-    eprintln!(
-        "{}",
-        operation_record(
-            operation,
-            connection,
-            method,
-            pane_id,
-            status,
-            kind.as_ref(),
-            timing,
-        )
-    );
+    operation_record(
+        operation,
+        connection,
+        method,
+        pane_id,
+        status,
+        kind.as_ref(),
+        timing,
+    )
+}
+
+fn emit_operation_record(record: Value) {
+    eprintln!("{record}");
+}
+
+fn logged_method(method: &str) -> &'static str {
+    soyeht_protocol::METHODS
+        .iter()
+        .find(|entry| entry.0 == method)
+        .map(|entry| entry.0)
+        .unwrap_or("unknown")
+}
+
+fn operation_started_record(
+    operation: &str,
+    connection: &str,
+    method: &str,
+    pane_id: Option<&str>,
+    started_at: chrono::DateTime<chrono::Utc>,
+) -> Value {
+    serde_json::json!({
+        "event": "engine.operation_started",
+        "operationId": operation,
+        "connectionId": connection,
+        "method": logged_method(method),
+        "paneId": pane_id,
+        "startedAt": started_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    })
 }
 
 fn connection_close_record(connection: &str, local: bool, reason: CloseReason) -> Value {
@@ -544,16 +615,11 @@ fn operation_record(
 ) -> Value {
     // Only an allowlisted method name is retained. Request IDs and parameters
     // may contain credentials or terminal bytes and never enter this record.
-    let method = soyeht_protocol::METHODS
-        .iter()
-        .find(|entry| entry.0 == method)
-        .map(|entry| entry.0)
-        .unwrap_or("unknown");
     serde_json::json!({
         "event": "engine.operation",
         "operationId": operation,
         "connectionId": connection,
-        "method": method,
+        "method": logged_method(method),
         "paneId": pane_id,
         "outcome": outcome,
         "kind": kind,
@@ -608,6 +674,16 @@ mod tests {
         assert_eq!(record["finishedAt"], "2026-09-17T10:00:00.135Z");
         assert_eq!(record["durationMs"], 12);
         assert!(!record.to_string().contains("untrusted-private-text"));
+        let started = operation_started_record(
+            &operation,
+            &connection,
+            "untrusted-private-text",
+            None,
+            timing.started_at,
+        );
+        assert_eq!(started["event"], "engine.operation_started");
+        assert_eq!(started["method"], "unknown");
+        assert!(!started.to_string().contains("untrusted-private-text"));
         let success = operation_record(
             &operation,
             &connection,
@@ -619,6 +695,67 @@ mod tests {
         );
         assert_eq!(success["method"], "pane.create");
         assert!(success["kind"].is_null());
+    }
+
+    #[test]
+    fn operation_start_is_durable_without_a_finish_and_correlates_when_finished() {
+        let started_at = timestamp("2026-09-17T10:00:00.123Z");
+        let mut open_records = Vec::new();
+        let open = OperationTimer::start_with(
+            "connection-open",
+            "model.list",
+            None,
+            started_at,
+            Instant::now(),
+            |record| open_records.push(record),
+        );
+        let open_id = open.operation_id.clone();
+        drop(open);
+
+        assert_eq!(open_records.len(), 1);
+        assert_eq!(open_records[0]["event"], "engine.operation_started");
+        assert_eq!(open_records[0]["operationId"], open_id);
+        assert_eq!(open_records[0]["connectionId"], "connection-open");
+        assert_eq!(open_records[0]["method"], "model.list");
+        assert_eq!(open_records[0]["startedAt"], "2026-09-17T10:00:00.123Z");
+        assert!(open_records[0].get("finishedAt").is_none());
+        assert!(open_records[0].get("durationMs").is_none());
+        assert!(open_records[0].get("outcome").is_none());
+
+        let mut completed_records = Vec::new();
+        let completed = OperationTimer::start_with(
+            "connection-finished",
+            "harness.list",
+            None,
+            started_at,
+            Instant::now(),
+            |record| completed_records.push(record),
+        );
+        let completed_id = completed.operation_id.clone();
+        let outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError> =
+            Ok(Ok(Outcome::Reply(serde_json::json!({}))));
+        completed.finish_with(
+            &outcome,
+            timestamp("2026-09-17T10:00:00.135Z"),
+            12,
+            |record| completed_records.push(record),
+        );
+
+        assert_eq!(completed_records.len(), 2);
+        assert_eq!(completed_records[0]["event"], "engine.operation_started");
+        assert_eq!(completed_records[1]["event"], "engine.operation");
+        assert_eq!(completed_records[0]["operationId"], completed_id);
+        assert_eq!(completed_records[1]["operationId"], completed_id);
+        assert_eq!(completed_records[0]["connectionId"], "connection-finished");
+        assert_eq!(completed_records[1]["connectionId"], "connection-finished");
+        assert_eq!(completed_records[0]["method"], "harness.list");
+        assert_eq!(completed_records[1]["method"], "harness.list");
+        assert_eq!(
+            completed_records[1]["finishedAt"],
+            "2026-09-17T10:00:00.135Z"
+        );
+        assert_eq!(completed_records[1]["durationMs"], 12);
+        assert_eq!(completed_records[1]["outcome"], "reply");
     }
     #[test]
     fn operation_log_adds_only_a_validated_pane_route() {
