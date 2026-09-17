@@ -35,6 +35,59 @@ class SchemaTests(unittest.TestCase):
                 definition = self.schema["$defs"][method["params"]["$ref"].split("/")[-1]]
                 self.assertIn("idempotencyKey", definition["required"], name)
 
+    def test_pane_route_registry_follows_every_declared_parameter(self):
+        rust = render(self.schema, "test-digest")["engine/soyeht-protocol/src/generated.rs"]
+        registry = rust.split("pub const PANE_ROUTE_METHODS", 1)[1].split("];", 1)[0]
+        actual = dict(re.findall(r'\("([^"]+)", "([^"]+)"\)', registry))
+        expected = {}
+        for name, method in self.schema["x-methods"].items():
+            definition = self.schema["$defs"][method["params"]["$ref"].split("/")[-1]]
+            properties = definition.get("properties", {})
+            identifier_names = {
+                field
+                for field, rule in properties.items()
+                if rule == {"$ref": "#/$defs/Id"}
+                or (
+                    rule.get("type") == "array"
+                    and rule.get("items") == {"$ref": "#/$defs/Id"}
+                )
+            }
+            route = method.get("x-paneRoute")
+            if route is None and "paneId" in properties:
+                route = "paneId"
+            classified = identifier_names & set(self.schema["x-paneNonRouteIds"])
+            if route is not None:
+                classified.add(route)
+                expected[name] = route
+            with self.subTest(method=name):
+                self.assertEqual(classified, identifier_names)
+        self.assertEqual(actual, expected)
+
+    def test_unclassified_pane_parameter_fails_generation(self):
+        additions = copy.deepcopy(self.schema)
+        method = additions["x-methods"]["usage.refresh"]
+        definition = additions["$defs"][method["params"]["$ref"].split("/")[-1]]
+        definition["properties"]["relatedPane"] = {"$ref": "#/$defs/Id"}
+
+        missing_override = copy.deepcopy(self.schema)
+        del missing_override["x-methods"]["writing.variant.request"]["x-paneRoute"]
+
+        missing_non_route = copy.deepcopy(self.schema)
+        missing_non_route["x-paneNonRouteIds"].remove("paneIds")
+
+        stale_non_route = copy.deepcopy(self.schema)
+        stale_non_route["x-paneNonRouteIds"].append("unusedId")
+
+        for label, changed in (
+            ("usage.refresh", additions),
+            ("writing.variant.request", missing_override),
+            ("pane.experiment.export", missing_non_route),
+            ("unused", stale_non_route),
+        ):
+            with self.subTest(method=label):
+                with self.assertRaisesRegex(ValueError, "decision|unused"):
+                    validate_schema(changed)
+
     def test_event_registry_is_generated_for_every_language(self):
         outputs = render(self.schema, "test-digest")
         rust = outputs["engine/soyeht-protocol/src/generated.rs"]

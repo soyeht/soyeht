@@ -127,14 +127,26 @@ def ts_definition(name, schema):
     return f"export type {name} = {type_name(schema, 'ts')};"
 
 
+def pane_route_property(schema, method):
+    params = schema["$defs"][method["params"]["$ref"].split("/")[-1]]
+    if "x-paneRoute" in method:
+        return method["x-paneRoute"]
+    if "paneId" in params.get("properties", {}):
+        return "paneId"
+    return None
+
+
 def registry_rust(schema):
-    cases, rows = [], []
+    cases, rows, pane_routes = [], [], []
     for name, method in schema["x-methods"].items():
         kind = type_name(method["params"], "rust")
         case = variant(name)
         cases.append(f'    #[serde(rename = "{name}")]\n    {case}({kind}),')
         rows.append(f'    ("{name}", "{kind}", "{type_name(method["result"], "rust")}", {str(method["mutation"]).lower()}),')
-    return "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"method\", content = \"params\")]\npub enum Request {\n" + "\n".join(cases) + "\n}\npub const METHODS: &[(&str, &str, &str, bool)] = &[\n" + "\n".join(rows) + "\n];"
+        route = pane_route_property(schema, method)
+        if route is not None:
+            pane_routes.append(f'    ("{name}", "{route}"),')
+    return "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"method\", content = \"params\")]\npub enum Request {\n" + "\n".join(cases) + "\n}\npub const METHODS: &[(&str, &str, &str, bool)] = &[\n" + "\n".join(rows) + "\n];\npub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[\n" + "\n".join(pane_routes) + "\n];"
 
 
 def event_registry_rust(schema):
@@ -254,9 +266,48 @@ def validate_schema(schema):
         if not re.fullmatch(r"[A-Z][A-Za-z0-9]*", name):
             raise ValueError("Invalid type name")
         visit(definition)
-    for method in schema["x-methods"].values():
+    pane_non_route_ids = schema["x-paneNonRouteIds"]
+    if (
+        not isinstance(pane_non_route_ids, list)
+        or any(not isinstance(field, str) for field in pane_non_route_ids)
+        or len(pane_non_route_ids) != len(set(pane_non_route_ids))
+    ):
+        raise ValueError("Pane non-route identifiers must be unique names")
+    pane_non_route_ids = set(pane_non_route_ids)
+    used_pane_non_route_ids = set()
+    for name, method in schema["x-methods"].items():
+        allowed_method_keys = {"params", "result", "mutation", "x-paneRoute"}
+        if set(method) - allowed_method_keys:
+            raise ValueError(f"Unsupported method metadata for {name}")
+        if type(method["mutation"]) is not bool:
+            raise ValueError(f"Method mutation must be boolean for {name}")
         visit(method["params"])
         visit(method["result"])
+        params = schema["$defs"][method["params"]["$ref"].split("/")[-1]]
+        properties = params.get("properties", {})
+        identifier_names = {
+            field
+            for field, rule in properties.items()
+            if rule == {"$ref": "#/$defs/Id"}
+            or (
+                rule.get("type") == "array"
+                and rule.get("items") == {"$ref": "#/$defs/Id"}
+            )
+        }
+        route = pane_route_property(schema, method)
+        if route is not None:
+            if not isinstance(route, str):
+                raise ValueError(f"Pane route must be a parameter name for {name}")
+            if route not in properties or properties[route] != {"$ref": "#/$defs/Id"}:
+                raise ValueError(f"Pane route must name an Id parameter for {name}")
+        classified = identifier_names & pane_non_route_ids
+        used_pane_non_route_ids.update(classified)
+        if route is not None:
+            classified.add(route)
+        if classified != identifier_names:
+            raise ValueError(f"Every Id parameter needs a pane-route decision for {name}")
+    if used_pane_non_route_ids != pane_non_route_ids:
+        raise ValueError("Pane non-route identifier list contains unused names")
     event_cases = []
     for name, event in schema["x-events"].items():
         if set(event) != {"params", "durable"} or type(event["durable"]) is not bool:
