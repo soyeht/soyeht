@@ -24,6 +24,7 @@ struct SoyehtMacApp: App {
   var body: some Scene {
     Window("Soyeht · Dev", id: "main") {
       WorkspaceWindow(client: client, webHost: webHost)
+        .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 1024, minHeight: 640)
         .environment(themeStore)
         .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
