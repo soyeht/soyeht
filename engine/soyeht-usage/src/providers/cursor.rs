@@ -37,6 +37,8 @@ impl ProviderReader for Reader {
         Ok(ParsedReading {
             primary,
             secondary: None,
+            fetched_at: None,
+            observed_at_sec: None,
         })
     }
 }

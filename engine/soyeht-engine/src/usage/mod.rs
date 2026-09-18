@@ -135,7 +135,7 @@ impl Core {
         let readings = batch
             .outcomes
             .iter()
-            .map(|outcome| wire_reading(&outcome.reading))
+            .map(|outcome| wire_reading(&outcome.reading.for_display(batch.observed_at_sec)))
             .collect::<Vec<_>>();
         let result = serde_json::to_value(UsageRefreshResult {
             providers: readings.clone(),
@@ -187,7 +187,7 @@ fn missing_reading(
         .sources(provider.clone())
         .into_iter()
         .next()
-        .unwrap_or(UsageSource::ClaudeCliUsage);
+        .unwrap_or(UsageSource::ClaudeDesktopCache);
     Reading {
         provider,
         state: UsageState::Unavailable,
@@ -269,6 +269,15 @@ mod tests {
         )
     }
 
+    fn claude_cache_payload(fetched_at_ms: i64) -> SourceRead {
+        SourceRead::Payload(
+            format!(
+                "{{\"cachedUsageUtilization\":{{\"accountUuid\":\"secret-account\",\"fetchedAtMs\":{fetched_at_ms},\"utilization\":{{\"five_hour\":{{\"utilization\":10,\"resets_at\":\"later\"}},\"seven_day\":{{\"utilization\":20,\"resets_at\":\"later\"}}}}}}}}"
+            )
+            .into_bytes(),
+        )
+    }
+
     fn service(reads: Vec<SourceRead>) -> Service {
         Service::restore(
             Vec::new(),
@@ -339,6 +348,41 @@ mod tests {
         assert_eq!(item.state, UsageState::Stale);
         assert_eq!(item.primary.as_ref().unwrap().used, 0.4);
         assert_eq!(item.secondary.as_ref().unwrap().used, 0.7);
+    }
+
+    #[test]
+    fn old_claude_cache_is_published_stale_without_exposing_the_account() {
+        let directory = std::env::temp_dir().join(format!("sn-engine-cache-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let mut core = Core::open(&directory).unwrap();
+        core.clock = Arc::new(FixedClock(2_000_000));
+        core.usage = service(vec![claude_cache_payload(1_000_000)]);
+        let (outbox, _receiver) = crate::outbox::channel();
+        let connection = core.connect(true, false, outbox).unwrap();
+        core.dispatch(
+            &connection,
+            json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"client":"usage-test","clientVersion":"1","protocolVersion":1}}),
+        )
+        .unwrap();
+        let result = core
+            .usage_refresh(
+                &connection,
+                &json!({"provider":"claude","idempotencyKey":"cache-once"}),
+            )
+            .unwrap();
+        assert_eq!(result["providers"][0]["state"], "stale");
+        assert_eq!(result["providers"][0]["primary"]["used"], 0.1);
+        assert_eq!(result["providers"][0]["secondary"]["used"], 0.2);
+        assert_eq!(result["providers"][0]["source"], "claude_desktop_cache");
+        assert!(!result.to_string().contains("secret-account"));
+        let (_, events) = core.store.replay(0).unwrap();
+        assert!(
+            !serde_json::to_string(&events)
+                .unwrap()
+                .contains("secret-account")
+        );
+        drop(core);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
