@@ -998,6 +998,7 @@ private struct RenderedPaneLayoutChild: Identifiable {
 
 private struct PaneCard: View {
   @Bindable var client: EngineClient
+  @Environment(\.terminalKeyboardInputEnabled) private var terminalKeyboardInputEnabled
   let webHost: MacWebHost
   let pane: Pane
   let tint: Color
@@ -1215,7 +1216,7 @@ private struct PaneCard: View {
         EdgeInsets(
           top: PaneLayoutContentMetrics.agentBodyTopInset, leading: 4, bottom: 0,
           trailing: 4))
-    } else if client.selectedPaneId == pane.paneId {
+    } else {
       VStack(spacing: 0) {
         Label(
           TerminalStatePresentation.text(for: pane.state),
@@ -1229,23 +1230,15 @@ private struct PaneCard: View {
         .background(tint.opacity(0.55))
         .accessibilityIdentifier("terminal-state-\(pane.paneId)")
         MacTerminal(client: client, paneId: pane.paneId)
-        if let gap = client.gapText {
+          .environment(
+            \.terminalKeyboardInputEnabled,
+            terminalKeyboardInputEnabled && client.selectedPaneId == pane.paneId)
+        if let gap = client.gapText(for: pane.paneId) {
           Label(gap, systemImage: "exclamationmark.triangle")
             .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.warning)
             .padding(MacTheme.Space.x10)
         }
       }
-    } else {
-      VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
-        Text(
-          pane.mode == .terminal
-            ? TerminalStatePresentation.text(for: pane.state) : pane.phrase
-        )
-        .font(MacTheme.mono(MacTheme.TypeScale.caption))
-        Spacer()
-        Text(pane.cwd).font(MacTheme.mono(MacTheme.TypeScale.small))
-          .foregroundStyle(MacTheme.muted).lineLimit(1).truncationMode(.middle)
-      }.padding(EdgeInsets(top: 11, leading: 12, bottom: 11, trailing: 12))
     }
   }
 

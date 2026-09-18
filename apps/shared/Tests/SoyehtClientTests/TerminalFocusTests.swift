@@ -139,6 +139,79 @@
     #expect(forwarded == [Data(bytes), Data(bytes)])
   }
 
+  @MainActor @Test func simultaneousTerminalHostsRouteInputAndResizeToTheirOwnPane() {
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    var firstInput: [Data] = []
+    var secondInput: [Data] = []
+    var resizes: [(String?, Int, Int)] = []
+    let first = TerminalHost(
+      client: client, paneId: "pane-a", acceptsInput: false,
+      sendInput: { firstInput.append($0) },
+      resizeTerminal: { resizes.append(($0, $1, $2)) })
+    let second = TerminalHost(
+      client: client, paneId: "pane-b", acceptsInput: true,
+      sendInput: { secondInput.append($0) },
+      resizeTerminal: { resizes.append(($0, $1, $2)) })
+    let firstView = TerminalView(frame: .zero)
+    let secondView = TerminalView(frame: .zero)
+    let bytes = Array("pwd\n".utf8)
+
+    first.send(source: firstView, data: bytes[...])
+    second.send(source: secondView, data: bytes[...])
+    first.sizeChanged(source: firstView, newCols: 80, newRows: 24)
+    second.sizeChanged(source: secondView, newCols: 120, newRows: 42)
+
+    #expect(firstInput.isEmpty)
+    #expect(secondInput == [Data(bytes)])
+    #expect(resizes.map(\.0) == ["pane-a", "pane-b"])
+    #expect(resizes.map(\.1) == [80, 120])
+    #expect(resizes.map(\.2) == [24, 42])
+  }
+
+  @MainActor @Test func paneOutputSinksStayIsolatedAndLateReleaseCannotClearReplacement() {
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    let firstOwner = NSObject()
+    let replacementOwner = NSObject()
+    let siblingOwner = NSObject()
+    var first = Data()
+    var replacement = Data()
+    var sibling = Data()
+
+    client.claimTerminalOutput(paneId: "pane-a", owner: firstOwner) { bytes, _ in
+      first.append(bytes)
+    }
+    client.claimTerminalOutput(paneId: "pane-b", owner: siblingOwner) { bytes, _ in
+      sibling.append(bytes)
+    }
+    client.deliverTerminalOutput(to: "pane-a", bytes: Data("old".utf8), reset: false)
+    client.claimTerminalOutput(paneId: "pane-a", owner: replacementOwner) { bytes, _ in
+      replacement.append(bytes)
+    }
+    client.releaseTerminalOutput(paneId: "pane-a", owner: firstOwner)
+    client.deliverTerminalOutput(to: "pane-a", bytes: Data("new".utf8), reset: false)
+    client.deliverTerminalOutput(to: "pane-b", bytes: Data("peer".utf8), reset: false)
+
+    #expect(String(decoding: first, as: UTF8.self) == "old")
+    #expect(String(decoding: replacement, as: UTF8.self) == "new")
+    #expect(String(decoding: sibling, as: UTF8.self) == "peer")
+    #expect(client.terminalOutputSinkCount == 2)
+  }
+
+  @MainActor @Test func terminalBodyClickRunsActivationBeforeNativeMouseHandling() throws {
+    let surface = TerminalSurface(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    var activated = false
+    surface.updateActivation { activated = true }
+    let event = try #require(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: NSPoint(x: 20, y: 20), modifierFlags: [],
+        timestamp: 0, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1,
+        pressure: 1))
+
+    surface.mouseDown(with: event)
+
+    #expect(activated)
+  }
+
   @MainActor @Test func retiringTerminalCannotDetachItsReplacementOutputSink() {
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
     let first = TerminalHost(client: client, acceptsInput: true)
