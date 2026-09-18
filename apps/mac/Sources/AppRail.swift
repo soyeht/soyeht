@@ -1,5 +1,3 @@
-import Darwin
-import Foundation
 import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
@@ -44,21 +42,27 @@ struct AppRail: View {
     .accessibilityIdentifier("app-bar")
     .onAppear(perform: startClaudeUsageCache)
     .onDisappear(perform: stopClaudeUsageCache)
+    .onChange(of: client.connected) { _, connected in
+      if connected { refreshClaudeUsage() }
+    }
   }
 
   private func startClaudeUsageCache() {
     guard claudeUsageObserver == nil else { return }
     let observer = ClaudeUsageCacheObserver()
-    observer.start {
-      Task { try? await client.refreshUsage(.claude) }
-    }
+    observer.start(onChange: refreshClaudeUsage)
     claudeUsageObserver = observer
-    Task { try? await client.refreshUsage(.claude) }
+    refreshClaudeUsage()
   }
 
   private func stopClaudeUsageCache() {
     claudeUsageObserver?.stop()
     claudeUsageObserver = nil
+  }
+
+  private func refreshClaudeUsage() {
+    guard client.connected else { return }
+    Task { try? await client.refreshUsage(.claude) }
   }
 
   private var items: [AppRailItem] {
@@ -76,74 +80,6 @@ struct AppRail: View {
       AppRailItem(
         destination: .screenplays, glyph: .system("movieclapper"), label: "Screenplays"),
     ]
-  }
-}
-
-@MainActor
-private final class ClaudeUsageCacheObserver {
-  private struct Signature: Equatable {
-    let modifiedAt: TimeInterval
-    let byteCount: UInt64
-  }
-
-  private let cacheURL = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".claude.json")
-  private var source: DispatchSourceFileSystemObject?
-  private var lastSignature: Signature?
-  private var pendingRefresh: Task<Void, Never>?
-  private var onChange: (@MainActor @Sendable () -> Void)?
-
-  func start(onChange: @escaping @MainActor @Sendable () -> Void) {
-    guard source == nil else { return }
-    self.onChange = onChange
-    lastSignature = signature()
-    let descriptor = Darwin.open(cacheURL.deletingLastPathComponent().path, O_EVTONLY)
-    guard descriptor >= 0 else { return }
-    let source = DispatchSource.makeFileSystemObjectSource(
-      fileDescriptor: descriptor,
-      eventMask: [.write, .rename, .delete],
-      queue: .global(qos: .utility))
-    source.setEventHandler { [weak self] in
-      Task { @MainActor in self?.directoryChanged() }
-    }
-    source.setCancelHandler { _ = Darwin.close(descriptor) }
-    self.source = source
-    source.resume()
-  }
-
-  func stop() {
-    pendingRefresh?.cancel()
-    pendingRefresh = nil
-    source?.cancel()
-    source = nil
-    onChange = nil
-  }
-
-  private func directoryChanged() {
-    let current = signature()
-    guard current != lastSignature else { return }
-    lastSignature = current
-    pendingRefresh?.cancel()
-    pendingRefresh = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(200))
-      guard !Task.isCancelled else { return }
-      self?.onChange?()
-    }
-  }
-
-  private func signature() -> Signature? {
-    guard
-      let attributes = try? FileManager.default.attributesOfItem(atPath: cacheURL.path),
-      let modifiedAt = attributes[.modificationDate] as? Date,
-      let byteCount = attributes[.size] as? NSNumber
-    else { return nil }
-    return Signature(
-      modifiedAt: modifiedAt.timeIntervalSince1970,
-      byteCount: byteCount.uint64Value)
-  }
-
-  deinit {
-    source?.cancel()
   }
 }
 

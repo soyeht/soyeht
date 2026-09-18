@@ -94,6 +94,7 @@ extension EngineClient {
   }
 
   public func refreshUsage(_ provider: UsageProvider? = nil) async throws {
+    guard connected else { throw ClientFailure.disconnected }
     try await refreshUsage(provider, now: Date()) { [self] provider in
       try await requestUsageRefresh(provider)
     }
