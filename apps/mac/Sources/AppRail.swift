@@ -9,6 +9,7 @@ struct AppRail: View {
   let onSettings: () -> Void
   let onUsageDetails: (UsageProvider) -> Void
   @State private var claudeUsageObserver: ClaudeUsageCacheObserver?
+  @State private var claudeUsageRefreshTask: Task<Void, Never>?
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x6) {
@@ -56,13 +57,18 @@ struct AppRail: View {
   }
 
   private func stopClaudeUsageCache() {
+    claudeUsageRefreshTask?.cancel()
+    claudeUsageRefreshTask = nil
     claudeUsageObserver?.stop()
     claudeUsageObserver = nil
   }
 
   private func refreshClaudeUsage() {
     guard client.connected else { return }
-    Task { try? await client.refreshUsage(.claude) }
+    claudeUsageRefreshTask?.cancel()
+    claudeUsageRefreshTask = Task {
+      try? await client.refreshUsageAfterRateLimitOnce(.claude)
+    }
   }
 
   private var items: [AppRailItem] {

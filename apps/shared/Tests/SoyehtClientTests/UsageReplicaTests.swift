@@ -37,6 +37,22 @@ private final class UsageRefreshProbe {
   }
 }
 
+@MainActor
+private final class RateLimitRetryProbe {
+  private(set) var calls = 0
+  private(set) var waits: [UInt32] = []
+
+  func fail(_ retryAfterSec: UInt32) async throws {
+    calls += 1
+    throw ClientFailure.remote(
+      ErrorKind.rate_limited.rawValue, "wait", retryAfterSec: retryAfterSec)
+  }
+
+  func wait(_ seconds: UInt32) async throws {
+    waits.append(seconds)
+  }
+}
+
 @Test func usagePresentationClosesThresholdsAndStaleDisplay() {
   #expect(UsagePresentation(reading(used: 0.49)).band == .success)
   #expect(UsagePresentation(reading(used: 0.50)).band == .warning)
@@ -124,6 +140,26 @@ private final class UsageRefreshProbe {
   } catch {
     Issue.record("Unexpected error: \(error)")
   }
+}
+
+@MainActor @Test func usageRefreshRetriesRateLimitOnlyOnceAfterServerDelay() async {
+  let probe = RateLimitRetryProbe()
+  let client = EngineClient(socket: "/tmp/sn-usage-retry/engine.sock")
+
+  do {
+    try await client.refreshUsageAfterRateLimitOnce(
+      wait: probe.wait,
+      operation: { try await probe.fail(17) })
+    Issue.record("The second rate limit should escape instead of looping")
+  } catch ClientFailure.remote(let kind, _, let retryAfterSec) {
+    #expect(kind == ErrorKind.rate_limited.rawValue)
+    #expect(retryAfterSec == 17)
+  } catch {
+    Issue.record("Unexpected error: \(error)")
+  }
+
+  #expect(probe.calls == 2)
+  #expect(probe.waits == [17])
 }
 
 #if os(macOS)

@@ -100,6 +100,26 @@ extension EngineClient {
     }
   }
 
+  public func refreshUsageAfterRateLimitOnce(_ provider: UsageProvider? = nil) async throws {
+    try await refreshUsageAfterRateLimitOnce(
+      wait: { seconds in try await Task.sleep(for: .seconds(seconds)) },
+      operation: { [self] in try await refreshUsage(provider) })
+  }
+
+  func refreshUsageAfterRateLimitOnce(
+    wait: @escaping @MainActor @Sendable (UInt32) async throws -> Void,
+    operation: @escaping @MainActor @Sendable () async throws -> Void
+  ) async throws {
+    do {
+      try await operation()
+    } catch ClientFailure.remote(let kind, _, let retryAfterSec)
+      where kind == ErrorKind.rate_limited.rawValue && retryAfterSec != nil
+    {
+      try await wait(retryAfterSec!)
+      try await operation()
+    }
+  }
+
   func refreshUsage(
     _ provider: UsageProvider?, now: Date,
     operation: @escaping @MainActor @Sendable (UsageProvider?) async throws -> UsageRefreshResult

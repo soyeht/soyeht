@@ -6,7 +6,7 @@ public enum ClientFailure: Error, LocalizedError, Sendable {
   case disconnected, invalidFrame, invalidSnapshot, invalidStream, timeout
   case editorCommand(String)
   case webHost(ErrorKind, String)
-  case remote(String, String)
+  case remote(String, String, retryAfterSec: UInt32? = nil)
   var canRetry: Bool {
     switch self {
     case .disconnected, .timeout: true
@@ -22,7 +22,7 @@ public enum ClientFailure: Error, LocalizedError, Sendable {
     case .timeout: "The engine did not respond in time."
     case .editorCommand(let message): message
     case .webHost(_, let message): message
-    case .remote(_, let message): message
+    case .remote(_, let message, _): message
     }
   }
 }

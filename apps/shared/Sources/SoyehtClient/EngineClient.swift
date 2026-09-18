@@ -107,7 +107,7 @@ public final class EngineClient {
         guard let self else { return }
         do { try await self.session() } catch {
           self.connectionText = error.localizedDescription
-          if case ClientFailure.remote(let kind, _) = error,
+          if case ClientFailure.remote(let kind, _, _) = error,
             self.readOnly
               && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
                 .contains(kind)
@@ -376,7 +376,8 @@ public final class EngineClient {
         request.continuation.resume(
           throwing: ClientFailure.remote(
             message["error"]["data"]["kind"].string ?? "internal_error",
-            message["error"]["message"].string ?? "Request refused"))
+            message["error"]["message"].string ?? "Request refused",
+            retryAfterSec: message["error"]["data"]["retryAfterSec"].int.flatMap(UInt32.init)))
         return
       }
       let result = message["result"]
@@ -408,7 +409,8 @@ public final class EngineClient {
     if message["id"] == .null, message["error"] != .null {
       throw ClientFailure.remote(
         message["error"]["data"]["kind"].string ?? ErrorKind.internal_error.rawValue,
-        message["error"]["message"].string ?? "Connection closed")
+        message["error"]["message"].string ?? "Connection closed",
+        retryAfterSec: message["error"]["data"]["retryAfterSec"].int.flatMap(UInt32.init))
     }
     guard let method = message["method"].string else { return }
     let params = message["params"]
