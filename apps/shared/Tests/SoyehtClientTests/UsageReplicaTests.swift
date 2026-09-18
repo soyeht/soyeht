@@ -38,7 +38,9 @@ private final class UsageRefreshProbe {
   #expect(UsagePresentation(reading(used: 0.50)).band == .warning)
   #expect(UsagePresentation(reading(used: 0.80)).band == .warning)
   #expect(UsagePresentation(reading(used: 0.81)).band == .danger)
-  #expect(UsagePresentation(reading(state: .stale)).percentage == "—")
+  #expect(UsagePresentation(reading(state: .stale)).percentage == "40%")
+  #expect(UsagePresentation(reading(state: .stale)).band == nil)
+  #expect(UsagePresentation(reading(state: .stale)).isStale)
   #expect(UsagePresentation(reading(state: .unavailable, used: nil)).fraction == nil)
 }
 
@@ -57,15 +59,6 @@ private final class UsageRefreshProbe {
     source: .codex_app_server, fetchedAt: "2026-09-15T12:00:00Z")
   #expect(UsagePresentation(reading).fraction == 0.8)
   #expect(UsagePresentation(reading).displayedWindow?.label == "Weekly")
-}
-
-@Test func hoverRefreshUsesTheContractedSixtySecondAge() throws {
-  let now = try #require(ISO8601DateFormatter().date(from: "2026-09-12T12:01:00Z"))
-  #expect(!UsagePresentation(reading()).needsHoverRefresh(now: now))
-  #expect(
-    UsagePresentation(reading(fetchedAt: "2026-09-12T11:58:59Z"))
-      .needsHoverRefresh(now: now))
-  #expect(UsagePresentation(reading(fetchedAt: "invalid")).needsHoverRefresh(now: now))
 }
 
 @Test func usageTimestampsAcceptProviderFractionalSeconds() {

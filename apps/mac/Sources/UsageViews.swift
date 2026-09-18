@@ -3,7 +3,6 @@ import SoyehtProtocol
 import SwiftUI
 
 struct UsageRing: View {
-  @Bindable var client: EngineClient
   let reading: UsageReading
   let onDetails: (UsageProvider) -> Void
   @State private var hovering = false
@@ -35,7 +34,7 @@ struct UsageRing: View {
         .frame(width: 40, height: 40)
         Text(presentation.percentage)
           .font(MacTheme.chrome(9, weight: .bold))
-          .foregroundStyle(MacTheme.secondary)
+          .foregroundStyle(presentation.isStale ? MacTheme.muted : MacTheme.secondary)
           .frame(height: 15)
       }
       .opacity(presentation.fraction == nil ? 0.46 : 1)
@@ -45,7 +44,9 @@ struct UsageRing: View {
     .help("\(reading.provider.displayName) usage")
     .accessibilityLabel("\(reading.provider.displayName) usage \(presentation.percentage)")
     .accessibilityIdentifier("usage-ring-\(reading.provider.rawValue)")
-    .onHover(perform: hoverChanged)
+    .onHover { value in
+      withAnimation(.easeOut(duration: 0.12)) { hovering = value }
+    }
     .overlay(alignment: .topLeading) {
       if hovering {
         UsageDetailBalloon(reading: reading)
@@ -68,11 +69,6 @@ struct UsageRing: View {
     }
   }
 
-  private func hoverChanged(_ value: Bool) {
-    withAnimation(.easeOut(duration: 0.12)) { hovering = value }
-    guard value, presentation.needsHoverRefresh() else { return }
-    Task { try? await client.refreshUsage(reading.provider) }
-  }
 }
 
 struct UsageDetailBalloon: View {
@@ -86,12 +82,18 @@ struct UsageDetailBalloon: View {
       } else if reading.state == .no_access {
         stateMessage("Allow access in Settings.", icon: "lock")
       } else if let primary = reading.primary {
-        UsageWindowRow(window: primary)
-        if let secondary = reading.secondary { UsageWindowRow(window: secondary) }
+        UsageWindowRow(window: primary, stale: reading.state == .stale)
+        if let secondary = reading.secondary {
+          UsageWindowRow(window: secondary, stale: reading.state == .stale)
+        }
       } else {
         stateMessage(stateLabel, icon: "exclamationmark.circle")
       }
-      Text("Source: \(reading.source.displayName) · \(UsageTimeText.fetched(reading.fetchedAt))")
+      Text(
+        "Source: \(reading.source.displayName) · "
+          + (reading.state == .stale
+            ? UsageTimeText.asOf(reading.fetchedAt) : UsageTimeText.fetched(reading.fetchedAt))
+      )
         .font(MacTheme.chrome(MacTheme.TypeScale.micro))
         .foregroundStyle(MacTheme.muted)
         .lineLimit(1)
@@ -137,7 +139,7 @@ struct UsageDetailBalloon: View {
   private var statusColor: Color {
     switch reading.state {
     case .ok: MacTheme.success
-    case .stale: MacTheme.warning
+    case .stale: MacTheme.muted
     case .login_needed, .no_access, .unavailable: MacTheme.muted
     }
   }
@@ -145,6 +147,7 @@ struct UsageDetailBalloon: View {
 
 private struct UsageWindowRow: View {
   let window: UsageWindow
+  let stale: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x3) {
@@ -170,6 +173,7 @@ private struct UsageWindowRow: View {
 
   private var fraction: Double { min(max(window.used, 0), 1) }
   private var color: Color {
+    if stale { return MacTheme.muted }
     if fraction < 0.5 { return MacTheme.success }
     if fraction <= 0.8 { return MacTheme.warning }
     return MacTheme.danger
@@ -207,7 +211,7 @@ struct UsageSettingsDetail: View {
                 Text(UsagePresentation(reading).percentage)
                   .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
               }
-              .foregroundStyle(MacTheme.ink)
+              .foregroundStyle(reading.state == .stale ? MacTheme.muted : MacTheme.ink)
               .padding(.horizontal, MacTheme.Space.x12)
               .frame(width: 210, height: 42)
               .background(
@@ -265,6 +269,14 @@ private enum UsageTimeText {
     let seconds = max(0, Date().timeIntervalSince(date))
     if seconds < 60 { return "updated just now" }
     return "updated \(duration(seconds)) ago"
+  }
+
+  static func asOf(_ value: String) -> String {
+    guard let date = timestamp(value) else { return "time unavailable" }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "HH:mm"
+    return "as of \(formatter.string(from: date))"
   }
 
   private static func timestamp(_ value: String) -> Date? {
