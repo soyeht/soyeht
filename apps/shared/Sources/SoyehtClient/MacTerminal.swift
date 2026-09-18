@@ -31,6 +31,17 @@
   final class TerminalSurface: TerminalView {
     private var keyboardInputEnabled = true
     private var claimedInitialFocus = false
+    private var onActivate: (() -> Void)?
+    private(set) var isReceivingOutput = false
+
+    func updateActivation(_ action: @escaping () -> Void) { onActivate = action }
+
+    func receive(_ bytes: Data, reset: Bool) {
+      isReceivingOutput = true
+      defer { isReceivingOutput = false }
+      if reset { getTerminal().resetToInitialState() }
+      feed(byteArray: Array(bytes)[...])
+    }
 
     func updateKeyboardInputEnabled(_ enabled: Bool) {
       guard keyboardInputEnabled != enabled else { return }
@@ -53,7 +64,8 @@
       claimedInitialFocus = window.makeFirstResponder(self)
     }
     override func mouseDown(with event: NSEvent) {
-      if keyboardInputEnabled { window?.makeFirstResponder(self) }
+      onActivate?()
+      window?.makeFirstResponder(self)
       super.mouseDown(with: event)
     }
   }
@@ -100,7 +112,8 @@
     }
     public func makeCoordinator() -> TerminalHost {
       TerminalHost(
-        client: client, acceptsInput: keyboardInputEnabled, ringBell: { NSSound.beep() },
+        client: client, paneId: paneId, acceptsInput: keyboardInputEnabled,
+        ringBell: { NSSound.beep() },
         openFile: { workspaceId, reference in
           openFile(workspaceId: workspaceId, reference: reference)
         },
@@ -118,15 +131,22 @@
       applyTheme(to: view)
       view.linkReporting = .implicit
       view.linkHighlightMode = .hover
-      view.setAccessibilityLabel("Selected pane terminal")
+      view.setAccessibilityLabel("Terminal pane")
+      view.updateActivation { [weak client] in client?.select(paneId) }
       view.updateKeyboardInputEnabled(keyboardInputEnabled)
+      client.claimTerminalOutput(paneId: paneId, owner: view) { [weak view] bytes, reset in
+        view?.receive(bytes, reset: reset)
+      }
       context.coordinator.attach(view, refresh: registered.isNew)
       return view
     }
     public func updateNSView(_ view: TerminalView, context: Context) {
       applyTheme(to: view)
       context.coordinator.updateAcceptsInput(keyboardInputEnabled)
-      (view as? TerminalSurface)?.updateKeyboardInputEnabled(keyboardInputEnabled)
+      if let surface = view as? TerminalSurface {
+        surface.updateActivation { [weak client] in client?.select(paneId) }
+        surface.updateKeyboardInputEnabled(keyboardInputEnabled)
+      }
       context.coordinator.updateOpenFile { workspaceId, reference in
         openFile(workspaceId: workspaceId, reference: reference)
       }
