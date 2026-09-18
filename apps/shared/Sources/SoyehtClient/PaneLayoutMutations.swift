@@ -30,7 +30,8 @@ public enum PaneLayoutDropZone: String, CaseIterable, Equatable, Sendable {
 /// Pure changes to a pane tree. UI code supplies intentions and never edits branches directly.
 public enum PaneLayoutTreeMutation {
   /// Adds a newly created pane immediately to the right of or below the anchor, taking half of
-  /// the anchor's current share. Normalization flattens a parent with the same axis.
+  /// its space above the panes' floors; each pane keeps its own floor. Normalization flattens a
+  /// parent with the same axis.
   public static func splitting(
     _ tree: PaneLayoutTree, anchorPaneId: String, newLeaf: PaneLayoutLeaf,
     axis: PaneLayoutAxis
