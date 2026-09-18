@@ -3,7 +3,7 @@ import Testing
 @testable import SoyehtClient
 
 private let acceptedFontMetrics = PaneLayoutFontMetrics(
-  terminal: PaneLayoutFontMetric(characterWidth: 8, lineHeight: 16, pointSize: 13),
+  terminal: PaneLayoutFontMetric(characterWidth: 8, lineHeight: 18, pointSize: 13),
   editor: PaneLayoutFontMetric(characterWidth: 6.9, lineHeight: 19, pointSize: 11.5),
   chrome: PaneLayoutFontMetric(characterWidth: 7.2, lineHeight: 17, pointSize: 12),
   agent: PaneLayoutFontMetric(characterWidth: 9, lineHeight: 21, pointSize: 15),
@@ -15,23 +15,24 @@ private let acceptedFontMetrics = PaneLayoutFontMetrics(
   let footprints = PaneLayoutFloorFormula.footprintFloors(
     fonts: acceptedFontMetrics, halo: 15)
 
-  #expect(surfaces[.terminal] == PaneLayoutSize(width: 340, height: 277))
+  #expect(surfaces[.terminal] == PaneLayoutSize(width: 340, height: 301))
   #expect(surfaces[.editor] == PaneLayoutSize(width: 333, height: 395))
   #expect(surfaces[.agent] == PaneLayoutSize(width: 340, height: 355))
   #expect(surfaces[.web] == PaneLayoutSize(width: 340, height: 361))
   #expect(surfaces[.text] == PaneLayoutSize(width: 317, height: 380))
   #expect(surfaces[.screenplay] == PaneLayoutSize(width: 344, height: 582))
   #expect(surfaces[.presentation] == PaneLayoutSize(width: 340, height: 302))
+  #expect(footprints[.terminal] == PaneLayoutSize(width: 370, height: 331))
   #expect(footprints[.screenplay] == PaneLayoutSize(width: 374, height: 612))
   #expect(footprints[.unknownWriting] == footprints[.screenplay])
 }
 
 @Test func terminalFloorChangesWhenTheActiveRendererLineHeightChanges() {
   var metrics = acceptedFontMetrics
-  metrics.terminal.lineHeight = 18
+  metrics.terminal.lineHeight = 16
 
   let surface = PaneLayoutFloorFormula.surfaceFloors(fonts: metrics)[.terminal]
-  #expect(surface == PaneLayoutSize(width: 340, height: 301))
+  #expect(surface == PaneLayoutSize(width: 340, height: 277))
 }
 
 @Test func compactWindowPolicyYieldsDecorationBeforePaneFloor() {
@@ -44,6 +45,9 @@ private let acceptedFontMetrics = PaneLayoutFontMetrics(
   #expect(policy.horizontalInset(windowWidth: 375) == 0.5)
   #expect(policy.horizontalInset(windowWidth: 430) == 18)
   #expect(policy.verticalOverhead == 84)
+  #expect(
+    PaneLayoutFloorFormula.footprintFloors(fonts: acceptedFontMetrics, halo: 15)[.terminal]!.height
+      + policy.verticalOverhead == 415)
   #expect(policy.railOverlays(windowWidth: 430))
   #expect(!policy.railOverlays(windowWidth: 466))
 }

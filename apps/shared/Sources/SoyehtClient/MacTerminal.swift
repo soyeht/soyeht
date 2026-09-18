@@ -14,6 +14,19 @@
     }
   }
 
+  public enum MacTerminalFont {
+    public static let familyName = "JetBrains Mono"
+    public static let pointSize = CGFloat(PaneLayoutContentMetrics.terminalFontPointSize)
+
+    public static func active() -> NSFont {
+      guard let font = NSFont(name: familyName, size: pointSize) else {
+        assertionFailure("Missing bundled terminal font: \(familyName)")
+        return NSFont.monospacedSystemFont(ofSize: pointSize, weight: .regular)
+      }
+      return font
+    }
+  }
+
   @MainActor
   final class TerminalSurface: TerminalView {
     private var keyboardInputEnabled = true
@@ -99,8 +112,7 @@
       let registered = client.terminalViewRegistry.surface(for: paneId) {
         TerminalSurface(
           frame: .zero,
-          font: .monospacedSystemFont(
-            ofSize: PaneLayoutContentMetrics.terminalFontPointSize, weight: .regular))
+          font: MacTerminalFont.active())
       }
       let view = registered.view
       applyTheme(to: view)
