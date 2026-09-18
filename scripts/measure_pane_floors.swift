@@ -66,23 +66,11 @@ enum Measurement {
       lineHeight: rawHeight)
   }
 
-  static func systemTerminalMetric() -> FontMetric {
-    let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    let ctFont = font as CTFont
-    let rawWidth = ("W" as NSString).size(withAttributes: [.font: font]).width
-    let rawHeight = ceil(
-      CTFontGetAscent(ctFont) + CTFontGetDescent(ctFont) + CTFontGetLeading(ctFont))
-    return FontMetric(
-      name: font.fontName, pointSize: 13,
-      characterWidth: (rawWidth * retinaScale).rounded() / retinaScale,
-      lineHeight: ceil(rawHeight * retinaScale) / retinaScale)
-  }
 }
 
 try Measurement.registerFonts()
 
-let terminal = Measurement.systemTerminalMetric()
-let labeledTerminal = Measurement.metric(
+let terminal = Measurement.metric(
   name: "JetBrains Mono", size: 13, character: "W", snappedForTerminal: true)
 let editor = Measurement.metric(name: "JetBrains Mono", size: 11.5, character: "0")
 let chrome = Measurement.metric(name: "Nunito", size: 12, character: "0")
@@ -133,15 +121,12 @@ let floors = [
 ]
 
 print("fonts")
-for metric in [terminal, labeledTerminal, editor, chrome, agent, prose, screenplay] {
+for metric in [terminal, editor, chrome, agent, prose, screenplay] {
   print(
     "\(metric.name)@\(metric.pointSize): char=\(metric.characterWidth), line=\(metric.lineHeight)")
 }
 print("screenplay-base-page-width=\(screenplayPageWidth)")
 print("screenplay-minimum-zoom=\(screenplayZoom)")
-print(
-  "terminal-if-preferences-label-were-rendered: surface=340x"
-    + "\(Int(20 + 26 + 8 + (chrome.lineHeight + 14) + 12 * labeledTerminal.lineHeight))")
 print("floors")
 for floor in floors {
   print(
