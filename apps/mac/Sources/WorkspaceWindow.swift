@@ -456,8 +456,11 @@ struct WorkspaceWindow: View {
     else { return }
     defer { paneSplitAnchorId = nil }
     do {
-      guard let displayed = client.paneLayouts.presentation(for: anchor.workspaceId)?.displayed.tree
-      else {
+      let livePanes = client.panes.filter { $0.workspaceId == anchor.workspaceId }
+      let reconciliation = try client.paneLayouts.reconciledPresentation(
+        for: anchor.workspaceId, livePanes: livePanes,
+        sizing: MacPaneLayoutMetrics.sizing)
+      guard let displayed = reconciliation.state.tree else {
         throw PaneLayoutControllerError.missingTree(anchor.workspaceId)
       }
       let base =
