@@ -105,6 +105,18 @@ private let geometrySizing = PaneLayoutSizingPolicy(
   #expect(compact.panePaths["agent"] == PaneLayoutNodePath(components: [1, 1]))
 }
 
+@Test func onePaneGrowsWithTheViewportWithoutChangingItsIdentity() throws {
+  let tree = PaneLayoutTree.leaf(PaneLayoutLeaf(paneId: "editor", kind: .editor))
+  let compact = try PaneLayoutGeometry.layout(
+    tree: tree, viewport: PaneLayoutSize(width: 600, height: 480), sizing: geometrySizing)
+  let wide = try PaneLayoutGeometry.layout(
+    tree: tree, viewport: PaneLayoutSize(width: 1_440, height: 812), sizing: geometrySizing)
+
+  #expect(compact.panePaths == wide.panePaths)
+  #expect(compact.paneRects["editor"]?.size == PaneLayoutSize(width: 600, height: 480))
+  #expect(wide.paneRects["editor"]?.size == PaneLayoutSize(width: 1_440, height: 812))
+}
+
 @Test func onePointBelowEveryAxisProducesExplicitOverflow() throws {
   let tree = PaneLayoutTree.leaf(PaneLayoutLeaf(paneId: "terminal", kind: .terminal))
   let result = try PaneLayoutGeometry.layout(

@@ -11,21 +11,25 @@ struct AppRail: View {
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x6) {
-      ForEach(items, id: \.destination) { item in
-        AppRailButton(
-          glyph: item.glyph,
-          label: item.label,
-          selected: destination == item.destination,
-          action: { onSelect(item.destination) })
+      ScrollView(.vertical) {
+        VStack(spacing: MacTheme.Space.x6) {
+          ForEach(items, id: \.destination) { item in
+            AppRailButton(
+              glyph: item.glyph,
+              label: item.label,
+              selected: destination == item.destination,
+              action: { onSelect(item.destination) })
+          }
+          Rectangle()
+            .fill(MacTheme.shadowDark)
+            .frame(width: 24, height: 1)
+            .padding(.vertical, MacTheme.Space.x2)
+          ForEach(client.usageReadings, id: \.provider) { reading in
+            UsageRing(client: client, reading: reading, onDetails: onUsageDetails)
+          }
+        }
       }
-      Rectangle()
-        .fill(MacTheme.shadowDark)
-        .frame(width: 24, height: 1)
-        .padding(.vertical, MacTheme.Space.x2)
-      ForEach(client.usageReadings, id: \.provider) { reading in
-        UsageRing(client: client, reading: reading, onDetails: onUsageDetails)
-      }
-      Spacer(minLength: 0)
+      .scrollIndicators(.visible)
       AppRailButton(
         glyph: .system("gearshape"), label: "Settings", selected: false, action: onSettings)
     }

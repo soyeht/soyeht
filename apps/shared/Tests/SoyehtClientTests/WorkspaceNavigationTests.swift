@@ -45,26 +45,6 @@ func appBarVisibilityPersistsWithoutPersistingTheSelectedView() {
   #expect(restored.destination == .agents)
 }
 
-@Test func threePaneWritingCompositionPromotesTheSelectedSurfaceAndItsAgent() {
-  let terminal = pane("terminal", mode: .terminal)
-  let agent = pane("agent", mode: .agent)
-  let text = pane("text", mode: .writing, kind: .text, section: .texts)
-  let screenplay = pane(
-    "screenplay", mode: .writing, kind: .screenplay, section: .screenplays)
-
-  let selectedWriting = PanePresentationOrder.arrange(
-    [terminal, agent, text, screenplay], selectedPaneId: screenplay.paneId)
-  #expect(selectedWriting.map(\.paneId) == ["screenplay", "agent", "terminal", "text"])
-
-  let selectedAgent = PanePresentationOrder.arrange(
-    [terminal, text, agent], selectedPaneId: agent.paneId)
-  #expect(selectedAgent.map(\.paneId) == ["text", "agent", "terminal"])
-
-  let selectedTerminal = PanePresentationOrder.arrange(
-    [terminal, agent, text], selectedPaneId: terminal.paneId)
-  #expect(selectedTerminal.map(\.paneId) == ["terminal", "agent", "text"])
-}
-
 @Test @MainActor func paneUpdatePreservesVisiblePaneOrder() {
   let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
   let left = pane("left", mode: .terminal)

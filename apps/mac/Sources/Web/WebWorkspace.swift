@@ -6,6 +6,7 @@ struct WebWorkspace: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   let workspaceId: String?
+  let viewportSize: CGSize
   let onClose: (String) -> Void
   let onNewPane: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -23,7 +24,7 @@ struct WebWorkspace: View {
     } else {
       PaneGrid(
         client: client, webHost: webHost, workspaceId: workspaceId, mode: .web,
-        splitAxis: .columns, onClose: onClose, onNewPane: onNewPane, onSplit: onSplit,
+        viewportSize: viewportSize, onClose: onClose, onNewPane: onNewPane, onSplit: onSplit,
         onTasks: onTasks)
     }
   }

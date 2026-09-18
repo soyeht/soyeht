@@ -25,7 +25,10 @@ struct SoyehtMacApp: App {
     Window("Soyeht · Dev", id: "main") {
       WorkspaceWindow(client: client, webHost: webHost)
         .ignoresSafeArea(.container, edges: .top)
-        .frame(minWidth: 1024, minHeight: 640)
+        .frame(
+          minWidth: MacPaneLayoutMetrics.minimumExercisedViewport.width,
+          minHeight: MacPaneLayoutMetrics.minimumExercisedViewport.height
+        )
         .environment(themeStore)
         .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
         .task { client.start() }

@@ -65,12 +65,13 @@ public struct PaneLayoutState: Equatable, Sendable {
   public mutating func reconcile(
     livePanes: [Pane], sizing: PaneLayoutSizingPolicy
   ) throws -> [String] {
-    let present = Set(tree?.paneIdsInCanonicalOrder ?? [])
+    var present = Set(tree?.paneIdsInCanonicalOrder ?? [])
     var inserted: [String] = []
     for pane in livePanes where !present.contains(pane.paneId) {
       tree = try PaneLayoutArrangement.inserting(
         PaneLayoutLeaf(pane: pane), into: tree, rule: insertionRule, sizing: sizing)
       inserted.append(pane.paneId)
+      present.insert(pane.paneId)
     }
     return inserted
   }

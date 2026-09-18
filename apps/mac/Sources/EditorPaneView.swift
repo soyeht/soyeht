@@ -53,7 +53,7 @@ struct EditorPaneView: View {
     }
     .padding(MacTheme.Space.x10)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
-    .frame(minWidth: 620, maxWidth: .infinity, maxHeight: .infinity)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .accessibilityIdentifier("editor-pane")
     .sheet(isPresented: $showHistory) {
       if let file = view?.file { EditorHistorySheet(client: client, file: file) }
