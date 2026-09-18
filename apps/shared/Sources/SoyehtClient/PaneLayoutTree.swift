@@ -49,7 +49,7 @@ public enum PaneLayoutKind: String, CaseIterable, Hashable, Sendable {
   }
 }
 
-public enum PaneLayoutAxis: String, Sendable {
+public enum PaneLayoutAxis: String, Hashable, Sendable {
   case horizontal
   case vertical
 }
@@ -306,7 +306,7 @@ public enum PaneLayoutMinimumSize {
     try? require(for: tree, floors: floors, gaps: gaps)
   }
 
-  fileprivate static func require(
+  public static func require(
     for tree: PaneLayoutTree,
     floors: [PaneLayoutKind: PaneLayoutSize],
     gaps: PaneLayoutGaps
