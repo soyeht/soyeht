@@ -236,12 +236,14 @@ public final class EngineClient {
     connectionText = "Dev profile · connected"
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
     #if os(macOS)
+      // The tmux-style Mac surface keeps every terminal current, including hidden workspaces.
       for pane in panes where pane.mode == .terminal { try await subscribe(pane.paneId) }
     #endif
     if let pane = selectedPane {
       switch pane.mode {
       case .terminal:
         #if !os(macOS)
+          // Phone still has one selected terminal surface; Block D will define its final policy.
           try await subscribe(pane.paneId)
         #endif
       case .agent: try await loadAgentPane(pane.paneId, replacing: true)
@@ -413,7 +415,11 @@ public final class EngineClient {
           let paneId = request.params["paneId"].string
         {
           let info = try result.decoded(StreamInfo.self)
-          try terminalStreams.install(paneId: paneId, info: info)
+          // A close event can overtake an in-flight subscribe response. Do not resurrect stream
+          // state after the pane (or its terminal role) has already disappeared.
+          if panes.contains(where: { $0.paneId == paneId && $0.mode == .terminal }) {
+            try terminalStreams.install(paneId: paneId, info: info)
+          }
         }
         request.continuation.resume(
           returning: EngineResponse(value: result, attachment: attachment)
@@ -642,6 +648,9 @@ public final class EngineClient {
   public func refreshTerminal(_ paneId: String) {
     guard connected, panes.contains(where: { $0.paneId == paneId && $0.mode == .terminal })
     else { return }
+    // macOS subscribes every terminal after the snapshot. A surface mounted after that must
+    // consume the existing stream instead of replacing it and replaying the tail a second time.
+    guard !terminalStreams.contains(paneId) else { return }
     perform { try await self.subscribe(paneId) }
   }
   public func gapText(for paneId: String) -> String? { terminalStreams.gapText(for: paneId) }
