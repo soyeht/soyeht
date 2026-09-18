@@ -58,20 +58,17 @@ does not mutate application state.
 
 | Use | Source in the app | PostScript font | Point size | measured `ch`/cell | measured line |
 |---|---|---:|---:|---:|---:|
-| terminal, actual renderer | `MacTerminal.swift:65-68` | `.AppleSystemUIFontMonospaced-Regular` | 13 | 8.000 | 16 |
-| terminal, Preferences label | `PreferencesPanel.swift:714` | `JetBrainsMono-Regular` | 13 | 8.000 | 18 |
+| terminal renderer and Preferences | `MacTerminal.swift:17-27`; `PreferencesPanel.swift:714` | `JetBrainsMono-Regular` | 13 | 8.000 | 18 |
 | editor | `EditorNativeViewport.swift:8-17` | `JetBrainsMono-Regular` | 11.5 | 6.900 | 19 explicit |
 | chrome | `MacStyle.swift:109-119` | `Nunito-Regular` | 12/15 | 7.200/9.000 | 17/21 |
 | text | `WritingTextPane.swift:408-418` | `Newsreader16pt-Regular` | 20 | 11.037 | 32 explicit |
 | screenplay | `WritingScreenplayPane.swift:709-720` | `CourierPrime-Regular` | 16 | 9.594 | 27 explicit |
 
-There is a real discrepancy in the first two rows: Preferences says
-“JetBrains Mono 13”, while the terminal constructs SF Mono 13. The default floor
-below uses what is actually rendered. If the renderer is corrected to match the
-label, the terminal surface height changes from 277 to 301 pt, its footprint
-from 307 to 331 pt, and its minimum window height from 391 to 415 pt. The layout
-implementation must derive this floor from the active terminal font rather than
-freeze either number.
+The renderer and Preferences now agree on JetBrains Mono 13. VM1 visual
+measurement confirms an 18 pt line (36 px at Retina 2×). The terminal surface,
+footprint and minimum window height below are therefore 301, 331 and 415 pt.
+The layout derives these values from the same `MacTerminalFont` used by the
+renderer; the test changes the font metric and proves that the floor follows it.
 
 ## Fixtures and rulers
 
@@ -82,8 +79,8 @@ SwiftTerm measures the widest ASCII glyph and snaps it to the Retina grid, so
 `W` exercises the renderer's own sizing rule.
 
 - width: `40 × 8 + 2 × 10 card inset = 340`
-- height: `20 card inset + 26 header + 8 gap + 31 state + 12 × 16 = 277`
-- 340×277 passes; 339 gives 39 columns and 276 gives 11 full rows.
+- height: `20 card inset + 26 header + 8 gap + 31 state + 12 × 18 = 301`
+- 340×301 passes; 339 gives 39 columns and 300 gives 11 full rows.
 
 The 40×12 target came from the accepted proposal. Font changes recalculate the
 formula; they do not create a second literal.
@@ -182,7 +179,7 @@ deforms.
 
 | Type | surface | footprint with halo | minimum window height | failing neighbor |
 |---|---:|---:|---:|---:|
-| terminal (actual default) | 340×277 | 370×307 | 391 | 369 wide / 390 high |
+| terminal (actual default) | 340×301 | 370×331 | 415 | 369 wide / 414 high |
 | editor | 333×395 | 363×425 | 509 | 362 wide / 508 high |
 | agent | 340×355 | 370×385 | 469 | 369 wide / 468 high |
 | web | 340×361 | 370×391 | 475 | 369 wide / 474 high |

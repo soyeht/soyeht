@@ -48,8 +48,7 @@ enum MacPaneLayoutMetrics {
 
   private static let fontMetrics = PaneLayoutFontMetrics(
     terminal: metric(
-      NSFont.monospacedSystemFont(
-        ofSize: PaneLayoutContentMetrics.terminalFontPointSize, weight: .regular),
+      MacTerminalFont.active(),
       character: "W",
       snapToDisplayPixels: true),
     editor: metric(
