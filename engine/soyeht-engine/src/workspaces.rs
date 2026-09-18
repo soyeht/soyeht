@@ -33,6 +33,20 @@ fn workspace_for_action(
 }
 
 impl Core {
+    pub(crate) fn workspace_after_closing_pane(
+        &self,
+        workspace_id: &str,
+        pane_id: &str,
+    ) -> Result<Option<Workspace>> {
+        let mut workspace = workspace_for_action(&self.store, workspace_id, None)?;
+        let Some(layout) = crate::workspace_layout::removing_pane(&workspace.layout, pane_id)
+        else {
+            return Ok(None);
+        };
+        workspace.layout = layout;
+        Ok(Some(workspace))
+    }
+
     pub fn workspace_request(
         &mut self,
         connection: &str,

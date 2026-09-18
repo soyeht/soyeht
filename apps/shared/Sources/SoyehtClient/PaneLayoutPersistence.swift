@@ -33,6 +33,34 @@ public struct PaneLayoutState: Equatable, Sendable {
     }
   }
 
+  public init(workspaceLayout: JsonValue, livePanes: [Pane]) {
+    self.init(workspaceLayout: workspaceLayout)
+    var liveKinds: [String: PaneLayoutKind] = [:]
+    for pane in livePanes {
+      liveKinds[pane.paneId] = PaneLayoutKind(mode: pane.mode, writingKind: pane.writingKind)
+    }
+    guard var reconciled = tree else {
+      if !liveKinds.isEmpty { self.init() }
+      return
+    }
+    for paneId in reconciled.paneIdsInCanonicalOrder where liveKinds[paneId] == nil {
+      guard let remaining = reconciled.removingPane(withId: paneId) else {
+        tree = nil
+        if !liveKinds.isEmpty { self.init() }
+        return
+      }
+      reconciled = remaining
+    }
+    let leaves = reconciled.leavesInCanonicalOrder
+    guard leaves.count == liveKinds.count,
+      leaves.allSatisfy({ liveKinds[$0.paneId] == $0.kind })
+    else {
+      self.init()
+      return
+    }
+    tree = reconciled
+  }
+
   public var insertionRule: PaneLayoutInsertionRule {
     mode == .custom ? .preservingUserArrangement : .initialByType
   }

@@ -53,11 +53,21 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
         .as_str()
         .unwrap()
         .to_owned();
-    let pane = client.call(
+    let first_pane = client.call(
         "pane.create",
         json!({
-            "workspaceId":workspace,"mode":"terminal","name":"Terminal",
-            "idempotencyKey":"layout-pane"
+            "workspaceId":workspace,"mode":"terminal","name":"First",
+            "idempotencyKey":"layout-pane-first"
+        }),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second_pane = client.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,"mode":"terminal","name":"Second",
+            "idempotencyKey":"layout-pane-second"
         }),
     )["paneId"]
         .as_str()
@@ -65,7 +75,10 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
         .to_owned();
     let layout = json!({
         "version":1,"mode":"custom",
-        "tree":{"paneId":pane,"kind":"terminal"}
+        "tree":{"axis":"horizontal","children":[
+            {"weight":2.0,"node":{"paneId":first_pane,"kind":"terminal"}},
+            {"weight":1.0,"node":{"paneId":second_pane,"kind":"terminal"}}
+        ]}
     });
     let saved = client.call(
         "workspace.layout.set",
@@ -96,6 +109,15 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
     );
     assert_eq!(unknown["error"]["data"]["kind"], "invalid_params");
 
+    client.call(
+        "pane.close",
+        json!({"paneId":first_pane,"idempotencyKey":"close-first-layout-pane"}),
+    );
+    let pruned_layout = json!({
+        "version":1,"mode":"custom",
+        "tree":{"paneId":second_pane,"kind":"terminal"}
+    });
+
     drop(client);
     rig.kill_engine();
     rig.start();
@@ -107,7 +129,7 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
         .iter()
         .find(|item| item["workspaceId"] == workspace)
         .unwrap()["layout"];
-    assert_eq!(restored_layout, &layout);
+    assert_eq!(restored_layout, &pruned_layout);
 }
 
 struct Rig {

@@ -1,12 +1,83 @@
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneMode, WorkspacePaneLayoutEnvelope, WorkspacePaneLayoutKind, WorkspacePaneLayoutNode,
-    WritingKind,
+    Pane, PaneMode, WorkspacePaneLayoutBranch, WorkspacePaneLayoutEnvelope,
+    WorkspacePaneLayoutKind, WorkspacePaneLayoutNode, WorkspacePaneLayoutSplit, WritingKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 
 pub const CURRENT_VERSION: u32 = 1;
+
+pub fn removing_pane(layout: &Value, pane_id: &str) -> Option<Value> {
+    let mut envelope =
+        serde_json::from_value::<WorkspacePaneLayoutEnvelope>(layout.clone()).ok()?;
+    if envelope.version != CURRENT_VERSION {
+        return None;
+    }
+    let (tree, removed) = remove_from_node(envelope.tree.take(), pane_id);
+    if !removed {
+        return None;
+    }
+    envelope.tree = tree;
+    serde_json::to_value(envelope).ok()
+}
+
+fn remove_from_node(
+    node: Option<WorkspacePaneLayoutNode>,
+    pane_id: &str,
+) -> (Option<WorkspacePaneLayoutNode>, bool) {
+    let Some(node) = node else {
+        return (None, false);
+    };
+    match node {
+        WorkspacePaneLayoutNode::V0(leaf) if leaf.pane_id == pane_id => (None, true),
+        WorkspacePaneLayoutNode::V0(leaf) => (Some(WorkspacePaneLayoutNode::V0(leaf)), false),
+        WorkspacePaneLayoutNode::V1(split) => remove_from_split(split, pane_id),
+    }
+}
+
+fn remove_from_split(
+    split: WorkspacePaneLayoutSplit,
+    pane_id: &str,
+) -> (Option<WorkspacePaneLayoutNode>, bool) {
+    let mut removed = false;
+    let mut children = Vec::with_capacity(split.children.len());
+    for branch in split.children {
+        let (node, branch_removed) = remove_from_node(Some(branch.node), pane_id);
+        removed |= branch_removed;
+        if let Some(node) = node {
+            children.push(WorkspacePaneLayoutBranch {
+                weight: branch.weight,
+                node,
+            });
+        }
+    }
+    if !removed {
+        return (
+            Some(WorkspacePaneLayoutNode::V1(WorkspacePaneLayoutSplit {
+                axis: split.axis,
+                children,
+            })),
+            false,
+        );
+    }
+    let mut children = children.into_iter();
+    let Some(first) = children.next() else {
+        return (None, true);
+    };
+    let Some(second) = children.next() else {
+        return (Some(first.node), true);
+    };
+    let mut remaining = vec![first, second];
+    remaining.extend(children);
+    (
+        Some(WorkspacePaneLayoutNode::V1(WorkspacePaneLayoutSplit {
+            axis: split.axis,
+            children: remaining,
+        })),
+        true,
+    )
+}
 
 pub fn fallback_diagnostic(workspace_id: &str, layout: &Value) -> Option<Value> {
     let envelope = serde_json::from_value::<WorkspacePaneLayoutEnvelope>(layout.clone()).ok()?;
@@ -196,5 +267,30 @@ mod tests {
             validate("workspace", &envelope, [pane("real")]).unwrap_err(),
             "Pane missing is not open in this workspace"
         );
+    }
+
+    #[test]
+    fn closing_a_pane_prunes_its_leaf_and_collapses_single_child_splits() {
+        let layout = json!({
+            "version":1,
+            "mode":"custom",
+            "tree":{
+                "axis":"horizontal",
+                "children":[
+                    {"weight":2,"node":{"paneId":"closed","kind":"terminal"}},
+                    {"weight":1,"node":{"paneId":"open","kind":"terminal"}}
+                ]
+            }
+        });
+
+        assert_eq!(
+            removing_pane(&layout, "closed"),
+            Some(json!({
+                "version":1,
+                "mode":"custom",
+                "tree":{"paneId":"open","kind":"terminal"}
+            }))
+        );
+        assert_eq!(removing_pane(&layout, "absent"), None);
     }
 }

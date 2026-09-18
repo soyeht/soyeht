@@ -267,6 +267,7 @@ impl Core {
             .ok_or_else(|| errors::not_found("Pane not found"))?
             .stored
             .clone();
+        let mut layout_workspace = None;
         let requested_capture = (method == "pane.experiment.set")
             .then(|| errors::param_bool(params, "on"))
             .transpose()?;
@@ -293,10 +294,18 @@ impl Core {
         let result = match method {
             "pane.close" => {
                 saved.closed = true;
+                layout_workspace = self
+                    .workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
                 events.push((
                     "pane.closed".into(),
                     json!({"paneId":id,"workspaceId":saved.pane.workspace_id}),
                 ));
+                if let Some(workspace) = &layout_workspace {
+                    events.push((
+                        "workspace.layout_updated".into(),
+                        json!({"workspace":workspace}),
+                    ));
+                }
                 json!({"paneId":id})
             }
             "pane.rename" => {
@@ -359,6 +368,9 @@ impl Core {
             write_pane(tx, &saved)?;
             if saved.closed {
                 tx.close_pane(id)?;
+            }
+            if let Some(workspace) = &layout_workspace {
+                tx.update_workspace(workspace)?;
             }
             Ok((result, events))
         })?;

@@ -639,6 +639,11 @@ public final class EngineClient {
         idempotencyKey: UUID().uuidString))
     return try result.decoded(WorkspaceLayoutSetResult.self).workspace
   }
+  public func paneLayoutState(for workspace: Workspace) -> PaneLayoutState {
+    PaneLayoutState(
+      workspaceLayout: workspace.layout,
+      livePanes: panes.filter { $0.workspaceId == workspace.workspaceId })
+  }
   public func closePane(_ id: String) {
     perform {
       _ = try await self.mutation(

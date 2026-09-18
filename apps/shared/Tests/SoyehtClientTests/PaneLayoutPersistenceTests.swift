@@ -73,3 +73,40 @@ import Testing
 
   #expect(PaneLayoutState(workspaceLayout: duplicate) == PaneLayoutState())
 }
+
+@Test func loadingLayoutPrunesClosedPaneAndCollapsesItsSplit() throws {
+  let persisted = JsonValue.object([
+    "version": .integer(1),
+    "mode": .string("custom"),
+    "tree": .object([
+      "axis": .string("horizontal"),
+      "children": .array([
+        .object([
+          "weight": .integer(2),
+          "node": .object([
+            "paneId": .string("closed"), "kind": .string("terminal"),
+          ]),
+        ]),
+        .object([
+          "weight": .integer(1),
+          "node": .object([
+            "paneId": .string("open"), "kind": .string("terminal"),
+          ]),
+        ]),
+      ]),
+    ]),
+  ])
+
+  let state = PaneLayoutState(workspaceLayout: persisted, livePanes: [terminalPane("open")])
+
+  #expect(state.mode == .custom)
+  #expect(
+    state.tree == .leaf(PaneLayoutLeaf(paneId: "open", kind: .terminal)))
+}
+
+private func terminalPane(_ paneId: String) -> Pane {
+  Pane(
+    paneId: paneId, workspaceId: "workspace", name: paneId, cwd: "/workspace", mode: .terminal,
+    state: .idle, source: .protocol, confidence: 1, phrase: "Ready", generation: 1, cols: 80,
+    rows: 24, record: false)
+}
