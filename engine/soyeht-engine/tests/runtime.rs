@@ -42,6 +42,96 @@ fn runtime_rig_slot() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+#[test]
+fn workspace_pane_layout_is_validated_persisted_and_restored() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Layout","path":rig.path,"idempotencyKey":"layout-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let first_pane = client.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,"mode":"terminal","name":"First",
+            "idempotencyKey":"layout-pane-first"
+        }),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second_pane = client.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,"mode":"terminal","name":"Second",
+            "idempotencyKey":"layout-pane-second"
+        }),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let layout = json!({
+        "version":1,"mode":"custom",
+        "tree":{"axis":"horizontal","children":[
+            {"weight":2.0,"node":{"paneId":first_pane,"kind":"terminal"}},
+            {"weight":1.0,"node":{"paneId":second_pane,"kind":"terminal"}}
+        ]}
+    });
+    let saved = client.call(
+        "workspace.layout.set",
+        json!({
+            "workspaceId":workspace,"layout":layout,
+            "idempotencyKey":"save-layout"
+        }),
+    );
+    assert_eq!(saved["workspace"]["layout"], layout);
+
+    let missing = client.request(
+        "workspace.layout.set",
+        json!({
+            "workspaceId":workspace,
+            "layout":{"version":1,"mode":"custom",
+                "tree":{"paneId":"missing","kind":"terminal"}},
+            "idempotencyKey":"missing-layout-pane"
+        }),
+    );
+    assert_eq!(missing["error"]["data"]["kind"], "invalid_params");
+    let unknown = client.request(
+        "workspace.layout.set",
+        json!({
+            "workspaceId":workspace,
+            "layout":{"version":99,"mode":"custom","tree":null},
+            "idempotencyKey":"unknown-layout-version"
+        }),
+    );
+    assert_eq!(unknown["error"]["data"]["kind"], "invalid_params");
+
+    client.call(
+        "pane.close",
+        json!({"paneId":first_pane,"idempotencyKey":"close-first-layout-pane"}),
+    );
+    let pruned_layout = json!({
+        "version":1,"mode":"custom",
+        "tree":{"paneId":second_pane,"kind":"terminal"}
+    });
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let workspaces = restored.call("workspace.list", json!({}));
+    let restored_layout = &workspaces["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["workspaceId"] == workspace)
+        .unwrap()["layout"];
+    assert_eq!(restored_layout, &pruned_layout);
+}
+
 struct Rig {
     _runtime_slot: MutexGuard<'static, ()>,
     path: PathBuf,

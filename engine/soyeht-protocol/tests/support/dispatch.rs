@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -15,6 +15,14 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "RpcError" => roundtrip::<RpcError>(value),
         "ErrorData" => roundtrip::<ErrorData>(value),
         "Actor" => roundtrip::<Actor>(value),
+        "WorkspacePaneLayoutMode" => roundtrip::<WorkspacePaneLayoutMode>(value),
+        "WorkspacePaneLayoutKind" => roundtrip::<WorkspacePaneLayoutKind>(value),
+        "WorkspacePaneLayoutAxis" => roundtrip::<WorkspacePaneLayoutAxis>(value),
+        "WorkspacePaneLayoutLeaf" => roundtrip::<WorkspacePaneLayoutLeaf>(value),
+        "WorkspacePaneLayoutBranch" => roundtrip::<WorkspacePaneLayoutBranch>(value),
+        "WorkspacePaneLayoutSplit" => roundtrip::<WorkspacePaneLayoutSplit>(value),
+        "WorkspacePaneLayoutNode" => roundtrip::<WorkspacePaneLayoutNode>(value),
+        "WorkspacePaneLayoutEnvelope" => roundtrip::<WorkspacePaneLayoutEnvelope>(value),
         "Workspace" => roundtrip::<Workspace>(value),
         "Pane" => roundtrip::<Pane>(value),
         "Device" => roundtrip::<Device>(value),
@@ -36,6 +44,8 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "WorkspaceCreateResult" => roundtrip::<WorkspaceCreateResult>(value),
         "WorkspaceRenameParams" => roundtrip::<WorkspaceRenameParams>(value),
         "WorkspaceRenameResult" => roundtrip::<WorkspaceRenameResult>(value),
+        "WorkspaceLayoutSetParams" => roundtrip::<WorkspaceLayoutSetParams>(value),
+        "WorkspaceLayoutSetResult" => roundtrip::<WorkspaceLayoutSetResult>(value),
         "WorkspaceCloseParams" => roundtrip::<WorkspaceCloseParams>(value),
         "WorkspaceCloseResult" => roundtrip::<WorkspaceCloseResult>(value),
         "WorkspaceFocusParams" => roundtrip::<WorkspaceFocusParams>(value),
@@ -86,6 +96,7 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "StateSnapshotPartEvent" => roundtrip::<StateSnapshotPartEvent>(value),
         "WorkspaceCreatedEvent" => roundtrip::<WorkspaceCreatedEvent>(value),
         "WorkspaceRenamedEvent" => roundtrip::<WorkspaceRenamedEvent>(value),
+        "WorkspaceLayoutUpdatedEvent" => roundtrip::<WorkspaceLayoutUpdatedEvent>(value),
         "WorkspaceClosedEvent" => roundtrip::<WorkspaceClosedEvent>(value),
         "PaneCreatedEvent" => roundtrip::<PaneCreatedEvent>(value),
         "PaneRenamedEvent" => roundtrip::<PaneRenamedEvent>(value),

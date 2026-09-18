@@ -33,7 +33,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::Message;
-use soyeht_protocol::{ProbeCapability, PromptItem, TranscriptMessage, ndjson::Decoder};
+use soyeht_protocol::{ProbeCapability, PromptItem, TranscriptMessage, Workspace, ndjson::Decoder};
 use soyeht_store::{
     agents::{self, AgentModelRefusal, NativeRequest, Outgoing, PromptAttachment},
     database::{Change, Mutation},
@@ -73,6 +73,7 @@ pub struct Changes {
     pub probes: Vec<ProbeCapability>,
     pub events: Vec<(String, Value)>,
     pub model_refusal: Option<AgentModelRefusal>,
+    pub workspace_layout: Option<Workspace>,
     pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
@@ -140,6 +141,16 @@ fn persist_model_refusal(
     Ok(())
 }
 
+fn persist_workspace_layout(
+    tx: &Change<'_>,
+    workspace: Option<&Workspace>,
+) -> soyeht_store::database::Result<()> {
+    if let Some(workspace) = workspace {
+        tx.update_workspace(workspace)?;
+    }
+    Ok(())
+}
+
 impl AgentPersistence<'_> {
     fn apply(
         self,
@@ -188,6 +199,7 @@ impl AgentPersistence<'_> {
         }
         persist_model_refusal(tx, self.changes.model_refusal.as_ref())?;
         write_pane(tx, self.saved)?;
+        persist_workspace_layout(tx, self.changes.workspace_layout.as_ref())?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;
         let attention_changed = self.changes.clear_attention
             || !self.changes.attention.is_empty()

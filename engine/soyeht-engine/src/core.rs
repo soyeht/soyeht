@@ -82,6 +82,13 @@ impl Core {
             _ => (),
         }
         let mut store = Store::open(directory).map_err(errors::storage)?;
+        let workspaces = store.workspaces().map_err(errors::storage)?;
+        let _ = crate::workspace_layout::log_fallback_diagnostics(
+            workspaces
+                .iter()
+                .map(|workspace| (workspace.workspace_id.as_str(), &workspace.layout)),
+            std::io::stderr(),
+        );
         let generation = store.next_engine_generation().map_err(errors::storage)?;
         if generation > u32::MAX as u64 {
             return Err(errors::internal("Engine generation exhausted"));

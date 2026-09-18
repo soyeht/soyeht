@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -38,6 +38,35 @@ export interface Actor {
   "client": string;
   "deviceId"?: Id;
   "paneId"?: Id;
+}
+
+export type WorkspacePaneLayoutMode = "automatic" | "custom";
+
+export type WorkspacePaneLayoutKind = "terminal" | "agent" | "editor" | "web" | "text" | "presentation" | "screenplay" | "unknown_writing";
+
+export type WorkspacePaneLayoutAxis = "horizontal" | "vertical";
+
+export interface WorkspacePaneLayoutLeaf {
+  "paneId": Id;
+  "kind": WorkspacePaneLayoutKind;
+}
+
+export interface WorkspacePaneLayoutBranch {
+  "weight": number;
+  "node": WorkspacePaneLayoutNode;
+}
+
+export interface WorkspacePaneLayoutSplit {
+  "axis": WorkspacePaneLayoutAxis;
+  "children": Array<WorkspacePaneLayoutBranch>;
+}
+
+export type WorkspacePaneLayoutNode = WorkspacePaneLayoutLeaf | WorkspacePaneLayoutSplit;
+
+export interface WorkspacePaneLayoutEnvelope {
+  "version": number;
+  "mode": WorkspacePaneLayoutMode;
+  "tree"?: WorkspacePaneLayoutNode;
 }
 
 export interface Workspace {
@@ -176,6 +205,16 @@ export interface WorkspaceRenameParams {
 }
 
 export interface WorkspaceRenameResult {
+  "workspace": Workspace;
+}
+
+export interface WorkspaceLayoutSetParams {
+  "workspaceId": Id;
+  "layout": WorkspacePaneLayoutEnvelope;
+  "idempotencyKey": Id;
+}
+
+export interface WorkspaceLayoutSetResult {
   "workspace": Workspace;
 }
 
@@ -456,6 +495,13 @@ export interface WorkspaceRenamedEvent {
   "eventId": Decimal;
   "at": string;
   "workspace": Workspace;
+}
+
+export interface WorkspaceLayoutUpdatedEvent {
+  "workspace": Workspace;
+  "eventId": Decimal;
+  "at": string;
+  "actor"?: Actor;
 }
 
 export interface WorkspaceClosedEvent {
@@ -2925,6 +2971,7 @@ export interface Methods {
   "workspace.list": { params: WorkspaceListParams; result: WorkspaceListResult };
   "workspace.create": { params: WorkspaceCreateParams; result: WorkspaceCreateResult };
   "workspace.rename": { params: WorkspaceRenameParams; result: WorkspaceRenameResult };
+  "workspace.layout.set": { params: WorkspaceLayoutSetParams; result: WorkspaceLayoutSetResult };
   "workspace.close": { params: WorkspaceCloseParams; result: WorkspaceCloseResult };
   "workspace.focus": { params: WorkspaceFocusParams; result: WorkspaceFocusResult };
   "pane.create": { params: PaneCreateParams; result: PaneCreateResult };
@@ -3047,6 +3094,7 @@ export interface Events {
   "state.snapshot_part": StateSnapshotPartEvent;
   "workspace.created": WorkspaceCreatedEvent;
   "workspace.renamed": WorkspaceRenamedEvent;
+  "workspace.layout_updated": WorkspaceLayoutUpdatedEvent;
   "workspace.closed": WorkspaceClosedEvent;
   "pane.created": PaneCreatedEvent;
   "pane.renamed": PaneRenamedEvent;
@@ -3121,6 +3169,7 @@ export const eventRegistry = {
   "state.snapshot_part": { paramsType: "StateSnapshotPartEvent", durable: false },
   "workspace.created": { paramsType: "WorkspaceCreatedEvent", durable: true },
   "workspace.renamed": { paramsType: "WorkspaceRenamedEvent", durable: true },
+  "workspace.layout_updated": { paramsType: "WorkspaceLayoutUpdatedEvent", durable: true },
   "workspace.closed": { paramsType: "WorkspaceClosedEvent", durable: true },
   "pane.created": { paramsType: "PaneCreatedEvent", durable: true },
   "pane.renamed": { paramsType: "PaneRenamedEvent", durable: true },

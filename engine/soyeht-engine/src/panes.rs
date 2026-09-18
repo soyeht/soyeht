@@ -252,6 +252,27 @@ impl Core {
         Ok(mutation.result)
     }
 
+    pub(crate) fn prepare_pane_close(
+        &self,
+        saved: &mut StoredPane,
+        events: &mut Vec<(String, Value)>,
+    ) -> Result<Option<soyeht_protocol::Workspace>> {
+        saved.closed = true;
+        let workspace =
+            self.workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
+        events.push((
+            "pane.closed".into(),
+            json!({"paneId":saved.pane.pane_id,"workspaceId":saved.pane.workspace_id}),
+        ));
+        if let Some(workspace) = &workspace {
+            events.push((
+                "workspace.layout_updated".into(),
+                json!({"workspace":workspace}),
+            ));
+        }
+        Ok(workspace)
+    }
+
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         if method == "pane.experiment.delete" {
             return self.delete_experiment_capture_data(connection, params);
@@ -267,6 +288,7 @@ impl Core {
             .ok_or_else(|| errors::not_found("Pane not found"))?
             .stored
             .clone();
+        let mut layout_workspace = None;
         let requested_capture = (method == "pane.experiment.set")
             .then(|| errors::param_bool(params, "on"))
             .transpose()?;
@@ -292,11 +314,7 @@ impl Core {
         let mut events = vec![];
         let result = match method {
             "pane.close" => {
-                saved.closed = true;
-                events.push((
-                    "pane.closed".into(),
-                    json!({"paneId":id,"workspaceId":saved.pane.workspace_id}),
-                ));
+                layout_workspace = self.prepare_pane_close(&mut saved, &mut events)?;
                 json!({"paneId":id})
             }
             "pane.rename" => {
@@ -359,6 +377,9 @@ impl Core {
             write_pane(tx, &saved)?;
             if saved.closed {
                 tx.close_pane(id)?;
+            }
+            if let Some(workspace) = &layout_workspace {
+                tx.update_workspace(workspace)?;
             }
             Ok((result, events))
         })?;

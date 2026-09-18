@@ -65,6 +65,24 @@ fn pane_row(row: &Row<'_>) -> rusqlite::Result<PaneRecord> {
 }
 
 impl Store {
+    pub fn workspaces(&self) -> Result<Vec<Workspace>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT payload FROM workspaces WHERE closed=0 ORDER BY id")?;
+        Ok(statement
+            .query_map([], |row| {
+                let raw: String = row.get(0)?;
+                serde_json::from_str(&raw).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn workspace(&self, id: &str) -> Result<Option<Workspace>> {
         let raw: Option<String> = self
             .connection

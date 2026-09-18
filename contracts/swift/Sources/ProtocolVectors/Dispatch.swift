@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -18,6 +18,14 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "RpcError": return try codec(SoyehtProtocol.RpcError.self, data)
         case "ErrorData": return try codec(SoyehtProtocol.ErrorData.self, data)
         case "Actor": return try codec(SoyehtProtocol.Actor.self, data)
+        case "WorkspacePaneLayoutMode": return try codec(SoyehtProtocol.WorkspacePaneLayoutMode.self, data)
+        case "WorkspacePaneLayoutKind": return try codec(SoyehtProtocol.WorkspacePaneLayoutKind.self, data)
+        case "WorkspacePaneLayoutAxis": return try codec(SoyehtProtocol.WorkspacePaneLayoutAxis.self, data)
+        case "WorkspacePaneLayoutLeaf": return try codec(SoyehtProtocol.WorkspacePaneLayoutLeaf.self, data)
+        case "WorkspacePaneLayoutBranch": return try codec(SoyehtProtocol.WorkspacePaneLayoutBranch.self, data)
+        case "WorkspacePaneLayoutSplit": return try codec(SoyehtProtocol.WorkspacePaneLayoutSplit.self, data)
+        case "WorkspacePaneLayoutNode": return try codec(SoyehtProtocol.WorkspacePaneLayoutNode.self, data)
+        case "WorkspacePaneLayoutEnvelope": return try codec(SoyehtProtocol.WorkspacePaneLayoutEnvelope.self, data)
         case "Workspace": return try codec(SoyehtProtocol.Workspace.self, data)
         case "Pane": return try codec(SoyehtProtocol.Pane.self, data)
         case "Device": return try codec(SoyehtProtocol.Device.self, data)
@@ -39,6 +47,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "WorkspaceCreateResult": return try codec(SoyehtProtocol.WorkspaceCreateResult.self, data)
         case "WorkspaceRenameParams": return try codec(SoyehtProtocol.WorkspaceRenameParams.self, data)
         case "WorkspaceRenameResult": return try codec(SoyehtProtocol.WorkspaceRenameResult.self, data)
+        case "WorkspaceLayoutSetParams": return try codec(SoyehtProtocol.WorkspaceLayoutSetParams.self, data)
+        case "WorkspaceLayoutSetResult": return try codec(SoyehtProtocol.WorkspaceLayoutSetResult.self, data)
         case "WorkspaceCloseParams": return try codec(SoyehtProtocol.WorkspaceCloseParams.self, data)
         case "WorkspaceCloseResult": return try codec(SoyehtProtocol.WorkspaceCloseResult.self, data)
         case "WorkspaceFocusParams": return try codec(SoyehtProtocol.WorkspaceFocusParams.self, data)
@@ -89,6 +99,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "StateSnapshotPartEvent": return try codec(SoyehtProtocol.StateSnapshotPartEvent.self, data)
         case "WorkspaceCreatedEvent": return try codec(SoyehtProtocol.WorkspaceCreatedEvent.self, data)
         case "WorkspaceRenamedEvent": return try codec(SoyehtProtocol.WorkspaceRenamedEvent.self, data)
+        case "WorkspaceLayoutUpdatedEvent": return try codec(SoyehtProtocol.WorkspaceLayoutUpdatedEvent.self, data)
         case "WorkspaceClosedEvent": return try codec(SoyehtProtocol.WorkspaceClosedEvent.self, data)
         case "PaneCreatedEvent": return try codec(SoyehtProtocol.PaneCreatedEvent.self, data)
         case "PaneRenamedEvent": return try codec(SoyehtProtocol.PaneRenamedEvent.self, data)

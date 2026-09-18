@@ -419,7 +419,7 @@ public final class EngineClient {
     case .stateSnapshotPart: try snapshot.append(params.decoded(StateSnapshotPartEvent.self))
     case .paneCreated, .paneUpdated, .paneRenamed, .paneClosed, .paneStateChanged:
       try applyPaneEvent(eventName, params)
-    case .workspaceCreated, .workspaceRenamed:
+    case .workspaceCreated, .workspaceRenamed, .workspaceLayoutUpdated:
       let workspace = try params["workspace"].decoded(Workspace.self)
       workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
       workspaces.append(workspace)
@@ -628,6 +628,21 @@ public final class EngineClient {
       WorkspaceCreateParams(
         name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
     return try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
+  }
+  public func setWorkspacePaneLayout(
+    workspaceId: String, state: PaneLayoutState
+  ) async throws -> Workspace {
+    let result = try await mutation(
+      "workspace.layout.set",
+      WorkspaceLayoutSetParams(
+        workspaceId: workspaceId, layout: try state.envelope(),
+        idempotencyKey: UUID().uuidString))
+    return try result.decoded(WorkspaceLayoutSetResult.self).workspace
+  }
+  public func paneLayoutState(for workspace: Workspace) -> PaneLayoutState {
+    PaneLayoutState(
+      workspaceLayout: workspace.layout,
+      livePanes: panes.filter { $0.workspaceId == workspace.workspaceId })
   }
   public func closePane(_ id: String) {
     perform {
