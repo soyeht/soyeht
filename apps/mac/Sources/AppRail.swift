@@ -8,6 +8,8 @@ struct AppRail: View {
   let onSelect: (WorkspaceDestination) -> Void
   let onSettings: () -> Void
   let onUsageDetails: (UsageProvider) -> Void
+  @State private var claudeUsageObserver: ClaudeUsageCacheObserver?
+  @State private var claudeUsageRefreshTask: Task<Void, Never>?
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x6) {
@@ -25,7 +27,7 @@ struct AppRail: View {
             .frame(width: 24, height: 1)
             .padding(.vertical, MacTheme.Space.x2)
           ForEach(client.usageReadings, id: \.provider) { reading in
-            UsageRing(client: client, reading: reading, onDetails: onUsageDetails)
+            UsageRing(reading: reading, onDetails: onUsageDetails)
           }
         }
       }
@@ -39,14 +41,33 @@ struct AppRail: View {
     .frame(maxHeight: .infinity)
     .background(MacTheme.canvas)
     .accessibilityIdentifier("app-bar")
-    .task { await refreshWhileOpen() }
+    .onAppear(perform: startClaudeUsageCache)
+    .onDisappear(perform: stopClaudeUsageCache)
+    .onChange(of: client.connected) { _, connected in
+      if connected { refreshClaudeUsage() }
+    }
   }
 
-  private func refreshWhileOpen() async {
-    try? await client.refreshUsage()
-    while !Task.isCancelled {
-      do { try await Task.sleep(for: .seconds(300)) } catch { return }
-      try? await client.refreshUsage()
+  private func startClaudeUsageCache() {
+    guard claudeUsageObserver == nil else { return }
+    let observer = ClaudeUsageCacheObserver()
+    observer.start(onChange: refreshClaudeUsage)
+    claudeUsageObserver = observer
+    refreshClaudeUsage()
+  }
+
+  private func stopClaudeUsageCache() {
+    claudeUsageRefreshTask?.cancel()
+    claudeUsageRefreshTask = nil
+    claudeUsageObserver?.stop()
+    claudeUsageObserver = nil
+  }
+
+  private func refreshClaudeUsage() {
+    guard client.connected else { return }
+    claudeUsageRefreshTask?.cancel()
+    claudeUsageRefreshTask = Task {
+      try? await client.refreshUsageAfterRateLimitOnce(.claude)
     }
   }
 

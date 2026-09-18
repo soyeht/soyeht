@@ -83,6 +83,8 @@ fn refresh_reader(
         match port.read(reader.provider(), source.clone()) {
             SourceRead::Payload(payload) => match reader.parse(source.clone(), &payload) {
                 Ok(parsed) => {
+                    let fetched_at = parsed.fetched_at.unwrap_or(fetched_at);
+                    let observed_at_sec = parsed.observed_at_sec.unwrap_or(observed_at_sec);
                     return Ok(RefreshOutcome {
                         reading: Reading::available(
                             reader.provider(),

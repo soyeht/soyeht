@@ -7,6 +7,19 @@ usage rings ship. It contains source names and normalized outcomes only. No
 credential, account identifier, current percentage or private response body is
 recorded.
 
+## 2026-09-18 Claude correction
+
+The original Claude probe below proved that `/usage` returned the required
+windows, but later on-device testing proved that launching it can make macOS
+attribute Claude Code's Media Library access to the Soyeht engine. It is no
+longer an eligible automatic source.
+
+Claude Code 2.1.275 already writes the same five-hour and seven-day windows,
+reset times and `fetchedAtMs` under `cachedUsageUtilization` in
+`~/.claude.json`. The production reader now parses only that key, never reads
+`accountUuid`, and never launches `claude`. Old cache data remains visible as a
+gray last-known value. Selected source label: `claude_desktop_cache`.
+
 The Dev harness registry contained one configured harness, `claude-code`.
 Contract 10 also names candidate providers, so the investigation covered every
 named candidate that was installed on this Mac. The production registry is
@@ -30,7 +43,7 @@ must be bounded, machine-readable and read-only before it can become a reader.
 | Amp | Not installed | Command discovery | No local client or login to inspect | No |
 | Muse | Not installed | Command discovery | No local client or login to inspect | No |
 
-## Selected sources
+## Original selected sources
 
 ### Claude
 
@@ -48,7 +61,7 @@ desktop cache file `plan-usage-history.json` was also present. Its schema stores
 timestamped usage samples, but it was not selected or treated as proof of a
 current authoritative reading.
 
-Selected source label: `claude_cli_usage`.
+Original source label: `claude_cli_usage`; superseded by the correction above.
 
 ### Codex
 
@@ -96,8 +109,9 @@ test.
 
 ## Implementation consequence
 
-The first ordered registry has three readers: Claude, Codex and Cursor. Each
-uses the passing preferred source above. Fake source ports cover `ok`, `stale`,
+The first ordered registry has three readers: Claude, Codex and Cursor. Claude
+uses the passive cache source in the correction above; Codex and Cursor use the
+passing sources recorded below it. Fake source ports cover `ok`, `stale`,
 `login_needed`, `no_access` and `unavailable` in the local gate. A later reader
 for any excluded provider requires a repeatable, noninteractive, non-mutating
 real-login probe and a new report entry before a ring is added.

@@ -4,6 +4,10 @@ import Testing
 
 @testable import SoyehtClient
 
+#if os(macOS)
+  import Darwin
+#endif
+
 private func reading(
   _ provider: UsageProvider = .claude, state: UsageState = .ok, used: Double? = 0.4,
   secondaryUsed: Double? = nil, fetchedAt: String = "2026-09-12T12:00:00Z"
@@ -33,12 +37,30 @@ private final class UsageRefreshProbe {
   }
 }
 
+@MainActor
+private final class RateLimitRetryProbe {
+  private(set) var calls = 0
+  private(set) var waits: [UInt32] = []
+
+  func fail(_ retryAfterSec: UInt32) async throws {
+    calls += 1
+    throw ClientFailure.remote(
+      ErrorKind.rate_limited.rawValue, "wait", retryAfterSec: retryAfterSec)
+  }
+
+  func wait(_ seconds: UInt32) async throws {
+    waits.append(seconds)
+  }
+}
+
 @Test func usagePresentationClosesThresholdsAndStaleDisplay() {
   #expect(UsagePresentation(reading(used: 0.49)).band == .success)
   #expect(UsagePresentation(reading(used: 0.50)).band == .warning)
   #expect(UsagePresentation(reading(used: 0.80)).band == .warning)
   #expect(UsagePresentation(reading(used: 0.81)).band == .danger)
-  #expect(UsagePresentation(reading(state: .stale)).percentage == "—")
+  #expect(UsagePresentation(reading(state: .stale)).percentage == "40%")
+  #expect(UsagePresentation(reading(state: .stale)).band == nil)
+  #expect(UsagePresentation(reading(state: .stale)).isStale)
   #expect(UsagePresentation(reading(state: .unavailable, used: nil)).fraction == nil)
 }
 
@@ -57,15 +79,6 @@ private final class UsageRefreshProbe {
     source: .codex_app_server, fetchedAt: "2026-09-15T12:00:00Z")
   #expect(UsagePresentation(reading).fraction == 0.8)
   #expect(UsagePresentation(reading).displayedWindow?.label == "Weekly")
-}
-
-@Test func hoverRefreshUsesTheContractedSixtySecondAge() throws {
-  let now = try #require(ISO8601DateFormatter().date(from: "2026-09-12T12:01:00Z"))
-  #expect(!UsagePresentation(reading()).needsHoverRefresh(now: now))
-  #expect(
-    UsagePresentation(reading(fetchedAt: "2026-09-12T11:58:59Z"))
-      .needsHoverRefresh(now: now))
-  #expect(UsagePresentation(reading(fetchedAt: "invalid")).needsHoverRefresh(now: now))
 }
 
 @Test func usageTimestampsAcceptProviderFractionalSeconds() {
@@ -116,3 +129,62 @@ private final class UsageRefreshProbe {
   }
   #expect(probe.calls == 2)
 }
+
+@MainActor @Test func usageRefreshWaitsForAnAuthorizedConnection() async {
+  let client = EngineClient(socket: "/tmp/sn-usage-before-hello/engine.sock")
+  do {
+    try await client.refreshUsage(.claude)
+    Issue.record("Usage refresh reached the wire before hello completed")
+  } catch is ClientFailure {
+    #expect(!client.connected)
+  } catch {
+    Issue.record("Unexpected error: \(error)")
+  }
+}
+
+@MainActor @Test func usageRefreshRetriesRateLimitOnlyOnceAfterServerDelay() async {
+  let probe = RateLimitRetryProbe()
+  let client = EngineClient(socket: "/tmp/sn-usage-retry/engine.sock")
+
+  do {
+    try await client.refreshUsageAfterRateLimitOnce(
+      wait: probe.wait,
+      operation: { try await probe.fail(17) })
+    Issue.record("The second rate limit should escape instead of looping")
+  } catch ClientFailure.remote(let kind, _, let retryAfterSec) {
+    #expect(kind == ErrorKind.rate_limited.rawValue)
+    #expect(retryAfterSec == 17)
+  } catch {
+    Issue.record("Unexpected error: \(error)")
+  }
+
+  #expect(probe.calls == 2)
+  #expect(probe.waits == [17])
+}
+
+#if os(macOS)
+  @MainActor @Test func claudeCacheObserverHandlesAtomicRenameInARealDirectory() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("soyeht-usage-observer-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let cache = directory.appendingPathComponent(".claude.json")
+    let replacement = directory.appendingPathComponent("replacement.json")
+    try Data("{}".utf8).write(to: cache)
+    let observer = ClaudeUsageCacheObserver(cacheURL: cache)
+    var changes = 0
+    observer.start { changes += 1 }
+
+    try Data("{\"cachedUsageUtilization\":{}}".utf8).write(to: replacement)
+    let renamed = replacement.path.withCString { source in
+      cache.path.withCString { destination in Darwin.rename(source, destination) }
+    }
+    #expect(renamed == 0)
+    for _ in 0..<100 where changes == 0 {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(changes == 1)
+    observer.stop()
+  }
+#endif

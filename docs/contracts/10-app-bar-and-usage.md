@@ -28,8 +28,9 @@ weekly window by default, falling back to the current window when no weekly
 reading is available. Other providers show their primary reported window.
 The provider glyph sits inside the ring; the percentage sits below it. Band
 colors use the existing tokens: below 50 % `success`, 50–80 % `warning`,
-above 80 % `danger`. A provider with no reading yet, or a reading older
-than 15 minutes, draws a dimmed ring with "—". A provider that is signed in
+above 80 % `danger`. A provider with no reading yet draws a dimmed ring with
+"—". A reading older than 15 minutes keeps its last percentage, but the
+ring and values turn gray and the detail reports `as of HH:mm`. A provider that is signed in
 but has no reader draws nothing: no ring, no placeholder.
 
 Hover opens the detail balloon (screen 12b): provider name, primary window
@@ -45,13 +46,12 @@ reads only what the provider's own tools already keep on this Mac, never
 stores provider credentials, never refreshes or rotates a token, and never
 sends a token anywhere except to that provider's own usage endpoint. Each
 reader has a **preferred source** and **fallbacks**, tried in order; the
-balloon shows which one answered. None of the sources below has been
-verified by us yet; the first task of the slice is to run each reader
-against a real login and record the result in `docs/reports/`.
-- **Claude**: (1) the Claude Code CLI's usage command in a non-persistent,
-  no-MCP session, parsed; (2) the OAuth token the CLI keeps in the login
-  keychain, sent to Anthropic's usage endpoint (one macOS consent dialog);
-  (3) the usage entry in the Claude Desktop HTTP cache, when present.
+balloon shows which one answered. Verified sources are recorded in
+`docs/reports/`.
+- **Claude**: the `cachedUsageUtilization` entry already written in
+  `~/.claude.json` by Claude Code. The reader parses that key once and ignores
+  account identifiers and every unrelated key. Soyeht never launches `claude`
+  to obtain usage and never reads or reuses its OAuth credential.
 - **Codex**: (1) a disposable `codex app-server` asked for
   `account/rateLimits/read` (the same channel the harness already uses in
   contract 04); (2) the access token in the Codex login file sent to the
@@ -66,10 +66,12 @@ against a real login and record the result in `docs/reports/`.
   added under the same rules; where they do not, no ring is drawn. The
   result of that investigation, provider by provider, goes to
   `docs/reports/` before the rings ship.
-- Refresh every 5 minutes while the rail is open; on hover when the reading
-  is older than 60 s; exponential backoff (up to 30 min) after a 429 or a
-  network error. The last reading is stored (contract 07) so rings show a
-  value right after restart, marked stale until refreshed.
+- Opening the rail reads Claude's passive cache once. While the rail remains
+  open, a file observer rereads it only when that file changes: no polling and
+  no hover refresh. A reader that must start a provider process runs only after
+  an explicit user refresh. Exponential backoff (up to 30 min) applies after a
+  429 or network error. The last reading is stored (contract 07) so rings show
+  a value right after restart, marked stale until refreshed.
 
 ## 4. Engine and clients (contract 08)
 - `usage.list` → `{providers: [{provider, state: "ok"|"stale"|"login_needed"|
