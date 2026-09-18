@@ -153,7 +153,7 @@ public indirect enum PaneLayoutTree: Equatable, Sendable {
   }
 
   /// Flattens child splits that use their parent's axis without changing the parent's share.
-  fileprivate func normalized() -> PaneLayoutTree {
+  func normalized() -> PaneLayoutTree {
     switch self {
     case .leaf:
       return self

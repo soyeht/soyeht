@@ -48,19 +48,42 @@ public struct PaneLayoutNodeGeometry: Equatable, Sendable {
   }
 }
 
+public struct PaneLayoutDividerGeometry: Equatable, Sendable {
+  public var splitPath: PaneLayoutNodePath
+  /// The divider follows this direct child and precedes child `afterChildIndex + 1`.
+  public var afterChildIndex: Int
+  public var axis: PaneLayoutAxis
+  /// The complete gap in root content coordinates. Its hit area never overlaps a pane footprint.
+  public var frame: PaneLayoutRect
+
+  public init(
+    splitPath: PaneLayoutNodePath, afterChildIndex: Int, axis: PaneLayoutAxis,
+    frame: PaneLayoutRect
+  ) {
+    self.splitPath = splitPath
+    self.afterChildIndex = afterChildIndex
+    self.axis = axis
+    self.frame = frame
+  }
+}
+
 public struct PaneLayoutGeometryResult: Equatable, Sendable {
   public var nodes: [PaneLayoutNodePath: PaneLayoutNodeGeometry]
   public var panePaths: [String: PaneLayoutNodePath]
   /// Pane footprints in the root content coordinate space at zero scroll offset.
   public var paneRects: [String: PaneLayoutRect]
+  /// Divider hit areas, confined to the gaps between direct siblings.
+  public var dividers: [PaneLayoutDividerGeometry]
 
   public init(
     nodes: [PaneLayoutNodePath: PaneLayoutNodeGeometry],
-    panePaths: [String: PaneLayoutNodePath], paneRects: [String: PaneLayoutRect]
+    panePaths: [String: PaneLayoutNodePath], paneRects: [String: PaneLayoutRect],
+    dividers: [PaneLayoutDividerGeometry] = []
   ) {
     self.nodes = nodes
     self.panePaths = panePaths
     self.paneRects = paneRects
+    self.dividers = dividers
   }
 }
 
@@ -76,7 +99,8 @@ public enum PaneLayoutGeometry {
       tree, at: PaneLayoutNodePath(), frame: rootFrame,
       rootOrigin: PaneLayoutPoint(x: 0, y: 0))
     return PaneLayoutGeometryResult(
-      nodes: builder.nodes, panePaths: builder.panePaths, paneRects: builder.paneRects)
+      nodes: builder.nodes, panePaths: builder.panePaths, paneRects: builder.paneRects,
+      dividers: builder.dividers)
   }
 
   public static func layoutRects(
@@ -90,6 +114,7 @@ public enum PaneLayoutGeometry {
     var nodes: [PaneLayoutNodePath: PaneLayoutNodeGeometry] = [:]
     var panePaths: [String: PaneLayoutNodePath] = [:]
     var paneRects: [String: PaneLayoutRect] = [:]
+    var dividers: [PaneLayoutDividerGeometry] = []
 
     mutating func place(
       _ tree: PaneLayoutTree, at path: PaneLayoutNodePath, frame: PaneLayoutRect,
@@ -146,7 +171,20 @@ public enum PaneLayoutGeometry {
           try place(
             branch.tree, at: path.appending(index), frame: childFrame,
             rootOrigin: childRootOrigin)
-          cursor += childExtent + gap
+          cursor += childExtent
+          if index < split.children.count - 1 {
+            let dividerOrigin = point(axis: split.axis, extent: cursor)
+            let rootDividerOrigin = PaneLayoutPoint(
+              x: rootOrigin.x + dividerOrigin.x,
+              y: rootOrigin.y + dividerOrigin.y)
+            let dividerSize = replacingExtent(
+              in: frame.size, axis: split.axis, with: gap)
+            dividers.append(
+              PaneLayoutDividerGeometry(
+                splitPath: path, afterChildIndex: index, axis: split.axis,
+                frame: PaneLayoutRect(origin: rootDividerOrigin, size: dividerSize)))
+          }
+          cursor += gap
         }
       }
     }
