@@ -172,21 +172,9 @@ impl Core {
             ));
         }
         state.phase = super::state::Phase::Faulted;
-        saved.closed = true;
         saved.pane.state = PaneState::Dead;
         saved.pane.phrase = "Agent pane closed".into();
-        changes.workspace_layout =
-            self.workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
-        changes.events.push((
-            "pane.closed".into(),
-            json!({"paneId":pane,"workspaceId":saved.pane.workspace_id}),
-        ));
-        if let Some(workspace) = &changes.workspace_layout {
-            changes.events.push((
-                "workspace.layout_updated".into(),
-                json!({"workspace":workspace}),
-            ));
-        }
+        changes.workspace_layout = self.prepare_pane_close(&mut saved, &mut changes.events)?;
         let result = self
             .commit_agent(
                 saved,

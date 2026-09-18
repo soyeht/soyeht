@@ -252,6 +252,27 @@ impl Core {
         Ok(mutation.result)
     }
 
+    pub(crate) fn prepare_pane_close(
+        &self,
+        saved: &mut StoredPane,
+        events: &mut Vec<(String, Value)>,
+    ) -> Result<Option<soyeht_protocol::Workspace>> {
+        saved.closed = true;
+        let workspace =
+            self.workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
+        events.push((
+            "pane.closed".into(),
+            json!({"paneId":saved.pane.pane_id,"workspaceId":saved.pane.workspace_id}),
+        ));
+        if let Some(workspace) = &workspace {
+            events.push((
+                "workspace.layout_updated".into(),
+                json!({"workspace":workspace}),
+            ));
+        }
+        Ok(workspace)
+    }
+
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         if method == "pane.experiment.delete" {
             return self.delete_experiment_capture_data(connection, params);
@@ -293,19 +314,7 @@ impl Core {
         let mut events = vec![];
         let result = match method {
             "pane.close" => {
-                saved.closed = true;
-                layout_workspace = self
-                    .workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
-                events.push((
-                    "pane.closed".into(),
-                    json!({"paneId":id,"workspaceId":saved.pane.workspace_id}),
-                ));
-                if let Some(workspace) = &layout_workspace {
-                    events.push((
-                        "workspace.layout_updated".into(),
-                        json!({"workspace":workspace}),
-                    ));
-                }
+                layout_workspace = self.prepare_pane_close(&mut saved, &mut events)?;
                 json!({"paneId":id})
             }
             "pane.rename" => {

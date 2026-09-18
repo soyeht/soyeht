@@ -141,6 +141,16 @@ fn persist_model_refusal(
     Ok(())
 }
 
+fn persist_workspace_layout(
+    tx: &Change<'_>,
+    workspace: Option<&Workspace>,
+) -> soyeht_store::database::Result<()> {
+    if let Some(workspace) = workspace {
+        tx.update_workspace(workspace)?;
+    }
+    Ok(())
+}
+
 impl AgentPersistence<'_> {
     fn apply(
         self,
@@ -189,9 +199,7 @@ impl AgentPersistence<'_> {
         }
         persist_model_refusal(tx, self.changes.model_refusal.as_ref())?;
         write_pane(tx, self.saved)?;
-        if let Some(workspace) = &self.changes.workspace_layout {
-            tx.update_workspace(workspace)?;
-        }
+        persist_workspace_layout(tx, self.changes.workspace_layout.as_ref())?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;
         let attention_changed = self.changes.clear_attention
             || !self.changes.attention.is_empty()
