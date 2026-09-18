@@ -32,6 +32,14 @@ public final class EngineClient {
   public private(set) var connectionText = "Connecting to the Dev profile…"
   public var problem: String?
   public private(set) var selectedPaneId: String?
+  @ObservationIgnored public lazy var paneLayouts = PaneLayoutController {
+    [weak self] workspaceId, state in
+    guard let self else { throw ClientFailure.disconnected }
+    let workspace = try await self.setWorkspacePaneLayout(workspaceId: workspaceId, state: state)
+    return PaneLayoutState(
+      workspaceLayout: workspace.layout,
+      livePanes: self.panes.filter { $0.workspaceId == workspaceId })
+  }
   public var gapText: String? {
     selectedPaneId.flatMap { terminalStreams.gapText(for: $0) }
   }
@@ -160,6 +168,7 @@ public final class EngineClient {
     if readOnly {
       panes = []
       workspaces = []
+      paneLayouts.removeAll()
       agentPanes = [:]
       agentWebDrafts = [:]
       tasks = []
@@ -453,7 +462,11 @@ public final class EngineClient {
       let workspace = try params["workspace"].decoded(Workspace.self)
       workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
       workspaces.append(workspace)
-    case .workspaceClosed: workspaces.removeAll { $0.workspaceId == params["workspaceId"].string }
+      synchronizePaneLayout(workspace)
+    case .workspaceClosed:
+      let workspaceId = params["workspaceId"].string
+      workspaces.removeAll { $0.workspaceId == workspaceId }
+      if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
     case .streamReplayStart:
       if let replay = try terminalStreams.start(params.decoded(StreamReplayStartEvent.self)),
         replay.reset
@@ -565,6 +578,8 @@ public final class EngineClient {
       terminalViewRegistry.retainOnly(terminalPaneIds)
     #endif
     self.workspaces = workspaces
+    paneLayouts.retainOnly(workspaceIds: Set(workspaces.map(\.workspaceId)))
+    for workspace in workspaces { synchronizePaneLayout(workspace) }
     try applyAgentSnapshot(sections, panes: panes)
     try applyTaskSnapshot(sections, panes: panes)
     try applyEditorSnapshot(sections, panes: panes)
@@ -733,6 +748,10 @@ public final class EngineClient {
     PaneLayoutState(
       workspaceLayout: workspace.layout,
       livePanes: panes.filter { $0.workspaceId == workspace.workspaceId })
+  }
+  private func synchronizePaneLayout(_ workspace: Workspace) {
+    paneLayouts.synchronize(
+      workspaceId: workspace.workspaceId, confirmed: paneLayoutState(for: workspace))
   }
   public func closePane(_ id: String) {
     perform {
