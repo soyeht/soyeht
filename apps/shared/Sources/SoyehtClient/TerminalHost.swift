@@ -35,7 +35,7 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
 
   func updateAcceptsInput(_ acceptsInput: Bool) { self.acceptsInput = acceptsInput }
 
-  func attach(_ view: TerminalView) {
+  func attach(_ view: TerminalView, refresh: Bool = true) {
     view.terminalDelegate = self
     client.claimTerminalOutput(owner: self) { [weak self, weak view] bytes, reset in
       guard let self, let view else { return }
@@ -44,7 +44,7 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
       if reset { view.getTerminal().resetToInitialState() }
       view.feed(byteArray: Array(bytes)[...])
     }
-    client.refreshTerminal()
+    if refresh { client.refreshTerminal() }
   }
 
   func update(_ view: TerminalView) {

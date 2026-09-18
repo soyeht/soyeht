@@ -81,7 +81,8 @@ struct WritingScreenplayPane: View {
       .buttonStyle(NeoPillButtonStyle())
       .accessibilityIdentifier("writing-show-beat-board")
     }
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 42)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.screenplayHeaderHeight)
     .background(MacTheme.well, in: Capsule())
     .padding(.horizontal, MacTheme.Space.x10).padding(.top, MacTheme.Space.x10)
     .padding(.bottom, MacTheme.Space.x6)
@@ -133,7 +134,8 @@ struct WritingScreenplayPane: View {
         }
         .buttonStyle(.plain)
       }
-      .padding(.horizontal, MacTheme.Space.x12).frame(height: 60).background(MacTheme.face)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .frame(height: PaneLayoutContentMetrics.screenplayToolbarHeight).background(MacTheme.face)
 
       let suggestions = smartTypeSuggestions(in: structure)
       if !suggestions.isEmpty {
@@ -150,7 +152,8 @@ struct WritingScreenplayPane: View {
           }
           Spacer()
         }
-        .padding(.horizontal, MacTheme.Space.x14).frame(height: 34)
+        .padding(.horizontal, MacTheme.Space.x14)
+        .frame(height: PaneLayoutContentMetrics.screenplaySmartTypeHeight)
         .background(MacTheme.canvas)
       }
     }
@@ -673,7 +676,8 @@ private struct ScreenplayViewport: NSViewRepresentable {
       textView.backgroundColor = NSColor(MacTheme.face)
       textView.insertionPointColor = NSColor(MacTheme.accent)
       textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
-      textView.textContainerInset = NSSize(width: 74, height: 58)
+      textView.textContainerInset = NSSize(
+        width: PaneLayoutContentMetrics.screenplayPageHorizontalInset, height: 58)
       textView.minSize = .zero
       textView.maxSize = NSSize(
         width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -715,7 +719,8 @@ private struct ScreenplayViewport: NSViewRepresentable {
     let result = NSMutableAttributedString(
       string: source,
       attributes: [
-        .font: MacTheme.screenplayNSFont(16), .foregroundColor: NSColor(MacTheme.ink),
+        .font: MacTheme.screenplayNSFont(PaneLayoutContentMetrics.screenplayFontPointSize),
+        .foregroundColor: NSColor(MacTheme.ink),
         .paragraphStyle: paragraph, .screenplayFocus: focus,
       ])
     for element in structure.elements {
@@ -752,16 +757,28 @@ private struct ScreenplayViewport: NSViewRepresentable {
     case .scene_heading:
       paragraph.firstLineHeadIndent = 0
       paragraph.headIndent = 0
-      text.addAttribute(.font, value: MacTheme.screenplayNSFont(16, bold: true), range: range)
+      text.addAttribute(
+        .font,
+        value: MacTheme.screenplayNSFont(
+          PaneLayoutContentMetrics.screenplayFontPointSize, bold: true),
+        range: range)
     case .action, .shot:
       paragraph.firstLineHeadIndent = 0
       paragraph.headIndent = 0
       if kind == .shot {
-        text.addAttribute(.font, value: MacTheme.screenplayNSFont(16, bold: true), range: range)
+        text.addAttribute(
+          .font,
+          value: MacTheme.screenplayNSFont(
+            PaneLayoutContentMetrics.screenplayFontPointSize, bold: true),
+          range: range)
       }
     case .character:
       paragraph.alignment = .center
-      text.addAttribute(.font, value: MacTheme.screenplayNSFont(16, bold: true), range: range)
+      text.addAttribute(
+        .font,
+        value: MacTheme.screenplayNSFont(
+          PaneLayoutContentMetrics.screenplayFontPointSize, bold: true),
+        range: range)
     case .parenthetical:
       paragraph.alignment = .center
       text.addAttribute(.foregroundColor, value: NSColor(MacTheme.secondary), range: range)
@@ -793,8 +810,8 @@ private struct ScreenplayViewport: NSViewRepresentable {
 
   private static func baseParagraph() -> NSMutableParagraphStyle {
     let style = NSMutableParagraphStyle()
-    style.minimumLineHeight = 27
-    style.maximumLineHeight = 27
+    style.minimumLineHeight = PaneLayoutContentMetrics.screenplayLineHeight
+    style.maximumLineHeight = PaneLayoutContentMetrics.screenplayLineHeight
     style.paragraphSpacing = 8
     return style
   }

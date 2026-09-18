@@ -13,7 +13,7 @@
     window.isReleasedWhenClosed = false
     defer { window.close() }
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
-    let host = NSHostingView(rootView: MacTerminal(client: client))
+    let host = NSHostingView(rootView: MacTerminal(client: client, paneId: "pane-a"))
     window.contentView = host
     host.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))
@@ -30,6 +30,35 @@
     #expect(view.getTerminal().cols > cols)
   }
 
+  @MainActor @Test func terminalSurfaceIdentityLivesWithItsPane() {
+    let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+    let first = client.terminalViewRegistry.surface(for: "pane-a") {
+      TerminalSurface(frame: .zero)
+    }
+    let reused = client.terminalViewRegistry.surface(for: "pane-a") {
+      TerminalSurface(frame: .zero)
+    }
+    let sibling = client.terminalViewRegistry.surface(for: "pane-b") {
+      TerminalSurface(frame: .zero)
+    }
+
+    #expect(first.isNew)
+    #expect(!reused.isNew)
+    #expect(first.view === reused.view)
+    #expect(first.view !== sibling.view)
+
+    client.terminalViewRegistry.retainOnly(["pane-b"])
+    #expect(client.terminalViewRegistry.identity(for: "pane-a") == nil)
+    #expect(
+      client.terminalViewRegistry.identity(for: "pane-b") == ObjectIdentifier(sibling.view))
+
+    let recreated = client.terminalViewRegistry.surface(for: "pane-a") {
+      TerminalSurface(frame: .zero)
+    }
+    #expect(recreated.isNew)
+    #expect(first.view !== recreated.view)
+  }
+
   @MainActor @Test func terminalLifecycleUpdateDoesNotStealFieldFocus() async throws {
     _ = NSApplication.shared
     let window = NSWindow(
@@ -38,7 +67,7 @@
     window.isReleasedWhenClosed = false
     defer { window.close() }
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
-    let host = NSHostingView(rootView: MacTerminal(client: client))
+    let host = NSHostingView(rootView: MacTerminal(client: client, paneId: "pane-a"))
     let field = NSTextField(frame: NSRect(x: 20, y: 20, width: 300, height: 30))
     window.contentView = host
     host.addSubview(field)
@@ -65,7 +94,7 @@
     window.isReleasedWhenClosed = false
     defer { window.close() }
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
-    let host = NSHostingView(rootView: MacTerminal(client: client))
+    let host = NSHostingView(rootView: MacTerminal(client: client, paneId: "pane-a"))
     let field = NSTextField(frame: NSRect(x: 20, y: 20, width: 300, height: 30))
     window.contentView = host
     host.addSubview(field)

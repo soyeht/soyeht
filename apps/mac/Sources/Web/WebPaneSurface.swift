@@ -160,7 +160,7 @@ private struct WebNavigationBar: View {
       navigationButton("arrow.up.right.square", "Open in system browser") { openExternally() }
     }
     .padding(.horizontal, MacTheme.Space.x10)
-    .frame(height: 27)
+    .frame(height: PaneLayoutContentMetrics.webNavigationHeight)
     .neoWell(radius: MacTheme.Radius.pill)
   }
 
@@ -479,7 +479,7 @@ private struct WebStatusBar: View {
     }
     .foregroundStyle(MacTheme.muted)
     .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: 24)
+    .frame(height: PaneLayoutContentMetrics.webStatusHeight)
     .background(MacTheme.canvas)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Space.x8, style: .continuous))
   }

@@ -52,13 +52,28 @@ public struct PaneLayoutState: Equatable, Sendable {
       reconciled = remaining
     }
     let leaves = reconciled.leavesInCanonicalOrder
-    guard leaves.count == liveKinds.count,
-      leaves.allSatisfy({ liveKinds[$0.paneId] == $0.kind })
-    else {
+    guard leaves.allSatisfy({ liveKinds[$0.paneId] == $0.kind }) else {
       self.init()
       return
     }
     tree = reconciled
+  }
+
+  /// Adds panes that appeared after a custom layout was stored without discarding that layout.
+  /// The returned IDs are suitable for one structured diagnostic at the integration boundary.
+  @discardableResult
+  public mutating func reconcile(
+    livePanes: [Pane], sizing: PaneLayoutSizingPolicy
+  ) throws -> [String] {
+    var present = Set(tree?.paneIdsInCanonicalOrder ?? [])
+    var inserted: [String] = []
+    for pane in livePanes where !present.contains(pane.paneId) {
+      tree = try PaneLayoutArrangement.inserting(
+        PaneLayoutLeaf(pane: pane), into: tree, rule: insertionRule, sizing: sizing)
+      inserted.append(pane.paneId)
+      present.insert(pane.paneId)
+    }
+    return inserted
   }
 
   public var insertionRule: PaneLayoutInsertionRule {

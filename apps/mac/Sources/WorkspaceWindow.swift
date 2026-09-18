@@ -1,8 +1,95 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
+import CoreText
+import OSLog
 import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
+
+enum MacPaneLayoutMetrics {
+  /// Named from the smallest width and height exercised by the accepted floor report.
+  static let minimumExercisedViewport = PaneLayoutSize(width: 375, height: 375)
+  static let topBarHeight = 42.0
+  static let workspaceTabHeight = 36.0
+  static let topBarControlHeight = 34.0
+  static let paneVerticalInset = 17.0
+  static let railWidth = 56.0
+
+  static let paneHalo: Double = {
+    let elevation = MacTheme.Elevation.pane
+    return Double(
+      max(
+        abs(elevation.lightOffset) + elevation.lightBlur,
+        abs(elevation.darkOffset) + elevation.darkBlur))
+  }()
+  static let workspaceTabShadowClearance: Double = {
+    let elevation = MacTheme.Elevation.pill
+    return Double(
+      max(
+        elevation.lightOffset + elevation.lightBlur,
+        elevation.darkOffset + elevation.darkBlur))
+  }()
+  static let workspaceTabViewportHeight =
+    workspaceTabHeight + 2 * workspaceTabShadowClearance
+
+  static let surfaceFloors = PaneLayoutFloorFormula.surfaceFloors(fonts: fontMetrics)
+  static let footprintFloors = PaneLayoutFloorFormula.footprintFloors(
+    fonts: fontMetrics, halo: paneHalo)
+  static let sizing = PaneLayoutSizingPolicy(
+    floors: footprintFloors,
+    gaps: PaneLayoutGaps(
+      horizontal: Double(MacTheme.Space.x18), vertical: Double(MacTheme.Space.x18)))
+  static let window = PaneLayoutWindowPolicy(
+    minimumExercisedViewport: minimumExercisedViewport,
+    largestPaneFootprintWidth: footprintFloors.values.map(\.width).max() ?? 0,
+    standardHorizontalInset: Double(MacTheme.Space.x18),
+    topInset: Double(MacTheme.Space.x8), topBarHeight: topBarHeight,
+    paneVerticalInset: paneVerticalInset, railWidth: railWidth)
+
+  private static let fontMetrics = PaneLayoutFontMetrics(
+    terminal: metric(
+      NSFont.monospacedSystemFont(
+        ofSize: PaneLayoutContentMetrics.terminalFontPointSize, weight: .regular),
+      character: "W",
+      snapToDisplayPixels: true),
+    editor: metric(
+      font(named: "JetBrains Mono", size: PaneLayoutContentMetrics.editorFontPointSize),
+      character: "0"),
+    chrome: metric(font(named: "Nunito", size: MacTheme.TypeScale.control), character: "0"),
+    agent: metric(font(named: "Nunito", size: MacTheme.TypeScale.body), character: "0"),
+    prose: metric(
+      font(named: "Newsreader", size: PaneLayoutContentMetrics.textFontPointSize),
+      character: "0"),
+    screenplay: metric(
+      font(named: "Courier Prime", size: PaneLayoutContentMetrics.screenplayFontPointSize),
+      character: "0"))
+
+  private static func font(named name: String, size: CGFloat) -> NSFont {
+    guard let font = NSFont(name: name, size: size) else {
+      assertionFailure("Missing bundled pane-layout font: \(name)")
+      return NSFont.systemFont(ofSize: size)
+    }
+    return font
+  }
+
+  private static func metric(
+    _ font: NSFont, character: String, snapToDisplayPixels: Bool = false
+  ) -> PaneLayoutFontMetric {
+    let coreTextFont = font as CTFont
+    var characterWidth = (character as NSString).size(withAttributes: [.font: font]).width
+    var lineHeight = ceil(
+      CTFontGetAscent(coreTextFont) + CTFontGetDescent(coreTextFont)
+        + CTFontGetLeading(coreTextFont))
+    if snapToDisplayPixels {
+      let scale = NSScreen.main?.backingScaleFactor ?? 2
+      characterWidth = (characterWidth * scale).rounded() / scale
+      lineHeight = ceil(lineHeight * scale) / scale
+    }
+    return PaneLayoutFontMetric(
+      characterWidth: Double(characterWidth), lineHeight: Double(lineHeight),
+      pointSize: Double(font.pointSize))
+  }
+}
 
 enum PaneSplitAxis: Sendable {
   case columns
@@ -25,37 +112,9 @@ struct WorkspaceWindow: View {
   @State private var selectedUsageProvider: UsageProvider?
   @State private var editorPaletteMode: EditorPaletteMode?
   var body: some View {
-    VStack(spacing: MacTheme.Space.x16) {
-      WorkspaceTopBar(
-        client: client, workspaceId: selectedTaskWorkspaceId,
-        onSelectWorkspace: selectWorkspace, onNewPane: presentNewPane,
-        onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() })
-      HStack(spacing: 0) {
-        if navigation.appBarOpen {
-          AppRail(
-            client: client,
-            destination: railDestination,
-            onSelect: selectDestination,
-            onSettings: {
-              selectedUsageProvider = nil
-              showPreferences = true
-            },
-            onUsageDetails: { provider in
-              selectedUsageProvider = provider
-              showPreferences = true
-            }
-          )
-          .transition(.move(edge: .leading).combined(with: .opacity))
-          .zIndex(30)
-        }
-        workspaceContent
-      }
+    GeometryReader { geometry in
+      workspaceChrome(windowSize: geometry.size)
     }
-    .padding(
-      EdgeInsets(
-        top: MacTheme.Space.x8, leading: MacTheme.Space.x18,
-        bottom: MacTheme.Space.x18, trailing: MacTheme.Space.x18)
-    )
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
     .environment(editorInputPreferences)
     .environment(webLinkPreferences)
@@ -162,7 +221,58 @@ struct WorkspaceWindow: View {
     .onExitCommand { showPreferences = false }
   }
 
-  @ViewBuilder private var workspaceContent: some View {
+  private func workspaceChrome(windowSize: CGSize) -> some View {
+    let policy = MacPaneLayoutMetrics.window
+    let paneViewport = policy.paneViewport(
+      window: PaneLayoutSize(width: windowSize.width, height: windowSize.height),
+      railOpen: navigation.appBarOpen)
+    let horizontalInset = policy.horizontalInset(windowWidth: windowSize.width)
+    let rowWidth = max(0, windowSize.width - 2 * horizontalInset)
+    let railOverlays = policy.railOverlays(windowWidth: windowSize.width)
+    let contentOffset = navigation.appBarOpen && !railOverlays ? policy.railWidth : 0
+
+    return VStack(spacing: CGFloat(policy.paneVerticalInset)) {
+      WorkspaceTopBar(
+        client: client, workspaceId: selectedTaskWorkspaceId,
+        onSelectWorkspace: selectWorkspace, onNewPane: presentNewPane,
+        onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() })
+      ZStack(alignment: .leading) {
+        workspaceContent(
+          viewportSize: CGSize(width: paneViewport.width, height: paneViewport.height)
+        )
+        .frame(width: paneViewport.width, height: paneViewport.height)
+        .offset(x: contentOffset)
+        if navigation.appBarOpen {
+          appRail
+            .frame(width: policy.railWidth, height: paneViewport.height)
+            .transition(.move(edge: .leading).combined(with: .opacity))
+            .zIndex(30)
+        }
+      }
+      .frame(width: rowWidth, height: paneViewport.height, alignment: .leading)
+    }
+    .padding(.top, CGFloat(policy.topInset))
+    .padding(.bottom, CGFloat(policy.paneVerticalInset))
+    .padding(.horizontal, CGFloat(horizontalInset))
+    .frame(width: windowSize.width, height: windowSize.height)
+  }
+
+  private var appRail: some View {
+    AppRail(
+      client: client,
+      destination: railDestination,
+      onSelect: selectDestination,
+      onSettings: {
+        selectedUsageProvider = nil
+        showPreferences = true
+      },
+      onUsageDetails: { provider in
+        selectedUsageProvider = provider
+        showPreferences = true
+      })
+  }
+
+  @ViewBuilder private func workspaceContent(viewportSize: CGSize) -> some View {
     switch navigation.destination {
     case .tasks:
       if let workspaceId = selectedTaskWorkspaceId {
@@ -179,22 +289,23 @@ struct WorkspaceWindow: View {
       } else {
         PaneGrid(
           client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
-          splitAxis: paneSplitAxis, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+          viewportSize: viewportSize, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
           onSplit: presentSplit, onTasks: showTasks)
       }
     case .terminal:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
-        splitAxis: paneSplitAxis, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        viewportSize: viewportSize, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .editor:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .editor,
-        splitAxis: paneSplitAxis, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        viewportSize: viewportSize, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .web:
       WebWorkspace(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
+        viewportSize: viewportSize,
         onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onSplit: presentSplit,
         onTasks: showTasks)
     case .phone:
@@ -441,13 +552,6 @@ private struct PairedPhoneRow: View {
 }
 
 private struct WorkspaceTopBar: View {
-  private var tabShadowClearance: CGFloat {
-    let elevation = MacTheme.Elevation.pill
-    return max(
-      elevation.lightOffset + elevation.lightBlur,
-      elevation.darkOffset + elevation.darkBlur)
-  }
-
   @Bindable var client: EngineClient
   let workspaceId: String?
   let onSelectWorkspace: (String) -> Void
@@ -457,10 +561,14 @@ private struct WorkspaceTopBar: View {
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x10) {
-      Color.clear.frame(width: 52, height: 34)
+      Color.clear.frame(width: 52, height: MacPaneLayoutMetrics.topBarControlHeight)
       Button(action: onToggleAppBar) {
         Image(systemName: "rectangle.grid.2x2")
-          .font(.system(size: 15, weight: .semibold)).frame(width: 34, height: 34)
+          .font(.system(size: 15, weight: .semibold))
+          .frame(
+            width: MacPaneLayoutMetrics.topBarControlHeight,
+            height: MacPaneLayoutMetrics.topBarControlHeight
+          )
           .neoRaised(radius: MacTheme.Radius.control)
       }
       .help("Toggle app bar")
@@ -474,9 +582,9 @@ private struct WorkspaceTopBar: View {
               action: { onSelectWorkspace(workspace.workspaceId) })
           }
         }
-        .padding(tabShadowClearance)
+        .padding(MacPaneLayoutMetrics.workspaceTabShadowClearance)
       }
-      .frame(height: 36 + (tabShadowClearance * 2))
+      .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
       .clipped()
       .overlay {
         HStack(spacing: 0) {
@@ -492,13 +600,16 @@ private struct WorkspaceTopBar: View {
           )
           .frame(width: MacTheme.Space.x18)
         }
-        .frame(height: 36 + (tabShadowClearance * 2))
+        .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
         .allowsHitTesting(false)
       }
 
       Button(action: onNewPane) {
         Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
-          .frame(width: 34, height: 34).neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
+          .frame(
+            width: MacPaneLayoutMetrics.topBarControlHeight,
+            height: MacPaneLayoutMetrics.topBarControlHeight
+          ).neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
       }
       .help("Open a terminal or agent pane").disabled(!client.connected)
       Spacer(minLength: MacTheme.Space.x10)
@@ -510,7 +621,7 @@ private struct WorkspaceTopBar: View {
             .foregroundStyle(MacTheme.secondary)
         }
       }
-    }.frame(height: 42)
+    }.frame(height: MacPaneLayoutMetrics.topBarHeight)
   }
 }
 
@@ -529,7 +640,8 @@ private struct WorkspaceTab: View {
         Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
           .foregroundStyle(MacTheme.muted).accessibilityHidden(true)
       }
-      .padding(.horizontal, MacTheme.Space.x12).frame(height: 36)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .frame(height: MacPaneLayoutMetrics.workspaceTabHeight)
       .modifier(WorkspaceTabSurface(selected: selected))
     }
   }
@@ -548,21 +660,26 @@ private struct WorkspaceTabSurface: ViewModifier {
 }
 
 struct PaneGrid: View {
+  private static let logger = Logger(
+    subsystem: "com.soyeht.next.dev.mac", category: "pane-layout")
+
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   let workspaceId: String?
   let mode: PaneMode?
-  let splitAxis: PaneSplitAxis
+  let viewportSize: CGSize
   let onClose: (String) -> Void
   let onNewPane: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   let onTasks: () -> Void
 
-  private var panes: [Pane] {
+  private var workspacePanes: [Pane] {
     guard let workspaceId else { return [] }
-    return client.panes.filter { pane in
-      pane.workspaceId == workspaceId && (mode == nil || pane.mode == mode)
-    }
+    return client.panes.filter { $0.workspaceId == workspaceId }
+  }
+
+  private var panes: [Pane] {
+    workspacePanes.filter { mode == nil || $0.mode == mode }
   }
 
   var body: some View {
@@ -581,21 +698,19 @@ struct PaneGrid: View {
           } else {
             Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))
           }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else if panes.count <= 2 {
-        PanePair(
-          client: client, webHost: webHost, panes: panes, onClose: onClose, onTasks: onTasks,
-          onSplit: onSplit, splitAxis: splitAxis, tint: paneTint)
-      } else {
-        PaneStrip(
-          client: client, webHost: webHost, panes: panes, onClose: onClose, onTasks: onTasks,
-          onSplit: onSplit, tint: paneTint)
+        }
+        .frame(width: viewportSize.width, height: viewportSize.height)
+      } else if let layout = resolvedLayout {
+        PaneLayoutTreeSurface(
+          client: client, webHost: webHost, panes: panes, tree: layout.tree, plan: layout.plan,
+          onClose: onClose, onTasks: onTasks, onSplit: onSplit
+        )
+        .task(id: layout.repairTaskID) {
+          await persistRepairIfNeeded(layout)
+        }
       }
-    }.padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
-  }
-
-  private func paneTint(_ index: Int) -> Color {
-    [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand][index % 4]
+    }
+    .frame(width: viewportSize.width, height: viewportSize.height)
   }
 
   private func openEditorFile() {
@@ -625,125 +740,237 @@ struct PaneGrid: View {
     else { return nil }
     return fileParts.dropFirst(rootParts.count).joined(separator: "/")
   }
+
+  private var resolvedLayout: ResolvedPaneGridLayout? {
+    guard let workspaceId,
+      let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId })
+    else { return nil }
+    do {
+      var state = client.paneLayoutState(for: workspace)
+      let inserted = try state.reconcile(
+        livePanes: workspacePanes, sizing: MacPaneLayoutMetrics.sizing)
+      guard let completeTree = state.tree else { return nil }
+      let visiblePaneIds = Set(panes.map(\.paneId))
+      var visibleTree: PaneLayoutTree? = completeTree
+      for paneId in completeTree.paneIdsInCanonicalOrder where !visiblePaneIds.contains(paneId) {
+        visibleTree = visibleTree?.removingPane(withId: paneId)
+      }
+      guard let tree = visibleTree else { return nil }
+      let plan = try PaneLayoutGeometry.layout(
+        tree: tree,
+        viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
+        sizing: MacPaneLayoutMetrics.sizing)
+      return ResolvedPaneGridLayout(
+        workspaceId: workspaceId, state: state, tree: tree, plan: plan,
+        insertedPaneIds: inserted)
+    } catch {
+      Self.logger.error("pane_layout_resolution_failed error=\(error.localizedDescription)")
+      return nil
+    }
+  }
+
+  private func persistRepairIfNeeded(_ layout: ResolvedPaneGridLayout) async {
+    guard layout.state.mode == .custom, !layout.insertedPaneIds.isEmpty else { return }
+    Self.logger.notice(
+      "pane_layout_reconciled_missing workspace=\(layout.workspaceId, privacy: .public) panes=\(layout.insertedPaneIds.joined(separator: ","), privacy: .public)"
+    )
+    do {
+      _ = try await client.setWorkspacePaneLayout(
+        workspaceId: layout.workspaceId, state: layout.state)
+    } catch {
+      client.problem = error.localizedDescription
+    }
+  }
 }
 
-private struct PaneStrip: View {
+private struct ResolvedPaneGridLayout {
+  let workspaceId: String
+  let state: PaneLayoutState
+  let tree: PaneLayoutTree
+  let plan: PaneLayoutGeometryResult
+  let insertedPaneIds: [String]
+
+  var repairTaskID: String {
+    "\(workspaceId):\(state.mode.rawValue):\(insertedPaneIds.joined(separator: ","))"
+  }
+}
+
+private struct PaneLayoutTreeSurface: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   let panes: [Pane]
+  let tree: PaneLayoutTree
+  let plan: PaneLayoutGeometryResult
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
-  let tint: (Int) -> Color
 
-  private var ordered: [Pane] {
-    PanePresentationOrder.arrange(panes, selectedPaneId: client.selectedPaneId)
+  var body: some View {
+    PaneLayoutNodeSurface(
+      client: client, webHost: webHost, panesById: panesById, tintIndices: tintIndices,
+      tree: tree, path: PaneLayoutNodePath(), plan: plan, onClose: onClose, onTasks: onTasks,
+      onSplit: onSplit)
+  }
+
+  private var panesById: [String: Pane] {
+    Dictionary(uniqueKeysWithValues: panes.map { ($0.paneId, $0) })
+  }
+
+  private var tintIndices: [String: Int] {
+    Dictionary(
+      uniqueKeysWithValues: tree.leavesInCanonicalOrder.enumerated().map {
+        ($0.element.paneId, $0.offset)
+      })
+  }
+}
+
+private struct PaneLayoutNodeSurface: View {
+  @Bindable var client: EngineClient
+  let webHost: MacWebHost
+  let panesById: [String: Pane]
+  let tintIndices: [String: Int]
+  let tree: PaneLayoutTree
+  let path: PaneLayoutNodePath
+  let plan: PaneLayoutGeometryResult
+  let onClose: (String) -> Void
+  let onTasks: () -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
+
+  @ViewBuilder var body: some View {
+    if let geometry = plan.nodes[path] {
+      switch tree {
+      case .leaf(let leaf):
+        if let pane = panesById[leaf.paneId] {
+          leafSurface(pane: pane, geometry: geometry)
+        }
+      case .split(let split):
+        PaneLayoutSplitSurface(
+          client: client, webHost: webHost, panesById: panesById, tintIndices: tintIndices,
+          split: split, path: path, plan: plan, onClose: onClose, onTasks: onTasks,
+          onSplit: onSplit)
+      }
+    }
+  }
+
+  @ViewBuilder private func leafSurface(
+    pane: Pane, geometry: PaneLayoutNodeGeometry
+  ) -> some View {
+    let halo = CGFloat(MacPaneLayoutMetrics.paneHalo)
+    let contentWidth = CGFloat(geometry.contentSize.width)
+    let contentHeight = CGFloat(geometry.contentSize.height)
+    if geometry.overflowAxes.isEmpty {
+      paneSurface(
+        pane: pane, halo: halo, contentWidth: contentWidth, contentHeight: contentHeight
+      )
+      .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
+      .id(pane.paneId)
+    } else {
+      ScrollView(scrollAxes(for: geometry), showsIndicators: true) {
+        paneSurface(
+          pane: pane, halo: halo, contentWidth: contentWidth, contentHeight: contentHeight
+        )
+      }
+      .scrollBounceBehavior(.basedOnSize)
+      .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
+      .id(pane.paneId)
+    }
+  }
+
+  private func paneSurface(
+    pane: Pane, halo: CGFloat, contentWidth: CGFloat, contentHeight: CGFloat
+  ) -> some View {
+    PaneCard(
+      client: client, webHost: webHost, pane: pane,
+      tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
+      onTasks: onTasks, onSplit: onSplit
+    )
+    .frame(
+      width: max(0, contentWidth - 2 * halo),
+      height: max(0, contentHeight - 2 * halo)
+    )
+    .padding(halo)
+    .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
+  }
+
+  private func scrollAxes(for geometry: PaneLayoutNodeGeometry) -> Axis.Set {
+    var axes: Axis.Set = []
+    if geometry.overflowAxes.contains(.horizontal) { axes.insert(.horizontal) }
+    if geometry.overflowAxes.contains(.vertical) { axes.insert(.vertical) }
+    return axes
+  }
+
+  private func paneTint(_ index: Int) -> Color {
+    [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand][index % 4]
+  }
+}
+
+private struct PaneLayoutSplitSurface: View {
+  @Bindable var client: EngineClient
+  let webHost: MacWebHost
+  let panesById: [String: Pane]
+  let tintIndices: [String: Int]
+  let split: PaneLayoutSplit
+  let path: PaneLayoutNodePath
+  let plan: PaneLayoutGeometryResult
+  let onClose: (String) -> Void
+  let onTasks: () -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
+
+  private var children: [RenderedPaneLayoutChild] {
+    split.children.enumerated().map {
+      RenderedPaneLayoutChild(index: $0.offset, branch: $0.element)
+    }
   }
 
   var body: some View {
-    GeometryReader { geometry in
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: MacTheme.Space.x18) {
-          ForEach(Array(ordered.enumerated()), id: \.element.paneId) { index, pane in
-            PaneCard(
-              client: client, webHost: webHost, pane: pane, tint: tint(index), onClose: onClose,
-              onTasks: onTasks, onSplit: onSplit
-            )
-            .frame(width: paneWidth(pane, at: index, total: geometry.size.width))
-            .frame(height: geometry.size.height)
+    if let geometry = plan.nodes[path] {
+      ScrollViewReader { proxy in
+        ScrollView(
+          split.axis == .horizontal ? .horizontal : .vertical,
+          showsIndicators: geometry.overflowAxes.contains(split.axis)
+        ) {
+          ZStack(alignment: .topLeading) {
+            ForEach(children) { child in
+              let childPath = path.appending(child.index)
+              if let childGeometry = plan.nodes[childPath] {
+                PaneLayoutNodeSurface(
+                  client: client, webHost: webHost, panesById: panesById,
+                  tintIndices: tintIndices, tree: child.branch.tree, path: childPath,
+                  plan: plan, onClose: onClose, onTasks: onTasks, onSplit: onSplit
+                )
+                .frame(
+                  width: childGeometry.frame.size.width,
+                  height: childGeometry.frame.size.height
+                )
+                .offset(
+                  x: childGeometry.frame.origin.x,
+                  y: childGeometry.frame.origin.y
+                )
+                .id(child.id)
+              }
+            }
           }
-        }
-        .frame(minWidth: geometry.size.width, alignment: .leading)
-        .frame(height: geometry.size.height, alignment: .top)
-      }
-      .clipped()
-    }
-  }
-
-  private func paneWidth(_ pane: Pane, at index: Int, total: CGFloat) -> CGFloat {
-    let pair = Array(ordered.prefix(2))
-    let available = max(0, total - MacTheme.Space.x18)
-    if index < 2, pair.contains(where: { $0.mode == .writing }),
-      pair.contains(where: { $0.mode == .agent })
-    {
-      return pane.mode == .writing ? available * 0.67 : available * 0.33
-    }
-    if index < 2, pair.contains(where: { $0.mode == .editor }),
-      pair.contains(where: { $0.mode == .agent })
-    {
-      return pane.mode == .editor ? available * 0.7 : available * 0.3
-    }
-    if index < 2, Set(pair.map(\.mode)) == Set([.web, .agent]) {
-      return pane.mode == .web ? available * 0.67 : available * 0.33
-    }
-    return pane.mode == .writing ? max(860, total * 0.67) : max(420, total * 0.42)
-  }
-}
-
-private struct PanePair: View {
-  @Bindable var client: EngineClient
-  let webHost: MacWebHost
-  let panes: [Pane]
-  let onClose: (String) -> Void
-  let onTasks: () -> Void
-  let onSplit: (String, PaneSplitAxis) -> Void
-  let splitAxis: PaneSplitAxis
-  let tint: (Int) -> Color
-
-  var body: some View {
-    GeometryReader { geometry in
-      splitLayout {
-        ForEach(Array(ordered.enumerated()), id: \.element.paneId) { index, pane in
-          PaneCard(
-            client: client, webHost: webHost, pane: pane, tint: tint(index), onClose: onClose,
-            onTasks: onTasks, onSplit: onSplit
-          )
           .frame(
-            width: splitAxis == .columns ? width(for: pane, total: geometry.size.width) : nil,
-            height: splitAxis == .rows ? rowHeight(total: geometry.size.height) : nil)
+            width: geometry.contentSize.width, height: geometry.contentSize.height,
+            alignment: .topLeading)
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDisabled(!geometry.overflowAxes.contains(split.axis))
+        .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
+        .onAppear { scrollSelectedPane(using: proxy) }
+        .onChange(of: client.selectedPaneId) { _, _ in scrollSelectedPane(using: proxy) }
       }
     }
   }
 
-  private var splitLayout: AnyLayout {
-    splitAxis == .columns
-      ? AnyLayout(HStackLayout(spacing: MacTheme.Space.x18))
-      : AnyLayout(VStackLayout(spacing: MacTheme.Space.x18))
-  }
-
-  private func rowHeight(total: CGFloat) -> CGFloat? {
-    guard ordered.count == 2 else { return nil }
-    return max(0, total - MacTheme.Space.x18) / 2
-  }
-
-  private var ordered: [Pane] {
-    guard panes.count == 2 else { return panes }
-    if panes.contains(where: { $0.mode == .writing }) {
-      return panes.sorted { left, right in left.mode == .writing && right.mode != .writing }
-    }
-    if panes.contains(where: { $0.mode == .editor }) {
-      return panes.sorted { left, right in left.mode == .editor && right.mode != .editor }
-    }
-    if Set(panes.map(\.mode)) == Set([.web, .agent]) {
-      return panes.sorted { left, _ in left.mode == .web }
-    }
-    return panes
-  }
-
-  private func width(for pane: Pane, total: CGFloat) -> CGFloat? {
-    guard ordered.count == 2 else { return nil }
-    let available = max(0, total - MacTheme.Space.x18)
-    if ordered.contains(where: { $0.mode == .writing }) {
-      return pane.mode == .writing ? available * 0.67 : available * 0.33
-    }
-    if ordered.contains(where: { $0.mode == .editor }) {
-      return pane.mode == .editor ? available * 0.7 : available * 0.3
-    }
-    if Set(ordered.map(\.mode)) == Set([.web, .agent]) {
-      return pane.mode == .web ? available * 0.67 : available * 0.33
-    }
-    return nil
+  private func scrollSelectedPane(using proxy: ScrollViewProxy) {
+    guard let selectedPaneId = client.selectedPaneId,
+      let childIndex = split.children.firstIndex(where: {
+        $0.tree.paneIdsInCanonicalOrder.contains(selectedPaneId)
+      })
+    else { return }
+    let identity = split.children[childIndex].tree.leavesInCanonicalOrder[0].paneId
+    proxy.scrollTo(identity, anchor: .center)
   }
 }
 
@@ -761,6 +988,13 @@ private struct EmptyWorkspaceView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
+}
+
+private struct RenderedPaneLayoutChild: Identifiable {
+  let index: Int
+  let branch: PaneLayoutBranch
+
+  var id: String { branch.tree.leavesInCanonicalOrder[0].paneId }
 }
 
 private struct PaneCard: View {
@@ -789,11 +1023,12 @@ private struct PaneCard: View {
       } else if pane.mode == .writing, pane.writingKind == .screenplay {
         WritingScreenplayPane(client: client, pane: pane)
       } else {
-        VStack(spacing: MacTheme.Space.x8) {
+        VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
           header
           paneBody
         }
-        .padding(MacTheme.Space.x10).neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+        .padding(PaneLayoutContentMetrics.paneCardInset)
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       }
     }
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
@@ -944,7 +1179,8 @@ private struct PaneCard: View {
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
     .foregroundStyle(MacTheme.secondary)
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 26)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
     .background(tint, in: Capsule())
   }
 
@@ -969,13 +1205,17 @@ private struct PaneCard: View {
             }
             Image(systemName: "chevron.right").foregroundStyle(MacTheme.muted)
           }
-          .padding(.horizontal, MacTheme.Space.x12).frame(height: 34)
+          .padding(.horizontal, MacTheme.Space.x12)
+          .frame(height: PaneLayoutContentMetrics.agentTaskHeight)
           .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
         }
         AgentConversationView(
           client: client, paneId: pane.paneId, showsConfiguration: false,
           style: MacTheme.agentConversation)
-      }.padding(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
+      }.padding(
+        EdgeInsets(
+          top: PaneLayoutContentMetrics.agentBodyTopInset, leading: 4, bottom: 0,
+          trailing: 4))
     } else if client.selectedPaneId == pane.paneId {
       VStack(spacing: 0) {
         Label(
@@ -986,10 +1226,10 @@ private struct PaneCard: View {
         .foregroundStyle(stateColor)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, MacTheme.Space.x10)
-        .padding(.vertical, MacTheme.Space.x7)
+        .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
         .background(tint.opacity(0.55))
         .accessibilityIdentifier("terminal-state-\(pane.paneId)")
-        MacTerminal(client: client)
+        MacTerminal(client: client, paneId: pane.paneId)
         if let gap = client.gapText {
           Label(gap, systemImage: "exclamationmark.triangle")
             .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.warning)

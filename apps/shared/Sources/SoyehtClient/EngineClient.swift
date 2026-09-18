@@ -37,6 +37,9 @@ public final class EngineClient {
   public private(set) var connectionActor: Actor?
   @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
   @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
+  #if os(macOS)
+    @ObservationIgnored let terminalViewRegistry = MacTerminalViewRegistry()
+  #endif
   public internal(set) var terminalOutput: ((Data, Bool) -> Void)? {
     get { terminalOutputSink }
     set {
@@ -480,6 +483,9 @@ public final class EngineClient {
     case .paneClosed:
       let id = params["paneId"].string
       panes.removeAll { $0.paneId == id }
+      #if os(macOS)
+        if let id { terminalViewRegistry.remove(id) }
+      #endif
       if let id { agentPanes.removeValue(forKey: id) }
       if let id { agentWebDrafts.removeValue(forKey: id) }
       if let id { discardEditorPane(id) }
@@ -523,6 +529,10 @@ public final class EngineClient {
       !$0.revoked
     }
     self.panes = panes
+    #if os(macOS)
+      terminalViewRegistry.retainOnly(
+        Set(panes.lazy.filter { $0.mode == .terminal }.map(\.paneId)))
+    #endif
     self.workspaces = workspaces
     try applyAgentSnapshot(sections, panes: panes)
     try applyTaskSnapshot(sections, panes: panes)
