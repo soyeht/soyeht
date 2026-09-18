@@ -23,7 +23,7 @@ struct WritingTextPane: View {
   }
 
   var body: some View {
-    VStack(spacing: MacTheme.Space.x8) {
+    VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
       header
       if let writing, let file, file.viewport != nil {
         toolbar(writing.document)
@@ -38,7 +38,7 @@ struct WritingTextPane: View {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
-    .padding(MacTheme.Space.x10)
+    .padding(PaneLayoutContentMetrics.paneCardInset)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .task(id: writingLoadKey) { await loadIfNeeded() }
   }
@@ -52,7 +52,8 @@ struct WritingTextPane: View {
       Text(wordCountLabel)
         .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.muted)
     }
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 28)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.textHeaderHeight)
     .background(MacTheme.well, in: Capsule())
   }
 
@@ -99,7 +100,8 @@ struct WritingTextPane: View {
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
     .foregroundStyle(MacTheme.secondary)
-    .padding(.horizontal, MacTheme.Space.x10).frame(height: 42)
+    .padding(.horizontal, MacTheme.Space.x10)
+    .frame(height: PaneLayoutContentMetrics.textToolbarHeight)
     .background(MacTheme.face)
     .popover(
       isPresented: Binding(
@@ -409,8 +411,8 @@ private struct WritingTextViewport: NSViewRepresentable {
   static func attributed(
     _ projection: WritingMarkdownProjection, font: WritingFont, focus: Bool
   ) -> NSAttributedString {
-    let base = MacTheme.proseNSFont(font, 20)
-    let paragraph = paragraphStyle(lineHeight: 32)
+    let base = MacTheme.proseNSFont(font, PaneLayoutContentMetrics.textFontPointSize)
+    let paragraph = paragraphStyle(lineHeight: PaneLayoutContentMetrics.textLineHeight)
     let result = NSMutableAttributedString(
       string: projection.text,
       attributes: [

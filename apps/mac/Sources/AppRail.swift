@@ -35,7 +35,7 @@ struct AppRail: View {
     }
     .padding(.vertical, MacTheme.Space.x12)
     .padding(.horizontal, MacTheme.Space.x8)
-    .frame(width: 56)
+    .frame(width: MacPaneLayoutMetrics.railWidth)
     .frame(maxHeight: .infinity)
     .background(MacTheme.canvas)
     .accessibilityIdentifier("app-bar")

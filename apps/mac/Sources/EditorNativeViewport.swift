@@ -4,15 +4,17 @@ import SoyehtProtocol
 import SwiftUI
 
 @MainActor enum EditorTextMetrics {
-  static let lineHeight: CGFloat = 19
+  static let lineHeight: CGFloat = PaneLayoutContentMetrics.editorLineHeight
 
   static func attributes() -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
     paragraph.minimumLineHeight = lineHeight
     paragraph.maximumLineHeight = lineHeight
     return [
-      .font: NSFont(name: "JetBrains Mono", size: 11.5)
-        ?? NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular),
+      .font: NSFont(
+        name: "JetBrains Mono", size: PaneLayoutContentMetrics.editorFontPointSize)
+        ?? NSFont.monospacedSystemFont(
+          ofSize: PaneLayoutContentMetrics.editorFontPointSize, weight: .regular),
       .foregroundColor: NSColor(MacTheme.ink),
       .paragraphStyle: paragraph,
     ]
@@ -136,9 +138,13 @@ struct EditorNativeViewport: NSViewRepresentable {
 
     private func updateVirtualGeometry(_ viewport: FileReadResult) {
       guard let scrollView else { return }
-      let top = 10 + CGFloat(viewport.fromLine) * Self.lineHeight
-      textView.textContainerInset = NSSize(width: 10, height: top)
-      let documentHeight = 20 + CGFloat(viewport.file.lineCount) * Self.lineHeight
+      let top =
+        PaneLayoutContentMetrics.editorTextInset + CGFloat(viewport.fromLine) * Self.lineHeight
+      textView.textContainerInset = NSSize(
+        width: PaneLayoutContentMetrics.editorTextInset, height: top)
+      let documentHeight =
+        2 * PaneLayoutContentMetrics.editorTextInset
+        + CGFloat(viewport.file.lineCount) * Self.lineHeight
       let height = max(scrollView.contentSize.height, documentHeight)
       textView.minSize = NSSize(width: 0, height: height)
       if abs(textView.frame.height - height) > 0.5 {
@@ -152,7 +158,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       guard let scrollView, let viewport = parent.view.viewport,
         requestedViewportStart == nil
       else { return }
-      let visibleTop = max(0, scrollView.contentView.bounds.minY - 10)
+      let visibleTop = max(
+        0, scrollView.contentView.bounds.minY - PaneLayoutContentMetrics.editorTextInset)
       let visibleFrom = UInt32(clamping: Int(visibleTop / Self.lineHeight))
       let visibleLines = UInt32(
         clamping: Int(ceil(scrollView.contentSize.height / Self.lineHeight)) + 2)
@@ -600,7 +607,7 @@ struct EditorNativeViewport: NSViewRepresentable {
 }
 
 @MainActor final class EditorLineGutter: NSView {
-  static let width: CGFloat = 44
+  static let width: CGFloat = PaneLayoutContentMetrics.editorGutterWidth
   override var isFlipped: Bool { true }
   private weak var textView: NSTextView?
   private weak var scrollView: NSScrollView?

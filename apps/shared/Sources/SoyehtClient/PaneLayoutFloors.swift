@@ -34,6 +34,57 @@ public struct PaneLayoutFontMetrics: Equatable, Sendable {
   }
 }
 
+/// Dimensions shared by the measured floor formulas and the views that own them.
+/// Fixture-only rulers remain named here as policy, rather than masquerading as view literals.
+public enum PaneLayoutContentMetrics {
+  public static let paneCardInset = 10.0
+  public static let paneStackSpacing = 8.0
+
+  public static let genericPaneHeaderHeight = 26.0
+  public static let terminalFontPointSize = 13.0
+  public static let terminalStateVerticalInset = 7.0
+
+  public static let editorFontPointSize = 11.5
+  public static let editorLineHeight = 19.0
+  public static let editorGutterWidth = 44.0
+  public static let editorTextInset = 10.0
+  public static let editorHeaderHeight = 27.0
+  public static let editorTabHeight = 26.0
+  public static let editorViewportVerticalInset = 20.0
+  public static let editorReviewHeight = 42.0
+  public static let editorStatusHeight = 24.0
+
+  public static let agentTaskHeight = 34.0
+  public static let agentBodyTopInset = 4.0
+  public static let agentControlsFixtureHeight = 33.0
+  public static let agentDividerHeight = 1.0
+  public static let agentTranscriptFixtureHeight = 150.0
+  public static let agentComposerFixtureHeight = 67.0
+
+  public static let webNavigationHeight = 27.0
+  public static let webViewportFixture = PaneLayoutSize(width: 320, height: 240)
+  public static let webStatusHeight = 24.0
+
+  public static let textFontPointSize = 20.0
+  public static let textLineHeight = 32.0
+  public static let textHeaderHeight = 28.0
+  public static let textToolbarHeight = 42.0
+  public static let textReviewHeight = editorReviewHeight
+  public static let textPageInset = 16.0
+
+  public static let screenplayFontPointSize = 16.0
+  public static let screenplayLineHeight = 27.0
+  public static let screenplayPageHorizontalInset = 74.0
+  public static let screenplayHeaderHeight = 42.0
+  public static let screenplayToolbarHeight = 60.0
+  public static let screenplaySmartTypeHeight = 34.0
+
+  public static let presentationHeaderHeight = 42.0
+  public static let presentationNumericRailHeight = 32.0
+  public static let presentationStage = PaneLayoutSize(width: 320, height: 180)
+  public static let presentationFooterHeight = 28.0
+}
+
 /// Content rulers accepted in `docs/reports/pane-layout-floor-measurements.md`.
 public enum PaneLayoutFloorFormula {
   public static let terminalColumns = 40.0
@@ -43,7 +94,7 @@ public enum PaneLayoutFloorFormula {
   public static let compactTextCharacters = 24.0
   public static let screenplayColumns = 61.0
   public static let minimumScreenplayPointSize = 7.5
-  public static let paneCardInset = 10.0
+  public static let paneCardInset = PaneLayoutContentMetrics.paneCardInset
 
   public static func surfaceFloors(
     fonts: PaneLayoutFontMetrics
@@ -51,29 +102,62 @@ public enum PaneLayoutFloorFormula {
     let terminal = PaneLayoutSize(
       width: ceil(terminalColumns * fonts.terminal.characterWidth + 2 * paneCardInset),
       height: ceil(
-        2 * paneCardInset + 26 + 8 + (fonts.chrome.lineHeight + 14)
+        2 * paneCardInset + PaneLayoutContentMetrics.genericPaneHeaderHeight
+          + PaneLayoutContentMetrics.paneStackSpacing
+          + (fonts.chrome.lineHeight + 2 * PaneLayoutContentMetrics.terminalStateVerticalInset)
           + terminalRows * fonts.terminal.lineHeight))
     let editor = PaneLayoutSize(
-      width: ceil(editorColumns * fonts.editor.characterWidth + 44 + 20 + 2 * paneCardInset),
-      height: 2 * paneCardInset + 27 + 8 + 26 + (12 * 19 + 20) + 42 + 24)
+      width: ceil(
+        editorColumns * fonts.editor.characterWidth + PaneLayoutContentMetrics.editorGutterWidth
+          + 2 * PaneLayoutContentMetrics.editorTextInset + 2 * paneCardInset),
+      height: 2 * paneCardInset + PaneLayoutContentMetrics.editorHeaderHeight
+        + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.editorTabHeight
+        + (12 * PaneLayoutContentMetrics.editorLineHeight
+          + PaneLayoutContentMetrics.editorViewportVerticalInset)
+        + PaneLayoutContentMetrics.editorReviewHeight
+        + PaneLayoutContentMetrics.editorStatusHeight)
     let agent = PaneLayoutSize(
       width: ceil(agentComposerCharacters * fonts.agent.characterWidth + 124),
-      height: 2 * paneCardInset + 26 + 8 + 4 + 34 + 12 + 33 + 1 + 150 + 67)
+      height: 2 * paneCardInset + PaneLayoutContentMetrics.genericPaneHeaderHeight
+        + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.agentBodyTopInset
+        + PaneLayoutContentMetrics.agentTaskHeight + 12
+        + PaneLayoutContentMetrics.agentControlsFixtureHeight
+        + PaneLayoutContentMetrics.agentDividerHeight
+        + PaneLayoutContentMetrics.agentTranscriptFixtureHeight
+        + PaneLayoutContentMetrics.agentComposerFixtureHeight)
     let web = PaneLayoutSize(
-      width: 320 + 2 * paneCardInset,
-      height: 2 * paneCardInset + 26 + 8 + 27 + 8 + 240 + 8 + 24)
+      width: PaneLayoutContentMetrics.webViewportFixture.width + 2 * paneCardInset,
+      height: 2 * paneCardInset + PaneLayoutContentMetrics.genericPaneHeaderHeight
+        + PaneLayoutContentMetrics.paneStackSpacing
+        + PaneLayoutContentMetrics.webNavigationHeight
+        + PaneLayoutContentMetrics.paneStackSpacing
+        + PaneLayoutContentMetrics.webViewportFixture.height
+        + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.webStatusHeight)
     let text = PaneLayoutSize(
-      width: ceil(compactTextCharacters * fonts.prose.characterWidth + 32 + 2 * paneCardInset),
-      height: 2 * paneCardInset + 28 + 42 + 42 + 3 * 8 + 32 + 6 * 32)
-    let screenplayPageWidth = screenplayColumns * fonts.screenplay.characterWidth + 148
+      width: ceil(
+        compactTextCharacters * fonts.prose.characterWidth
+          + 2 * PaneLayoutContentMetrics.textPageInset + 2 * paneCardInset),
+      height: 2 * paneCardInset + PaneLayoutContentMetrics.textHeaderHeight
+        + PaneLayoutContentMetrics.textToolbarHeight + PaneLayoutContentMetrics.textReviewHeight
+        + 3 * PaneLayoutContentMetrics.paneStackSpacing
+        + 2 * PaneLayoutContentMetrics.textPageInset
+        + 6 * PaneLayoutContentMetrics.textLineHeight)
+    let screenplayPageWidth =
+      screenplayColumns * fonts.screenplay.characterWidth
+      + 2 * PaneLayoutContentMetrics.screenplayPageHorizontalInset
     let screenplayZoom = minimumScreenplayPointSize / fonts.screenplay.pointSize
     let screenplayWidth = ceil(screenplayPageWidth * screenplayZoom)
     let screenplay = PaneLayoutSize(
       width: screenplayWidth,
-      height: 42 + 60 + 34 + ceil(screenplayWidth * 11 / 8.5))
+      height: PaneLayoutContentMetrics.screenplayHeaderHeight
+        + PaneLayoutContentMetrics.screenplayToolbarHeight
+        + PaneLayoutContentMetrics.screenplaySmartTypeHeight + ceil(screenplayWidth * 11 / 8.5))
     let presentation = PaneLayoutSize(
-      width: 320 + 2 * paneCardInset,
-      height: 42 + 32 + 180 + 28 + 2 * paneCardInset)
+      width: PaneLayoutContentMetrics.presentationStage.width + 2 * paneCardInset,
+      height: PaneLayoutContentMetrics.presentationHeaderHeight
+        + PaneLayoutContentMetrics.presentationNumericRailHeight
+        + PaneLayoutContentMetrics.presentationStage.height
+        + PaneLayoutContentMetrics.presentationFooterHeight + 2 * paneCardInset)
 
     return [
       .terminal: terminal,

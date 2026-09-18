@@ -30,7 +30,7 @@ struct EditorPaneView: View {
   }
 
   var body: some View {
-    VStack(spacing: MacTheme.Space.x8) {
+    VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
       EditorPaneHeader(
         file: view?.file, branch: branch, showHistory: { showHistory = true },
         showConflict: { showConflict = true }, showDiff: { showDiff = true },
@@ -51,7 +51,7 @@ struct EditorPaneView: View {
         editorLoading
       }
     }
-    .padding(MacTheme.Space.x10)
+    .padding(PaneLayoutContentMetrics.paneCardInset)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .accessibilityIdentifier("editor-pane")
@@ -228,7 +228,8 @@ private struct EditorPaneHeader: View {
           .foregroundStyle(statusColor)
       }
     }
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 27)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.editorHeaderHeight)
     .background(MacTheme.well, in: Capsule())
   }
 
@@ -403,7 +404,8 @@ private struct EditorTabs: View {
             }
           }
           .foregroundStyle(file.fileId == selected.fileId ? MacTheme.accent : MacTheme.secondary)
-          .padding(.horizontal, MacTheme.Space.x12).frame(height: 26)
+          .padding(.horizontal, MacTheme.Space.x12)
+          .frame(height: PaneLayoutContentMetrics.editorTabHeight)
           .background(
             file.fileId == selected.fileId ? MacTheme.well : Color.clear,
             in: Capsule())
@@ -596,7 +598,8 @@ private struct EditorAgentReviewHunkCard: View {
         .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
         .buttonStyle(NeoPillButtonStyle()).disabled(busy)
     }
-    .padding(.horizontal, MacTheme.Space.x10).frame(height: 42)
+    .padding(.horizontal, MacTheme.Space.x10)
+    .frame(height: PaneLayoutContentMetrics.editorReviewHeight)
     .background(MacTheme.agentBlue, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 }
@@ -674,7 +677,8 @@ private struct EditorStatusBar: View {
       }
     }
     .foregroundStyle(MacTheme.secondary)
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 24).background(MacTheme.canvas)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.editorStatusHeight).background(MacTheme.canvas)
   }
 
   private var language: String {

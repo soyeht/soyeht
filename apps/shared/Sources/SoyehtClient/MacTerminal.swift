@@ -64,7 +64,9 @@
     }
     public func makeNSView(context: Context) -> TerminalView {
       let view = TerminalSurface(
-        frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+        frame: .zero,
+        font: .monospacedSystemFont(
+          ofSize: PaneLayoutContentMetrics.terminalFontPointSize, weight: .regular))
       applyTheme(to: view)
       view.linkReporting = .implicit
       view.linkHighlightMode = .hover

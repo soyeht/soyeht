@@ -64,7 +64,8 @@ struct WritingPresentationPane: View {
       }
       .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(slides.isEmpty)
     }
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 42).background(MacTheme.face)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.presentationHeaderHeight).background(MacTheme.face)
   }
 
   private var slideRail: some View {
@@ -118,7 +119,8 @@ struct WritingPresentationPane: View {
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.micro))
     .foregroundStyle(MacTheme.muted)
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 28).background(MacTheme.canvas)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.presentationFooterHeight).background(MacTheme.canvas)
   }
 
   private func select(_ slide: WritingSlide) {
