@@ -852,29 +852,44 @@ private struct PaneLayoutNodeSurface: View {
     }
   }
 
-  private func leafSurface(
+  @ViewBuilder private func leafSurface(
     pane: Pane, geometry: PaneLayoutNodeGeometry
   ) -> some View {
     let halo = CGFloat(MacPaneLayoutMetrics.paneHalo)
     let contentWidth = CGFloat(geometry.contentSize.width)
     let contentHeight = CGFloat(geometry.contentSize.height)
-    return ScrollView(scrollAxes(for: geometry), showsIndicators: !geometry.overflowAxes.isEmpty) {
-      PaneCard(
-        client: client, webHost: webHost, pane: pane,
-        tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
-        onTasks: onTasks, onSplit: onSplit
+    if geometry.overflowAxes.isEmpty {
+      paneSurface(
+        pane: pane, halo: halo, contentWidth: contentWidth, contentHeight: contentHeight
       )
-      .frame(
-        width: max(0, contentWidth - 2 * halo),
-        height: max(0, contentHeight - 2 * halo)
-      )
-      .padding(halo)
-      .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
+      .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
+      .id(pane.paneId)
+    } else {
+      ScrollView(scrollAxes(for: geometry), showsIndicators: true) {
+        paneSurface(
+          pane: pane, halo: halo, contentWidth: contentWidth, contentHeight: contentHeight
+        )
+      }
+      .scrollBounceBehavior(.basedOnSize)
+      .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
+      .id(pane.paneId)
     }
-    .scrollDisabled(geometry.overflowAxes.isEmpty)
-    .scrollBounceBehavior(.basedOnSize)
-    .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
-    .id(pane.paneId)
+  }
+
+  private func paneSurface(
+    pane: Pane, halo: CGFloat, contentWidth: CGFloat, contentHeight: CGFloat
+  ) -> some View {
+    PaneCard(
+      client: client, webHost: webHost, pane: pane,
+      tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
+      onTasks: onTasks, onSplit: onSplit
+    )
+    .frame(
+      width: max(0, contentWidth - 2 * halo),
+      height: max(0, contentHeight - 2 * halo)
+    )
+    .padding(halo)
+    .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
   }
 
   private func scrollAxes(for geometry: PaneLayoutNodeGeometry) -> Axis.Set {
