@@ -1214,7 +1214,7 @@ private struct PaneCard: View {
         .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
         .background(tint.opacity(0.55))
         .accessibilityIdentifier("terminal-state-\(pane.paneId)")
-        MacTerminal(client: client)
+        MacTerminal(client: client, paneId: pane.paneId)
         if let gap = client.gapText {
           Label(gap, systemImage: "exclamationmark.triangle")
             .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.warning)
