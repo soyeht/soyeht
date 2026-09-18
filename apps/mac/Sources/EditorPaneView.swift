@@ -6,6 +6,7 @@ struct EditorPaneView: View {
   @Bindable var client: EngineClient
   @Environment(EditorInputPreferences.self) private var inputPreferences
   let pane: Pane
+  let headerDrag: PaneHeaderDragConfiguration?
   @State private var selectedPosition: TextPosition?
   @State private var showHistory = false
   @State private var showConflict = false
@@ -34,7 +35,7 @@ struct EditorPaneView: View {
       EditorPaneHeader(
         file: view?.file, branch: branch, showHistory: { showHistory = true },
         showConflict: { showConflict = true }, showDiff: { showDiff = true },
-        diffReady: currentDiff != nil, diffProblem: diffProblem)
+        diffReady: currentDiff != nil, diffProblem: diffProblem, headerDrag: headerDrag)
       if let view {
         if view.file.conflicted {
           EditorConflictBanner(showConflict: { showConflict = true })
@@ -190,6 +191,7 @@ private struct EditorPaneHeader: View {
   let showDiff: () -> Void
   let diffReady: Bool
   let diffProblem: String?
+  let headerDrag: PaneHeaderDragConfiguration?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x7) {
@@ -231,6 +233,7 @@ private struct EditorPaneHeader: View {
     .padding(.horizontal, MacTheme.Space.x12)
     .frame(height: PaneLayoutContentMetrics.editorHeaderHeight)
     .background(MacTheme.well, in: Capsule())
+    .paneHeaderDrag(headerDrag)
   }
 
   private var pathLabel: String {

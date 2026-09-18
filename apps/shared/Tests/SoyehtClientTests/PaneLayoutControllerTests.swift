@@ -4,6 +4,15 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func layoutFailureUsesAFixedUserMessageInsteadOfTheTransportError() {
+  let failure = PaneLayoutCommitFailure(workspaceId: "workspace", message: "unauthorized: 401")
+
+  #expect(
+    PaneLayoutCommitFailure.userMessage
+      == "Couldn't save the layout. The last saved arrangement is back.")
+  #expect(!PaneLayoutCommitFailure.userMessage.contains(failure.message))
+}
+
 @Test @MainActor
 func gestureDraftIsLocalUntilCommitAndThenBecomesCustom() async throws {
   let probe = PaneLayoutPersistProbe()

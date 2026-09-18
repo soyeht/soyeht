@@ -6,6 +6,7 @@ import SwiftUI
 struct WritingPresentationPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
+  let headerDrag: PaneHeaderDragConfiguration?
   @State private var selectedSlide: UInt32 = 0
   @State private var activeLine: UInt32 = 0
   @State private var targetLine: UInt32?
@@ -66,6 +67,7 @@ struct WritingPresentationPane: View {
     }
     .padding(.horizontal, MacTheme.Space.x12)
     .frame(height: PaneLayoutContentMetrics.presentationHeaderHeight).background(MacTheme.face)
+    .paneHeaderDrag(headerDrag)
   }
 
   private var slideRail: some View {

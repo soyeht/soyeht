@@ -20,6 +20,9 @@ public enum PaneLayoutControllerError: Error, Equatable, LocalizedError, Sendabl
 }
 
 public struct PaneLayoutCommitFailure: Equatable, Sendable {
+  public static let userMessage =
+    "Couldn't save the layout. The last saved arrangement is back."
+
   public var workspaceId: String
   public var message: String
 

@@ -6,6 +6,7 @@ import SwiftUI
 struct WritingTextPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
+  let headerDrag: PaneHeaderDragConfiguration?
   @State private var selection: SoyehtProtocol.TextRange?
   @State private var activeLine: UInt32 = 0
   @State private var destinationKind: WritingFormatKind?
@@ -55,6 +56,7 @@ struct WritingTextPane: View {
     .padding(.horizontal, MacTheme.Space.x12)
     .frame(height: PaneLayoutContentMetrics.textHeaderHeight)
     .background(MacTheme.well, in: Capsule())
+    .paneHeaderDrag(headerDrag)
   }
 
   private func toolbar(_ document: WritingDocument) -> some View {
