@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 22;
+pub const SCHEMA_VERSION: u32 = 23;
 
 #[derive(Debug)]
 pub enum Error {
@@ -367,6 +367,9 @@ impl Store {
             }
             if version < 22 {
                 tx.execute_batch(include_str!("../migrations/022-agent-model-refusals.sql"))?;
+            }
+            if version < 23 {
+                tx.execute_batch(include_str!("../migrations/023-writing-full-width.sql"))?;
             }
             tx.commit()?;
         }

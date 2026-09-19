@@ -74,7 +74,7 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
         .unwrap()
         .to_owned();
     let layout = json!({
-        "version":1,"mode":"custom",
+        "version":2,"mode":"custom",
         "tree":{"axis":"horizontal","children":[
             {"weight":2.0,"node":{"paneId":first_pane,"kind":"terminal"}},
             {"weight":1.0,"node":{"paneId":second_pane,"kind":"terminal"}}
@@ -93,7 +93,7 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
         "workspace.layout.set",
         json!({
             "workspaceId":workspace,
-            "layout":{"version":1,"mode":"custom",
+            "layout":{"version":2,"mode":"custom",
                 "tree":{"paneId":"missing","kind":"terminal"}},
             "idempotencyKey":"missing-layout-pane"
         }),
@@ -114,7 +114,7 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
         json!({"paneId":first_pane,"idempotencyKey":"close-first-layout-pane"}),
     );
     let pruned_layout = json!({
-        "version":1,"mode":"custom",
+        "version":2,"mode":"custom",
         "tree":{"paneId":second_pane,"kind":"terminal"}
     });
 
@@ -190,10 +190,11 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
 
     let preferred = client.call(
         "writing.preferences.set",
-        json!({"fileId":file_id,"baseRevision":"1","font":"sans","focusMode":true,"idempotencyKey":"writing-preferences"}),
+        json!({"fileId":file_id,"baseRevision":"1","font":"sans","focusMode":true,"fullWidth":true,"idempotencyKey":"writing-preferences"}),
     );
     assert_eq!(preferred["document"]["font"], "sans");
     assert_eq!(preferred["document"]["focusMode"], true);
+    assert_eq!(preferred["document"]["fullWidth"], true);
     let listed = client.call(
         "writing.section.list",
         json!({"workspaceId":workspace,"section":"texts","limit":50}),
@@ -206,6 +207,31 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
         json!({"workspaceId":workspace,"path":"Writing/Presentations/review.md","kind":"presentation","idempotencyKey":"open-presentation"}),
     );
     let slides_file = slides["document"]["file"]["fileId"].clone();
+    let screenplay = client.call(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"screenplays","title":"No Full Width",
+            "idempotencyKey":"create-no-full-width-screenplay"
+        }),
+    );
+    let screenplay_file = screenplay["document"]["file"]["fileId"].clone();
+    for (file_id, key) in [
+        (slides_file.clone(), "presentation-full-width"),
+        (screenplay_file, "screenplay-full-width"),
+    ] {
+        let refused = client.request(
+            "writing.preferences.set",
+            json!({
+                "fileId":file_id,"baseRevision":"1","fullWidth":true,
+                "idempotencyKey":key
+            }),
+        );
+        assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+        assert_eq!(
+            refused["error"]["message"],
+            "Full width is available only for text documents"
+        );
+    }
     let structure = client.call(
         "writing.structure",
         json!({"fileId":slides_file,"revision":"1"}),
@@ -231,6 +257,7 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
         .unwrap();
     assert_eq!(restored_document["font"], "sans");
     assert_eq!(restored_document["focusMode"], true);
+    assert_eq!(restored_document["fullWidth"], true);
     assert_eq!(restored_document["file"]["paneId"], pane_id);
 }
 

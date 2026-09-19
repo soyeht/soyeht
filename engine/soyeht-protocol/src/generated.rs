@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
+// Generated from contracts/protocol.json (sha256 65a5d24b582dfacd7996d517136102539055dd167f0acfe8e38d18bddc2c0900). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -245,11 +245,20 @@ pub struct WorkspacePaneLayoutBranch {
     pub node: WorkspacePaneLayoutNode,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutCompanion {
+    #[serde(rename = "writingPaneId")]
+    pub writing_pane_id: Id,
+    #[serde(rename = "agentPaneId")]
+    pub agent_pane_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WorkspacePaneLayoutSplit {
     #[serde(rename = "axis")]
     pub axis: WorkspacePaneLayoutAxis,
     #[serde(rename = "children")]
     pub children: Vec<WorkspacePaneLayoutBranch>,
+    #[serde(rename = "companion", skip_serializing_if = "Option::is_none")]
+    pub companion: Option<WorkspacePaneLayoutCompanion>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
@@ -4858,6 +4867,8 @@ pub struct WritingDocument {
     pub font: WritingFont,
     #[serde(rename = "focusMode")]
     pub focus_mode: bool,
+    #[serde(rename = "fullWidth")]
+    pub full_width: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WritingSectionEntry {
@@ -5094,6 +5105,8 @@ pub struct WritingPreferencesParams {
     pub font: Option<WritingFont>,
     #[serde(rename = "focusMode", skip_serializing_if = "Option::is_none")]
     pub focus_mode: Option<bool>,
+    #[serde(rename = "fullWidth", skip_serializing_if = "Option::is_none")]
+    pub full_width: Option<bool>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }

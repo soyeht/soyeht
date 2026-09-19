@@ -267,11 +267,19 @@ impl Core {
         let file = self.editor.stored(&request.file_id)?.clone();
         require_revision(&request.base_revision, file.revision)?;
         let mut record = self.writing_record(&file.file_id)?;
+        if request.full_width == Some(true) && record.kind != WritingKind::Text {
+            return Err(errors::invalid(
+                "Full width is available only for text documents",
+            ));
+        }
         if let Some(font) = request.font {
             record.font = font;
         }
         if let Some(focus_mode) = request.focus_mode {
             record.focus_mode = focus_mode;
+        }
+        if let Some(full_width) = request.full_width {
+            record.full_width = full_width;
         }
         record.updated_ms = self.now_ms();
         let result = serde_json::to_value(WritingPreferencesResult {
@@ -445,6 +453,7 @@ impl Core {
             sidecar_revision: 0,
             font: WritingFont::ReadingSerif,
             focus_mode: false,
+            full_width: false,
             sidecar: WritingSidecar::default(),
             updated_ms: self.now_ms(),
         })
@@ -483,6 +492,7 @@ pub(super) fn public_document(
         sidecar_revision: record.sidecar_revision.to_string(),
         font: record.font.clone(),
         focus_mode: record.focus_mode,
+        full_width: record.full_width,
     })
 }
 

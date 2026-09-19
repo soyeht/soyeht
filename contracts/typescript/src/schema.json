@@ -248,6 +248,22 @@
       ],
       "additionalProperties": true
     },
+    "WorkspacePaneLayoutCompanion": {
+      "type": "object",
+      "properties": {
+        "writingPaneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "agentPaneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "writingPaneId",
+        "agentPaneId"
+      ],
+      "additionalProperties": true
+    },
     "WorkspacePaneLayoutSplit": {
       "type": "object",
       "properties": {
@@ -259,6 +275,9 @@
           "items": {
             "$ref": "#/$defs/WorkspacePaneLayoutBranch"
           }
+        },
+        "companion": {
+          "$ref": "#/$defs/WorkspacePaneLayoutCompanion"
         }
       },
       "required": [
@@ -283,7 +302,7 @@
         "version": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 1
+          "maximum": 2
         },
         "mode": {
           "$ref": "#/$defs/WorkspacePaneLayoutMode"
@@ -9776,6 +9795,9 @@
         },
         "focusMode": {
           "type": "boolean"
+        },
+        "fullWidth": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -9784,7 +9806,8 @@
         "section",
         "sidecarRevision",
         "font",
-        "focusMode"
+        "focusMode",
+        "fullWidth"
       ],
       "additionalProperties": true
     },
@@ -10356,6 +10379,9 @@
           "$ref": "#/$defs/WritingFont"
         },
         "focusMode": {
+          "type": "boolean"
+        },
+        "fullWidth": {
           "type": "boolean"
         },
         "idempotencyKey": {

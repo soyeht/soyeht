@@ -117,6 +117,14 @@
     }
   },
   {
+    "name": "WorkspacePaneLayoutCompanion",
+    "type": "WorkspacePaneLayoutCompanion",
+    "value": {
+      "writingPaneId": "00000000-0000-4000-8000-000000000001",
+      "agentPaneId": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
     "name": "WorkspacePaneLayoutSplit",
     "type": "WorkspacePaneLayoutSplit",
     "value": {
@@ -144,7 +152,7 @@
     "name": "WorkspacePaneLayoutEnvelope",
     "type": "WorkspacePaneLayoutEnvelope",
     "value": {
-      "version": 1,
+      "version": 2,
       "mode": "custom",
       "tree": {
         "paneId": "00000000-0000-4000-8000-000000000001",
@@ -9557,7 +9565,8 @@
       "section": "texts",
       "sidecarRevision": "1",
       "font": "reading_serif",
-      "focusMode": false
+      "focusMode": false,
+      "fullWidth": false
     }
   },
   {
@@ -9736,7 +9745,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "pane": {
         "paneId": "writing-pane-1",
@@ -9826,7 +9836,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "pane": {
         "paneId": "writing-pane-1",
@@ -9914,7 +9925,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "slides": [
         {
@@ -10068,6 +10080,7 @@
       "baseRevision": "1",
       "font": "classic_serif",
       "focusMode": true,
+      "fullWidth": false,
       "idempotencyKey": "writing-prefs-1"
     }
   },
@@ -10094,7 +10107,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "classic_serif",
-        "focusMode": true
+        "focusMode": true,
+        "fullWidth": false
       }
     }
   },
@@ -10174,7 +10188,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "variants": {
         "lineId": "line-1",
@@ -10279,7 +10294,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "beat": {
         "beatId": "beat-1",
@@ -10381,7 +10397,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "pane": {
           "paneId": "writing-pane-1",
@@ -10480,7 +10497,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "pane": {
           "paneId": "writing-pane-1",
@@ -10577,7 +10595,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "slides": [
           {
@@ -10759,6 +10778,7 @@
         "baseRevision": "1",
         "font": "classic_serif",
         "focusMode": true,
+        "fullWidth": false,
         "idempotencyKey": "writing-prefs-1"
       }
     }
@@ -10789,7 +10809,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "classic_serif",
-          "focusMode": true
+          "focusMode": true,
+          "fullWidth": false
         }
       }
     }
@@ -10865,7 +10886,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "variants": {
           "lineId": "line-1",
@@ -10941,7 +10963,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "variants": {
           "lineId": "line-1",
@@ -11017,7 +11040,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "variants": {
           "lineId": "line-1",
@@ -11130,7 +11154,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "beat": {
           "beatId": "beat-1",
@@ -11184,7 +11209,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "beat": {
           "beatId": "beat-1",

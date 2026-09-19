@@ -117,7 +117,7 @@ private func screenplayStructure() -> WritingStructureResult {
       diskRevision: "4", lineCount: 6, byteCount: "90", dirty: false,
       conflicted: false, watching: true),
     kind: .screenplay, section: .screenplays, sidecarRevision: "2",
-    font: .sans, focusMode: false)
+    font: .sans, focusMode: false, fullWidth: false)
   return WritingStructureResult(
     document: document, slides: [],
     scenes: [

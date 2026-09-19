@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
+// Generated from contracts/protocol.json (sha256 65a5d24b582dfacd7996d517136102539055dd167f0acfe8e38d18bddc2c0900). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -23,6 +23,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "WorkspacePaneLayoutAxis": return try codec(SoyehtProtocol.WorkspacePaneLayoutAxis.self, data)
         case "WorkspacePaneLayoutLeaf": return try codec(SoyehtProtocol.WorkspacePaneLayoutLeaf.self, data)
         case "WorkspacePaneLayoutBranch": return try codec(SoyehtProtocol.WorkspacePaneLayoutBranch.self, data)
+        case "WorkspacePaneLayoutCompanion": return try codec(SoyehtProtocol.WorkspacePaneLayoutCompanion.self, data)
         case "WorkspacePaneLayoutSplit": return try codec(SoyehtProtocol.WorkspacePaneLayoutSplit.self, data)
         case "WorkspacePaneLayoutNode": return try codec(SoyehtProtocol.WorkspacePaneLayoutNode.self, data)
         case "WorkspacePaneLayoutEnvelope": return try codec(SoyehtProtocol.WorkspacePaneLayoutEnvelope.self, data)
