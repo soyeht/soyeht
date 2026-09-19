@@ -40,6 +40,11 @@ public enum PaneLayoutContentMetrics {
   public static let paneCardInset = 10.0
   public static let paneStackSpacing = 8.0
 
+  /// Common writing chrome introduced by the responsive writing policy.
+  public static let writingHeaderHeight = 42.0
+  public static let writingRailDividerWidth = 1.0
+  public static let companionTabStripHeight = 36.0
+
   public static let genericPaneHeaderHeight = 26.0
   public static let terminalFontPointSize = 13.0
   public static let terminalStateVerticalInset = 7.0
@@ -71,6 +76,8 @@ public enum PaneLayoutContentMetrics {
   public static let textToolbarHeight = 42.0
   public static let textReviewHeight = editorReviewHeight
   public static let textPageInset = 16.0
+  public static let textReadingCharacters = 66.0
+  public static let textCompactLines = 6.0
 
   public static let screenplayFontPointSize = 16.0
   public static let screenplayLineHeight = 27.0
@@ -78,10 +85,15 @@ public enum PaneLayoutContentMetrics {
   public static let screenplayHeaderHeight = 42.0
   public static let screenplayToolbarHeight = 60.0
   public static let screenplaySmartTypeHeight = 34.0
+  public static let screenplayPageRatio = 11.0 / 8.5
+  public static let screenplayMinimumScale = 7.5 / screenplayFontPointSize
+  public static let screenplaySceneRailWidth = 330.0
 
   public static let presentationHeaderHeight = 42.0
   public static let presentationNumericRailHeight = 32.0
   public static let presentationStage = PaneLayoutSize(width: 320, height: 180)
+  public static let presentationMaximumStage = PaneLayoutSize(width: 1024, height: 576)
+  public static let presentationThumbnailRailWidth = 236.0
   public static let presentationFooterHeight = 28.0
 
   public static let newPaneHeaderHeight = genericPaneHeaderHeight
