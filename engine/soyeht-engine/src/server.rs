@@ -29,6 +29,8 @@ use tokio::{
 
 type Shared = Arc<Mutex<Core>>;
 
+const WRITING_SECTION_LIST_TIMEOUT: Duration = Duration::from_secs(5);
+
 fn lock_core(shared: &Shared) -> crate::errors::Result<std::sync::MutexGuard<'_, Core>> {
     shared.lock().map_err(|_| Error::EngineStatePoisoned)
 }
@@ -374,6 +376,7 @@ async fn read_requests(
                 .dispatch(&connection, request)
         })
         .await;
+        let outcome = resolve_deferred_outcome(Arc::clone(&core), outcome).await;
         log_operation(
             &operation_id,
             id,
@@ -418,6 +421,7 @@ async fn read_requests(
                     return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
                 }
             }
+            Ok(Ok(Outcome::WritingSectionList(_))) => return CloseReason::WorkerFailed,
             Ok(Err(error)) if failed_handshake => {
                 let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
                     return CloseReason::WorkerFailed;
@@ -435,6 +439,45 @@ async fn read_requests(
             }
             Err(_) => return CloseReason::WorkerFailed,
         }
+    }
+}
+
+async fn resolve_deferred_outcome(
+    core: Shared,
+    outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+) -> std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError> {
+    let Ok(Ok(Outcome::WritingSectionList(prepared))) = outcome else {
+        return outcome;
+    };
+    let scanned = match spawn_blocking_with_timeout(
+        WRITING_SECTION_LIST_TIMEOUT,
+        move || prepared.scan(),
+        "Writing section listing timed out",
+    )
+    .await?
+    {
+        Ok(scanned) => scanned,
+        Err(error) => return Ok(Err(error)),
+    };
+    tokio::task::spawn_blocking(move || {
+        let core = core.lock().map_err(|_| Error::EngineStatePoisoned)?;
+        scanned.finish(&core).map(Outcome::Reply)
+    })
+    .await
+}
+
+async fn spawn_blocking_with_timeout<T, F>(
+    timeout: Duration,
+    operation: F,
+    timeout_message: &'static str,
+) -> std::result::Result<crate::errors::Result<T>, tokio::task::JoinError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> crate::errors::Result<T> + Send + 'static,
+{
+    match tokio::time::timeout(timeout, tokio::task::spawn_blocking(operation)).await {
+        Ok(result) => result,
+        Err(_) => Ok(Err(errors::internal(timeout_message))),
     }
 }
 
@@ -468,6 +511,7 @@ fn log_operation(
 ) {
     let (status, kind) = match outcome {
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
+        Ok(Ok(Outcome::WritingSectionList(_))) => ("worker_failed", None),
         Ok(Ok(Outcome::Attachment { .. })) => ("attachment", None),
         Ok(Ok(Outcome::Queued)) => ("queued", None),
         Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
@@ -537,6 +581,25 @@ fn operation_pane_id<'a>(method: &str, request: &'a Value) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn blocking_request_timeout_returns_an_error_instead_of_waiting_forever() {
+        let result = spawn_blocking_with_timeout(
+            Duration::from_millis(5),
+            || {
+                std::thread::sleep(Duration::from_millis(50));
+                Ok(())
+            },
+            "bounded work timed out",
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            result,
+            Err(Error::Internal(message)) if message == "bounded work timed out"
+        ));
+    }
+
     #[test]
     fn operation_log_keeps_identity_but_never_unknown_method_text() {
         let operation = uuid::Uuid::new_v4().to_string();

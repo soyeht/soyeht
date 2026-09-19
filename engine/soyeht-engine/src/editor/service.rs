@@ -748,7 +748,7 @@ fn contained_path(root: &Path, target: PathBuf) -> Result<ResolvedPath> {
     })
 }
 
-fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile>> {
+pub(crate) fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile>> {
     let root = fs::canonicalize(root)?;
     let mut builder = ignore::WalkBuilder::new(&root);
     builder

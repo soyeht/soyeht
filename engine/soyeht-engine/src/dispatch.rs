@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 pub enum Outcome {
     Reply(Value),
+    WritingSectionList(crate::writing::PreparedWritingSectionList),
     Attachment {
         result: Value,
         reference: AttachmentRef,
@@ -380,6 +381,11 @@ impl Core {
             "file.format" => return self.language_format(connection, request_id, params),
             "file.diagnostics" | "file.diff" => self.file_inspection(method, params)?,
             "writing.asset.read" => return self.writing_asset_read(params),
+            "writing.section.list" => {
+                return self
+                    .prepare_writing_section_list(params)
+                    .map(Outcome::WritingSectionList);
+            }
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
                 self.document_request(connection, method, params, writing_image)?
             }

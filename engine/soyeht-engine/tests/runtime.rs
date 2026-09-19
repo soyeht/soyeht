@@ -140,6 +140,43 @@ struct Rig {
 }
 
 #[test]
+fn writing_section_listing_ignores_protected_workspace_siblings() {
+    let rig = Rig::new();
+    fs::create_dir_all(rig.path.join("Writing/Texts/Research")).unwrap();
+    fs::write(
+        rig.path.join("Writing/Texts/Research/notes.md"),
+        "# Notes\n",
+    )
+    .unwrap();
+    let protected = rig.path.join("Pictures/Photos Library.photoslibrary");
+    fs::create_dir_all(&protected).unwrap();
+    fs::write(protected.join("private.md"), "private\n").unwrap();
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Scoped writing","path":rig.path,"idempotencyKey":"scoped-writing"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let listed = client.request(
+        "writing.section.list",
+        json!({"workspaceId":workspace,"section":"texts","limit":50}),
+    );
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o700)).unwrap();
+
+    assert!(listed.get("error").is_none(), "{listed}");
+    assert_eq!(listed["result"]["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        listed["result"]["entries"][0]["path"],
+        "Writing/Texts/Research/notes.md"
+    );
+    assert!(client.call("engine.status", json!({}))["version"].is_string());
+}
+
+#[test]
 fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
     let mut rig = Rig::new();
     fs::create_dir_all(rig.path.join("Writing/Texts")).unwrap();
