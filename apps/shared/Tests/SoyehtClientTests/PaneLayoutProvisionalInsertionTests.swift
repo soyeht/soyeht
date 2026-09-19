@@ -29,7 +29,9 @@ private let provisionalSizing = PaneLayoutSizingPolicy(
 
   #expect(preview.paneIdsInCanonicalOrder == ["editor", "terminal", "placeholder"])
   #expect(completed.paneIdsInCanonicalOrder == ["editor", "terminal", "created"])
-  #expect(provisionalShape(preview, replacing: "placeholder") == provisionalShape(completed, replacing: "created"))
+  #expect(
+    provisionalShape(preview, replacing: "placeholder")
+      == provisionalShape(completed, replacing: "created"))
 }
 
 @Test func globalPreviewUsesTheCurrentArrangementRuleAndKeepsItsBaseFrozen() throws {
@@ -50,7 +52,9 @@ private let provisionalSizing = PaneLayoutSizingPolicy(
     with: PaneLayoutLeaf(paneId: "created", kind: .agent), sizing: provisionalSizing)
 
   #expect(preview.paneIdsInCanonicalOrder == ["editor", "terminal", "placeholder"])
-  #expect(provisionalShape(preview, replacing: "placeholder") == provisionalShape(completed, replacing: "created"))
+  #expect(
+    provisionalShape(preview, replacing: "placeholder")
+      == provisionalShape(completed, replacing: "created"))
   #expect(insertion.baseTree == base)
 }
 
@@ -60,7 +64,9 @@ private let provisionalSizing = PaneLayoutSizingPolicy(
     placeholder: PaneLayoutLeaf(paneId: "placeholder", kind: .terminal),
     placement: .arranged(rule: .initialByType))
 
-  #expect(try insertion.previewTree(sizing: provisionalSizing) == provisionalLeaf("placeholder", .terminal))
+  #expect(
+    try insertion.previewTree(sizing: provisionalSizing)
+      == provisionalLeaf("placeholder", .terminal))
   #expect(
     try insertion.completedTree(
       with: PaneLayoutLeaf(paneId: "created", kind: .terminal), sizing: provisionalSizing)
@@ -103,8 +109,12 @@ private func provisionalLeaf(_ id: String, _ kind: PaneLayoutKind) -> PaneLayout
 private func provisionalShape(_ tree: PaneLayoutTree, replacing paneId: String) -> String {
   switch tree {
   case .leaf(let leaf):
-    return leaf.paneId == paneId ? "leaf:new:\(leaf.kind.rawValue)" : "leaf:\(leaf.paneId):\(leaf.kind.rawValue)"
+    return leaf.paneId == paneId
+      ? "leaf:new:\(leaf.kind.rawValue)" : "leaf:\(leaf.paneId):\(leaf.kind.rawValue)"
   case .split(let split):
-    return "\(split.axis.rawValue)[\(split.children.map { "\($0.weight):\(provisionalShape($0.tree, replacing: paneId))" }.joined(separator: ","))]"
+    let branches = split.children.map {
+      "\($0.weight):\(provisionalShape($0.tree, replacing: paneId))"
+    }
+    return "\(split.axis.rawValue)[\(branches.joined(separator: ","))]"
   }
 }

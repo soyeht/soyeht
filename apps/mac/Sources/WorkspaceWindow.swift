@@ -2035,89 +2035,89 @@ private struct NewPaneSheet: View {
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
             .frame(height: PaneLayoutContentMetrics.newPaneHeadingHeight)
           VStack(spacing: 0) {
-          if mode == .agent {
-            ZStack(alignment: .topLeading) {
-              TextField("", text: $prompt, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-                .font(MacTheme.chrome(MacTheme.TypeScale.body))
-                .foregroundStyle(MacTheme.ink)
-                .focused($promptFocused)
-                .padding(.trailing, 54)
-                .accessibilityLabel("Ask anything")
-                .accessibilityHint("Type the first message for the new agent")
-              if prompt.isEmpty {
-                Text("Ask anything. Choose a directory and an agent below.")
-                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
-                  .foregroundStyle(MacTheme.muted)
-                  .allowsHitTesting(false)
-              }
-              HStack {
-                Spacer()
-                Button("⌘⇧C") { promptFocused = true }
-                  .buttonStyle(.plain)
-                  .keyboardShortcut("c", modifiers: [.command, .shift])
-                  .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
-                  .foregroundStyle(MacTheme.muted)
-                  .accessibilityLabel("Focus new agent message")
-              }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { promptFocused = true }
-          } else {
-            HStack(alignment: .top) {
-              Text("Open a terminal in the directory selected below.")
-                .font(MacTheme.chrome(MacTheme.TypeScale.body))
-                .foregroundStyle(MacTheme.muted)
-              Spacer()
-            }
-            Spacer()
-          }
-          HStack(spacing: MacTheme.Space.x8) {
-            Button(action: chooseDirectory) {
-              Image(systemName: "plus").font(.system(size: 16))
-            }.help("Choose a directory")
             if mode == .agent {
-              Button {
-                showsAgentPicker.toggle()
-              } label: {
-                HStack(spacing: MacTheme.Space.x6) {
-                  Image(systemName: "cpu")
-                  Text(selectedAgentLabel)
-                    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-                  if !effort.isEmpty {
-                    Text("·").foregroundStyle(MacTheme.muted)
-                    Text(effort.capitalized)
-                      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-                      .foregroundStyle(MacTheme.secondary)
-                  }
-                  Image(systemName: "chevron.down").font(.system(size: 10))
+              ZStack(alignment: .topLeading) {
+                TextField("", text: $prompt, axis: .vertical)
+                  .textFieldStyle(.plain)
+                  .lineLimit(1...4)
+                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .foregroundStyle(MacTheme.ink)
+                  .focused($promptFocused)
+                  .padding(.trailing, 54)
+                  .accessibilityLabel("Ask anything")
+                  .accessibilityHint("Type the first message for the new agent")
+                if prompt.isEmpty {
+                  Text("Ask anything. Choose a directory and an agent below.")
+                    .font(MacTheme.chrome(MacTheme.TypeScale.body))
                     .foregroundStyle(MacTheme.muted)
+                    .allowsHitTesting(false)
+                }
+                HStack {
+                  Spacer()
+                  Button("⌘⇧C") { promptFocused = true }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+                    .foregroundStyle(MacTheme.muted)
+                    .accessibilityLabel("Focus new agent message")
                 }
               }
-              .popover(isPresented: $showsAgentPicker, arrowEdge: .bottom) { agentPicker }
+              .contentShape(Rectangle())
+              .onTapGesture { promptFocused = true }
             } else {
-              Button(action: create) {
-                Text("Terminal")
-                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+              HStack(alignment: .top) {
+                Text("Open a terminal in the directory selected below.")
+                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .foregroundStyle(MacTheme.muted)
+                Spacer()
               }
-              .buttonStyle(.plain)
-              .disabled(directory == nil || submitting)
-              .accessibilityHint("Open a terminal in the selected directory")
+              Spacer()
             }
-            Spacer()
-            Button(action: create) {
-              Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold))
-                .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
-                .neoAccent(radius: MacTheme.Radius.pill)
+            HStack(spacing: MacTheme.Space.x8) {
+              Button(action: chooseDirectory) {
+                Image(systemName: "plus").font(.system(size: 16))
+              }.help("Choose a directory")
+              if mode == .agent {
+                Button {
+                  showsAgentPicker.toggle()
+                } label: {
+                  HStack(spacing: MacTheme.Space.x6) {
+                    Image(systemName: "cpu")
+                    Text(selectedAgentLabel)
+                      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                    if !effort.isEmpty {
+                      Text("·").foregroundStyle(MacTheme.muted)
+                      Text(effort.capitalized)
+                        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+                        .foregroundStyle(MacTheme.secondary)
+                    }
+                    Image(systemName: "chevron.down").font(.system(size: 10))
+                      .foregroundStyle(MacTheme.muted)
+                  }
+                }
+                .popover(isPresented: $showsAgentPicker, arrowEdge: .bottom) { agentPicker }
+              } else {
+                Button(action: create) {
+                  Text("Terminal")
+                    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(directory == nil || submitting)
+                .accessibilityHint("Open a terminal in the selected directory")
+              }
+              Spacer()
+              Button(action: create) {
+                Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold))
+                  .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
+                  .neoAccent(radius: MacTheme.Radius.pill)
+              }
+              .disabled(
+                directory == nil || (mode == .agent && selectedHarness?.available != true)
+                  || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
+              )
+              .keyboardShortcut(.return, modifiers: [.command, .shift])
             }
-            .disabled(
-              directory == nil || (mode == .agent && selectedHarness?.available != true)
-                || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
-            )
-            .keyboardShortcut(.return, modifiers: [.command, .shift])
           }
-        }
           .padding(EdgeInsets(top: 14, leading: 16, bottom: 12, trailing: 16))
           .frame(maxWidth: .infinity)
           .frame(height: PaneLayoutContentMetrics.newPaneFormHeight)
