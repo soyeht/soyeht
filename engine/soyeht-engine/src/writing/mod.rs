@@ -8,6 +8,8 @@ mod formatting;
 mod structure;
 mod variants;
 
+pub use structure::PreparedWritingSectionList;
+
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
 
@@ -72,7 +74,6 @@ impl Core {
         writing_image: Option<attachments::WritingImageAttachment>,
     ) -> Result<Value> {
         match method {
-            "writing.section.list" => self.writing_section_list(params),
             "writing.document.create" => self.writing_document_create(connection, params),
             "writing.document.open" => self.writing_document_open(connection, params),
             "writing.structure" => self.writing_structure(connection, params),

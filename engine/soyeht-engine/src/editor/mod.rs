@@ -6,8 +6,8 @@ mod persistence;
 mod search;
 mod service;
 
-pub(crate) use service::language;
 pub use service::{FileSystemPort, Service, SystemFiles};
+pub(crate) use service::{ProjectFile, enumerate_project_files, language};
 
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
