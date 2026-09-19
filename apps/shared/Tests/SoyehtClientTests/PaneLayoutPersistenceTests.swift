@@ -100,6 +100,46 @@ import Testing
   #expect(PaneLayoutState(workspaceLayout: try state.encodedWorkspaceLayout()) == state)
 }
 
+@Test func companionRequiresExactlyTwoDirectLeafChildren() {
+  let companion: JsonValue = .object([
+    "writingPaneId": .string("writing"), "agentPaneId": .string("agent"),
+  ])
+  let writing: JsonValue = .object(["paneId": .string("writing"), "kind": .string("text")])
+  let agent: JsonValue = .object(["paneId": .string("agent"), "kind": .string("agent")])
+  let terminal: JsonValue = .object([
+    "paneId": .string("terminal"), "kind": .string("terminal"),
+  ])
+  let branch: (JsonValue) -> JsonValue = { node in
+    .object(["weight": .integer(1), "node": node])
+  }
+  let extraChild: JsonValue = .object([
+    "version": .integer(2), "mode": .string("custom"),
+    "tree": .object([
+      "axis": .string("horizontal"),
+      "children": .array([branch(writing), branch(agent), branch(terminal)]),
+      "companion": companion,
+    ]),
+  ])
+  let nestedMember: JsonValue = .object([
+    "version": .integer(2), "mode": .string("custom"),
+    "tree": .object([
+      "axis": .string("horizontal"),
+      "children": .array([
+        branch(writing),
+        branch(
+          .object([
+            "axis": .string("vertical"),
+            "children": .array([branch(agent), branch(terminal)]),
+          ])),
+      ]),
+      "companion": companion,
+    ]),
+  ])
+
+  #expect(PaneLayoutState(workspaceLayout: extraChild).tree == nil)
+  #expect(PaneLayoutState(workspaceLayout: nestedMember).tree == nil)
+}
+
 @Test func invalidPersistedTreeFallsBackToAutomaticLayout() {
   let duplicate = JsonValue.object([
     "version": .integer(1),

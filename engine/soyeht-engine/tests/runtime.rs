@@ -207,6 +207,31 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
         json!({"workspaceId":workspace,"path":"Writing/Presentations/review.md","kind":"presentation","idempotencyKey":"open-presentation"}),
     );
     let slides_file = slides["document"]["file"]["fileId"].clone();
+    let screenplay = client.call(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"screenplays","title":"No Full Width",
+            "idempotencyKey":"create-no-full-width-screenplay"
+        }),
+    );
+    let screenplay_file = screenplay["document"]["file"]["fileId"].clone();
+    for (file_id, key) in [
+        (slides_file.clone(), "presentation-full-width"),
+        (screenplay_file, "screenplay-full-width"),
+    ] {
+        let refused = client.request(
+            "writing.preferences.set",
+            json!({
+                "fileId":file_id,"baseRevision":"1","fullWidth":true,
+                "idempotencyKey":key
+            }),
+        );
+        assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+        assert_eq!(
+            refused["error"]["message"],
+            "Full width is available only for text documents"
+        );
+    }
     let structure = client.call(
         "writing.structure",
         json!({"fileId":slides_file,"revision":"1"}),

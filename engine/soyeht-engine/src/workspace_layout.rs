@@ -208,7 +208,7 @@ fn validate_node(
                 descendants.extend(validate_node(&branch.node, panes, seen, paired)?);
             }
             if let Some(companion) = &split.companion {
-                validate_companion(companion, &descendants, panes, paired)?;
+                validate_companion(companion, split, &descendants, panes, paired)?;
             }
             Ok(descendants)
         }
@@ -217,6 +217,7 @@ fn validate_node(
 
 fn validate_companion(
     companion: &WorkspacePaneLayoutCompanion,
+    split: &WorkspacePaneLayoutSplit,
     descendants: &BTreeSet<String>,
     panes: &BTreeMap<String, Pane>,
     paired: &mut BTreeSet<String>,
@@ -250,6 +251,19 @@ fn validate_companion(
     }
     if members.iter().any(|pane_id| paired.contains(pane_id)) {
         return Err("A pane cannot belong to more than one writing companion".into());
+    }
+    let direct_members = split
+        .children
+        .iter()
+        .map(|branch| match &branch.node {
+            WorkspacePaneLayoutNode::V0(leaf) => Some(leaf.pane_id.clone()),
+            WorkspacePaneLayoutNode::V1(_) => None,
+        })
+        .collect::<Option<BTreeSet<_>>>();
+    if split.children.len() != 2 || direct_members.as_ref() != Some(&members) {
+        return Err(
+            "A writing companion must annotate exactly its two direct leaf children".into(),
+        );
     }
     paired.extend(members);
     Ok(())
@@ -466,6 +480,47 @@ mod tests {
         assert_eq!(
             validate("workspace", &outside, [writing, terminal, agent]).unwrap_err(),
             "A writing companion must stay inside its annotated subtree"
+        );
+    }
+
+    #[test]
+    fn companion_validation_requires_exactly_two_direct_leaf_children() {
+        let writing = pane_as("writing", PaneMode::Writing, Some(WritingKind::Text));
+        let agent = pane_as("agent", PaneMode::Agent, None);
+        let terminal = pane("terminal");
+        let extra_child: WorkspacePaneLayoutEnvelope = serde_json::from_value(json!({
+            "version":2,"mode":"custom",
+            "tree":{"axis":"horizontal","children":[
+                {"weight":1,"node":{"paneId":"writing","kind":"text"}},
+                {"weight":1,"node":{"paneId":"agent","kind":"agent"}},
+                {"weight":1,"node":{"paneId":"terminal","kind":"terminal"}}
+            ],"companion":{"writingPaneId":"writing","agentPaneId":"agent"}}
+        }))
+        .unwrap();
+        assert_eq!(
+            validate(
+                "workspace",
+                &extra_child,
+                [writing.clone(), agent.clone(), terminal.clone()]
+            )
+            .unwrap_err(),
+            "A writing companion must annotate exactly its two direct leaf children"
+        );
+
+        let nested_member: WorkspacePaneLayoutEnvelope = serde_json::from_value(json!({
+            "version":2,"mode":"custom",
+            "tree":{"axis":"horizontal","children":[
+                {"weight":1,"node":{"paneId":"writing","kind":"text"}},
+                {"weight":1,"node":{"axis":"vertical","children":[
+                    {"weight":1,"node":{"paneId":"agent","kind":"agent"}},
+                    {"weight":1,"node":{"paneId":"terminal","kind":"terminal"}}
+                ]}}
+            ],"companion":{"writingPaneId":"writing","agentPaneId":"agent"}}
+        }))
+        .unwrap();
+        assert_eq!(
+            validate("workspace", &nested_member, [writing, agent, terminal]).unwrap_err(),
+            "A writing companion must annotate exactly its two direct leaf children"
         );
     }
 

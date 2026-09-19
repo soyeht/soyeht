@@ -267,6 +267,11 @@ impl Core {
         let file = self.editor.stored(&request.file_id)?.clone();
         require_revision(&request.base_revision, file.revision)?;
         let mut record = self.writing_record(&file.file_id)?;
+        if request.full_width == Some(true) && record.kind != WritingKind::Text {
+            return Err(errors::invalid(
+                "Full width is available only for text documents",
+            ));
+        }
         if let Some(font) = request.font {
             record.font = font;
         }

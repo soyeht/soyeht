@@ -155,6 +155,12 @@ extension PaneLayoutTree {
       let members = Set([companion.writingPaneId, companion.agentPaneId])
       guard members.count == 2, members.isSubset(of: descendants), paired.isDisjoint(with: members)
       else { return false }
+      let directMembers = split.children.compactMap { child -> String? in
+        guard case .leaf(let leaf) = child.tree else { return nil }
+        return leaf.paneId
+      }
+      guard split.children.count == 2, directMembers.count == 2, Set(directMembers) == members
+      else { return false }
       guard
         leaves.first(where: { $0.paneId == companion.writingPaneId }).map({
           [.text, .presentation, .screenplay].contains($0.kind)
