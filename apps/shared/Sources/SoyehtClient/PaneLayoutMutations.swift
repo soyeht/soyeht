@@ -170,7 +170,8 @@ public enum PaneLayoutTreeMutation {
       var children = current.children
       children[dividerIndex].weight += weightDelta
       children[dividerIndex + 1].weight -= weightDelta
-      return PaneLayoutSplit(axis: current.axis, children: children)
+      return PaneLayoutSplit(
+        axis: current.axis, children: children, companion: current.companion)
     }
   }
 
@@ -208,7 +209,8 @@ public enum PaneLayoutTreeMutation {
         axis: split.axis,
         children: zip(split.children, weights).map {
           PaneLayoutBranch(weight: $0.1, tree: $0.0.tree)
-        })
+        },
+        companion: split.companion)
     }
   }
 
@@ -260,7 +262,12 @@ extension PaneLayoutTree {
         let result = children[index].tree.replacingLeaf(withId: paneId, transform: transform)
         guard result.replaced else { continue }
         children[index].tree = result.tree
-        return (.split(PaneLayoutSplit(axis: split.axis, children: children)), true)
+        return (
+          .split(
+            PaneLayoutSplit(
+              axis: split.axis, children: children, companion: split.companion)),
+          true
+        )
       }
       return (self, false)
     }
@@ -278,7 +285,8 @@ extension PaneLayoutTree {
           axis: split.axis,
           children: split.children.map {
             PaneLayoutBranch(weight: $0.weight, tree: $0.tree.mappingLeaves(transform))
-          }))
+          },
+          companion: split.companion))
     }
   }
 
@@ -325,6 +333,7 @@ extension PaneLayoutTree {
     var children = split.children
     children[first].tree = try children[first].tree.updatingSplit(
       remainingPath: remainingPath.dropFirst(), originalPath: originalPath, transform: transform)
-    return .split(PaneLayoutSplit(axis: split.axis, children: children))
+    return .split(
+      PaneLayoutSplit(axis: split.axis, children: children, companion: split.companion))
   }
 }

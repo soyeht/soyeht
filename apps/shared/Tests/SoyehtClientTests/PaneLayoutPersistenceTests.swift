@@ -45,7 +45,59 @@ import Testing
 
   #expect(restored == state)
   #expect(restored.insertionRule == .preservingUserArrangement)
-  #expect(try encoded.decoded(WorkspacePaneLayoutEnvelope.self).version == 1)
+  #expect(try encoded.decoded(WorkspacePaneLayoutEnvelope.self).version == 2)
+}
+
+@Test func versionOnePreservesItsTreeAndMigratesWithZeroCompanions() throws {
+  let versionOne = JsonValue.object([
+    "version": .integer(1),
+    "mode": .string("custom"),
+    "tree": .object([
+      "axis": .string("horizontal"),
+      "children": .array([
+        .object([
+          "weight": .integer(2),
+          "node": .object(["paneId": .string("writing"), "kind": .string("text")]),
+        ]),
+        .object([
+          "weight": .integer(1),
+          "node": .object(["paneId": .string("agent"), "kind": .string("agent")]),
+        ]),
+      ]),
+      "companion": .object([
+        "writingPaneId": .string("writing"), "agentPaneId": .string("agent"),
+      ]),
+    ]),
+  ])
+
+  let state = PaneLayoutState(workspaceLayout: versionOne)
+  let encoded = try state.encodedWorkspaceLayout()
+  let envelope = try encoded.decoded(WorkspacePaneLayoutEnvelope.self)
+
+  #expect(envelope.version == 2)
+  #expect(state.tree?.paneIdsInCanonicalOrder == ["writing", "agent"])
+  guard case .split(let split) = state.tree else {
+    Issue.record("The v1 tree did not survive migration")
+    return
+  }
+  #expect(split.children.map(\.weight) == [2, 1])
+  #expect(split.companion == nil)
+}
+
+@Test func versionTwoRoundTripsAnExplicitCompanionOnItsSubtree() throws {
+  let companion = PaneLayoutCompanion(writingPaneId: "writing", agentPaneId: "agent")
+  let state = PaneLayoutState(
+    tree: .split(
+      PaneLayoutSplit(
+        axis: .horizontal,
+        children: [
+          PaneLayoutBranch(tree: .leaf(PaneLayoutLeaf(paneId: "writing", kind: .text))),
+          PaneLayoutBranch(tree: .leaf(PaneLayoutLeaf(paneId: "agent", kind: .agent))),
+        ],
+        companion: companion)),
+    mode: .custom)
+
+  #expect(PaneLayoutState(workspaceLayout: try state.encodedWorkspaceLayout()) == state)
 }
 
 @Test func invalidPersistedTreeFallsBackToAutomaticLayout() {

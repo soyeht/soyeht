@@ -82,13 +82,35 @@ public struct PaneLayoutBranch: Equatable, Sendable {
   }
 }
 
+public struct PaneLayoutCompanion: Equatable, Sendable {
+  public var writingPaneId: String
+  public var agentPaneId: String
+
+  public init(writingPaneId: String, agentPaneId: String) {
+    self.writingPaneId = writingPaneId
+    self.agentPaneId = agentPaneId
+  }
+}
+
 public struct PaneLayoutSplit: Equatable, Sendable {
   public var axis: PaneLayoutAxis
   public var children: [PaneLayoutBranch]
+  public var companion: PaneLayoutCompanion?
 
-  public init(axis: PaneLayoutAxis, children: [PaneLayoutBranch]) {
+  public init(
+    axis: PaneLayoutAxis, children: [PaneLayoutBranch],
+    companion: PaneLayoutCompanion? = nil
+  ) {
     self.axis = axis
     self.children = children
+    self.companion = companion
+  }
+}
+
+extension PaneLayoutCompanion {
+  fileprivate func retained(in branches: [PaneLayoutBranch]) -> Self? {
+    let paneIds = Set(branches.flatMap { $0.tree.paneIdsInCanonicalOrder })
+    return paneIds.contains(writingPaneId) && paneIds.contains(agentPaneId) ? self : nil
   }
 }
 
@@ -124,9 +146,12 @@ public indirect enum PaneLayoutTree: Equatable, Sendable {
       case 1:
         return remaining[0].tree
       default:
-        return PaneLayoutTree.split(
-          PaneLayoutSplit(axis: split.axis, children: remaining)
-        ).normalized()
+        let remainingTree = PaneLayoutTree.split(
+          PaneLayoutSplit(
+            axis: split.axis, children: remaining,
+            companion: split.companion?.retained(in: remaining))
+        )
+        return remainingTree.normalized()
       }
     }
   }
@@ -146,7 +171,12 @@ public indirect enum PaneLayoutTree: Equatable, Sendable {
           with: role, transform: transform)
         guard result.replaced else { continue }
         children[index].tree = result.tree
-        return (.split(PaneLayoutSplit(axis: split.axis, children: children)), true)
+        return (
+          .split(
+            PaneLayoutSplit(
+              axis: split.axis, children: children, companion: split.companion)),
+          true
+        )
       }
       return (self, false)
     }
@@ -158,10 +188,21 @@ public indirect enum PaneLayoutTree: Equatable, Sendable {
     case .leaf:
       return self
     case .split(let split):
+      if split.companion != nil {
+        return .split(
+          PaneLayoutSplit(
+            axis: split.axis,
+            children: split.children.map {
+              PaneLayoutBranch(weight: $0.weight, tree: $0.tree.normalized())
+            },
+            companion: split.companion))
+      }
       var flattened: [PaneLayoutBranch] = []
       for branch in split.children {
         let child = branch.tree.normalized()
-        guard case .split(let childSplit) = child, childSplit.axis == split.axis else {
+        guard case .split(let childSplit) = child, childSplit.axis == split.axis,
+          childSplit.companion == nil
+        else {
           flattened.append(PaneLayoutBranch(weight: branch.weight, tree: child))
           continue
         }
@@ -250,7 +291,9 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
     case .split(let split):
       let children = try split.children.map { try reweighting($0.tree) }
       return .split(
-        PaneLayoutSplit(axis: split.axis, children: try branches(for: children, along: split.axis)))
+        PaneLayoutSplit(
+          axis: split.axis, children: try branches(for: children, along: split.axis),
+          companion: split.companion))
     }
   }
 

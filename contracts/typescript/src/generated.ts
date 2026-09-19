@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
+// Generated from contracts/protocol.json (sha256 65a5d24b582dfacd7996d517136102539055dd167f0acfe8e38d18bddc2c0900). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -56,9 +56,15 @@ export interface WorkspacePaneLayoutBranch {
   "node": WorkspacePaneLayoutNode;
 }
 
+export interface WorkspacePaneLayoutCompanion {
+  "writingPaneId": Id;
+  "agentPaneId": Id;
+}
+
 export interface WorkspacePaneLayoutSplit {
   "axis": WorkspacePaneLayoutAxis;
   "children": Array<WorkspacePaneLayoutBranch>;
+  "companion"?: WorkspacePaneLayoutCompanion;
 }
 
 export type WorkspacePaneLayoutNode = WorkspacePaneLayoutLeaf | WorkspacePaneLayoutSplit;
@@ -2701,6 +2707,7 @@ export interface WritingDocument {
   "sidecarRevision": Decimal;
   "font": WritingFont;
   "focusMode": boolean;
+  "fullWidth": boolean;
 }
 
 export interface WritingSectionEntry {
@@ -2849,6 +2856,7 @@ export interface WritingPreferencesParams {
   "baseRevision": Decimal;
   "font"?: WritingFont;
   "focusMode"?: boolean;
+  "fullWidth"?: boolean;
   "idempotencyKey": Id;
 }
 

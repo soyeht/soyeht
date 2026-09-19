@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
+// Generated from contracts/protocol.json (sha256 65a5d24b582dfacd7996d517136102539055dd167f0acfe8e38d18bddc2c0900). Do not edit.
 import Foundation
 
 
@@ -176,12 +176,23 @@ public struct WorkspacePaneLayoutBranch: Codable, Sendable {
     }
 }
 
+public struct WorkspacePaneLayoutCompanion: Codable, Sendable {
+    public var `writingPaneId`: Id
+    public var `agentPaneId`: Id
+    public init(`writingPaneId`: Id, `agentPaneId`: Id) {
+        self.`writingPaneId` = `writingPaneId`
+        self.`agentPaneId` = `agentPaneId`
+    }
+}
+
 public struct WorkspacePaneLayoutSplit: Codable, Sendable {
     public var `axis`: WorkspacePaneLayoutAxis
     public var `children`: [WorkspacePaneLayoutBranch]
-    public init(`axis`: WorkspacePaneLayoutAxis, `children`: [WorkspacePaneLayoutBranch]) {
+    public var `companion`: WorkspacePaneLayoutCompanion?
+    public init(`axis`: WorkspacePaneLayoutAxis, `children`: [WorkspacePaneLayoutBranch], `companion`: WorkspacePaneLayoutCompanion? = nil) {
         self.`axis` = `axis`
         self.`children` = `children`
+        self.`companion` = `companion`
     }
 }
 
@@ -5357,13 +5368,15 @@ public struct WritingDocument: Codable, Sendable {
     public var `sidecarRevision`: Decimal
     public var `font`: WritingFont
     public var `focusMode`: Bool
-    public init(`file`: FileDocument, `kind`: WritingKind, `section`: WritingSection, `sidecarRevision`: Decimal, `font`: WritingFont, `focusMode`: Bool) {
+    public var `fullWidth`: Bool
+    public init(`file`: FileDocument, `kind`: WritingKind, `section`: WritingSection, `sidecarRevision`: Decimal, `font`: WritingFont, `focusMode`: Bool, `fullWidth`: Bool) {
         self.`file` = `file`
         self.`kind` = `kind`
         self.`section` = `section`
         self.`sidecarRevision` = `sidecarRevision`
         self.`font` = `font`
         self.`focusMode` = `focusMode`
+        self.`fullWidth` = `fullWidth`
     }
 }
 
@@ -5635,12 +5648,14 @@ public struct WritingPreferencesParams: Codable, Sendable {
     public var `baseRevision`: Decimal
     public var `font`: WritingFont?
     public var `focusMode`: Bool?
+    public var `fullWidth`: Bool?
     public var `idempotencyKey`: Id
-    public init(`fileId`: Id, `baseRevision`: Decimal, `font`: WritingFont? = nil, `focusMode`: Bool? = nil, `idempotencyKey`: Id) {
+    public init(`fileId`: Id, `baseRevision`: Decimal, `font`: WritingFont? = nil, `focusMode`: Bool? = nil, `fullWidth`: Bool? = nil, `idempotencyKey`: Id) {
         self.`fileId` = `fileId`
         self.`baseRevision` = `baseRevision`
         self.`font` = `font`
         self.`focusMode` = `focusMode`
+        self.`fullWidth` = `fullWidth`
         self.`idempotencyKey` = `idempotencyKey`
     }
 }

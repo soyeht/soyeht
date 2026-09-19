@@ -8,7 +8,7 @@ public enum PaneLayoutPersistenceError: Error, Equatable, Sendable {
 /// Workspace-scoped state. Viewport state such as scroll, rail visibility, and collapsed headers
 /// deliberately stays outside this value because it belongs to one device.
 public struct PaneLayoutState: Equatable, Sendable {
-  public static let currentVersion: UInt32 = 1
+  public static let currentVersion: UInt32 = 2
 
   public var tree: PaneLayoutTree?
   public var mode: WorkspacePaneLayoutMode
@@ -20,14 +20,18 @@ public struct PaneLayoutState: Equatable, Sendable {
 
   public init(workspaceLayout: JsonValue) {
     guard let envelope = try? workspaceLayout.decoded(WorkspacePaneLayoutEnvelope.self),
-      envelope.version == Self.currentVersion
+      envelope.version == 1 || envelope.version == Self.currentVersion
     else {
       self.init()
       return
     }
     do {
       self.init(
-        tree: try envelope.tree.map(PaneLayoutTree.init(protocolNode:)), mode: envelope.mode)
+        tree: try envelope.tree.map {
+          try PaneLayoutTree(
+            protocolNode: $0, includeCompanions: envelope.version == Self.currentVersion)
+        },
+        mode: envelope.mode)
     } catch {
       self.init()
     }
@@ -98,7 +102,9 @@ public struct PaneLayoutState: Equatable, Sendable {
 }
 
 extension PaneLayoutTree {
-  fileprivate init(protocolNode: WorkspacePaneLayoutNode) throws {
+  fileprivate init(
+    protocolNode: WorkspacePaneLayoutNode, includeCompanions: Bool
+  ) throws {
     switch protocolNode {
     case .v0(let leaf):
       guard !leaf.paneId.isEmpty else { throw PaneLayoutPersistenceError.invalidTree }
@@ -111,13 +117,53 @@ extension PaneLayoutTree {
           throw PaneLayoutPersistenceError.invalidTree
         }
         return PaneLayoutBranch(
-          weight: branch.weight, tree: try PaneLayoutTree(protocolNode: branch.node))
+          weight: branch.weight,
+          tree: try PaneLayoutTree(
+            protocolNode: branch.node, includeCompanions: includeCompanions))
       }
+      let companion =
+        includeCompanions
+        ? split.companion.map {
+          PaneLayoutCompanion(
+            writingPaneId: $0.writingPaneId, agentPaneId: $0.agentPaneId)
+        }
+        : nil
       self = .split(
-        PaneLayoutSplit(axis: PaneLayoutAxis(protocolAxis: split.axis), children: children))
+        PaneLayoutSplit(
+          axis: PaneLayoutAxis(protocolAxis: split.axis), children: children,
+          companion: companion))
     }
     let ids = paneIdsInCanonicalOrder
     guard Set(ids).count == ids.count else { throw PaneLayoutPersistenceError.invalidTree }
+    var paired = Set<String>()
+    guard companionsAreValid(paired: &paired) else {
+      throw PaneLayoutPersistenceError.invalidTree
+    }
+  }
+
+  private func companionsAreValid(paired: inout Set<String>) -> Bool {
+    switch self {
+    case .leaf:
+      return true
+    case .split(let split):
+      guard split.children.allSatisfy({ $0.tree.companionsAreValid(paired: &paired) }) else {
+        return false
+      }
+      guard let companion = split.companion else { return true }
+      let leaves = leavesInCanonicalOrder
+      let descendants = Set(leaves.map(\.paneId))
+      let members = Set([companion.writingPaneId, companion.agentPaneId])
+      guard members.count == 2, members.isSubset(of: descendants), paired.isDisjoint(with: members)
+      else { return false }
+      guard
+        leaves.first(where: { $0.paneId == companion.writingPaneId }).map({
+          [.text, .presentation, .screenplay].contains($0.kind)
+        }) == true,
+        leaves.first(where: { $0.paneId == companion.agentPaneId })?.kind == .agent
+      else { return false }
+      paired.formUnion(members)
+      return true
+    }
   }
 }
 
@@ -139,6 +185,10 @@ extension WorkspacePaneLayoutNode {
             }
             return WorkspacePaneLayoutBranch(
               weight: branch.weight, node: try WorkspacePaneLayoutNode(layoutTree: branch.tree))
+          },
+          companion: split.companion.map {
+            WorkspacePaneLayoutCompanion(
+              writingPaneId: $0.writingPaneId, agentPaneId: $0.agentPaneId)
           }))
     }
   }

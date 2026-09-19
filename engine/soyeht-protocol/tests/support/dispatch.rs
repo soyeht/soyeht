@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b537f54269d000f95112e39b78eb70a1af8e96839b7d3e02fac0ac3afd016f0f). Do not edit.
+// Generated from contracts/protocol.json (sha256 65a5d24b582dfacd7996d517136102539055dd167f0acfe8e38d18bddc2c0900). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -20,6 +20,7 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "WorkspacePaneLayoutAxis" => roundtrip::<WorkspacePaneLayoutAxis>(value),
         "WorkspacePaneLayoutLeaf" => roundtrip::<WorkspacePaneLayoutLeaf>(value),
         "WorkspacePaneLayoutBranch" => roundtrip::<WorkspacePaneLayoutBranch>(value),
+        "WorkspacePaneLayoutCompanion" => roundtrip::<WorkspacePaneLayoutCompanion>(value),
         "WorkspacePaneLayoutSplit" => roundtrip::<WorkspacePaneLayoutSplit>(value),
         "WorkspacePaneLayoutNode" => roundtrip::<WorkspacePaneLayoutNode>(value),
         "WorkspacePaneLayoutEnvelope" => roundtrip::<WorkspacePaneLayoutEnvelope>(value),

@@ -101,6 +101,7 @@ fn document() -> WritingDocumentRecord {
         sidecar_revision: 0,
         font: WritingFont::ReadingSerif,
         focus_mode: false,
+        full_width: false,
         sidecar: WritingSidecar::default(),
         updated_ms: 2,
     }
@@ -205,7 +206,8 @@ fn writing_document_preferences_replace_without_bypassing_the_sidecar_journal() 
     let profile = Profile::new();
     let mut store = profile.store();
     seed_file(&mut store);
-    let initial = document();
+    let mut initial = document();
+    initial.full_width = true;
     store
         .mutate("test", "initial", "initial", |change| {
             change.save_writing_document(&initial)?;
@@ -242,7 +244,8 @@ fn one_transaction_advances_the_sidecar_and_preserves_the_writer_selection_after
     let profile = Profile::new();
     let mut store = profile.store();
     seed_file(&mut store);
-    let initial = document();
+    let mut initial = document();
+    initial.full_width = true;
     store
         .mutate("test", "initial", "initial", |change| {
             change.save_writing_document(&initial)?;
@@ -264,6 +267,7 @@ fn one_transaction_advances_the_sidecar_and_preserves_the_writer_selection_after
 
     let reopened = profile.store();
     let stored = reopened.writing_document("file-1").unwrap().unwrap();
+    assert!(stored.full_width);
     assert_eq!(stored.sidecar.line_variants[0].selected_index, 1);
     let versions = reopened.writing_sidecar_versions("file-1").unwrap();
     assert_eq!(versions.len(), 1);

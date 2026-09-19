@@ -273,6 +273,9 @@ impl Core {
         if let Some(focus_mode) = request.focus_mode {
             record.focus_mode = focus_mode;
         }
+        if let Some(full_width) = request.full_width {
+            record.full_width = full_width;
+        }
         record.updated_ms = self.now_ms();
         let result = serde_json::to_value(WritingPreferencesResult {
             document: public_document(&file, &record)?,
@@ -445,6 +448,7 @@ impl Core {
             sidecar_revision: 0,
             font: WritingFont::ReadingSerif,
             focus_mode: false,
+            full_width: false,
             sidecar: WritingSidecar::default(),
             updated_ms: self.now_ms(),
         })
@@ -483,6 +487,7 @@ pub(super) fn public_document(
         sidecar_revision: record.sidecar_revision.to_string(),
         font: record.font.clone(),
         focus_mode: record.focus_mode,
+        full_width: record.full_width,
     })
 }
 

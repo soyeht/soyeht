@@ -178,7 +178,8 @@ extension EngineClient {
 
   @discardableResult
   public func setWritingPreferences(
-    fileId: String, font: WritingFont? = nil, focusMode: Bool? = nil
+    fileId: String, font: WritingFont? = nil, focusMode: Bool? = nil,
+    fullWidth: Bool? = nil
   ) async throws -> WritingPreferencesResult {
     let key = UUID().uuidString
     let result: WritingPreferencesResult = try await withWritingRevision(fileId) { revision in
@@ -186,7 +187,7 @@ extension EngineClient {
         "writing.preferences.set",
         WritingPreferencesParams(
           fileId: fileId, baseRevision: revision, font: font, focusMode: focusMode,
-          idempotencyKey: key)
+          fullWidth: fullWidth, idempotencyKey: key)
       ).decoded(WritingPreferencesResult.self)
     }
     writingDocuments[fileId] = WritingDocumentView(document: result.document)

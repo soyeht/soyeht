@@ -183,7 +183,11 @@ fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
 
     let connection = Connection::open(profile.0.join("soyeht.db")).unwrap();
     connection
-        .execute_batch("DROP TABLE agent_model_refusals; PRAGMA user_version=21;")
+        .execute_batch(
+            "DROP TABLE agent_model_refusals;
+             ALTER TABLE writing_documents DROP COLUMN full_width;
+             PRAGMA user_version=21;",
+        )
         .unwrap();
     drop(connection);
 

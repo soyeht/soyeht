@@ -36,6 +36,7 @@ pub struct WritingDocumentRecord {
     pub sidecar_revision: u64,
     pub font: WritingFont,
     pub focus_mode: bool,
+    pub full_width: bool,
     pub sidecar: WritingSidecar,
     pub updated_ms: i64,
 }
@@ -88,7 +89,7 @@ impl Store {
 
     pub fn writing_documents(&self) -> Result<Vec<WritingDocumentRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT file_id,kind,section,sidecar_revision,font,focus_mode,sidecar_payload,updated_ms FROM writing_documents ORDER BY file_id",
+            "SELECT file_id,kind,section,sidecar_revision,font,focus_mode,full_width,sidecar_payload,updated_ms FROM writing_documents ORDER BY file_id",
         )?;
         let rows = statement.query_map([], decode_document)?;
         rows.map(|row| validate_document(row?)).collect()
@@ -141,10 +142,11 @@ impl Change<'_> {
                 return Err(Error::InvalidWritingDocument);
             }
             self.transaction.execute(
-                "UPDATE writing_documents SET font=?1,focus_mode=?2,updated_ms=?3 WHERE file_id=?4",
+                "UPDATE writing_documents SET font=?1,focus_mode=?2,full_width=?3,updated_ms=?4 WHERE file_id=?5",
                 params![
                     font_name(&document.font),
                     document.focus_mode,
+                    document.full_width,
                     document.updated_ms,
                     document.file_id
                 ],
@@ -154,8 +156,8 @@ impl Change<'_> {
                 return Err(Error::InvalidWritingDocument);
             }
             self.transaction.execute(
-                "INSERT INTO writing_documents(file_id,kind,section,sidecar_revision,font,focus_mode,sidecar_payload,updated_ms) VALUES (?1,?2,?3,0,?4,?5,?6,?7)",
-                params![document.file_id, kind_name(&document.kind), section_name(&document.section), font_name(&document.font), document.focus_mode, payload, document.updated_ms],
+                "INSERT INTO writing_documents(file_id,kind,section,sidecar_revision,font,focus_mode,full_width,sidecar_payload,updated_ms) VALUES (?1,?2,?3,0,?4,?5,?6,?7,?8)",
+                params![document.file_id, kind_name(&document.kind), section_name(&document.section), font_name(&document.font), document.focus_mode, document.full_width, payload, document.updated_ms],
             )?;
         }
         Ok(())
@@ -187,8 +189,8 @@ impl Change<'_> {
             params![document.file_id, to_i64(document.sidecar_revision)?, author, payload, created_ms],
         )?;
         let changed = self.transaction.execute(
-            "UPDATE writing_documents SET sidecar_revision=?1,font=?2,focus_mode=?3,sidecar_payload=?4,updated_ms=?5 WHERE file_id=?6 AND sidecar_revision=?7",
-            params![to_i64(document.sidecar_revision)?, font_name(&document.font), document.focus_mode, payload, document.updated_ms, document.file_id, to_i64(expected_revision)?],
+            "UPDATE writing_documents SET sidecar_revision=?1,font=?2,focus_mode=?3,full_width=?4,sidecar_payload=?5,updated_ms=?6 WHERE file_id=?7 AND sidecar_revision=?8",
+            params![to_i64(document.sidecar_revision)?, font_name(&document.font), document.focus_mode, document.full_width, payload, document.updated_ms, document.file_id, to_i64(expected_revision)?],
         )?;
         if changed != 1 {
             return Err(Error::InvalidWritingSidecar);
@@ -257,7 +259,7 @@ fn document_from(
 ) -> Result<Option<WritingDocumentRecord>> {
     let document = connection
         .query_row(
-            "SELECT file_id,kind,section,sidecar_revision,font,focus_mode,sidecar_payload,updated_ms FROM writing_documents WHERE file_id=?1",
+            "SELECT file_id,kind,section,sidecar_revision,font,focus_mode,full_width,sidecar_payload,updated_ms FROM writing_documents WHERE file_id=?1",
             [file_id],
             decode_document,
         )
@@ -266,7 +268,7 @@ fn document_from(
 }
 
 fn decode_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<WritingDocumentRecord> {
-    let sidecar: String = row.get(6)?;
+    let sidecar: String = row.get(7)?;
     Ok(WritingDocumentRecord {
         file_id: row.get(0)?,
         kind: kind_from_name(&row.get::<_, String>(1)?).ok_or_else(invalid_column)?,
@@ -280,8 +282,9 @@ fn decode_document(row: &rusqlite::Row<'_>) -> rusqlite::Result<WritingDocumentR
         })?,
         font: font_from_name(&row.get::<_, String>(4)?).ok_or_else(invalid_column)?,
         focus_mode: row.get(5)?,
+        full_width: row.get(6)?,
         sidecar: serde_json::from_str(&sidecar).map_err(json_error)?,
-        updated_ms: row.get(7)?,
+        updated_ms: row.get(8)?,
     })
 }
 
