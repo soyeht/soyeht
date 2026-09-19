@@ -2,9 +2,11 @@ import AppKit
 import CoreImage.CIFilterBuiltins
 import CoreText
 import OSLog
+import Observation
 import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum MacPaneLayoutMetrics {
   /// Named from the smallest width and height exercised by the accepted floor report.
@@ -95,6 +97,98 @@ enum PaneSplitAxis: Sendable {
   case rows
 }
 
+struct PaneDragSource: Equatable {
+  let workspaceId: String
+  let paneId: String
+}
+
+struct PaneDividerGesture: Equatable {
+  let workspaceId: String
+  let splitPath: PaneLayoutNodePath
+  let afterChildIndex: Int
+  let baseTree: PaneLayoutTree
+}
+
+@Observable
+final class PaneLayoutInteractionState {
+  var paneSource: PaneDragSource?
+  var dropTarget: PaneLayoutDropTarget?
+  var divider: PaneDividerGesture?
+
+  var isGestureActive: Bool { paneSource != nil || divider != nil }
+  var blocksLayoutActions: Bool { divider != nil }
+
+  func beginPaneDrag(workspaceId: String, paneId: String) {
+    divider = nil
+    dropTarget = nil
+    paneSource = PaneDragSource(workspaceId: workspaceId, paneId: paneId)
+  }
+
+  func updateDropTarget(_ target: PaneLayoutDropTarget?) {
+    dropTarget = target
+  }
+
+  func beginDivider(_ gesture: PaneDividerGesture) {
+    paneSource = nil
+    dropTarget = nil
+    divider = gesture
+  }
+
+  func clearDropTarget(for paneId: String) {
+    if dropTarget?.paneId == paneId { dropTarget = nil }
+  }
+
+  func clear() {
+    paneSource = nil
+    dropTarget = nil
+    divider = nil
+  }
+}
+
+struct PaneHeaderDragConfiguration {
+  let interaction: PaneLayoutInteractionState
+  let workspaceId: String
+  let paneId: String
+  let title: String
+  let tint: Color
+}
+
+extension View {
+  @ViewBuilder
+  func paneHeaderDrag(_ configuration: PaneHeaderDragConfiguration?) -> some View {
+    if let configuration {
+      onDrag {
+        configuration.interaction.beginPaneDrag(
+          workspaceId: configuration.workspaceId, paneId: configuration.paneId)
+        return NSItemProvider(
+          object: "soyeht-pane:\(configuration.workspaceId):\(configuration.paneId)" as NSString)
+      } preview: {
+        PaneDragGhost(title: configuration.title, tint: configuration.tint)
+      }
+    } else {
+      self
+    }
+  }
+}
+
+private struct PaneDragGhost: View {
+  let title: String
+  let tint: Color
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x7) {
+      Image(systemName: "rectangle.split.2x1")
+      Text(title).lineLimit(1)
+    }
+    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+    .foregroundStyle(MacTheme.ink)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
+    .background(tint.opacity(0.92), in: Capsule())
+    .shadow(color: MacTheme.ink.opacity(0.16), radius: 8, y: 4)
+  }
+}
+
 struct WorkspaceWindow: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
@@ -104,6 +198,7 @@ struct WorkspaceWindow: View {
   @State private var paneToClose: String?
   @State private var showNewPane = false
   @State private var paneSplitAxis = PaneSplitAxis.columns
+  @State private var paneSplitAnchorId: String?
   @State private var showPairing = false
   @State private var deviceToRevoke: String?
   @State private var taskWorkspaceId: String?
@@ -284,7 +379,8 @@ struct WorkspaceWindow: View {
         NewPaneWorkspace(
           client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
           splitAxis: paneSplitAxis, isPresented: $showNewPane,
-          onClose: { paneToClose = $0 }, onSplit: presentSplit, onTasks: showTasks)
+          onClose: { paneToClose = $0 }, onSplit: presentSplit, onTasks: showTasks,
+          onCreated: completeSplit)
       } else {
         PaneGrid(
           client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
@@ -341,6 +437,7 @@ struct WorkspaceWindow: View {
   }
   private func presentNewPane() {
     paneSplitAxis = .columns
+    paneSplitAnchorId = nil
     client.refreshHarnesses()
     navigation.select(.agents)
     showNewPane = true
@@ -348,9 +445,36 @@ struct WorkspaceWindow: View {
   private func presentSplit(_ paneId: String, _ axis: PaneSplitAxis) {
     client.select(paneId)
     paneSplitAxis = axis
+    paneSplitAnchorId = paneId
     client.refreshHarnesses()
     navigation.select(.agents)
     showNewPane = true
+  }
+  private func completeSplit(_ newPaneId: String, _ kind: PaneLayoutKind) {
+    guard let anchorPaneId = paneSplitAnchorId,
+      let anchor = client.panes.first(where: { $0.paneId == anchorPaneId })
+    else { return }
+    defer { paneSplitAnchorId = nil }
+    do {
+      let livePanes = client.panes.filter { $0.workspaceId == anchor.workspaceId }
+      let reconciliation = try client.paneLayouts.reconciledPresentation(
+        for: anchor.workspaceId, livePanes: livePanes,
+        sizing: MacPaneLayoutMetrics.sizing)
+      guard let displayed = reconciliation.state.tree else {
+        throw PaneLayoutControllerError.missingTree(anchor.workspaceId)
+      }
+      let base =
+        displayed.paneIdsInCanonicalOrder.contains(newPaneId)
+        ? displayed.removingPane(withId: newPaneId) : displayed
+      guard let base else { throw PaneLayoutControllerError.missingTree(anchor.workspaceId) }
+      let tree = try PaneLayoutTreeMutation.splitting(
+        base, anchorPaneId: anchorPaneId,
+        newLeaf: PaneLayoutLeaf(paneId: newPaneId, kind: kind),
+        axis: paneSplitAxis == .columns ? .horizontal : .vertical)
+      try client.paneLayouts.commit(tree: tree, workspaceId: anchor.workspaceId)
+    } catch {
+      client.problem = "Couldn't split the pane. The new pane is still available."
+    }
   }
   private var selectedTaskWorkspaceId: String? {
     taskWorkspaceId ?? client.selectedPane?.workspaceId ?? client.workspaces.first?.workspaceId
@@ -671,6 +795,7 @@ struct PaneGrid: View {
   let onNewPane: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   let onTasks: () -> Void
+  @State private var interaction = PaneLayoutInteractionState()
 
   private var workspacePanes: [Pane] {
     guard let workspaceId else { return [] }
@@ -701,15 +826,33 @@ struct PaneGrid: View {
         .frame(width: viewportSize.width, height: viewportSize.height)
       } else if let layout = resolvedLayout {
         PaneLayoutTreeSurface(
-          client: client, webHost: webHost, panes: panes, tree: layout.tree, plan: layout.plan,
-          onClose: onClose, onTasks: onTasks, onSplit: onSplit
+          client: client, webHost: webHost, workspaceId: layout.workspaceId, panes: panes,
+          tree: layout.tree, plan: layout.plan, viewportSize: viewportSize,
+          interaction: interaction, interactionsEnabled: mode == nil,
+          onClose: onClose, onTasks: onTasks, onSplit: onSplit,
+          onPaneDrop: commitPaneDrop
         )
         .task(id: layout.repairTaskID) {
-          await persistRepairIfNeeded(layout)
+          persistRepairIfNeeded(layout)
         }
       }
     }
     .frame(width: viewportSize.width, height: viewportSize.height)
+    .onChange(of: client.paneLayouts.failure) { _, failure in
+      handleLayoutFailure(failure)
+    }
+    .onChange(of: activeDraftTree) { _, draft in
+      if interaction.divider != nil, draft == nil { interaction.clear() }
+    }
+    .onChange(of: workspaceId) { previous, _ in
+      if let previous { client.paneLayouts.cancelDraft(workspaceId: previous) }
+      interaction.clear()
+    }
+    .onDisappear {
+      if let workspaceId { client.paneLayouts.cancelDraft(workspaceId: workspaceId) }
+      interaction.clear()
+    }
+    .onAppear { handleLayoutFailure(client.paneLayouts.failure) }
   }
 
   private func openEditorFile() {
@@ -745,9 +888,10 @@ struct PaneGrid: View {
       let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId })
     else { return nil }
     do {
-      var state = client.paneLayoutState(for: workspace)
-      let inserted = try state.reconcile(
-        livePanes: workspacePanes, sizing: MacPaneLayoutMetrics.sizing)
+      let reconciliation = try client.paneLayouts.reconciledPresentation(
+        for: workspace.workspaceId, livePanes: workspacePanes,
+        sizing: MacPaneLayoutMetrics.sizing)
+      let state = reconciliation.state
       guard let completeTree = state.tree else { return nil }
       let visiblePaneIds = Set(panes.map(\.paneId))
       var visibleTree: PaneLayoutTree? = completeTree
@@ -761,24 +905,57 @@ struct PaneGrid: View {
         sizing: MacPaneLayoutMetrics.sizing)
       return ResolvedPaneGridLayout(
         workspaceId: workspaceId, state: state, tree: tree, plan: plan,
-        insertedPaneIds: inserted)
+        insertedPaneIds: reconciliation.insertedPaneIds)
     } catch {
       Self.logger.error("pane_layout_resolution_failed error=\(error.localizedDescription)")
       return nil
     }
   }
 
-  private func persistRepairIfNeeded(_ layout: ResolvedPaneGridLayout) async {
+  private func persistRepairIfNeeded(_ layout: ResolvedPaneGridLayout) {
     guard layout.state.mode == .custom, !layout.insertedPaneIds.isEmpty else { return }
     Self.logger.notice(
       "pane_layout_reconciled_missing workspace=\(layout.workspaceId, privacy: .public) panes=\(layout.insertedPaneIds.joined(separator: ","), privacy: .public)"
     )
     do {
-      _ = try await client.setWorkspacePaneLayout(
-        workspaceId: layout.workspaceId, state: layout.state)
+      guard let tree = layout.state.tree else { return }
+      try client.paneLayouts.commit(tree: tree, workspaceId: layout.workspaceId)
     } catch {
-      client.problem = error.localizedDescription
+      client.problem = "Couldn't repair the pane layout. No panes were removed."
     }
+  }
+
+  private var activeDraftTree: PaneLayoutTree? {
+    guard let workspaceId else { return nil }
+    return client.paneLayouts.presentation(for: workspaceId)?.draftTree
+  }
+
+  private func commitPaneDrop(
+    sourcePaneId: String, targetPaneId: String, zone: PaneLayoutDropZone
+  ) {
+    guard let workspaceId, sourcePaneId != targetPaneId else {
+      interaction.clear()
+      return
+    }
+    do {
+      let tree = try client.paneLayouts.beginDraft(workspaceId: workspaceId)
+      let moved = try PaneLayoutTreeMutation.moving(
+        tree, paneId: sourcePaneId, relativeTo: targetPaneId, zone: zone)
+      try client.paneLayouts.updateDraft(workspaceId: workspaceId, tree: moved)
+      try client.paneLayouts.commitDraft(workspaceId: workspaceId)
+    } catch {
+      client.paneLayouts.cancelDraft(workspaceId: workspaceId)
+      client.problem = "Couldn't move the pane. The layout was not changed."
+    }
+    interaction.clear()
+  }
+
+  private func handleLayoutFailure(_ failure: PaneLayoutCommitFailure?) {
+    guard let failure, failure.workspaceId == workspaceId else { return }
+    client.paneLayouts.cancelDraft(workspaceId: failure.workspaceId)
+    interaction.clear()
+    client.problem = PaneLayoutCommitFailure.userMessage
+    client.paneLayouts.clearFailure()
   }
 }
 
@@ -797,18 +974,29 @@ private struct ResolvedPaneGridLayout {
 private struct PaneLayoutTreeSurface: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
+  let workspaceId: String
   let panes: [Pane]
   let tree: PaneLayoutTree
   let plan: PaneLayoutGeometryResult
+  let viewportSize: CGSize
+  let interaction: PaneLayoutInteractionState
+  let interactionsEnabled: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
+  let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
 
   var body: some View {
     PaneLayoutNodeSurface(
       client: client, webHost: webHost, panesById: panesById, tintIndices: tintIndices,
-      tree: tree, path: PaneLayoutNodePath(), plan: plan, onClose: onClose, onTasks: onTasks,
-      onSplit: onSplit)
+      workspaceId: workspaceId, tree: tree, path: PaneLayoutNodePath(), plan: plan,
+      viewportSize: viewportSize, interaction: interaction,
+      interactionsEnabled: interactionsEnabled, onClose: onClose, onTasks: onTasks,
+      onSplit: onSplit, onPaneDrop: onPaneDrop
+    )
+    .onDrop(
+      of: [UTType.plainText],
+      delegate: PaneLayoutFallbackDropDelegate(interaction: interaction))
   }
 
   private var panesById: [String: Pane] {
@@ -828,12 +1016,17 @@ private struct PaneLayoutNodeSurface: View {
   let webHost: MacWebHost
   let panesById: [String: Pane]
   let tintIndices: [String: Int]
+  let workspaceId: String
   let tree: PaneLayoutTree
   let path: PaneLayoutNodePath
   let plan: PaneLayoutGeometryResult
+  let viewportSize: CGSize
+  let interaction: PaneLayoutInteractionState
+  let interactionsEnabled: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
+  let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
 
   @ViewBuilder var body: some View {
     if let geometry = plan.nodes[path] {
@@ -845,8 +1038,10 @@ private struct PaneLayoutNodeSurface: View {
       case .split(let split):
         PaneLayoutSplitSurface(
           client: client, webHost: webHost, panesById: panesById, tintIndices: tintIndices,
-          split: split, path: path, plan: plan, onClose: onClose, onTasks: onTasks,
-          onSplit: onSplit)
+          workspaceId: workspaceId, split: split, path: path, plan: plan,
+          viewportSize: viewportSize, interaction: interaction,
+          interactionsEnabled: interactionsEnabled, onClose: onClose, onTasks: onTasks,
+          onSplit: onSplit, onPaneDrop: onPaneDrop)
       }
     }
   }
@@ -881,7 +1076,12 @@ private struct PaneLayoutNodeSurface: View {
     PaneCard(
       client: client, webHost: webHost, pane: pane,
       tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
-      onTasks: onTasks, onSplit: onSplit
+      onTasks: onTasks, onSplit: onSplit,
+      interaction: interactionsEnabled ? interaction : nil,
+      dropTargetSize: CGSize(
+        width: max(0, contentWidth - 2 * halo),
+        height: max(0, contentHeight - 2 * halo)),
+      onPaneDrop: onPaneDrop
     )
     .frame(
       width: max(0, contentWidth - 2 * halo),
@@ -908,12 +1108,17 @@ private struct PaneLayoutSplitSurface: View {
   let webHost: MacWebHost
   let panesById: [String: Pane]
   let tintIndices: [String: Int]
+  let workspaceId: String
   let split: PaneLayoutSplit
   let path: PaneLayoutNodePath
   let plan: PaneLayoutGeometryResult
+  let viewportSize: CGSize
+  let interaction: PaneLayoutInteractionState
+  let interactionsEnabled: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
+  let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
 
   private var children: [RenderedPaneLayoutChild] {
     split.children.enumerated().map {
@@ -934,8 +1139,11 @@ private struct PaneLayoutSplitSurface: View {
               if let childGeometry = plan.nodes[childPath] {
                 PaneLayoutNodeSurface(
                   client: client, webHost: webHost, panesById: panesById,
-                  tintIndices: tintIndices, tree: child.branch.tree, path: childPath,
-                  plan: plan, onClose: onClose, onTasks: onTasks, onSplit: onSplit
+                  tintIndices: tintIndices, workspaceId: workspaceId,
+                  tree: child.branch.tree, path: childPath, plan: plan,
+                  viewportSize: viewportSize, interaction: interaction,
+                  interactionsEnabled: interactionsEnabled, onClose: onClose,
+                  onTasks: onTasks, onSplit: onSplit, onPaneDrop: onPaneDrop
                 )
                 .frame(
                   width: childGeometry.frame.size.width,
@@ -946,6 +1154,24 @@ private struct PaneLayoutSplitSurface: View {
                   y: childGeometry.frame.origin.y
                 )
                 .id(child.id)
+              }
+            }
+            if interactionsEnabled {
+              ForEach(dividers) { divider in
+                if let frame = dividerFrame(divider, in: geometry) {
+                  PaneLayoutDividerHandle(
+                    axis: divider.axis,
+                    accessibilityID: divider.accessibilityID,
+                    onChanged: { translation in
+                      resizeDivider(divider, translation: translation)
+                    },
+                    onEnded: { finishDivider(divider) },
+                    onDoubleClick: { equalize(divider) }
+                  )
+                  .frame(width: frame.width, height: frame.height)
+                  .offset(x: frame.minX, y: frame.minY)
+                  .zIndex(50)
+                }
               }
             }
           }
@@ -970,6 +1196,100 @@ private struct PaneLayoutSplitSurface: View {
     else { return }
     let identity = split.children[childIndex].tree.leavesInCanonicalOrder[0].paneId
     proxy.scrollTo(identity, anchor: .center)
+  }
+
+  private var dividers: [RenderedPaneLayoutDivider] {
+    plan.dividers.compactMap { divider in
+      guard divider.splitPath == path else { return nil }
+      return RenderedPaneLayoutDivider(geometry: divider)
+    }
+  }
+
+  private func dividerFrame(
+    _ divider: RenderedPaneLayoutDivider, in geometry: PaneLayoutNodeGeometry
+  ) -> CGRect? {
+    guard let before = plan.nodes[path.appending(divider.afterChildIndex)] else { return nil }
+    if divider.axis == .horizontal {
+      return CGRect(
+        x: before.frame.maxX, y: 0,
+        width: MacPaneLayoutMetrics.sizing.gaps.horizontal,
+        height: geometry.contentSize.height)
+    }
+    return CGRect(
+      x: 0, y: before.frame.maxY,
+      width: geometry.contentSize.width,
+      height: MacPaneLayoutMetrics.sizing.gaps.vertical)
+  }
+
+  private func resizeDivider(
+    _ divider: RenderedPaneLayoutDivider, translation: CGSize
+  ) {
+    do {
+      let active: PaneDividerGesture
+      if let dividerGesture = interaction.divider {
+        active = dividerGesture
+      } else {
+        let base = try client.paneLayouts.beginDraft(workspaceId: workspaceId)
+        let gesture = PaneDividerGesture(
+          workspaceId: workspaceId, splitPath: divider.splitPath,
+          afterChildIndex: divider.afterChildIndex, baseTree: base)
+        interaction.beginDivider(gesture)
+        active = gesture
+      }
+      guard active.workspaceId == workspaceId,
+        active.splitPath == divider.splitPath,
+        active.afterChildIndex == divider.afterChildIndex
+      else { return }
+      let delta = divider.axis == .horizontal ? translation.width : translation.height
+      let tree = try PaneLayoutTreeMutation.resizing(
+        active.baseTree, splitAt: active.splitPath,
+        dividerIndex: active.afterChildIndex, delta: delta,
+        viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
+        sizing: MacPaneLayoutMetrics.sizing)
+      try client.paneLayouts.updateDraft(workspaceId: workspaceId, tree: tree)
+    } catch {
+      cancelDivider(message: "Couldn't resize the panes. The layout was not changed.")
+    }
+  }
+
+  private func finishDivider(_ divider: RenderedPaneLayoutDivider) {
+    guard let active = interaction.divider,
+      active.workspaceId == workspaceId,
+      active.splitPath == divider.splitPath,
+      active.afterChildIndex == divider.afterChildIndex
+    else {
+      interaction.clear()
+      return
+    }
+    defer { interaction.clear() }
+    do {
+      guard client.paneLayouts.presentation(for: workspaceId)?.draftTree != nil else { return }
+      try client.paneLayouts.commitDraft(workspaceId: workspaceId)
+    } catch {
+      client.paneLayouts.cancelDraft(workspaceId: workspaceId)
+      client.problem = "Couldn't resize the panes. The layout was not changed."
+    }
+  }
+
+  private func equalize(_ divider: RenderedPaneLayoutDivider) {
+    guard !interaction.blocksLayoutActions,
+      let tree = client.paneLayouts.presentation(for: workspaceId)?.displayed.tree
+    else { return }
+    do {
+      let equalized = try PaneLayoutTreeMutation.equalizing(
+        tree, splitAt: divider.splitPath,
+        viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
+        sizing: MacPaneLayoutMetrics.sizing)
+      try client.paneLayouts.commit(tree: equalized, workspaceId: workspaceId)
+    } catch {
+      client.problem = "Couldn't equalize the panes. The layout was not changed."
+    }
+  }
+
+  private func cancelDivider(message: String) {
+    client.paneLayouts.cancelDraft(workspaceId: workspaceId)
+    interaction.clear()
+    client.problem = message
   }
 }
 
@@ -996,6 +1316,191 @@ private struct RenderedPaneLayoutChild: Identifiable {
   var id: String { branch.tree.leavesInCanonicalOrder[0].paneId }
 }
 
+private struct RenderedPaneLayoutDivider: Identifiable {
+  let splitPath: PaneLayoutNodePath
+  let afterChildIndex: Int
+  let axis: PaneLayoutAxis
+
+  init(geometry: PaneLayoutDividerGeometry) {
+    splitPath = geometry.splitPath
+    afterChildIndex = geometry.afterChildIndex
+    axis = geometry.axis
+  }
+
+  var id: String { accessibilityID }
+  var accessibilityID: String {
+    let path =
+      splitPath.components.isEmpty
+      ? "root" : splitPath.components.map(String.init).joined(separator: "-")
+    return "pane-divider-\(path)-\(afterChildIndex)"
+  }
+}
+
+private struct PaneLayoutDividerHandle: View {
+  let axis: PaneLayoutAxis
+  let accessibilityID: String
+  let onChanged: (CGSize) -> Void
+  let onEnded: () -> Void
+  let onDoubleClick: () -> Void
+  @State private var cursorIsActive = false
+
+  var body: some View {
+    Color.clear
+      .contentShape(Rectangle())
+      .gesture(
+        DragGesture(minimumDistance: 2)
+          .onChanged { onChanged($0.translation) }
+          .onEnded { _ in onEnded() }
+      )
+      .onTapGesture(count: 2, perform: onDoubleClick)
+      .onHover { inside in
+        guard inside != cursorIsActive else { return }
+        cursorIsActive = inside
+        if inside {
+          resizeCursor.push()
+        } else {
+          NSCursor.pop()
+        }
+      }
+      .onDisappear {
+        if cursorIsActive {
+          NSCursor.pop()
+          cursorIsActive = false
+        }
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(axis == .horizontal ? "Resize columns" : "Resize rows")
+      .accessibilityIdentifier(accessibilityID)
+  }
+
+  private var resizeCursor: NSCursor {
+    axis == .horizontal ? .resizeLeftRight : .resizeUpDown
+  }
+}
+
+private struct PaneLayoutPaneDropDelegate: DropDelegate {
+  let interaction: PaneLayoutInteractionState
+  let workspaceId: String
+  let targetPaneId: String
+  let targetSize: CGSize
+  let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
+
+  func validateDrop(info: DropInfo) -> Bool {
+    guard let source = interaction.paneSource else { return false }
+    return source.workspaceId == workspaceId && source.paneId != targetPaneId
+  }
+
+  func dropEntered(info: DropInfo) {
+    updateTarget(info.location)
+  }
+
+  func dropUpdated(info: DropInfo) -> DropProposal? {
+    updateTarget(info.location)
+    return interaction.dropTarget == nil
+      ? DropProposal(operation: .cancel)
+      : DropProposal(
+        operation: .move)
+  }
+
+  func dropExited(info: DropInfo) {
+    interaction.clearDropTarget(for: targetPaneId)
+  }
+
+  func performDrop(info: DropInfo) -> Bool {
+    updateTarget(info.location)
+    guard let source = interaction.paneSource,
+      let target = interaction.dropTarget,
+      target.paneId == targetPaneId,
+      target.workspaceId == workspaceId
+    else {
+      interaction.clear()
+      return false
+    }
+    onPaneDrop(source.paneId, target.paneId, target.zone)
+    interaction.clear()
+    return true
+  }
+
+  private func updateTarget(_ location: CGPoint) {
+    guard let source = interaction.paneSource else {
+      interaction.updateDropTarget(nil)
+      return
+    }
+    let rect = PaneLayoutRect(
+      size: PaneLayoutSize(width: targetSize.width, height: targetSize.height))
+    interaction.updateDropTarget(
+      PaneLayoutDropGeometry.target(
+        at: PaneLayoutPoint(x: location.x, y: location.y),
+        sourceWorkspaceId: source.workspaceId, targetWorkspaceId: workspaceId,
+        targetPaneId: targetPaneId, paneArea: rect, targetPaneRect: rect))
+  }
+}
+
+private struct PaneLayoutFallbackDropDelegate: DropDelegate {
+  let interaction: PaneLayoutInteractionState
+
+  func validateDrop(info: DropInfo) -> Bool {
+    interaction.paneSource != nil
+  }
+
+  func performDrop(info: DropInfo) -> Bool {
+    interaction.clear()
+    return false
+  }
+}
+
+private struct PaneDropTargetModifier: ViewModifier {
+  let interaction: PaneLayoutInteractionState?
+  let workspaceId: String
+  let paneId: String
+  let size: CGSize?
+  let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if let interaction, let size {
+      content.onDrop(
+        of: [UTType.plainText],
+        delegate: PaneLayoutPaneDropDelegate(
+          interaction: interaction, workspaceId: workspaceId, targetPaneId: paneId,
+          targetSize: size, onPaneDrop: onPaneDrop))
+    } else {
+      content
+    }
+  }
+}
+
+private struct PaneDropZonesOverlay: View {
+  let paneId: String
+  let size: CGSize
+  let selected: PaneLayoutDropZone?
+
+  var body: some View {
+    ZStack(alignment: .topLeading) {
+      ForEach(PaneLayoutDropZone.allCases, id: \.rawValue) { zone in
+        let rect = PaneLayoutDropGeometry.rect(
+          for: zone,
+          in: PaneLayoutRect(size: PaneLayoutSize(width: size.width, height: size.height)))
+        RoundedRectangle(cornerRadius: MacTheme.Radius.compact)
+          .fill(selected == zone ? MacTheme.accent.opacity(0.24) : Color.clear)
+          .overlay {
+            if selected == zone {
+              RoundedRectangle(cornerRadius: MacTheme.Radius.compact)
+                .stroke(MacTheme.accent, lineWidth: 2)
+            }
+          }
+          .frame(width: rect.size.width, height: rect.size.height)
+          .offset(x: rect.origin.x, y: rect.origin.y)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel("Drop pane \(zone.rawValue)")
+          .accessibilityIdentifier("pane-drop-zone-\(zone.rawValue)-\(paneId)")
+      }
+    }
+    .frame(width: size.width, height: size.height, alignment: .topLeading)
+    .allowsHitTesting(false)
+  }
+}
+
 private struct PaneCard: View {
   @Bindable var client: EngineClient
   @Environment(\.terminalKeyboardInputEnabled) private var terminalKeyboardInputEnabled
@@ -1005,6 +1510,9 @@ private struct PaneCard: View {
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
+  let interaction: PaneLayoutInteractionState?
+  let dropTargetSize: CGSize?
+  let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
   @State private var showingAutomation = false
   @State private var showingHarnessSwitch = false
   @State private var showingCaptureConsent = false
@@ -1015,13 +1523,13 @@ private struct PaneCard: View {
   var body: some View {
     Group {
       if pane.mode == .editor {
-        EditorPaneView(client: client, pane: pane)
+        EditorPaneView(client: client, pane: pane, headerDrag: dragConfiguration)
       } else if pane.mode == .writing, pane.writingKind == .text {
-        WritingTextPane(client: client, pane: pane)
+        WritingTextPane(client: client, pane: pane, headerDrag: dragConfiguration)
       } else if pane.mode == .writing, pane.writingKind == .presentation {
-        WritingPresentationPane(client: client, pane: pane)
+        WritingPresentationPane(client: client, pane: pane, headerDrag: dragConfiguration)
       } else if pane.mode == .writing, pane.writingKind == .screenplay {
-        WritingScreenplayPane(client: client, pane: pane)
+        WritingScreenplayPane(client: client, pane: pane, headerDrag: dragConfiguration)
       } else {
         VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
           header
@@ -1033,6 +1541,19 @@ private struct PaneCard: View {
     }
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .simultaneousGesture(TapGesture().onEnded { client.select(pane.paneId) })
+    .modifier(
+      PaneDropTargetModifier(
+        interaction: interaction, workspaceId: pane.workspaceId, paneId: pane.paneId,
+        size: dropTargetSize, onPaneDrop: onPaneDrop)
+    )
+    .overlay(alignment: .topLeading) {
+      if let interaction, let dropTargetSize {
+        PaneDropZonesOverlay(
+          paneId: pane.paneId, size: dropTargetSize,
+          selected: interaction.dropTarget?.paneId == pane.paneId
+            ? interaction.dropTarget?.zone : nil)
+      }
+    }
     .contextMenu { Button("Close pane", role: .destructive) { onClose(pane.paneId) } }
     .confirmationDialog(
       ExperimentCapturePresentation.consentTitle(for: pane.mode),
@@ -1078,6 +1599,13 @@ private struct PaneCard: View {
       }
     }
     .zIndex(showingAutomation ? 20 : 0)
+  }
+
+  private var dragConfiguration: PaneHeaderDragConfiguration? {
+    guard let interaction else { return nil }
+    return PaneHeaderDragConfiguration(
+      interaction: interaction, workspaceId: pane.workspaceId, paneId: pane.paneId,
+      title: pane.name, tint: tint)
   }
 
   private var header: some View {
@@ -1160,7 +1688,7 @@ private struct PaneCard: View {
       .help("Split pane into columns")
       .accessibilityLabel("Split pane into columns")
       .accessibilityIdentifier("split-pane-columns-\(pane.paneId)")
-      .disabled(!client.connected)
+      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
       Button {
         onSplit(pane.paneId, .rows)
       } label: {
@@ -1169,19 +1697,21 @@ private struct PaneCard: View {
       .help("Split pane into rows")
       .accessibilityLabel("Split pane into rows")
       .accessibilityIdentifier("split-pane-rows-\(pane.paneId)")
-      .disabled(!client.connected)
+      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
       Button {
         onClose(pane.paneId)
       } label: {
         Image(systemName: "xmark")
       }
-      .help("Close this pane").disabled(!client.connected)
+      .help("Close this pane")
+      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
     .foregroundStyle(MacTheme.secondary)
     .padding(.horizontal, MacTheme.Space.x12)
     .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
     .background(tint, in: Capsule())
+    .paneHeaderDrag(dragConfiguration)
   }
 
   @ViewBuilder private var paneBody: some View {
@@ -1324,18 +1854,23 @@ private struct NewPaneWorkspace: View {
   let onClose: (String) -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   let onTasks: () -> Void
+  let onCreated: (String, PaneLayoutKind) -> Void
 
   var body: some View {
     splitLayout {
       if let pane = client.selectedPane {
         PaneCard(
           client: client, webHost: webHost, pane: pane, tint: MacTheme.agentRose, onClose: onClose,
-          onTasks: onTasks, onSplit: onSplit
+          onTasks: onTasks, onSplit: onSplit, interaction: nil, dropTargetSize: nil,
+          onPaneDrop: { _, _, _ in }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      NewPaneSheet(client: client, workspaceId: workspaceId, isPresented: $isPresented)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      NewPaneSheet(
+        client: client, workspaceId: workspaceId, isPresented: $isPresented,
+        onCreated: onCreated
+      )
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }.padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
   }
 
@@ -1350,6 +1885,7 @@ private struct NewPaneSheet: View {
   @Bindable var client: EngineClient
   let workspaceId: String?
   @Binding var isPresented: Bool
+  let onCreated: (String, PaneLayoutKind) -> Void
   @State private var mode = PaneMode.terminal
   @State private var directory: URL?
   @State private var harness = ""
@@ -1596,12 +2132,16 @@ private struct NewPaneSheet: View {
     submitting = true
     Task { @MainActor in
       do {
+        let paneId: String
         if mode == .terminal {
-          _ = try await client.createTerminalPane(directory: directory)
+          paneId = try await client.createTerminalPane(directory: directory)
         } else {
-          let paneId = try await client.createAgentPaneNow(
+          paneId = try await client.createAgentPaneNow(
             directory: directory, harness: harness, model: model.isEmpty ? nil : model,
             effort: effort.isEmpty ? nil : effort, permission: permission)
+        }
+        onCreated(paneId, PaneLayoutKind(mode: mode))
+        if mode == .agent {
           if !firstPrompt.isEmpty {
             try await client.sendPromptNow(paneId, text: firstPrompt)
           }

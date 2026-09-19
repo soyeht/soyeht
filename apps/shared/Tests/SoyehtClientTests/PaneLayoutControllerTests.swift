@@ -4,6 +4,15 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func layoutFailureUsesAFixedUserMessageInsteadOfTheTransportError() {
+  let failure = PaneLayoutCommitFailure(workspaceId: "workspace", message: "unauthorized: 401")
+
+  #expect(
+    PaneLayoutCommitFailure.userMessage
+      == "Couldn't save the layout. The last saved arrangement is back.")
+  #expect(!PaneLayoutCommitFailure.userMessage.contains(failure.message))
+}
+
 @Test @MainActor
 func gestureDraftIsLocalUntilCommitAndThenBecomesCustom() async throws {
   let probe = PaneLayoutPersistProbe()
@@ -132,6 +141,28 @@ func aPaneCreatedBeforeLayoutFailureRemainsVisibleThroughReconciliation() async 
   #expect(reconciled.insertedPaneIds == ["created"])
   #expect(reconciled.state.mode == .custom)
   #expect(Set(reconciled.state.tree?.paneIdsInCanonicalOrder ?? []) == ["anchor", "created"])
+}
+
+@Test @MainActor
+func firstSplitUsesTheReconciledLiveTreeWhenNoLayoutWasStoredYet() async throws {
+  let probe = PaneLayoutPersistProbe()
+  let controller = PaneLayoutController(persist: probe.persist)
+  controller.synchronize(
+    workspaceId: "workspace", confirmed: PaneLayoutState(tree: nil, mode: .automatic))
+
+  let reconciled = try controller.reconciledPresentation(
+    for: "workspace", livePanes: [terminalPane("anchor"), terminalPane("created")],
+    sizing: testSizing)
+  let displayed = try #require(reconciled.state.tree)
+  let base = try #require(displayed.removingPane(withId: "created"))
+  let split = try PaneLayoutTreeMutation.splitting(
+    base, anchorPaneId: "anchor",
+    newLeaf: PaneLayoutLeaf(paneId: "created", kind: .terminal), axis: .horizontal)
+
+  try controller.commit(tree: split, workspaceId: "workspace")
+  await expectEventually { probe.requests.count == 1 }
+  #expect(probe.requests[0].state.tree == split)
+  #expect(probe.requests[0].state.mode == .custom)
 }
 
 @Test @MainActor

@@ -10,6 +10,7 @@ private let screenplayElementKinds: [ScreenplayElementKind] = [
 struct WritingScreenplayPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
+  let headerDrag: PaneHeaderDragConfiguration?
   @State private var activeLine: UInt32 = 0
   @State private var targetLine: UInt32?
   @State private var railVisible = true
@@ -86,6 +87,7 @@ struct WritingScreenplayPane: View {
     .background(MacTheme.well, in: Capsule())
     .padding(.horizontal, MacTheme.Space.x10).padding(.top, MacTheme.Space.x10)
     .padding(.bottom, MacTheme.Space.x6)
+    .paneHeaderDrag(headerDrag)
   }
 
   private func toolbar(
