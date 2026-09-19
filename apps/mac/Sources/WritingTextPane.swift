@@ -3,10 +3,89 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
+/// Shared writing chrome. Text adopts it in C3; screenplay and presentation follow in C4/C5.
+struct WritingPaneHeader: View {
+  let paneId: String
+  let title: String
+  let icon: String
+  let metadata: String?
+  let fullWidth: Bool?
+  let headerDrag: PaneHeaderDragConfiguration?
+  let mutationDisabled: Bool
+  let layoutActionsDisabled: Bool
+  let onToggleFullWidth: (() -> Void)?
+  let onSplit: (String, PaneSplitAxis) -> Void
+  let onClose: (String) -> Void
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Image(systemName: icon).foregroundStyle(MacTheme.secondary)
+      Text(title)
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      if let metadata {
+        Text(metadata)
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.muted)
+          .lineLimit(1)
+      }
+      if let fullWidth, let onToggleFullWidth {
+        Button(action: onToggleFullWidth) {
+          Image(
+            systemName: fullWidth
+              ? "arrow.down.right.and.arrow.up.left"
+              : "arrow.up.left.and.arrow.down.right")
+        }
+        .help(fullWidth ? "Use reading width" : "Use full width")
+        .accessibilityLabel(fullWidth ? "Use reading width" : "Use full width")
+        .accessibilityIdentifier("writing-full-width-\(paneId)")
+        .disabled(mutationDisabled)
+      }
+      Button {
+        onSplit(paneId, .columns)
+      } label: {
+        Image(systemName: "rectangle.split.2x1")
+      }
+      .help("Split pane into columns")
+      .accessibilityLabel("Split pane into columns")
+      .accessibilityIdentifier("split-pane-columns-\(paneId)")
+      .disabled(layoutActionsDisabled)
+      Button {
+        onSplit(paneId, .rows)
+      } label: {
+        Image(systemName: "rectangle.split.1x2")
+      }
+      .help("Split pane into rows")
+      .accessibilityLabel("Split pane into rows")
+      .accessibilityIdentifier("split-pane-rows-\(paneId)")
+      .disabled(layoutActionsDisabled)
+      Button {
+        onClose(paneId)
+      } label: {
+        Image(systemName: "xmark")
+      }
+      .help("Close this pane")
+      .accessibilityLabel("Close this pane")
+      .accessibilityIdentifier("close-pane-\(paneId)")
+      .disabled(layoutActionsDisabled)
+    }
+    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+    .foregroundStyle(MacTheme.secondary)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.writingHeaderHeight)
+    .background(MacTheme.well, in: Capsule())
+    .paneHeaderDrag(headerDrag)
+  }
+}
+
 struct WritingTextPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
+  let onClose: (String) -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
+  let layoutActionsDisabled: Bool
   @State private var selection: SoyehtProtocol.TextRange?
   @State private var activeLine: UInt32 = 0
   @State private var destinationKind: WritingFormatKind?
@@ -24,82 +103,142 @@ struct WritingTextPane: View {
   }
 
   var body: some View {
-    VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
-      header
-      if let writing, let file, file.viewport != nil {
-        toolbar(writing.document)
-        EditorAgentReviewBar(
-          client: client, view: file, selectedPosition: selection?.start)
-        WritingTextViewport(
-          client: client, view: file, document: writing.document,
-          selection: $selection, activeLine: $activeLine
-        )
-        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    GeometryReader { proxy in
+      if let document = writing?.document,
+        let plan = layoutPlan(size: proxy.size, document: document)
+      {
+        ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
+          plannedSurface(plan: plan, document: document)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDisabled(plan.overflowAxes.isEmpty)
+        .frame(width: proxy.size.width, height: proxy.size.height)
       } else {
-        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
+          writingHeader(document: nil)
+          ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(PaneLayoutContentMetrics.paneCardInset)
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       }
     }
-    .padding(PaneLayoutContentMetrics.paneCardInset)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .task(id: writingLoadKey) { await loadIfNeeded() }
   }
 
-  private var header: some View {
-    HStack(spacing: MacTheme.Space.x8) {
-      Image(systemName: "doc.richtext").foregroundStyle(MacTheme.secondary)
-      Text(pane.name)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
-      Spacer()
-      Text(wordCountLabel)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.muted)
+  private func layoutPlan(size: CGSize, document: WritingDocument) -> WritingLayoutPlan? {
+    let policy = WritingLayoutPolicy(
+      floors: MacPaneLayoutMetrics.surfaceFloors,
+      gaps: MacPaneLayoutMetrics.sizing.gaps)
+    return try? policy.layout(
+      WritingLayoutRequest(
+        kind: .text,
+        viewport: PaneLayoutSize(width: size.width, height: size.height),
+        font: MacPaneLayoutMetrics.proseMetric(for: document.font),
+        fullWidth: document.fullWidth,
+        reviewVisible: file?.review != nil))
+  }
+
+  private func plannedSurface(
+    plan: WritingLayoutPlan, document: WritingDocument
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      MacTheme.canvas
+        .writingFrame(plan.contentRect)
+      writingHeader(document: document)
+        .writingFrame(plan.headerRect)
+      if let toolbarRect = plan.toolbarRect {
+        toolbar(document)
+          .writingFrame(toolbarRect)
+      }
+      if let reviewRect = plan.reviewRect, let file {
+        WritingTextReviewStrip(
+          client: client, view: file, selectedPosition: selection?.start)
+          .writingFrame(reviewRect)
+      }
+      if let file, file.viewport != nil,
+        case .text(let textPlan) = plan.surface
+      {
+        WritingTextViewport(
+          client: client, view: file, document: document,
+          selection: $selection, activeLine: $activeLine
+        )
+        .writingFrame(textPlan.columnRect)
+        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+        .accessibilityIdentifier("writing-text-column-\(pane.paneId)")
+      } else if case .text(let textPlan) = plan.surface {
+        ProgressView()
+          .writingFrame(textPlan.columnRect)
+      }
     }
-    .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: PaneLayoutContentMetrics.textHeaderHeight)
-    .background(MacTheme.well, in: Capsule())
-    .paneHeaderDrag(headerDrag)
+    .frame(width: plan.contentSize.width, height: plan.contentSize.height)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+  }
+
+  private func writingHeader(document: WritingDocument?) -> some View {
+    WritingPaneHeader(
+      paneId: pane.paneId, title: pane.name, icon: "doc.richtext",
+      metadata: document == nil ? nil : wordCountLabel,
+      fullWidth: document?.fullWidth,
+      headerDrag: headerDrag,
+      mutationDisabled: !client.connected,
+      layoutActionsDisabled: !client.connected || layoutActionsDisabled,
+      onToggleFullWidth: document.map { document in
+        { setFullWidth(!document.fullWidth) }
+      },
+      onSplit: onSplit, onClose: onClose)
+  }
+
+  private func scrollAxes(_ plan: WritingLayoutPlan) -> Axis.Set {
+    var axes: Axis.Set = []
+    if plan.overflowAxes.contains(.horizontal) { axes.insert(.horizontal) }
+    if plan.overflowAxes.contains(.vertical) { axes.insert(.vertical) }
+    return axes
   }
 
   private func toolbar(_ document: WritingDocument) -> some View {
-    HStack(spacing: MacTheme.Space.x8) {
-      Menu {
-        fontButton("Newsreader", .reading_serif, document: document)
-        fontButton("Classic serif", .classic_serif, document: document)
-        fontButton("Sans", .sans, document: document)
-      } label: {
-        Label(fontLabel(document.font), systemImage: "textformat")
-      }
-      .menuStyle(.borderlessButton).frame(width: 174)
+    ScrollView(.horizontal) {
+      HStack(spacing: MacTheme.Space.x8) {
+        Menu {
+          fontButton("Newsreader", .reading_serif, document: document)
+          fontButton("Classic serif", .classic_serif, document: document)
+          fontButton("Sans", .sans, document: document)
+        } label: {
+          Label(fontLabel(document.font), systemImage: "textformat")
+        }
+        .menuStyle(.borderlessButton).frame(width: 174)
 
-      Divider().frame(height: 20)
-      Menu {
-        formatButton("Heading 1", .heading1)
-        formatButton("Heading 2", .heading2)
-        formatButton("Heading 3", .heading3)
-      } label: {
-        Label("Heading", systemImage: "textformat.size")
-      }
-      .menuStyle(.borderlessButton).frame(width: 130)
-      Divider().frame(height: 20)
+        Divider().frame(height: 20)
+        Menu {
+          formatButton("Heading 1", .heading1)
+          formatButton("Heading 2", .heading2)
+          formatButton("Heading 3", .heading3)
+        } label: {
+          Label("Heading", systemImage: "textformat.size")
+        }
+        .menuStyle(.borderlessButton).frame(width: 130)
+        Divider().frame(height: 20)
 
-      formatIcon("bold", "Bold", .bold)
-      formatIcon("italic", "Italic", .italic)
-      formatIcon("list.bullet", "Bulleted list", .bullet_list)
-      formatIcon("list.number", "Numbered list", .numbered_list)
-      formatIcon("quote.opening", "Quote", .quote)
-      destinationIcon("link", "Link", .link)
-      destinationIcon("photo", "Image", .image)
-      Spacer()
-      Button {
-        setFocus(!document.focusMode)
-      } label: {
-        Label("Focus", systemImage: "scope")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
-          .foregroundStyle(document.focusMode ? MacTheme.accent : MacTheme.secondary)
-          .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
-          .background(document.focusMode ? MacTheme.selection : Color.clear, in: Capsule())
+        formatIcon("bold", "Bold", .bold)
+        formatIcon("italic", "Italic", .italic)
+        formatIcon("list.bullet", "Bulleted list", .bullet_list)
+        formatIcon("list.number", "Numbered list", .numbered_list)
+        formatIcon("quote.opening", "Quote", .quote)
+        destinationIcon("link", "Link", .link)
+        destinationIcon("photo", "Image", .image)
+        Button {
+          setFocus(!document.focusMode)
+        } label: {
+          Label("Focus", systemImage: "scope")
+            .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+            .foregroundStyle(document.focusMode ? MacTheme.accent : MacTheme.secondary)
+            .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
+            .background(document.focusMode ? MacTheme.selection : Color.clear, in: Capsule())
+        }
+        .help("Emphasize the active line")
       }
-      .help("Emphasize the active line")
+      .fixedSize(horizontal: true, vertical: false)
     }
+    .scrollIndicators(.hidden)
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
     .foregroundStyle(MacTheme.secondary)
     .padding(.horizontal, MacTheme.Space.x10)
@@ -221,11 +360,58 @@ struct WritingTextPane: View {
     }
   }
 
+  private func setFullWidth(_ enabled: Bool) {
+    guard let fileId = writing?.document.file.fileId else { return }
+    Task { @MainActor in
+      do { _ = try await client.setWritingPreferences(fileId: fileId, fullWidth: enabled) } catch {
+        client.problem = error.localizedDescription
+      }
+    }
+  }
+
   private func loadIfNeeded() async {
     guard let writing, file?.viewport == nil else { return }
     do { try await client.loadWritingPane(writing.document.file.paneId) } catch {
       client.problem = error.localizedDescription
     }
+  }
+}
+
+private struct WritingTextReviewStrip: View {
+  @Bindable var client: EngineClient
+  let view: EditorFileView
+  let selectedPosition: TextPosition?
+  @State private var showingReview = false
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x8) {
+      Image(systemName: "person.crop.circle.badge.checkmark")
+        .foregroundStyle(MacTheme.accent)
+      Text("Agent changes ready to review")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      Button("Review") { showingReview = true }
+        .buttonStyle(NeoPillButtonStyle())
+        .accessibilityIdentifier("writing-review-\(view.file.fileId)")
+    }
+    .padding(.horizontal, MacTheme.Space.x10)
+    .frame(height: PaneLayoutContentMetrics.textReviewHeight)
+    .background(MacTheme.canvas)
+    .popover(isPresented: $showingReview, arrowEdge: .bottom) {
+      EditorAgentReviewBar(
+        client: client, view: view, selectedPosition: selectedPosition)
+        .padding(MacTheme.Space.x10)
+        .frame(width: 680)
+        .background(MacTheme.canvas)
+    }
+  }
+}
+
+private extension View {
+  func writingFrame(_ rect: PaneLayoutRect) -> some View {
+    frame(width: rect.size.width, height: rect.size.height, alignment: .topLeading)
+      .offset(x: rect.origin.x, y: rect.origin.y)
   }
 }
 
@@ -372,7 +558,8 @@ private struct WritingTextViewport: NSViewRepresentable {
       textView.backgroundColor = NSColor(MacTheme.face)
       textView.insertionPointColor = NSColor(MacTheme.accent)
       textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
-      textView.textContainerInset = NSSize(width: 92, height: 68)
+      // The pure writing plan owns both the 66-character cap and the page inset.
+      textView.textContainerInset = .zero
       textView.minSize = NSSize(width: 0, height: 0)
       textView.maxSize = NSSize(
         width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)

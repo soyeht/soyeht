@@ -137,9 +137,9 @@ is evidence of the implementation to replace, not an input to the floor.
 
 - ideal column: `66 × 11.037 = 728.445 pt`
 - compact width: `24 × 11.037 + 32 page inset + 20 card inset = 316.889`
-- height: 20 card + 28 header + 42 toolbar + 42 review + three 8 gaps + 32 page
-  inset + `6 × 32` lines = 380
-- 317×380 passes; 316 exposes 23 `ch` and 379 clips the sixth body line.
+- height: 20 card + 42 shared writing header + 42 toolbar + 42 review + three 8
+  gaps + 32 page inset + `6 × 32` lines = 394
+- 317×394 passes; 316 exposes 23 `ch` and 393 clips the sixth body line.
 
 The full 66 `ch` footprint is 811 pt, so it becomes available at 1024, not 768.
 Below that, prose reflows; it is never scaled down.
@@ -183,7 +183,7 @@ deforms.
 | editor | 333×395 | 363×425 | 509 | 362 wide / 508 high |
 | agent | 340×355 | 370×385 | 469 | 369 wide / 468 high |
 | web | 340×361 | 370×391 | 475 | 369 wide / 474 high |
-| text | 317×380 | 347×410 | 494 | 346 wide / 493 high |
+| text | 317×394 | 347×424 | 508 | 346 wide / 507 high |
 | screenplay | 344×582 | 374×612 | 696 | 373 wide / 695 high |
 | presentation | 340×302 | 370×332 | 416 | 369 wide / 415 high |
 

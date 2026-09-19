@@ -3,12 +3,15 @@ import Testing
 
 @testable import SoyehtClient
 
-private let writingFloors: [PaneLayoutKind: PaneLayoutSize] = [
-  .text: PaneLayoutSize(width: 317, height: 394),
-  .screenplay: PaneLayoutSize(width: 344, height: 582),
-  .presentation: PaneLayoutSize(width: 340, height: 302),
-  .agent: PaneLayoutSize(width: 340, height: 355),
-]
+private let writingFontMetrics = PaneLayoutFontMetrics(
+  terminal: PaneLayoutFontMetric(characterWidth: 8, lineHeight: 18, pointSize: 13),
+  editor: PaneLayoutFontMetric(characterWidth: 6.9, lineHeight: 19, pointSize: 11.5),
+  chrome: PaneLayoutFontMetric(characterWidth: 7.2, lineHeight: 17, pointSize: 12),
+  agent: PaneLayoutFontMetric(characterWidth: 9, lineHeight: 21, pointSize: 15),
+  prose: PaneLayoutFontMetric(characterWidth: 11.037, lineHeight: 32, pointSize: 20),
+  screenplay: PaneLayoutFontMetric(characterWidth: 9.59375, lineHeight: 27, pointSize: 16))
+
+private let writingFloors = PaneLayoutFloorFormula.surfaceFloors(fonts: writingFontMetrics)
 
 private let writingPolicy = WritingLayoutPolicy(
   floors: writingFloors,

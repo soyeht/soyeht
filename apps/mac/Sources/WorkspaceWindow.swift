@@ -8,7 +8,7 @@ import SoyehtProtocol
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum MacPaneLayoutMetrics {
+@MainActor enum MacPaneLayoutMetrics {
   /// Named from the smallest width and height exercised by the accepted floor report.
   static let minimumExercisedViewport = PaneLayoutSize(width: 375, height: 375)
   static let topBarHeight = 42.0
@@ -66,12 +66,20 @@ enum MacPaneLayoutMetrics {
       character: "0"),
     chrome: metric(font(named: "Nunito", size: MacTheme.TypeScale.control), character: "0"),
     agent: metric(font(named: "Nunito", size: MacTheme.TypeScale.body), character: "0"),
-    prose: metric(
-      font(named: "Newsreader", size: PaneLayoutContentMetrics.textFontPointSize),
-      character: "0"),
+    prose: proseMetric(for: .reading_serif),
     screenplay: metric(
       font(named: "Courier Prime", size: PaneLayoutContentMetrics.screenplayFontPointSize),
       character: "0"))
+
+  static func proseMetric(for font: WritingFont) -> PaneLayoutFontMetric {
+    let measured = metric(
+      MacTheme.proseNSFont(font, PaneLayoutContentMetrics.textFontPointSize),
+      character: "0")
+    return PaneLayoutFontMetric(
+      characterWidth: measured.characterWidth,
+      lineHeight: PaneLayoutContentMetrics.textLineHeight,
+      pointSize: PaneLayoutContentMetrics.textFontPointSize)
+  }
 
   private static func font(named name: String, size: CGFloat) -> NSFont {
     guard let font = NSFont(name: name, size: size) else {
@@ -105,7 +113,7 @@ enum PaneSplitAxis: Sendable {
   case rows
 }
 
-private struct NewPaneDraft: Equatable {
+@MainActor private struct NewPaneDraft: Equatable {
   let workspaceId: String?
   var insertion: PaneLayoutProvisionalInsertion
 
@@ -1668,7 +1676,10 @@ private struct PaneCard: View {
       if pane.mode == .editor {
         EditorPaneView(client: client, pane: pane, headerDrag: dragConfiguration)
       } else if pane.mode == .writing, pane.writingKind == .text {
-        WritingTextPane(client: client, pane: pane, headerDrag: dragConfiguration)
+        WritingTextPane(
+          client: client, pane: pane, headerDrag: dragConfiguration,
+          onClose: onClose, onSplit: onSplit,
+          layoutActionsDisabled: interaction?.blocksLayoutActions == true)
       } else if pane.mode == .writing, pane.writingKind == .presentation {
         WritingPresentationPane(client: client, pane: pane, headerDrag: dragConfiguration)
       } else if pane.mode == .writing, pane.writingKind == .screenplay {
