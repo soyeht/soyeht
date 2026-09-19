@@ -76,6 +76,8 @@ let editor = Measurement.metric(name: "JetBrains Mono", size: 11.5, character: "
 let chrome = Measurement.metric(name: "Nunito", size: 12, character: "0")
 let agent = Measurement.metric(name: "Nunito", size: 15, character: "0")
 let prose = Measurement.metric(name: "Newsreader", size: 20, character: "0")
+let proseTimes = Measurement.metric(name: "Times New Roman", size: 20, character: "0")
+let proseNunito = Measurement.metric(name: "Nunito", size: 20, character: "0")
 let screenplay = Measurement.metric(name: "Courier Prime", size: 16, character: "0")
 
 let terminalFloor = PaneFloor(
@@ -126,7 +128,7 @@ let floors = [
 ]
 
 print("fonts")
-for metric in [terminal, editor, chrome, agent, prose, screenplay] {
+for metric in [terminal, editor, chrome, agent, prose, proseTimes, proseNunito, screenplay] {
   print(
     "\(metric.name)@\(metric.pointSize): char=\(metric.characterWidth), line=\(metric.lineHeight)")
 }
