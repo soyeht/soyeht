@@ -213,18 +213,30 @@ public enum PaneLayoutSizingError: Error, Equatable, Sendable {
 public struct PaneLayoutSizingPolicy: Equatable, Sendable {
   public var floors: [PaneLayoutKind: PaneLayoutSize]
   public var gaps: PaneLayoutGaps
+  /// Presentation-only floors for leaves whose content differs from their eventual pane kind.
+  /// They are keyed by pane ID so provisional UI never needs a persistable protocol kind.
+  public var paneFloors: [String: PaneLayoutSize]
 
-  public init(floors: [PaneLayoutKind: PaneLayoutSize], gaps: PaneLayoutGaps) {
+  public init(
+    floors: [PaneLayoutKind: PaneLayoutSize], gaps: PaneLayoutGaps,
+    paneFloors: [String: PaneLayoutSize] = [:]
+  ) {
     self.floors = floors
     self.gaps = gaps
+    self.paneFloors = paneFloors
+  }
+
+  public func overridingFloor(forPaneId paneId: String, with floor: PaneLayoutSize) -> Self {
+    var copy = self
+    copy.paneFloors[paneId] = floor
+    return copy
   }
 
   fileprivate func branches(
     for trees: [PaneLayoutTree], along axis: PaneLayoutAxis
   ) throws -> [PaneLayoutBranch] {
     try trees.map { tree in
-      let minimum = try PaneLayoutMinimumSize.require(
-        for: tree, floors: floors, gaps: gaps)
+      let minimum = try minimumSize(for: tree)
       return PaneLayoutBranch(
         weight: axis == .horizontal ? minimum.width : minimum.height,
         tree: tree)
@@ -239,6 +251,34 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
       let children = try split.children.map { try reweighting($0.tree) }
       return .split(
         PaneLayoutSplit(axis: split.axis, children: try branches(for: children, along: split.axis)))
+    }
+  }
+
+  func floor(for leaf: PaneLayoutLeaf) throws -> PaneLayoutSize {
+    if let floor = paneFloors[leaf.paneId] { return floor }
+    guard let floor = floors[leaf.kind] else {
+      throw PaneLayoutSizingError.missingFloor(leaf.kind)
+    }
+    return floor
+  }
+
+  func minimumSize(for tree: PaneLayoutTree) throws -> PaneLayoutSize {
+    switch tree {
+    case .leaf(let leaf):
+      return try floor(for: leaf)
+    case .split(let split):
+      let childSizes = try split.children.map { try minimumSize(for: $0.tree) }
+      let gapCount = Double(max(0, childSizes.count - 1))
+      switch split.axis {
+      case .horizontal:
+        return PaneLayoutSize(
+          width: childSizes.reduce(0) { $0 + $1.width } + gaps.horizontal * gapCount,
+          height: childSizes.map(\.height).max() ?? 0)
+      case .vertical:
+        return PaneLayoutSize(
+          width: childSizes.map(\.width).max() ?? 0,
+          height: childSizes.reduce(0) { $0 + $1.height } + gaps.vertical * gapCount)
+      }
     }
   }
 }

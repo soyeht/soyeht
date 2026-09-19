@@ -115,9 +115,14 @@ let presentationFloor = PaneFloor(
   name: "presentation", surfaceWidth: 320 + 20,
   surfaceHeight: 42 + 32 + 180 + 28 + 20)
 
+let newPaneChooserFloor = PaneFloor(
+  name: "new-pane-chooser",
+  surfaceWidth: ceil(24 * agent.characterWidth + 124),
+  surfaceHeight: 20 + 26 + 8 + 24 + 24 + 3 * 18 + 150 + 32 + 64)
+
 let floors = [
   terminalFloor, editorFloor, agentFloor, webFloor, textFloor, screenplayFloor,
-  presentationFloor,
+  presentationFloor, newPaneChooserFloor,
 ]
 
 print("fonts")

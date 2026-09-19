@@ -37,10 +37,18 @@ enum MacPaneLayoutMetrics {
   static let surfaceFloors = PaneLayoutFloorFormula.surfaceFloors(fonts: fontMetrics)
   static let footprintFloors = PaneLayoutFloorFormula.footprintFloors(
     fonts: fontMetrics, halo: paneHalo)
+  static let newPaneSurfaceFloor = PaneLayoutFloorFormula.newPaneChooserSurfaceFloor(
+    fonts: fontMetrics)
+  static let newPaneFootprintFloor = PaneLayoutSize(
+    width: ceil(newPaneSurfaceFloor.width + 2 * paneHalo),
+    height: ceil(newPaneSurfaceFloor.height + 2 * paneHalo))
   static let sizing = PaneLayoutSizingPolicy(
     floors: footprintFloors,
     gaps: PaneLayoutGaps(
       horizontal: Double(MacTheme.Space.x18), vertical: Double(MacTheme.Space.x18)))
+  static func sizing(newPanePlaceholderId: String) -> PaneLayoutSizingPolicy {
+    sizing.overridingFloor(forPaneId: newPanePlaceholderId, with: newPaneFootprintFloor)
+  }
   static let window = PaneLayoutWindowPolicy(
     minimumExercisedViewport: minimumExercisedViewport,
     largestPaneFootprintWidth: footprintFloors.values.map(\.width).max() ?? 0,
@@ -95,6 +103,33 @@ enum MacPaneLayoutMetrics {
 enum PaneSplitAxis: Sendable {
   case columns
   case rows
+}
+
+private struct NewPaneDraft: Equatable {
+  let workspaceId: String?
+  var insertion: PaneLayoutProvisionalInsertion
+
+  var placeholderPaneId: String { insertion.placeholder.paneId }
+
+  func previewTree() throws -> PaneLayoutTree {
+    try insertion.previewTree(sizing: MacPaneLayoutMetrics.sizing)
+  }
+
+  func completedTree(paneId: String, kind: PaneLayoutKind) throws -> PaneLayoutTree {
+    try insertion.completedTree(
+      with: PaneLayoutLeaf(paneId: paneId, kind: kind), sizing: MacPaneLayoutMetrics.sizing)
+  }
+
+  mutating func select(kind: PaneLayoutKind) {
+    insertion = insertion.selecting(kind: kind)
+  }
+}
+
+private struct NewPanePlaceholderPresentation {
+  let draft: NewPaneDraft
+  let onKindChange: (PaneLayoutKind) -> Void
+  let onCancel: () -> Void
+  let onCreated: (String, PaneLayoutKind) -> Void
 }
 
 struct PaneDragSource: Equatable {
@@ -196,9 +231,7 @@ struct WorkspaceWindow: View {
   @State private var editorInputPreferences = EditorInputPreferences()
   @State private var webLinkPreferences = WebLinkPreferences()
   @State private var paneToClose: String?
-  @State private var showNewPane = false
-  @State private var paneSplitAxis = PaneSplitAxis.columns
-  @State private var paneSplitAnchorId: String?
+  @State private var newPaneDraft: NewPaneDraft?
   @State private var showPairing = false
   @State private var deviceToRevoke: String?
   @State private var taskWorkspaceId: String?
@@ -375,18 +408,11 @@ struct WorkspaceWindow: View {
         EmptyWorkspaceView(icon: "checklist", title: "No workspace selected")
       }
     case .agents:
-      if showNewPane {
-        NewPaneWorkspace(
-          client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
-          splitAxis: paneSplitAxis, isPresented: $showNewPane,
-          onClose: { paneToClose = $0 }, onSplit: presentSplit, onTasks: showTasks,
-          onCreated: completeSplit)
-      } else {
-        PaneGrid(
-          client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
-          viewportSize: viewportSize, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
-          onSplit: presentSplit, onTasks: showTasks)
-      }
+      PaneGrid(
+        client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
+        viewportSize: viewportSize, newPane: newPanePresentation,
+        onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        onSplit: presentSplit, onTasks: showTasks)
     case .terminal:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
@@ -422,6 +448,7 @@ struct WorkspaceWindow: View {
   }
 
   private func selectWorkspace(_ workspaceId: String) {
+    newPaneDraft = nil
     taskWorkspaceId = workspaceId
     if let pane = client.panes.first(where: { $0.workspaceId == workspaceId }) {
       client.select(pane.paneId)
@@ -436,45 +463,71 @@ struct WorkspaceWindow: View {
     showPairing = true
   }
   private func presentNewPane() {
-    paneSplitAxis = .columns
-    paneSplitAnchorId = nil
-    client.refreshHarnesses()
-    navigation.select(.agents)
-    showNewPane = true
+    do {
+      let workspaceId = selectedTaskWorkspaceId
+      let snapshot = try workspaceId.map(layoutSnapshot)
+      newPaneDraft = NewPaneDraft(
+        workspaceId: workspaceId,
+        insertion: PaneLayoutProvisionalInsertion(
+          baseTree: snapshot?.state.tree,
+          placeholder: PaneLayoutLeaf(paneId: newPanePlaceholderId(), kind: .terminal),
+          placement: .arranged(rule: snapshot?.state.insertionRule ?? .initialByType)))
+      client.refreshHarnesses()
+      navigation.select(.agents)
+    } catch {
+      client.problem = "Couldn't open the new pane chooser. The layout was not changed."
+    }
   }
   private func presentSplit(_ paneId: String, _ axis: PaneSplitAxis) {
-    client.select(paneId)
-    paneSplitAxis = axis
-    paneSplitAnchorId = paneId
-    client.refreshHarnesses()
-    navigation.select(.agents)
-    showNewPane = true
-  }
-  private func completeSplit(_ newPaneId: String, _ kind: PaneLayoutKind) {
-    guard let anchorPaneId = paneSplitAnchorId,
-      let anchor = client.panes.first(where: { $0.paneId == anchorPaneId })
-    else { return }
-    defer { paneSplitAnchorId = nil }
+    guard let anchor = client.panes.first(where: { $0.paneId == paneId }) else { return }
     do {
-      let livePanes = client.panes.filter { $0.workspaceId == anchor.workspaceId }
-      let reconciliation = try client.paneLayouts.reconciledPresentation(
-        for: anchor.workspaceId, livePanes: livePanes,
-        sizing: MacPaneLayoutMetrics.sizing)
-      guard let displayed = reconciliation.state.tree else {
-        throw PaneLayoutControllerError.missingTree(anchor.workspaceId)
-      }
-      let base =
-        displayed.paneIdsInCanonicalOrder.contains(newPaneId)
-        ? displayed.removingPane(withId: newPaneId) : displayed
-      guard let base else { throw PaneLayoutControllerError.missingTree(anchor.workspaceId) }
-      let tree = try PaneLayoutTreeMutation.splitting(
-        base, anchorPaneId: anchorPaneId,
-        newLeaf: PaneLayoutLeaf(paneId: newPaneId, kind: kind),
-        axis: paneSplitAxis == .columns ? .horizontal : .vertical)
-      try client.paneLayouts.commit(tree: tree, workspaceId: anchor.workspaceId)
+      let snapshot = try layoutSnapshot(anchor.workspaceId)
+      newPaneDraft = NewPaneDraft(
+        workspaceId: anchor.workspaceId,
+        insertion: PaneLayoutProvisionalInsertion(
+          baseTree: snapshot.state.tree,
+          placeholder: PaneLayoutLeaf(paneId: newPanePlaceholderId(), kind: .terminal),
+          placement: .split(
+            anchorPaneId: paneId, axis: axis == .columns ? .horizontal : .vertical)))
+      client.select(paneId)
+      client.refreshHarnesses()
+      navigation.select(.agents)
+    } catch {
+      client.problem = "Couldn't open the split chooser. The layout was not changed."
+    }
+  }
+  private func completeNewPane(_ newPaneId: String, _ kind: PaneLayoutKind) {
+    guard let draft = newPaneDraft else { return }
+    defer { newPaneDraft = nil }
+    guard case .split = draft.insertion.placement, let workspaceId = draft.workspaceId else {
+      return
+    }
+    do {
+      try client.paneLayouts.commit(
+        tree: draft.completedTree(paneId: newPaneId, kind: kind), workspaceId: workspaceId)
     } catch {
       client.problem = "Couldn't split the pane. The new pane is still available."
     }
+  }
+  private var newPanePresentation: NewPanePlaceholderPresentation? {
+    guard let draft = newPaneDraft else { return nil }
+    return NewPanePlaceholderPresentation(
+      draft: draft,
+      onKindChange: { kind in
+        guard newPaneDraft?.placeholderPaneId == draft.placeholderPaneId else { return }
+        newPaneDraft?.select(kind: kind)
+      },
+      onCancel: { newPaneDraft = nil },
+      onCreated: completeNewPane)
+  }
+  private func layoutSnapshot(_ workspaceId: String) throws -> PaneLayoutReconciliation {
+    try client.paneLayouts.reconciledPresentation(
+      for: workspaceId,
+      livePanes: client.panes.filter { $0.workspaceId == workspaceId },
+      sizing: MacPaneLayoutMetrics.sizing)
+  }
+  private func newPanePlaceholderId() -> String {
+    "local-new-pane-\(UUID().uuidString.lowercased())"
   }
   private var selectedTaskWorkspaceId: String? {
     taskWorkspaceId ?? client.selectedPane?.workspaceId ?? client.workspaces.first?.workspaceId
@@ -516,7 +569,7 @@ struct WorkspaceWindow: View {
   }
   private func selectDestination(_ destination: WorkspaceDestination) {
     navigation.select(destination)
-    if destination != .agents { showNewPane = false }
+    if destination != .agents { newPaneDraft = nil }
   }
   private var pairing: some View {
     ScrollView { pairingContent }.frame(width: 520, height: 720).background(MacTheme.canvas)
@@ -791,11 +844,48 @@ struct PaneGrid: View {
   let workspaceId: String?
   let mode: PaneMode?
   let viewportSize: CGSize
+  fileprivate let newPane: NewPanePlaceholderPresentation?
   let onClose: (String) -> Void
   let onNewPane: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   let onTasks: () -> Void
   @State private var interaction = PaneLayoutInteractionState()
+
+  init(
+    client: EngineClient, webHost: MacWebHost, workspaceId: String?, mode: PaneMode?,
+    viewportSize: CGSize, onClose: @escaping (String) -> Void,
+    onNewPane: @escaping () -> Void, onSplit: @escaping (String, PaneSplitAxis) -> Void,
+    onTasks: @escaping () -> Void
+  ) {
+    self.client = client
+    self.webHost = webHost
+    self.workspaceId = workspaceId
+    self.mode = mode
+    self.viewportSize = viewportSize
+    newPane = nil
+    self.onClose = onClose
+    self.onNewPane = onNewPane
+    self.onSplit = onSplit
+    self.onTasks = onTasks
+  }
+
+  fileprivate init(
+    client: EngineClient, webHost: MacWebHost, workspaceId: String?, mode: PaneMode?,
+    viewportSize: CGSize, newPane: NewPanePlaceholderPresentation?,
+    onClose: @escaping (String) -> Void, onNewPane: @escaping () -> Void,
+    onSplit: @escaping (String, PaneSplitAxis) -> Void, onTasks: @escaping () -> Void
+  ) {
+    self.client = client
+    self.webHost = webHost
+    self.workspaceId = workspaceId
+    self.mode = mode
+    self.viewportSize = viewportSize
+    self.newPane = newPane
+    self.onClose = onClose
+    self.onNewPane = onNewPane
+    self.onSplit = onSplit
+    self.onTasks = onTasks
+  }
 
   private var workspacePanes: [Pane] {
     guard let workspaceId else { return [] }
@@ -808,7 +898,19 @@ struct PaneGrid: View {
 
   var body: some View {
     Group {
-      if panes.isEmpty {
+      if let layout = resolvedLayout {
+        PaneLayoutTreeSurface(
+          client: client, webHost: webHost, workspaceId: layout.workspaceId, panes: panes,
+          tree: layout.tree, plan: layout.plan, viewportSize: viewportSize,
+          interaction: interaction, interactionsEnabled: mode == nil && newPane == nil,
+          newPane: newPane,
+          onClose: onClose, onTasks: onTasks, onSplit: onSplit,
+          onPaneDrop: commitPaneDrop
+        )
+        .task(id: layout.repairTaskID) {
+          persistRepairIfNeeded(layout)
+        }
+      } else if panes.isEmpty {
         VStack(spacing: MacTheme.Space.x18) {
           Image(systemName: mode == .editor ? "doc.text" : "rectangle.split.2x1")
             .font(.system(size: 42, weight: .light))
@@ -824,17 +926,6 @@ struct PaneGrid: View {
           }
         }
         .frame(width: viewportSize.width, height: viewportSize.height)
-      } else if let layout = resolvedLayout {
-        PaneLayoutTreeSurface(
-          client: client, webHost: webHost, workspaceId: layout.workspaceId, panes: panes,
-          tree: layout.tree, plan: layout.plan, viewportSize: viewportSize,
-          interaction: interaction, interactionsEnabled: mode == nil,
-          onClose: onClose, onTasks: onTasks, onSplit: onSplit,
-          onPaneDrop: commitPaneDrop
-        )
-        .task(id: layout.repairTaskID) {
-          persistRepairIfNeeded(layout)
-        }
       }
     }
     .frame(width: viewportSize.width, height: viewportSize.height)
@@ -884,6 +975,24 @@ struct PaneGrid: View {
   }
 
   private var resolvedLayout: ResolvedPaneGridLayout? {
+    if let newPane, newPane.draft.workspaceId == workspaceId {
+      do {
+        let tree = try newPane.draft.previewTree()
+        let sizing = MacPaneLayoutMetrics.sizing(
+          newPanePlaceholderId: newPane.draft.placeholderPaneId)
+        let plan = try PaneLayoutGeometry.layout(
+          tree: tree,
+          viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
+          sizing: sizing)
+        return ResolvedPaneGridLayout(
+          workspaceId: workspaceId ?? "", state: PaneLayoutState(), tree: tree, plan: plan,
+          insertedPaneIds: [], isProvisional: true)
+      } catch {
+        Self.logger.error(
+          "new_pane_layout_resolution_failed error=\(error.localizedDescription)")
+        return nil
+      }
+    }
     guard let workspaceId,
       let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId })
     else { return nil }
@@ -905,7 +1014,7 @@ struct PaneGrid: View {
         sizing: MacPaneLayoutMetrics.sizing)
       return ResolvedPaneGridLayout(
         workspaceId: workspaceId, state: state, tree: tree, plan: plan,
-        insertedPaneIds: reconciliation.insertedPaneIds)
+        insertedPaneIds: reconciliation.insertedPaneIds, isProvisional: false)
     } catch {
       Self.logger.error("pane_layout_resolution_failed error=\(error.localizedDescription)")
       return nil
@@ -913,7 +1022,9 @@ struct PaneGrid: View {
   }
 
   private func persistRepairIfNeeded(_ layout: ResolvedPaneGridLayout) {
-    guard layout.state.mode == .custom, !layout.insertedPaneIds.isEmpty else { return }
+    guard !layout.isProvisional, layout.state.mode == .custom,
+      !layout.insertedPaneIds.isEmpty
+    else { return }
     Self.logger.notice(
       "pane_layout_reconciled_missing workspace=\(layout.workspaceId, privacy: .public) panes=\(layout.insertedPaneIds.joined(separator: ","), privacy: .public)"
     )
@@ -965,9 +1076,10 @@ private struct ResolvedPaneGridLayout {
   let tree: PaneLayoutTree
   let plan: PaneLayoutGeometryResult
   let insertedPaneIds: [String]
+  let isProvisional: Bool
 
   var repairTaskID: String {
-    "\(workspaceId):\(state.mode.rawValue):\(insertedPaneIds.joined(separator: ","))"
+    "\(workspaceId):\(state.mode.rawValue):\(isProvisional):\(insertedPaneIds.joined(separator: ","))"
   }
 }
 
@@ -981,6 +1093,7 @@ private struct PaneLayoutTreeSurface: View {
   let viewportSize: CGSize
   let interaction: PaneLayoutInteractionState
   let interactionsEnabled: Bool
+  let newPane: NewPanePlaceholderPresentation?
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -991,7 +1104,8 @@ private struct PaneLayoutTreeSurface: View {
       client: client, webHost: webHost, panesById: panesById, tintIndices: tintIndices,
       workspaceId: workspaceId, tree: tree, path: PaneLayoutNodePath(), plan: plan,
       viewportSize: viewportSize, interaction: interaction,
-      interactionsEnabled: interactionsEnabled, onClose: onClose, onTasks: onTasks,
+      interactionsEnabled: interactionsEnabled, newPane: newPane,
+      onClose: onClose, onTasks: onTasks,
       onSplit: onSplit, onPaneDrop: onPaneDrop
     )
     .onDrop(
@@ -1023,6 +1137,7 @@ private struct PaneLayoutNodeSurface: View {
   let viewportSize: CGSize
   let interaction: PaneLayoutInteractionState
   let interactionsEnabled: Bool
+  let newPane: NewPanePlaceholderPresentation?
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -1032,7 +1147,9 @@ private struct PaneLayoutNodeSurface: View {
     if let geometry = plan.nodes[path] {
       switch tree {
       case .leaf(let leaf):
-        if let pane = panesById[leaf.paneId] {
+        if let newPane, leaf.paneId == newPane.draft.placeholderPaneId {
+          placeholderSurface(newPane, geometry: geometry)
+        } else if let pane = panesById[leaf.paneId] {
           leafSurface(pane: pane, geometry: geometry)
         }
       case .split(let split):
@@ -1040,10 +1157,34 @@ private struct PaneLayoutNodeSurface: View {
           client: client, webHost: webHost, panesById: panesById, tintIndices: tintIndices,
           workspaceId: workspaceId, split: split, path: path, plan: plan,
           viewportSize: viewportSize, interaction: interaction,
-          interactionsEnabled: interactionsEnabled, onClose: onClose, onTasks: onTasks,
+          interactionsEnabled: interactionsEnabled, newPane: newPane,
+          onClose: onClose, onTasks: onTasks,
           onSplit: onSplit, onPaneDrop: onPaneDrop)
       }
     }
+  }
+
+  private func placeholderSurface(
+    _ presentation: NewPanePlaceholderPresentation,
+    geometry: PaneLayoutNodeGeometry
+  ) -> some View {
+    let halo = CGFloat(MacPaneLayoutMetrics.paneHalo)
+    let width = CGFloat(geometry.frame.size.width)
+    let height = CGFloat(geometry.frame.size.height)
+    return NewPaneSheet(
+      client: client, workspaceId: presentation.draft.workspaceId,
+      mode: Binding(
+        get: {
+          presentation.draft.insertion.placeholder.kind == .agent ? .agent : .terminal
+        },
+        set: { presentation.onKindChange(PaneLayoutKind(mode: $0)) }),
+      onCancel: presentation.onCancel, onCreated: presentation.onCreated
+    )
+    .frame(width: max(0, width - 2 * halo), height: max(0, height - 2 * halo))
+    .padding(halo)
+    .frame(width: width, height: height, alignment: .topLeading)
+    .id(presentation.draft.placeholderPaneId)
+    .accessibilityIdentifier("new-pane-placeholder")
   }
 
   @ViewBuilder private func leafSurface(
@@ -1115,6 +1256,7 @@ private struct PaneLayoutSplitSurface: View {
   let viewportSize: CGSize
   let interaction: PaneLayoutInteractionState
   let interactionsEnabled: Bool
+  let newPane: NewPanePlaceholderPresentation?
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -1142,7 +1284,8 @@ private struct PaneLayoutSplitSurface: View {
                   tintIndices: tintIndices, workspaceId: workspaceId,
                   tree: child.branch.tree, path: childPath, plan: plan,
                   viewportSize: viewportSize, interaction: interaction,
-                  interactionsEnabled: interactionsEnabled, onClose: onClose,
+                  interactionsEnabled: interactionsEnabled, newPane: newPane,
+                  onClose: onClose,
                   onTasks: onTasks, onSplit: onSplit, onPaneDrop: onPaneDrop
                 )
                 .frame(
@@ -1845,48 +1988,12 @@ private struct PaneCard: View {
   }
 }
 
-private struct NewPaneWorkspace: View {
-  @Bindable var client: EngineClient
-  let webHost: MacWebHost
-  let workspaceId: String?
-  let splitAxis: PaneSplitAxis
-  @Binding var isPresented: Bool
-  let onClose: (String) -> Void
-  let onSplit: (String, PaneSplitAxis) -> Void
-  let onTasks: () -> Void
-  let onCreated: (String, PaneLayoutKind) -> Void
-
-  var body: some View {
-    splitLayout {
-      if let pane = client.selectedPane {
-        PaneCard(
-          client: client, webHost: webHost, pane: pane, tint: MacTheme.agentRose, onClose: onClose,
-          onTasks: onTasks, onSplit: onSplit, interaction: nil, dropTargetSize: nil,
-          onPaneDrop: { _, _, _ in }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      }
-      NewPaneSheet(
-        client: client, workspaceId: workspaceId, isPresented: $isPresented,
-        onCreated: onCreated
-      )
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }.padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
-  }
-
-  private var splitLayout: AnyLayout {
-    splitAxis == .columns
-      ? AnyLayout(HStackLayout(spacing: MacTheme.Space.x18))
-      : AnyLayout(VStackLayout(spacing: MacTheme.Space.x18))
-  }
-}
-
 private struct NewPaneSheet: View {
   @Bindable var client: EngineClient
   let workspaceId: String?
-  @Binding var isPresented: Bool
+  @Binding var mode: PaneMode
+  let onCancel: () -> Void
   let onCreated: (String, PaneLayoutKind) -> Void
-  @State private var mode = PaneMode.terminal
   @State private var directory: URL?
   @State private var harness = ""
   @State private var model = ""
@@ -1912,133 +2019,129 @@ private struct NewPaneSheet: View {
         Spacer()
         Image(systemName: "rectangle.split.2x1").accessibilityHidden(true)
         Image(systemName: "rectangle.split.1x2").accessibilityHidden(true)
-        Button {
-          isPresented = false
-        } label: {
+        Button(action: onCancel) {
           Image(systemName: "xmark")
         }
         .help("Close new pane")
       }
       .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
-      .padding(.horizontal, MacTheme.Space.x12).frame(height: 26)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .frame(height: PaneLayoutContentMetrics.newPaneHeaderHeight)
       .background(MacTheme.well, in: Capsule())
 
-      VStack(spacing: MacTheme.Space.x18) {
-        Text("What do you want to do?")
-          .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
-        VStack(spacing: 0) {
-          if mode == .agent {
-            ZStack(alignment: .topLeading) {
-              TextField("", text: $prompt, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-                .font(MacTheme.chrome(MacTheme.TypeScale.body))
-                .foregroundStyle(MacTheme.ink)
-                .focused($promptFocused)
-                .padding(.trailing, 54)
-                .accessibilityLabel("Ask anything")
-                .accessibilityHint("Type the first message for the new agent")
-              if prompt.isEmpty {
-                Text("Ask anything. Choose a directory and an agent below.")
-                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
-                  .foregroundStyle(MacTheme.muted)
-                  .allowsHitTesting(false)
-              }
-              HStack {
-                Spacer()
-                Button("⌘⇧C") { promptFocused = true }
-                  .buttonStyle(.plain)
-                  .keyboardShortcut("c", modifiers: [.command, .shift])
-                  .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
-                  .foregroundStyle(MacTheme.muted)
-                  .accessibilityLabel("Focus new agent message")
-              }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { promptFocused = true }
-          } else {
-            HStack(alignment: .top) {
-              Text("Open a terminal in the directory selected below.")
-                .font(MacTheme.chrome(MacTheme.TypeScale.body))
-                .foregroundStyle(MacTheme.muted)
-              Spacer()
-            }
-            Spacer()
-          }
-          HStack(spacing: MacTheme.Space.x8) {
-            Button(action: chooseDirectory) {
-              Image(systemName: "plus").font(.system(size: 16))
-            }.help("Choose a directory")
+      ScrollView(.vertical, showsIndicators: true) {
+        VStack(spacing: PaneLayoutContentMetrics.newPaneSectionSpacing) {
+          Text("What do you want to do?")
+            .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+            .frame(height: PaneLayoutContentMetrics.newPaneHeadingHeight)
+          VStack(spacing: 0) {
             if mode == .agent {
-              Button {
-                showsAgentPicker.toggle()
-              } label: {
-                HStack(spacing: MacTheme.Space.x6) {
-                  Image(systemName: "cpu")
-                  Text(selectedAgentLabel)
-                    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-                  if !effort.isEmpty {
-                    Text("·").foregroundStyle(MacTheme.muted)
-                    Text(effort.capitalized)
-                      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-                      .foregroundStyle(MacTheme.secondary)
-                  }
-                  Image(systemName: "chevron.down").font(.system(size: 10))
+              ZStack(alignment: .topLeading) {
+                TextField("", text: $prompt, axis: .vertical)
+                  .textFieldStyle(.plain)
+                  .lineLimit(1...4)
+                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .foregroundStyle(MacTheme.ink)
+                  .focused($promptFocused)
+                  .padding(.trailing, 54)
+                  .accessibilityLabel("Ask anything")
+                  .accessibilityHint("Type the first message for the new agent")
+                if prompt.isEmpty {
+                  Text("Ask anything. Choose a directory and an agent below.")
+                    .font(MacTheme.chrome(MacTheme.TypeScale.body))
                     .foregroundStyle(MacTheme.muted)
+                    .allowsHitTesting(false)
+                }
+                HStack {
+                  Spacer()
+                  Button("⌘⇧C") { promptFocused = true }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+                    .foregroundStyle(MacTheme.muted)
+                    .accessibilityLabel("Focus new agent message")
                 }
               }
-              .popover(isPresented: $showsAgentPicker, arrowEdge: .bottom) { agentPicker }
+              .contentShape(Rectangle())
+              .onTapGesture { promptFocused = true }
             } else {
-              Button(action: create) {
-                Text("Terminal")
-                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+              HStack(alignment: .top) {
+                Text("Open a terminal in the directory selected below.")
+                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .foregroundStyle(MacTheme.muted)
+                Spacer()
               }
-              .buttonStyle(.plain)
-              .disabled(directory == nil || submitting)
-              .accessibilityHint("Open a terminal in the selected directory")
+              Spacer()
             }
-            Spacer()
-            Button(action: create) {
-              Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold))
-                .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
-                .neoAccent(radius: MacTheme.Radius.pill)
+            HStack(spacing: MacTheme.Space.x8) {
+              Button(action: chooseDirectory) {
+                Image(systemName: "plus").font(.system(size: 16))
+              }.help("Choose a directory")
+              if mode == .agent {
+                Button {
+                  showsAgentPicker.toggle()
+                } label: {
+                  HStack(spacing: MacTheme.Space.x6) {
+                    Image(systemName: "cpu")
+                    Text(selectedAgentLabel)
+                      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                    if !effort.isEmpty {
+                      Text("·").foregroundStyle(MacTheme.muted)
+                      Text(effort.capitalized)
+                        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+                        .foregroundStyle(MacTheme.secondary)
+                    }
+                    Image(systemName: "chevron.down").font(.system(size: 10))
+                      .foregroundStyle(MacTheme.muted)
+                  }
+                }
+                .popover(isPresented: $showsAgentPicker, arrowEdge: .bottom) { agentPicker }
+              } else {
+                Button(action: create) {
+                  Text("Terminal")
+                    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(directory == nil || submitting)
+                .accessibilityHint("Open a terminal in the selected directory")
+              }
+              Spacer()
+              Button(action: create) {
+                Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold))
+                  .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
+                  .neoAccent(radius: MacTheme.Radius.pill)
+              }
+              .disabled(
+                directory == nil || (mode == .agent && selectedHarness?.available != true)
+                  || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
+              )
+              .keyboardShortcut(.return, modifiers: [.command, .shift])
             }
-            .disabled(
-              directory == nil || (mode == .agent && selectedHarness?.available != true)
-                || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
-            )
-            .keyboardShortcut(.return, modifiers: [.command, .shift])
           }
-        }
-        .padding(EdgeInsets(top: 14, leading: 16, bottom: 12, trailing: 16))
-        .frame(width: 520, height: 150).neoWell(radius: MacTheme.Radius.control)
+          .padding(EdgeInsets(top: 14, leading: 16, bottom: 12, trailing: 16))
+          .frame(maxWidth: .infinity)
+          .frame(height: PaneLayoutContentMetrics.newPaneFormHeight)
+          .neoWell(radius: MacTheme.Radius.control)
 
-        metadata
-        HStack(spacing: MacTheme.Space.x10) {
-          Text(mode == .agent ? "Prefer the command line?" : "Prefer a structured agent?")
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-            .foregroundStyle(MacTheme.muted)
-          Button {
-            mode = mode == .agent ? .terminal : .agent
-            if mode == .agent {
-              showsAgentPicker = true
-              promptFocused = true
-            }
-          } label: {
-            Label(
-              mode == .agent ? "Open a terminal" : "Open an agent",
-              systemImage: mode == .agent ? "terminal" : "cpu")
-          }.buttonStyle(NeoPillButtonStyle())
-          Text("⌘⇧Enter")
-            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
-            .foregroundStyle(MacTheme.muted)
-        }.frame(width: 520, alignment: .leading).padding(.top, MacTheme.Space.x14)
+          metadata
+            .frame(height: PaneLayoutContentMetrics.newPaneMetadataHeight)
+          ViewThatFits(in: .horizontal) {
+            modeSwitch(horizontal: true)
+            modeSwitch(horizontal: false)
+          }
+          .frame(
+            maxWidth: .infinity,
+            minHeight: PaneLayoutContentMetrics.newPaneCompactFooterHeight,
+            alignment: .topLeading)
+        }
+        .padding(.vertical, PaneLayoutContentMetrics.newPaneBodyVerticalInset)
+        .frame(maxWidth: .infinity)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .offset(y: -16)
+      .scrollBounceBehavior(.basedOnSize)
       .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
     }
-    .padding(MacTheme.Space.x10).neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .padding(PaneLayoutContentMetrics.paneCardInset)
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .onAppear {
       client.refreshHarnesses(rescan: true)
       selectFirstHarness()
@@ -2056,16 +2159,49 @@ private struct NewPaneSheet: View {
     }
   }
 
+  @ViewBuilder private func modeSwitch(horizontal: Bool) -> some View {
+    let content = Group {
+      Text(mode == .agent ? "Prefer the command line?" : "Prefer a structured agent?")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .foregroundStyle(MacTheme.muted)
+      Button(action: toggleMode) {
+        Label(
+          mode == .agent ? "Open a terminal" : "Open an agent",
+          systemImage: mode == .agent ? "terminal" : "cpu")
+      }
+      .buttonStyle(NeoPillButtonStyle())
+      Text("⌘⇧Enter")
+        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        .foregroundStyle(MacTheme.muted)
+    }
+    if horizontal {
+      HStack(spacing: MacTheme.Space.x10) { content }
+    } else {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x8) { content }
+    }
+  }
+
+  private func toggleMode() {
+    mode = mode == .agent ? .terminal : .agent
+    if mode == .agent {
+      showsAgentPicker = true
+      promptFocused = true
+    }
+  }
+
   private var metadata: some View {
-    HStack(spacing: MacTheme.Space.x14) {
+    HStack(spacing: MacTheme.Space.x8) {
       Button(action: chooseDirectory) {
         Label(
           directory?.lastPathComponent ?? "Project", systemImage: "folder"
         )
         .lineLimit(1)
       }
+      .layoutPriority(1)
       Label("Local", systemImage: "desktopcomputer")
+        .fixedSize()
       Label("main", systemImage: "arrow.triangle.branch")
+        .fixedSize()
       Spacer()
       if mode == .agent {
         Menu {
@@ -2078,7 +2214,8 @@ private struct NewPaneSheet: View {
       }
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-    .foregroundStyle(MacTheme.secondary).frame(width: 508)
+    .foregroundStyle(MacTheme.secondary)
+    .frame(maxWidth: .infinity)
   }
 
   private var agentPicker: some View {
@@ -2146,7 +2283,6 @@ private struct NewPaneSheet: View {
             try await client.sendPromptNow(paneId, text: firstPrompt)
           }
         }
-        isPresented = false
       } catch {
         submitting = false
         client.problem = error.localizedDescription
