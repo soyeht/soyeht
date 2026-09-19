@@ -25,6 +25,9 @@ private let acceptedFontMetrics = PaneLayoutFontMetrics(
   #expect(footprints[.terminal] == PaneLayoutSize(width: 370, height: 331))
   #expect(footprints[.screenplay] == PaneLayoutSize(width: 374, height: 612))
   #expect(footprints[.unknownWriting] == footprints[.screenplay])
+  #expect(
+    PaneLayoutFloorFormula.newPaneChooserSurfaceFloor(fonts: acceptedFontMetrics)
+      == PaneLayoutSize(width: 340, height: 402))
 }
 
 @Test func terminalFloorChangesWhenTheActiveRendererLineHeightChanges() {

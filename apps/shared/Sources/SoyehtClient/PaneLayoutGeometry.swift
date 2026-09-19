@@ -122,9 +122,7 @@ public enum PaneLayoutGeometry {
     ) throws {
       switch tree {
       case .leaf(let leaf):
-        guard let floor = sizing.floors[leaf.kind] else {
-          throw PaneLayoutSizingError.missingFloor(leaf.kind)
-        }
+        let floor = try sizing.floor(for: leaf)
         let contentSize = PaneLayoutSize(
           width: max(frame.size.width, floor.width),
           height: max(frame.size.height, floor.height))
@@ -137,10 +135,7 @@ public enum PaneLayoutGeometry {
         paneRects[leaf.paneId] = PaneLayoutRect(origin: rootOrigin, size: contentSize)
 
       case .split(let split):
-        let minimums = try split.children.map {
-          try PaneLayoutMinimumSize.require(
-            for: $0.tree, floors: sizing.floors, gaps: sizing.gaps)
-        }
+        let minimums = try split.children.map { try sizing.minimumSize(for: $0.tree) }
         let gap = split.axis == .horizontal ? sizing.gaps.horizontal : sizing.gaps.vertical
         let gapTotal = gap * Double(max(0, split.children.count - 1))
         let viewportExtent = extent(of: frame.size, axis: split.axis)

@@ -83,6 +83,14 @@ public enum PaneLayoutContentMetrics {
   public static let presentationNumericRailHeight = 32.0
   public static let presentationStage = PaneLayoutSize(width: 320, height: 180)
   public static let presentationFooterHeight = 28.0
+
+  public static let newPaneHeaderHeight = genericPaneHeaderHeight
+  public static let newPaneBodyVerticalInset = 12.0
+  public static let newPaneSectionSpacing = 18.0
+  public static let newPaneHeadingHeight = 24.0
+  public static let newPaneFormHeight = 150.0
+  public static let newPaneMetadataHeight = 32.0
+  public static let newPaneCompactFooterHeight = 64.0
 }
 
 /// Content rulers accepted in `docs/reports/pane-layout-floor-measurements.md`.
@@ -92,6 +100,8 @@ public enum PaneLayoutFloorFormula {
   public static let editorColumns = 36.0
   public static let agentComposerCharacters = 24.0
   public static let compactTextCharacters = 24.0
+  public static let newPaneComposerCharacters = 24.0
+  public static let newPaneControlChromeWidth = 124.0
   public static let screenplayColumns = 61.0
   public static let minimumScreenplayPointSize = 7.5
   public static let paneCardInset = PaneLayoutContentMetrics.paneCardInset
@@ -177,6 +187,26 @@ public enum PaneLayoutFloorFormula {
     surfaceFloors(fonts: fonts).mapValues {
       PaneLayoutSize(width: ceil($0.width + 2 * halo), height: ceil($0.height + 2 * halo))
     }
+  }
+
+  /// The complete compact chooser fixture: header, prompt/mode field, directory/branch metadata,
+  /// and the two-line mode switch used at a 375 pt window width.
+  public static func newPaneChooserSurfaceFloor(
+    fonts: PaneLayoutFontMetrics
+  ) -> PaneLayoutSize {
+    PaneLayoutSize(
+      width: ceil(
+        newPaneComposerCharacters * fonts.agent.characterWidth + newPaneControlChromeWidth),
+      height: ceil(
+        2 * PaneLayoutContentMetrics.paneCardInset
+          + PaneLayoutContentMetrics.newPaneHeaderHeight
+          + PaneLayoutContentMetrics.paneStackSpacing
+          + 2 * PaneLayoutContentMetrics.newPaneBodyVerticalInset
+          + PaneLayoutContentMetrics.newPaneHeadingHeight
+          + 3 * PaneLayoutContentMetrics.newPaneSectionSpacing
+          + PaneLayoutContentMetrics.newPaneFormHeight
+          + PaneLayoutContentMetrics.newPaneMetadataHeight
+          + PaneLayoutContentMetrics.newPaneCompactFooterHeight))
   }
 }
 

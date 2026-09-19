@@ -135,19 +135,15 @@ public enum PaneLayoutTreeMutation {
       throw PaneLayoutMutationError.invalidSplitPath(path)
     }
 
-    let leftMinimum = try PaneLayoutMinimumSize.require(
-      for: split.children[dividerIndex].tree, floors: sizing.floors, gaps: sizing.gaps)
-    let rightMinimum = try PaneLayoutMinimumSize.require(
-      for: split.children[dividerIndex + 1].tree, floors: sizing.floors, gaps: sizing.gaps)
+    let leftMinimum = try sizing.minimumSize(for: split.children[dividerIndex].tree)
+    let rightMinimum = try sizing.minimumSize(for: split.children[dividerIndex + 1].tree)
     let leftExtent = extent(of: leftGeometry.frame.size, axis: split.axis)
     let rightExtent = extent(of: rightGeometry.frame.size, axis: split.axis)
     let minimumDelta = extent(of: leftMinimum, axis: split.axis) - leftExtent
     let maximumDelta = rightExtent - extent(of: rightMinimum, axis: split.axis)
     let clampedDelta = min(max(delta, minimumDelta), maximumDelta)
 
-    let minimums = try split.children.map {
-      try PaneLayoutMinimumSize.require(for: $0.tree, floors: sizing.floors, gaps: sizing.gaps)
-    }
+    let minimums = try split.children.map { try sizing.minimumSize(for: $0.tree) }
     let gap = split.axis == .horizontal ? sizing.gaps.horizontal : sizing.gaps.vertical
     let minimumExtent =
       minimums.reduce(0) {
@@ -189,9 +185,7 @@ public enum PaneLayoutTreeMutation {
     guard let splitGeometry = geometry.nodes[path] else {
       throw PaneLayoutMutationError.invalidSplitPath(path)
     }
-    let minimums = try split.children.map {
-      try PaneLayoutMinimumSize.require(for: $0.tree, floors: sizing.floors, gaps: sizing.gaps)
-    }
+    let minimums = try split.children.map { try sizing.minimumSize(for: $0.tree) }
     let gap = split.axis == .horizontal ? sizing.gaps.horizontal : sizing.gaps.vertical
     let available = max(
       0,
