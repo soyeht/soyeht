@@ -193,14 +193,25 @@ struct PhoneWritingWorkspace: View {
 }
 
 @MainActor
-private enum PhoneWritingMetrics {
+enum PhoneWritingMetrics {
+  static let screenplayFontName = "Courier Prime"
+
+  static let screenplayMetric: PaneLayoutFontMetric = {
+    let font = screenplayFont()
+    let width = ("0" as NSString).size(withAttributes: [.font: font]).width
+    return PaneLayoutFontMetric(
+      characterWidth: ceil(width * 1_000) / 1_000,
+      lineHeight: PaneLayoutContentMetrics.screenplayLineHeight,
+      pointSize: PaneLayoutContentMetrics.screenplayFontPointSize)
+  }()
+
   static let fonts = PaneLayoutFontMetrics(
     terminal: PaneLayoutFontMetric(characterWidth: 8, lineHeight: 18, pointSize: 13),
     editor: PaneLayoutFontMetric(characterWidth: 6.9, lineHeight: 19, pointSize: 11.5),
     chrome: PaneLayoutFontMetric(characterWidth: 7.2, lineHeight: 17, pointSize: 12),
     agent: PaneLayoutFontMetric(characterWidth: 9, lineHeight: 21, pointSize: 15),
     prose: metric(for: .reading_serif),
-    screenplay: PaneLayoutFontMetric(characterWidth: 9.59375, lineHeight: 27, pointSize: 16))
+    screenplay: screenplayMetric)
   static let floors = PaneLayoutFloorFormula.surfaceFloors(fonts: fonts)
   static let sizing = PaneLayoutSizingPolicy(
     floors: floors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18))
@@ -234,6 +245,18 @@ private enum PhoneWritingMetrics {
         ?? UIFont(name: "Nunito", size: size)
         ?? UIFont.systemFont(ofSize: size)
     }
+  }
+
+  static func screenplayFont(bold: Bool = false) -> UIFont {
+    let size = PaneLayoutContentMetrics.screenplayFontPointSize
+    if bold {
+      return UIFont(name: "CourierPrime-Bold", size: size)
+        ?? UIFont(name: "Courier Prime Bold", size: size)
+        ?? UIFont.monospacedSystemFont(ofSize: size, weight: .bold)
+    }
+    return UIFont(name: screenplayFontName, size: size)
+      ?? UIFont(name: "CourierPrime-Regular", size: size)
+      ?? UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
   }
 }
 
@@ -321,6 +344,21 @@ private struct PhoneWritingLeaf: View {
           client: client, pane: pane, writing: writing, file: file,
           size: content.size, font: leaf.font ?? PhoneWritingMetrics.fonts.prose,
           floors: floors)
+      } else if leaf.kind == .screenplay {
+        if let writing, let file, let structure = writing.structure,
+          let content = leaf.contentRect, let pageSize = leaf.screenplayPageSize,
+          let fitScale = leaf.screenplayFitScale
+        {
+          PhoneWritingScreenplaySurface(
+            client: client, identity: leaf.identity, writing: writing, file: file,
+            structure: structure, viewportSize: content.size, pageSize: pageSize,
+            fitScale: fitScale, zoomMultiplier: leaf.screenplayZoom,
+            onZoomChanged: { zoom in
+              onAction(.setScreenplayZoom(leaf.identity, zoom))
+            })
+        } else {
+          writingState("Loading screenplay", systemImage: "arrow.trianglehead.2.clockwise")
+        }
       } else {
         writingState("Open this document on the Mac", systemImage: icon)
       }

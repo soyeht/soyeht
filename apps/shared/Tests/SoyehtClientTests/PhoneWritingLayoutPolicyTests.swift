@@ -211,6 +211,25 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
 
   #expect(leaf.font == phoneFonts.prose)
   #expect(leaf.fullWidth)
+  #expect(leaf.screenplayPageSize == nil)
+}
+
+@Test func screenplayPageIsFixedRatioAndFitsTheShorterViewportAxis() throws {
+  let tree = PaneLayoutTree.leaf(PaneLayoutLeaf(paneId: "screenplay", kind: .screenplay))
+  let plan = phonePolicy.layout(
+    request(
+      tree: tree, selectedPaneId: "screenplay",
+      viewport: PaneLayoutSize(width: 800, height: 375)))
+  let leaf = try #require(plan.leaves.first)
+  let page = try #require(leaf.screenplayPageSize)
+  let content = try #require(leaf.contentRect)
+  let fit = try #require(leaf.screenplayFitScale)
+
+  #expect(page.width == 61 * phoneFonts.screenplay.characterWidth + 2 * 74)
+  #expect(abs(page.height / page.width - 11.0 / 8.5) < 0.000_001)
+  #expect(page.width * fit <= content.size.width + 0.000_001)
+  #expect(page.height * fit <= content.size.height + 0.000_001)
+  #expect(abs(page.height * fit - content.size.height) < 0.000_001)
 }
 
 @Test func requestedPhoneMatrixNeverUsesHorizontalOverflowOrShrinksTargets() throws {
@@ -247,9 +266,14 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
         let screenplay = try #require(
           plan.leaves.first { $0.identity.paneId == "screenplay" })
         let scale = try #require(screenplay.screenplayFitScale)
+        let pageSize = try #require(screenplay.screenplayPageSize)
         #expect(scale >= WritingLayoutMetrics.standard.screenplayMinimumScale)
         let basePageWidth = 61 * phoneFonts.screenplay.characterWidth + 2 * 74
+        #expect(pageSize.width == basePageWidth)
+        #expect(abs(pageSize.height / pageSize.width - 11.0 / 8.5) < 0.000_001)
         #expect(basePageWidth * scale <= (screenplay.contentRect?.size.width ?? 0) + 0.000_001)
+        #expect(
+          pageSize.height * scale <= (screenplay.contentRect?.size.height ?? 0) + 0.000_001)
       }
     }
   }
