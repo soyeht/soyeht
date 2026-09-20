@@ -107,6 +107,23 @@ public enum PhoneWritingStateAction: Equatable, Sendable {
   case setScreenplayZoom(PhoneWritingIdentity, Double)
 }
 
+/// Phone navigation is device-local. Only an explicit operation on a remote pane may
+/// move the engine's shared focus.
+public enum PhoneWritingFocusAction: Equatable, Sendable {
+  case enterWorkspace
+  case toggleLeaf
+  case selectLocalTab
+  case restoreLocalState
+  case sendToAgent(String)
+}
+
+public enum PhoneWritingFocusPolicy {
+  public static func apply(_ action: PhoneWritingFocusAction, select: (String) -> Void) {
+    guard case .sendToAgent(let paneId) = action, !paneId.isEmpty else { return }
+    select(paneId)
+  }
+}
+
 public struct PhoneWritingViewportInsets: Equatable, Sendable {
   public var top: Double
   public var leading: Double

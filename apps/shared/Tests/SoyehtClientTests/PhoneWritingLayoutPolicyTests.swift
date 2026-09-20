@@ -127,6 +127,23 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
   #expect(ignoredAgentTab.panes.first { $0.identity == text.identity }?.activeTab == .document)
 }
 
+@Test func onlyExplicitRemotePhoneActionMovesSharedEngineFocus() {
+  var selectedPaneIds: [String] = []
+  let localActions: [PhoneWritingFocusAction] = [
+    .enterWorkspace, .toggleLeaf, .selectLocalTab, .restoreLocalState,
+  ]
+
+  for action in localActions {
+    PhoneWritingFocusPolicy.apply(action) { selectedPaneIds.append($0) }
+  }
+  #expect(selectedPaneIds.isEmpty)
+
+  PhoneWritingFocusPolicy.apply(.sendToAgent("agent")) {
+    selectedPaneIds.append($0)
+  }
+  #expect(selectedPaneIds == ["agent"])
+}
+
 @Test func invalidOrInferredCompanionsNeverCreateAnAgentTab() {
   let inferred = PaneLayoutTree.split(
     PaneLayoutSplit(
@@ -230,6 +247,56 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
   #expect(page.width * fit <= content.size.width + 0.000_001)
   #expect(page.height * fit <= content.size.height + 0.000_001)
   #expect(abs(page.height * fit - content.size.height) < 0.000_001)
+}
+
+@Test func phonePresentationKeepsSixteenByNineAndSwitchesNavigationByMeasuredWidth() throws {
+  let tree = PaneLayoutTree.leaf(PaneLayoutLeaf(paneId: "presentation", kind: .presentation))
+  let writingPolicy = WritingLayoutPolicy(
+    floors: phoneFloors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18))
+
+  for viewport in [
+    PaneLayoutSize(width: 375, height: 812),
+    PaneLayoutSize(width: 390, height: 667),
+    PaneLayoutSize(width: 430, height: 568),
+  ] {
+    let phone = phonePolicy.layout(
+      request(tree: tree, selectedPaneId: "presentation", viewport: viewport))
+    let leaf = try #require(phone.leaves.first)
+    let content = try #require(leaf.contentRect)
+    let plan = try writingPolicy.layout(
+      WritingLayoutRequest(
+        kind: .presentation,
+        viewport: PaneLayoutSize(
+          width: content.size.width,
+          height: content.size.height + WritingLayoutMetrics.standard.headerHeight),
+        font: phoneFonts.prose))
+    guard case .presentation(let presentation) = plan.surface else {
+      Issue.record("Expected a presentation plan")
+      continue
+    }
+    #expect(presentation.navigation == .numbers)
+    #expect(
+      abs(presentation.stageRect.size.width / presentation.stageRect.size.height - 16.0 / 9.0)
+        < 0.000_001)
+  }
+
+  let landscape = phonePolicy.layout(
+    request(
+      tree: tree, selectedPaneId: "presentation",
+      viewport: PaneLayoutSize(width: 812, height: 375)))
+  let content = try #require(landscape.leaves.first?.contentRect)
+  let landscapePlan = try writingPolicy.layout(
+    WritingLayoutRequest(
+      kind: .presentation,
+      viewport: PaneLayoutSize(
+        width: content.size.width,
+        height: content.size.height + WritingLayoutMetrics.standard.headerHeight),
+      font: phoneFonts.prose))
+  guard case .presentation(let presentation) = landscapePlan.surface else {
+    Issue.record("Expected a landscape presentation plan")
+    return
+  }
+  #expect(presentation.navigation == .thumbnails)
 }
 
 @Test func requestedPhoneMatrixNeverUsesHorizontalOverflowOrShrinksTargets() throws {

@@ -60,7 +60,6 @@ struct PhoneWritingWorkspace: View {
       .background(PhonePalette.canvas)
       .onAppear {
         reconcile(plan.localState)
-        client.select(initialPaneId)
       }
       .onChange(of: plan.localState) { _, reconciled in reconcile(reconciled) }
     }
@@ -132,7 +131,9 @@ struct PhoneWritingWorkspace: View {
     return PhoneWritingMetrics.policy.layout(
       PhoneWritingLayoutRequest(
         tree: layoutTree(livePanes: panes), documents: documents, paneNames: paneNames,
-        selectedPaneId: client.selectedPaneId, localState: localState,
+        // The pane used to enter this phone screen seeds device-local state without
+        // mutating the engine's shared focus.
+        selectedPaneId: initialPaneId, localState: localState,
         viewport: PaneLayoutSize(width: viewport.width, height: viewport.height)))
   }
 
@@ -302,37 +303,68 @@ private struct PhoneWritingLeaf: View {
   }
 
   private var header: some View {
-    Button {
-      toggle()
-    } label: {
-      HStack(spacing: 10) {
-        Image(systemName: icon)
-          .foregroundStyle(PhonePalette.accent)
-          .frame(width: 24)
-        Text(pane?.name ?? leaf.name)
-          .font(.system(.headline, design: .rounded))
-          .lineLimit(1)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        if leaf.companionAgentPaneId != nil {
-          Image(systemName: "link")
+    VStack(spacing: 0) {
+      Button {
+        toggle()
+      } label: {
+        HStack(spacing: 10) {
+          Image(systemName: icon)
+            .foregroundStyle(PhonePalette.accent)
+            .frame(width: 24)
+          Text(pane?.name ?? leaf.name)
+            .font(.system(.headline, design: .rounded))
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          if leaf.companionAgentPaneId != nil {
+            Image(systemName: "link")
+              .foregroundStyle(PhonePalette.secondary)
+              .accessibilityLabel("Linked agent")
+          }
+          Image(systemName: leaf.expanded ? "chevron.up" : "chevron.down")
             .foregroundStyle(PhonePalette.secondary)
-            .accessibilityLabel("Linked agent")
         }
-        Image(systemName: leaf.expanded ? "chevron.up" : "chevron.down")
-          .foregroundStyle(PhonePalette.secondary)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+        .contentShape(Rectangle())
       }
-      .padding(.horizontal, 14)
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .contentShape(Rectangle())
+      .buttonStyle(.plain)
+      .accessibilityLabel(accessibilityLabel)
+      .accessibilityValue(leaf.expanded ? "Expanded" : "Collapsed")
+      .accessibilityHint(leaf.expanded ? "Collapses this document" : "Opens this document")
+      .accessibilityIdentifier("phone-writing-header-\(leaf.identity.paneId)")
+
+      if leaf.companionAgentPaneId != nil {
+        HStack(spacing: 0) {
+          tabButton(.document, title: "Document", systemImage: icon)
+          tabButton(.agent, title: "Agent", systemImage: "bubble.left.and.bubble.right")
+        }
+        .frame(height: 44)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Linked document and agent tabs")
+      }
     }
-    .buttonStyle(.plain)
-    .accessibilityLabel(accessibilityLabel)
-    .accessibilityValue(leaf.expanded ? "Expanded" : "Collapsed")
-    .accessibilityHint(leaf.expanded ? "Collapses this document" : "Opens this document")
-    .accessibilityIdentifier("phone-writing-header-\(leaf.identity.paneId)")
   }
 
   @ViewBuilder private var contentView: some View {
+    if leaf.activeTab == .agent, let agentPaneId = leaf.companionAgentPaneId {
+      AgentConversationView(
+        client: client, paneId: agentPaneId, showsConfiguration: false,
+        onExplicitRemoteAction: {
+          PhoneWritingFocusPolicy.apply(.sendToAgent(agentPaneId)) { client.select($0) }
+        }
+      )
+      .accessibilityIdentifier("phone-writing-agent-\(agentPaneId)")
+      .task(id: agentPaneId) {
+        do { try await client.loadAgentConversation(agentPaneId) } catch {
+          client.problem = "Could not load the linked agent."
+        }
+      }
+    } else {
+      documentContent
+    }
+  }
+
+  @ViewBuilder private var documentContent: some View {
     switch leaf.availability {
     case .missingDocument:
       writingState("Loading document", systemImage: "arrow.trianglehead.2.clockwise")
@@ -343,7 +375,7 @@ private struct PhoneWritingLeaf: View {
         PhoneWritingTextSurface(
           client: client, pane: pane, writing: writing, file: file,
           size: content.size, font: leaf.font ?? PhoneWritingMetrics.fonts.prose,
-          floors: floors)
+          floors: floors, accessibilityName: leaf.name)
       } else if leaf.kind == .screenplay {
         if let writing, let file, let structure = writing.structure,
           let content = leaf.contentRect, let pageSize = leaf.screenplayPageSize,
@@ -353,11 +385,23 @@ private struct PhoneWritingLeaf: View {
             client: client, identity: leaf.identity, writing: writing, file: file,
             structure: structure, viewportSize: content.size, pageSize: pageSize,
             fitScale: fitScale, zoomMultiplier: leaf.screenplayZoom,
+            accessibilityName: leaf.name,
             onZoomChanged: { zoom in
               onAction(.setScreenplayZoom(leaf.identity, zoom))
             })
         } else {
           writingState("Loading screenplay", systemImage: "arrow.trianglehead.2.clockwise")
+        }
+      } else if leaf.kind == .presentation {
+        if let writing, let file, let structure = writing.structure,
+          let content = leaf.contentRect
+        {
+          PhoneWritingPresentationSurface(
+            client: client, writing: writing, file: file, structure: structure,
+            size: content.size, font: leaf.font ?? PhoneWritingMetrics.fonts.prose,
+            floors: floors, accessibilityName: leaf.name)
+        } else {
+          writingState("Loading presentation", systemImage: "arrow.trianglehead.2.clockwise")
         }
       } else {
         writingState("Open this document on the Mac", systemImage: icon)
@@ -393,13 +437,35 @@ private struct PhoneWritingLeaf: View {
     return "\(pane?.name ?? leaf.name), \(kindName)\(link)"
   }
 
+  private func tabButton(
+    _ tab: PhoneWritingTab, title: String, systemImage: String
+  ) -> some View {
+    let selected = leaf.activeTab == tab
+    return Button {
+      onAction(.selectTab(leaf.identity, tab))
+    } label: {
+      Label(title, systemImage: systemImage)
+        .font(.system(.subheadline, design: .rounded, weight: .semibold))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(selected ? PhonePalette.accent : PhonePalette.secondary)
+    .background(selected ? PhonePalette.accent.opacity(0.12) : Color.clear)
+    .accessibilityLabel("\(title) tab")
+    .accessibilityValue(selected ? "Selected" : "Not selected")
+    .accessibilityAddTraits(selected ? .isSelected : [])
+    .accessibilityIdentifier(
+      "phone-writing-tab-\(tab.rawValue)-\(leaf.identity.paneId)")
+  }
+
   private func toggle() {
     Task { @MainActor in
       if leaf.expanded, let fileId = leaf.identity.fileId {
         await client.flushEditorEdits(fileId: fileId)
       }
       onAction(.toggle(leaf.identity))
-      if !leaf.expanded { client.select(leaf.identity.paneId) }
     }
   }
 }
@@ -413,6 +479,7 @@ private struct PhoneWritingTextSurface: View {
   let size: PaneLayoutSize
   let font: PaneLayoutFontMetric
   let floors: [PaneLayoutKind: PaneLayoutSize]
+  let accessibilityName: String
 
   private var plan: WritingLayoutPlan? {
     try? WritingLayoutPolicy(
@@ -439,7 +506,8 @@ private struct PhoneWritingTextSurface: View {
         }
         if let file, file.viewport != nil {
           PhoneWritingTextEditor(
-            client: client, view: file, document: writing.document
+            client: client, view: file, document: writing.document,
+            accessibilityName: accessibilityName
           )
           .phoneWritingFrame(translated(textPlan.columnRect))
           .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -554,6 +622,7 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
   @Bindable var client: EngineClient
   let view: EditorFileView
   let document: WritingDocument
+  let accessibilityName: String
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -607,7 +676,7 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
       textView.attributedText = NSAttributedString(string: source, attributes: attributes())
       textView.selectedRange = validSelection(selection)
       textView.typingAttributes = attributes()
-      textView.accessibilityLabel = parent.document.file.path
+      textView.accessibilityLabel = "\(parent.accessibilityName), text document"
       renderedIdentity = identity
       renderedFont = parent.document.font
       renderedTheme = theme
@@ -651,7 +720,7 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
 }
 
 extension View {
-  fileprivate func phoneWritingFrame(_ rect: PaneLayoutRect) -> some View {
+  func phoneWritingFrame(_ rect: PaneLayoutRect) -> some View {
     frame(width: rect.size.width, height: rect.size.height, alignment: .topLeading)
       .position(
         x: rect.origin.x + rect.size.width / 2,

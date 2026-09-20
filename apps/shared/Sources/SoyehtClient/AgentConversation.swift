@@ -155,17 +155,20 @@ private struct AgentWell: ViewModifier {
   private let paneId: String
   private let showsConfiguration: Bool
   private let style: AgentConversationStyle
+  private let onExplicitRemoteAction: () -> Void
   @State private var prompt = ""
   @FocusState private var promptFocused: Bool
 
   public init(
     client: EngineClient, paneId: String, showsConfiguration: Bool = true,
-    style: AgentConversationStyle = .standard
+    style: AgentConversationStyle = .standard,
+    onExplicitRemoteAction: @escaping () -> Void = {}
   ) {
     self.client = client
     self.paneId = paneId
     self.showsConfiguration = showsConfiguration
     self.style = style
+    self.onExplicitRemoteAction = onExplicitRemoteAction
   }
 
   private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
@@ -436,6 +439,7 @@ private struct AgentWell: ViewModifier {
     guard !text.isEmpty else { return }
     prompt = ""
     client.setDraft(paneId, active: false)
+    onExplicitRemoteAction()
     client.sendPrompt(paneId, text: text)
     promptFocused = true
   }

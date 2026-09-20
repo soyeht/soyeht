@@ -144,6 +144,12 @@ public struct AgentWebAttachmentDraft: Sendable {
 }
 
 extension EngineClient {
+  /// Loads an agent transcript without changing shared pane focus. Phone companion
+  /// tabs use this path because opening a local tab is not a remote focus action.
+  public func loadAgentConversation(_ paneId: String) async throws {
+    try await loadAgentPane(paneId, replacing: true)
+  }
+
   func applyAgentSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
     let paneIds = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
     agentPanes = agentPanes.filter { paneIds.contains($0.key) }
