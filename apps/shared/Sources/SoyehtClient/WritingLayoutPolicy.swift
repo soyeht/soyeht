@@ -160,15 +160,18 @@ public struct WritingTextLayoutPlan: Equatable, Sendable {
 public struct WritingScreenplayLayoutPlan: Equatable, Sendable {
   public var navigation: WritingSceneNavigationMode
   public var navigationRect: PaneLayoutRect?
+  /// The fixed Courier page before uniform display scaling.
+  public var pageSize: PaneLayoutSize
   public var pageRect: PaneLayoutRect
   public var scale: Double
 
   public init(
     navigation: WritingSceneNavigationMode, navigationRect: PaneLayoutRect?,
-    pageRect: PaneLayoutRect, scale: Double
+    pageSize: PaneLayoutSize, pageRect: PaneLayoutRect, scale: Double
   ) {
     self.navigation = navigation
     self.navigationRect = navigationRect
+    self.pageSize = pageSize
     self.pageRect = pageRect
     self.scale = scale
   }
@@ -478,11 +481,11 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
     overflowAxes: Set<PaneLayoutAxis>
   ) -> WritingLayoutPlan {
     let header = rect(x: 0, y: 0, width: contentSize.width, height: metrics.headerHeight)
+    let smartTypeHeight = request.smartTypeVisible ? metrics.screenplaySmartTypeHeight : 0
     let toolbar = rect(
       x: 0, y: metrics.headerHeight, width: contentSize.width,
-      height: metrics.screenplayToolbarHeight)
-    let smartTypeHeight = request.smartTypeVisible ? metrics.screenplaySmartTypeHeight : 0
-    let bodyY = metrics.headerHeight + metrics.screenplayToolbarHeight + smartTypeHeight
+      height: metrics.screenplayToolbarHeight + smartTypeHeight)
+    let bodyY = toolbar.origin.y + toolbar.size.height
     let body = rect(
       x: 0, y: bodyY, width: contentSize.width, height: contentSize.height - bodyY)
     let pageWidth =
@@ -520,7 +523,7 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
       surface: .screenplay(
         WritingScreenplayLayoutPlan(
           navigation: navigation, navigationRect: navigationRect,
-          pageRect: page, scale: scale)))
+          pageSize: pageSize, pageRect: page, scale: scale)))
   }
 
   private func presentationLayout(

@@ -67,9 +67,11 @@ import UniformTypeIdentifiers
     chrome: metric(font(named: "Nunito", size: MacTheme.TypeScale.control), character: "0"),
     agent: metric(font(named: "Nunito", size: MacTheme.TypeScale.body), character: "0"),
     prose: proseMetric(for: .reading_serif),
-    screenplay: metric(
-      font(named: "Courier Prime", size: PaneLayoutContentMetrics.screenplayFontPointSize),
-      character: "0"))
+    screenplay: screenplayMetric)
+
+  static let screenplayMetric = metric(
+    font(named: "Courier Prime", size: PaneLayoutContentMetrics.screenplayFontPointSize),
+    character: "0")
 
   static func proseMetric(for font: WritingFont) -> PaneLayoutFontMetric {
     let measured = metric(
@@ -1683,7 +1685,10 @@ private struct PaneCard: View {
       } else if pane.mode == .writing, pane.writingKind == .presentation {
         WritingPresentationPane(client: client, pane: pane, headerDrag: dragConfiguration)
       } else if pane.mode == .writing, pane.writingKind == .screenplay {
-        WritingScreenplayPane(client: client, pane: pane, headerDrag: dragConfiguration)
+        WritingScreenplayPane(
+          client: client, pane: pane, headerDrag: dragConfiguration,
+          onClose: onClose, onSplit: onSplit,
+          layoutActionsDisabled: interaction?.blocksLayoutActions == true)
       } else {
         VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
           header
