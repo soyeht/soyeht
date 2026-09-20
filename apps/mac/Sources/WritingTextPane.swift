@@ -196,6 +196,8 @@ struct WritingTextPane: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDisabled(plan.overflowAxes.isEmpty)
         .frame(width: proxy.size.width, height: proxy.size.height)
+        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       } else {
         VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
           writingHeader(document: nil)
@@ -281,7 +283,6 @@ struct WritingTextPane: View {
       width: plan.contentSize.width, height: plan.contentSize.height,
       alignment: .topLeading
     )
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .onContinuousHover { phase in
       if case .active = phase { updateChrome(.pointerMoved) }
     }

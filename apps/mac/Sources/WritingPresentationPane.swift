@@ -40,6 +40,8 @@ struct WritingPresentationPane: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDisabled(plan.overflowAxes.isEmpty)
         .frame(width: proxy.size.width, height: proxy.size.height)
+        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       } else {
         VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
           presentationHeader(compact: false)
@@ -111,7 +113,6 @@ struct WritingPresentationPane: View {
       width: plan.contentSize.width, height: plan.contentSize.height,
       alignment: .topLeading
     )
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
   }
 
