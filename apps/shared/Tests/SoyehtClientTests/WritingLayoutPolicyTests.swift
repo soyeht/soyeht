@@ -58,7 +58,7 @@ private let screenplayMetric = PaneLayoutFontMetric(
   for (font, expectedWidth) in zip(fonts, expectedWidths) {
     let measured = try #require(WritingLayoutMetrics.standard.surfaceFloor(kind: .text, font: font))
     #expect(measured.width == ceil(24 * font.characterWidth + 52))
-    #expect(measured.height == 394)
+    #expect(measured.height == 332)
     let plan = try writingPolicy.layout(
       WritingLayoutRequest(
         kind: .text,
@@ -77,7 +77,7 @@ private let screenplayMetric = PaneLayoutFontMetric(
   let belowFloor = try writingPolicy.layout(
     WritingLayoutRequest(
       kind: .text,
-      viewport: PaneLayoutSize(width: 316, height: 393),
+        viewport: PaneLayoutSize(width: 316, height: 331),
       font: proseMetric, reviewVisible: true))
   guard case .text(let text) = atFloor.surface else {
     Issue.record("Expected text plan")
@@ -209,7 +209,7 @@ private let screenplayMetric = PaneLayoutFontMetric(
   let companion = PaneLayoutCompanion(writingPaneId: "writing", agentPaneId: "agent")
   let order = ["agent", "writing"]
   let sideThreshold = 317.0 + 18.0 + 340.0
-  let belowThreshold = 394.0 + 18.0 + 355.0
+  let belowThreshold = 332.0 + 18.0 + 355.0
 
   let side = try writingPolicy.companionLayout(
     WritingCompanionRequest(
