@@ -83,7 +83,7 @@
 		"AD936FCBED631FA67E05C3EA" = {
 			"isa" = "PBXGroup";
 			"sourceTree" = "<group>";
-			"children" = ( "41CF6794BA4200B839C53531", "0A3E27B8CA818264D75C8D81", );
+			"children" = ( "41CF6794BA4200B839C53531", "D20000000000000000000011", "0A3E27B8CA818264D75C8D81", );
 		};
 		"4C9A8D7A2C3C670C889D63E4" = {
 			"isa" = "XCBuildConfiguration";
@@ -121,8 +121,18 @@
 		"41D311A605520FC7B8B9A980" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ();
+			"files" = ( "D20000000000000000000001", );
 			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"D20000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "D20000000000000000000011";
+		};
+		"D20000000000000000000011" = {
+			"path" = "../mac/Resources/Fonts";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder";
+			"sourceTree" = "<group>";
 		};
 		"BC4A71180870F7945155FBB0" = {
 			"isa" = "XCLocalSwiftPackageReference";
@@ -131,13 +141,13 @@
 		"41CF6794BA4200B839C53531" = {
 			"path" = "Sources";
 			"isa" = "PBXGroup";
-			"children" = ( "9933069774EE38043B04DD7F", "561FB3BFE26076EF0D5F7228", "820408B6E6B478829DDDBB45", "360BC8301BC106F0418D20BA", "67D16B616E39D5EF7047BCDA", );
+			"children" = ( "9933069774EE38043B04DD7F", "561FB3BFE26076EF0D5F7228", "820408B6E6B478829DDDBB45", "D20000000000000000000012", "360BC8301BC106F0418D20BA", "67D16B616E39D5EF7047BCDA", );
 			"sourceTree" = "<group>";
 		};
 		"878A52FC5FF6A57D50B7B870" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ( "723CDCACDF4627454731BD35", "26CFE3494AB05627970A49B4", "7416A41BF9E4E5D5E2BC1C80", "4687FADC9768847101968BEA", "2CDCE4A3DD23D5FF44265BD2", );
+			"files" = ( "723CDCACDF4627454731BD35", "26CFE3494AB05627970A49B4", "7416A41BF9E4E5D5E2BC1C80", "D20000000000000000000002", "4687FADC9768847101968BEA", "2CDCE4A3DD23D5FF44265BD2", );
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
 		"F26350DAFE3F19AABFD69AC4" = {
@@ -230,6 +240,16 @@
 		"2CDCE4A3DD23D5FF44265BD2" = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = "67D16B616E39D5EF7047BCDA";
+		};
+		"D20000000000000000000002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "D20000000000000000000012";
+		};
+		"D20000000000000000000012" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PhoneWritingWorkspace.swift";
+			"sourceTree" = "<group>";
 		};
 	};
 	"rootObject" = "244210E48437B6556980A702";

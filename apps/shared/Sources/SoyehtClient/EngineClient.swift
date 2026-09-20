@@ -84,6 +84,8 @@ public final class EngineClient {
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
   public var readOnly: Bool { credential != nil }
+  /// Stable namespace for device-local presentation state. It is not a credential or token.
+  public var engineId: String? { credential?.engineId }
   public var harnessesLoading: Bool { harnessLoadCount > 0 }
   public func agentCatalogueLoading(_ harness: String) -> Bool {
     agentCatalogueLoadCounts[harness, default: 0] > 0
@@ -671,6 +673,11 @@ public final class EngineClient {
         }
       }
     }
+  }
+
+  /// Lets a platform surface drain the shared editor writer before it unmounts.
+  public func flushEditorEdits(fileId: String) async {
+    await settleEditorWrites(fileId)
   }
 
   public func preferredAgentPane(in workspaceId: String) -> Pane? {

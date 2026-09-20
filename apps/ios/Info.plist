@@ -41,6 +41,16 @@
 	</dict>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/Newsreader.ttf</string>
+		<string>Fonts/Newsreader-Italic.ttf</string>
+		<string>Fonts/Nunito-Regular.ttf</string>
+		<string>Fonts/Nunito-SemiBold.ttf</string>
+		<string>Fonts/Nunito-Bold.ttf</string>
+		<string>Fonts/CourierPrime-Regular.ttf</string>
+		<string>Fonts/CourierPrime-Bold.ttf</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
