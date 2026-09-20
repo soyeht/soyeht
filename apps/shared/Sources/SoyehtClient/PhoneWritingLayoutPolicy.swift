@@ -107,6 +107,23 @@ public enum PhoneWritingStateAction: Equatable, Sendable {
   case setScreenplayZoom(PhoneWritingIdentity, Double)
 }
 
+/// Phone navigation is device-local. Only an explicit operation on a remote pane may
+/// move the engine's shared focus.
+public enum PhoneWritingFocusAction: Equatable, Sendable {
+  case enterWorkspace
+  case toggleLeaf
+  case selectLocalTab
+  case restoreLocalState
+  case sendToAgent(String)
+}
+
+public enum PhoneWritingFocusPolicy {
+  public static func apply(_ action: PhoneWritingFocusAction, select: (String) -> Void) {
+    guard case .sendToAgent(let paneId) = action, !paneId.isEmpty else { return }
+    select(paneId)
+  }
+}
+
 public struct PhoneWritingViewportInsets: Equatable, Sendable {
   public var top: Double
   public var leading: Double
@@ -161,6 +178,9 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
   public var selectedPaneId: String?
   /// `nil` means this device has never stored state for this workspace.
   public var localState: PhoneWritingLocalState?
+  /// False while the read-only client is disconnected and its replicas are intentionally empty.
+  /// Such a gap must never prune or persist device-local presentation state.
+  public var snapshotIsAuthoritative: Bool
   public var viewport: PaneLayoutSize
   public var safeArea: PhoneWritingViewportInsets
   /// Software keyboard or another bottom obstruction. It changes visible height, not the tree.
@@ -170,6 +190,7 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
     tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor],
     paneNames: [String: String] = [:],
     selectedPaneId: String? = nil, localState: PhoneWritingLocalState? = nil,
+    snapshotIsAuthoritative: Bool = true,
     viewport: PaneLayoutSize,
     safeArea: PhoneWritingViewportInsets = PhoneWritingViewportInsets(),
     obscuredBottom: Double = 0
@@ -179,6 +200,7 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
     self.paneNames = paneNames
     self.selectedPaneId = selectedPaneId
     self.localState = localState
+    self.snapshotIsAuthoritative = snapshotIsAuthoritative
     self.viewport = viewport
     self.safeArea = safeArea
     self.obscuredBottom = obscuredBottom
@@ -276,9 +298,21 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
   public func layout(_ request: PhoneWritingLayoutRequest) -> PhoneWritingLayoutPlan {
     let projected = project(
       tree: request.tree, documents: request.documents, paneNames: request.paneNames)
-    let state = reconciledState(
-      request.localState, projected: projected, selectedPaneId: request.selectedPaneId)
-    let stateByIdentity = Dictionary(uniqueKeysWithValues: state.panes.map { ($0.identity, $0) })
+    let state: PhoneWritingLocalState
+    if !request.snapshotIsAuthoritative,
+      let stored = request.localState,
+      stored.version == PhoneWritingLocalState.currentVersion
+    {
+      state = stored
+    } else {
+      state = reconciledState(
+        request.localState, projected: projected, selectedPaneId: request.selectedPaneId)
+    }
+    // Reconciliation guarantees one local entry per live writing pane. Key the render
+    // lookup by pane id so a transient document gap can retain the last stable file
+    // identity until that document snapshot returns.
+    let stateByPaneId = Dictionary(
+      uniqueKeysWithValues: state.panes.map { ($0.identity.paneId, $0) })
     let viewport = sanitized(request.viewport)
     let safe = sanitized(request.safeArea)
     let obstruction = finiteNonnegative(request.obscuredBottom)
@@ -294,7 +328,7 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
     var leaves: [PhoneWritingLeafLayout] = []
     for item in projected {
       let paneState =
-        stateByIdentity[item.identity]
+        stateByPaneId[item.identity.paneId]
         ?? PhoneWritingPaneState(
           identity: item.identity)
       let hasCompanion = item.companionAgentPaneId != nil
@@ -328,7 +362,7 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
       let fitScale = screenplayFitScale(pageSize: pageSize, contentSize: content?.size)
       leaves.append(
         PhoneWritingLeafLayout(
-          identity: item.identity, name: item.name, kind: item.kind,
+          identity: paneState.identity, name: item.name, kind: item.kind,
           font: item.font, fullWidth: item.fullWidth,
           availability: item.availability, companionAgentPaneId: item.companionAgentPaneId,
           expanded: paneState.expanded, activeTab: paneState.activeTab,
@@ -470,12 +504,17 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
   ) -> PhoneWritingLocalState {
     let validStored = stored?.version == PhoneWritingLocalState.currentVersion ? stored : nil
     let existing: [PhoneWritingIdentity: PhoneWritingPaneState]
+    let existingByPaneId: [String: PhoneWritingPaneState]
     if let validStored {
       existing = Dictionary(
         validStored.panes.reversed().map { ($0.identity, $0) },
         uniquingKeysWith: { first, _ in first })
+      existingByPaneId = Dictionary(
+        validStored.panes.reversed().map { ($0.identity.paneId, $0) },
+        uniquingKeysWith: { first, _ in first })
     } else {
       existing = [:]
+      existingByPaneId = [:]
     }
     let initialPaneId: String? = {
       guard validStored == nil else { return nil }
@@ -492,6 +531,9 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
     let panes = projected.map { item -> PhoneWritingPaneState in
       var pane =
         existing[item.identity]
+        // An absent document is a loading state, not a new document identity. Keep
+        // the saved file identity and presentation state until the snapshot returns.
+        ?? (item.identity.fileId == nil ? existingByPaneId[item.identity.paneId] : nil)
         ?? PhoneWritingPaneState(
           identity: item.identity,
           expanded: item.identity.paneId == initialPaneId,

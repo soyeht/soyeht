@@ -16,6 +16,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
   let pageSize: PaneLayoutSize
   let fitScale: Double
   let zoomMultiplier: Double
+  let accessibilityName: String
   let onZoomChanged: (Double) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -75,7 +76,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         right: PaneLayoutContentMetrics.screenplayPageHorizontalInset)
       textView.layer.cornerRadius = 12
       textView.clipsToBounds = true
-      textView.accessibilityLabel = parent.writing.document.file.path
+      textView.accessibilityLabel = "\(parent.accessibilityName), screenplay"
 
       pageView.addSubview(textView)
       scrollView.addSubview(pageView)
@@ -173,7 +174,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         source, firstLine: firstLine, structure: parent.structure)
       textView.selectedRange = valid(selection)
       textView.typingAttributes = PhoneScreenplayStyle.typingAttributes
-      textView.accessibilityLabel = parent.writing.document.file.path
+      textView.accessibilityLabel = "\(parent.accessibilityName), screenplay"
       applying = false
     }
 
