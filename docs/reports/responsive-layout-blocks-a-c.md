@@ -24,8 +24,9 @@ Evidence:
 - [Pane layout floor measurements](pane-layout-floor-measurements.md)
 - [Multi-terminal client cost](multi-terminal-cost.md)
 - [New-pane chooser floor](new-pane-chooser-floor.md)
-- [Pane manipulation benchmark](../../benchmark/manipulacao-de-panes.md)
-- [Pane layout benchmark](../../benchmark/layout-de-panes.md)
+
+The comparative study of other apps remained outside the repository and
+informed the accepted rules.
 
 Delivery: [#338](https://github.com/soyeht/soyeht/pull/338),
 [#340](https://github.com/soyeht/soyeht/pull/340),
