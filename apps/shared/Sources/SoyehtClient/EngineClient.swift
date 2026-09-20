@@ -505,20 +505,11 @@ public final class EngineClient {
   }
   private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
     switch eventName {
-    case .paneCreated, .paneUpdated, .paneRenamed:
+    case .paneCreated:
+      try applyPaneCreated(params.decoded(PaneCreatedEvent.self))
+    case .paneUpdated, .paneRenamed:
       let pane = try params["pane"].decoded(Pane.self)
-      upsertPane(pane)
-      #if os(macOS)
-        if pane.mode == .terminal, connected, !terminalStreams.contains(pane.paneId) {
-          perform { try await self.subscribe(pane.paneId) }
-        }
-      #endif
-      if pane.mode == .agent {
-        var view = agentPanes[pane.paneId] ?? AgentPaneView()
-        view.queuePaused = pane.agent?.queuePaused ?? false
-        agentPanes[pane.paneId] = view
-      }
-      upsertWebPane(pane)
+      acceptPane(pane)
     case .paneClosed:
       let id = params["paneId"].string
       panes.removeAll { $0.paneId == id }
@@ -539,6 +530,45 @@ public final class EngineClient {
       }
     default: break
     }
+  }
+
+  func applyPaneCreated(_ event: PaneCreatedEvent) throws {
+    let pane = event.pane
+    switch pane.mode {
+    case .editor:
+      guard let file = event.file, event.writingDocument == nil,
+        file.paneId == pane.paneId, file.workspaceId == pane.workspaceId
+      else { throw ClientFailure.invalidFrame }
+      upsertEditor(file)
+    case .writing:
+      guard let file = event.file, let document = event.writingDocument,
+        file.paneId == pane.paneId, file.workspaceId == pane.workspaceId,
+        try JsonValue.encoded(file) == JsonValue.encoded(document.file),
+        pane.writingKind == document.kind, pane.writingSection == document.section
+      else { throw ClientFailure.invalidFrame }
+      upsertEditor(file)
+      writingDocuments[file.fileId] = WritingDocumentView(document: document)
+    case .terminal, .agent, .web:
+      guard event.file == nil, event.writingDocument == nil else {
+        throw ClientFailure.invalidFrame
+      }
+    }
+    acceptPane(pane)
+  }
+
+  private func acceptPane(_ pane: Pane) {
+    upsertPane(pane)
+    #if os(macOS)
+      if pane.mode == .terminal, connected, !terminalStreams.contains(pane.paneId) {
+        perform { try await self.subscribe(pane.paneId) }
+      }
+    #endif
+    if pane.mode == .agent {
+      var view = agentPanes[pane.paneId] ?? AgentPaneView()
+      view.queuePaused = pane.agent?.queuePaused ?? false
+      agentPanes[pane.paneId] = view
+    }
+    upsertWebPane(pane)
   }
 
   func upsertWorkspace(_ workspace: Workspace) {

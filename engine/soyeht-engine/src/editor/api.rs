@@ -115,6 +115,7 @@ impl Core {
             updated_ms: self.now_ms(),
         };
         let (opened, syntax) = initial_open_result(&file, &pane, request.line, request.column)?;
+        let created_event = pane_created_event(&saved.pane, &opened.file);
         let reply = open_reply(opened, pane_only)?;
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
@@ -123,10 +124,7 @@ impl Core {
         let mutation = self.mutate(connection, method, params, |change| {
             persist_new_pane(change, &saved, None)?;
             change.save_editor_file(&file)?;
-            Ok((
-                reply,
-                vec![("pane.created".into(), json!({"pane":saved.pane}))],
-            ))
+            Ok((reply, vec![("pane.created".into(), created_event)]))
         })?;
         if !mutation.repeated {
             self.panes.insert(
@@ -157,6 +155,7 @@ impl Core {
             sequence_base: 0,
         };
         let (opened, syntax) = initial_open_result(&file, &pane, request.line, request.column)?;
+        let created_event = pane_created_event(&saved.pane, &opened.file);
         let reply = open_reply(opened, request.pane_only)?;
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
@@ -172,10 +171,7 @@ impl Core {
                 if let Some(version) = &version {
                     change.record_file_version(version)?;
                 }
-                Ok((
-                    reply,
-                    vec![("pane.created".into(), json!({"pane":saved.pane}))],
-                ))
+                Ok((reply, vec![("pane.created".into(), created_event)]))
             },
         )?;
         if !mutation.repeated {
@@ -324,6 +320,10 @@ fn open_reply(result: FileOpenResult, pane_only: bool) -> Result<Value> {
         serde_json::to_value(result)
             .map_err(|_| errors::internal("File open result serialization failed"))
     }
+}
+
+fn pane_created_event(pane: &Pane, file: &soyeht_protocol::FileDocument) -> Value {
+    json!({"pane": pane, "file": file})
 }
 
 pub(crate) fn initial_open_result(

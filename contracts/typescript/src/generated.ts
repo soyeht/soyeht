@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 65a5d24b582dfacd7996d517136102539055dd167f0acfe8e38d18bddc2c0900). Do not edit.
+// Generated from contracts/protocol.json (sha256 bc5dd605956175ece4341e068213d424568eb26b09b274a299a269dd3f8e5b55). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -520,6 +520,8 @@ export interface PaneCreatedEvent {
   "eventId": Decimal;
   "at": string;
   "pane": Pane;
+  "file"?: FileDocument;
+  "writingDocument"?: WritingDocument;
 }
 
 export interface PaneRenamedEvent {
