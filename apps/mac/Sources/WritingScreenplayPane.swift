@@ -11,6 +11,7 @@ struct WritingScreenplayPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
+  let companionLinked: Bool
   let onClose: (String) -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   let layoutActionsDisabled: Bool
@@ -139,6 +140,7 @@ struct WritingScreenplayPane: View {
     WritingPaneHeader(
       paneId: pane.paneId, title: pane.name, icon: "doc.text", metadata: nil,
       fullWidth: nil, headerDrag: headerDrag,
+      companionLinked: companionLinked,
       auxiliaryAction: WritingPaneHeaderAction(
         title: "Idea board", systemImage: "lightbulb", help: "Show the idea board",
         accessibilityIdentifier: "writing-show-beat-board-\(pane.paneId)",

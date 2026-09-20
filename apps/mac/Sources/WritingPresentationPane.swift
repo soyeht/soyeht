@@ -7,6 +7,7 @@ struct WritingPresentationPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
+  let companionLinked: Bool
   let onClose: (String) -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   let layoutActionsDisabled: Bool
@@ -119,6 +120,7 @@ struct WritingPresentationPane: View {
       paneId: pane.paneId, title: pane.name, icon: "rectangle.on.rectangle.angled",
       metadata: compact ? nil : "\(slides.count) slides", fullWidth: nil,
       headerDrag: headerDrag,
+      companionLinked: companionLinked,
       auxiliaryAction: WritingPaneHeaderAction(
         title: "Present", systemImage: "play.fill", help: "Present slides",
         accessibilityIdentifier: "writing-present-\(pane.paneId)",
