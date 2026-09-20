@@ -40,8 +40,29 @@ public enum PaneLayoutContentMetrics {
   public static let paneCardInset = 10.0
   public static let paneStackSpacing = 8.0
 
-  /// Common writing chrome introduced by the responsive writing policy.
-  public static let writingHeaderHeight = 42.0
+  /// Common writing chrome measured from the accepted P5/P2 writing-pane design.
+  public static let writingHeaderHeight = 40.0
+  public static let writingHeaderHorizontalInset = 18.0
+  public static let writingHeaderFontPointSize = 14.0
+  public static let writingHeaderActionGap = 14.0
+  public static let writingHeaderMenuIconSize = 16.0
+  public static let writingHeaderMenuTargetSize = 32.0
+  public static let writingSelectionToolbarWidth = 232.0
+  public static let writingSelectionToolbarHeight = 32.0
+  public static let writingSelectionToolbarButtonWidth = 28.0
+  public static let writingSelectionToolbarIconSize = 16.0
+  public static let writingSelectionToolbarGap = 4.0
+  public static let writingSelectionToolbarHorizontalInset = 6.0
+  public static let writingSelectionToolbarSelectionGap = 8.0
+  public static let writingSelectionToolbarShadowOffset = 4.0
+  public static let writingSelectionToolbarShadowBlur = 12.0
+  public static let writingSelectionToolbarHalo =
+    writingSelectionToolbarShadowOffset + writingSelectionToolbarShadowBlur
+  public static let writingChromeDimmedOpacity = 0.35
+  public static let writingChromeDimDuration = 0.16
+  public static let writingChromeRevealDuration = 0.10
+  public static let writingOptionsMenuWidth = 232.0
+  public static let writingOptionsRowHeight = 28.0
   public static let writingRailDividerWidth = 1.0
   public static let companionTabStripHeight = 36.0
 
@@ -77,6 +98,8 @@ public enum PaneLayoutContentMetrics {
 
   public static let textFontPointSize = 20.0
   public static let textLineHeight = 32.0
+  /// Legacy ruler retained while screenplay and presentation migrate in E2/E3.
+  /// Text no longer includes a fixed toolbar in its layout or floor.
   public static let textToolbarHeight = 42.0
   public static let textReviewHeight = editorReviewHeight
   public static let textPageInset = 16.0
@@ -163,11 +186,11 @@ public enum PaneLayoutFloorFormula {
       width: ceil(
         compactTextCharacters * fonts.prose.characterWidth
           + 2 * PaneLayoutContentMetrics.textPageInset + 2 * paneCardInset),
-      height: 2 * paneCardInset + PaneLayoutContentMetrics.writingHeaderHeight
-        + PaneLayoutContentMetrics.textToolbarHeight + PaneLayoutContentMetrics.textReviewHeight
-        + 3 * PaneLayoutContentMetrics.paneStackSpacing
+      height: PaneLayoutContentMetrics.writingHeaderHeight
+        + PaneLayoutContentMetrics.textReviewHeight
+        + 2 * PaneLayoutContentMetrics.paneStackSpacing
         + 2 * PaneLayoutContentMetrics.textPageInset
-        + 6 * PaneLayoutContentMetrics.textLineHeight)
+        + 6 * PaneLayoutContentMetrics.textLineHeight + paneCardInset)
     let screenplayPageWidth =
       screenplayColumns * fonts.screenplay.characterWidth
       + 2 * PaneLayoutContentMetrics.screenplayPageHorizontalInset

@@ -36,10 +36,13 @@ struct WritingPresentationPane: View {
       {
         ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
           plannedSurface(plan: plan, presentationPlan: presentationPlan, file: file)
+            .forceEnclosingOverlayScrollers()
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDisabled(plan.overflowAxes.isEmpty)
         .frame(width: proxy.size.width, height: proxy.size.height)
+        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       } else {
         VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
           presentationHeader(compact: false)
@@ -111,7 +114,6 @@ struct WritingPresentationPane: View {
       width: plan.contentSize.width, height: plan.contentSize.height,
       alignment: .topLeading
     )
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
   }
 
@@ -370,6 +372,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
       scroll.backgroundColor = NSColor(MacTheme.face)
       scroll.hasVerticalScroller = true
       scroll.autohidesScrollers = true
+      scroll.scrollerStyle = .overlay
       scroll.documentView = textView
       configure()
       return scroll
@@ -561,6 +564,19 @@ private struct WritingAssetImage: View {
 
 @MainActor final class WritingImagePasteTextView: NSTextView {
   var imageHandler: ((NSPasteboard) -> Bool)?
+  var writingFormatShortcutHandler: ((WritingFormatKind) -> Void)?
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    let conflictingModifiers: NSEvent.ModifierFlags = [.control, .option, .shift]
+    guard flags.contains(.command), flags.intersection(conflictingModifiers).isEmpty,
+      let kind = WritingChromePolicy.formatShortcut(
+        key: event.charactersIgnoringModifiers ?? "", command: true),
+      let writingFormatShortcutHandler
+    else { return super.performKeyEquivalent(with: event) }
+    writingFormatShortcutHandler(kind)
+    return true
+  }
 
   override func paste(_ sender: Any?) {
     if imageHandler?(NSPasteboard.general) == true { return }

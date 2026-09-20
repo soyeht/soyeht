@@ -188,6 +188,33 @@ private struct NeoRaised: ViewModifier {
   }
 }
 
+/// Configures the SwiftUI `ScrollView` that owns the marked content. AppKit otherwise
+/// follows the machine-wide scrollbar preference, which can reintroduce the legacy
+/// permanent scroller inside writing panes.
+private struct EnclosingOverlayScrollerStyle: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView {
+    let marker = NSView(frame: .zero)
+    configure(marker)
+    return marker
+  }
+
+  func updateNSView(_ marker: NSView, context: Context) { configure(marker) }
+
+  private func configure(_ marker: NSView) {
+    DispatchQueue.main.async { [weak marker] in
+      var current: NSView? = marker
+      while let view = current {
+        if let scrollView = view as? NSScrollView ?? view.enclosingScrollView {
+          scrollView.scrollerStyle = .overlay
+          scrollView.autohidesScrollers = true
+          return
+        }
+        current = view.superview
+      }
+    }
+  }
+}
+
 private struct NeoWell: ViewModifier {
   let radius: CGFloat
   let depth: CGFloat
@@ -224,6 +251,10 @@ private struct NeoAccentGlow: ViewModifier {
 }
 
 extension View {
+  func forceEnclosingOverlayScrollers() -> some View {
+    background { EnclosingOverlayScrollerStyle().frame(width: 0, height: 0) }
+  }
+
   func neoRaised(
     radius: CGFloat = MacTheme.Radius.card,
     elevation: MacTheme.Elevation = .card

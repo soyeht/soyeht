@@ -129,8 +129,8 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
         width: ceil(
           textCompactCharacters * font.characterWidth + 2 * textPageInset + 2 * paneInset),
         height: ceil(
-          2 * paneInset + headerHeight + textToolbarHeight + textReviewHeight
-            + 3 * stackSpacing + 2 * textPageInset + textCompactLines * font.lineHeight))
+          headerHeight + textReviewHeight + 2 * stackSpacing
+            + 2 * textPageInset + textCompactLines * font.lineHeight + paneInset))
     case .screenplay:
       let basePageWidth =
         screenplayColumns * font.characterWidth + 2 * screenplayPageHorizontalInset
@@ -432,20 +432,17 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
     overflowAxes: Set<PaneLayoutAxis>
   ) -> WritingLayoutPlan {
     let inset = metrics.paneInset
-    let header = rect(
-      x: inset, y: inset, width: contentSize.width - 2 * inset,
-      height: metrics.headerHeight)
-    let toolbarY = header.origin.y + header.size.height + metrics.stackSpacing
-    let toolbar = rect(
-      x: inset, y: toolbarY, width: contentSize.width - 2 * inset,
-      height: metrics.textToolbarHeight)
-    var nextY = toolbar.origin.y + toolbar.size.height + metrics.stackSpacing
+    let header = rect(x: 0, y: 0, width: contentSize.width, height: metrics.headerHeight)
+    var nextY = header.origin.y + header.size.height
     var review: PaneLayoutRect?
     if request.reviewVisible {
+      nextY += metrics.stackSpacing
       review = rect(
         x: inset, y: nextY, width: contentSize.width - 2 * inset,
         height: metrics.textReviewHeight)
       nextY += metrics.textReviewHeight + metrics.stackSpacing
+    } else {
+      nextY += inset
     }
     let body = rect(
       x: inset, y: nextY, width: contentSize.width - 2 * inset,
@@ -459,7 +456,7 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
       y: body.origin.y + metrics.textPageInset,
       width: width, height: body.size.height - 2 * metrics.textPageInset)
     return WritingLayoutPlan(
-      headerRect: header, toolbarRect: toolbar, reviewRect: review,
+      headerRect: header, toolbarRect: nil, reviewRect: review,
       contentRect: body, contentSize: contentSize, overflowAxes: overflowAxes,
       surface: .text(
         WritingTextLayoutPlan(
