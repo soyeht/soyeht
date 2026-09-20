@@ -142,6 +142,11 @@ struct WritingTextPane: View {
     plan: WritingLayoutPlan, document: WritingDocument
   ) -> some View {
     ZStack(alignment: .topLeading) {
+      // Give the layout coordinate space its full planned size before positioning children.
+      // Positioned children do not contribute their position to the ZStack's ideal size.
+      Color.clear
+        .frame(width: plan.contentSize.width, height: plan.contentSize.height)
+        .allowsHitTesting(false)
       MacTheme.canvas
         .writingFrame(plan.contentRect)
       writingHeader(document: document)
@@ -170,7 +175,9 @@ struct WritingTextPane: View {
           .writingFrame(textPlan.columnRect)
       }
     }
-    .frame(width: plan.contentSize.width, height: plan.contentSize.height)
+    .frame(
+      width: plan.contentSize.width, height: plan.contentSize.height,
+      alignment: .topLeading)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
   }
 
@@ -408,10 +415,13 @@ private struct WritingTextReviewStrip: View {
   }
 }
 
-private extension View {
+extension View {
+  /// Places a writing surface in the plan's coordinate space without post-layout clipping.
   func writingFrame(_ rect: PaneLayoutRect) -> some View {
     frame(width: rect.size.width, height: rect.size.height, alignment: .topLeading)
-      .offset(x: rect.origin.x, y: rect.origin.y)
+      .position(
+        x: rect.origin.x + rect.size.width / 2,
+        y: rect.origin.y + rect.size.height / 2)
   }
 }
 
