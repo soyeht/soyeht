@@ -36,6 +36,7 @@ struct WritingPresentationPane: View {
       {
         ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
           plannedSurface(plan: plan, presentationPlan: presentationPlan, file: file)
+            .forceEnclosingOverlayScrollers()
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDisabled(plan.overflowAxes.isEmpty)
@@ -371,6 +372,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
       scroll.backgroundColor = NSColor(MacTheme.face)
       scroll.hasVerticalScroller = true
       scroll.autohidesScrollers = true
+      scroll.scrollerStyle = .overlay
       scroll.documentView = textView
       configure()
       return scroll

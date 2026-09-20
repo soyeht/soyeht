@@ -55,6 +55,7 @@ struct WritingScreenplayPane: View {
               plannedSurface(
                 plan: plan, screenplayPlan: screenplayPlan, file: file,
                 document: writing.document, structure: structure)
+                .forceEnclosingOverlayScrollers()
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollDisabled(plan.overflowAxes.isEmpty)

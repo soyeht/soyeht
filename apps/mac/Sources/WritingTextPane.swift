@@ -192,6 +192,7 @@ struct WritingTextPane: View {
       {
         ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
           plannedSurface(plan: plan, document: document)
+            .forceEnclosingOverlayScrollers()
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDisabled(plan.overflowAxes.isEmpty)
@@ -749,6 +750,7 @@ private struct WritingTextViewport: NSViewRepresentable {
       scroll.backgroundColor = NSColor(MacTheme.face)
       scroll.hasVerticalScroller = true
       scroll.autohidesScrollers = true
+      scroll.scrollerStyle = .overlay
       scroll.borderType = .noBorder
       scroll.documentView = textView
       scroll.contentView.postsBoundsChangedNotifications = true
