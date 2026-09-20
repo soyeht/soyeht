@@ -61,6 +61,28 @@ import UniformTypeIdentifiers
     topInset: Double(MacTheme.Space.x8), topBarHeight: topBarHeight,
     paneVerticalInset: paneVerticalInset, railWidth: railWidth)
 
+  static let paneHeader = PaneHeaderLayoutPolicy(
+    metrics: PaneHeaderLayoutMetrics(
+      horizontalPadding: 2 * Double(MacTheme.Space.x12),
+      spacing: Double(MacTheme.Space.x7),
+      stateDotWidth: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth,
+      readableTitleWidth: ceil(
+        PaneLayoutContentMetrics.genericPaneHeaderReadableTitleCharacters
+          * metric(
+            font(named: "JetBrains Mono", size: MacTheme.TypeScale.small), character: "0"
+          ).characterWidth),
+      summaryWidth: ceil(
+        PaneLayoutContentMetrics.genericPaneHeaderSummaryCharacters
+          * metric(
+            font(named: "JetBrains Mono", size: MacTheme.TypeScale.micro), character: "0"
+          ).characterWidth),
+      statusWidth: ceil(
+        PaneLayoutContentMetrics.genericPaneHeaderStatusCharacters
+          * metric(
+            font(named: "JetBrains Mono", size: MacTheme.TypeScale.micro), character: "0"
+          ).characterWidth),
+      actionWidth: PaneLayoutContentMetrics.genericPaneHeaderActionWidth))
+
   private static let fontMetrics = PaneLayoutFontMetrics(
     terminal: metric(
       MacTerminalFont.active(),
@@ -2521,108 +2543,13 @@ private struct PaneCard: View {
   }
 
   private var header: some View {
-    HStack(spacing: MacTheme.Space.x7) {
-      Circle().fill(stateColor).frame(width: 7, height: 7)
-      Text(pane.name).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold)).lineLimit(1)
-      if companionLinked {
-        Image(systemName: "link")
-          .help("Linked writing companion")
-          .accessibilityLabel("Linked writing companion")
-          .accessibilityIdentifier("writing-companion-link-\(pane.paneId)")
-      }
-      if pane.mode == .agent, let summary = agentSummary {
-        Text(summary).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))
-          .foregroundStyle(MacTheme.secondary).lineLimit(1)
-      }
-      Spacer(minLength: 0)
-      if pane.mode == .agent {
-        Text(pane.state.rawValue.replacingOccurrences(of: "_", with: " "))
-          .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
-          .foregroundStyle(MacTheme.secondary)
-      }
-      #if DEBUG
-        if [.terminal, .agent].contains(pane.mode), let capture = pane.experimentCapture {
-          if capture.on {
-            Label(
-              ExperimentCapturePresentation.activeLabel(for: pane.mode),
-              systemImage: "record.circle.fill"
-            )
-            .foregroundStyle(MacTheme.danger)
-            .accessibilityIdentifier("experiment-recording-\(pane.paneId)")
-          } else if let failure = capture.failure {
-            Label("Capture stopped", systemImage: "exclamationmark.triangle.fill")
-              .foregroundStyle(MacTheme.warning)
-              .help(failure)
-              .accessibilityLabel("Capture stopped: \(failure)")
-          } else if let captureNotice {
-            Text(captureNotice).foregroundStyle(MacTheme.secondary)
-          }
-        }
-        if [.terminal, .agent].contains(pane.mode) {
-          Button {
-            if pane.experimentCapture?.on == true {
-              setExperimentCapture(on: false)
-            } else {
-              showingCaptureConsent = true
-            }
-          } label: {
-            Image(systemName: pane.experimentCapture?.on == true ? "stop.circle" : "record.circle")
-          }
-          .help(
-            pane.experimentCapture?.on == true
-              ? "Stop experiment recording" : "Start experiment recording"
-          )
-          .accessibilityLabel(
-            pane.experimentCapture?.on == true
-              ? "Stop experiment recording" : "Start experiment recording"
-          )
-          .accessibilityIdentifier("experiment-capture-\(pane.paneId)")
-          .disabled(!client.connected || captureMutationInFlight)
-        }
-      #endif
-      if pane.mode == .agent {
-        Button {
-          showingHarnessSwitch = true
-        } label: {
-          Image(systemName: "arrow.triangle.2.circlepath")
-        }
-        .help("Switch agent")
-        .accessibilityLabel("Switch agent")
-        .accessibilityIdentifier("switch-agent-\(pane.paneId)")
-        .disabled(!client.connected || pane.agent?.operation != nil || harnessSwitching)
-        .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
-          AgentHarnessSwitchPicker(
-            client: client, pane: pane, isPresented: $showingHarnessSwitch)
-        }
-      }
-      if pane.mode == .agent { PaneAutomationButton(showing: $showingAutomation) }
-      Button(action: onTasks) { Image(systemName: "line.3.horizontal.decrease") }
-        .help("Open workspace tasks")
-      Button {
-        onSplit(pane.paneId, .columns)
-      } label: {
-        Image(systemName: "rectangle.split.2x1")
-      }
-      .help("Split pane into columns")
-      .accessibilityLabel("Split pane into columns")
-      .accessibilityIdentifier("split-pane-columns-\(pane.paneId)")
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
-      Button {
-        onSplit(pane.paneId, .rows)
-      } label: {
-        Image(systemName: "rectangle.split.1x2")
-      }
-      .help("Split pane into rows")
-      .accessibilityLabel("Split pane into rows")
-      .accessibilityIdentifier("split-pane-rows-\(pane.paneId)")
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
-      Button {
-        onClose(pane.paneId)
-      } label: {
-        Image(systemName: "xmark")
-      }
-      .help("Close this pane")
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+    GeometryReader { geometry in
+      let plan = MacPaneLayoutMetrics.paneHeader.plan(
+        availableWidth: geometry.size.width,
+        actionCount: headerActionCount,
+        hasSummary: pane.mode == .agent && agentSummary != nil,
+        hasStatus: pane.mode == .agent)
+      headerContent(plan: plan)
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
     .foregroundStyle(MacTheme.secondary)
@@ -2630,6 +2557,222 @@ private struct PaneCard: View {
     .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
     .background(tint, in: Capsule())
     .paneHeaderDrag(dragConfiguration)
+    .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
+      AgentHarnessSwitchPicker(
+        client: client, pane: pane, isPresented: $showingHarnessSwitch)
+    }
+  }
+
+  private func headerContent(plan: PaneHeaderLayoutPlan) -> some View {
+    HStack(spacing: MacTheme.Space.x7) {
+      Circle().fill(stateColor)
+        .frame(
+          width: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth,
+          height: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth)
+      Text(pane.name)
+        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+        .lineLimit(1).truncationMode(.tail).layoutPriority(3)
+        .help(pane.name)
+      if companionLinked {
+        Image(systemName: "link")
+          .help("Linked writing companion")
+          .accessibilityLabel("Linked writing companion")
+          .accessibilityIdentifier("writing-companion-link-\(pane.paneId)")
+      }
+      if pane.mode == .agent, let summary = agentSummary {
+        if plan.actionPlacement == .inline {
+          agentSummaryLabel(summary)
+        } else if let maximumWidth = plan.summaryMaximumWidth {
+          agentSummaryLabel(summary).frame(maxWidth: maximumWidth, alignment: .leading)
+        }
+      }
+      Spacer(minLength: MacTheme.Space.x2)
+      if pane.mode == .agent {
+        Text(paneStatusText)
+          .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
+          .foregroundStyle(MacTheme.secondary)
+          .lineLimit(1).truncationMode(.tail)
+          .frame(maxWidth: MacPaneLayoutMetrics.paneHeader.metrics.statusWidth)
+          .layoutPriority(2)
+      }
+      if plan.actionPlacement == .inline {
+        inlineHeaderActions
+      } else {
+        compactHeaderActions
+      }
+    }
+  }
+
+  private func agentSummaryLabel(_ summary: String) -> some View {
+    Text(summary).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))
+      .foregroundStyle(MacTheme.secondary).lineLimit(1).truncationMode(.tail)
+      .help(summary)
+  }
+
+  @ViewBuilder private var inlineHeaderActions: some View {
+    #if DEBUG
+      captureFeedback
+      if [.terminal, .agent].contains(pane.mode) { captureButton }
+    #endif
+    if pane.mode == .agent {
+      Button {
+        showingHarnessSwitch = true
+      } label: {
+        Image(systemName: "arrow.triangle.2.circlepath")
+      }
+      .help("Switch agent")
+      .accessibilityLabel("Switch agent")
+      .accessibilityIdentifier("switch-agent-\(pane.paneId)")
+      .disabled(!client.connected || pane.agent?.operation != nil || harnessSwitching)
+      PaneAutomationButton(showing: $showingAutomation)
+    }
+    Button(action: onTasks) { Image(systemName: "line.3.horizontal.decrease") }
+      .help("Open workspace tasks")
+    splitColumnButton
+    splitRowButton
+    closePaneButton
+  }
+
+  private var compactHeaderActions: some View {
+    Menu {
+      #if DEBUG
+        if [.terminal, .agent].contains(pane.mode) { captureMenuButton }
+      #endif
+      if pane.mode == .agent {
+        Button {
+          showingHarnessSwitch = true
+        } label: {
+          Label("Switch agent", systemImage: "arrow.triangle.2.circlepath")
+        }
+        .disabled(!client.connected || pane.agent?.operation != nil || harnessSwitching)
+        Button {
+          showingAutomation.toggle()
+        } label: {
+          Label("Loop and lead controls", systemImage: "repeat")
+        }
+      }
+      Button(action: onTasks) {
+        Label("Open workspace tasks", systemImage: "line.3.horizontal.decrease")
+      }
+      Divider()
+      Button { onSplit(pane.paneId, .columns) } label: {
+        Label("Split into columns", systemImage: "rectangle.split.2x1")
+      }
+      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+      Button { onSplit(pane.paneId, .rows) } label: {
+        Label("Split into rows", systemImage: "rectangle.split.1x2")
+      }
+      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+      Divider()
+      Button(role: .destructive) { onClose(pane.paneId) } label: {
+        Label("Close pane", systemImage: "xmark")
+      }
+      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+    } label: {
+      Image(systemName: "ellipsis.circle")
+        .frame(width: PaneLayoutContentMetrics.genericPaneHeaderActionWidth)
+    }
+    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+    .help("Pane actions")
+    .accessibilityLabel("Pane actions")
+    .accessibilityIdentifier("pane-header-actions-\(pane.paneId)")
+  }
+
+  private var splitColumnButton: some View {
+    Button { onSplit(pane.paneId, .columns) } label: {
+      Image(systemName: "rectangle.split.2x1")
+    }
+    .help("Split pane into columns")
+    .accessibilityLabel("Split pane into columns")
+    .accessibilityIdentifier("split-pane-columns-\(pane.paneId)")
+    .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+  }
+
+  private var splitRowButton: some View {
+    Button { onSplit(pane.paneId, .rows) } label: {
+      Image(systemName: "rectangle.split.1x2")
+    }
+    .help("Split pane into rows")
+    .accessibilityLabel("Split pane into rows")
+    .accessibilityIdentifier("split-pane-rows-\(pane.paneId)")
+    .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+  }
+
+  private var closePaneButton: some View {
+    Button { onClose(pane.paneId) } label: { Image(systemName: "xmark") }
+      .help("Close this pane")
+      .accessibilityLabel("Close this pane")
+      .accessibilityIdentifier("close-pane-\(pane.paneId)")
+      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+  }
+
+  #if DEBUG
+    @ViewBuilder private var captureFeedback: some View {
+      if [.terminal, .agent].contains(pane.mode), let capture = pane.experimentCapture {
+        if capture.on {
+          Label(
+            ExperimentCapturePresentation.activeLabel(for: pane.mode),
+            systemImage: "record.circle.fill"
+          )
+          .foregroundStyle(MacTheme.danger).lineLimit(1)
+          .accessibilityIdentifier("experiment-recording-\(pane.paneId)")
+        } else if let failure = capture.failure {
+          Label("Capture stopped", systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(MacTheme.warning).lineLimit(1)
+            .help(failure)
+            .accessibilityLabel("Capture stopped: \(failure)")
+        } else if let captureNotice {
+          Text(captureNotice).foregroundStyle(MacTheme.secondary).lineLimit(1)
+        }
+      }
+    }
+
+    private var captureButton: some View {
+      Button {
+        toggleExperimentCapture()
+      } label: {
+        Image(systemName: pane.experimentCapture?.on == true ? "stop.circle" : "record.circle")
+      }
+      .help(experimentCaptureActionTitle)
+      .accessibilityLabel(experimentCaptureActionTitle)
+      .accessibilityIdentifier("experiment-capture-\(pane.paneId)")
+      .disabled(!client.connected || captureMutationInFlight)
+    }
+
+    private var captureMenuButton: some View {
+      Button { toggleExperimentCapture() } label: {
+        Label(
+          experimentCaptureActionTitle,
+          systemImage: pane.experimentCapture?.on == true ? "stop.circle" : "record.circle")
+      }
+      .disabled(!client.connected || captureMutationInFlight)
+    }
+
+    private var experimentCaptureActionTitle: String {
+      pane.experimentCapture?.on == true
+        ? "Stop experiment recording" : "Start experiment recording"
+    }
+
+    private func toggleExperimentCapture() {
+      if pane.experimentCapture?.on == true {
+        setExperimentCapture(on: false)
+      } else {
+        showingCaptureConsent = true
+      }
+    }
+  #endif
+
+  private var paneStatusText: String {
+    pane.state.rawValue.replacingOccurrences(of: "_", with: " ")
+  }
+
+  private var headerActionCount: Int {
+    var count = 4  // Tasks, two split directions, and close.
+    if pane.mode == .agent { count += 2 }
+    #if DEBUG
+      if [.terminal, .agent].contains(pane.mode) { count += 1 }
+    #endif
+    return count
   }
 
   @ViewBuilder private var paneBody: some View {
