@@ -1683,7 +1683,10 @@ private struct PaneCard: View {
           onClose: onClose, onSplit: onSplit,
           layoutActionsDisabled: interaction?.blocksLayoutActions == true)
       } else if pane.mode == .writing, pane.writingKind == .presentation {
-        WritingPresentationPane(client: client, pane: pane, headerDrag: dragConfiguration)
+        WritingPresentationPane(
+          client: client, pane: pane, headerDrag: dragConfiguration,
+          onClose: onClose, onSplit: onSplit,
+          layoutActionsDisabled: interaction?.blocksLayoutActions == true)
       } else if pane.mode == .writing, pane.writingKind == .screenplay {
         WritingScreenplayPane(
           client: client, pane: pane, headerDrag: dragConfiguration,

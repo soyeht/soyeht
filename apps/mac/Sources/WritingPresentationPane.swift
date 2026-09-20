@@ -7,6 +7,9 @@ struct WritingPresentationPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
+  let onClose: (String) -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
+  let layoutActionsDisabled: Bool
   @State private var selectedSlide: UInt32 = 0
   @State private var activeLine: UInt32 = 0
   @State private var targetLine: UInt32?
@@ -25,20 +28,26 @@ struct WritingPresentationPane: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      header
-      if let file, file.viewport != nil {
-        HStack(spacing: 0) {
-          slideRail
-          Divider().overlay(MacTheme.well)
-          sourceEditor(file)
+    GeometryReader { proxy in
+      if let document = writing?.document, let file, file.viewport != nil,
+        let plan = layoutPlan(size: proxy.size, document: document),
+        case .presentation(let presentationPlan) = plan.surface
+      {
+        ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
+          plannedSurface(plan: plan, presentationPlan: presentationPlan, file: file)
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDisabled(plan.overflowAxes.isEmpty)
+        .frame(width: proxy.size.width, height: proxy.size.height)
       } else {
-        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
+          presentationHeader(compact: false)
+          ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(PaneLayoutContentMetrics.paneCardInset)
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       }
     }
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
-    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .task(id: writingLoadKey) { await loadIfNeeded() }
     .sheet(isPresented: $presenting) {
       if let fileId = writing?.document.file.fileId {
@@ -48,26 +57,83 @@ struct WritingPresentationPane: View {
     }
   }
 
-  private var header: some View {
-    HStack(spacing: MacTheme.Space.x8) {
-      Image(systemName: "rectangle.on.rectangle.angled")
-        .foregroundStyle(MacTheme.secondary)
-      Text(pane.name)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
-      Spacer()
-      Text("\(slides.count) slides")
-        .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.muted)
-      Button {
-        presenting = !slides.isEmpty
-      } label: {
-        Label("Present", systemImage: "play.fill")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+  private func layoutPlan(
+    size: CGSize, document: WritingDocument
+  ) -> WritingLayoutPlan? {
+    let policy = WritingLayoutPolicy(
+      floors: MacPaneLayoutMetrics.surfaceFloors,
+      gaps: MacPaneLayoutMetrics.sizing.gaps)
+    return try? policy.layout(
+      WritingLayoutRequest(
+        kind: .presentation,
+        viewport: PaneLayoutSize(width: size.width, height: size.height),
+        font: MacPaneLayoutMetrics.proseMetric(for: document.font)))
+  }
+
+  private func plannedSurface(
+    plan: WritingLayoutPlan, presentationPlan: WritingPresentationLayoutPlan,
+    file: EditorFileView
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      Color.clear
+        .frame(width: plan.contentSize.width, height: plan.contentSize.height)
+        .allowsHitTesting(false)
+      MacTheme.canvas
+        .writingFrame(plan.contentRect)
+      presentationHeader(compact: presentationPlan.navigation == .numbers)
+        .writingFrame(plan.headerRect)
+      if presentationPlan.navigation == .thumbnails {
+        slideRail
+          .writingFrame(presentationPlan.navigationRect)
+          .accessibilityIdentifier("writing-presentation-slide-rail-\(pane.paneId)")
+        MacTheme.well
+          .writingFrame(
+            PaneLayoutRect(
+              origin: PaneLayoutPoint(
+                x: presentationPlan.navigationRect.origin.x
+                  + presentationPlan.navigationRect.size.width,
+                y: presentationPlan.navigationRect.origin.y),
+              size: PaneLayoutSize(
+                width: WritingLayoutMetrics.standard.railDividerWidth,
+                height: presentationPlan.navigationRect.size.height)))
+      } else {
+        slideNumberStrip
+          .writingFrame(presentationPlan.navigationRect)
+          .accessibilityIdentifier("writing-presentation-slide-numbers-\(pane.paneId)")
       }
-      .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(slides.isEmpty)
+      presentationStage(file)
+        .writingFrame(presentationPlan.stageRect)
+      footer
+        .writingFrame(presentationPlan.footerRect)
     }
-    .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: PaneLayoutContentMetrics.presentationHeaderHeight).background(MacTheme.face)
-    .paneHeaderDrag(headerDrag)
+    .frame(
+      width: plan.contentSize.width, height: plan.contentSize.height,
+      alignment: .topLeading
+    )
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+  }
+
+  private func presentationHeader(compact: Bool) -> some View {
+    WritingPaneHeader(
+      paneId: pane.paneId, title: pane.name, icon: "rectangle.on.rectangle.angled",
+      metadata: compact ? nil : "\(slides.count) slides", fullWidth: nil,
+      headerDrag: headerDrag,
+      auxiliaryAction: WritingPaneHeaderAction(
+        title: "Present", systemImage: "play.fill", help: "Present slides",
+        accessibilityIdentifier: "writing-present-\(pane.paneId)",
+        disabled: slides.isEmpty,
+        action: { presenting = true }),
+      mutationDisabled: !client.connected,
+      layoutActionsDisabled: !client.connected || layoutActionsDisabled,
+      onToggleFullWidth: nil, onSplit: onSplit, onClose: onClose)
+  }
+
+  private func scrollAxes(_ plan: WritingLayoutPlan) -> Axis.Set {
+    var axes: Axis.Set = []
+    if plan.overflowAxes.contains(.horizontal) { axes.insert(.horizontal) }
+    if plan.overflowAxes.contains(.vertical) { axes.insert(.vertical) }
+    return axes
   }
 
   private var slideRail: some View {
@@ -94,17 +160,49 @@ struct WritingPresentationPane: View {
         .padding(MacTheme.Space.x4)
       }
     }
-    .padding(MacTheme.Space.x12).frame(width: 236).background(MacTheme.canvas)
+    .padding(MacTheme.Space.x12).background(MacTheme.canvas)
   }
 
-  private func sourceEditor(_ file: EditorFileView) -> some View {
-    VStack(spacing: 0) {
-      WritingPresentationViewport(
-        client: client, view: file, activeLine: $activeLine, targetLine: $targetLine
-      )
-      footer
+  private var slideNumberStrip: some View {
+    ScrollView(.horizontal) {
+      HStack(spacing: MacTheme.Space.x6) {
+        ForEach(slides, id: \.index) { slide in
+          Button {
+            select(slide)
+          } label: {
+            Text("\(identifier: slide.index + 1)")
+              .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold))
+              .foregroundStyle(
+                slide.index == selectedSlide ? MacTheme.onAccent : MacTheme.secondary
+              )
+              .frame(width: 22, height: 22)
+              .background(
+                slide.index == selectedSlide ? MacTheme.accent : MacTheme.well, in: Circle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Slide \(identifier: slide.index + 1)")
+          .accessibilityIdentifier(
+            "writing-presentation-slide-number-\(pane.paneId)-\(slide.index)")
+        }
+      }
+      .fixedSize(horizontal: true, vertical: false)
+      .padding(.horizontal, MacTheme.Space.x10)
     }
+    .scrollIndicators(.hidden)
+    .background(MacTheme.canvas)
+  }
+
+  private func presentationStage(_ file: EditorFileView) -> some View {
+    WritingPresentationViewport(
+      client: client, view: file, activeLine: $activeLine, targetLine: $targetLine
+    )
     .background(MacTheme.face)
+    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    .overlay {
+      RoundedRectangle(cornerRadius: MacTheme.Radius.control)
+        .stroke(MacTheme.well, lineWidth: 1)
+    }
+    .accessibilityIdentifier("writing-presentation-stage-\(pane.paneId)")
     .onChange(of: activeLine) { _, line in
       if let slide = slides.first(where: { line >= $0.startLine && line <= $0.endLine }) {
         selectedSlide = slide.index
@@ -224,7 +322,9 @@ private struct WritingSlideShow: View {
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+        .accessibilityIdentifier("writing-presentation-presented-slide")
       }
       HStack {
         Button("Previous") { index = max(index - 1, 0) }.disabled(index == 0)

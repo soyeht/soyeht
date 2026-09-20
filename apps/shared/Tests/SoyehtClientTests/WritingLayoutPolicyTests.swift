@@ -163,6 +163,10 @@ private let screenplayMetric = PaneLayoutFontMetric(
   }
   #expect(compactPresentation.navigation == .numbers)
   #expect(compactPresentation.stageRect.size == PaneLayoutSize(width: 320, height: 180))
+  #expect(compactPresentation.footerRect.size.height == 28)
+  #expect(
+    compactPresentation.footerRect.origin.y
+      + compactPresentation.footerRect.size.height == compact.contentSize.height)
   let compactRatio =
     compactPresentation.stageRect.size.width / compactPresentation.stageRect.size.height
   #expect(abs(compactRatio - 16.0 / 9.0) < 0.000_001)
