@@ -11,9 +11,12 @@ struct WritingScreenplayPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
+  let onClose: (String) -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
+  let layoutActionsDisabled: Bool
   @State private var activeLine: UInt32 = 0
   @State private var targetLine: UInt32?
-  @State private var railVisible = true
+  @State private var showingSceneDrawer = false
   @State private var editRequest: ScreenplayEditRequest?
   @State private var hoveredLine: UInt32?
   @State private var hoverY: CGFloat = 0
@@ -32,167 +35,248 @@ struct WritingScreenplayPane: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
+    Group {
       if showingBeatBoard, let writing, let structure {
         WritingBeatBoardPane(
           client: client, pane: pane, document: writing.document, structure: structure,
-          showScreenplay: { showingBeatBoard = false })
+          showScreenplay: { showingBeatBoard = false }
+        )
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
       } else {
-        header
-        screenplayContent
+        GeometryReader { proxy in
+          if let writing, let file, file.viewport != nil, let structure,
+            let plan = layoutPlan(
+              size: proxy.size, document: writing.document, structure: structure),
+            case .screenplay(let screenplayPlan) = plan.surface
+          {
+            ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
+              plannedSurface(
+                plan: plan, screenplayPlan: screenplayPlan, file: file,
+                document: writing.document, structure: structure)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDisabled(plan.overflowAxes.isEmpty)
+            .frame(width: proxy.size.width, height: proxy.size.height)
+          } else {
+            VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
+              screenplayHeader
+              ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(PaneLayoutContentMetrics.paneCardInset)
+            .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+          }
+        }
       }
     }
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
-    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .task(id: writingLoadKey) { await loadIfNeeded() }
   }
 
-  @ViewBuilder private var screenplayContent: some View {
-    if let writing, let file, file.viewport != nil, let structure {
-      HStack(spacing: 0) {
-        if railVisible {
-          ScreenplaySceneRail(
-            scenes: structure.scenes, elements: structure.elements,
-            activeLine: activeLine, select: selectScene)
-          Divider().overlay(MacTheme.well)
-        }
-        VStack(spacing: 0) {
-          toolbar(document: writing.document, structure: structure)
-          screenplaySheet(file: file, document: writing.document, structure: structure)
-        }
-      }
-    } else {
-      ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
+  private func layoutPlan(
+    size: CGSize, document: WritingDocument, structure: WritingStructureResult
+  ) -> WritingLayoutPlan? {
+    let policy = WritingLayoutPolicy(
+      floors: MacPaneLayoutMetrics.surfaceFloors,
+      gaps: MacPaneLayoutMetrics.sizing.gaps)
+    return try? policy.layout(
+      WritingLayoutRequest(
+        kind: .screenplay,
+        viewport: PaneLayoutSize(width: size.width, height: size.height),
+        font: MacPaneLayoutMetrics.screenplayMetric,
+        smartTypeVisible: !smartTypeSuggestions(in: structure).isEmpty))
   }
 
-  private var header: some View {
-    HStack(spacing: MacTheme.Space.x8) {
-      Image(systemName: "doc.text")
-        .foregroundStyle(MacTheme.secondary)
-      Text(pane.name)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
-      Spacer()
-      Button {
-        showingBeatBoard = true
-      } label: {
-        Label("Idea board", systemImage: "lightbulb")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+  private func plannedSurface(
+    plan: WritingLayoutPlan, screenplayPlan: WritingScreenplayLayoutPlan,
+    file: EditorFileView, document: WritingDocument, structure: WritingStructureResult
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      Color.clear
+        .frame(width: plan.contentSize.width, height: plan.contentSize.height)
+        .allowsHitTesting(false)
+      MacTheme.canvas
+        .writingFrame(plan.contentRect)
+      screenplayHeader
+        .writingFrame(plan.headerRect)
+      if let toolbarRect = plan.toolbarRect {
+        toolbar(
+          document: document, structure: structure,
+          navigation: screenplayPlan.navigation
+        )
+        .writingFrame(toolbarRect)
       }
-      .buttonStyle(NeoPillButtonStyle())
-      .accessibilityIdentifier("writing-show-beat-board")
+      if let navigationRect = screenplayPlan.navigationRect {
+        ScreenplaySceneRail(
+          scenes: structure.scenes, elements: structure.elements,
+          activeLine: activeLine, select: selectScene
+        )
+        .writingFrame(navigationRect)
+        .accessibilityIdentifier("writing-screenplay-scene-rail-\(pane.paneId)")
+        MacTheme.well
+          .writingFrame(
+            PaneLayoutRect(
+              origin: PaneLayoutPoint(
+                x: navigationRect.origin.x + navigationRect.size.width,
+                y: navigationRect.origin.y),
+              size: PaneLayoutSize(
+                width: WritingLayoutMetrics.standard.railDividerWidth,
+                height: navigationRect.size.height)))
+      }
+      screenplayPage(
+        file: file, document: document, structure: structure, plan: screenplayPlan
+      )
+      .writingFrame(screenplayPlan.pageRect)
     }
-    .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: PaneLayoutContentMetrics.screenplayHeaderHeight)
-    .background(MacTheme.well, in: Capsule())
-    .padding(.horizontal, MacTheme.Space.x10).padding(.top, MacTheme.Space.x10)
-    .padding(.bottom, MacTheme.Space.x6)
-    .paneHeaderDrag(headerDrag)
+    .frame(
+      width: plan.contentSize.width, height: plan.contentSize.height,
+      alignment: .topLeading
+    )
+    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+  }
+
+  private var screenplayHeader: some View {
+    WritingPaneHeader(
+      paneId: pane.paneId, title: pane.name, icon: "doc.text", metadata: nil,
+      fullWidth: nil, headerDrag: headerDrag,
+      auxiliaryAction: WritingPaneHeaderAction(
+        title: "Idea board", systemImage: "lightbulb", help: "Show the idea board",
+        accessibilityIdentifier: "writing-show-beat-board-\(pane.paneId)",
+        action: { showingBeatBoard = true }),
+      mutationDisabled: !client.connected,
+      layoutActionsDisabled: !client.connected || layoutActionsDisabled,
+      onToggleFullWidth: nil, onSplit: onSplit, onClose: onClose)
+  }
+
+  private func scrollAxes(_ plan: WritingLayoutPlan) -> Axis.Set {
+    var axes: Axis.Set = []
+    if plan.overflowAxes.contains(.horizontal) { axes.insert(.horizontal) }
+    if plan.overflowAxes.contains(.vertical) { axes.insert(.vertical) }
+    return axes
   }
 
   private func toolbar(
-    document: WritingDocument, structure: WritingStructureResult
+    document: WritingDocument, structure: WritingStructureResult,
+    navigation: WritingSceneNavigationMode
   ) -> some View {
     VStack(spacing: 0) {
-      HStack(spacing: MacTheme.Space.x10) {
-        Button {
-          railVisible.toggle()
-        } label: {
-          Image(systemName: railVisible ? "sidebar.left" : "sidebar.right")
-            .frame(width: 28, height: 28)
-        }
-        .buttonStyle(.plain).help(railVisible ? "Collapse scenes" : "Show scenes")
-
-        Divider().frame(height: 22)
-        Menu {
-          ForEach(screenplayElementKinds, id: \.self) { kind in
-            Button(kind.label) { requestEdit(kind: kind) }
+      ScrollView(.horizontal) {
+        HStack(spacing: MacTheme.Space.x10) {
+          if navigation == .drawer {
+            Button {
+              showingSceneDrawer.toggle()
+            } label: {
+              Image(systemName: "sidebar.left")
+                .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .help("Show scenes")
+            .accessibilityLabel("Show scenes")
+            .accessibilityIdentifier("writing-show-scenes-\(pane.paneId)")
+            .popover(isPresented: $showingSceneDrawer, arrowEdge: .bottom) {
+              ScreenplaySceneRail(
+                scenes: structure.scenes, elements: structure.elements,
+                activeLine: activeLine, select: selectScene
+              )
+              .frame(height: PaneLayoutContentMetrics.screenplaySceneRailWidth)
+            }
+            Divider().frame(height: 22)
           }
-        } label: {
-          HStack(spacing: MacTheme.Space.x8) {
-            Text(currentKind(in: structure).label)
-            Image(systemName: "chevron.down")
-          }
-          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
-          .foregroundStyle(MacTheme.ink)
-          .padding(.horizontal, MacTheme.Space.x12).frame(height: 30)
-          .background(MacTheme.well, in: Capsule())
-        }
-        .menuStyle(.borderlessButton).frame(width: 176)
 
-        Divider().frame(height: 22)
-        Text("Tab and Enter advance the element")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control))
-          .foregroundStyle(MacTheme.muted)
-        Spacer(minLength: 0)
-        Button {
-          setFocus(!document.focusMode)
-        } label: {
-          Label("Focus", systemImage: "scope")
+          Menu {
+            ForEach(screenplayElementKinds, id: \.self) { kind in
+              Button(kind.label) { requestEdit(kind: kind) }
+            }
+          } label: {
+            HStack(spacing: MacTheme.Space.x8) {
+              Text(currentKind(in: structure).label)
+              Image(systemName: "chevron.down")
+            }
             .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
-            .foregroundStyle(document.focusMode ? MacTheme.accent : MacTheme.secondary)
-            .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
-            .background(document.focusMode ? MacTheme.selection : Color.clear, in: Capsule())
+            .foregroundStyle(MacTheme.ink)
+            .padding(.horizontal, MacTheme.Space.x12).frame(height: 30)
+            .background(MacTheme.well, in: Capsule())
+          }
+          .menuStyle(.borderlessButton).frame(width: 176)
+
+          Divider().frame(height: 22)
+          Text("Tab and Enter advance the element")
+            .font(MacTheme.chrome(MacTheme.TypeScale.control))
+            .foregroundStyle(MacTheme.muted)
+          Button {
+            setFocus(!document.focusMode)
+          } label: {
+            Label("Focus", systemImage: "scope")
+              .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+              .foregroundStyle(document.focusMode ? MacTheme.accent : MacTheme.secondary)
+              .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
+              .background(document.focusMode ? MacTheme.selection : Color.clear, in: Capsule())
+          }
+          .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, MacTheme.Space.x12)
       }
-      .padding(.horizontal, MacTheme.Space.x12)
-      .frame(height: PaneLayoutContentMetrics.screenplayToolbarHeight).background(MacTheme.face)
+      .scrollIndicators(.hidden)
+      .frame(height: PaneLayoutContentMetrics.screenplayToolbarHeight)
+      .background(MacTheme.face)
 
       let suggestions = smartTypeSuggestions(in: structure)
       if !suggestions.isEmpty {
-        HStack(spacing: MacTheme.Space.x6) {
-          Text("SMARTTYPE")
-            .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
-            .foregroundStyle(MacTheme.muted)
-          ForEach(suggestions, id: \.self) { suggestion in
-            Button(suggestion) {
-              requestEdit(kind: currentKind(in: structure), text: suggestion)
+        ScrollView(.horizontal) {
+          HStack(spacing: MacTheme.Space.x6) {
+            Text("SMARTTYPE")
+              .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+              .foregroundStyle(MacTheme.muted)
+            ForEach(suggestions, id: \.self) { suggestion in
+              Button(suggestion) {
+                requestEdit(kind: currentKind(in: structure), text: suggestion)
+              }
+              .buttonStyle(NeoPillButtonStyle())
+              .font(MacTheme.screenplay(MacTheme.TypeScale.small, weight: .bold))
             }
-            .buttonStyle(NeoPillButtonStyle())
-            .font(MacTheme.screenplay(MacTheme.TypeScale.small, weight: .bold))
           }
-          Spacer()
+          .fixedSize(horizontal: true, vertical: false)
+          .padding(.horizontal, MacTheme.Space.x14)
         }
-        .padding(.horizontal, MacTheme.Space.x14)
+        .scrollIndicators(.hidden)
         .frame(height: PaneLayoutContentMetrics.screenplaySmartTypeHeight)
         .background(MacTheme.canvas)
       }
     }
   }
 
-  private func screenplaySheet(
-    file: EditorFileView, document: WritingDocument, structure: WritingStructureResult
+  private func screenplayPage(
+    file: EditorFileView, document: WritingDocument, structure: WritingStructureResult,
+    plan: WritingScreenplayLayoutPlan
   ) -> some View {
-    HStack(spacing: 0) {
-      Spacer(minLength: 22)
-      ZStack(alignment: .topLeading) {
-        ScreenplayViewport(
-          client: client, view: file, document: document, structure: structure,
-          activeLine: $activeLine, targetLine: $targetLine, editRequest: $editRequest,
-          hoveredLine: $hoveredLine, hoverY: $hoverY)
-        if let variants = hoveredVariants(in: structure) {
-          GeometryReader { geometry in
-            ScreenplayVariantControl(
-              client: client, pane: pane, fileId: file.file.fileId, variants: variants
-            )
-            .fixedSize()
-            .position(
-              x: max(150, geometry.size.width - 154),
-              y: min(max(58, hoverY - 4), max(58, geometry.size.height - 58)))
-          }
-          .allowsHitTesting(true)
+    ZStack(alignment: .topLeading) {
+      ScreenplayViewport(
+        client: client, view: file, document: document, structure: structure,
+        pageSize: plan.pageSize, scale: plan.scale,
+        activeLine: $activeLine, targetLine: $targetLine, editRequest: $editRequest,
+        hoveredLine: $hoveredLine, hoverY: $hoverY)
+      if let variants = hoveredVariants(in: structure) {
+        GeometryReader { geometry in
+          ScreenplayVariantControl(
+            client: client, pane: pane, fileId: file.file.fileId, variants: variants
+          )
+          .fixedSize()
+          .position(
+            x: max(150, geometry.size.width - 154),
+            y: min(
+              max(58, hoverY * plan.scale - 4),
+              max(58, geometry.size.height - 58)))
         }
+        .allowsHitTesting(true)
       }
-      .frame(maxWidth: 860, maxHeight: .infinity)
-      .neoRaised(radius: MacTheme.Radius.control, elevation: .panel)
-      .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
-      .onHover { inside in
-        if !inside { hoveredLine = nil }
-      }
-      Spacer(minLength: 22)
     }
-    .padding(.vertical, 32).background(MacTheme.canvas)
+    .neoRaised(radius: MacTheme.Radius.control, elevation: .panel)
+    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    .onHover { inside in
+      if !inside { hoveredLine = nil }
+    }
+    .accessibilityIdentifier("writing-screenplay-page-\(pane.paneId)")
   }
 
   private func currentKind(in structure: WritingStructureResult) -> ScreenplayElementKind {
@@ -427,6 +511,8 @@ private struct ScreenplayViewport: NSViewRepresentable {
   let view: EditorFileView
   let document: WritingDocument
   let structure: WritingStructureResult
+  let pageSize: PaneLayoutSize
+  let scale: Double
   @Binding var activeLine: UInt32
   @Binding var targetLine: UInt32?
   @Binding var editRequest: ScreenplayEditRequest?
@@ -458,15 +544,18 @@ private struct ScreenplayViewport: NSViewRepresentable {
       scroll.backgroundColor = NSColor(MacTheme.face)
       scroll.hasVerticalScroller = true
       scroll.autohidesScrollers = true
+      scroll.scrollerStyle = .overlay
       scroll.borderType = .noBorder
       scroll.documentView = textView
       configure(scroll)
+      applyPageGeometry(scroll)
       return scroll
     }
 
     func update(_ scrollView: NSScrollView) {
       guard let viewport = parent.view.viewport else { return }
       applyTheme(scrollView)
+      applyPageGeometry(scrollView)
       firstLine = viewport.fromLine
       let next = viewport.lines.map(\.text).joined(separator: "\n")
       let revision = "\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine)"
@@ -498,6 +587,28 @@ private struct ScreenplayViewport: NSViewRepresentable {
       textView.backgroundColor = NSColor(MacTheme.face)
       textView.insertionPointColor = NSColor(MacTheme.accent)
       textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
+    }
+
+    private func applyPageGeometry(_ scrollView: NSScrollView) {
+      let page = NSSize(width: parent.pageSize.width, height: parent.pageSize.height)
+      let currentHeight = max(page.height, textView.frame.height)
+      if abs(textView.frame.width - page.width) > 0.25
+        || abs(textView.frame.height - currentHeight) > 0.25
+      {
+        textView.setFrameSize(NSSize(width: page.width, height: currentHeight))
+      }
+      textView.minSize = page
+      textView.maxSize = NSSize(width: page.width, height: .greatestFiniteMagnitude)
+
+      let scale = CGFloat(parent.scale)
+      scrollView.allowsMagnification = true
+      scrollView.minMagnification = 0.1
+      scrollView.maxMagnification = 1
+      if abs(scrollView.magnification - scale) > 0.000_1 {
+        scrollView.magnification = scale
+      }
+      scrollView.minMagnification = scale
+      scrollView.maxMagnification = scale
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -680,9 +791,6 @@ private struct ScreenplayViewport: NSViewRepresentable {
       textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
       textView.textContainerInset = NSSize(
         width: PaneLayoutContentMetrics.screenplayPageHorizontalInset, height: 58)
-      textView.minSize = .zero
-      textView.maxSize = NSSize(
-        width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
       textView.isVerticallyResizable = true
       textView.isHorizontallyResizable = false
       textView.autoresizingMask = [.width]

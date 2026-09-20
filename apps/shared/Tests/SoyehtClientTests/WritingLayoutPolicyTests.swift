@@ -101,6 +101,14 @@ private let screenplayMetric = PaneLayoutFontMetric(
   }
   #expect(compactScreenplay.navigation == .drawer)
   #expect(compactScreenplay.navigationRect == nil)
+  #expect(compactScreenplay.pageSize.width == 61 * screenplayMetric.characterWidth + 2 * 74)
+  #expect(
+    compactScreenplay.pageSize.height
+      == compactScreenplay.pageSize.width * WritingLayoutMetrics.standard.screenplayPageRatio)
+  #expect(
+    compact.toolbarRect?.size.height
+      == WritingLayoutMetrics.standard.screenplayToolbarHeight
+      + WritingLayoutMetrics.standard.screenplaySmartTypeHeight)
   #expect(
     abs(compactScreenplay.pageRect.size.width / compactScreenplay.pageRect.size.height - 8.5 / 11)
       < 0.000_001)

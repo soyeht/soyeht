@@ -3,6 +3,14 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
+struct WritingPaneHeaderAction {
+  let title: String
+  let systemImage: String
+  let help: String
+  let accessibilityIdentifier: String
+  let action: () -> Void
+}
+
 /// Shared writing chrome. Text adopts it in C3; screenplay and presentation follow in C4/C5.
 struct WritingPaneHeader: View {
   let paneId: String
@@ -11,6 +19,7 @@ struct WritingPaneHeader: View {
   let metadata: String?
   let fullWidth: Bool?
   let headerDrag: PaneHeaderDragConfiguration?
+  var auxiliaryAction: WritingPaneHeaderAction?
   let mutationDisabled: Bool
   let layoutActionsDisabled: Bool
   let onToggleFullWidth: (() -> Void)?
@@ -29,6 +38,14 @@ struct WritingPaneHeader: View {
           .font(MacTheme.chrome(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.muted)
           .lineLimit(1)
+      }
+      if let auxiliaryAction {
+        Button(action: auxiliaryAction.action) {
+          Label(auxiliaryAction.title, systemImage: auxiliaryAction.systemImage)
+        }
+        .buttonStyle(NeoPillButtonStyle())
+        .help(auxiliaryAction.help)
+        .accessibilityIdentifier(auxiliaryAction.accessibilityIdentifier)
       }
       if let fullWidth, let onToggleFullWidth {
         Button(action: onToggleFullWidth) {
@@ -187,6 +204,7 @@ struct WritingTextPane: View {
       metadata: document == nil ? nil : wordCountLabel,
       fullWidth: document?.fullWidth,
       headerDrag: headerDrag,
+      auxiliaryAction: nil,
       mutationDisabled: !client.connected,
       layoutActionsDisabled: !client.connected || layoutActionsDisabled,
       onToggleFullWidth: document.map { document in
