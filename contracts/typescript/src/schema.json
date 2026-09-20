@@ -1817,6 +1817,12 @@
         },
         "pane": {
           "$ref": "#/$defs/Pane"
+        },
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "writingDocument": {
+          "$ref": "#/$defs/WritingDocument"
         }
       },
       "required": [

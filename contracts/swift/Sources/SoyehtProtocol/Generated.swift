@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 65a5d24b582dfacd7996d517136102539055dd167f0acfe8e38d18bddc2c0900). Do not edit.
+// Generated from contracts/protocol.json (sha256 bc5dd605956175ece4341e068213d424568eb26b09b274a299a269dd3f8e5b55). Do not edit.
 import Foundation
 
 
@@ -1051,10 +1051,14 @@ public struct PaneCreatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
     public var `pane`: Pane
-    public init(`eventId`: Decimal, `at`: String, `pane`: Pane) {
+    public var `file`: FileDocument?
+    public var `writingDocument`: WritingDocument?
+    public init(`eventId`: Decimal, `at`: String, `pane`: Pane, `file`: FileDocument? = nil, `writingDocument`: WritingDocument? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`pane` = `pane`
+        self.`file` = `file`
+        self.`writingDocument` = `writingDocument`
     }
 }
 

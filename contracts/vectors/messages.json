@@ -888,7 +888,7 @@
         "workspaceId": "00000000-0000-4000-8000-000000000001",
         "name": "example",
         "cwd": "/tmp/soyeht-test",
-        "mode": "terminal",
+        "mode": "writing",
         "state": "starting",
         "source": "protocol",
         "confidence": 0.5,
@@ -896,7 +896,45 @@
         "generation": 1,
         "cols": 1,
         "rows": 1,
-        "record": true
+        "record": true,
+        "writingKind": "text",
+        "writingSection": "texts"
+      },
+      "file": {
+        "fileId": "writing-file-1",
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "path": "Writing/Texts/Chapter One.md",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 3,
+        "byteCount": "32",
+        "dirty": false,
+        "conflicted": false,
+        "watching": true
+      },
+      "writingDocument": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": true
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "reading_serif",
+        "focusMode": false,
+        "fullWidth": false
       }
     }
   },
@@ -2110,7 +2148,7 @@
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "name": "example",
           "cwd": "/tmp/soyeht-test",
-          "mode": "terminal",
+          "mode": "writing",
           "state": "starting",
           "source": "protocol",
           "confidence": 0.5,
@@ -2118,7 +2156,45 @@
           "generation": 1,
           "cols": 1,
           "rows": 1,
-          "record": true
+          "record": true,
+          "writingKind": "text",
+          "writingSection": "texts"
+        },
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": true
+        },
+        "writingDocument": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": true
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false,
+          "fullWidth": false
         }
       }
     }

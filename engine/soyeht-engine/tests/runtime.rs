@@ -177,6 +177,77 @@ fn writing_section_listing_ignores_protected_workspace_siblings() {
 }
 
 #[test]
+fn pane_created_events_carry_replica_metadata_for_other_clients() {
+    let rig = Rig::new();
+    fs::create_dir_all(rig.path.join("Writing/Texts")).unwrap();
+    fs::write(rig.path.join("main.rs"), "fn main() {}\n").unwrap();
+    fs::write(
+        rig.path.join("Writing/Texts/notes.md"),
+        "# Notes\n\nShared live.\n",
+    )
+    .unwrap();
+
+    let mut writer = rig.client();
+    let workspace = writer.call(
+        "workspace.create",
+        json!({"name":"Live replica","path":rig.path,"idempotencyKey":"live-replica-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut observer = rig.client();
+    let (snapshot, _) = observer.snapshot();
+    observer.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+    observer.messages.clear();
+
+    writer.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"editor","path":"main.rs","idempotencyKey":"live-editor"}),
+    );
+    writer.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,
+            "mode":"writing",
+            "path":"Writing/Texts/notes.md",
+            "writingKind":"text",
+            "writingSection":"texts",
+            "idempotencyKey":"live-writing"
+        }),
+    );
+    observer.call("engine.status", json!({}));
+
+    let events: Vec<Value> = observer
+        .messages
+        .iter()
+        .filter_map(|frame| {
+            let Frame::Json(bytes) = frame else {
+                return None;
+            };
+            let value: Value = serde_json::from_slice(bytes).ok()?;
+            (value["method"] == "pane.created").then_some(value["params"].clone())
+        })
+        .collect();
+    let editor = events
+        .iter()
+        .find(|event| event["pane"]["mode"] == "editor")
+        .expect("editor pane event");
+    assert_eq!(editor["file"]["paneId"], editor["pane"]["paneId"]);
+    assert_eq!(editor["file"]["path"], "main.rs");
+    assert!(editor.get("writingDocument").is_none());
+    assert!(editor.get("viewport").is_none());
+
+    let writing = events
+        .iter()
+        .find(|event| event["pane"]["mode"] == "writing")
+        .expect("writing pane event");
+    assert_eq!(writing["file"]["paneId"], writing["pane"]["paneId"]);
+    assert_eq!(writing["writingDocument"]["file"], writing["file"]);
+    assert_eq!(writing["writingDocument"]["kind"], "text");
+    assert!(writing.get("viewport").is_none());
+}
+
+#[test]
 fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
     let mut rig = Rig::new();
     fs::create_dir_all(rig.path.join("Writing/Texts")).unwrap();
