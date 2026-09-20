@@ -962,23 +962,23 @@ private struct WorkspaceTopBar: View {
       if let sticky = plan.sticky,
         let workspace = client.workspaces.first(where: { $0.workspaceId == sticky.workspaceId })
       {
-        WorkspaceTab(
-          workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
-          keyboardFocusable: false, focusedWorkspaceId: nil,
-          action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
-          onClose: { onCloseWorkspace(workspace.workspaceId) }, identifierPrefix: "workspace-tab-sticky")
-        .frame(
-          width: min(
-            measurement.items.first(where: { $0.workspaceId == workspace.workspaceId })?.width
-              ?? MacPaneLayoutMetrics.workspaceTabMaximumWidth,
-            max(
-              0,
-              measurement.viewportWidth
-                - 2 * MacPaneLayoutMetrics.workspaceTabShadowClearance)
+        ZStack(alignment: sticky.edge == .leading ? .leading : .trailing) {
+          workspaceStickyBackdrop(
+            edge: sticky.edge, width: stickyOcclusionWidth(for: sticky, in: measurement))
+          WorkspaceTab(
+            workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
+            keyboardFocusable: false, focusedWorkspaceId: nil,
+            action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
+            onClose: { onCloseWorkspace(workspace.workspaceId) },
+            identifierPrefix: "workspace-tab-sticky"
           )
-        )
-        .padding(.horizontal, MacPaneLayoutMetrics.workspaceTabShadowClearance)
-        .background(MacTheme.canvas)
+          .frame(width: stickyTabWidth(for: sticky, in: measurement))
+          .padding(.horizontal, MacPaneLayoutMetrics.workspaceTabShadowClearance)
+        }
+        .frame(
+          width: stickyOcclusionWidth(for: sticky, in: measurement),
+          height: MacPaneLayoutMetrics.workspaceTabViewportHeight,
+          alignment: sticky.edge == .leading ? .leading : .trailing)
         .transition(.opacity)
       }
     }
@@ -986,24 +986,23 @@ private struct WorkspaceTopBar: View {
   }
 
   private var workspaceTabFades: some View {
-    let occlusion = plan.sticky.map { stickyOcclusionWidth(for: $0, in: measurement) } ?? 0
-    let leadingOffset = plan.sticky?.edge == .leading ? occlusion : 0
-    let trailingOffset = plan.sticky?.edge == .trailing ? occlusion : 0
-    return ZStack {
-      LinearGradient(
-        colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
-        startPoint: .leading, endPoint: .trailing
-      )
-      .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .offset(x: leadingOffset)
-      LinearGradient(
-        colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
-        startPoint: .leading, endPoint: .trailing
-      )
-      .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
-      .frame(maxWidth: .infinity, alignment: .trailing)
-      .offset(x: -trailingOffset)
+    ZStack {
+      if plan.sticky?.edge != .leading {
+        LinearGradient(
+          colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
+          startPoint: .leading, endPoint: .trailing
+        )
+        .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      if plan.sticky?.edge != .trailing {
+        LinearGradient(
+          colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
+          startPoint: .leading, endPoint: .trailing
+        )
+        .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+      }
     }
     .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
     .clipped()
@@ -1044,13 +1043,48 @@ private struct WorkspaceTopBar: View {
   private func stickyOcclusionWidth(
     for sticky: WorkspaceTabStickyPresentation, in measurement: WorkspaceTabStripMeasurement
   ) -> Double {
-    guard let item = measurement.items.first(where: { $0.workspaceId == sticky.workspaceId }) else {
-      return 0
-    }
     let clearance = MacPaneLayoutMetrics.workspaceTabShadowClearance
-    let tabWidth = min(item.width, max(0, measurement.viewportWidth - 2 * clearance))
+    let tabWidth = stickyTabWidth(for: sticky, in: measurement)
     let footprint = tabWidth + 2 * clearance + Double(MacTheme.Space.x10)
     return min(measurement.viewportWidth, footprint)
+  }
+
+  private func stickyTabWidth(
+    for sticky: WorkspaceTabStickyPresentation, in measurement: WorkspaceTabStripMeasurement
+  ) -> Double {
+    let measured = measurement.items.first(where: { $0.workspaceId == sticky.workspaceId })?.width
+      ?? MacPaneLayoutMetrics.workspaceTabMaximumWidth
+    return min(
+      measured,
+      max(
+        0,
+        measurement.viewportWidth - 2 * MacPaneLayoutMetrics.workspaceTabShadowClearance))
+  }
+
+  @ViewBuilder private func workspaceStickyBackdrop(
+    edge: WorkspaceTabStickyEdge, width: Double
+  ) -> some View {
+    let fadeWidth = min(width, MacPaneLayoutMetrics.workspaceTabFadeWidth)
+    let opaqueWidth = max(0, width - fadeWidth)
+    HStack(spacing: 0) {
+      if edge == .leading {
+        MacTheme.canvas.frame(width: opaqueWidth)
+        LinearGradient(
+          colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
+          startPoint: .leading, endPoint: .trailing
+        )
+        .frame(width: fadeWidth)
+      } else {
+        LinearGradient(
+          colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
+          startPoint: .leading, endPoint: .trailing
+        )
+        .frame(width: fadeWidth)
+        MacTheme.canvas.frame(width: opaqueWidth)
+      }
+    }
+    .frame(width: width, height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
+    .allowsHitTesting(false)
   }
 
   private func moveWorkspaceFocus(
