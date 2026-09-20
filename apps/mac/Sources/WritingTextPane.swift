@@ -105,6 +105,58 @@ struct WritingPaneHeader: View {
   }
 }
 
+/// The accepted P5/P2 writing header. Screenplay and presentation adopt this in E2/E3.
+struct WritingChromeHeader<Trailing: View>: View {
+  let paneId: String
+  let title: String
+  let metadata: String?
+  let companionLinked: Bool
+  let opacity: Double
+  let headerDrag: PaneHeaderDragConfiguration?
+  let onHover: (Bool) -> Void
+  @ViewBuilder let trailing: () -> Trailing
+
+  var body: some View {
+    HStack(spacing: WritingChromeMetrics.standard.headerActionGap) {
+      HStack(spacing: MacTheme.Space.x6) {
+        Text(title)
+          .font(
+            MacTheme.chrome(
+              WritingChromeMetrics.standard.headerFontPointSize, weight: .semibold)
+          )
+          .foregroundStyle(MacTheme.secondary)
+          .lineLimit(1)
+          .help(title)
+          .accessibilityLabel(title)
+        if companionLinked {
+          Image(systemName: "link")
+            .font(.system(size: WritingChromeMetrics.standard.headerMenuIconSize))
+            .foregroundStyle(MacTheme.secondary)
+            .help("Linked writing companion")
+            .accessibilityLabel("Linked writing companion")
+            .accessibilityIdentifier("writing-companion-link-\(paneId)")
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      if let metadata {
+        Text(metadata)
+          .font(MacTheme.chrome(WritingChromeMetrics.standard.headerFontPointSize))
+          .foregroundStyle(MacTheme.muted)
+          .lineLimit(1)
+      }
+      trailing()
+    }
+    .padding(.horizontal, WritingChromeMetrics.standard.headerHorizontalInset)
+    .frame(height: WritingChromeMetrics.standard.headerHeight)
+    .background(MacTheme.face)
+    .opacity(opacity)
+    .onHover(perform: onHover)
+    .paneHeaderDrag(headerDrag)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("writing-header-\(paneId)")
+  }
+}
+
 struct WritingTextPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
@@ -114,9 +166,13 @@ struct WritingTextPane: View {
   let onSplit: (String, PaneSplitAxis) -> Void
   let layoutActionsDisabled: Bool
   @State private var selection: SoyehtProtocol.TextRange?
+  @State private var selectionGeometry: PaneLayoutRect?
   @State private var activeLine: UInt32 = 0
   @State private var destinationKind: WritingFormatKind?
   @State private var destination = ""
+  @State private var showingOptions = false
+  @State private var showingCloseConfirmation = false
+  @State private var chromeActivity = WritingChromeActivityState()
 
   private var writing: WritingDocumentView? {
     client.writingDocuments.values.first { $0.document.file.paneId == pane.paneId }
@@ -150,6 +206,20 @@ struct WritingTextPane: View {
       }
     }
     .task(id: writingLoadKey) { await loadIfNeeded() }
+    .onChange(of: hasSelection) { _, value in
+      updateChrome(.selectionChanged(value))
+      if !value { selectionGeometry = nil }
+    }
+    .onChange(of: showingOptions) { _, value in updateChrome(.menuChanged(value)) }
+    .onChange(of: destinationKind != nil) { _, value in
+      updateChrome(.popoverChanged(value))
+    }
+    .alert("Close \(documentFileName)?", isPresented: $showingCloseConfirmation) {
+      Button("Cancel", role: .cancel) {}
+      Button("Close", role: .destructive) { client.closePane(pane.paneId) }
+    } message: {
+      Text("Unsaved changes will be lost.")
+    }
   }
 
   private func layoutPlan(size: CGSize, document: WritingDocument) -> WritingLayoutPlan? {
@@ -174,14 +244,10 @@ struct WritingTextPane: View {
       Color.clear
         .frame(width: plan.contentSize.width, height: plan.contentSize.height)
         .allowsHitTesting(false)
-      MacTheme.canvas
+      MacTheme.face
         .writingFrame(plan.contentRect)
       writingHeader(document: document)
         .writingFrame(plan.headerRect)
-      if let toolbarRect = plan.toolbarRect {
-        toolbar(document)
-          .writingFrame(toolbarRect)
-      }
       if let reviewRect = plan.reviewRect, let file {
         WritingTextReviewStrip(
           client: client, view: file, selectedPosition: selection?.start
@@ -193,7 +259,8 @@ struct WritingTextPane: View {
       {
         WritingTextViewport(
           client: client, view: file, document: document,
-          selection: $selection, activeLine: $activeLine
+          selection: $selection, selectionGeometry: $selectionGeometry,
+          activeLine: $activeLine, onEditingActivity: { updateChrome(.edited) }
         )
         .writingFrame(textPlan.columnRect)
         .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
@@ -202,28 +269,53 @@ struct WritingTextPane: View {
         ProgressView()
           .writingFrame(textPlan.columnRect)
       }
+      if let selectionGeometry,
+        let toolbarRect = selectionToolbarRect(selectionGeometry, plan: plan)
+      {
+        selectionToolbar
+          .writingFrame(toolbarRect)
+          .zIndex(2)
+      }
     }
     .frame(
       width: plan.contentSize.width, height: plan.contentSize.height,
       alignment: .topLeading
     )
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .onContinuousHover { phase in
+      if case .active = phase { updateChrome(.pointerMoved) }
+    }
   }
 
   private func writingHeader(document: WritingDocument?) -> some View {
-    WritingPaneHeader(
-      paneId: pane.paneId, title: pane.name, icon: "doc.richtext",
+    WritingChromeHeader(
+      paneId: pane.paneId, title: documentFileName,
       metadata: document == nil ? nil : wordCountLabel,
-      fullWidth: document?.fullWidth,
+      companionLinked: companionLinked, opacity: chromeOpacity,
       headerDrag: headerDrag,
-      companionLinked: companionLinked,
-      auxiliaryAction: nil,
-      mutationDisabled: !client.connected,
-      layoutActionsDisabled: !client.connected || layoutActionsDisabled,
-      onToggleFullWidth: document.map { document in
-        { setFullWidth(!document.fullWidth) }
-      },
-      onSplit: onSplit, onClose: onClose)
+      onHover: { updateChrome(.headerHoverChanged($0)) },
+      trailing: {
+        Button {
+          showingOptions.toggle()
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.system(size: WritingChromeMetrics.standard.headerMenuIconSize))
+            .foregroundStyle(MacTheme.secondary)
+            .frame(
+              width: WritingChromeMetrics.standard.headerMenuTargetSize,
+              height: WritingChromeMetrics.standard.headerMenuTargetSize
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Writing options")
+        .accessibilityLabel("Writing options menu")
+        .accessibilityIdentifier("writing-options-\(pane.paneId)")
+        .popover(isPresented: $showingOptions, arrowEdge: .bottom) {
+          if let document { writingOptions(document) }
+        }
+      }
+    )
   }
 
   private func scrollAxes(_ plan: WritingLayoutPlan) -> Axis.Set {
@@ -233,99 +325,215 @@ struct WritingTextPane: View {
     return axes
   }
 
-  private func toolbar(_ document: WritingDocument) -> some View {
-    ScrollView(.horizontal) {
-      HStack(spacing: MacTheme.Space.x8) {
-        Menu {
-          fontButton("Newsreader", .reading_serif, document: document)
-          fontButton("Classic serif", .classic_serif, document: document)
-          fontButton("Sans", .sans, document: document)
-        } label: {
-          Label(fontLabel(document.font), systemImage: "textformat")
-        }
-        .menuStyle(.borderlessButton).frame(width: 174)
-
-        Divider().frame(height: 20)
-        Menu {
-          formatButton("Heading 1", .heading1)
-          formatButton("Heading 2", .heading2)
-          formatButton("Heading 3", .heading3)
-        } label: {
-          Label("Heading", systemImage: "textformat.size")
-        }
-        .menuStyle(.borderlessButton).frame(width: 130)
-        Divider().frame(height: 20)
-
-        formatIcon("bold", "Bold", .bold)
-        formatIcon("italic", "Italic", .italic)
-        formatIcon("list.bullet", "Bulleted list", .bullet_list)
-        formatIcon("list.number", "Numbered list", .numbered_list)
-        formatIcon("quote.opening", "Quote", .quote)
-        destinationIcon("link", "Link", .link)
-        destinationIcon("photo", "Image", .image)
-        Button {
-          setFocus(!document.focusMode)
-        } label: {
-          Label("Focus", systemImage: "scope")
-            .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
-            .foregroundStyle(document.focusMode ? MacTheme.accent : MacTheme.secondary)
-            .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
-            .background(document.focusMode ? MacTheme.selection : Color.clear, in: Capsule())
-        }
-        .help("Emphasize the active line")
+  private func writingOptions(_ document: WritingDocument) -> some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      Menu {
+        fontButton("Newsreader", .reading_serif, document: document)
+        fontButton("Classic serif", .classic_serif, document: document)
+        fontButton("Sans", .sans, document: document)
+      } label: {
+        optionLabel(fontLabel(document.font), icon: "textformat")
       }
-      .fixedSize(horizontal: true, vertical: false)
+      .menuStyle(.borderlessButton)
+      .disabled(!client.connected)
+      .accessibilityLabel("Font: \(fontLabel(document.font))")
+      .accessibilityIdentifier("writing-options-font-\(pane.paneId)")
+      optionButton(
+        document.fullWidth ? "Use reading width" : "Use full width",
+        icon: document.fullWidth
+          ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+        disabled: !client.connected,
+        identifier: "writing-options-width-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        setFullWidth(!document.fullWidth)
+      }
+      optionButton(
+        document.focusMode ? "Turn off Focus mode" : "Focus mode", icon: "scope",
+        active: document.focusMode, disabled: !client.connected,
+        identifier: "writing-options-focus-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        setFocus(!document.focusMode)
+      }
+      Divider().padding(.vertical, MacTheme.Space.x3)
+      optionButton(
+        "Split into columns", icon: "rectangle.split.2x1",
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "split-pane-columns-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        onSplit(pane.paneId, .columns)
+      }
+      optionButton(
+        "Split into rows", icon: "rectangle.split.1x2",
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "split-pane-rows-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        onSplit(pane.paneId, .rows)
+      }
+      Divider().padding(.vertical, MacTheme.Space.x3)
+      optionButton(
+        "Close pane", icon: "xmark", role: .destructive,
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "close-pane-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        requestClose()
+      }
     }
-    .scrollIndicators(.hidden)
-    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-    .foregroundStyle(MacTheme.secondary)
-    .padding(.horizontal, MacTheme.Space.x10)
-    .frame(height: PaneLayoutContentMetrics.textToolbarHeight)
+    .padding(MacTheme.Space.x8)
+    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
     .background(MacTheme.face)
-    .popover(
-      isPresented: Binding(
-        get: { destinationKind != nil },
-        set: { if !$0 { destinationKind = nil } })
-    ) {
-      destinationPopover
-    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Writing options menu")
+  }
+
+  private func optionLabel(_ title: String, icon: String, active: Bool = false) -> some View {
+    Label(title, systemImage: icon)
+      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+      .foregroundStyle(active ? MacTheme.accent : MacTheme.ink)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: PaneLayoutContentMetrics.writingOptionsRowHeight,
+        alignment: .leading
+      )
+      .contentShape(Rectangle())
+  }
+
+  private func optionButton(
+    _ title: String, icon: String, role: ButtonRole? = nil, active: Bool = false,
+    disabled: Bool = false, identifier: String, action: @escaping () -> Void
+  ) -> some View {
+    Button(role: role, action: action) { optionLabel(title, icon: icon, active: active) }
+      .buttonStyle(.plain)
+      .disabled(disabled)
+      .accessibilityIdentifier(identifier)
   }
 
   private func fontButton(
     _ title: String, _ font: WritingFont, document: WritingDocument
   ) -> some View {
     Button {
+      showingOptions = false
       setFont(font)
     } label: {
       if document.font == font { Label(title, systemImage: "checkmark") } else { Text(title) }
     }
   }
 
-  private func formatButton(_ title: String, _ kind: WritingFormatKind) -> some View {
-    Button(title) { apply(kind) }
+  private var selectionToolbar: some View {
+    HStack(spacing: WritingChromeMetrics.standard.toolbarGap) {
+      selectionFormatButton("bold", "Bold", .bold, identifier: "bold")
+        .keyboardShortcut("b", modifiers: .command)
+      selectionFormatButton("italic", "Italic", .italic, identifier: "italic")
+        .keyboardShortcut("i", modifiers: .command)
+      Menu {
+        Button("Heading 1") { apply(.heading1) }
+        Button("Heading 2") { apply(.heading2) }
+        Button("Heading 3") { apply(.heading3) }
+      } label: {
+        selectionToolbarIcon("textformat.size", help: "Heading")
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .frame(
+        width: WritingChromeMetrics.standard.toolbarButtonWidth,
+        height: WritingChromeMetrics.standard.toolbarSize.height
+      )
+      .help("Heading")
+      .accessibilityLabel("Heading")
+      .accessibilityIdentifier("writing-selection-heading-\(pane.paneId)")
+      Menu {
+        Button("Bulleted list") { apply(.bullet_list) }
+        Button("Numbered list") { apply(.numbered_list) }
+      } label: {
+        selectionToolbarIcon("list.bullet", help: "List")
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .frame(
+        width: WritingChromeMetrics.standard.toolbarButtonWidth,
+        height: WritingChromeMetrics.standard.toolbarSize.height
+      )
+      .help("List")
+      .accessibilityLabel("List")
+      .accessibilityIdentifier("writing-selection-list-\(pane.paneId)")
+      selectionFormatButton("text.quote", "Quote", .quote, identifier: "quote")
+      selectionDestinationButton("link", "Link", .link, identifier: "link")
+        .keyboardShortcut("k", modifiers: .command)
+      selectionDestinationButton("photo", "Image", .image, identifier: "image")
+    }
+    .padding(.horizontal, WritingChromeMetrics.standard.toolbarHorizontalInset)
+    .frame(
+      width: WritingChromeMetrics.standard.toolbarSize.width,
+      height: WritingChromeMetrics.standard.toolbarSize.height
+    )
+    .background(MacTheme.face, in: Capsule())
+    .shadow(
+      color: MacTheme.shadowDark.opacity(0.40),
+      radius: WritingChromeMetrics.standard.toolbarShadowBlur / 2,
+      x: 0, y: WritingChromeMetrics.standard.toolbarShadowOffset
+    )
+    .popover(
+      isPresented: Binding(
+        get: { destinationKind != nil },
+        set: { if !$0 { destinationKind = nil } }),
+      arrowEdge: .bottom
+    ) {
+      destinationPopover
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Formatting selection")
+    .accessibilityIdentifier("writing-selection-toolbar-\(pane.paneId)")
+    .disabled(!client.connected)
   }
 
-  private func formatIcon(
-    _ icon: String, _ help: String, _ kind: WritingFormatKind
+  private func selectionFormatButton(
+    _ icon: String, _ help: String, _ kind: WritingFormatKind, identifier: String
   ) -> some View {
     Button {
       apply(kind)
     } label: {
-      Image(systemName: icon).font(.system(size: 14, weight: .semibold)).frame(
-        width: 26, height: 28)
-    }.help(help)
+      selectionToolbarIcon(icon, help: help)
+    }
+    .buttonStyle(.plain)
+    .help(help)
+    .accessibilityLabel(help)
+    .accessibilityIdentifier("writing-selection-\(identifier)-\(pane.paneId)")
   }
 
-  private func destinationIcon(
-    _ icon: String, _ help: String, _ kind: WritingFormatKind
+  private func selectionDestinationButton(
+    _ icon: String, _ help: String, _ kind: WritingFormatKind, identifier: String
   ) -> some View {
     Button {
+      guard hasSelection else { return }
       destination = ""
       destinationKind = kind
     } label: {
-      Image(systemName: icon).font(.system(size: 14, weight: .semibold)).frame(
-        width: 26, height: 28)
-    }.help(help)
+      selectionToolbarIcon(icon, help: help)
+    }
+    .buttonStyle(.plain)
+    .help(help)
+    .accessibilityLabel(help)
+    .accessibilityIdentifier("writing-selection-\(identifier)-\(pane.paneId)")
+  }
+
+  private func selectionToolbarIcon(_ icon: String, help: String) -> some View {
+    Image(systemName: icon)
+      .font(
+        .system(
+          size: WritingChromeMetrics.standard.toolbarIconSize,
+          weight: .semibold)
+      )
+      .foregroundStyle(MacTheme.ink)
+      .frame(
+        width: WritingChromeMetrics.standard.toolbarButtonWidth,
+        height: WritingChromeMetrics.standard.toolbarSize.height
+      )
+      .contentShape(Rectangle())
+      .help(help)
   }
 
   private var destinationPopover: some View {
@@ -345,13 +553,18 @@ struct WritingTextPane: View {
         .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(destination.isEmpty)
       }
     }
-    .padding(MacTheme.Space.x16).frame(width: 320).background(MacTheme.canvas)
+    .padding(MacTheme.Space.x16).frame(width: 320).background(MacTheme.face)
   }
 
   private var wordCountLabel: String {
     let text = file?.viewport?.lines.map(\.text).joined(separator: "\n") ?? ""
     let count = text.split(whereSeparator: { $0.isWhitespace }).count
-    return "\(count) words"
+    return count == 1 ? "1 word" : "\(count) words"
+  }
+
+  private var documentFileName: String {
+    guard let path = writing?.document.file.path else { return pane.name }
+    return URL(fileURLWithPath: path).lastPathComponent
   }
 
   private func fontLabel(_ font: WritingFont) -> String {
@@ -362,16 +575,55 @@ struct WritingTextPane: View {
     }
   }
 
-  private func selectedRange() -> SoyehtProtocol.TextRange {
-    selection
-      ?? SoyehtProtocol.TextRange(
-        start: TextPosition(line: activeLine, column: 0),
-        end: TextPosition(line: activeLine, column: 0))
+  private var hasSelection: Bool {
+    guard let selection else { return false }
+    return selection.start.line != selection.end.line
+      || selection.start.column != selection.end.column
+  }
+
+  private var chromeOpacity: Double {
+    chromeActivity.visibility == .dimmed
+      ? WritingChromeMetrics.standard.dimmedOpacity : 1
+  }
+
+  private func selectionToolbarRect(
+    _ localSelection: PaneLayoutRect, plan: WritingLayoutPlan
+  ) -> PaneLayoutRect? {
+    guard hasSelection, case .text(let textPlan) = plan.surface else { return nil }
+    let selectionInSurface = PaneLayoutRect(
+      origin: PaneLayoutPoint(
+        x: textPlan.columnRect.origin.x + localSelection.origin.x,
+        y: textPlan.columnRect.origin.y + localSelection.origin.y),
+      size: localSelection.size)
+    return WritingChromePolicy().selectionToolbarRect(
+      selection: selectionInSurface, within: plan.contentRect)
+  }
+
+  private func updateChrome(_ event: WritingChromeActivityEvent) {
+    var next = chromeActivity
+    next.reduce(event)
+    let duration =
+      next.visibility == .dimmed
+      ? WritingChromeMetrics.standard.dimDuration
+      : WritingChromeMetrics.standard.revealDuration
+    withAnimation(.easeOut(duration: duration)) { chromeActivity = next }
+  }
+
+  private func requestClose() {
+    switch WritingChromePolicy().closeDisposition(
+      fileName: documentFileName, dirty: file?.file.dirty == true)
+    {
+    case .closeImmediately:
+      client.closePane(pane.paneId)
+    case .confirm:
+      showingCloseConfirmation = true
+    }
   }
 
   private func apply(_ kind: WritingFormatKind, value: String? = nil) {
-    guard let fileId = writing?.document.file.fileId else { return }
-    let range = selectedRange()
+    guard let fileId = writing?.document.file.fileId, let range = selection,
+      range.start.line != range.end.line || range.start.column != range.end.column
+    else { return }
     Task { @MainActor in
       do {
         _ = try await client.formatWritingDocument(
@@ -462,13 +714,19 @@ private struct WritingTextViewport: NSViewRepresentable {
   let view: EditorFileView
   let document: WritingDocument
   @Binding var selection: SoyehtProtocol.TextRange?
+  @Binding var selectionGeometry: PaneLayoutRect?
   @Binding var activeLine: UInt32
+  let onEditingActivity: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeNSView(context: Context) -> NSScrollView { context.coordinator.makeScrollView() }
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
     context.coordinator.update(scrollView)
+  }
+  static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+    NotificationCenter.default.removeObserver(
+      coordinator, name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -480,6 +738,7 @@ private struct WritingTextViewport: NSViewRepresentable {
     private var renderedFont: WritingFont?
     private var renderedTheme: TerminalColorTheme?
     private var rendering = false
+    private weak var scrollView: NSScrollView?
 
     init(_ parent: WritingTextViewport) { self.parent = parent }
 
@@ -491,6 +750,11 @@ private struct WritingTextViewport: NSViewRepresentable {
       scroll.autohidesScrollers = true
       scroll.borderType = .noBorder
       scroll.documentView = textView
+      scroll.contentView.postsBoundsChangedNotifications = true
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(viewportDidScroll(_:)),
+        name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+      scrollView = scroll
       configureTextView()
       return scroll
     }
@@ -512,6 +776,7 @@ private struct WritingTextViewport: NSViewRepresentable {
       } else if parent.activeLine != currentLine() || parent.document.focusMode != focusApplied {
         render(selection: validSelection(textView.selectedRange()))
       }
+      publishSelectionGeometry(deferred: true)
     }
 
     private func applyTheme(_ scrollView: NSScrollView) {
@@ -528,6 +793,7 @@ private struct WritingTextViewport: NSViewRepresentable {
         return
       }
       parent.selection = SoyehtProtocol.TextRange(start: start, end: end)
+      publishSelectionGeometry()
       if parent.activeLine != start.line {
         parent.activeLine = start.line
         render(selection: range)
@@ -544,14 +810,18 @@ private struct WritingTextViewport: NSViewRepresentable {
         let start = position(affectedCharRange.location),
         let end = position(NSMaxRange(affectedCharRange))
       else { return false }
+      parent.onEditingActivity()
       source = raw.replacingCharacters(in: affectedCharRange, with: replacement)
       let cursor = affectedCharRange.location + replacement.utf16.count
+      let cursorPosition = position(cursor) ?? start
       parent.client.enqueueEditorEdits(
         fileId: parent.view.file.fileId,
         edits: [
           TextEdit(range: SoyehtProtocol.TextRange(start: start, end: end), text: replacement)
         ])
-      parent.activeLine = start.line &+ UInt32(clamping: replacement.filter { $0 == "\n" }.count)
+      parent.activeLine = cursorPosition.line
+      parent.selection = SoyehtProtocol.TextRange(start: cursorPosition, end: cursorPosition)
+      parent.selectionGeometry = nil
       render(selection: NSRange(location: cursor, length: 0))
       return false
     }
@@ -575,6 +845,45 @@ private struct WritingTextViewport: NSViewRepresentable {
       textView.setSelectedRange(validSelection(selection))
       textView.needsDisplay = true
       rendering = false
+      publishSelectionGeometry(deferred: true)
+    }
+
+    @objc private func viewportDidScroll(_ notification: Notification) {
+      publishSelectionGeometry()
+    }
+
+    private func publishSelectionGeometry(deferred: Bool = false) {
+      if deferred {
+        Task { @MainActor [weak self] in self?.publishSelectionGeometry() }
+        return
+      }
+      guard scrollView != nil else {
+        parent.selectionGeometry = nil
+        return
+      }
+      let selectedRange = textView.selectedRange()
+      guard selectedRange.length > 0, let layoutManager = textView.layoutManager,
+        let textContainer = textView.textContainer
+      else {
+        parent.selectionGeometry = nil
+        return
+      }
+      let glyphRange = layoutManager.glyphRange(
+        forCharacterRange: selectedRange, actualCharacterRange: nil)
+      var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+      rect.origin.x += textView.textContainerOrigin.x
+      rect.origin.y += textView.textContainerOrigin.y
+      let visible = textView.visibleRect
+      let clipped = rect.intersection(visible)
+      guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else {
+        parent.selectionGeometry = nil
+        return
+      }
+      parent.selectionGeometry = PaneLayoutRect(
+        origin: PaneLayoutPoint(
+          x: clipped.minX - visible.minX,
+          y: clipped.minY - visible.minY),
+        size: PaneLayoutSize(width: clipped.width, height: clipped.height))
     }
 
     private func validSelection(_ range: NSRange) -> NSRange {

@@ -45,6 +45,8 @@ public struct WritingChromeMetrics: Equatable, Sendable {
   public let toolbarGap: Double
   public let toolbarHorizontalInset: Double
   public let selectionGap: Double
+  public let toolbarShadowOffset: Double
+  public let toolbarShadowBlur: Double
   public let toolbarHalo: Double
   public let dimmedOpacity: Double
   public let dimDuration: Double
@@ -65,6 +67,8 @@ public struct WritingChromeMetrics: Equatable, Sendable {
     toolbarGap: PaneLayoutContentMetrics.writingSelectionToolbarGap,
     toolbarHorizontalInset: PaneLayoutContentMetrics.writingSelectionToolbarHorizontalInset,
     selectionGap: PaneLayoutContentMetrics.writingSelectionToolbarSelectionGap,
+    toolbarShadowOffset: PaneLayoutContentMetrics.writingSelectionToolbarShadowOffset,
+    toolbarShadowBlur: PaneLayoutContentMetrics.writingSelectionToolbarShadowBlur,
     toolbarHalo: PaneLayoutContentMetrics.writingSelectionToolbarHalo,
     dimmedOpacity: PaneLayoutContentMetrics.writingChromeDimmedOpacity,
     dimDuration: PaneLayoutContentMetrics.writingChromeDimDuration,

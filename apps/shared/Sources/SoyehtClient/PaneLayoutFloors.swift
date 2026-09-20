@@ -61,6 +61,8 @@ public enum PaneLayoutContentMetrics {
   public static let writingChromeDimmedOpacity = 0.35
   public static let writingChromeDimDuration = 0.16
   public static let writingChromeRevealDuration = 0.10
+  public static let writingOptionsMenuWidth = 232.0
+  public static let writingOptionsRowHeight = 28.0
   public static let writingRailDividerWidth = 1.0
   public static let companionTabStripHeight = 36.0
 

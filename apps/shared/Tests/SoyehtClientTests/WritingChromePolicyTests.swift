@@ -43,6 +43,8 @@ private let chromePolicy = WritingChromePolicy()
   #expect(metrics.toolbarGap == 4)
   #expect(metrics.toolbarHorizontalInset == 6)
   #expect(metrics.selectionGap == 8)
+  #expect(metrics.toolbarShadowOffset == 4)
+  #expect(metrics.toolbarShadowBlur == 12)
   #expect(metrics.toolbarHalo == 16)
   #expect(metrics.dimmedOpacity == 0.35)
 }
