@@ -85,6 +85,20 @@ public struct PhoneWritingLocalState: Codable, Equatable, Sendable {
     else { return nil }
     return state
   }
+
+  /// Opens a newly created or explicitly chosen document without changing the state of
+  /// any other leaf. Replacing by pane id also prevents a transient missing-document
+  /// identity from leaving a duplicate behind once its file id arrives.
+  public func opening(_ identity: PhoneWritingIdentity) -> Self {
+    var updated = self
+    if let index = updated.panes.firstIndex(where: { $0.identity == identity }) {
+      updated.panes[index].expanded = true
+      return updated
+    }
+    updated.panes.removeAll { $0.identity.paneId == identity.paneId }
+    updated.panes.append(PhoneWritingPaneState(identity: identity, expanded: true))
+    return updated
+  }
 }
 
 public enum PhoneWritingStateAction: Equatable, Sendable {
@@ -141,6 +155,9 @@ public struct PhoneWritingLayoutMetrics: Equatable, Sendable {
 public struct PhoneWritingLayoutRequest: Equatable, Sendable {
   public var tree: PaneLayoutTree?
   public var documents: [PhoneWritingDocumentDescriptor]
+  /// Complete pane titles from the live pane snapshot. These remain available while a
+  /// writing document is still loading, so an identifier never becomes visible copy.
+  public var paneNames: [String: String]
   public var selectedPaneId: String?
   /// `nil` means this device has never stored state for this workspace.
   public var localState: PhoneWritingLocalState?
@@ -151,6 +168,7 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
 
   public init(
     tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor],
+    paneNames: [String: String] = [:],
     selectedPaneId: String? = nil, localState: PhoneWritingLocalState? = nil,
     viewport: PaneLayoutSize,
     safeArea: PhoneWritingViewportInsets = PhoneWritingViewportInsets(),
@@ -158,6 +176,7 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
   ) {
     self.tree = tree
     self.documents = documents
+    self.paneNames = paneNames
     self.selectedPaneId = selectedPaneId
     self.localState = localState
     self.viewport = viewport
@@ -252,7 +271,8 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
   }
 
   public func layout(_ request: PhoneWritingLayoutRequest) -> PhoneWritingLayoutPlan {
-    let projected = project(tree: request.tree, documents: request.documents)
+    let projected = project(
+      tree: request.tree, documents: request.documents, paneNames: request.paneNames)
     let state = reconciledState(
       request.localState, projected: projected, selectedPaneId: request.selectedPaneId)
     let stateByIdentity = Dictionary(uniqueKeysWithValues: state.panes.map { ($0.identity, $0) })
@@ -369,7 +389,8 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
   }
 
   private func project(
-    tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor]
+    tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor],
+    paneNames: [String: String]
   ) -> [ProjectedLeaf] {
     guard let tree else { return [] }
     let grouped = Dictionary(grouping: documents, by: \PhoneWritingDocumentDescriptor.paneId)
@@ -396,7 +417,8 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
         ProjectedLeaf(
           identity: PhoneWritingIdentity(
             paneId: leaf.paneId, fileId: valid ? descriptor?.fileId : nil),
-          name: descriptor?.name ?? leaf.paneId, kind: leaf.kind,
+          name: descriptor?.name ?? paneNames[leaf.paneId] ?? "Writing document",
+          kind: leaf.kind,
           font: valid ? descriptor?.font : nil,
           fullWidth: valid && leaf.kind == .text ? descriptor?.fullWidth == true : false,
           availability: availability,

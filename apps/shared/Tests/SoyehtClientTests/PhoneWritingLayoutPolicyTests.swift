@@ -165,10 +165,13 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
     PhoneWritingLayoutRequest(
       tree: tree,
       documents: [document("wrong", kind: .text)],
+      paneNames: ["missing": "Draft without a loaded document"],
       viewport: PaneLayoutSize(width: 375, height: 812), safeArea: phoneSafeArea))
 
   #expect(plan.leaves.map(\.availability) == [.missingDocument, .inconsistentDocument])
   #expect(plan.leaves.map(\.identity.paneId) == ["missing", "wrong"])
+  #expect(plan.leaves[0].name == "Draft without a loaded document")
+  #expect(plan.leaves[0].name != plan.leaves[0].identity.paneId)
 }
 
 @Test func headerCarriesTheCompleteNameAndEveryControlMeetsTheHitTarget() throws {

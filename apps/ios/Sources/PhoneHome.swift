@@ -154,7 +154,12 @@ struct PhoneHome: View {
           ForEach(client.panes.filter { $0.workspaceId == workspace.workspaceId }, id: \.paneId) {
             pane in
             NavigationLink {
-              PhonePane(client: client, paneId: pane.paneId)
+              if pane.mode == .writing {
+                PhoneWritingWorkspace(
+                  client: client, workspaceId: pane.workspaceId, initialPaneId: pane.paneId)
+              } else {
+                PhonePane(client: client, paneId: pane.paneId)
+              }
             } label: {
               Label {
                 VStack(alignment: .leading, spacing: 5) {
