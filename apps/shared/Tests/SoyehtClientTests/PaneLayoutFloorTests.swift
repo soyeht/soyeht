@@ -19,7 +19,10 @@ private let acceptedFontMetrics = PaneLayoutFontMetrics(
   #expect(surfaces[.editor] == PaneLayoutSize(width: 333, height: 395))
   #expect(surfaces[.agent] == PaneLayoutSize(width: 340, height: 355))
   #expect(surfaces[.web] == PaneLayoutSize(width: 340, height: 361))
-  #expect(surfaces[.text] == PaneLayoutSize(width: 317, height: 380))
+  #expect(surfaces[.text] == PaneLayoutSize(width: 317, height: 394))
+  #expect(
+    PaneLayoutContentMetrics.writingHeaderHeight
+      == WritingLayoutMetrics.standard.headerHeight)
   #expect(surfaces[.screenplay] == PaneLayoutSize(width: 344, height: 582))
   #expect(surfaces[.presentation] == PaneLayoutSize(width: 340, height: 302))
   #expect(footprints[.terminal] == PaneLayoutSize(width: 370, height: 331))

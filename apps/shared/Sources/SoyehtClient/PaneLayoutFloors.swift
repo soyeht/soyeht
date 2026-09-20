@@ -72,7 +72,6 @@ public enum PaneLayoutContentMetrics {
 
   public static let textFontPointSize = 20.0
   public static let textLineHeight = 32.0
-  public static let textHeaderHeight = 28.0
   public static let textToolbarHeight = 42.0
   public static let textReviewHeight = editorReviewHeight
   public static let textPageInset = 16.0
@@ -159,7 +158,7 @@ public enum PaneLayoutFloorFormula {
       width: ceil(
         compactTextCharacters * fonts.prose.characterWidth
           + 2 * PaneLayoutContentMetrics.textPageInset + 2 * paneCardInset),
-      height: 2 * paneCardInset + PaneLayoutContentMetrics.textHeaderHeight
+      height: 2 * paneCardInset + PaneLayoutContentMetrics.writingHeaderHeight
         + PaneLayoutContentMetrics.textToolbarHeight + PaneLayoutContentMetrics.textReviewHeight
         + 3 * PaneLayoutContentMetrics.paneStackSpacing
         + 2 * PaneLayoutContentMetrics.textPageInset

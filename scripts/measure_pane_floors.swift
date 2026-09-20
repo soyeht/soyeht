@@ -26,6 +26,7 @@ enum Measurement {
   static let paneHalo: CGFloat = 15
   static let shellVerticalOverhead: CGFloat = 84
   static let retinaScale: CGFloat = 2
+  static let writingHeaderHeight: CGFloat = 42
 
   static func registerFonts() throws {
     let root =
@@ -103,7 +104,7 @@ let webFloor = PaneFloor(
 let textFloor = PaneFloor(
   name: "text",
   surfaceWidth: ceil(24 * prose.characterWidth + 32 + 20),
-  surfaceHeight: 20 + 28 + 42 + 42 + 3 * 8 + 32 + 6 * 32)
+  surfaceHeight: 20 + Measurement.writingHeaderHeight + 42 + 42 + 3 * 8 + 32 + 6 * 32)
 
 let screenplayPageWidth = 61 * screenplay.characterWidth + 148
 let screenplayZoom = 7.5 / screenplay.pointSize
