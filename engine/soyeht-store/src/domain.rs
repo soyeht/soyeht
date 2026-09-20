@@ -68,7 +68,7 @@ impl Store {
     pub fn workspaces(&self) -> Result<Vec<Workspace>> {
         let mut statement = self
             .connection
-            .prepare("SELECT payload FROM workspaces WHERE closed=0 ORDER BY id")?;
+            .prepare("SELECT payload FROM workspaces WHERE closed=0 ORDER BY rowid")?;
         Ok(statement
             .query_map([], |row| {
                 let raw: String = row.get(0)?;

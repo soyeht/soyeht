@@ -41,6 +41,15 @@ fn workspace(name: &str) -> Workspace {
     }
 }
 
+fn workspace_with_id(id: &str) -> Workspace {
+    Workspace {
+        workspace_id: id.into(),
+        name: id.into(),
+        path: format!("/tmp/{id}"),
+        layout: json!({"direction":"row"}),
+    }
+}
+
 fn pane() -> PaneRecord {
     PaneRecord {
         pane: Pane {
@@ -85,6 +94,78 @@ fn seed_workspace_and_pane(store: &mut Store) {
             Ok((json!({}), vec![]))
         })
         .unwrap();
+}
+
+#[test]
+fn workspaces_keep_creation_order_across_updates_and_reopen() {
+    let profile = Profile::new();
+    {
+        let mut store = profile.store();
+        store
+            .mutate("test", "seed-order", "seed-order", |change| {
+                change.insert_workspace(&workspace_with_id("z-last-alphabetically"))?;
+                change.insert_workspace(&workspace_with_id("a-first-alphabetically"))?;
+                change.insert_workspace(&workspace_with_id("m-middle"))?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        store
+            .mutate("test", "update-order", "update-order", |change| {
+                let mut updated = workspace_with_id("a-first-alphabetically");
+                updated.name = "Renamed without moving".into();
+                change.update_workspace(&updated)?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        assert_eq!(
+            store
+                .workspaces()
+                .unwrap()
+                .iter()
+                .map(|workspace| workspace.workspace_id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "z-last-alphabetically",
+                "a-first-alphabetically",
+                "m-middle"
+            ]
+        );
+    }
+
+    let mut reopened = profile.store();
+    assert_eq!(
+        reopened
+            .workspaces()
+            .unwrap()
+            .iter()
+            .map(|workspace| workspace.workspace_id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "z-last-alphabetically",
+            "a-first-alphabetically",
+            "m-middle"
+        ]
+    );
+    let snapshot = reopened.snapshot().unwrap();
+    let snapshot_workspaces = snapshot
+        .sections
+        .iter()
+        .find(|(name, _)| name == "workspaces")
+        .unwrap()
+        .1
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        snapshot_workspaces
+            .iter()
+            .map(|workspace| workspace["workspaceId"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "z-last-alphabetically",
+            "a-first-alphabetically",
+            "m-middle"
+        ]
+    );
 }
 
 #[test]

@@ -62,6 +62,24 @@ func appBarVisibilityPersistsWithoutPersistingTheSelectedView() {
   #expect(client.panes.first?.phrase == "Working")
 }
 
+@Test @MainActor func workspaceUpdatePreservesCreationOrder() {
+  let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
+  client.upsertWorkspace(workspace("last-created", name: "Last created"))
+  client.upsertWorkspace(workspace("first-alphabetically", name: "First alphabetically"))
+  client.upsertWorkspace(workspace("middle", name: "Middle"))
+
+  client.upsertWorkspace(workspace("first-alphabetically", name: "Renamed"))
+
+  #expect(
+    client.workspaces.map(\.workspaceId)
+      == ["last-created", "first-alphabetically", "middle"])
+  #expect(client.workspaces[1].name == "Renamed")
+}
+
+private func workspace(_ workspaceId: String, name: String) -> Workspace {
+  Workspace(workspaceId: workspaceId, name: name, path: "/\(workspaceId)", layout: .object([:]))
+}
+
 private func pane(
   _ paneId: String, mode: PaneMode, kind: WritingKind? = nil,
   section: WritingSection? = nil
