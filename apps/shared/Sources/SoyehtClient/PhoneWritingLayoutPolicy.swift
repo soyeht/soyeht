@@ -200,6 +200,8 @@ public struct PhoneWritingLeafLayout: Equatable, Sendable {
   public var documentTabRect: PaneLayoutRect?
   public var agentTabRect: PaneLayoutRect?
   public var contentRect: PaneLayoutRect?
+  /// The fixed 8.5:11 Courier page before the phone applies its uniform fit scale.
+  public var screenplayPageSize: PaneLayoutSize?
   /// Whole-page fit before the person's transient pinch multiplier.
   public var screenplayFitScale: Double?
   public var screenplayZoom: Double
@@ -211,7 +213,7 @@ public struct PhoneWritingLeafLayout: Equatable, Sendable {
     expanded: Bool, activeTab: PhoneWritingTab, rowRect: PaneLayoutRect,
     headerRect: PaneLayoutRect, documentTabRect: PaneLayoutRect?,
     agentTabRect: PaneLayoutRect?, contentRect: PaneLayoutRect?,
-    screenplayFitScale: Double?, screenplayZoom: Double
+    screenplayPageSize: PaneLayoutSize?, screenplayFitScale: Double?, screenplayZoom: Double
   ) {
     self.identity = identity
     self.name = name
@@ -227,6 +229,7 @@ public struct PhoneWritingLeafLayout: Equatable, Sendable {
     self.documentTabRect = documentTabRect
     self.agentTabRect = agentTabRect
     self.contentRect = contentRect
+    self.screenplayPageSize = screenplayPageSize
     self.screenplayFitScale = screenplayFitScale
     self.screenplayZoom = screenplayZoom
   }
@@ -321,7 +324,8 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
       }
       let rowHeight = headerHeight + (content?.size.height ?? 0)
       let row = rect(x: left, y: y, width: availableWidth, height: rowHeight)
-      let fitScale = screenplayFitScale(for: item, availableWidth: availableWidth)
+      let pageSize = screenplayPageSize(for: item)
+      let fitScale = screenplayFitScale(pageSize: pageSize, contentSize: content?.size)
       leaves.append(
         PhoneWritingLeafLayout(
           identity: item.identity, name: item.name, kind: item.kind,
@@ -330,7 +334,8 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
           expanded: paneState.expanded, activeTab: paneState.activeTab,
           rowRect: row, headerRect: header, documentTabRect: documentTab,
           agentTabRect: agentTab, contentRect: content,
-          screenplayFitScale: fitScale, screenplayZoom: paneState.screenplayZoom))
+          screenplayPageSize: pageSize, screenplayFitScale: fitScale,
+          screenplayZoom: paneState.screenplayZoom))
       y += rowHeight + finiteNonnegative(metrics.rowSpacing)
     }
     if !leaves.isEmpty { y -= finiteNonnegative(metrics.rowSpacing) }
@@ -520,15 +525,25 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
     return PaneLayoutSize(width: max(0, width), height: max(0, height))
   }
 
-  private func screenplayFitScale(
-    for item: ProjectedLeaf, availableWidth: Double
-  ) -> Double? {
+  private func screenplayPageSize(for item: ProjectedLeaf) -> PaneLayoutSize? {
     guard item.kind == .screenplay, let font = item.font else { return nil }
     let baseWidth =
       writingMetrics.screenplayColumns * font.characterWidth
       + 2 * writingMetrics.screenplayPageHorizontalInset
     guard baseWidth.isFinite, baseWidth > 0 else { return nil }
-    return min(1, max(writingMetrics.screenplayMinimumScale, availableWidth / baseWidth))
+    return PaneLayoutSize(
+      width: baseWidth, height: baseWidth * writingMetrics.screenplayPageRatio)
+  }
+
+  private func screenplayFitScale(
+    pageSize: PaneLayoutSize?, contentSize: PaneLayoutSize?
+  ) -> Double? {
+    guard let pageSize, let contentSize, pageSize.width > 0, pageSize.height > 0 else {
+      return nil
+    }
+    let fit = min(contentSize.width / pageSize.width, contentSize.height / pageSize.height)
+    guard fit.isFinite else { return nil }
+    return min(1, max(writingMetrics.screenplayMinimumScale, fit))
   }
 
   private func isWriting(_ kind: PaneLayoutKind) -> Bool {
