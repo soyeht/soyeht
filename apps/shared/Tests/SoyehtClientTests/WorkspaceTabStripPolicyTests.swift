@@ -71,6 +71,44 @@ private func stripItems(spacing: Double = 10) -> [WorkspaceTabStripItem] {
   #expect(!trailing.hiddenWorkspaceIds.contains("workspace-15"))
 }
 
+@Test func stickyProxyConsumesViewportAndCoveredCellsCountAsHidden() {
+  let items = [
+    WorkspaceTabStripItem(workspaceId: "active", minX: -170, width: 160),
+    WorkspaceTabStripItem(workspaceId: "covered", minX: 20, width: 170),
+    WorkspaceTabStripItem(workspaceId: "visible", minX: 230, width: 170),
+    WorkspaceTabStripItem(workspaceId: "trailing", minX: 430, width: 170),
+  ]
+
+  let plan = WorkspaceTabStripPolicy.plan(
+    items: items, activeWorkspaceId: "active",
+    viewport: WorkspaceTabStripViewport(offset: 0, width: 500),
+    stickyOcclusionWidth: 220)
+
+  #expect(plan.sticky == WorkspaceTabStickyPresentation(workspaceId: "active", edge: .leading))
+  #expect(plan.fullyVisibleWorkspaceIds == ["visible"])
+  #expect(plan.hiddenWorkspaceIds == ["covered", "trailing"])
+  #expect(plan.hiddenCount == 2)
+}
+
+@Test func trailingStickyProxyConsumesViewportFromItsOwnEdge() {
+  let items = [
+    WorkspaceTabStripItem(workspaceId: "leading", minX: -80, width: 170),
+    WorkspaceTabStripItem(workspaceId: "visible", minX: 100, width: 170),
+    WorkspaceTabStripItem(workspaceId: "covered", minX: 310, width: 170),
+    WorkspaceTabStripItem(workspaceId: "active", minX: 520, width: 170),
+  ]
+
+  let plan = WorkspaceTabStripPolicy.plan(
+    items: items, activeWorkspaceId: "active",
+    viewport: WorkspaceTabStripViewport(offset: 0, width: 500),
+    stickyOcclusionWidth: 220)
+
+  #expect(plan.sticky == WorkspaceTabStickyPresentation(workspaceId: "active", edge: .trailing))
+  #expect(plan.fullyVisibleWorkspaceIds == ["visible"])
+  #expect(plan.hiddenWorkspaceIds == ["leading", "covered"])
+  #expect(plan.hiddenCount == 2)
+}
+
 @Test func partiallyClippedActiveTabUsesStickyUntilItsCanonicalCellIsWhole() {
   let items = [WorkspaceTabStripItem(workspaceId: "active", minX: 40, width: 200)]
 

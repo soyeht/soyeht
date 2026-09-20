@@ -117,6 +117,37 @@ fn workspaces_keep_creation_order_across_updates_and_reopen() {
                 Ok((json!({}), vec![]))
             })
             .unwrap();
+        let sequences = store
+            .connection()
+            .prepare("SELECT id,created_seq FROM workspaces ORDER BY created_seq")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            sequences,
+            [
+                ("z-last-alphabetically".into(), 1),
+                ("a-first-alphabetically".into(), 2),
+                ("m-middle".into(), 3)
+            ]
+        );
+        for (workspace_id, rowid) in [
+            ("z-last-alphabetically", -30),
+            ("a-first-alphabetically", -20),
+            ("m-middle", -10),
+        ] {
+            store
+                .connection()
+                .execute(
+                    "UPDATE workspaces SET rowid=?1 WHERE id=?2",
+                    rusqlite::params![rowid, workspace_id],
+                )
+                .unwrap();
+        }
         assert_eq!(
             store
                 .workspaces()
