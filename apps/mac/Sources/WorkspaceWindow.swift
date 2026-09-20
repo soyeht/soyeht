@@ -83,6 +83,13 @@ import UniformTypeIdentifiers
           ).characterWidth),
       actionWidth: PaneLayoutContentMetrics.genericPaneHeaderActionWidth))
 
+  static func paneHeaderAvailableWidth(cardWidth: CGFloat) -> Double {
+    max(
+      0,
+      Double(cardWidth) - 2 * PaneLayoutContentMetrics.paneCardInset
+        - paneHeader.metrics.horizontalPadding)
+  }
+
   private static let fontMetrics = PaneLayoutFontMetrics(
     terminal: metric(
       MacTerminalFont.active(),
@@ -1659,19 +1666,20 @@ private struct PaneLayoutNodeSurface: View {
   private func paneSurface(
     pane: Pane, halo: CGFloat, contentWidth: CGFloat, contentHeight: CGFloat
   ) -> some View {
-    PaneCard(
+    let cardWidth = max(0, contentWidth - 2 * halo)
+    return PaneCard(
       client: client, webHost: webHost, pane: pane,
       tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
       onTasks: onTasks, onSplit: onSplit,
       interaction: interactionsEnabled ? interaction : nil,
-      companionLinked: companionLinked,
+      companionLinked: companionLinked, cardWidth: cardWidth,
       dropTargetSize: CGSize(
-        width: max(0, contentWidth - 2 * halo),
+        width: cardWidth,
         height: max(0, contentHeight - 2 * halo)),
       onPaneDrop: onPaneDrop
     )
     .frame(
-      width: max(0, contentWidth - 2 * halo),
+      width: cardWidth,
       height: max(0, contentHeight - 2 * halo)
     )
     .padding(halo)
@@ -2433,6 +2441,7 @@ private struct PaneCard: View {
   let onSplit: (String, PaneSplitAxis) -> Void
   let interaction: PaneLayoutInteractionState?
   let companionLinked: Bool
+  let cardWidth: CGFloat
   let dropTargetSize: CGSize?
   let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
   @State private var showingAutomation = false
@@ -2543,14 +2552,12 @@ private struct PaneCard: View {
   }
 
   private var header: some View {
-    GeometryReader { geometry in
-      let plan = MacPaneLayoutMetrics.paneHeader.plan(
-        availableWidth: geometry.size.width,
-        actionCount: headerActionCount,
-        hasSummary: pane.mode == .agent && agentSummary != nil,
-        hasStatus: pane.mode == .agent)
-      headerContent(plan: plan)
-    }
+    let plan = MacPaneLayoutMetrics.paneHeader.plan(
+      availableWidth: MacPaneLayoutMetrics.paneHeaderAvailableWidth(cardWidth: cardWidth),
+      actionCount: headerActionCount,
+      hasSummary: pane.mode == .agent && agentSummary != nil,
+      hasStatus: pane.mode == .agent)
+    return headerContent(plan: plan)
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
     .foregroundStyle(MacTheme.secondary)
     .padding(.horizontal, MacTheme.Space.x12)
