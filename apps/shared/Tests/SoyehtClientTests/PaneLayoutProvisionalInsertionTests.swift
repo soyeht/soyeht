@@ -7,6 +7,7 @@ private let provisionalSizing = PaneLayoutSizingPolicy(
     .terminal: PaneLayoutSize(width: 300, height: 180),
     .agent: PaneLayoutSize(width: 280, height: 220),
     .editor: PaneLayoutSize(width: 600, height: 480),
+    .text: PaneLayoutSize(width: 317, height: 394),
   ],
   gaps: PaneLayoutGaps(horizontal: 20, vertical: 12))
 
@@ -83,6 +84,38 @@ private let provisionalSizing = PaneLayoutSizingPolicy(
 
   #expect(selected.placeholder == PaneLayoutLeaf(paneId: "placeholder", kind: .agent))
   #expect(insertion.placeholder.kind == .terminal)
+}
+
+@Test func explicitAgentSplitAnnotatesExactlyTheWritingAndCreatedLeaves() throws {
+  let insertion = PaneLayoutProvisionalInsertion(
+    baseTree: provisionalLeaf("writing", .text),
+    placeholder: PaneLayoutLeaf(paneId: "placeholder", kind: .agent),
+    placement: .split(anchorPaneId: "writing", axis: .horizontal))
+
+  let completed = try insertion.completedWritingCompanionTree(
+    with: PaneLayoutLeaf(paneId: "agent", kind: .agent),
+    writingPaneId: "writing", sizing: provisionalSizing)
+  let split = try #require(
+    {
+      if case .split(let split) = completed { return split }
+      return nil
+    }())
+
+  #expect(split.companion == PaneLayoutCompanion(writingPaneId: "writing", agentPaneId: "agent"))
+  #expect(split.children.map(\.tree.paneIdsInCanonicalOrder) == [["writing"], ["agent"]])
+}
+
+@Test func terminalSplitNeverBecomesAWritingCompanion() throws {
+  let insertion = PaneLayoutProvisionalInsertion(
+    baseTree: provisionalLeaf("writing", .text),
+    placeholder: PaneLayoutLeaf(paneId: "placeholder", kind: .terminal),
+    placement: .split(anchorPaneId: "writing", axis: .horizontal))
+
+  #expect(throws: PaneLayoutMutationError.invalidCompanion) {
+    try insertion.completedWritingCompanionTree(
+      with: PaneLayoutLeaf(paneId: "terminal", kind: .terminal),
+      writingPaneId: "writing", sizing: provisionalSizing)
+  }
 }
 
 @Test func paneSpecificFloorAppliesOnlyToThePlaceholderLeaf() throws {

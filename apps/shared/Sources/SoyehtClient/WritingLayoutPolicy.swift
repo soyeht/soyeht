@@ -19,6 +19,14 @@ public enum WritingCompanionPresentation: Equatable, Sendable {
   case sideBySide
   case below
   case tabs
+
+  public var splitAxis: PaneLayoutAxis? {
+    switch self {
+    case .sideBySide: .horizontal
+    case .below: .vertical
+    case .tabs: nil
+    }
+  }
 }
 
 public struct WritingLayoutMetrics: Equatable, Sendable {
@@ -276,7 +284,8 @@ public struct WritingCompanionRequest: Equatable, Sendable {
 
 public struct WritingCompanionLayoutPlan: Equatable, Sendable {
   public var presentation: WritingCompanionPresentation
-  public var paneRects: [String: PaneLayoutRect]
+  /// The space owned by the pair. In side/below modes, persisted tree weights divide this rect.
+  public var contentRect: PaneLayoutRect
   public var tabStripRect: PaneLayoutRect?
   public var tabOrder: [String]
   public var selectedPaneId: String
@@ -285,12 +294,12 @@ public struct WritingCompanionLayoutPlan: Equatable, Sendable {
 
   public init(
     presentation: WritingCompanionPresentation,
-    paneRects: [String: PaneLayoutRect], tabStripRect: PaneLayoutRect?,
+    contentRect: PaneLayoutRect, tabStripRect: PaneLayoutRect?,
     tabOrder: [String], selectedPaneId: String, contentSize: PaneLayoutSize,
     overflowAxes: Set<PaneLayoutAxis>
   ) {
     self.presentation = presentation
-    self.paneRects = paneRects
+    self.contentRect = contentRect
     self.tabStripRect = tabStripRect
     self.tabOrder = tabOrder
     self.selectedPaneId = selectedPaneId
@@ -382,20 +391,10 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
       let contentSize = PaneLayoutSize(
         width: viewport.width,
         height: max(viewport.height, max(writingFloor.height, agentFloor.height)))
-      let writingWidth = viewport.width - gaps.horizontal - agentFloor.width
-      let widths = [
-        companion.writingPaneId: writingWidth,
-        companion.agentPaneId: agentFloor.width,
-      ]
-      var x = 0.0
-      var rects: [String: PaneLayoutRect] = [:]
-      for paneId in request.canonicalPaneIds {
-        let width = widths[paneId] ?? 0
-        rects[paneId] = rect(x: x, y: 0, width: width, height: contentSize.height)
-        x += width + gaps.horizontal
-      }
       return companionPlan(
-        presentation: .sideBySide, rects: rects, tabStrip: nil,
+        presentation: .sideBySide,
+        content: rect(x: 0, y: 0, width: contentSize.width, height: contentSize.height),
+        tabStrip: nil,
         order: request.canonicalPaneIds, selected: selected,
         contentSize: contentSize, viewport: viewport)
     }
@@ -404,20 +403,10 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
       let contentSize = PaneLayoutSize(
         width: max(viewport.width, max(writingFloor.width, agentFloor.width)),
         height: viewport.height)
-      let writingHeight = viewport.height - gaps.vertical - agentFloor.height
-      let heights = [
-        companion.writingPaneId: writingHeight,
-        companion.agentPaneId: agentFloor.height,
-      ]
-      var y = 0.0
-      var rects: [String: PaneLayoutRect] = [:]
-      for paneId in request.canonicalPaneIds {
-        let height = heights[paneId] ?? 0
-        rects[paneId] = rect(x: 0, y: y, width: contentSize.width, height: height)
-        y += height + gaps.vertical
-      }
       return companionPlan(
-        presentation: .below, rects: rects, tabStrip: nil,
+        presentation: .below,
+        content: rect(x: 0, y: 0, width: contentSize.width, height: contentSize.height),
+        tabStrip: nil,
         order: request.canonicalPaneIds, selected: selected,
         contentSize: contentSize, viewport: viewport)
     }
@@ -431,7 +420,7 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
       width: contentSize.width, height: contentSize.height - metrics.companionTabStripHeight)
     return companionPlan(
       presentation: .tabs,
-      rects: [companion.writingPaneId: paneRect, companion.agentPaneId: paneRect],
+      content: paneRect,
       tabStrip: rect(
         x: 0, y: 0, width: contentSize.width, height: metrics.companionTabStripHeight),
       order: request.canonicalPaneIds, selected: selected,
@@ -587,12 +576,12 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
 
   private func companionPlan(
     presentation: WritingCompanionPresentation,
-    rects: [String: PaneLayoutRect], tabStrip: PaneLayoutRect?,
+    content: PaneLayoutRect, tabStrip: PaneLayoutRect?,
     order: [String], selected: String, contentSize: PaneLayoutSize,
     viewport: PaneLayoutSize
   ) -> WritingCompanionLayoutPlan {
     WritingCompanionLayoutPlan(
-      presentation: presentation, paneRects: rects, tabStripRect: tabStrip,
+      presentation: presentation, contentRect: content, tabStripRect: tabStrip,
       tabOrder: order, selectedPaneId: selected, contentSize: contentSize,
       overflowAxes: overflowAxes(content: contentSize, viewport: viewport))
   }

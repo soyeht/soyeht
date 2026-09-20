@@ -8,6 +8,7 @@ private let mutationSizing = PaneLayoutSizingPolicy(
     .agent: PaneLayoutSize(width: 280, height: 220),
     .editor: PaneLayoutSize(width: 600, height: 480),
     .web: PaneLayoutSize(width: 520, height: 420),
+    .text: PaneLayoutSize(width: 317, height: 394),
   ],
   gaps: PaneLayoutGaps(horizontal: 20, vertical: 12))
 
@@ -215,6 +216,65 @@ private let mutationSizing = PaneLayoutSizingPolicy(
     viewport: PaneLayoutSize(width: 500, height: 400), sizing: mutationSizing)
 
   #expect(result == tree)
+}
+
+@Test func companionResizeUsesPresentedAxisAndKeepsThePersistedStructure() throws {
+  let companion = PaneLayoutCompanion(writingPaneId: "writing", agentPaneId: "agent")
+  let tree = PaneLayoutTree.split(
+    PaneLayoutSplit(
+      axis: .horizontal,
+      children: [
+        PaneLayoutBranch(tree: mutationLeaf("writing", .text)),
+        PaneLayoutBranch(tree: mutationLeaf("agent", .agent)),
+      ],
+      companion: companion))
+
+  let resized = try PaneLayoutTreeMutation.resizingPresentedCompanion(
+    tree, splitAt: PaneLayoutNodePath(), presentationAxis: .vertical,
+    dividerIndex: 0, delta: 50,
+    viewport: PaneLayoutSize(width: 500, height: 1_000), sizing: mutationSizing)
+  let split = try #require(
+    {
+      if case .split(let split) = resized { return split }
+      return nil
+    }())
+
+  #expect(split.axis == .horizontal)
+  #expect(split.companion == companion)
+  #expect(split.children[0].weight > split.children[1].weight)
+  #expect(abs(split.children[0].weight + split.children[1].weight - 2) < 0.000_001)
+
+  let equalized = try PaneLayoutTreeMutation.equalizingPresentedCompanion(
+    resized, splitAt: PaneLayoutNodePath(), presentationAxis: .vertical,
+    viewport: PaneLayoutSize(width: 500, height: 1_000), sizing: mutationSizing)
+  let equalizedSplit = try #require(
+    {
+      if case .split(let split) = equalized { return split }
+      return nil
+    }())
+  #expect(equalizedSplit.axis == .horizontal)
+  #expect(equalizedSplit.companion == companion)
+}
+
+@Test func movingCompanionMembersAgainstEachOtherKeepsTheExplicitLink() throws {
+  let pair = try PaneLayoutTreeMutation.splittingWritingCompanion(
+    .leaf(PaneLayoutLeaf(paneId: "writing", kind: .text)),
+    writingPaneId: "writing",
+    agentLeaf: PaneLayoutLeaf(paneId: "agent", kind: .agent),
+    axis: .horizontal)
+
+  let moved = try PaneLayoutTreeMutation.moving(
+    pair, paneId: "agent", relativeTo: "writing", zone: .top)
+  guard case .split(let split) = moved else {
+    Issue.record("Expected the companion split")
+    return
+  }
+
+  #expect(split.axis == .vertical)
+  #expect(split.children.map(\.tree.paneIdsInCanonicalOrder) == [["agent"], ["writing"]])
+  #expect(
+    split.companion
+      == PaneLayoutCompanion(writingPaneId: "writing", agentPaneId: "agent"))
 }
 
 @Test func equalizeChangesOnlyTheRequestedSplitsDirectChildren() throws {

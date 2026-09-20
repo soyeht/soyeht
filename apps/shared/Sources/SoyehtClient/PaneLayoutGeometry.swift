@@ -135,6 +135,21 @@ public enum PaneLayoutGeometry {
         paneRects[leaf.paneId] = PaneLayoutRect(origin: rootOrigin, size: contentSize)
 
       case .split(let split):
+        if let contentSize = try sizing.companionContentSize(
+          for: split, viewport: frame.size)
+        {
+          var overflow: Set<PaneLayoutAxis> = []
+          if contentSize.width > frame.size.width { overflow.insert(.horizontal) }
+          if contentSize.height > frame.size.height { overflow.insert(.vertical) }
+          nodes[path] = PaneLayoutNodeGeometry(
+            frame: frame, contentSize: contentSize, overflowAxes: overflow)
+          for index in split.children.indices {
+            guard case .leaf(let leaf) = split.children[index].tree else { continue }
+            panePaths[leaf.paneId] = path.appending(index)
+            paneRects[leaf.paneId] = PaneLayoutRect(origin: rootOrigin, size: contentSize)
+          }
+          return
+        }
         let minimums = try split.children.map { try sizing.minimumSize(for: $0.tree) }
         let gap = split.axis == .horizontal ? sizing.gaps.horizontal : sizing.gaps.vertical
         let gapTotal = gap * Double(max(0, split.children.count - 1))
