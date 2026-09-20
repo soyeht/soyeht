@@ -601,6 +601,15 @@ private struct ScreenplayViewport: NSViewRepresentable {
       }
       textView.minSize = page
       textView.maxSize = NSSize(width: page.width, height: .greatestFiniteMagnitude)
+      if let container = textView.textContainer {
+        let textWidth = max(0, page.width - 2 * textView.textContainerInset.width)
+        let containerSize = NSSize(width: textWidth, height: .greatestFiniteMagnitude)
+        if abs(container.containerSize.width - containerSize.width) > 0.25
+          || container.containerSize.height != containerSize.height
+        {
+          container.containerSize = containerSize
+        }
+      }
 
       let scale = CGFloat(parent.scale)
       scrollView.allowsMagnification = true
@@ -699,6 +708,7 @@ private struct ScreenplayViewport: NSViewRepresentable {
           source, firstLine: firstLine, activeLine: parent.activeLine,
           focus: parent.document.focusMode, structure: parent.structure))
       textView.setSelectedRange(valid(selection))
+      ensurePageLayout()
       textView.needsDisplay = true
       applying = false
     }
@@ -723,8 +733,21 @@ private struct ScreenplayViewport: NSViewRepresentable {
       }
       storage.endEditing()
       textView.setSelectedRange(valid(selection))
+      ensurePageLayout()
       textView.needsDisplay = true
       applying = false
+    }
+
+    private func ensurePageLayout() {
+      guard let layout = textView.layoutManager, let container = textView.textContainer else {
+        return
+      }
+      if let storage = textView.textStorage, storage.length > 0 {
+        layout.invalidateLayout(
+          forCharacterRange: NSRange(location: 0, length: storage.length),
+          actualCharacterRange: nil)
+      }
+      layout.ensureLayout(for: container)
     }
 
     private func hover(at point: NSPoint, scroll: NSScrollView) {
@@ -795,8 +818,10 @@ private struct ScreenplayViewport: NSViewRepresentable {
         width: PaneLayoutContentMetrics.screenplayPageHorizontalInset, height: 58)
       textView.isVerticallyResizable = true
       textView.isHorizontallyResizable = false
-      textView.autoresizingMask = [.width]
-      textView.textContainer?.widthTracksTextView = true
+      // The fixed page owns its text width. Letting the scroll view autoresize the document view
+      // makes the first layout use the visible (scaled) width until a later interaction updates it.
+      textView.autoresizingMask = []
+      textView.textContainer?.widthTracksTextView = false
       textView.textContainer?.lineFragmentPadding = 0
       scroll.contentView.postsBoundsChangedNotifications = true
     }
