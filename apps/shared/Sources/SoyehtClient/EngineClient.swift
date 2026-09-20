@@ -536,11 +536,13 @@ public final class EngineClient {
     let pane = event.pane
     switch pane.mode {
     case .editor:
+      if event.file == nil, event.writingDocument == nil { break }
       guard let file = event.file, event.writingDocument == nil,
         file.paneId == pane.paneId, file.workspaceId == pane.workspaceId
       else { throw ClientFailure.invalidFrame }
       upsertEditor(file)
     case .writing:
+      if event.file == nil, event.writingDocument == nil { break }
       guard let file = event.file, let document = event.writingDocument,
         file.paneId == pane.paneId, file.workspaceId == pane.workspaceId,
         try JsonValue.encoded(file) == JsonValue.encoded(document.file),

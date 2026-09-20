@@ -40,13 +40,27 @@ import Testing
   #expect(client.writingDocuments.isEmpty)
 }
 
-@MainActor @Test func paneCreatedRejectsIncompleteOrCrossOwnedReplicaMetadata() {
+@MainActor @Test func paneCreatedWithoutReplicaMetadataKeepsTheLegacyIncompletePane() throws {
+  let pane = createdWritingPane()
+
+  let client = EngineClient(socket: "/tmp/pane-created-missing.sock")
+  try client.applyPaneCreated(
+    PaneCreatedEvent(eventId: "1", at: "2026-09-20T12:00:00Z", pane: pane))
+
+  #expect(client.panes.map(\.paneId) == [pane.paneId])
+  #expect(client.editorFiles.isEmpty)
+  #expect(client.writingDocuments.isEmpty)
+}
+
+@MainActor @Test func paneCreatedRejectsCrossOwnedOrPartialReplicaMetadata() {
   let pane = createdWritingPane()
   let document = createdWritingDocument()
 
   #expect(throws: ClientFailure.self) {
-    try EngineClient(socket: "/tmp/pane-created-missing.sock").applyPaneCreated(
-      PaneCreatedEvent(eventId: "1", at: "2026-09-20T12:00:00Z", pane: pane))
+    try EngineClient(socket: "/tmp/pane-created-partial.sock").applyPaneCreated(
+      PaneCreatedEvent(
+        eventId: "1", at: "2026-09-20T12:00:00Z", pane: pane,
+        file: document.file))
   }
 
   var wrong = document
