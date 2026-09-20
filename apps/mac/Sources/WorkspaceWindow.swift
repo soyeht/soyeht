@@ -1656,6 +1656,7 @@ private struct PaneLayoutNodeSurface: View {
         paneSurface(
           pane: pane, halo: halo, contentWidth: contentWidth, contentHeight: contentHeight
         )
+        .forceEnclosingOverlayScrollers()
       }
       .scrollBounceBehavior(.basedOnSize)
       .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
@@ -1724,6 +1725,7 @@ private struct PaneLayoutCompanionSurface: View {
         } else {
           ScrollView(scrollAxes(for: layout), showsIndicators: true) {
             companionContent(layout)
+              .forceEnclosingOverlayScrollers()
           }
           .scrollBounceBehavior(.basedOnSize)
         }
