@@ -751,6 +751,12 @@ public final class EngineClient {
         idempotencyKey: UUID().uuidString))
     return try result.decoded(WorkspaceLayoutSetResult.self).workspace
   }
+  public func closeWorkspace(_ workspaceId: String) async throws {
+    _ = try await mutation(
+      "workspace.close",
+      WorkspaceCloseParams(
+        workspaceId: workspaceId, idempotencyKey: UUID().uuidString))
+  }
   public func paneLayoutState(for workspace: Workspace) -> PaneLayoutState {
     PaneLayoutState(
       workspaceLayout: workspace.layout,

@@ -14,6 +14,11 @@ import UniformTypeIdentifiers
   static let topBarHeight = 42.0
   static let workspaceTabHeight = 36.0
   static let topBarControlHeight = 34.0
+  static let workspaceTabMaximumWidth = 216.0
+  static let workspaceOverflowButtonWidth = 44.0
+  static let workspaceOverflowPopoverWidth = 340.0
+  static let workspaceOverflowPopoverMaximumHeight = 420.0
+  static let workspaceTabFadeWidth = Double(MacTheme.Space.x18)
   static let paneVerticalInset = 17.0
   static let railWidth = 56.0
 
@@ -378,7 +383,8 @@ struct WorkspaceWindow: View {
     return VStack(spacing: CGFloat(policy.paneVerticalInset)) {
       WorkspaceTopBar(
         client: client, workspaceId: selectedTaskWorkspaceId,
-        onSelectWorkspace: selectWorkspace, onNewPane: presentNewPane,
+        onSelectWorkspace: selectWorkspace, onCloseWorkspace: closeWorkspace,
+        onNewPane: presentNewPane,
         onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() })
       ZStack(alignment: .leading) {
         workspaceContent(
@@ -469,6 +475,30 @@ struct WorkspaceWindow: View {
     taskWorkspaceId = workspaceId
     if let pane = client.panes.first(where: { $0.workspaceId == workspaceId }) {
       client.select(pane.paneId)
+    }
+  }
+  private func closeWorkspace(_ workspaceId: String) {
+    let order = client.workspaces.map(\.workspaceId)
+    let wasSelected = selectedTaskWorkspaceId == workspaceId
+    let replacement = WorkspaceTabStripPolicy.selectionAfterClosing(
+      workspaceId: workspaceId, orderedWorkspaceIds: order)
+    if wasSelected {
+      if let replacement {
+        selectWorkspace(replacement)
+      } else {
+        taskWorkspaceId = nil
+        client.select(nil)
+      }
+    }
+    Task { @MainActor in
+      do {
+        try await client.closeWorkspace(workspaceId)
+      } catch {
+        if wasSelected, client.workspaces.contains(where: { $0.workspaceId == workspaceId }) {
+          selectWorkspace(workspaceId)
+        }
+        client.problem = "Couldn't close the workspace. It is still available."
+      }
     }
   }
   private func showTasks() {
@@ -755,99 +785,340 @@ private struct PairedPhoneRow: View {
   }
 }
 
+private struct WorkspaceTabAnchorPreferenceKey: PreferenceKey {
+  static let defaultValue: [String: Anchor<CGRect>] = [:]
+
+  static func reduce(
+    value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]
+  ) {
+    value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+  }
+}
+
+private struct WorkspaceTabStripMeasurement: Equatable {
+  var items: [WorkspaceTabStripItem]
+  var viewportWidth: Double
+  var contentWidth: Double
+
+  static let empty = WorkspaceTabStripMeasurement(
+    items: [], viewportWidth: 0, contentWidth: 0)
+}
+
+private struct WorkspaceTabMeasurementPreferenceKey: PreferenceKey {
+  static let defaultValue = WorkspaceTabStripMeasurement.empty
+
+  static func reduce(
+    value: inout WorkspaceTabStripMeasurement,
+    nextValue: () -> WorkspaceTabStripMeasurement
+  ) {
+    value = nextValue()
+  }
+}
+
 private struct WorkspaceTopBar: View {
   @Bindable var client: EngineClient
   let workspaceId: String?
   let onSelectWorkspace: (String) -> Void
+  let onCloseWorkspace: (String) -> Void
   let onNewPane: () -> Void
   let onTasks: () -> Void
   let onToggleAppBar: () -> Void
 
-  var body: some View {
-    HStack(spacing: MacTheme.Space.x10) {
-      Color.clear.frame(width: 52, height: MacPaneLayoutMetrics.topBarControlHeight)
-      Button(action: onToggleAppBar) {
-        Image(systemName: "rectangle.grid.2x2")
-          .font(.system(size: 15, weight: .semibold))
-          .frame(
-            width: MacPaneLayoutMetrics.topBarControlHeight,
-            height: MacPaneLayoutMetrics.topBarControlHeight
-          )
-          .neoRaised(radius: MacTheme.Radius.control)
-      }
-      .help("Toggle app bar")
-      .accessibilityIdentifier("toggle-app-bar")
+  @State private var measurement = WorkspaceTabStripMeasurement.empty
+  @State private var plan = WorkspaceTabStripPlan(
+    fullyVisibleWorkspaceIds: [], hiddenWorkspaceIds: [], sticky: nil)
+  @State private var showsOverflowControl = false
+  @State private var overflowPresented = false
 
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: MacTheme.Space.x10) {
-          ForEach(client.workspaces, id: \.workspaceId) { workspace in
-            WorkspaceTab(
-              name: workspace.name, selected: workspace.workspaceId == workspaceId,
-              action: { onSelectWorkspace(workspace.workspaceId) })
+  var body: some View {
+    ScrollViewReader { proxy in
+      HStack(spacing: MacTheme.Space.x10) {
+        Color.clear.frame(width: 52, height: MacPaneLayoutMetrics.topBarControlHeight)
+        Button(action: onToggleAppBar) {
+          Image(systemName: "rectangle.grid.2x2")
+            .font(.system(size: 15, weight: .semibold))
+            .frame(
+              width: MacPaneLayoutMetrics.topBarControlHeight,
+              height: MacPaneLayoutMetrics.topBarControlHeight
+            )
+            .neoRaised(radius: MacTheme.Radius.control)
+        }
+        .help("Toggle app bar")
+        .accessibilityIdentifier("toggle-app-bar")
+
+        workspaceStrip(proxy)
+
+        if showsOverflowControl, plan.hiddenCount > 0 {
+          Button("+\(plan.hiddenCount)") { overflowPresented.toggle() }
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            .foregroundStyle(MacTheme.accent)
+            .frame(
+              width: MacPaneLayoutMetrics.workspaceOverflowButtonWidth,
+              height: MacPaneLayoutMetrics.topBarControlHeight
+            )
+            .neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
+            .help("Show \(plan.hiddenCount) more workspaces")
+            .accessibilityLabel("\(plan.hiddenCount) more workspaces")
+            .accessibilityIdentifier("workspace-tabs-overflow")
+            .popover(isPresented: $overflowPresented, arrowEdge: .bottom) {
+              WorkspaceOverflowList(
+                workspaces: hiddenWorkspaces,
+                onSelect: { workspaceId in
+                  overflowPresented = false
+                  onSelectWorkspace(workspaceId)
+                  reveal(workspaceId, edge: nil, using: proxy)
+                })
+            }
+        }
+
+        Button(action: onNewPane) {
+          Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
+            .frame(
+              width: MacPaneLayoutMetrics.topBarControlHeight,
+              height: MacPaneLayoutMetrics.topBarControlHeight
+            ).neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
+        }
+        .help("Open a terminal or agent pane").disabled(!client.connected)
+        .accessibilityIdentifier("new-pane")
+        if !client.connected {
+          HStack(spacing: MacTheme.Space.x6) {
+            Circle().fill(MacTheme.warning).frame(width: 7, height: 7)
+            Text("Reconnecting")
+              .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
+              .foregroundStyle(MacTheme.secondary)
           }
         }
-        .padding(MacPaneLayoutMetrics.workspaceTabShadowClearance)
       }
-      .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
-      .clipped()
-      .overlay {
-        HStack(spacing: 0) {
-          LinearGradient(
-            colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
-            startPoint: .leading, endPoint: .trailing
-          )
-          .frame(width: MacTheme.Space.x18)
-          Spacer(minLength: 0)
-          LinearGradient(
-            colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
-            startPoint: .leading, endPoint: .trailing
-          )
-          .frame(width: MacTheme.Space.x18)
+      .frame(height: MacPaneLayoutMetrics.topBarHeight)
+      .onChange(of: workspaceId) { _, selectedId in
+        let nextPlan = planned(from: measurement, activeWorkspaceId: selectedId)
+        plan = nextPlan
+        guard let selectedId, !nextPlan.fullyVisibleWorkspaceIds.contains(selectedId) else {
+          return
         }
-        .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
-        .allowsHitTesting(false)
+        reveal(selectedId, edge: nextPlan.sticky?.edge, using: proxy)
       }
+      .onChange(of: client.workspaces.map(\.workspaceId)) { _, workspaceIds in
+        let liveIds = Set(workspaceIds)
+        if !plan.hiddenWorkspaceIds.allSatisfy(liveIds.contains) {
+          updatePlan(from: measurement)
+        }
+      }
+    }
+  }
 
-      Button(action: onNewPane) {
-        Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
-          .frame(
-            width: MacPaneLayoutMetrics.topBarControlHeight,
-            height: MacPaneLayoutMetrics.topBarControlHeight
-          ).neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
-      }
-      .help("Open a terminal or agent pane").disabled(!client.connected)
-      Spacer(minLength: MacTheme.Space.x10)
-      if !client.connected {
-        HStack(spacing: MacTheme.Space.x6) {
-          Circle().fill(MacTheme.warning).frame(width: 7, height: 7)
-          Text("Reconnecting")
-            .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
-            .foregroundStyle(MacTheme.secondary)
+  private var hiddenWorkspaces: [Workspace] {
+    let hidden = Set(plan.hiddenWorkspaceIds)
+    return client.workspaces.filter { hidden.contains($0.workspaceId) }
+  }
+
+  private func workspaceStrip(_ proxy: ScrollViewProxy) -> some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: MacTheme.Space.x10) {
+        ForEach(client.workspaces, id: \.workspaceId) { workspace in
+          WorkspaceTab(
+            workspaceId: workspace.workspaceId, name: workspace.name,
+            selected: workspace.workspaceId == workspaceId,
+            keyboardFocusable: true,
+            action: { onSelectWorkspace(workspace.workspaceId) },
+            onClose: { onCloseWorkspace(workspace.workspaceId) })
+          .opacity(plan.sticky?.workspaceId == workspace.workspaceId ? 0 : 1)
+          .allowsHitTesting(plan.sticky?.workspaceId != workspace.workspaceId)
+          .accessibilityHidden(plan.sticky?.workspaceId == workspace.workspaceId)
+          .id(workspace.workspaceId)
+          .anchorPreference(
+            key: WorkspaceTabAnchorPreferenceKey.self, value: .bounds,
+            transform: { [workspace.workspaceId: $0] })
         }
       }
-    }.frame(height: MacPaneLayoutMetrics.topBarHeight)
+      .padding(MacPaneLayoutMetrics.workspaceTabShadowClearance)
+    }
+    .accessibilityIdentifier("workspace-tab-strip")
+    .frame(maxWidth: .infinity)
+    .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
+    .clipped()
+    .overlayPreferenceValue(WorkspaceTabAnchorPreferenceKey.self) { anchors in
+      GeometryReader { geometry in
+        let items = client.workspaces.compactMap { workspace -> WorkspaceTabStripItem? in
+          guard let anchor = anchors[workspace.workspaceId] else { return nil }
+          let bounds = geometry[anchor]
+          return WorkspaceTabStripItem(
+            workspaceId: workspace.workspaceId,
+            minX: Double(bounds.minX), width: Double(bounds.width))
+        }
+        Color.clear.preference(
+          key: WorkspaceTabMeasurementPreferenceKey.self,
+          value: WorkspaceTabStripMeasurement(
+            items: items, viewportWidth: Double(geometry.size.width),
+            contentWidth: contentWidth(for: items)))
+      }
+    }
+    .onPreferenceChange(WorkspaceTabMeasurementPreferenceKey.self) { updatePlan(from: $0) }
+    .overlay { workspaceTabFades }
+    .overlay(alignment: plan.sticky?.edge == .leading ? .leading : .trailing) {
+      if let sticky = plan.sticky,
+        let workspace = client.workspaces.first(where: { $0.workspaceId == sticky.workspaceId })
+      {
+        WorkspaceTab(
+          workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
+          keyboardFocusable: false,
+          action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
+          onClose: { onCloseWorkspace(workspace.workspaceId) }, identifierPrefix: "workspace-tab-sticky")
+        .frame(
+          width: min(
+            measurement.items.first(where: { $0.workspaceId == workspace.workspaceId })?.width
+              ?? MacPaneLayoutMetrics.workspaceTabMaximumWidth,
+            max(
+              0,
+              measurement.viewportWidth
+                - 2 * MacPaneLayoutMetrics.workspaceTabShadowClearance)
+          )
+        )
+        .padding(.horizontal, MacPaneLayoutMetrics.workspaceTabShadowClearance)
+        .background(MacTheme.canvas)
+        .transition(.opacity)
+      }
+    }
+    .animation(.easeInOut(duration: 0.16), value: plan.sticky)
+  }
+
+  private var workspaceTabFades: some View {
+    HStack(spacing: 0) {
+      LinearGradient(
+        colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
+        startPoint: .leading, endPoint: .trailing
+      )
+      .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
+      Spacer(minLength: 0)
+      LinearGradient(
+        colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
+        startPoint: .leading, endPoint: .trailing
+      )
+      .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
+    }
+    .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
+    .allowsHitTesting(false)
+  }
+
+  private func updatePlan(from nextMeasurement: WorkspaceTabStripMeasurement) {
+    measurement = nextMeasurement
+    let overflowReservation =
+      MacPaneLayoutMetrics.workspaceOverflowButtonWidth + Double(MacTheme.Space.x10)
+    let widthWithoutOverflow = nextMeasurement.viewportWidth
+      + (showsOverflowControl ? overflowReservation : 0)
+    let needsOverflow = nextMeasurement.contentWidth > widthWithoutOverflow + 0.5
+    showsOverflowControl = needsOverflow
+    plan = planned(from: nextMeasurement, activeWorkspaceId: workspaceId)
+  }
+
+  private func contentWidth(for items: [WorkspaceTabStripItem]) -> Double {
+    guard let minimum = items.map(\.minX).min(), let maximum = items.map(\.maxX).max() else {
+      return 0
+    }
+    return maximum - minimum + 2 * MacPaneLayoutMetrics.workspaceTabShadowClearance
+  }
+
+  private func planned(
+    from measurement: WorkspaceTabStripMeasurement, activeWorkspaceId: String?
+  ) -> WorkspaceTabStripPlan {
+    WorkspaceTabStripPolicy.plan(
+      items: measurement.items, activeWorkspaceId: activeWorkspaceId,
+      viewport: WorkspaceTabStripViewport(offset: 0, width: measurement.viewportWidth))
+  }
+
+  private func reveal(
+    _ workspaceId: String, edge: WorkspaceTabStickyEdge?, using proxy: ScrollViewProxy
+  ) {
+    let anchor: UnitPoint
+    switch edge {
+    case .leading: anchor = .leading
+    case .trailing: anchor = .trailing
+    case nil: anchor = .center
+    }
+    withAnimation(.easeInOut(duration: 0.18)) {
+      proxy.scrollTo(workspaceId, anchor: anchor)
+    }
   }
 }
 
 private struct WorkspaceTab: View {
+  let workspaceId: String
   let name: String
   let selected: Bool
+  let keyboardFocusable: Bool
   let action: () -> Void
+  let onClose: () -> Void
+  var identifierPrefix = "workspace-tab"
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: MacTheme.Space.x8) {
-        Image(systemName: "folder").font(.system(size: 14, weight: .medium))
-          .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
-        Text(name).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-          .foregroundStyle(selected ? MacTheme.accent : MacTheme.ink).lineLimit(1)
-        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
-          .foregroundStyle(MacTheme.muted).accessibilityHidden(true)
+    HStack(spacing: MacTheme.Space.x6) {
+      Button(action: action) {
+        HStack(spacing: MacTheme.Space.x8) {
+          Image(systemName: "folder").font(.system(size: 14, weight: .medium))
+            .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
+          Text(name).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+            .foregroundStyle(selected ? MacTheme.accent : MacTheme.ink).lineLimit(1)
+        }
       }
-      .padding(.horizontal, MacTheme.Space.x12)
-      .frame(height: MacPaneLayoutMetrics.workspaceTabHeight)
-      .modifier(WorkspaceTabSurface(selected: selected))
+      .focusable(keyboardFocusable)
+      .help(name)
+      .accessibilityLabel(name)
+      .accessibilityAddTraits(selected ? .isSelected : [])
+      .accessibilityIdentifier("\(identifierPrefix)-\(workspaceId)")
+
+      Button(action: onClose) {
+        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(MacTheme.muted)
+      }
+      .focusable(keyboardFocusable)
+      .help("Close \(name)")
+      .accessibilityLabel("Close workspace \(name)")
+      .accessibilityIdentifier("\(identifierPrefix)-close-\(workspaceId)")
     }
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: MacPaneLayoutMetrics.workspaceTabHeight)
+    .frame(maxWidth: MacPaneLayoutMetrics.workspaceTabMaximumWidth)
+    .modifier(WorkspaceTabSurface(selected: selected))
+  }
+}
+
+private struct WorkspaceOverflowList: View {
+  let workspaces: [Workspace]
+  let onSelect: (String) -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+      Text("More workspaces")
+        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: MacTheme.Space.x6) {
+          ForEach(workspaces, id: \.workspaceId) { workspace in
+            Button { onSelect(workspace.workspaceId) } label: {
+              HStack(alignment: .top, spacing: MacTheme.Space.x8) {
+                Image(systemName: "folder")
+                  .foregroundStyle(MacTheme.secondary)
+                Text(workspace.name)
+                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+                  .foregroundStyle(MacTheme.ink)
+                  .multilineTextAlignment(.leading)
+                  .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+              }
+              .padding(.horizontal, MacTheme.Space.x10)
+              .padding(.vertical, MacTheme.Space.x8)
+              .contentShape(Rectangle())
+            }
+            .help(workspace.name)
+            .accessibilityLabel(workspace.name)
+            .accessibilityIdentifier("workspace-overflow-\(workspace.workspaceId)")
+          }
+        }
+      }
+      .frame(maxHeight: MacPaneLayoutMetrics.workspaceOverflowPopoverMaximumHeight)
+    }
+    .padding(MacTheme.Space.x14)
+    .frame(width: MacPaneLayoutMetrics.workspaceOverflowPopoverWidth)
+    .background(MacTheme.canvas)
   }
 }
 
