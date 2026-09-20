@@ -7,6 +7,7 @@ private let geometrySizing = PaneLayoutSizingPolicy(
     .terminal: PaneLayoutSize(width: 320, height: 180),
     .agent: PaneLayoutSize(width: 300, height: 220),
     .editor: PaneLayoutSize(width: 600, height: 480),
+    .text: PaneLayoutSize(width: 317, height: 394),
   ],
   gaps: PaneLayoutGaps(horizontal: 20, vertical: 12))
 
@@ -125,4 +126,43 @@ private let geometrySizing = PaneLayoutSizingPolicy(
 
   #expect(root.contentSize == PaneLayoutSize(width: 320, height: 180))
   #expect(root.overflowAxes == [.horizontal, .vertical])
+}
+
+@Test func explicitCompanionReservesItsCompactTabFloorAsOneAdaptiveNode() throws {
+  let tree = PaneLayoutTree.split(
+    PaneLayoutSplit(
+      axis: .horizontal,
+      children: [
+        PaneLayoutBranch(tree: .leaf(PaneLayoutLeaf(paneId: "writing", kind: .text))),
+        PaneLayoutBranch(tree: .leaf(PaneLayoutLeaf(paneId: "agent", kind: .agent))),
+      ],
+      companion: PaneLayoutCompanion(writingPaneId: "writing", agentPaneId: "agent")))
+
+  let result = try PaneLayoutGeometry.layout(
+    tree: tree, viewport: PaneLayoutSize(width: 375, height: 375), sizing: geometrySizing)
+  let root = try #require(result.nodes[PaneLayoutNodePath()])
+
+  #expect(root.contentSize == PaneLayoutSize(width: 375, height: 430))
+  #expect(root.overflowAxes == [.vertical])
+  #expect(result.nodes.count == 1)
+  #expect(result.panePaths["writing"] == PaneLayoutNodePath(components: [0]))
+  #expect(result.panePaths["agent"] == PaneLayoutNodePath(components: [1]))
+}
+
+@Test func wideCompanionDoesNotPayForATabStripThatIsNotRendered() throws {
+  let tree = PaneLayoutTree.split(
+    PaneLayoutSplit(
+      axis: .horizontal,
+      children: [
+        PaneLayoutBranch(tree: .leaf(PaneLayoutLeaf(paneId: "writing", kind: .text))),
+        PaneLayoutBranch(tree: .leaf(PaneLayoutLeaf(paneId: "agent", kind: .agent))),
+      ],
+      companion: PaneLayoutCompanion(writingPaneId: "writing", agentPaneId: "agent")))
+
+  let result = try PaneLayoutGeometry.layout(
+    tree: tree, viewport: PaneLayoutSize(width: 1_024, height: 394), sizing: geometrySizing)
+  let root = try #require(result.nodes[PaneLayoutNodePath()])
+
+  #expect(root.contentSize == PaneLayoutSize(width: 1_024, height: 394))
+  #expect(root.overflowAxes.isEmpty)
 }

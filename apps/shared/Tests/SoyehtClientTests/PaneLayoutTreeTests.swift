@@ -64,6 +64,23 @@ private let sizing = PaneLayoutSizingPolicy(
   #expect(split.children.map(\.weight) == [620, 620, 620])
 }
 
+@Test func splittingACompanionMemberDissolvesThePairAndNormalizesTheAxis() throws {
+  let writing = PaneLayoutTree.leaf(PaneLayoutLeaf(paneId: "writing", kind: .text))
+  let pair = try PaneLayoutTreeMutation.splittingWritingCompanion(
+    writing, writingPaneId: "writing",
+    agentLeaf: PaneLayoutLeaf(paneId: "agent", kind: .agent), axis: .horizontal)
+
+  let split = try PaneLayoutTreeMutation.splitting(
+    pair, anchorPaneId: "writing",
+    newLeaf: PaneLayoutLeaf(paneId: "terminal", kind: .terminal), axis: .horizontal)
+  let root = try #require(split.horizontalSplit)
+
+  #expect(root.companion == nil)
+  #expect(root.children.count == 3)
+  #expect(root.children.allSatisfy { $0.tree.horizontalSplit == nil })
+  #expect(split.paneIdsInCanonicalOrder == ["writing", "terminal", "agent"])
+}
+
 @Test func postDragInsertionUsesLastSameRoleLeafAndPreservesExistingShares() throws {
   let left = PaneLayoutTree.split(
     PaneLayoutSplit(

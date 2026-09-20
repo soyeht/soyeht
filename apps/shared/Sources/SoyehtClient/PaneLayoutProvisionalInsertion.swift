@@ -31,6 +31,17 @@ public struct PaneLayoutProvisionalInsertion: Equatable, Sendable {
     try inserting(leaf, sizing: sizing)
   }
 
+  public func completedWritingCompanionTree(
+    with agentLeaf: PaneLayoutLeaf, writingPaneId: String,
+    sizing: PaneLayoutSizingPolicy
+  ) throws -> PaneLayoutTree {
+    guard case .split(let anchorPaneId, let axis) = placement,
+      anchorPaneId == writingPaneId, let baseTree
+    else { throw PaneLayoutMutationError.invalidCompanion }
+    return try PaneLayoutTreeMutation.splittingWritingCompanion(
+      baseTree, writingPaneId: writingPaneId, agentLeaf: agentLeaf, axis: axis)
+  }
+
   public func selecting(kind: PaneLayoutKind) -> Self {
     var copy = self
     copy.placeholder.kind = kind

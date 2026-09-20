@@ -20,6 +20,7 @@ struct WritingPaneHeader: View {
   let metadata: String?
   let fullWidth: Bool?
   let headerDrag: PaneHeaderDragConfiguration?
+  var companionLinked = false
   var auxiliaryAction: WritingPaneHeaderAction?
   let mutationDisabled: Bool
   let layoutActionsDisabled: Bool
@@ -34,6 +35,12 @@ struct WritingPaneHeader: View {
         .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
+      if companionLinked {
+        Image(systemName: "link")
+          .help("Linked writing companion")
+          .accessibilityLabel("Linked writing companion")
+          .accessibilityIdentifier("writing-companion-link-\(paneId)")
+      }
       if let metadata {
         Text(metadata)
           .font(MacTheme.chrome(MacTheme.TypeScale.caption))
@@ -102,6 +109,7 @@ struct WritingTextPane: View {
   @Bindable var client: EngineClient
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
+  let companionLinked: Bool
   let onClose: (String) -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
   let layoutActionsDisabled: Bool
@@ -176,8 +184,9 @@ struct WritingTextPane: View {
       }
       if let reviewRect = plan.reviewRect, let file {
         WritingTextReviewStrip(
-          client: client, view: file, selectedPosition: selection?.start)
-          .writingFrame(reviewRect)
+          client: client, view: file, selectedPosition: selection?.start
+        )
+        .writingFrame(reviewRect)
       }
       if let file, file.viewport != nil,
         case .text(let textPlan) = plan.surface
@@ -196,7 +205,8 @@ struct WritingTextPane: View {
     }
     .frame(
       width: plan.contentSize.width, height: plan.contentSize.height,
-      alignment: .topLeading)
+      alignment: .topLeading
+    )
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
   }
 
@@ -206,6 +216,7 @@ struct WritingTextPane: View {
       metadata: document == nil ? nil : wordCountLabel,
       fullWidth: document?.fullWidth,
       headerDrag: headerDrag,
+      companionLinked: companionLinked,
       auxiliaryAction: nil,
       mutationDisabled: !client.connected,
       layoutActionsDisabled: !client.connected || layoutActionsDisabled,
@@ -427,10 +438,11 @@ private struct WritingTextReviewStrip: View {
     .background(MacTheme.canvas)
     .popover(isPresented: $showingReview, arrowEdge: .bottom) {
       EditorAgentReviewBar(
-        client: client, view: view, selectedPosition: selectedPosition)
-        .padding(MacTheme.Space.x10)
-        .frame(width: 680)
-        .background(MacTheme.canvas)
+        client: client, view: view, selectedPosition: selectedPosition
+      )
+      .padding(MacTheme.Space.x10)
+      .frame(width: 680)
+      .background(MacTheme.canvas)
     }
   }
 }

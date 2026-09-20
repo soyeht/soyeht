@@ -109,8 +109,12 @@ public struct PaneLayoutSplit: Equatable, Sendable {
 
 extension PaneLayoutCompanion {
   fileprivate func retained(in branches: [PaneLayoutBranch]) -> Self? {
-    let paneIds = Set(branches.flatMap { $0.tree.paneIdsInCanonicalOrder })
-    return paneIds.contains(writingPaneId) && paneIds.contains(agentPaneId) ? self : nil
+    guard branches.count == 2 else { return nil }
+    let directPaneIds = branches.compactMap { branch -> String? in
+      guard case .leaf(let leaf) = branch.tree else { return nil }
+      return leaf.paneId
+    }
+    return Set(directPaneIds) == Set([writingPaneId, agentPaneId]) ? self : nil
   }
 }
 
@@ -189,13 +193,17 @@ public indirect enum PaneLayoutTree: Equatable, Sendable {
       return self
     case .split(let split):
       if split.companion != nil {
-        return .split(
-          PaneLayoutSplit(
-            axis: split.axis,
-            children: split.children.map {
-              PaneLayoutBranch(weight: $0.weight, tree: $0.tree.normalized())
-            },
-            companion: split.companion))
+        let children = split.children.map {
+          PaneLayoutBranch(weight: $0.weight, tree: $0.tree.normalized())
+        }
+        if let companion = split.companion?.retained(in: children) {
+          return .split(
+            PaneLayoutSplit(
+              axis: split.axis, children: children, companion: companion))
+        }
+        return PaneLayoutTree.split(
+          PaneLayoutSplit(axis: split.axis, children: children)
+        ).normalized()
       }
       var flattened: [PaneLayoutBranch] = []
       for branch in split.children {
@@ -311,6 +319,17 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
       return try floor(for: leaf)
     case .split(let split):
       let childSizes = try split.children.map { try minimumSize(for: $0.tree) }
+      if split.companion != nil, split.children.count == 2,
+        split.children.allSatisfy({
+          if case .leaf = $0.tree { return true }
+          return false
+        })
+      {
+        return PaneLayoutSize(
+          width: childSizes.map(\.width).max() ?? 0,
+          height: (childSizes.map(\.height).max() ?? 0)
+            + PaneLayoutContentMetrics.companionTabStripHeight)
+      }
       let gapCount = Double(max(0, childSizes.count - 1))
       switch split.axis {
       case .horizontal:
@@ -323,6 +342,35 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
           height: childSizes.reduce(0) { $0 + $1.height } + gaps.vertical * gapCount)
       }
     }
+  }
+
+  func companionContentSize(
+    for split: PaneLayoutSplit, viewport: PaneLayoutSize
+  ) throws -> PaneLayoutSize? {
+    guard split.companion != nil, split.children.count == 2,
+      split.children.allSatisfy({
+        if case .leaf = $0.tree { return true }
+        return false
+      })
+    else { return nil }
+    let childSizes = try split.children.map { try minimumSize(for: $0.tree) }
+    let maximumWidth = childSizes.map(\.width).max() ?? 0
+    let maximumHeight = childSizes.map(\.height).max() ?? 0
+    let sideWidth = childSizes.reduce(0) { $0 + $1.width } + gaps.horizontal
+    let belowHeight = childSizes.reduce(0) { $0 + $1.height } + gaps.vertical
+
+    if viewport.width >= sideWidth {
+      return PaneLayoutSize(
+        width: viewport.width, height: max(viewport.height, maximumHeight))
+    }
+    if viewport.height >= belowHeight {
+      return PaneLayoutSize(
+        width: max(viewport.width, maximumWidth), height: viewport.height)
+    }
+    return PaneLayoutSize(
+      width: max(viewport.width, maximumWidth),
+      height: max(
+        viewport.height, maximumHeight + PaneLayoutContentMetrics.companionTabStripHeight))
   }
 }
 

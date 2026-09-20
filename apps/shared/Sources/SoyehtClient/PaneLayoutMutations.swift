@@ -5,6 +5,7 @@ public enum PaneLayoutMutationError: Error, Equatable, Sendable {
   case invalidDivider(Int)
   case invalidDelta
   case invalidWeights
+  case invalidCompanion
 }
 
 public enum PaneLayoutDropZone: String, CaseIterable, Equatable, Sendable {
@@ -55,6 +56,35 @@ public enum PaneLayoutTreeMutation {
     return result.tree.normalized()
   }
 
+  /// Creates the explicit two-leaf writing/agent pair. Its annotated split is retained even when
+  /// its axis matches the parent, so no later renderer has to infer companionship by position.
+  public static func splittingWritingCompanion(
+    _ tree: PaneLayoutTree, writingPaneId: String, agentLeaf: PaneLayoutLeaf,
+    axis: PaneLayoutAxis
+  ) throws -> PaneLayoutTree {
+    guard agentLeaf.kind == .agent,
+      let writing = tree.leaf(withId: writingPaneId),
+      [.text, .screenplay, .presentation].contains(writing.kind)
+    else { throw PaneLayoutMutationError.invalidCompanion }
+    guard tree.leaf(withId: agentLeaf.paneId) == nil else {
+      throw PaneLayoutMutationError.duplicatePane(agentLeaf.paneId)
+    }
+    let companion = PaneLayoutCompanion(
+      writingPaneId: writingPaneId, agentPaneId: agentLeaf.paneId)
+    let result = tree.replacingLeaf(withId: writingPaneId) { writingTree in
+      .split(
+        PaneLayoutSplit(
+          axis: axis,
+          children: [
+            PaneLayoutBranch(tree: writingTree),
+            PaneLayoutBranch(tree: .leaf(agentLeaf)),
+          ],
+          companion: companion))
+    }
+    guard result.replaced else { throw PaneLayoutMutationError.missingPane(writingPaneId) }
+    return result.tree.normalized()
+  }
+
   /// Moves a pane to an edge of another pane, or swaps the two leaves for a center drop.
   public static func moving(
     _ tree: PaneLayoutTree, paneId: String, relativeTo targetPaneId: String,
@@ -69,6 +99,11 @@ public enum PaneLayoutTreeMutation {
     }
     if zone == .center {
       return try swapping(tree, paneId, targetPaneId)
+    }
+    if let reorderedPair = tree.reorderingCompanionMembers(
+      paneId: paneId, relativeTo: targetPaneId, zone: zone)
+    {
+      return reorderedPair.normalized()
     }
     guard let axis = zone.axis,
       let pruned = tree.removingPane(withId: paneId)
@@ -175,6 +210,68 @@ public enum PaneLayoutTreeMutation {
     }
   }
 
+  /// Resizes an adaptive writing companion along its currently presented axis while retaining the
+  /// persisted split axis. Only its two weights change, so side/below transitions keep the ratio.
+  public static func resizingPresentedCompanion(
+    _ tree: PaneLayoutTree, splitAt path: PaneLayoutNodePath,
+    presentationAxis: PaneLayoutAxis, dividerIndex: Int, delta: Double,
+    viewport: PaneLayoutSize, sizing: PaneLayoutSizingPolicy
+  ) throws -> PaneLayoutTree {
+    guard delta.isFinite else { throw PaneLayoutMutationError.invalidDelta }
+    let split = try tree.split(at: path)
+    guard split.companion != nil else { throw PaneLayoutMutationError.invalidCompanion }
+    guard split.children.indices.contains(dividerIndex),
+      split.children.indices.contains(dividerIndex + 1)
+    else { throw PaneLayoutMutationError.invalidDivider(dividerIndex) }
+
+    let presented = PaneLayoutTree.split(
+      PaneLayoutSplit(axis: presentationAxis, children: split.children))
+    let geometry = try PaneLayoutGeometry.layout(
+      tree: presented, viewport: viewport, sizing: sizing)
+    let root = PaneLayoutNodePath()
+    guard let splitGeometry = geometry.nodes[root],
+      let firstGeometry = geometry.nodes[root.appending(dividerIndex)],
+      let secondGeometry = geometry.nodes[root.appending(dividerIndex + 1)]
+    else { throw PaneLayoutMutationError.invalidSplitPath(path) }
+
+    let minimums = try split.children.map { try sizing.minimumSize(for: $0.tree) }
+    let firstExtent = extent(of: firstGeometry.frame.size, axis: presentationAxis)
+    let secondExtent = extent(of: secondGeometry.frame.size, axis: presentationAxis)
+    let minimumDelta = extent(of: minimums[dividerIndex], axis: presentationAxis) - firstExtent
+    let maximumDelta =
+      secondExtent - extent(of: minimums[dividerIndex + 1], axis: presentationAxis)
+    let clampedDelta = min(max(delta, minimumDelta), maximumDelta)
+    let gap = presentationAxis == .horizontal ? sizing.gaps.horizontal : sizing.gaps.vertical
+    let minimumExtent =
+      minimums.reduce(0) {
+        $0 + extent(of: $1, axis: presentationAxis)
+      } + gap * Double(max(0, split.children.count - 1))
+    let contentExtent = extent(of: splitGeometry.contentSize, axis: presentationAxis)
+    let distributable = max(0, contentExtent - minimumExtent)
+    let weightTotal = split.children.reduce(0) { $0 + $1.weight }
+    guard distributable > 0 else { return tree }
+    guard weightTotal.isFinite, weightTotal > 0 else {
+      throw PaneLayoutMutationError.invalidWeights
+    }
+
+    let requestedWeightDelta = clampedDelta * weightTotal / distributable
+    let minimumWeight = max(weightTotal * 1e-9, Double.leastNormalMagnitude)
+    let firstWeight = split.children[dividerIndex].weight
+    let secondWeight = split.children[dividerIndex + 1].weight
+    let weightDelta = min(
+      max(requestedWeightDelta, minimumWeight - firstWeight),
+      secondWeight - minimumWeight)
+    guard weightDelta.isFinite, weightDelta != 0 else { return tree }
+
+    return try tree.updatingSplit(at: path) { current in
+      var children = current.children
+      children[dividerIndex].weight += weightDelta
+      children[dividerIndex + 1].weight -= weightDelta
+      return PaneLayoutSplit(
+        axis: current.axis, children: children, companion: current.companion)
+    }
+  }
+
   /// Makes direct children equally large in the current split when their measured floors allow it.
   /// A floor larger than the equal share wins and the remaining children share the rest.
   public static func equalizing(
@@ -214,6 +311,40 @@ public enum PaneLayoutTreeMutation {
     }
   }
 
+  public static func equalizingPresentedCompanion(
+    _ tree: PaneLayoutTree, splitAt path: PaneLayoutNodePath,
+    presentationAxis: PaneLayoutAxis, viewport: PaneLayoutSize,
+    sizing: PaneLayoutSizingPolicy
+  ) throws -> PaneLayoutTree {
+    let split = try tree.split(at: path)
+    guard split.companion != nil else { throw PaneLayoutMutationError.invalidCompanion }
+    let minimums = try split.children.map { try sizing.minimumSize(for: $0.tree) }
+    let gap = presentationAxis == .horizontal ? sizing.gaps.horizontal : sizing.gaps.vertical
+    let available = max(
+      0,
+      extent(of: viewport, axis: presentationAxis)
+        - gap * Double(max(0, split.children.count - 1)))
+    let desired = equalizedExtents(
+      minimums.map { extent(of: $0, axis: presentationAxis) }, available: available)
+    let flexible = zip(desired, minimums).map {
+      max(0, $0.0 - extent(of: $0.1, axis: presentationAxis))
+    }
+    let distributable = flexible.reduce(0, +)
+    let minimumWeight = max(distributable * 1e-9, Double.leastNormalMagnitude)
+    let weights =
+      distributable > 0
+      ? flexible.map { max($0, minimumWeight) }
+      : Array(repeating: PaneLayoutBranch.defaultWeight, count: split.children.count)
+    return try tree.updatingSplit(at: path) { current in
+      PaneLayoutSplit(
+        axis: current.axis,
+        children: zip(current.children, weights).map {
+          PaneLayoutBranch(weight: $0.1, tree: $0.0.tree)
+        },
+        companion: current.companion)
+    }
+  }
+
   private static func equalizedExtents(_ minimums: [Double], available: Double) -> [Double] {
     var desired = minimums
     var unsettled = Set(minimums.indices)
@@ -240,6 +371,45 @@ public enum PaneLayoutTreeMutation {
 }
 
 extension PaneLayoutTree {
+  fileprivate func reorderingCompanionMembers(
+    paneId: String, relativeTo targetPaneId: String, zone: PaneLayoutDropZone
+  ) -> PaneLayoutTree? {
+    guard let axis = zone.axis else { return nil }
+    switch self {
+    case .leaf:
+      return nil
+    case .split(let split):
+      if let companion = split.companion,
+        Set([paneId, targetPaneId])
+          == Set([companion.writingPaneId, companion.agentPaneId])
+      {
+        guard
+          let source = split.children.first(where: {
+            $0.tree.paneIdsInCanonicalOrder == [paneId]
+          }),
+          let target = split.children.first(where: {
+            $0.tree.paneIdsInCanonicalOrder == [targetPaneId]
+          })
+        else { return nil }
+        let children = zone.insertsBeforeTarget ? [source, target] : [target, source]
+        return .split(
+          PaneLayoutSplit(axis: axis, children: children, companion: companion))
+      }
+      for index in split.children.indices {
+        guard
+          let reordered = split.children[index].tree.reorderingCompanionMembers(
+            paneId: paneId, relativeTo: targetPaneId, zone: zone)
+        else { continue }
+        var children = split.children
+        children[index].tree = reordered
+        return .split(
+          PaneLayoutSplit(
+            axis: split.axis, children: children, companion: split.companion))
+      }
+      return nil
+    }
+  }
+
   fileprivate func leaf(withId paneId: String) -> PaneLayoutLeaf? {
     switch self {
     case .leaf(let leaf):
