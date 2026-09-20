@@ -1,4 +1,5 @@
 import Foundation
+import SoyehtProtocol
 
 public enum WritingChromeAction: String, CaseIterable, Equatable, Sendable {
   case font
@@ -134,6 +135,15 @@ public struct WritingChromePolicy: Equatable, Sendable {
   public let metrics: WritingChromeMetrics
 
   public init(metrics: WritingChromeMetrics = .standard) { self.metrics = metrics }
+
+  public static func formatShortcut(key: String, command: Bool) -> WritingFormatKind? {
+    guard command else { return nil }
+    switch key.lowercased() {
+    case "b": return .bold
+    case "i": return .italic
+    default: return nil
+    }
+  }
 
   public func plan(
     kind: PaneLayoutKind, fullWidth: Bool = false, hasSelection: Bool = false

@@ -564,6 +564,19 @@ private struct WritingAssetImage: View {
 
 @MainActor final class WritingImagePasteTextView: NSTextView {
   var imageHandler: ((NSPasteboard) -> Bool)?
+  var writingFormatShortcutHandler: ((WritingFormatKind) -> Void)?
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    let conflictingModifiers: NSEvent.ModifierFlags = [.control, .option, .shift]
+    guard flags.contains(.command), flags.intersection(conflictingModifiers).isEmpty,
+      let kind = WritingChromePolicy.formatShortcut(
+        key: event.charactersIgnoringModifiers ?? "", command: true),
+      let writingFormatShortcutHandler
+    else { return super.performKeyEquivalent(with: event) }
+    writingFormatShortcutHandler(kind)
+    return true
+  }
 
   override func paste(_ sender: Any?) {
     if imageHandler?(NSPasteboard.general) == true { return }

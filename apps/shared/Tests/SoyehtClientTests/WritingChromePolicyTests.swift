@@ -96,3 +96,11 @@ private let chromePolicy = WritingChromePolicy()
     chromePolicy.closeDisposition(fileName: "essay.md", dirty: true)
       == .confirm(title: "Close essay.md?", message: "Unsaved changes will be lost."))
 }
+
+@Test func nativeTextShortcutsMapOnlyBoldAndItalicWithCommand() {
+  #expect(WritingChromePolicy.formatShortcut(key: "b", command: true) == .bold)
+  #expect(WritingChromePolicy.formatShortcut(key: "B", command: true) == .bold)
+  #expect(WritingChromePolicy.formatShortcut(key: "i", command: true) == .italic)
+  #expect(WritingChromePolicy.formatShortcut(key: "k", command: true) == nil)
+  #expect(WritingChromePolicy.formatShortcut(key: "b", command: false) == nil)
+}

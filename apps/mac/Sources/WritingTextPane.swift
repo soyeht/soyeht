@@ -263,7 +263,8 @@ struct WritingTextPane: View {
         WritingTextViewport(
           client: client, view: file, document: document,
           selection: $selection, selectionGeometry: $selectionGeometry,
-          activeLine: $activeLine, onEditingActivity: { updateChrome(.edited) }
+          activeLine: $activeLine, onEditingActivity: { updateChrome(.edited) },
+          onFormatShortcut: { kind, range in apply(kind, range: range) }
         )
         .writingFrame(textPlan.columnRect)
         .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
@@ -337,6 +338,7 @@ struct WritingTextPane: View {
         optionLabel(fontLabel(document.font), icon: "textformat")
       }
       .menuStyle(.borderlessButton)
+      .focusable(false)
       .disabled(!client.connected)
       .accessibilityLabel("Font: \(fontLabel(document.font))")
       .accessibilityIdentifier("writing-options-font-\(pane.paneId)")
@@ -622,8 +624,12 @@ struct WritingTextPane: View {
     }
   }
 
-  private func apply(_ kind: WritingFormatKind, value: String? = nil) {
-    guard let fileId = writing?.document.file.fileId, let range = selection,
+  private func apply(
+    _ kind: WritingFormatKind, value: String? = nil,
+    range explicitRange: SoyehtProtocol.TextRange? = nil
+  ) {
+    guard let fileId = writing?.document.file.fileId,
+      let range = explicitRange ?? selection,
       range.start.line != range.end.line || range.start.column != range.end.column
     else { return }
     Task { @MainActor in
@@ -719,6 +725,7 @@ private struct WritingTextViewport: NSViewRepresentable {
   @Binding var selectionGeometry: PaneLayoutRect?
   @Binding var activeLine: UInt32
   let onEditingActivity: () -> Void
+  let onFormatShortcut: (WritingFormatKind, SoyehtProtocol.TextRange) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeNSView(context: Context) -> NSScrollView { context.coordinator.makeScrollView() }
@@ -759,6 +766,9 @@ private struct WritingTextViewport: NSViewRepresentable {
         name: NSView.boundsDidChangeNotification, object: scroll.contentView)
       scrollView = scroll
       configureTextView()
+      textView.writingFormatShortcutHandler = { [weak self] kind in
+        self?.applyFormatShortcut(kind)
+      }
       return scroll
     }
 
@@ -887,6 +897,16 @@ private struct WritingTextViewport: NSViewRepresentable {
           x: clipped.minX - visible.minX,
           y: clipped.minY - visible.minY),
         size: PaneLayoutSize(width: clipped.width, height: clipped.height))
+    }
+
+    private func applyFormatShortcut(_ kind: WritingFormatKind) {
+      let selectedRange = textView.selectedRange()
+      guard selectedRange.length > 0,
+        let start = position(selectedRange.location),
+        let end = position(NSMaxRange(selectedRange))
+      else { return }
+      parent.onFormatShortcut(
+        kind, SoyehtProtocol.TextRange(start: start, end: end))
     }
 
     private func validSelection(_ range: NSRange) -> NSRange {
