@@ -68,6 +68,28 @@ public enum WorkspaceTabStripPolicy {
   /// while its canonical cell is outside the viewport.
   public static func plan(
     items: [WorkspaceTabStripItem], activeWorkspaceId: String?,
+    viewport: WorkspaceTabStripViewport, stickyOcclusionWidth: Double = 0
+  ) -> WorkspaceTabStripPlan {
+    let initial = planWithoutStickyOcclusion(
+      items: items, activeWorkspaceId: activeWorkspaceId, viewport: viewport)
+    guard let sticky = initial.sticky, stickyOcclusionWidth > 0 else { return initial }
+
+    let occlusion = min(max(0, stickyOcclusionWidth), max(0, viewport.width))
+    let visibleViewport: WorkspaceTabStripViewport
+    switch sticky.edge {
+    case .leading:
+      visibleViewport = WorkspaceTabStripViewport(
+        offset: viewport.offset + occlusion, width: viewport.width - occlusion)
+    case .trailing:
+      visibleViewport = WorkspaceTabStripViewport(
+        offset: viewport.offset, width: viewport.width - occlusion)
+    }
+    return planWithoutStickyOcclusion(
+      items: items, activeWorkspaceId: activeWorkspaceId, viewport: visibleViewport)
+  }
+
+  private static func planWithoutStickyOcclusion(
+    items: [WorkspaceTabStripItem], activeWorkspaceId: String?,
     viewport: WorkspaceTabStripViewport
   ) -> WorkspaceTabStripPlan {
     let fullyVisible = items.filter { item in

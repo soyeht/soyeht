@@ -829,6 +829,7 @@ private struct WorkspaceTopBar: View {
     fullyVisibleWorkspaceIds: [], hiddenWorkspaceIds: [], sticky: nil)
   @State private var showsOverflowControl = false
   @State private var overflowPresented = false
+  @FocusState private var focusedWorkspaceId: String?
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -919,7 +920,8 @@ private struct WorkspaceTopBar: View {
           WorkspaceTab(
             workspaceId: workspace.workspaceId, name: workspace.name,
             selected: workspace.workspaceId == workspaceId,
-            keyboardFocusable: true,
+            keyboardFocusable: plan.sticky?.workspaceId != workspace.workspaceId,
+            focusedWorkspaceId: $focusedWorkspaceId,
             action: { onSelectWorkspace(workspace.workspaceId) },
             onClose: { onCloseWorkspace(workspace.workspaceId) })
           .opacity(plan.sticky?.workspaceId == workspace.workspaceId ? 0 : 1)
@@ -954,6 +956,7 @@ private struct WorkspaceTopBar: View {
       }
     }
     .onPreferenceChange(WorkspaceTabMeasurementPreferenceKey.self) { updatePlan(from: $0) }
+    .onMoveCommand { direction in moveWorkspaceFocus(direction, using: proxy) }
     .overlay { workspaceTabFades }
     .overlay(alignment: plan.sticky?.edge == .leading ? .leading : .trailing) {
       if let sticky = plan.sticky,
@@ -961,7 +964,7 @@ private struct WorkspaceTopBar: View {
       {
         WorkspaceTab(
           workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
-          keyboardFocusable: false,
+          keyboardFocusable: false, focusedWorkspaceId: nil,
           action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
           onClose: { onCloseWorkspace(workspace.workspaceId) }, identifierPrefix: "workspace-tab-sticky")
         .frame(
@@ -983,20 +986,27 @@ private struct WorkspaceTopBar: View {
   }
 
   private var workspaceTabFades: some View {
-    HStack(spacing: 0) {
+    let occlusion = plan.sticky.map { stickyOcclusionWidth(for: $0, in: measurement) } ?? 0
+    let leadingOffset = plan.sticky?.edge == .leading ? occlusion : 0
+    let trailingOffset = plan.sticky?.edge == .trailing ? occlusion : 0
+    return ZStack {
       LinearGradient(
         colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
         startPoint: .leading, endPoint: .trailing
       )
       .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
-      Spacer(minLength: 0)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .offset(x: leadingOffset)
       LinearGradient(
         colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
         startPoint: .leading, endPoint: .trailing
       )
       .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .offset(x: -trailingOffset)
     }
     .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
+    .clipped()
     .allowsHitTesting(false)
   }
 
@@ -1021,9 +1031,51 @@ private struct WorkspaceTopBar: View {
   private func planned(
     from measurement: WorkspaceTabStripMeasurement, activeWorkspaceId: String?
   ) -> WorkspaceTabStripPlan {
-    WorkspaceTabStripPolicy.plan(
+    let viewport = WorkspaceTabStripViewport(offset: 0, width: measurement.viewportWidth)
+    let initial = WorkspaceTabStripPolicy.plan(
       items: measurement.items, activeWorkspaceId: activeWorkspaceId,
-      viewport: WorkspaceTabStripViewport(offset: 0, width: measurement.viewportWidth))
+      viewport: viewport)
+    let occlusion = initial.sticky.map { stickyOcclusionWidth(for: $0, in: measurement) } ?? 0
+    return WorkspaceTabStripPolicy.plan(
+      items: measurement.items, activeWorkspaceId: activeWorkspaceId,
+      viewport: viewport, stickyOcclusionWidth: occlusion)
+  }
+
+  private func stickyOcclusionWidth(
+    for sticky: WorkspaceTabStickyPresentation, in measurement: WorkspaceTabStripMeasurement
+  ) -> Double {
+    guard let item = measurement.items.first(where: { $0.workspaceId == sticky.workspaceId }) else {
+      return 0
+    }
+    let clearance = MacPaneLayoutMetrics.workspaceTabShadowClearance
+    let tabWidth = min(item.width, max(0, measurement.viewportWidth - 2 * clearance))
+    let footprint = tabWidth + 2 * clearance + Double(MacTheme.Space.x10)
+    return min(measurement.viewportWidth, footprint)
+  }
+
+  private func moveWorkspaceFocus(
+    _ move: MoveCommandDirection, using proxy: ScrollViewProxy
+  ) {
+    let direction: WorkspaceTabFocusDirection
+    let edge: WorkspaceTabStickyEdge
+    switch move {
+    case .left:
+      direction = .previous
+      edge = .leading
+    case .right:
+      direction = .next
+      edge = .trailing
+    default:
+      return
+    }
+    let orderedIds = client.workspaces.map(\.workspaceId)
+    guard
+      let neighbor = WorkspaceTabStripPolicy.focusNeighbor(
+        of: focusedWorkspaceId ?? workspaceId, direction: direction,
+        orderedWorkspaceIds: orderedIds)
+    else { return }
+    focusedWorkspaceId = neighbor
+    reveal(neighbor, edge: edge, using: proxy)
   }
 
   private func reveal(
@@ -1046,6 +1098,7 @@ private struct WorkspaceTab: View {
   let name: String
   let selected: Bool
   let keyboardFocusable: Bool
+  let focusedWorkspaceId: FocusState<String?>.Binding?
   let action: () -> Void
   let onClose: () -> Void
   var identifierPrefix = "workspace-tab"
@@ -1060,7 +1113,15 @@ private struct WorkspaceTab: View {
             .foregroundStyle(selected ? MacTheme.accent : MacTheme.ink).lineLimit(1)
         }
       }
-      .focusable(keyboardFocusable)
+      .modifier(
+        WorkspaceTabKeyboardFocus(
+          workspaceId: workspaceId, enabled: keyboardFocusable,
+          focusedWorkspaceId: focusedWorkspaceId))
+      .onKeyPress(.return) {
+        guard keyboardFocusable else { return .ignored }
+        action()
+        return .handled
+      }
       .help(name)
       .accessibilityLabel(name)
       .accessibilityAddTraits(selected ? .isSelected : [])
@@ -1070,7 +1131,7 @@ private struct WorkspaceTab: View {
         Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
           .foregroundStyle(MacTheme.muted)
       }
-      .focusable(keyboardFocusable)
+      .focusable(false)
       .help("Close \(name)")
       .accessibilityLabel("Close workspace \(name)")
       .accessibilityIdentifier("\(identifierPrefix)-close-\(workspaceId)")
@@ -1079,6 +1140,22 @@ private struct WorkspaceTab: View {
     .frame(height: MacPaneLayoutMetrics.workspaceTabHeight)
     .frame(maxWidth: MacPaneLayoutMetrics.workspaceTabMaximumWidth)
     .modifier(WorkspaceTabSurface(selected: selected))
+  }
+}
+
+private struct WorkspaceTabKeyboardFocus: ViewModifier {
+  let workspaceId: String
+  let enabled: Bool
+  let focusedWorkspaceId: FocusState<String?>.Binding?
+
+  @ViewBuilder func body(content: Content) -> some View {
+    if enabled, let focusedWorkspaceId {
+      content
+        .focusable(true)
+        .focused(focusedWorkspaceId, equals: workspaceId)
+    } else {
+      content.focusable(false)
+    }
   }
 }
 
