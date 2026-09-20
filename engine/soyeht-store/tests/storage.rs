@@ -171,6 +171,64 @@ fn migration_backs_up_an_existing_database_before_changing_version() {
 }
 
 #[test]
+fn version_23_migration_backfills_a_durable_workspace_creation_sequence() {
+    let directory = Directory::new();
+    let old = rusqlite::Connection::open(directory.0.join("soyeht.db")).unwrap();
+    old.execute_batch(
+        "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         INSERT INTO metadata(key,value) VALUES
+           ('db_id','stable-id'),('engine_generation','0');
+         CREATE TABLE workspaces (
+           id TEXT PRIMARY KEY,
+           payload TEXT NOT NULL,
+           closed INTEGER NOT NULL DEFAULT 0
+         );
+         PRAGMA user_version=23;",
+    )
+    .unwrap();
+    for workspace_id in [
+        "z-last-alphabetically",
+        "a-first-alphabetically",
+        "m-middle",
+    ] {
+        let payload = serde_json::to_string(&workspace(workspace_id, workspace_id.into())).unwrap();
+        old.execute(
+            "INSERT INTO workspaces(id,payload) VALUES (?1,?2)",
+            rusqlite::params![workspace_id, payload],
+        )
+        .unwrap();
+    }
+    drop(old);
+
+    let store = Store::open(&directory.0).unwrap();
+    assert_eq!(
+        store
+            .connection()
+            .prepare("SELECT id,created_seq FROM workspaces ORDER BY created_seq")
+            .unwrap()
+            .query_map([], |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?
+            )))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap(),
+        [
+            ("z-last-alphabetically".into(), 1),
+            ("a-first-alphabetically".into(), 2),
+            ("m-middle".into(), 3)
+        ]
+    );
+    assert_eq!(
+        store
+            .connection()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        soyeht_store::database::SCHEMA_VERSION
+    );
+}
+
+#[test]
 fn full_database_does_not_confirm_a_partial_mutation() {
     let directory = Directory::new();
     let mut store = Store::open(&directory.0).unwrap();

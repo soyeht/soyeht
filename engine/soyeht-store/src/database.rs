@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 23;
+pub const SCHEMA_VERSION: u32 = 24;
 
 #[derive(Debug)]
 pub enum Error {
@@ -371,6 +371,11 @@ impl Store {
             if version < 23 {
                 tx.execute_batch(include_str!("../migrations/023-writing-full-width.sql"))?;
             }
+            if version < 24 {
+                tx.execute_batch(include_str!(
+                    "../migrations/024-workspace-created-sequence.sql"
+                ))?;
+            }
             tx.commit()?;
         }
         let db_id =
@@ -498,7 +503,7 @@ impl Store {
         let cursor = cursor(&tx)?;
         let workspaces = rows_json(
             &tx,
-            "SELECT payload FROM workspaces WHERE closed=0 ORDER BY rowid",
+            "SELECT payload FROM workspaces WHERE closed=0 ORDER BY created_seq",
         )?;
         let panes = rows_json(&tx, "SELECT payload FROM panes WHERE closed=0 ORDER BY id")?;
         let devices = rows_json(

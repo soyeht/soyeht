@@ -68,7 +68,7 @@ impl Store {
     pub fn workspaces(&self) -> Result<Vec<Workspace>> {
         let mut statement = self
             .connection
-            .prepare("SELECT payload FROM workspaces WHERE closed=0 ORDER BY rowid")?;
+            .prepare("SELECT payload FROM workspaces WHERE closed=0 ORDER BY created_seq")?;
         Ok(statement
             .query_map([], |row| {
                 let raw: String = row.get(0)?;
@@ -286,7 +286,7 @@ impl Store {
 impl Change<'_> {
     pub fn insert_workspace(&self, workspace: &Workspace) -> Result<()> {
         self.transaction.execute(
-            "INSERT INTO workspaces(id,payload) VALUES (?1,?2)",
+            "INSERT INTO workspaces(id,payload,created_seq) VALUES (?1,?2,(SELECT COALESCE(MAX(created_seq),0)+1 FROM workspaces))",
             params![workspace.workspace_id, serde_json::to_string(workspace)?],
         )?;
         Ok(())
