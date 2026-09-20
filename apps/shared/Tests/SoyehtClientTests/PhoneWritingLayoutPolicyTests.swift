@@ -80,6 +80,40 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
   #expect(!plan.leaves[0].expanded)
 }
 
+@Test func transientMissingDocumentsPreserveStateWithoutSavingOverIt() {
+  let tree = writingFixtureTree()
+  let seed = phonePolicy.layout(request(tree: tree, selectedPaneId: "screenplay-agent"))
+  var stored = PhoneWritingLocalState(
+    panes: seed.localState.panes.map { pane in
+      var pane = pane
+      pane.expanded = true
+      if pane.identity.paneId == "screenplay" {
+        pane.activeTab = .agent
+        pane.screenplayZoom = 2.25
+      }
+      return pane
+    })
+  let expected = stored
+  var saves = 0
+
+  for documents in [[], fixtureDocuments()] {
+    let plan = phonePolicy.layout(
+      PhoneWritingLayoutRequest(
+        tree: tree, documents: documents,
+        selectedPaneId: "screenplay-agent", localState: stored,
+        viewport: PaneLayoutSize(width: 375, height: 812), safeArea: phoneSafeArea))
+    if plan.localState != stored {
+      stored = plan.localState
+      saves += 1
+    }
+    #expect(plan.leaves.map(\.expanded) == [true, true, true])
+    #expect(plan.leaves[1].activeTab == .agent)
+  }
+
+  #expect(stored == expected)
+  #expect(saves == 0)
+}
+
 @Test func localStateRoundTripsAndUnknownVersionsBecomeAbsentState() throws {
   let state = PhoneWritingLocalState(
     panes: [

@@ -295,7 +295,11 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
       tree: request.tree, documents: request.documents, paneNames: request.paneNames)
     let state = reconciledState(
       request.localState, projected: projected, selectedPaneId: request.selectedPaneId)
-    let stateByIdentity = Dictionary(uniqueKeysWithValues: state.panes.map { ($0.identity, $0) })
+    // Reconciliation guarantees one local entry per live writing pane. Key the render
+    // lookup by pane id so a transient document gap can retain the last stable file
+    // identity until that document snapshot returns.
+    let stateByPaneId = Dictionary(
+      uniqueKeysWithValues: state.panes.map { ($0.identity.paneId, $0) })
     let viewport = sanitized(request.viewport)
     let safe = sanitized(request.safeArea)
     let obstruction = finiteNonnegative(request.obscuredBottom)
@@ -311,7 +315,7 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
     var leaves: [PhoneWritingLeafLayout] = []
     for item in projected {
       let paneState =
-        stateByIdentity[item.identity]
+        stateByPaneId[item.identity.paneId]
         ?? PhoneWritingPaneState(
           identity: item.identity)
       let hasCompanion = item.companionAgentPaneId != nil
@@ -345,7 +349,7 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
       let fitScale = screenplayFitScale(pageSize: pageSize, contentSize: content?.size)
       leaves.append(
         PhoneWritingLeafLayout(
-          identity: item.identity, name: item.name, kind: item.kind,
+          identity: paneState.identity, name: item.name, kind: item.kind,
           font: item.font, fullWidth: item.fullWidth,
           availability: item.availability, companionAgentPaneId: item.companionAgentPaneId,
           expanded: paneState.expanded, activeTab: paneState.activeTab,
@@ -487,12 +491,17 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
   ) -> PhoneWritingLocalState {
     let validStored = stored?.version == PhoneWritingLocalState.currentVersion ? stored : nil
     let existing: [PhoneWritingIdentity: PhoneWritingPaneState]
+    let existingByPaneId: [String: PhoneWritingPaneState]
     if let validStored {
       existing = Dictionary(
         validStored.panes.reversed().map { ($0.identity, $0) },
         uniquingKeysWith: { first, _ in first })
+      existingByPaneId = Dictionary(
+        validStored.panes.reversed().map { ($0.identity.paneId, $0) },
+        uniquingKeysWith: { first, _ in first })
     } else {
       existing = [:]
+      existingByPaneId = [:]
     }
     let initialPaneId: String? = {
       guard validStored == nil else { return nil }
@@ -509,6 +518,9 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
     let panes = projected.map { item -> PhoneWritingPaneState in
       var pane =
         existing[item.identity]
+        // An absent document is a loading state, not a new document identity. Keep
+        // the saved file identity and presentation state until the snapshot returns.
+        ?? (item.identity.fileId == nil ? existingByPaneId[item.identity.paneId] : nil)
         ?? PhoneWritingPaneState(
           identity: item.identity,
           expanded: item.identity.paneId == initialPaneId,
