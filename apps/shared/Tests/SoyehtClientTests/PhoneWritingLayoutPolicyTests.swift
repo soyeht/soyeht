@@ -96,18 +96,28 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
   let expected = stored
   var saves = 0
 
-  for documents in [[], fixtureDocuments()] {
+  let phases: [(tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor], authoritative: Bool)] = [
+    (nil, [], false),
+    (tree, [], true),
+    (tree, fixtureDocuments(), true),
+  ]
+  for phase in phases {
     let plan = phonePolicy.layout(
       PhoneWritingLayoutRequest(
-        tree: tree, documents: documents,
+        tree: phase.tree, documents: phase.documents,
         selectedPaneId: "screenplay-agent", localState: stored,
+        snapshotIsAuthoritative: phase.authoritative,
         viewport: PaneLayoutSize(width: 375, height: 812), safeArea: phoneSafeArea))
     if plan.localState != stored {
       stored = plan.localState
       saves += 1
     }
-    #expect(plan.leaves.map(\.expanded) == [true, true, true])
-    #expect(plan.leaves[1].activeTab == .agent)
+    if phase.tree != nil {
+      #expect(plan.leaves.map(\.expanded) == [true, true, true])
+      #expect(plan.leaves[1].activeTab == .agent)
+    } else {
+      #expect(plan.leaves.isEmpty)
+    }
   }
 
   #expect(stored == expected)

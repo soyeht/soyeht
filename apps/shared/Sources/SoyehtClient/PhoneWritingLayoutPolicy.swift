@@ -178,6 +178,9 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
   public var selectedPaneId: String?
   /// `nil` means this device has never stored state for this workspace.
   public var localState: PhoneWritingLocalState?
+  /// False while the read-only client is disconnected and its replicas are intentionally empty.
+  /// Such a gap must never prune or persist device-local presentation state.
+  public var snapshotIsAuthoritative: Bool
   public var viewport: PaneLayoutSize
   public var safeArea: PhoneWritingViewportInsets
   /// Software keyboard or another bottom obstruction. It changes visible height, not the tree.
@@ -187,6 +190,7 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
     tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor],
     paneNames: [String: String] = [:],
     selectedPaneId: String? = nil, localState: PhoneWritingLocalState? = nil,
+    snapshotIsAuthoritative: Bool = true,
     viewport: PaneLayoutSize,
     safeArea: PhoneWritingViewportInsets = PhoneWritingViewportInsets(),
     obscuredBottom: Double = 0
@@ -196,6 +200,7 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
     self.paneNames = paneNames
     self.selectedPaneId = selectedPaneId
     self.localState = localState
+    self.snapshotIsAuthoritative = snapshotIsAuthoritative
     self.viewport = viewport
     self.safeArea = safeArea
     self.obscuredBottom = obscuredBottom
@@ -293,8 +298,16 @@ public struct PhoneWritingLayoutPolicy: Equatable, Sendable {
   public func layout(_ request: PhoneWritingLayoutRequest) -> PhoneWritingLayoutPlan {
     let projected = project(
       tree: request.tree, documents: request.documents, paneNames: request.paneNames)
-    let state = reconciledState(
-      request.localState, projected: projected, selectedPaneId: request.selectedPaneId)
+    let state: PhoneWritingLocalState
+    if !request.snapshotIsAuthoritative,
+      let stored = request.localState,
+      stored.version == PhoneWritingLocalState.currentVersion
+    {
+      state = stored
+    } else {
+      state = reconciledState(
+        request.localState, projected: projected, selectedPaneId: request.selectedPaneId)
+    }
     // Reconciliation guarantees one local entry per live writing pane. Key the render
     // lookup by pane id so a transient document gap can retain the last stable file
     // identity until that document snapshot returns.

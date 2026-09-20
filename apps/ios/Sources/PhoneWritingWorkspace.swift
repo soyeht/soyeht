@@ -134,6 +134,7 @@ struct PhoneWritingWorkspace: View {
         // The pane used to enter this phone screen seeds device-local state without
         // mutating the engine's shared focus.
         selectedPaneId: initialPaneId, localState: localState,
+        snapshotIsAuthoritative: client.connected,
         viewport: PaneLayoutSize(width: viewport.width, height: viewport.height)))
   }
 
@@ -158,6 +159,9 @@ struct PhoneWritingWorkspace: View {
   }
 
   private func reconcile(_ state: PhoneWritingLocalState) {
+    // A read-only disconnect clears replicas by design. Do not mistake that transient
+    // empty snapshot for panes being closed and overwrite the last local presentation.
+    guard client.connected else { return }
     guard localState != state else { return }
     localState = state
     persist(state)
