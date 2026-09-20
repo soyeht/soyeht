@@ -460,8 +460,7 @@ public final class EngineClient {
       try applyPaneEvent(eventName, params)
     case .workspaceCreated, .workspaceRenamed, .workspaceLayoutUpdated:
       let workspace = try params["workspace"].decoded(Workspace.self)
-      workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
-      workspaces.append(workspace)
+      upsertWorkspace(workspace)
       synchronizePaneLayout(workspace)
     case .workspaceClosed:
       let workspaceId = params["workspaceId"].string
@@ -539,6 +538,14 @@ public final class EngineClient {
         panes[index].phrase = event.phrase
       }
     default: break
+    }
+  }
+
+  func upsertWorkspace(_ workspace: Workspace) {
+    if let index = workspaces.firstIndex(where: { $0.workspaceId == workspace.workspaceId }) {
+      workspaces[index] = workspace
+    } else {
+      workspaces.append(workspace)
     }
   }
   private func applyDeviceEvent(_ eventName: EventName, _ params: JsonValue) throws {

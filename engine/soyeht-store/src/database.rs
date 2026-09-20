@@ -498,7 +498,7 @@ impl Store {
         let cursor = cursor(&tx)?;
         let workspaces = rows_json(
             &tx,
-            "SELECT payload FROM workspaces WHERE closed=0 ORDER BY id",
+            "SELECT payload FROM workspaces WHERE closed=0 ORDER BY rowid",
         )?;
         let panes = rows_json(&tx, "SELECT payload FROM panes WHERE closed=0 ORDER BY id")?;
         let devices = rows_json(
