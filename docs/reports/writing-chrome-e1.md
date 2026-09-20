@@ -2,7 +2,7 @@
 
 Date: 2026-09-20
 
-Build under test: `48411ba` (`codex/writing-chrome-e1`)
+Build under test: `f42536f` (`codex/writing-chrome-e1`)
 
 Product: rewrite, bundle `com.soyeht.next.dev.mac`
 
@@ -73,8 +73,9 @@ container; every action and the `Writing options menu` has a named AX control.
   it visible;
 - clean versus dirty writing close behavior.
 
-The focused shared suite passed 67/67. The full shared suite passed 231/231,
-and `scripts/check_mac.sh` completed with `BUILD SUCCEEDED`.
+The focused shared suite passed 67/67. The full shared suite passed 232/232,
+and both unsigned and signed runs of `scripts/check_mac.sh` completed with
+`BUILD SUCCEEDED`.
 
 ## VM1 visual and interaction proof
 
@@ -93,6 +94,33 @@ dimmed the header and pointer movement restored it (`E1-header-dimmed.png` and
 `E1-header-restored.png`). The fixture ended byte-identical to its backup:
 `e2e310c5672a9b6adcfac6cc7df32904dc221a3559bb1ecc3dd037561db3b297`.
 The database ended with `focus_mode=0` and `full_width=0`.
+
+### Native keyboard shortcut proof
+
+The first review found that Command-B and Command-I did not reach their SwiftUI
+buttons while the AppKit text view owned the keyboard. The text view now handles
+only those two command-key equivalents and sends its current UTF-16 selection
+through the same `writing.format` path as the toolbar. Other modifiers and
+commands continue down the native responder chain.
+
+On VM1, a mouse-selected range in the first paragraph produced these exact
+on-disk results before the fixture was restored:
+
+- Command-B: `se**ssenta e** seis`
+- Command-I: `se_ssenta e_ seis`
+
+Each gesture emitted exactly one successful `writing.format` engine operation.
+The fixture was restored byte-for-byte after both checks. A pure mapping test
+also keeps the native shortcut set closed to Command-B and Command-I.
+
+### Pane-drag review control
+
+An A/B run showed that a real pane header starts the drag and reaches the same
+commit path on main `b3cad57` and E1 `6a12d0a`. The provisional new-pane chooser
+header has no `paneHeaderDrag`, so it was not a valid control for the original
+VNC observation. Dropping a real pane over that provisional surface fails with
+`Couldn't move the pane` on both builds; the pre-existing follow-up is #382 and
+does not block E1.
 
 ## Pane halo proof
 
@@ -126,9 +154,8 @@ Evidence: `E1-scroll-inner-rest-1024.png`,
 
 ## VM state at handoff
 
-The VNC capture client stopped VM1 while testing a connection option. VM1 was
-started again, the `rewrite` account was unlocked, and only the rewrite app and
-its existing launch agents resumed. The product data was not reset. Final PIDs
-were app `560`, engine `719`, PTY daemon `728`; the database still held one
-workspace, one pane, and the same writing document and preferences listed
-above.
+VM1 is running the signed `f42536f` app from `/Applications/Soyeht Dev.app`.
+Final PIDs are app `6337`, engine `719`, and PTY daemon `728`. The database was
+not reset: it contains one workspace and one live pane (six historical rows are
+closed). The text fixture is restored to SHA-256
+`e2e310c5672a9b6adcfac6cc7df32904dc221a3559bb1ecc3dd037561db3b297`.
