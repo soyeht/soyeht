@@ -8,6 +8,7 @@ struct WritingPaneHeaderAction {
   let systemImage: String
   let help: String
   let accessibilityIdentifier: String
+  var disabled = false
   let action: () -> Void
 }
 
@@ -46,6 +47,7 @@ struct WritingPaneHeader: View {
         .buttonStyle(NeoPillButtonStyle())
         .help(auxiliaryAction.help)
         .accessibilityIdentifier(auxiliaryAction.accessibilityIdentifier)
+        .disabled(auxiliaryAction.disabled)
       }
       if let fullWidth, let onToggleFullWidth {
         Button(action: onToggleFullWidth) {

@@ -181,16 +181,18 @@ public struct WritingPresentationLayoutPlan: Equatable, Sendable {
   public var navigation: WritingSlideNavigationMode
   public var navigationRect: PaneLayoutRect
   public var stageRect: PaneLayoutRect
+  public var footerRect: PaneLayoutRect
   /// Scale relative to the accepted 320×180 minimum stage.
   public var scale: Double
 
   public init(
     navigation: WritingSlideNavigationMode, navigationRect: PaneLayoutRect,
-    stageRect: PaneLayoutRect, scale: Double
+    stageRect: PaneLayoutRect, footerRect: PaneLayoutRect, scale: Double
   ) {
     self.navigation = navigation
     self.navigationRect = navigationRect
     self.stageRect = stageRect
+    self.footerRect = footerRect
     self.scale = scale
   }
 }
@@ -577,6 +579,9 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
         WritingPresentationLayoutPlan(
           navigation: navigation, navigationRect: navigationRect,
           stageRect: centered(fitted, in: stageArea),
+          footerRect: rect(
+            x: 0, y: contentSize.height - footer,
+            width: contentSize.width, height: footer),
           scale: fitted.width / metrics.presentationMinimumStage.width)))
   }
 
