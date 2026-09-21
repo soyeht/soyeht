@@ -496,7 +496,8 @@ extension EngineClient {
   }
 
   public func createAgentPaneNow(
-    directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode
+    directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode,
+    selectPane: Bool = true
   ) async throws -> String {
     let path = directory.standardizedFileURL.path
     let workspaceId = try await workspaceId(for: directory, path: path)
@@ -507,7 +508,7 @@ extension EngineClient {
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
         effort: effort, permission: permission))
     let paneId = try result.decoded(PaneCreateResult.self).paneId
-    select(paneId)
+    if selectPane { select(paneId) }
     return paneId
   }
 

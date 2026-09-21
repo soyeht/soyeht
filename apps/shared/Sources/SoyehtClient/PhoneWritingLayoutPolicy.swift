@@ -148,15 +148,33 @@ public struct PhoneWritingLayoutMetrics: Equatable, Sendable {
   public var rowSpacing: Double
   public var maximumScreenplayZoom: Double
 
+  /// Fixed phone writing chrome. Text scales within this single line and truncates;
+  /// it never makes the header taller than the minimum touch target.
+  public var headerHorizontalInset: Double
+  public var headerNamePointSize: Double
+  public var headerCountPointSize: Double
+  public var headerKindIconSize: Double
+  public var headerActionIconSize: Double
+  public var screenplayInlineMenuClearance: Double
+
   public init(
     minimumHitTarget: Double, horizontalInset: Double, verticalInset: Double,
-    rowSpacing: Double, maximumScreenplayZoom: Double
+    rowSpacing: Double, maximumScreenplayZoom: Double,
+    headerHorizontalInset: Double = 14, headerNamePointSize: Double = 14,
+    headerCountPointSize: Double = 14, headerKindIconSize: Double = 18,
+    headerActionIconSize: Double = 17, screenplayInlineMenuClearance: Double = 3
   ) {
     self.minimumHitTarget = minimumHitTarget
     self.horizontalInset = horizontalInset
     self.verticalInset = verticalInset
     self.rowSpacing = rowSpacing
     self.maximumScreenplayZoom = maximumScreenplayZoom
+    self.headerHorizontalInset = headerHorizontalInset
+    self.headerNamePointSize = headerNamePointSize
+    self.headerCountPointSize = headerCountPointSize
+    self.headerKindIconSize = headerKindIconSize
+    self.headerActionIconSize = headerActionIconSize
+    self.screenplayInlineMenuClearance = screenplayInlineMenuClearance
   }
 
   public static let standard = PhoneWritingLayoutMetrics(
@@ -167,6 +185,102 @@ public struct PhoneWritingLayoutMetrics: Equatable, Sendable {
     verticalInset: 12,
     rowSpacing: 12,
     maximumScreenplayZoom: 4)
+
+  /// Phone leaves already own the only fixed header. Writing surfaces therefore
+  /// consume body geometry directly instead of adding and translating a fake Mac header.
+  public func bodyWritingMetrics(
+    from source: WritingLayoutMetrics = .standard
+  ) -> WritingLayoutMetrics {
+    var result = source
+    result.headerHeight = 0
+    return result
+  }
+
+  /// The measured floors include the desktop writing header. A phone leaf owns that
+  /// header separately, so its body must consume the same floors with that height
+  /// removed exactly once.
+  public func bodySurfaceFloors(
+    from floors: [PaneLayoutKind: PaneLayoutSize],
+    source: WritingLayoutMetrics = .standard
+  ) -> [PaneLayoutKind: PaneLayoutSize] {
+    var result = floors
+    for kind in [PaneLayoutKind.text, .screenplay, .presentation] {
+      guard let floor = result[kind] else { continue }
+      result[kind] = PaneLayoutSize(
+        width: floor.width, height: max(0, floor.height - source.headerHeight))
+    }
+    return result
+  }
+}
+
+public enum PhoneWritingChromeTransition: Equatable, Sendable {
+  case dim
+  case reveal
+}
+
+public struct PhoneWritingChromePlan: Equatable, Sendable {
+  public var menuActions: [WritingChromeAction]
+  public var selectionActions: [WritingChromeAction]
+  public var splitKinds: [PaneLayoutKind]
+  public var headerHeight: Double
+  public var headerIsSingleLine: Bool
+  public var headerTextTruncates: Bool
+  public var minimumActionTarget: Double
+
+  public init(
+    menuActions: [WritingChromeAction], selectionActions: [WritingChromeAction],
+    splitKinds: [PaneLayoutKind], headerHeight: Double,
+    headerIsSingleLine: Bool, headerTextTruncates: Bool,
+    minimumActionTarget: Double
+  ) {
+    self.menuActions = menuActions
+    self.selectionActions = selectionActions
+    self.splitKinds = splitKinds
+    self.headerHeight = headerHeight
+    self.headerIsSingleLine = headerIsSingleLine
+    self.headerTextTruncates = headerTextTruncates
+    self.minimumActionTarget = minimumActionTarget
+  }
+}
+
+/// Pure phone writing chrome policy. UIKit and SwiftUI consume this inventory;
+/// neither platform view is allowed to silently invent or lose an action.
+public struct PhoneWritingChromePolicy: Equatable, Sendable {
+  public var metrics: PhoneWritingLayoutMetrics
+  public var writingChrome: WritingChromePolicy
+
+  public init(
+    metrics: PhoneWritingLayoutMetrics = .standard,
+    writingChrome: WritingChromePolicy = WritingChromePolicy()
+  ) {
+    self.metrics = metrics
+    self.writingChrome = writingChrome
+  }
+
+  public func plan(
+    kind: PaneLayoutKind, fullWidth: Bool = false, hasSelection: Bool = false
+  ) -> PhoneWritingChromePlan {
+    let base = writingChrome.plan(
+      kind: kind, fullWidth: fullWidth, hasSelection: hasSelection)
+    return PhoneWritingChromePlan(
+      menuActions: base.menuActions,
+      selectionActions: base.selectionActions,
+      splitKinds: [.text, .screenplay, .presentation, .agent],
+      headerHeight: metrics.minimumHitTarget,
+      headerIsSingleLine: true,
+      headerTextTruncates: true,
+      minimumActionTarget: metrics.minimumHitTarget)
+  }
+
+  public func duration(
+    for transition: PhoneWritingChromeTransition, reduceMotion: Bool
+  ) -> Double {
+    guard !reduceMotion else { return 0 }
+    switch transition {
+    case .dim: return writingChrome.metrics.dimDuration
+    case .reveal: return writingChrome.metrics.revealDuration
+    }
+  }
 }
 
 public struct PhoneWritingLayoutRequest: Equatable, Sendable {
