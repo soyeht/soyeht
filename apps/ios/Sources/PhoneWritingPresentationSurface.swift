@@ -13,22 +13,20 @@ struct PhoneWritingPresentationSurface: View {
   let structure: WritingStructureResult
   let size: PaneLayoutSize
   let font: PaneLayoutFontMetric
-  let floors: [PaneLayoutKind: PaneLayoutSize]
   let accessibilityName: String
-
-  @State private var selectedSlide: UInt32 = 0
+  @Binding var selectedSlide: UInt32
+  let onActivity: () -> Void
 
   private var slides: [WritingSlide] { structure.slides }
 
   private var plan: WritingLayoutPlan? {
     try? WritingLayoutPolicy(
-      floors: floors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18)
+      metrics: PhoneWritingMetrics.bodyWritingMetrics,
+      floors: PhoneWritingMetrics.bodyFloors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18)
     ).layout(
       WritingLayoutRequest(
         kind: .presentation,
-        viewport: PaneLayoutSize(
-          width: size.width,
-          height: size.height + WritingLayoutMetrics.standard.headerHeight),
+        viewport: size,
         font: font))
   }
 
@@ -36,23 +34,23 @@ struct PhoneWritingPresentationSurface: View {
     if let plan, case .presentation(let presentation) = plan.surface {
       ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
         ZStack(alignment: .topLeading) {
-          PhonePalette.canvas
+          PhonePalette.face
             .frame(width: plan.contentSize.width, height: contentHeight(plan))
           if presentation.navigation == .thumbnails {
             thumbnailRail
-              .phoneWritingFrame(translated(presentation.navigationRect))
+              .phoneWritingFrame(presentation.navigationRect)
               .accessibilityIdentifier(
                 "phone-writing-presentation-thumbnails-\(writing.document.file.paneId)")
           } else {
             numberStrip
-              .phoneWritingFrame(translated(presentation.navigationRect))
+              .phoneWritingFrame(presentation.navigationRect)
               .accessibilityIdentifier(
                 "phone-writing-presentation-numbers-\(writing.document.file.paneId)")
           }
           stage
-            .phoneWritingFrame(translated(presentation.stageRect))
+            .phoneWritingFrame(presentation.stageRect)
           footer
-            .phoneWritingFrame(translated(presentation.footerRect))
+            .phoneWritingFrame(presentation.footerRect)
         }
         .frame(
           width: plan.contentSize.width, height: contentHeight(plan), alignment: .topLeading)
@@ -60,6 +58,8 @@ struct PhoneWritingPresentationSurface: View {
       .scrollDisabled(plan.overflowAxes.isEmpty)
       .scrollBounceBehavior(.basedOnSize)
       .frame(width: size.width, height: size.height)
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 3).onChanged { _ in onActivity() })
       .onAppear { synchronizeSelection() }
       .onChange(of: file.viewport?.fromLine) { _, _ in synchronizeSelection() }
       .onChange(of: slides.map(\.index)) { _, _ in synchronizeSelection() }
@@ -71,6 +71,7 @@ struct PhoneWritingPresentationSurface: View {
       LazyVStack(spacing: 10) {
         ForEach(slides, id: \.index) { slide in
           Button {
+            onActivity()
             select(slide)
           } label: {
             VStack(alignment: .leading, spacing: 7) {
@@ -106,7 +107,7 @@ struct PhoneWritingPresentationSurface: View {
       }
       .padding(8)
     }
-    .background(PhonePalette.canvas)
+    .background(PhonePalette.face)
   }
 
   private var numberStrip: some View {
@@ -114,6 +115,7 @@ struct PhoneWritingPresentationSurface: View {
       HStack(spacing: 8) {
         ForEach(slides, id: \.index) { slide in
           Button {
+            onActivity()
             select(slide)
           } label: {
             Text("\(slide.index + 1)")
@@ -137,7 +139,7 @@ struct PhoneWritingPresentationSurface: View {
       .padding(.horizontal, 10)
     }
     .scrollIndicators(.hidden)
-    .background(PhonePalette.canvas)
+    .background(PhonePalette.face)
   }
 
   private var stage: some View {
@@ -185,7 +187,7 @@ struct PhoneWritingPresentationSurface: View {
     .font(.caption)
     .foregroundStyle(PhonePalette.secondary)
     .padding(.horizontal, 10)
-    .background(PhonePalette.canvas)
+    .background(PhonePalette.face)
     .accessibilityElement(children: .combine)
   }
 
@@ -245,15 +247,104 @@ struct PhoneWritingPresentationSurface: View {
   }
 
   private func contentHeight(_ plan: WritingLayoutPlan) -> Double {
-    max(0, plan.contentSize.height - WritingLayoutMetrics.standard.headerHeight)
+    plan.contentSize.height
+  }
+}
+
+@MainActor
+struct PhoneWritingPresentationPlayer: View {
+  @Bindable var client: EngineClient
+  let writing: WritingDocumentView
+  let slides: [WritingSlide]
+  let accessibilityName: String
+
+  @Environment(\.dismiss) private var dismiss
+  @State private var index: Int
+
+  init(
+    client: EngineClient, writing: WritingDocumentView, slides: [WritingSlide],
+    initialSlide: UInt32, accessibilityName: String
+  ) {
+    self.client = client
+    self.writing = writing
+    self.slides = slides
+    self.accessibilityName = accessibilityName
+    _index = State(
+      initialValue: slides.firstIndex(where: { $0.index == initialSlide }) ?? 0)
   }
 
-  private func translated(_ rect: PaneLayoutRect) -> PaneLayoutRect {
-    PaneLayoutRect(
-      origin: PaneLayoutPoint(
-        x: rect.origin.x,
-        y: rect.origin.y - WritingLayoutMetrics.standard.headerHeight),
-      size: rect.size)
+  var body: some View {
+    NavigationStack {
+      GeometryReader { proxy in
+        ZStack {
+          Color.black.ignoresSafeArea()
+          if let slide {
+            VStack(spacing: 18) {
+              Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .lineLimit(4)
+                .minimumScaleFactor(0.45)
+              if !slide.imagePaths.isEmpty {
+                HStack(spacing: 12) {
+                  ForEach(Array(slide.imagePaths.prefix(2)), id: \.self) { asset in
+                    PhoneWritingPresentationAsset(
+                      client: client, fileId: writing.document.file.fileId,
+                      revision: writing.document.file.revision, asset: asset)
+                  }
+                }
+              }
+            }
+            .padding(24)
+            .frame(
+              width: min(proxy.size.width, proxy.size.height * 16 / 9),
+              height: min(proxy.size.height, proxy.size.width * 9 / 16))
+            .background(PhonePalette.face)
+            .foregroundStyle(PhonePalette.ink)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(
+              "\(accessibilityName), slide \(slide.index + 1), "
+                + (slide.heading.isEmpty ? "Untitled slide" : slide.heading))
+          } else {
+            ContentUnavailableView("No slides", systemImage: "rectangle.on.rectangle")
+              .foregroundStyle(.white)
+          }
+        }
+      }
+      .safeAreaInset(edge: .bottom) {
+        HStack(spacing: 12) {
+          Button("Previous", systemImage: "chevron.left") { index = max(0, index - 1) }
+            .frame(minWidth: 44, minHeight: 44)
+            .disabled(index == 0 || slides.isEmpty)
+          Spacer()
+          Text(slides.isEmpty ? "0 / 0" : "\(index + 1) / \(slides.count)")
+            .font(.subheadline.monospacedDigit())
+          Spacer()
+          Button("Next", systemImage: "chevron.right") {
+            index = min(slides.count - 1, index + 1)
+          }
+          .frame(minWidth: 44, minHeight: 44)
+          .disabled(slides.isEmpty || index >= slides.count - 1)
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 18)
+        .background(.ultraThinMaterial)
+      }
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { dismiss() }
+            .frame(minWidth: 44, minHeight: 44)
+        }
+      }
+    }
+    .tint(PhonePalette.accent)
+  }
+
+  private var slide: WritingSlide? {
+    guard slides.indices.contains(index) else { return nil }
+    return slides[index]
   }
 }
 

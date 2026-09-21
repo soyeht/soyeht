@@ -17,6 +17,9 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
   let fitScale: Double
   let zoomMultiplier: Double
   let accessibilityName: String
+  let onEditingActivity: () -> Void
+  let onSelectionActivity: (Bool) -> Void
+  let onScrollActivity: () -> Void
   let onZoomChanged: (Double) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -34,6 +37,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     var parent: PhoneWritingScreenplaySurface
     private let pageView = UIView()
     private let textView = UITextView()
+    private let elementButton = UIButton(type: .system)
     private var source = ""
     private var firstLine: UInt32 = 0
     private var renderedIdentity: String?
@@ -46,12 +50,13 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     func makeScrollView() -> UIScrollView {
       let scrollView = UIScrollView()
       scrollView.delegate = self
-      scrollView.backgroundColor = UIColor(PhonePalette.canvas)
+      scrollView.backgroundColor = UIColor(PhonePalette.face)
       scrollView.bouncesZoom = true
       scrollView.decelerationRate = .normal
       scrollView.keyboardDismissMode = .interactive
-      scrollView.showsHorizontalScrollIndicator = false
-      scrollView.showsVerticalScrollIndicator = false
+      scrollView.showsHorizontalScrollIndicator = true
+      scrollView.showsVerticalScrollIndicator = true
+      scrollView.indicatorStyle = .default
       scrollView.accessibilityIdentifier =
         "phone-writing-screenplay-\(parent.identity.paneId)"
 
@@ -76,8 +81,25 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         right: PaneLayoutContentMetrics.screenplayPageHorizontalInset)
       textView.layer.cornerRadius = 12
       textView.clipsToBounds = true
+      textView.showsHorizontalScrollIndicator = false
+      textView.showsVerticalScrollIndicator = true
+      textView.indicatorStyle = .default
       textView.accessibilityLabel = "\(parent.accessibilityName), screenplay"
 
+      var configuration = UIButton.Configuration.plain()
+      configuration.image = UIImage(systemName: "plus.circle")
+      configuration.contentInsets = .zero
+      elementButton.configuration = configuration
+      elementButton.frame.size = CGSize(
+        width: PhoneWritingLayoutMetrics.standard.minimumHitTarget,
+        height: PhoneWritingLayoutMetrics.standard.minimumHitTarget)
+      elementButton.showsMenuAsPrimaryAction = true
+      elementButton.accessibilityLabel = "Screenplay element and SmartType"
+      elementButton.accessibilityIdentifier =
+        "phone-writing-screenplay-element-\(parent.identity.paneId)"
+      elementButton.isHidden = true
+
+      textView.addSubview(elementButton)
       pageView.addSubview(textView)
       scrollView.addSubview(pageView)
       update(scrollView)
@@ -117,6 +139,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
       source = EditorEditing.viewportText(viewport.lines)
       renderedIdentity = identity
       render(selection: valid(textView.selectedRange))
+      updateElementMenu()
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? {
@@ -136,6 +159,22 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
       parent.onZoomChanged(Double(scale / minimum))
     }
 
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+      parent.onScrollActivity()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+      guard scrollView === textView else { return }
+      parent.onScrollActivity()
+      updateElementMenu()
+    }
+
+    func textViewDidChangeSelection(_ textView: UITextView) {
+      guard !applying else { return }
+      parent.onSelectionActivity(textView.selectedRange.length > 0)
+      updateElementMenu()
+    }
+
     func textView(
       _ textView: UITextView, shouldChangeTextIn range: NSRange,
       replacementText text: String
@@ -148,7 +187,109 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
       parent.client.enqueueEditorEdits(
         fileId: parent.file.file.fileId, edits: [edit.wireEdit])
       render(selection: NSRange(location: edit.cursor, length: 0))
+      parent.onEditingActivity()
+      updateElementMenu()
       return false
+    }
+
+    private func updateElementMenu() {
+      let selection = textView.selectedRange
+      guard selection.location != NSNotFound, selection.length == 0,
+        selection.location <= source.utf16.count
+      else {
+        elementButton.isHidden = true
+        return
+      }
+      let raw = source as NSString
+      let lineRange = raw.lineRange(for: selection)
+      var contentRange = lineRange
+      while contentRange.length > 0 {
+        let character = raw.character(at: NSMaxRange(contentRange) - 1)
+        guard character == 10 || character == 13 else { break }
+        contentRange.length -= 1
+      }
+      let lineText = raw.substring(with: contentRange)
+      guard WritingChromePolicy().showsScreenplayElementMenu(
+        lineText: lineText, selectionLength: selection.length)
+      else {
+        elementButton.isHidden = true
+        return
+      }
+      let activeLine = lineNumber(at: selection.location)
+      let suggestionKind = ScreenplayInteraction.suggestionKind(
+        at: activeLine, in: parent.structure)
+      let suggestions = Array(
+        ScreenplayInteraction.suggestions(
+          for: suggestionKind, prefix: lineText, in: parent.structure).prefix(5))
+      let elementActions = screenplayElementKinds.map { kind in
+        UIAction(title: elementTitle(kind)) { [weak self] _ in
+          self?.applyLine(kind: kind, value: "", range: contentRange)
+        }
+      }
+      var children: [UIMenuElement] = [
+        UIMenu(title: "Element", options: .displayInline, children: elementActions)
+      ]
+      if !suggestions.isEmpty {
+        children.append(
+          UIMenu(
+            title: "SmartType", options: .displayInline,
+            children: suggestions.map { suggestion in
+              UIAction(title: suggestion) { [weak self] _ in
+                self?.applyLine(kind: suggestionKind, value: suggestion, range: contentRange)
+              }
+            }))
+      }
+      elementButton.menu = UIMenu(children: children)
+      guard let selectedTextRange = textView.selectedTextRange else {
+        elementButton.isHidden = true
+        return
+      }
+      let caret = textView.caretRect(for: selectedTextRange.start)
+      let target = CGFloat(PhoneWritingLayoutMetrics.standard.minimumHitTarget)
+      let clearance = CGFloat(
+        PhoneWritingLayoutMetrics.standard.screenplayInlineMenuClearance)
+      elementButton.frame = CGRect(
+        x: min(max(0, caret.maxX + clearance), textView.bounds.width - target),
+        y: min(max(0, caret.midY - target / 2), textView.bounds.height - target),
+        width: target, height: target)
+      elementButton.isHidden = false
+      textView.bringSubviewToFront(elementButton)
+    }
+
+    private func applyLine(kind: ScreenplayElementKind, value: String, range: NSRange) {
+      guard
+        let edit = ScreenplayInteraction.typingEdit(
+          source: source, firstLine: firstLine, range: range,
+          replacement: ScreenplayInteraction.formattedLine(value, as: kind))
+      else { return }
+      source = edit.source
+      parent.client.enqueueEditorEdits(
+        fileId: parent.file.file.fileId, edits: [edit.wireEdit])
+      render(selection: NSRange(location: edit.cursor, length: 0))
+      parent.onEditingActivity()
+      updateElementMenu()
+    }
+
+    private func lineNumber(at utf16Offset: Int) -> UInt32 {
+      let prefix = (source as NSString).substring(
+        with: NSRange(location: 0, length: min(utf16Offset, source.utf16.count)))
+      return firstLine + UInt32(prefix.reduce(into: 0) { if $1 == "\n" { $0 += 1 } })
+    }
+
+    private var screenplayElementKinds: [ScreenplayElementKind] {
+      [.scene_heading, .action, .character, .parenthetical, .dialogue, .transition, .shot]
+    }
+
+    private func elementTitle(_ kind: ScreenplayElementKind) -> String {
+      switch kind {
+      case .scene_heading: "Scene heading"
+      case .action: "Action"
+      case .character: "Character"
+      case .parenthetical: "Parenthetical"
+      case .dialogue: "Dialogue"
+      case .transition: "Transition"
+      case .shot: "Shot"
+      }
     }
 
     private func centerPage(in scrollView: UIScrollView) {

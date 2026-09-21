@@ -3,6 +3,46 @@ import SoyehtProtocol
 import SwiftUI
 import UIKit
 
+private enum PhoneWritingSplitChoice: String, CaseIterable, Identifiable {
+  case text
+  case screenplay
+  case presentation
+  case agent
+
+  var id: String { rawValue }
+  var title: String {
+    switch self {
+    case .text: "Text"
+    case .screenplay: "Screenplay"
+    case .presentation: "Presentation"
+    case .agent: "Agent"
+    }
+  }
+  var kind: PaneLayoutKind {
+    switch self {
+    case .text: .text
+    case .screenplay: .screenplay
+    case .presentation: .presentation
+    case .agent: .agent
+    }
+  }
+  var section: WritingSection? {
+    switch self {
+    case .text: .texts
+    case .screenplay: .screenplays
+    case .presentation: .presentations
+    case .agent: nil
+    }
+  }
+}
+
+private struct PhoneWritingSplitRequest: Identifiable {
+  let id = UUID()
+  let anchorPaneId: String
+  let axis: PaneLayoutAxis
+  let baseTree: PaneLayoutTree
+}
+
 @MainActor
 struct PhoneWritingWorkspace: View {
   @Bindable var client: EngineClient
@@ -13,6 +53,12 @@ struct PhoneWritingWorkspace: View {
   @State private var showingNewText = false
   @State private var newTextTitle = ""
   @State private var creatingText = false
+  @State private var splitRequest: PhoneWritingSplitRequest?
+  @State private var splitChoice: PhoneWritingSplitChoice = .text
+  @State private var splitTitle = ""
+  @State private var splitHarnessId = ""
+  @State private var creatingSplit = false
+  @State private var scrollActivityTick = 0
   private let stateStore: PhoneWritingLocalStateStore
   private let engineId: String
 
@@ -47,14 +93,20 @@ struct PhoneWritingWorkspace: View {
               ForEach(plan.leaves, id: \.identity) { leaf in
                 PhoneWritingLeaf(
                   client: client, leaf: leaf,
-                  pane: pane(withId: leaf.identity.paneId), floors: PhoneWritingMetrics.floors,
-                  onAction: { action in apply(action, to: plan) }
+                  pane: pane(withId: leaf.identity.paneId),
+                  scrollActivityTick: scrollActivityTick,
+                  onAction: { action in apply(action, to: plan) },
+                  onSplit: { axis in beginSplit(leaf: leaf, axis: axis) }
                 )
                 .phoneWritingFrame(leaf.rowRect)
               }
             }
           }
           .scrollBounceBehavior(.basedOnSize)
+          .simultaneousGesture(
+            DragGesture(minimumDistance: 3).onChanged { _ in
+              scrollActivityTick &+= 1
+            })
         }
       }
       .background(PhonePalette.canvas)
@@ -78,6 +130,7 @@ struct PhoneWritingWorkspace: View {
       }
     }
     .sheet(isPresented: $showingNewText) { newTextSheet }
+    .sheet(item: $splitRequest) { request in splitSheet(request) }
   }
 
   private var newTextSheet: some View {
@@ -104,6 +157,66 @@ struct PhoneWritingWorkspace: View {
       }
     }
     .presentationDetents([.medium])
+  }
+
+  private func splitSheet(_ request: PhoneWritingSplitRequest) -> some View {
+    NavigationStack {
+      Form {
+        Picker("Pane", selection: $splitChoice) {
+          ForEach(availableSplitChoices) { choice in
+            Text(choice.title).tag(choice)
+          }
+        }
+        if splitChoice == .agent {
+          Picker("Harness", selection: $splitHarnessId) {
+            ForEach(readyHarnesses, id: \.id) { harness in
+              Text(harness.name).tag(harness.id)
+            }
+          }
+          if readyHarnesses.isEmpty {
+            Text("No ready agent harness is available on this Mac.")
+              .foregroundStyle(PhonePalette.secondary)
+          }
+        } else {
+          TextField("Title", text: $splitTitle)
+            .textInputAutocapitalization(.sentences)
+            .accessibilityIdentifier("phone-writing-split-title")
+        }
+      }
+      .navigationTitle(request.axis == .horizontal ? "Split columns" : "Split rows")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { splitRequest = nil }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Create") { createSplit(request) }
+            .disabled(!splitIsReady || creatingSplit)
+            .accessibilityIdentifier("phone-writing-create-split")
+        }
+      }
+    }
+    .presentationDetents([.medium, .large])
+    .onChange(of: readyHarnesses.map(\.id)) { _, harnessIds in
+      guard splitChoice == .agent, !harnessIds.contains(splitHarnessId) else { return }
+      splitHarnessId = harnessIds.first ?? ""
+    }
+  }
+
+  private var readyHarnesses: [HarnessInfo] {
+    HarnessPickerModel.sections(client.harnesses)
+      .filter { $0.group == .ready || $0.group == .needsSetup }
+      .flatMap(\.items)
+  }
+
+  private var availableSplitChoices: [PhoneWritingSplitChoice] {
+    let allowed = PhoneWritingMetrics.chromePolicy.plan(kind: .text).splitKinds
+    return PhoneWritingSplitChoice.allCases.filter { allowed.contains($0.kind) }
+  }
+
+  private var splitIsReady: Bool {
+    if splitChoice == .agent { return readyHarnesses.contains { $0.id == splitHarnessId } }
+    return !splitTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
   private var workspaceName: String {
@@ -175,6 +288,66 @@ struct PhoneWritingWorkspace: View {
     }
   }
 
+  private func beginSplit(leaf: PhoneWritingLeafLayout, axis: PaneLayoutAxis) {
+    let panes = client.panes.filter { $0.workspaceId == workspaceId }
+    guard let tree = layoutTree(livePanes: panes) else {
+      client.problem = "Could not open the split chooser. The layout was not changed."
+      return
+    }
+    splitChoice = .text
+    splitTitle = ""
+    client.refreshHarnesses()
+    splitHarnessId = HarnessPickerModel.defaultHarness(in: client.harnesses)?.id ?? ""
+    splitRequest = PhoneWritingSplitRequest(
+      anchorPaneId: leaf.identity.paneId, axis: axis, baseTree: tree)
+  }
+
+  private func createSplit(_ request: PhoneWritingSplitRequest) {
+    guard splitIsReady, !creatingSplit else { return }
+    let choice = splitChoice
+    let title = splitTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    let harnessId = splitHarnessId
+    creatingSplit = true
+    Task { @MainActor in
+      defer { creatingSplit = false }
+      do {
+        let insertion = PaneLayoutProvisionalInsertion(
+          baseTree: request.baseTree,
+          placeholder: PaneLayoutLeaf(paneId: "phone-new-pane", kind: choice.kind),
+          placement: .split(anchorPaneId: request.anchorPaneId, axis: request.axis))
+        let paneId: String
+        let completed: PaneLayoutTree
+        if let section = choice.section {
+          let result = try await client.createWritingDocument(
+            workspaceId: workspaceId, section: section, title: title,
+            selectPane: false)
+          paneId = result.pane.paneId
+          completed = try insertion.completedTree(
+            with: PaneLayoutLeaf(paneId: paneId, kind: choice.kind),
+            sizing: PhoneWritingMetrics.sizing)
+          let identity = PhoneWritingIdentity(
+            paneId: paneId, fileId: result.document.file.fileId)
+          let state = (localState ?? PhoneWritingLocalState()).opening(identity)
+          localState = state
+          persist(state)
+        } else {
+          guard let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId })
+          else { throw PhoneWritingSplitFailure.missingWorkspace }
+          paneId = try await client.createAgentPaneNow(
+            directory: URL(fileURLWithPath: workspace.path), harness: harnessId,
+            model: nil, effort: nil, permission: .ask, selectPane: false)
+          completed = try insertion.completedWritingCompanionTree(
+            with: PaneLayoutLeaf(paneId: paneId, kind: .agent),
+            writingPaneId: request.anchorPaneId, sizing: PhoneWritingMetrics.sizing)
+        }
+        try client.paneLayouts.commit(tree: completed, workspaceId: workspaceId)
+        splitRequest = nil
+      } catch {
+        client.problem = "Could not create the split. The layout was not changed."
+      }
+    }
+  }
+
   private func createText() {
     let title = newTextTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !title.isEmpty, !creatingText else { return }
@@ -183,7 +356,7 @@ struct PhoneWritingWorkspace: View {
       defer { creatingText = false }
       do {
         let result = try await client.createWritingDocument(
-          workspaceId: workspaceId, section: .texts, title: title)
+          workspaceId: workspaceId, section: .texts, title: title, selectPane: false)
         let identity = PhoneWritingIdentity(
           paneId: result.pane.paneId, fileId: result.document.file.fileId)
         let state = (localState ?? PhoneWritingLocalState()).opening(identity)
@@ -195,6 +368,10 @@ struct PhoneWritingWorkspace: View {
       }
     }
   }
+}
+
+private enum PhoneWritingSplitFailure: Error {
+  case missingWorkspace
 }
 
 @MainActor
@@ -221,6 +398,9 @@ enum PhoneWritingMetrics {
   static let sizing = PaneLayoutSizingPolicy(
     floors: floors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18))
   static let policy = PhoneWritingLayoutPolicy(floors: floors)
+  static let chromePolicy = PhoneWritingChromePolicy()
+  static let bodyWritingMetrics = PhoneWritingLayoutMetrics.standard.bodyWritingMetrics()
+  static let bodyFloors = PhoneWritingLayoutMetrics.standard.bodySurfaceFloors(from: floors)
 
   static func metric(for document: WritingDocument) -> PaneLayoutFontMetric {
     document.kind == .screenplay ? fonts.screenplay : metric(for: document.font)
@@ -270,8 +450,18 @@ private struct PhoneWritingLeaf: View {
   @Bindable var client: EngineClient
   let leaf: PhoneWritingLeafLayout
   let pane: Pane?
-  let floors: [PaneLayoutKind: PaneLayoutSize]
+  let scrollActivityTick: Int
   let onAction: (PhoneWritingStateAction) -> Void
+  let onSplit: (PaneLayoutAxis) -> Void
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var chromeActivity = WritingChromeActivityState()
+  @State private var showingCloseConfirmation = false
+  @State private var showingIdeaBoard = false
+  @State private var showingScenes = false
+  @State private var presentingSlides = false
+  @State private var selectedPresentationSlide: UInt32 = 0
 
   private var writing: WritingDocumentView? {
     guard let fileId = leaf.identity.fileId else { return nil }
@@ -295,6 +485,44 @@ private struct PhoneWritingLeaf: View {
     .frame(width: leaf.rowRect.size.width, height: leaf.rowRect.size.height, alignment: .top)
     .background(PhonePalette.face, in: RoundedRectangle(cornerRadius: 18))
     .accessibilityElement(children: .contain)
+    .confirmationDialog(
+      closeTitle, isPresented: $showingCloseConfirmation, titleVisibility: .visible
+    ) {
+      Button("Close pane", role: .destructive) { closePane() }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Unsaved changes will be lost.")
+    }
+    .sheet(isPresented: $showingIdeaBoard) {
+      if let writing, let structure = writing.structure {
+        PhoneWritingIdeaBoard(
+          client: client, writing: writing, structure: structure,
+          accessibilityName: leaf.name)
+      }
+    }
+    .sheet(isPresented: $showingScenes) {
+      if let writing, let file, let structure = writing.structure {
+        PhoneWritingScenes(
+          client: client, writing: writing, file: file, structure: structure,
+          accessibilityName: leaf.name)
+      }
+    }
+    .fullScreenCover(isPresented: $presentingSlides) {
+      if let writing {
+        PhoneWritingPresentationPlayer(
+          client: client, writing: writing,
+          slides: writing.structure?.slides ?? [],
+          initialSlide: selectedPresentationSlide,
+          accessibilityName: leaf.name)
+      } else {
+        ContentUnavailableView(
+          "Presentation unavailable", systemImage: "rectangle.on.rectangle")
+      }
+    }
+    .onChange(of: scrollActivityTick) { _, _ in updateChrome(.pointerMoved) }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { updateChrome(.pointerMoved) }
+    }
     .task(
       id: leaf.expanded
         ? "\(leaf.identity.paneId):\(writing?.loadIdentity ?? "missing")" : nil
@@ -308,34 +536,67 @@ private struct PhoneWritingLeaf: View {
 
   private var header: some View {
     VStack(spacing: 0) {
-      Button {
-        toggle()
-      } label: {
-        HStack(spacing: 10) {
-          Image(systemName: icon)
-            .foregroundStyle(PhonePalette.accent)
-            .frame(width: 24)
-          Text(pane?.name ?? leaf.name)
-            .font(.system(.headline, design: .rounded))
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          if leaf.companionAgentPaneId != nil {
-            Image(systemName: "link")
+      HStack(spacing: 0) {
+        Button { toggle() } label: {
+          HStack(spacing: 8) {
+            Image(systemName: icon)
+              .font(.system(size: PhoneWritingLayoutMetrics.standard.headerKindIconSize))
               .foregroundStyle(PhonePalette.secondary)
-              .accessibilityLabel("Linked agent")
+              .frame(width: 22)
+            Text(documentFileName)
+              .font(
+                .custom(
+                  "Nunito", size: PhoneWritingLayoutMetrics.standard.headerNamePointSize,
+                  relativeTo: .subheadline
+                ).weight(.semibold)
+              )
+              .foregroundStyle(PhonePalette.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+              .frame(maxWidth: .infinity, alignment: .leading)
           }
-          Image(systemName: leaf.expanded ? "chevron.up" : "chevron.down")
-            .foregroundStyle(PhonePalette.secondary)
+          .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
+          .contentShape(Rectangle())
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(leaf.expanded ? "Expanded" : "Collapsed")
+        .accessibilityHint(leaf.expanded ? "Collapses this document" : "Opens this document")
+        .accessibilityIdentifier("phone-writing-header-\(leaf.identity.paneId)")
+
+        if let metadataLabel {
+          Text(metadataLabel)
+            .font(
+              .custom(
+                "Nunito", size: PhoneWritingLayoutMetrics.standard.headerCountPointSize,
+                relativeTo: .subheadline))
+            .foregroundStyle(PhonePalette.muted)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .layoutPriority(1)
+            .accessibilityLabel(metadataAccessibilityLabel)
+        }
+        if leaf.companionAgentPaneId != nil {
+          Image(systemName: "link")
+            .font(.system(size: 15))
+            .foregroundStyle(PhonePalette.secondary)
+            .frame(width: 30, height: 44)
+            .accessibilityLabel("Linked agent")
+        }
+        writingOptions
+        Button { toggle() } label: {
+          Image(systemName: leaf.expanded ? "chevron.up" : "chevron.down")
+            .font(.system(size: PhoneWritingLayoutMetrics.standard.headerActionIconSize))
+            .foregroundStyle(PhonePalette.secondary)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(leaf.expanded ? "Collapse document" : "Expand document")
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel(accessibilityLabel)
-      .accessibilityValue(leaf.expanded ? "Expanded" : "Collapsed")
-      .accessibilityHint(leaf.expanded ? "Collapses this document" : "Opens this document")
-      .accessibilityIdentifier("phone-writing-header-\(leaf.identity.paneId)")
+      .padding(.leading, PhoneWritingLayoutMetrics.standard.headerHorizontalInset)
+      .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+      .opacity(chromeOpacity)
 
       if leaf.companionAgentPaneId != nil {
         HStack(spacing: 0) {
@@ -346,6 +607,78 @@ private struct PhoneWritingLeaf: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Linked document and agent tabs")
       }
+    }
+  }
+
+  private var writingOptions: some View {
+    Menu {
+      ForEach(chromePlan.menuActions, id: \.rawValue) { action in
+        if action == .splitColumns || action == .closePane { Divider() }
+        writingMenuAction(action)
+      }
+    } label: {
+      Image(systemName: "ellipsis")
+        .font(.system(size: PhoneWritingLayoutMetrics.standard.headerActionIconSize))
+        .foregroundStyle(PhonePalette.secondary)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+    }
+    .accessibilityLabel("Writing options")
+    .accessibilityIdentifier("phone-writing-options-\(leaf.identity.paneId)")
+    // SwiftUI Menu has no reliable close callback. Revealing without latching a
+    // synthetic "open" state keeps the next edit free to dim the chrome.
+    .simultaneousGesture(TapGesture().onEnded { updateChrome(.pointerMoved) })
+  }
+
+  private var chromePlan: PhoneWritingChromePlan {
+    PhoneWritingMetrics.chromePolicy.plan(
+      kind: leaf.kind, fullWidth: writing?.document.fullWidth == true)
+  }
+
+  @ViewBuilder private func writingMenuAction(_ action: WritingChromeAction) -> some View {
+    switch action {
+    case .font:
+      Menu("Font") {
+        fontButton("Newsreader", .reading_serif)
+        fontButton("Classic serif", .classic_serif)
+        fontButton("Sans", .sans)
+      }
+    case .useFullWidth:
+      Button("Use full width") { setFullWidth(true) }
+    case .useReadingWidth:
+      Button("Use reading width") { setFullWidth(false) }
+    case .focusMode:
+      focusButton
+    case .ideaBoard:
+      Button("Idea board", systemImage: "rectangle.3.group") {
+        openScreenplaySheet(.ideaBoard)
+      }
+    case .scenes:
+      Button("Scenes", systemImage: "list.number") {
+        openScreenplaySheet(.scenes)
+      }
+    case .present:
+      Button("Present", systemImage: "play.rectangle") { presentSlides() }
+    case .splitColumns:
+      Button("Split columns", systemImage: "rectangle.split.2x1") {
+        updateChrome(.menuChanged(false))
+        onSplit(.horizontal)
+      }
+    case .splitRows:
+      Button("Split rows", systemImage: "rectangle.split.1x2") {
+        updateChrome(.menuChanged(false))
+        onSplit(.vertical)
+      }
+    case .closePane:
+      Button("Close pane", systemImage: "xmark", role: .destructive) { requestClose() }
+    case .bold, .italic, .heading, .list, .quote, .link, .image:
+      EmptyView()
+    }
+  }
+
+  private var focusButton: some View {
+    Button(writing?.document.focusMode == true ? "Leave Focus" : "Focus") {
+      setFocus(writing?.document.focusMode != true)
     }
   }
 
@@ -379,7 +712,10 @@ private struct PhoneWritingLeaf: View {
         PhoneWritingTextSurface(
           client: client, pane: pane, writing: writing, file: file,
           size: content.size, font: leaf.font ?? PhoneWritingMetrics.fonts.prose,
-          floors: floors, accessibilityName: leaf.name)
+          accessibilityName: leaf.name,
+          onEditingActivity: { updateChrome(.edited) },
+          onSelectionActivity: { updateChrome(.selectionChanged($0)) },
+          onScrollActivity: { updateChrome(.pointerMoved) })
       } else if leaf.kind == .screenplay {
         if let writing, let file, let structure = writing.structure,
           let content = leaf.contentRect, let pageSize = leaf.screenplayPageSize,
@@ -390,6 +726,9 @@ private struct PhoneWritingLeaf: View {
             structure: structure, viewportSize: content.size, pageSize: pageSize,
             fitScale: fitScale, zoomMultiplier: leaf.screenplayZoom,
             accessibilityName: leaf.name,
+            onEditingActivity: { updateChrome(.edited) },
+            onSelectionActivity: { updateChrome(.selectionChanged($0)) },
+            onScrollActivity: { updateChrome(.pointerMoved) },
             onZoomChanged: { zoom in
               onAction(.setScreenplayZoom(leaf.identity, zoom))
             })
@@ -403,7 +742,9 @@ private struct PhoneWritingLeaf: View {
           PhoneWritingPresentationSurface(
             client: client, writing: writing, file: file, structure: structure,
             size: content.size, font: leaf.font ?? PhoneWritingMetrics.fonts.prose,
-            floors: floors, accessibilityName: leaf.name)
+            accessibilityName: leaf.name,
+            selectedSlide: $selectedPresentationSlide,
+            onActivity: { updateChrome(.pointerMoved) })
         } else {
           writingState("Loading presentation", systemImage: "arrow.trianglehead.2.clockwise")
         }
@@ -441,6 +782,144 @@ private struct PhoneWritingLeaf: View {
     return "\(pane?.name ?? leaf.name), \(kindName)\(link)"
   }
 
+  private var documentFileName: String {
+    guard let path = writing?.document.file.path else { return pane?.name ?? leaf.name }
+    return URL(fileURLWithPath: path).lastPathComponent
+  }
+
+  private var metadataLabel: String? {
+    switch leaf.kind {
+    case .text:
+      let text = file?.viewport?.lines.map(\.text).joined(separator: "\n") ?? ""
+      let count = text.split(whereSeparator: { $0.isWhitespace }).count
+      return count == 1 ? "1 word" : "\(count) words"
+    case .screenplay:
+      let count = writing?.structure?.scenes.count ?? 0
+      return count == 1 ? "1 scene" : "\(count) scenes"
+    case .presentation:
+      let count = writing?.structure?.slides.count ?? 0
+      return count == 1 ? "1 slide" : "\(count) slides"
+    default:
+      return nil
+    }
+  }
+
+  private var metadataAccessibilityLabel: String {
+    metadataLabel ?? ""
+  }
+
+  private var chromeOpacity: Double {
+    chromeActivity.visibility == .dimmed
+      ? WritingChromeMetrics.standard.dimmedOpacity : 1
+  }
+
+  private var closeTitle: String { "Close \(documentFileName)?" }
+
+  private func updateChrome(_ event: WritingChromeActivityEvent) {
+    let before = chromeActivity.visibility
+    var updated = chromeActivity
+    updated.reduce(event)
+    let after = updated.visibility
+    let transition: PhoneWritingChromeTransition = after == .dimmed ? .dim : .reveal
+    let duration = PhoneWritingMetrics.chromePolicy.duration(
+      for: transition, reduceMotion: reduceMotion)
+    if before == after || duration == 0 {
+      chromeActivity = updated
+    } else {
+      withAnimation(.easeInOut(duration: duration)) { chromeActivity = updated }
+    }
+  }
+
+  private func fontButton(_ title: String, _ font: WritingFont) -> some View {
+    Button {
+      setFont(font)
+    } label: {
+      if writing?.document.font == font {
+        Label(title, systemImage: "checkmark")
+      } else {
+        Text(title)
+      }
+    }
+  }
+
+  private func setFont(_ font: WritingFont) {
+    guard let fileId = writing?.document.file.fileId else { return }
+    updateChrome(.menuChanged(false))
+    Task { @MainActor in
+      do { _ = try await client.setWritingPreferences(fileId: fileId, font: font) } catch {
+        client.problem = "Could not change the document font."
+      }
+    }
+  }
+
+  private func setFullWidth(_ enabled: Bool) {
+    guard let fileId = writing?.document.file.fileId else { return }
+    updateChrome(.menuChanged(false))
+    Task { @MainActor in
+      do { _ = try await client.setWritingPreferences(fileId: fileId, fullWidth: enabled) } catch {
+        client.problem = "Could not change the document width."
+      }
+    }
+  }
+
+  private func setFocus(_ enabled: Bool) {
+    guard let fileId = writing?.document.file.fileId else { return }
+    updateChrome(.menuChanged(false))
+    Task { @MainActor in
+      do { _ = try await client.setWritingPreferences(fileId: fileId, focusMode: enabled) } catch {
+        client.problem = "Could not change Focus."
+      }
+    }
+  }
+
+  private enum ScreenplaySheet {
+    case ideaBoard
+    case scenes
+  }
+
+  private func openScreenplaySheet(_ sheet: ScreenplaySheet) {
+    updateChrome(.menuChanged(false))
+    Task { @MainActor in
+      do {
+        try await client.loadWritingPane(leaf.identity.paneId)
+        switch sheet {
+        case .ideaBoard: showingIdeaBoard = true
+        case .scenes: showingScenes = true
+        }
+      } catch {
+        client.problem = "Could not load the screenplay."
+      }
+    }
+  }
+
+  private func presentSlides() {
+    updateChrome(.menuChanged(false))
+    Task { @MainActor in
+      do {
+        try await client.loadWritingPane(leaf.identity.paneId)
+        presentingSlides = true
+      } catch {
+        client.problem = "Could not load the presentation."
+      }
+    }
+  }
+
+  private func requestClose() {
+    updateChrome(.menuChanged(false))
+    let dirty = file?.file.dirty == true
+    switch WritingChromePolicy().closeDisposition(fileName: documentFileName, dirty: dirty) {
+    case .closeImmediately: closePane()
+    case .confirm: showingCloseConfirmation = true
+    }
+  }
+
+  private func closePane() {
+    Task { @MainActor in
+      if let fileId = leaf.identity.fileId { await client.flushEditorEdits(fileId: fileId) }
+      client.closePane(leaf.identity.paneId)
+    }
+  }
+
   private func tabButton(
     _ tab: PhoneWritingTab, title: String, systemImage: String
   ) -> some View {
@@ -465,6 +944,7 @@ private struct PhoneWritingLeaf: View {
   }
 
   private func toggle() {
+    updateChrome(.pointerMoved)
     Task { @MainActor in
       if leaf.expanded, let fileId = leaf.identity.fileId {
         await client.flushEditorEdits(fileId: fileId)
@@ -482,18 +962,22 @@ private struct PhoneWritingTextSurface: View {
   let file: EditorFileView?
   let size: PaneLayoutSize
   let font: PaneLayoutFontMetric
-  let floors: [PaneLayoutKind: PaneLayoutSize]
   let accessibilityName: String
+  let onEditingActivity: () -> Void
+  let onSelectionActivity: (Bool) -> Void
+  let onScrollActivity: () -> Void
+
+  @State private var destinationRequest: PhoneWritingDestinationRequest?
+  @State private var destination = ""
 
   private var plan: WritingLayoutPlan? {
     try? WritingLayoutPolicy(
-      floors: floors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18)
+      metrics: PhoneWritingMetrics.bodyWritingMetrics,
+      floors: PhoneWritingMetrics.bodyFloors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18)
     ).layout(
       WritingLayoutRequest(
         kind: .text,
-        viewport: PaneLayoutSize(
-          width: size.width,
-          height: size.height + WritingLayoutMetrics.standard.headerHeight),
+        viewport: size,
         font: font, fullWidth: writing.document.fullWidth,
         reviewVisible: file?.review != nil))
   }
@@ -501,64 +985,58 @@ private struct PhoneWritingTextSurface: View {
   var body: some View {
     if let plan, case .text(let textPlan) = plan.surface {
       ZStack(alignment: .topLeading) {
-        PhonePalette.canvas
-        if let toolbar = translated(plan.toolbarRect) {
-          toolbarView.phoneWritingFrame(toolbar)
-        }
-        if let review = translated(plan.reviewRect) {
+        PhonePalette.face
+        if let review = plan.reviewRect {
           reviewView.phoneWritingFrame(review)
         }
         if let file, file.viewport != nil {
           PhoneWritingTextEditor(
             client: client, view: file, document: writing.document,
-            accessibilityName: accessibilityName
+            accessibilityName: accessibilityName,
+            onEditingActivity: onEditingActivity,
+            onSelectionActivity: onSelectionActivity,
+            onScrollActivity: onScrollActivity,
+            onFormat: { kind, range in apply(kind, range: range) },
+            onDestination: { kind, range in
+              destination = ""
+              destinationRequest = PhoneWritingDestinationRequest(kind: kind, range: range)
+            }
           )
-          .phoneWritingFrame(translated(textPlan.columnRect))
+          .phoneWritingFrame(textPlan.columnRect)
           .clipShape(RoundedRectangle(cornerRadius: 10))
           .accessibilityIdentifier("phone-writing-text-\(writing.document.file.paneId)")
         } else {
-          ProgressView().phoneWritingFrame(translated(textPlan.columnRect))
+          ProgressView().phoneWritingFrame(textPlan.columnRect)
         }
       }
       .frame(width: size.width, height: size.height, alignment: .topLeading)
+      .sheet(item: $destinationRequest) { request in
+        NavigationStack {
+          Form {
+            TextField(
+              request.kind == .image ? "Image path" : "Link destination",
+              text: $destination)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+          }
+          .navigationTitle(request.kind == .image ? "Insert image" : "Add link")
+          .navigationBarTitleDisplayMode(.inline)
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("Cancel") { destinationRequest = nil }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+              Button("Apply") {
+                apply(request.kind, range: request.range, value: destination)
+                destinationRequest = nil
+              }
+              .disabled(destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+          }
+        }
+        .presentationDetents([.medium])
+      }
     }
-  }
-
-  private var toolbarView: some View {
-    HStack(spacing: 8) {
-      Menu {
-        fontButton("Newsreader", .reading_serif)
-        fontButton("Classic serif", .classic_serif)
-        fontButton("Sans", .sans)
-      } label: {
-        Label(fontLabel, systemImage: "textformat")
-          .lineLimit(1)
-      }
-      Spacer(minLength: 4)
-      if file?.conflict != nil {
-        Image(systemName: "exclamationmark.triangle.fill")
-          .foregroundStyle(PhonePalette.warning)
-          .accessibilityLabel("File conflict")
-      }
-      Button {
-        setFullWidth(!writing.document.fullWidth)
-      } label: {
-        Image(
-          systemName: writing.document.fullWidth
-            ? "arrow.down.right.and.arrow.up.left"
-            : "arrow.up.left.and.arrow.down.right"
-        )
-        .frame(width: 32, height: 32)
-      }
-      .accessibilityLabel(
-        writing.document.fullWidth ? "Use reading width" : "Use full width"
-      )
-      .accessibilityIdentifier("phone-writing-full-width-\(writing.document.file.paneId)")
-    }
-    .font(.system(.subheadline, design: .rounded, weight: .semibold))
-    .foregroundStyle(PhonePalette.secondary)
-    .padding(.horizontal, 10)
-    .background(PhonePalette.face, in: RoundedRectangle(cornerRadius: 10))
   }
 
   private var reviewView: some View {
@@ -570,55 +1048,26 @@ private struct PhoneWritingTextSurface: View {
       .background(PhonePalette.face, in: RoundedRectangle(cornerRadius: 10))
   }
 
-  private var fontLabel: String {
-    switch writing.document.font {
-    case .reading_serif: "Newsreader"
-    case .classic_serif: "Classic serif"
-    case .sans: "Sans"
-    }
-  }
-
-  private func fontButton(_ title: String, _ font: WritingFont) -> some View {
-    Button {
-      setFont(font)
-    } label: {
-      if writing.document.font == font {
-        Label(title, systemImage: "checkmark")
-      } else {
-        Text(title)
-      }
-    }
-  }
-
-  private func setFont(_ font: WritingFont) {
+  private func apply(
+    _ kind: WritingFormatKind, range: SoyehtProtocol.TextRange, value: String? = nil
+  ) {
     let fileId = writing.document.file.fileId
     Task { @MainActor in
-      do { _ = try await client.setWritingPreferences(fileId: fileId, font: font) } catch {
-        client.problem = "Could not change the document font."
+      do {
+        _ = try await client.formatWritingDocument(
+          fileId: fileId, range: range, kind: kind, value: value)
+      } catch {
+        client.problem = "Could not format the selected text."
       }
     }
   }
 
-  private func setFullWidth(_ enabled: Bool) {
-    let fileId = writing.document.file.fileId
-    Task { @MainActor in
-      do { _ = try await client.setWritingPreferences(fileId: fileId, fullWidth: enabled) } catch {
-        client.problem = "Could not change the document width."
-      }
-    }
-  }
+}
 
-  private func translated(_ rect: PaneLayoutRect?) -> PaneLayoutRect? {
-    rect.map(translated)
-  }
-
-  private func translated(_ rect: PaneLayoutRect) -> PaneLayoutRect {
-    PaneLayoutRect(
-      origin: PaneLayoutPoint(
-        x: rect.origin.x,
-        y: rect.origin.y - WritingLayoutMetrics.standard.headerHeight),
-      size: rect.size)
-  }
+private struct PhoneWritingDestinationRequest: Identifiable {
+  let id = UUID()
+  let kind: WritingFormatKind
+  let range: SoyehtProtocol.TextRange
 }
 
 @MainActor
@@ -627,6 +1076,11 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
   let view: EditorFileView
   let document: WritingDocument
   let accessibilityName: String
+  let onEditingActivity: () -> Void
+  let onSelectionActivity: (Bool) -> Void
+  let onScrollActivity: () -> Void
+  let onFormat: (WritingFormatKind, SoyehtProtocol.TextRange) -> Void
+  let onDestination: (WritingFormatKind, SoyehtProtocol.TextRange) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -664,6 +1118,7 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
       textView.keyboardDismissMode = .interactive
       textView.autocorrectionType = .yes
       textView.spellCheckingType = .yes
+      textView.indicatorStyle = .default
       return textView
     }
 
@@ -699,7 +1154,97 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
       else { return false }
       source = EditorEditing.applying(plan.replacements, to: source)
       parent.client.enqueueEditorEdits(fileId: parent.view.file.fileId, edits: plan.edits)
+      parent.onEditingActivity()
       return true
+    }
+
+    func textViewDidChangeSelection(_ textView: UITextView) {
+      parent.onSelectionActivity(textView.selectedRange.length > 0)
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+      parent.onScrollActivity()
+    }
+
+    func textView(
+      _ textView: UITextView, editMenuForTextIn range: NSRange,
+      suggestedActions: [UIMenuElement]
+    ) -> UIMenu? {
+      guard range.length > 0, let wireRange = wireRange(range) else {
+        return UIMenu(children: suggestedActions)
+      }
+      let actions = PhoneWritingMetrics.chromePolicy.plan(
+        kind: .text, hasSelection: true
+      ).selectionActions
+      let format = UIMenu(
+        title: "Format", options: .displayInline,
+        children: actions.compactMap { menuElement(for: $0, range: wireRange) })
+      return UIMenu(children: suggestedActions + [format])
+    }
+
+    private func menuElement(
+      for chromeAction: WritingChromeAction, range: SoyehtProtocol.TextRange
+    ) -> UIMenuElement? {
+      switch chromeAction {
+      case .bold:
+        action("Bold", image: "bold", kind: .bold, range: range)
+      case .italic:
+        action("Italic", image: "italic", kind: .italic, range: range)
+      case .heading:
+        UIMenu(
+          title: "Heading", image: UIImage(systemName: "textformat.size"),
+          children: [
+            action("Heading 1", kind: .heading1, range: range),
+            action("Heading 2", kind: .heading2, range: range),
+            action("Heading 3", kind: .heading3, range: range),
+          ])
+      case .list:
+        UIMenu(
+          title: "List", image: UIImage(systemName: "list.bullet"),
+          children: [
+            action("Bulleted list", kind: .bullet_list, range: range),
+            action("Numbered list", kind: .numbered_list, range: range),
+          ])
+      case .quote:
+        action("Quote", image: "text.quote", kind: .quote, range: range)
+      case .link:
+        destinationAction("Link", image: "link", kind: .link, range: range)
+      case .image:
+        destinationAction("Image", image: "photo", kind: .image, range: range)
+      case .font, .useFullWidth, .useReadingWidth, .focusMode, .ideaBoard, .scenes,
+        .present, .splitColumns, .splitRows, .closePane:
+        nil
+      }
+    }
+
+    private func action(
+      _ title: String, image: String? = nil, kind: WritingFormatKind,
+      range: SoyehtProtocol.TextRange
+    ) -> UIAction {
+      UIAction(title: title, image: image.flatMap(UIImage.init(systemName:))) { [weak self] _ in
+        guard let self else { return }
+        Task { @MainActor in self.parent.onFormat(kind, range) }
+      }
+    }
+
+    private func destinationAction(
+      _ title: String, image: String, kind: WritingFormatKind,
+      range: SoyehtProtocol.TextRange
+    ) -> UIAction {
+      UIAction(title: title, image: UIImage(systemName: image)) { [weak self] _ in
+        guard let self else { return }
+        Task { @MainActor in self.parent.onDestination(kind, range) }
+      }
+    }
+
+    private func wireRange(_ range: NSRange) -> SoyehtProtocol.TextRange? {
+      guard
+        let start = EditorEditing.textPosition(
+          text: source, viewportStartLine: firstLine, utf16Offset: range.location),
+        let end = EditorEditing.textPosition(
+          text: source, viewportStartLine: firstLine, utf16Offset: NSMaxRange(range))
+      else { return nil }
+      return SoyehtProtocol.TextRange(start: start, end: end)
     }
 
     private func attributes() -> [NSAttributedString.Key: Any] {
@@ -720,6 +1265,100 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
       }
       return NSRange(location: range.location, length: min(range.length, length - range.location))
     }
+  }
+}
+
+@MainActor
+private struct PhoneWritingScenes: View {
+  @Bindable var client: EngineClient
+  let writing: WritingDocumentView
+  let file: EditorFileView
+  let structure: WritingStructureResult
+  let accessibilityName: String
+
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      List(structure.scenes, id: \.sceneId) { scene in
+        Button {
+          open(scene)
+        } label: {
+          HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("\(scene.ordinal + 1)")
+              .font(.subheadline.monospacedDigit().bold())
+              .foregroundStyle(PhonePalette.muted)
+            Text(scene.heading.isEmpty ? "Untitled scene" : scene.heading)
+              .lineLimit(2)
+          }
+          .frame(minHeight: 44)
+        }
+        .accessibilityLabel(
+          "Scene \(scene.ordinal + 1), "
+            + (scene.heading.isEmpty ? "Untitled scene" : scene.heading))
+      }
+      .navigationTitle("Scenes")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+      }
+    }
+    .accessibilityLabel("\(accessibilityName), scenes")
+  }
+
+  private func open(_ scene: ScreenplayScene) {
+    Task { @MainActor in
+      do {
+        try await client.loadEditorViewport(
+          fileId: writing.document.file.fileId, fromLine: scene.line)
+        dismiss()
+      } catch {
+        client.problem = "Could not open that scene."
+      }
+    }
+  }
+}
+
+@MainActor
+private struct PhoneWritingIdeaBoard: View {
+  @Bindable var client: EngineClient
+  let writing: WritingDocumentView
+  let structure: WritingStructureResult
+  let accessibilityName: String
+
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      Group {
+        if structure.beats.isEmpty {
+          ContentUnavailableView("No ideas", systemImage: "rectangle.3.group")
+        } else {
+          List(structure.beats.sorted { $0.order < $1.order }, id: \.beatId) { beat in
+            VStack(alignment: .leading, spacing: 5) {
+              Text(beat.title.isEmpty ? "Untitled idea" : beat.title)
+                .font(.headline)
+              if !beat.body.isEmpty {
+                Text(beat.body)
+                  .font(.subheadline)
+                  .foregroundStyle(PhonePalette.secondary)
+                  .lineLimit(3)
+              }
+              Text(String(describing: beat.category).capitalized)
+                .font(.caption)
+                .foregroundStyle(PhonePalette.muted)
+            }
+            .frame(minHeight: 44, alignment: .leading)
+          }
+        }
+      }
+      .navigationTitle("Idea board")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+      }
+    }
+    .accessibilityLabel("\(accessibilityName), idea board")
   }
 }
 
