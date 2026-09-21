@@ -388,6 +388,7 @@ struct WritingScreenplayPane: View {
       .neoRaised(radius: MacTheme.Radius.pill)
     }
     .menuStyle(.borderlessButton)
+    .menuIndicator(.hidden)
     .accessibilityLabel("Screenplay element")
     .accessibilityIdentifier("writing-screenplay-element-\(pane.paneId)")
   }
