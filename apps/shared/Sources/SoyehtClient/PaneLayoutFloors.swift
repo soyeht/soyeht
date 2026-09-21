@@ -98,9 +98,6 @@ public enum PaneLayoutContentMetrics {
 
   public static let textFontPointSize = 20.0
   public static let textLineHeight = 32.0
-  /// Legacy ruler retained only while presentation migrates in E3.
-  /// Text and screenplay no longer include fixed toolbars in their layout or floor.
-  public static let textToolbarHeight = 42.0
   public static let textReviewHeight = editorReviewHeight
   public static let textPageInset = 16.0
   public static let textReadingCharacters = 66.0
@@ -117,9 +114,10 @@ public enum PaneLayoutContentMetrics {
   public static let screenplayInlineElementMenuHeight = 30.0
   public static let screenplayInlineElementMenuInset = 12.0
   public static let screenplayInlineControlGap = 6.0
+  /// Keeps the 30 pt inline controls clear of the preceding 27 pt screenplay line.
+  public static let screenplayInlineAnchorClearance = 3.0
   public static let screenplaySmartTypeFontPointSize = 11.0
 
-  public static let presentationHeaderHeight = 42.0
   public static let presentationNumericRailHeight = 32.0
   public static let presentationStage = PaneLayoutSize(width: 320, height: 180)
   public static let presentationMaximumStage = PaneLayoutSize(width: 1024, height: 576)
@@ -205,7 +203,7 @@ public enum PaneLayoutFloorFormula {
         + ceil(screenplayWidth * PaneLayoutContentMetrics.screenplayPageRatio))
     let presentation = PaneLayoutSize(
       width: PaneLayoutContentMetrics.presentationStage.width + 2 * paneCardInset,
-      height: PaneLayoutContentMetrics.presentationHeaderHeight
+      height: PaneLayoutContentMetrics.writingHeaderHeight
         + PaneLayoutContentMetrics.presentationNumericRailHeight
         + PaneLayoutContentMetrics.presentationStage.height
         + PaneLayoutContentMetrics.presentationFooterHeight + 2 * paneCardInset)

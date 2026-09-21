@@ -15,6 +15,9 @@ struct WritingPresentationPane: View {
   @State private var activeLine: UInt32 = 0
   @State private var targetLine: UInt32?
   @State private var presenting = false
+  @State private var showingOptions = false
+  @State private var showingCloseConfirmation = false
+  @State private var chromeActivity = WritingChromeActivityState()
 
   private var writing: WritingDocumentView? {
     client.writingDocuments.values.first { $0.document.file.paneId == pane.paneId }
@@ -45,7 +48,7 @@ struct WritingPresentationPane: View {
         .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       } else {
         VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
-          presentationHeader(compact: false)
+          presentationHeader(document: writing?.document)
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(PaneLayoutContentMetrics.paneCardInset)
@@ -53,11 +56,23 @@ struct WritingPresentationPane: View {
       }
     }
     .task(id: writingLoadKey) { await loadIfNeeded() }
+    .onChange(of: showingOptions) { _, value in
+      updateChrome(.menuChanged(value))
+    }
+    .onChange(of: presenting) { _, value in
+      updateChrome(.popoverChanged(value))
+    }
     .sheet(isPresented: $presenting) {
       if let fileId = writing?.document.file.fileId {
         WritingSlideShow(
           client: client, fileId: fileId, slides: slides, initialIndex: selectedSlide)
       }
+    }
+    .alert("Close \(documentFileName)?", isPresented: $showingCloseConfirmation) {
+      Button("Cancel", role: .cancel) {}
+      Button("Close", role: .destructive) { client.closePane(pane.paneId) }
+    } message: {
+      Text("Unsaved changes will be lost.")
     }
   }
 
@@ -82,9 +97,9 @@ struct WritingPresentationPane: View {
       Color.clear
         .frame(width: plan.contentSize.width, height: plan.contentSize.height)
         .allowsHitTesting(false)
-      MacTheme.canvas
+      MacTheme.face
         .writingFrame(plan.contentRect)
-      presentationHeader(compact: presentationPlan.navigation == .numbers)
+      presentationHeader(document: writing?.document)
         .writingFrame(plan.headerRect)
       if presentationPlan.navigation == .thumbnails {
         slideRail
@@ -115,22 +130,106 @@ struct WritingPresentationPane: View {
       alignment: .topLeading
     )
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+    .onContinuousHover { phase in
+      if case .active = phase { updateChrome(.pointerMoved) }
+    }
   }
 
-  private func presentationHeader(compact: Bool) -> some View {
-    WritingPaneHeader(
-      paneId: pane.paneId, title: pane.name, icon: "rectangle.on.rectangle.angled",
-      metadata: compact ? nil : "\(slides.count) slides", fullWidth: nil,
+  private func presentationHeader(document: WritingDocument?) -> some View {
+    WritingChromeHeader(
+      paneId: pane.paneId, title: documentFileName,
+      metadata: document == nil ? nil : slideCountLabel,
+      companionLinked: companionLinked, opacity: chromeOpacity,
       headerDrag: headerDrag,
-      companionLinked: companionLinked,
-      auxiliaryAction: WritingPaneHeaderAction(
-        title: "Present", systemImage: "play.fill", help: "Present slides",
-        accessibilityIdentifier: "writing-present-\(pane.paneId)",
-        disabled: slides.isEmpty,
-        action: { presenting = true }),
-      mutationDisabled: !client.connected,
-      layoutActionsDisabled: !client.connected || layoutActionsDisabled,
-      onToggleFullWidth: nil, onSplit: onSplit, onClose: onClose)
+      onHover: { updateChrome(.headerHoverChanged($0)) },
+      trailing: {
+        Button {
+          showingOptions.toggle()
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.system(size: WritingChromeMetrics.standard.headerMenuIconSize))
+            .foregroundStyle(MacTheme.secondary)
+            .frame(
+              width: WritingChromeMetrics.standard.headerMenuTargetSize,
+              height: WritingChromeMetrics.standard.headerMenuTargetSize
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("Presentation options")
+        .accessibilityLabel("Presentation options menu")
+        .accessibilityIdentifier("writing-options-\(pane.paneId)")
+        .popover(isPresented: $showingOptions, arrowEdge: .bottom) {
+          presentationOptions
+        }
+      })
+  }
+
+  private var presentationOptions: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      optionButton(
+        "Present", icon: "play.fill", disabled: slides.isEmpty,
+        identifier: "writing-present-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        presenting = true
+      }
+      Divider().padding(.vertical, MacTheme.Space.x3)
+      optionButton(
+        "Split into columns", icon: "rectangle.split.2x1",
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "split-pane-columns-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        onSplit(pane.paneId, .columns)
+      }
+      optionButton(
+        "Split into rows", icon: "rectangle.split.1x2",
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "split-pane-rows-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        onSplit(pane.paneId, .rows)
+      }
+      Divider().padding(.vertical, MacTheme.Space.x3)
+      optionButton(
+        "Close pane", icon: "xmark", role: .destructive,
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "close-pane-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        requestClose()
+      }
+    }
+    .padding(MacTheme.Space.x8)
+    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
+    .background(MacTheme.face)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Presentation options menu")
+  }
+
+  private func optionLabel(_ title: String, icon: String) -> some View {
+    Label(title, systemImage: icon)
+      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+      .foregroundStyle(MacTheme.ink)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: PaneLayoutContentMetrics.writingOptionsRowHeight,
+        alignment: .leading
+      )
+      .contentShape(Rectangle())
+  }
+
+  private func optionButton(
+    _ title: String, icon: String, role: ButtonRole? = nil,
+    disabled: Bool = false, identifier: String, action: @escaping () -> Void
+  ) -> some View {
+    Button(role: role, action: action) { optionLabel(title, icon: icon) }
+      .buttonStyle(.plain)
+      .focusable(false)
+      .disabled(disabled)
+      .accessibilityIdentifier(identifier)
   }
 
   private func scrollAxes(_ plan: WritingLayoutPlan) -> Axis.Set {
@@ -162,9 +261,10 @@ struct WritingPresentationPane: View {
           }
         }
         .padding(MacTheme.Space.x4)
+        .forceEnclosingOverlayScrollers()
       }
     }
-    .padding(MacTheme.Space.x12).background(MacTheme.canvas)
+    .padding(MacTheme.Space.x12).background(MacTheme.face)
   }
 
   private var slideNumberStrip: some View {
@@ -191,14 +291,16 @@ struct WritingPresentationPane: View {
       }
       .fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, MacTheme.Space.x10)
+      .forceEnclosingOverlayScrollers()
     }
     .scrollIndicators(.hidden)
-    .background(MacTheme.canvas)
+    .background(MacTheme.face)
   }
 
   private func presentationStage(_ file: EditorFileView) -> some View {
     WritingPresentationViewport(
-      client: client, view: file, activeLine: $activeLine, targetLine: $targetLine
+      client: client, view: file, activeLine: $activeLine, targetLine: $targetLine,
+      onEditingActivity: { updateChrome(.edited) }
     )
     .background(MacTheme.face)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
@@ -224,7 +326,42 @@ struct WritingPresentationPane: View {
     .font(MacTheme.chrome(MacTheme.TypeScale.micro))
     .foregroundStyle(MacTheme.muted)
     .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: PaneLayoutContentMetrics.presentationFooterHeight).background(MacTheme.canvas)
+    .frame(height: PaneLayoutContentMetrics.presentationFooterHeight).background(MacTheme.face)
+  }
+
+  private var documentFileName: String {
+    guard let path = writing?.document.file.path else { return pane.name }
+    return URL(fileURLWithPath: path).lastPathComponent
+  }
+
+  private var slideCountLabel: String {
+    slides.count == 1 ? "1 slide" : "\(slides.count) slides"
+  }
+
+  private var chromeOpacity: Double {
+    chromeActivity.visibility == .dimmed
+      ? WritingChromeMetrics.standard.dimmedOpacity : 1
+  }
+
+  private func updateChrome(_ event: WritingChromeActivityEvent) {
+    var next = chromeActivity
+    next.reduce(event)
+    let duration =
+      next.visibility == .dimmed
+      ? WritingChromeMetrics.standard.dimDuration
+      : WritingChromeMetrics.standard.revealDuration
+    withAnimation(.easeOut(duration: duration)) { chromeActivity = next }
+  }
+
+  private func requestClose() {
+    switch WritingChromePolicy().closeDisposition(
+      fileName: documentFileName, dirty: file?.file.dirty == true)
+    {
+    case .closeImmediately:
+      client.closePane(pane.paneId)
+    case .confirm:
+      showingCloseConfirmation = true
+    }
   }
 
   private func select(_ slide: WritingSlide) {
@@ -347,6 +484,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
   let view: EditorFileView
   @Binding var activeLine: UInt32
   @Binding var targetLine: UInt32?
+  let onEditingActivity: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeNSView(context: Context) -> NSScrollView { context.coordinator.makeScrollView() }
@@ -416,6 +554,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
       guard NSMaxRange(range) <= raw.length,
         let start = position(range.location), let end = position(NSMaxRange(range))
       else { return false }
+      parent.onEditingActivity()
       source = raw.replacingCharacters(in: range, with: replacement)
       let cursor = range.location + replacement.utf16.count
       parent.client.enqueueEditorEdits(

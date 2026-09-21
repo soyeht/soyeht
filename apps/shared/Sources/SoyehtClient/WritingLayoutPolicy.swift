@@ -34,7 +34,6 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
   public var paneInset: Double
   public var stackSpacing: Double
 
-  public var textToolbarHeight: Double
   public var textReviewHeight: Double
   public var textPageInset: Double
   public var textReadingCharacters: Double
@@ -58,7 +57,7 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
 
   public init(
     headerHeight: Double, paneInset: Double, stackSpacing: Double,
-    textToolbarHeight: Double, textReviewHeight: Double, textPageInset: Double,
+    textReviewHeight: Double, textPageInset: Double,
     textReadingCharacters: Double, textCompactCharacters: Double, textCompactLines: Double,
     screenplayColumns: Double, screenplayPageHorizontalInset: Double,
     screenplayPageRatio: Double, screenplayMinimumScale: Double,
@@ -70,7 +69,6 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
     self.headerHeight = headerHeight
     self.paneInset = paneInset
     self.stackSpacing = stackSpacing
-    self.textToolbarHeight = textToolbarHeight
     self.textReviewHeight = textReviewHeight
     self.textPageInset = textPageInset
     self.textReadingCharacters = textReadingCharacters
@@ -94,7 +92,6 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
     headerHeight: PaneLayoutContentMetrics.writingHeaderHeight,
     paneInset: PaneLayoutContentMetrics.paneCardInset,
     stackSpacing: PaneLayoutContentMetrics.paneStackSpacing,
-    textToolbarHeight: PaneLayoutContentMetrics.textToolbarHeight,
     textReviewHeight: PaneLayoutContentMetrics.textReviewHeight,
     textPageInset: PaneLayoutContentMetrics.textPageInset,
     textReadingCharacters: PaneLayoutContentMetrics.textReadingCharacters,

@@ -57,6 +57,7 @@ private let chromePolicy = WritingChromePolicy()
   #expect(PaneLayoutContentMetrics.screenplayInlineElementMenuHeight == 30)
   #expect(PaneLayoutContentMetrics.screenplayInlineElementMenuInset == 12)
   #expect(PaneLayoutContentMetrics.screenplayInlineControlGap == 6)
+  #expect(PaneLayoutContentMetrics.screenplayInlineAnchorClearance == 3)
   #expect(PaneLayoutContentMetrics.screenplaySmartTypeFontPointSize == 11)
 }
 
