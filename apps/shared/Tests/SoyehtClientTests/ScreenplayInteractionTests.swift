@@ -81,6 +81,21 @@ import Testing
     ScreenplayInteraction.suggestionKind(at: 0, in: emptyScreenplayStructure()) == .scene_heading)
 }
 
+@Test func screenplayEditRequestNeverCrossesAFileOrReloadedViewport() {
+  #expect(
+    ScreenplayInteraction.editRequestMatchesViewport(
+      requestFileId: "file-1", requestRevision: "4",
+      viewportFileId: "file-1", viewportRevision: "4"))
+  #expect(
+    !ScreenplayInteraction.editRequestMatchesViewport(
+      requestFileId: "file-1", requestRevision: "4",
+      viewportFileId: "file-1", viewportRevision: "5"))
+  #expect(
+    !ScreenplayInteraction.editRequestMatchesViewport(
+      requestFileId: "file-1", requestRevision: "4",
+      viewportFileId: "file-2", viewportRevision: "4"))
+}
+
 @Test func screenplayVariantCyclingWrapsWithoutChangingTheWriterSelection() {
   let variants = screenplayStructure().variants[0]
   #expect(ScreenplayInteraction.adjacentVariant(in: variants, delta: 1)?.variantId == "v3")

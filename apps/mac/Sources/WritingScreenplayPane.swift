@@ -29,6 +29,7 @@ struct WritingScreenplayPane: View {
   @State private var chromeActivity = WritingChromeActivityState()
   @State private var elementMenuAnchor: PaneLayoutPoint?
   @State private var showingElementMenu = false
+  @State private var showingElementKindPicker = false
   @State private var smartTypeKind: ScreenplayElementKind = .action
   @State private var smartTypeSuggestions: [String] = []
   @State private var editRequest: ScreenplayEditRequest?
@@ -89,6 +90,9 @@ struct WritingScreenplayPane: View {
     .task(id: writingLoadKey) { await loadIfNeeded() }
     .onChange(of: headerPopover != nil) { _, value in
       updateChrome(.menuChanged(value))
+    }
+    .onChange(of: elementMenuAnchor == nil) { _, hidden in
+      if hidden { showingElementKindPicker = false }
     }
     .alert("Close \(documentFileName)?", isPresented: $showingCloseConfirmation) {
       Button("Cancel", role: .cancel) {}
@@ -281,6 +285,7 @@ struct WritingScreenplayPane: View {
   ) -> some View {
     Button(role: role, action: action) { optionLabel(title, icon: icon, active: active) }
       .buttonStyle(.plain)
+      .focusable(false)
       .disabled(disabled)
       .accessibilityIdentifier(identifier)
   }
@@ -299,12 +304,13 @@ struct WritingScreenplayPane: View {
         smartTypeKind: $smartTypeKind, smartTypeSuggestions: $smartTypeSuggestions,
         onEditingActivity: { updateChrome(.edited) })
       if let elementMenuAnchor {
-        screenplayInlineControls()
+        let controlsWidth = max(0, plan.pageRect.size.width - elementMenuAnchor.x)
+        screenplayInlineControls(availableWidth: controlsWidth)
           .frame(
-            width: plan.pageRect.size.width,
+            width: controlsWidth,
             height: PaneLayoutContentMetrics.screenplayInlineElementMenuHeight
           )
-          .position(x: plan.pageRect.size.width / 2, y: elementMenuAnchor.y)
+          .position(x: elementMenuAnchor.x + controlsWidth / 2, y: elementMenuAnchor.y)
           .zIndex(2)
       }
       if let variants = hoveredVariants(in: structure) {
@@ -330,7 +336,7 @@ struct WritingScreenplayPane: View {
     .accessibilityIdentifier("writing-screenplay-page-\(pane.paneId)")
   }
 
-  private func screenplayInlineControls() -> some View {
+  private func screenplayInlineControls(availableWidth: CGFloat) -> some View {
     ScrollView(.horizontal) {
       HStack(spacing: PaneLayoutContentMetrics.screenplayInlineControlGap) {
         if showingElementMenu { screenplayElementMenu() }
@@ -359,6 +365,7 @@ struct WritingScreenplayPane: View {
       }
       .fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, PaneLayoutContentMetrics.screenplayInlineElementMenuInset)
+      .frame(minWidth: availableWidth, alignment: .leading)
     }
     .scrollIndicators(.hidden)
     .accessibilityElement(children: .contain)
@@ -366,10 +373,8 @@ struct WritingScreenplayPane: View {
   }
 
   private func screenplayElementMenu() -> some View {
-    Menu {
-      ForEach(screenplayElementKinds, id: \.self) { kind in
-        Button(kind.label) { requestEdit(kind: kind) }
-      }
+    Button {
+      showingElementKindPicker.toggle()
     } label: {
       HStack(spacing: MacTheme.Space.x6) {
         Text(smartTypeKind.label)
@@ -387,8 +392,36 @@ struct WritingScreenplayPane: View {
       .background(MacTheme.face, in: Capsule())
       .neoRaised(radius: MacTheme.Radius.pill)
     }
-    .menuStyle(.borderlessButton)
-    .menuIndicator(.hidden)
+    .buttonStyle(.plain)
+    .focusable(false)
+    .popover(isPresented: $showingElementKindPicker, arrowEdge: .bottom) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+        ForEach(screenplayElementKinds, id: \.self) { kind in
+          Button {
+            showingElementKindPicker = false
+            requestEdit(kind: kind)
+          } label: {
+            Text(kind.label)
+              .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+              .foregroundStyle(MacTheme.ink)
+              .frame(
+                maxWidth: .infinity,
+                minHeight: PaneLayoutContentMetrics.writingOptionsRowHeight,
+                alignment: .leading
+              )
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .focusable(false)
+          .accessibilityIdentifier("writing-screenplay-element-\(kind.rawValue)-\(pane.paneId)")
+        }
+      }
+      .padding(MacTheme.Space.x8)
+      .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
+      .background(MacTheme.face)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("Screenplay elements")
+    }
     .accessibilityLabel("Screenplay element")
     .accessibilityIdentifier("writing-screenplay-element-\(pane.paneId)")
   }
@@ -401,7 +434,9 @@ struct WritingScreenplayPane: View {
   }
 
   private func requestEdit(kind: ScreenplayElementKind, text: String? = nil) {
-    editRequest = ScreenplayEditRequest(kind: kind, text: text)
+    guard let file else { return }
+    editRequest = ScreenplayEditRequest(
+      fileId: file.file.fileId, revision: file.file.revision, kind: kind, text: text)
   }
 
   private func setFocus(_ enabled: Bool) {
@@ -639,10 +674,14 @@ private struct ScreenplayVariantControl: View {
 
 private struct ScreenplayEditRequest: Equatable {
   let id = UUID()
+  let fileId: String
+  let revision: String
   let kind: ScreenplayElementKind
   let text: String?
 
-  init(kind: ScreenplayElementKind, text: String? = nil) {
+  init(fileId: String, revision: String, kind: ScreenplayElementKind, text: String? = nil) {
+    self.fileId = fileId
+    self.revision = revision
     self.kind = kind
     self.text = text
   }
@@ -725,8 +764,15 @@ private struct ScreenplayViewport: NSViewRepresentable {
       }
       if let request = parent.editRequest, request.id != appliedRequest {
         appliedRequest = request.id
-        apply(request)
+        // Consume before applying so a remounted viewport can never replay this request.
         parent.editRequest = nil
+        if ScreenplayInteraction.editRequestMatchesViewport(
+          requestFileId: request.fileId, requestRevision: request.revision,
+          viewportFileId: parent.view.file.fileId,
+          viewportRevision: parent.view.file.revision)
+        {
+          apply(request)
+        }
       }
       if let line = parent.targetLine, line >= viewport.fromLine, line < viewport.toLine {
         scroll(to: line)
@@ -993,6 +1039,14 @@ private struct ScreenplayViewport: NSViewRepresentable {
       }
       let visible = scrollView.documentVisibleRect
       let scale = CGFloat(parent.scale)
+      let pageWidth = CGFloat(parent.pageSize.width) * scale
+      let caretX =
+        (lineRect.minX + textView.textContainerOrigin.x - visible.minX) * scale
+      let controlInset = CGFloat(PaneLayoutContentMetrics.screenplayInlineElementMenuInset)
+      let controlGap = CGFloat(PaneLayoutContentMetrics.screenplayInlineControlGap)
+      let menuWidth = CGFloat(PaneLayoutContentMetrics.screenplayInlineElementMenuWidth)
+      let maximumStart = max(controlInset, pageWidth - menuWidth - controlInset)
+      let controlStart = min(max(controlInset, caretX + controlGap), maximumStart)
       let y = (lineRect.midY + textView.textContainerOrigin.y - visible.minY) * scale
       let pageHeight = CGFloat(parent.pageSize.height) * scale
       guard y >= 0, y <= pageHeight else {
@@ -1003,8 +1057,7 @@ private struct ScreenplayViewport: NSViewRepresentable {
       parent.smartTypeKind = smartTypeKind
       parent.smartTypeSuggestions = smartTypeSuggestions
       parent.elementMenuAnchor = PaneLayoutPoint(
-        x: PaneLayoutContentMetrics.screenplayInlineElementMenuInset
-          + PaneLayoutContentMetrics.screenplayInlineElementMenuWidth / 2,
+        x: controlStart,
         y: y)
     }
 

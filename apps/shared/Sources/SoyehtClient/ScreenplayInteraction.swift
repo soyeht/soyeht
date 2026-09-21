@@ -141,6 +141,15 @@ public enum ScreenplayInteraction {
     return nextKind(after: previous.kind, tab: false)
   }
 
+  /// A one-shot UI edit belongs only to the exact file viewport that issued it. A reload
+  /// advances the revision, so a request retained across a viewport remount is rejected.
+  public static func editRequestMatchesViewport(
+    requestFileId: String, requestRevision: String,
+    viewportFileId: String, viewportRevision: String
+  ) -> Bool {
+    requestFileId == viewportFileId && requestRevision == viewportRevision
+  }
+
   public static func adjacentVariant(
     in variants: WritingLineVariants, delta: Int
   ) -> WritingVariant? {
