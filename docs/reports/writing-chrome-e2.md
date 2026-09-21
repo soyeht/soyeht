@@ -2,7 +2,7 @@
 
 Date: 2026-09-20
 
-Build under test: `f34bf13` (`codex/writing-chrome-e2`)
+Build under test: `c8ebd78` (`codex/writing-chrome-e2`)
 
 Product: rewrite, bundle `com.soyeht.next.dev.mac`
 
@@ -60,8 +60,9 @@ The common dimming policy remains in force: sustained editing dims chrome to
 
 ## Pure and automated proof
 
-The focused `ScreenplayInteractionTests` passed 6/6. They cover bounded
-SmartType facts and the element kind inferred at the active line.
+The focused `ScreenplayInteractionTests` passed 7/7. They cover bounded
+SmartType facts, the element kind inferred at the active line, and rejection of
+an edit request whose file or revision no longer matches the mounted viewport.
 
 The writing and pane policy suites assert:
 
@@ -72,7 +73,7 @@ The writing and pane policy suites assert:
 - the inline menu is restricted to an empty insertion line;
 - the accepted 30/12/6/11 pt inline metrics have one named source.
 
-The full shared suite passed **232/232**, the focused pane-layout suite passed
+The full shared suite passed **234/234**, the focused pane-layout suite passed
 **67/67**, and the signed `scripts/check_mac.sh --sign` run (development team
 `ABCDE12345`) exited 0 with `BUILD SUCCEEDED`.
 
@@ -90,6 +91,24 @@ Evidence is preserved under `~/evidence-e2` on VM1.
 The seven element choices were opened from the inline menu. Selecting `MARIA`
 inserted `@MARIA` through the real edit path and immediately dismissed the
 inline row (`E2-smarttype-applied-1024.png`). The fixture was then restored.
+
+Review found two regressions and both were reproduced before correction. First,
+an applied SmartType request survived a switch to the Idea Board and could be
+replayed by a newly mounted screenplay coordinator. Edit requests now carry the
+source file and revision, are consumed before application, and are rejected if
+either identity differs from the mounted viewport. In the exact reproduction —
+insert `@MARIA`, restore the fixture externally, open Idea Board, return to
+Screenplay — the file stayed at SHA-256 `81de8d…` with `Title: Cena de teste`
+intact. A second board round trip without another insert also made zero writes.
+
+Second, the native borderless `Menu` discarded the promised raised label and
+introduced its own leading chevron. The element door is now a 148×30 raised
+button with one explicit trailing chevron and a seven-row non-focusable popover.
+At 1024 and 375 pt the control starts beyond the insertion caret, all seven rows
+remain reachable, and neither this popover nor the header options menu draws a
+focus ring on its first row. Evidence: `d8bc983-inline-ax-hidden.png`,
+`d8bc983-element-picker-7.png`, `d8bc983-options-menu-no-focus3.png`,
+`d8bc983-final-375-inline2.png`, and `d8bc983-final-375-picker.png`.
 
 The six header actions were exercised: Idea Board opened; Scenes showed all
 eight scenes; Focus changed the stored flag 0→1→0; split columns and split rows
@@ -112,17 +131,26 @@ movement, the thumb was gone and no gutter remained
 (`E2-scroll-outer-rest-375.png`). The same policy remains active on the inner
 screenplay viewport and the other two writing kinds.
 
+The inline control row owns a separate compact horizontal scroll view. On the
+review VM, the machine-wide legacy preference exposed its 19 pt horizontal
+scroller even when SwiftUI requested hidden indicators. A marker inside the
+scroll content now disables only that nearest horizontal scroller while keeping
+gesture scrolling. Accessibility inspection shows no inline `AXScrollBar` at
+1024 or 375 pt; the screenplay viewport's thin vertical overlay remains.
+
 ## Clean relaunch and handoff state
 
-Before handoff the rewrite app and both rewrite services were stopped. Logs
-were moved to
-`~/soyeht-logs-before-writing-e2-20260920-215027`; all other accumulated
+Before final handoff the rewrite app and both rewrite services were stopped.
+Logs were moved to
+`~/soyeht-logs-before-writing-e2-final-20260920-2230`; all other accumulated
 rewrite state was moved to
-`~/soyeht-state-before-writing-e2-20260920-215027`. The installed binaries and
-LaunchAgents remained. `com.soyeht.next.dev.ios.identity` was absent from the
-keychain. `harness-logs` and `experiments` were absent.
+`~/soyeht-state-before-writing-e2-final-20260920-2230`. The installed binaries,
+LaunchAgents, and external writing fixtures remained.
+`com.soyeht.next.dev.ios.identity` was absent from the keychain; `harness-logs`
+and `experiments` were absent.
 
 The clean database started at `0|0|0`. The preserved screenplay fixture was
 then opened for review, so the handoff database is `1|1|1`. Final PIDs are app
-`11647`, engine `11637`, and PTY daemon `11635`; the window is 1024×900. The app
-binary is dated 21:43:01 and the engine/PTY binaries 16:09:50.
+`14748`, engine `14612`, and PTY daemon `14610`; the window is 1024×900. The app
+binary is dated 22:21:44. The fixture is byte-identical to the accepted source
+(`81de8d425a7d02eea33c74b574e3d15096c3b9496d339edec4b4bab82791c70d`).
