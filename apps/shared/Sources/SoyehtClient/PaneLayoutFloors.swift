@@ -98,8 +98,8 @@ public enum PaneLayoutContentMetrics {
 
   public static let textFontPointSize = 20.0
   public static let textLineHeight = 32.0
-  /// Legacy ruler retained while screenplay and presentation migrate in E2/E3.
-  /// Text no longer includes a fixed toolbar in its layout or floor.
+  /// Legacy ruler retained only while presentation migrates in E3.
+  /// Text and screenplay no longer include fixed toolbars in their layout or floor.
   public static let textToolbarHeight = 42.0
   public static let textReviewHeight = editorReviewHeight
   public static let textPageInset = 16.0
@@ -109,12 +109,13 @@ public enum PaneLayoutContentMetrics {
   public static let screenplayFontPointSize = 16.0
   public static let screenplayLineHeight = 27.0
   public static let screenplayPageHorizontalInset = 74.0
-  public static let screenplayHeaderHeight = 42.0
-  public static let screenplayToolbarHeight = 60.0
-  public static let screenplaySmartTypeHeight = 34.0
   public static let screenplayPageRatio = 11.0 / 8.5
   public static let screenplayMinimumScale = 7.5 / screenplayFontPointSize
   public static let screenplaySceneRailWidth = 330.0
+  public static let screenplaySceneDrawerHeight = 420.0
+  public static let screenplayInlineElementMenuWidth = 148.0
+  public static let screenplayInlineElementMenuHeight = 28.0
+  public static let screenplayInlineElementMenuInset = 8.0
 
   public static let presentationHeaderHeight = 42.0
   public static let presentationNumericRailHeight = 32.0
@@ -198,9 +199,8 @@ public enum PaneLayoutFloorFormula {
     let screenplayWidth = ceil(screenplayPageWidth * screenplayZoom)
     let screenplay = PaneLayoutSize(
       width: screenplayWidth,
-      height: PaneLayoutContentMetrics.screenplayHeaderHeight
-        + PaneLayoutContentMetrics.screenplayToolbarHeight
-        + PaneLayoutContentMetrics.screenplaySmartTypeHeight + ceil(screenplayWidth * 11 / 8.5))
+      height: PaneLayoutContentMetrics.writingHeaderHeight
+        + ceil(screenplayWidth * PaneLayoutContentMetrics.screenplayPageRatio))
     let presentation = PaneLayoutSize(
       width: PaneLayoutContentMetrics.presentationStage.width + 2 * paneCardInset,
       height: PaneLayoutContentMetrics.presentationHeaderHeight

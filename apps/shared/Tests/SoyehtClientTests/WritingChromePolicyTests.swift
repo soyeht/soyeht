@@ -29,6 +29,13 @@ private let chromePolicy = WritingChromePolicy()
     ])
 }
 
+@Test func screenplayElementMenuOnlyAppearsForAnEmptyInsertionLine() {
+  #expect(chromePolicy.showsScreenplayElementMenu(lineText: "", selectionLength: 0))
+  #expect(chromePolicy.showsScreenplayElementMenu(lineText: "   \t", selectionLength: 0))
+  #expect(!chromePolicy.showsScreenplayElementMenu(lineText: "INT. SHOP", selectionLength: 0))
+  #expect(!chromePolicy.showsScreenplayElementMenu(lineText: "", selectionLength: 1))
+}
+
 @Test func acceptedP2MetricsHaveOneNamedSource() {
   let metrics = WritingChromeMetrics.standard
   #expect(metrics.headerHeight == 40)

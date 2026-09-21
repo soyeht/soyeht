@@ -194,6 +194,13 @@ public struct WritingChromePolicy: Equatable, Sendable {
       message: "Unsaved changes will be lost.")
   }
 
+  public func showsScreenplayElementMenu(
+    lineText: String, selectionLength: Int
+  ) -> Bool {
+    selectionLength == 0
+      && lineText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
   private func inset(_ rect: PaneLayoutRect, by amount: Double) -> PaneLayoutRect {
     let width = max(0, rect.size.width - 2 * amount)
     let height = max(0, rect.size.height - 2 * amount)
