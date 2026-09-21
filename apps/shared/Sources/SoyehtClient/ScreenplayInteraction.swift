@@ -127,6 +127,20 @@ public enum ScreenplayInteraction {
     return candidates.filter { needle.isEmpty || $0.uppercased().hasPrefix(needle) }
   }
 
+  /// Resolves the SmartType vocabulary for the active line. A parsed line keeps its own kind;
+  /// an empty line advances from the preceding element instead of silently becoming Action.
+  public static func suggestionKind(
+    at line: UInt32, in structure: WritingStructureResult
+  ) -> ScreenplayElementKind {
+    if let element = element(at: line, in: structure) { return element.kind }
+    guard
+      let previous = structure.elements
+        .filter({ $0.endLine < line })
+        .max(by: { $0.endLine < $1.endLine })
+    else { return .scene_heading }
+    return nextKind(after: previous.kind, tab: false)
+  }
+
   public static func adjacentVariant(
     in variants: WritingLineVariants, delta: Int
   ) -> WritingVariant? {

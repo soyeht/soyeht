@@ -54,6 +54,10 @@ private let chromePolicy = WritingChromePolicy()
   #expect(metrics.toolbarShadowBlur == 12)
   #expect(metrics.toolbarHalo == 16)
   #expect(metrics.dimmedOpacity == 0.35)
+  #expect(PaneLayoutContentMetrics.screenplayInlineElementMenuHeight == 30)
+  #expect(PaneLayoutContentMetrics.screenplayInlineElementMenuInset == 12)
+  #expect(PaneLayoutContentMetrics.screenplayInlineControlGap == 6)
+  #expect(PaneLayoutContentMetrics.screenplaySmartTypeFontPointSize == 11)
 }
 
 @Test func toolbarPrefersAboveThenBelowAndClampsItsHalo() {

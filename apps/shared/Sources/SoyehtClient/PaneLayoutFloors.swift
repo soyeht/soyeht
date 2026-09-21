@@ -114,8 +114,10 @@ public enum PaneLayoutContentMetrics {
   public static let screenplaySceneRailWidth = 330.0
   public static let screenplaySceneDrawerHeight = 420.0
   public static let screenplayInlineElementMenuWidth = 148.0
-  public static let screenplayInlineElementMenuHeight = 28.0
-  public static let screenplayInlineElementMenuInset = 8.0
+  public static let screenplayInlineElementMenuHeight = 30.0
+  public static let screenplayInlineElementMenuInset = 12.0
+  public static let screenplayInlineControlGap = 6.0
+  public static let screenplaySmartTypeFontPointSize = 11.0
 
   public static let presentationHeaderHeight = 42.0
   public static let presentationNumericRailHeight = 32.0

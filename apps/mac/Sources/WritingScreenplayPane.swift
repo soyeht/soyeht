@@ -28,6 +28,9 @@ struct WritingScreenplayPane: View {
   @State private var showingCloseConfirmation = false
   @State private var chromeActivity = WritingChromeActivityState()
   @State private var elementMenuAnchor: PaneLayoutPoint?
+  @State private var showingElementMenu = false
+  @State private var smartTypeKind: ScreenplayElementKind = .action
+  @State private var smartTypeSuggestions: [String] = []
   @State private var editRequest: ScreenplayEditRequest?
   @State private var hoveredLine: UInt32?
   @State private var hoverY: CGFloat = 0
@@ -63,8 +66,9 @@ struct WritingScreenplayPane: View {
             ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
               plannedSurface(
                 plan: plan, screenplayPlan: screenplayPlan, file: file,
-                document: writing.document, structure: structure)
-                .forceEnclosingOverlayScrollers()
+                document: writing.document, structure: structure
+              )
+              .forceEnclosingOverlayScrollers()
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollDisabled(plan.overflowAxes.isEmpty)
@@ -291,14 +295,16 @@ struct WritingScreenplayPane: View {
         pageSize: plan.pageSize, scale: plan.scale,
         activeLine: $activeLine, targetLine: $targetLine, editRequest: $editRequest,
         hoveredLine: $hoveredLine, hoverY: $hoverY,
-        elementMenuAnchor: $elementMenuAnchor,
+        elementMenuAnchor: $elementMenuAnchor, showingElementMenu: $showingElementMenu,
+        smartTypeKind: $smartTypeKind, smartTypeSuggestions: $smartTypeSuggestions,
         onEditingActivity: { updateChrome(.edited) })
       if let elementMenuAnchor {
-        screenplayElementMenu(structure: structure)
+        screenplayInlineControls()
           .frame(
-            width: PaneLayoutContentMetrics.screenplayInlineElementMenuWidth,
-            height: PaneLayoutContentMetrics.screenplayInlineElementMenuHeight)
-          .position(x: elementMenuAnchor.x, y: elementMenuAnchor.y)
+            width: plan.pageRect.size.width,
+            height: PaneLayoutContentMetrics.screenplayInlineElementMenuHeight
+          )
+          .position(x: plan.pageRect.size.width / 2, y: elementMenuAnchor.y)
           .zIndex(2)
       }
       if let variants = hoveredVariants(in: structure) {
@@ -324,34 +330,66 @@ struct WritingScreenplayPane: View {
     .accessibilityIdentifier("writing-screenplay-page-\(pane.paneId)")
   }
 
-  private func screenplayElementMenu(structure: WritingStructureResult) -> some View {
+  private func screenplayInlineControls() -> some View {
+    ScrollView(.horizontal) {
+      HStack(spacing: PaneLayoutContentMetrics.screenplayInlineControlGap) {
+        if showingElementMenu { screenplayElementMenu() }
+        if !smartTypeSuggestions.isEmpty {
+          Text("SMARTTYPE")
+            .font(
+              MacTheme.screenplay(
+                PaneLayoutContentMetrics.screenplaySmartTypeFontPointSize, weight: .bold)
+            )
+            .foregroundStyle(MacTheme.muted)
+          ForEach(smartTypeSuggestions, id: \.self) { suggestion in
+            Button(suggestion) { requestEdit(kind: smartTypeKind, text: suggestion) }
+              .buttonStyle(.plain)
+              .font(
+                MacTheme.screenplay(
+                  PaneLayoutContentMetrics.screenplaySmartTypeFontPointSize, weight: .bold)
+              )
+              .foregroundStyle(MacTheme.ink)
+              .padding(.horizontal, PaneLayoutContentMetrics.screenplayInlineElementMenuInset)
+              .frame(height: PaneLayoutContentMetrics.screenplayInlineElementMenuHeight)
+              .background(MacTheme.face, in: Capsule())
+              .neoRaised(radius: MacTheme.Radius.pill)
+              .accessibilityLabel("Use SmartType suggestion \(suggestion)")
+          }
+        }
+      }
+      .fixedSize(horizontal: true, vertical: false)
+      .padding(.horizontal, PaneLayoutContentMetrics.screenplayInlineElementMenuInset)
+    }
+    .scrollIndicators(.hidden)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Screenplay inline controls")
+  }
+
+  private func screenplayElementMenu() -> some View {
     Menu {
       ForEach(screenplayElementKinds, id: \.self) { kind in
         Button(kind.label) { requestEdit(kind: kind) }
       }
     } label: {
       HStack(spacing: MacTheme.Space.x6) {
-        Text(currentKind(in: structure).label)
+        Text(smartTypeKind.label)
           .lineLimit(1)
         Spacer(minLength: 0)
         Image(systemName: "chevron.down")
       }
-      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
       .foregroundStyle(MacTheme.ink)
-      .padding(.horizontal, MacTheme.Space.x8)
+      .padding(.horizontal, PaneLayoutContentMetrics.screenplayInlineElementMenuInset)
       .frame(
         width: PaneLayoutContentMetrics.screenplayInlineElementMenuWidth,
-        height: PaneLayoutContentMetrics.screenplayInlineElementMenuHeight)
+        height: PaneLayoutContentMetrics.screenplayInlineElementMenuHeight
+      )
       .background(MacTheme.face, in: Capsule())
       .neoRaised(radius: MacTheme.Radius.pill)
     }
     .menuStyle(.borderlessButton)
     .accessibilityLabel("Screenplay element")
     .accessibilityIdentifier("writing-screenplay-element-\(pane.paneId)")
-  }
-
-  private func currentKind(in structure: WritingStructureResult) -> ScreenplayElementKind {
-    ScreenplayInteraction.element(at: activeLine, in: structure)?.kind ?? .action
   }
 
   private func hoveredVariants(
@@ -492,7 +530,8 @@ private struct ScreenplaySceneRail: View {
       .padding(MacTheme.Space.x10).frame(maxWidth: .infinity, alignment: .leading)
       .background(
         selected ? MacTheme.selection : Color.clear,
-        in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+        in: RoundedRectangle(cornerRadius: MacTheme.Radius.control)
+      )
       .overlay {
         RoundedRectangle(cornerRadius: MacTheme.Radius.control)
           .stroke(selected ? MacTheme.accent : Color.clear, lineWidth: 2)
@@ -621,6 +660,9 @@ private struct ScreenplayViewport: NSViewRepresentable {
   @Binding var hoveredLine: UInt32?
   @Binding var hoverY: CGFloat
   @Binding var elementMenuAnchor: PaneLayoutPoint?
+  @Binding var showingElementMenu: Bool
+  @Binding var smartTypeKind: ScreenplayElementKind
+  @Binding var smartTypeSuggestions: [String]
   let onEditingActivity: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -909,24 +951,31 @@ private struct ScreenplayViewport: NSViewRepresentable {
         return
       }
       guard let scrollView else {
-        parent.elementMenuAnchor = nil
+        hideInlineControls()
         return
       }
       let selection = textView.selectedRange()
       let raw = source as NSString
       guard selection.location != NSNotFound, selection.location <= raw.length else {
-        parent.elementMenuAnchor = nil
+        hideInlineControls()
         return
       }
       let lineRange = raw.lineRange(
         for: NSRange(location: min(selection.location, raw.length), length: 0))
       let contentRange = lineContentRange(lineRange)
       let lineText = raw.substring(with: contentRange)
-      guard WritingChromePolicy().showsScreenplayElementMenu(
-        lineText: lineText, selectionLength: selection.length),
+      let showingElementMenu = WritingChromePolicy().showsScreenplayElementMenu(
+        lineText: lineText, selectionLength: selection.length)
+      let smartTypeKind = ScreenplayInteraction.suggestionKind(
+        at: position(selection.location)?.line ?? parent.activeLine, in: parent.structure)
+      let smartTypeSuggestions = Array(
+        ScreenplayInteraction.suggestions(
+          for: smartTypeKind, prefix: lineText, in: parent.structure
+        ).prefix(5))
+      guard showingElementMenu || !smartTypeSuggestions.isEmpty,
         let layout = textView.layoutManager, let container = textView.textContainer
       else {
-        parent.elementMenuAnchor = nil
+        hideInlineControls()
         return
       }
       layout.ensureLayout(for: container)
@@ -943,13 +992,22 @@ private struct ScreenplayViewport: NSViewRepresentable {
       let y = (lineRect.midY + textView.textContainerOrigin.y - visible.minY) * scale
       let pageHeight = CGFloat(parent.pageSize.height) * scale
       guard y >= 0, y <= pageHeight else {
-        parent.elementMenuAnchor = nil
+        hideInlineControls()
         return
       }
+      parent.showingElementMenu = showingElementMenu
+      parent.smartTypeKind = smartTypeKind
+      parent.smartTypeSuggestions = smartTypeSuggestions
       parent.elementMenuAnchor = PaneLayoutPoint(
         x: PaneLayoutContentMetrics.screenplayInlineElementMenuInset
           + PaneLayoutContentMetrics.screenplayInlineElementMenuWidth / 2,
         y: y)
+    }
+
+    private func hideInlineControls() {
+      parent.elementMenuAnchor = nil
+      parent.showingElementMenu = false
+      parent.smartTypeSuggestions = []
     }
 
     private func position(_ offset: Int) -> TextPosition? {
