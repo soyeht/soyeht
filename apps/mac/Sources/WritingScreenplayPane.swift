@@ -1048,7 +1048,9 @@ private struct ScreenplayViewport: NSViewRepresentable {
       let menuWidth = CGFloat(PaneLayoutContentMetrics.screenplayInlineElementMenuWidth)
       let maximumStart = max(controlInset, pageWidth - menuWidth - controlInset)
       let controlStart = min(max(controlInset, caretX + controlGap), maximumStart)
-      let y = (lineRect.midY + textView.textContainerOrigin.y - visible.minY) * scale
+      let y =
+        (lineRect.midY + textView.textContainerOrigin.y - visible.minY) * scale
+        + CGFloat(PaneLayoutContentMetrics.screenplayInlineAnchorClearance)
       let pageHeight = CGFloat(parent.pageSize.height) * scale
       guard y >= 0, y <= pageHeight else {
         hideInlineControls()
