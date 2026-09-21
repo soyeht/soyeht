@@ -223,6 +223,24 @@ private struct EnclosingOverlayScrollerStyle: NSViewRepresentable {
   }
 }
 
+/// Removes the horizontal indicator from the nearest owner while preserving gesture
+/// scrolling. Attach this to content inside a compact horizontal `ScrollView`.
+private struct EnclosingHorizontalScrollerHider: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView {
+    let marker = NSView(frame: .zero)
+    configure(marker)
+    return marker
+  }
+
+  func updateNSView(_ marker: NSView, context: Context) { configure(marker) }
+
+  private func configure(_ marker: NSView) {
+    DispatchQueue.main.async { [weak marker] in
+      marker?.enclosingScrollView?.hasHorizontalScroller = false
+    }
+  }
+}
+
 private struct NeoWell: ViewModifier {
   let radius: CGFloat
   let depth: CGFloat
@@ -261,6 +279,10 @@ private struct NeoAccentGlow: ViewModifier {
 extension View {
   func forceEnclosingOverlayScrollers() -> some View {
     background { EnclosingOverlayScrollerStyle().frame(width: 0, height: 0) }
+  }
+
+  func hideEnclosingHorizontalScroller() -> some View {
+    background { EnclosingHorizontalScrollerHider().frame(width: 0, height: 0) }
   }
 
   func neoRaised(

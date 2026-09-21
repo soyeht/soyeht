@@ -337,7 +337,7 @@ struct WritingScreenplayPane: View {
   }
 
   private func screenplayInlineControls(availableWidth: CGFloat) -> some View {
-    ScrollView(.horizontal) {
+    ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: PaneLayoutContentMetrics.screenplayInlineControlGap) {
         if showingElementMenu { screenplayElementMenu() }
         if !smartTypeSuggestions.isEmpty {
@@ -366,6 +366,7 @@ struct WritingScreenplayPane: View {
       .fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, PaneLayoutContentMetrics.screenplayInlineElementMenuInset)
       .frame(minWidth: availableWidth, alignment: .leading)
+      .hideEnclosingHorizontalScroller()
     }
     .scrollIndicators(.hidden)
     .accessibilityElement(children: .contain)
