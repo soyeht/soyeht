@@ -969,10 +969,13 @@ private struct ScreenplayViewport: NSViewRepresentable {
         lineText: lineText, selectionLength: selection.length)
       let smartTypeKind = ScreenplayInteraction.suggestionKind(
         at: position(selection.location)?.line ?? parent.activeLine, in: parent.structure)
-      let smartTypeSuggestions = Array(
-        ScreenplayInteraction.suggestions(
-          for: smartTypeKind, prefix: lineText, in: parent.structure
-        ).prefix(5))
+      let smartTypeSuggestions =
+        showingElementMenu
+        ? Array(
+          ScreenplayInteraction.suggestions(
+            for: smartTypeKind, prefix: lineText, in: parent.structure
+          ).prefix(5))
+        : []
       guard showingElementMenu || !smartTypeSuggestions.isEmpty,
         let layout = textView.layoutManager, let container = textView.textContainer
       else {
