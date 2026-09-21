@@ -203,14 +203,40 @@ private struct EnclosingOverlayScrollerStyle: NSViewRepresentable {
   private func configure(_ marker: NSView) {
     DispatchQueue.main.async { [weak marker] in
       var current: NSView? = marker
+      var configured = Set<ObjectIdentifier>()
       while let view = current {
         if let scrollView = view as? NSScrollView ?? view.enclosingScrollView {
-          scrollView.scrollerStyle = .overlay
-          scrollView.autohidesScrollers = true
-          return
+          let identity = ObjectIdentifier(scrollView)
+          if configured.insert(identity).inserted {
+            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+          }
+          // Writing panes can place an AppKit text scroll view inside the SwiftUI
+          // overflow scroll view. Continue above the nearest owner so both adopt
+          // the same non-persistent overlay policy.
+          current = scrollView.superview
+        } else {
+          current = view.superview
         }
-        current = view.superview
       }
+    }
+  }
+}
+
+/// Removes the horizontal indicator from the nearest owner while preserving gesture
+/// scrolling. Attach this to content inside a compact horizontal `ScrollView`.
+private struct EnclosingHorizontalScrollerHider: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView {
+    let marker = NSView(frame: .zero)
+    configure(marker)
+    return marker
+  }
+
+  func updateNSView(_ marker: NSView, context: Context) { configure(marker) }
+
+  private func configure(_ marker: NSView) {
+    DispatchQueue.main.async { [weak marker] in
+      marker?.enclosingScrollView?.hasHorizontalScroller = false
     }
   }
 }
@@ -253,6 +279,10 @@ private struct NeoAccentGlow: ViewModifier {
 extension View {
   func forceEnclosingOverlayScrollers() -> some View {
     background { EnclosingOverlayScrollerStyle().frame(width: 0, height: 0) }
+  }
+
+  func hideEnclosingHorizontalScroller() -> some View {
+    background { EnclosingHorizontalScrollerHider().frame(width: 0, height: 0) }
   }
 
   func neoRaised(

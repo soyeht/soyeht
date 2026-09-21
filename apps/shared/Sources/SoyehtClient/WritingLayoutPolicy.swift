@@ -41,8 +41,6 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
   public var textCompactCharacters: Double
   public var textCompactLines: Double
 
-  public var screenplayToolbarHeight: Double
-  public var screenplaySmartTypeHeight: Double
   public var screenplayColumns: Double
   public var screenplayPageHorizontalInset: Double
   public var screenplayPageRatio: Double
@@ -62,7 +60,6 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
     headerHeight: Double, paneInset: Double, stackSpacing: Double,
     textToolbarHeight: Double, textReviewHeight: Double, textPageInset: Double,
     textReadingCharacters: Double, textCompactCharacters: Double, textCompactLines: Double,
-    screenplayToolbarHeight: Double, screenplaySmartTypeHeight: Double,
     screenplayColumns: Double, screenplayPageHorizontalInset: Double,
     screenplayPageRatio: Double, screenplayMinimumScale: Double,
     screenplaySceneRailWidth: Double, railDividerWidth: Double,
@@ -79,8 +76,6 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
     self.textReadingCharacters = textReadingCharacters
     self.textCompactCharacters = textCompactCharacters
     self.textCompactLines = textCompactLines
-    self.screenplayToolbarHeight = screenplayToolbarHeight
-    self.screenplaySmartTypeHeight = screenplaySmartTypeHeight
     self.screenplayColumns = screenplayColumns
     self.screenplayPageHorizontalInset = screenplayPageHorizontalInset
     self.screenplayPageRatio = screenplayPageRatio
@@ -105,8 +100,6 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
     textReadingCharacters: PaneLayoutContentMetrics.textReadingCharacters,
     textCompactCharacters: PaneLayoutFloorFormula.compactTextCharacters,
     textCompactLines: PaneLayoutContentMetrics.textCompactLines,
-    screenplayToolbarHeight: PaneLayoutContentMetrics.screenplayToolbarHeight,
-    screenplaySmartTypeHeight: PaneLayoutContentMetrics.screenplaySmartTypeHeight,
     screenplayColumns: PaneLayoutFloorFormula.screenplayColumns,
     screenplayPageHorizontalInset: PaneLayoutContentMetrics.screenplayPageHorizontalInset,
     screenplayPageRatio: PaneLayoutContentMetrics.screenplayPageRatio,
@@ -137,8 +130,7 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
       let compactPageWidth = ceil(basePageWidth * screenplayMinimumScale)
       return PaneLayoutSize(
         width: compactPageWidth,
-        height: headerHeight + screenplayToolbarHeight + screenplaySmartTypeHeight
-          + ceil(compactPageWidth * screenplayPageRatio))
+        height: headerHeight + ceil(compactPageWidth * screenplayPageRatio))
     case .presentation:
       return PaneLayoutSize(
         width: presentationMinimumStage.width + 2 * paneInset,
@@ -242,19 +234,16 @@ public struct WritingLayoutRequest: Equatable, Sendable {
   public var font: PaneLayoutFontMetric
   public var fullWidth: Bool
   public var reviewVisible: Bool
-  public var smartTypeVisible: Bool
 
   public init(
     kind: PaneLayoutKind, viewport: PaneLayoutSize, font: PaneLayoutFontMetric,
-    fullWidth: Bool = false, reviewVisible: Bool = false,
-    smartTypeVisible: Bool = true
+    fullWidth: Bool = false, reviewVisible: Bool = false
   ) {
     self.kind = kind
     self.viewport = viewport
     self.font = font
     self.fullWidth = fullWidth
     self.reviewVisible = reviewVisible
-    self.smartTypeVisible = smartTypeVisible
   }
 }
 
@@ -469,11 +458,7 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
     overflowAxes: Set<PaneLayoutAxis>
   ) -> WritingLayoutPlan {
     let header = rect(x: 0, y: 0, width: contentSize.width, height: metrics.headerHeight)
-    let smartTypeHeight = request.smartTypeVisible ? metrics.screenplaySmartTypeHeight : 0
-    let toolbar = rect(
-      x: 0, y: metrics.headerHeight, width: contentSize.width,
-      height: metrics.screenplayToolbarHeight + smartTypeHeight)
-    let bodyY = toolbar.origin.y + toolbar.size.height
+    let bodyY = header.origin.y + header.size.height
     let body = rect(
       x: 0, y: bodyY, width: contentSize.width, height: contentSize.height - bodyY)
     let pageWidth =
@@ -506,7 +491,7 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
     if scaled.width > pageArea.size.width { combinedOverflow.insert(.horizontal) }
     if scaled.height > pageArea.size.height { combinedOverflow.insert(.vertical) }
     return WritingLayoutPlan(
-      headerRect: header, toolbarRect: toolbar, reviewRect: nil,
+      headerRect: header, toolbarRect: nil, reviewRect: nil,
       contentRect: body, contentSize: contentSize, overflowAxes: combinedOverflow,
       surface: .screenplay(
         WritingScreenplayLayoutPlan(

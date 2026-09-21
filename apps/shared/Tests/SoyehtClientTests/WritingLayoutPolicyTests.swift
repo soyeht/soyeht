@@ -105,10 +105,8 @@ private let screenplayMetric = PaneLayoutFontMetric(
   #expect(
     compactScreenplay.pageSize.height
       == compactScreenplay.pageSize.width * WritingLayoutMetrics.standard.screenplayPageRatio)
-  #expect(
-    compact.toolbarRect?.size.height
-      == WritingLayoutMetrics.standard.screenplayToolbarHeight
-      + WritingLayoutMetrics.standard.screenplaySmartTypeHeight)
+  #expect(compact.toolbarRect == nil)
+  #expect(compact.contentRect.origin.y == WritingLayoutMetrics.standard.headerHeight)
   #expect(
     abs(compactScreenplay.pageRect.size.width / compactScreenplay.pageRect.size.height - 8.5 / 11)
       < 0.000_001)
@@ -142,7 +140,7 @@ private let screenplayMetric = PaneLayoutFontMetric(
   let plan = try writingPolicy.layout(
     WritingLayoutRequest(
       kind: .screenplay,
-      viewport: PaneLayoutSize(width: 343, height: 581),
+      viewport: PaneLayoutSize(width: 343, height: 485),
       font: screenplayMetric))
   guard case .screenplay(let screenplay) = plan.surface else {
     Issue.record("Expected screenplay plan")

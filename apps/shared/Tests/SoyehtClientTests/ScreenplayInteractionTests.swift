@@ -75,6 +75,25 @@ import Testing
   #expect(
     ScreenplayInteraction.suggestions(for: .parenthetical, prefix: "(v", in: structure)
       == ["(V.O.)"])
+  #expect(ScreenplayInteraction.suggestionKind(at: 2, in: structure) == .character)
+  #expect(ScreenplayInteraction.suggestionKind(at: 3, in: structure) == .dialogue)
+  #expect(
+    ScreenplayInteraction.suggestionKind(at: 0, in: emptyScreenplayStructure()) == .scene_heading)
+}
+
+@Test func screenplayEditRequestNeverCrossesAFileOrReloadedViewport() {
+  #expect(
+    ScreenplayInteraction.editRequestMatchesViewport(
+      requestFileId: "file-1", requestRevision: "4",
+      viewportFileId: "file-1", viewportRevision: "4"))
+  #expect(
+    !ScreenplayInteraction.editRequestMatchesViewport(
+      requestFileId: "file-1", requestRevision: "4",
+      viewportFileId: "file-1", viewportRevision: "5"))
+  #expect(
+    !ScreenplayInteraction.editRequestMatchesViewport(
+      requestFileId: "file-1", requestRevision: "4",
+      viewportFileId: "file-2", viewportRevision: "4"))
 }
 
 @Test func screenplayVariantCyclingWrapsWithoutChangingTheWriterSelection() {
@@ -142,6 +161,13 @@ private func screenplayStructure() -> WritingStructureResult {
           WritingVariant(variantId: "v3", text: "Three", author: author),
         ], selectedIndex: 1)
     ], beats: [], truncated: false)
+}
+
+private func emptyScreenplayStructure() -> WritingStructureResult {
+  let value = screenplayStructure()
+  return WritingStructureResult(
+    document: value.document, slides: [], scenes: [], elements: [], variants: [], beats: [],
+    truncated: false)
 }
 
 private let author = FileAuthor(

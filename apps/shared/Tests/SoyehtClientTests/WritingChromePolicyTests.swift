@@ -29,6 +29,13 @@ private let chromePolicy = WritingChromePolicy()
     ])
 }
 
+@Test func screenplayElementMenuOnlyAppearsForAnEmptyInsertionLine() {
+  #expect(chromePolicy.showsScreenplayElementMenu(lineText: "", selectionLength: 0))
+  #expect(chromePolicy.showsScreenplayElementMenu(lineText: "   \t", selectionLength: 0))
+  #expect(!chromePolicy.showsScreenplayElementMenu(lineText: "INT. SHOP", selectionLength: 0))
+  #expect(!chromePolicy.showsScreenplayElementMenu(lineText: "", selectionLength: 1))
+}
+
 @Test func acceptedP2MetricsHaveOneNamedSource() {
   let metrics = WritingChromeMetrics.standard
   #expect(metrics.headerHeight == 40)
@@ -47,6 +54,10 @@ private let chromePolicy = WritingChromePolicy()
   #expect(metrics.toolbarShadowBlur == 12)
   #expect(metrics.toolbarHalo == 16)
   #expect(metrics.dimmedOpacity == 0.35)
+  #expect(PaneLayoutContentMetrics.screenplayInlineElementMenuHeight == 30)
+  #expect(PaneLayoutContentMetrics.screenplayInlineElementMenuInset == 12)
+  #expect(PaneLayoutContentMetrics.screenplayInlineControlGap == 6)
+  #expect(PaneLayoutContentMetrics.screenplaySmartTypeFontPointSize == 11)
 }
 
 @Test func toolbarPrefersAboveThenBelowAndClampsItsHalo() {
