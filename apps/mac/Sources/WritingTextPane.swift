@@ -293,7 +293,7 @@ struct WritingTextPane: View {
   private func writingHeader(document: WritingDocument?) -> some View {
     WritingChromeHeader(
       paneId: pane.paneId, title: documentFileName,
-      metadata: document == nil ? nil : wordCountLabel,
+      metadata: wordCountLabel,
       companionLinked: companionLinked, opacity: chromeOpacity,
       headerDrag: headerDrag,
       onHover: { updateChrome(.headerHoverChanged($0)) },
@@ -560,9 +560,8 @@ struct WritingTextPane: View {
     .padding(MacTheme.Space.x16).frame(width: 320).background(MacTheme.face)
   }
 
-  private var wordCountLabel: String {
-    let text = file?.viewport?.lines.map(\.text).joined(separator: "\n") ?? ""
-    let count = text.split(whereSeparator: { $0.isWhitespace }).count
+  private var wordCountLabel: String? {
+    guard let count = writing?.structure?.wordCount else { return nil }
     return count == 1 ? "1 word" : "\(count) words"
   }
 

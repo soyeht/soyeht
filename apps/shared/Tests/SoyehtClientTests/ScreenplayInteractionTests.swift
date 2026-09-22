@@ -160,14 +160,14 @@ private func screenplayStructure() -> WritingStructureResult {
           WritingVariant(variantId: "v2", text: "Two", author: author),
           WritingVariant(variantId: "v3", text: "Three", author: author),
         ], selectedIndex: 1)
-    ], beats: [], truncated: false)
+    ], beats: [], wordCount: 13, truncated: false)
 }
 
 private func emptyScreenplayStructure() -> WritingStructureResult {
   let value = screenplayStructure()
   return WritingStructureResult(
     document: value.document, slides: [], scenes: [], elements: [], variants: [], beats: [],
-    truncated: false)
+    wordCount: 0, truncated: false)
 }
 
 private let author = FileAuthor(
