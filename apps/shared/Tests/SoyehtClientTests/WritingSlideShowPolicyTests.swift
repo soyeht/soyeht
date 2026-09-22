@@ -80,6 +80,16 @@ import Testing
   #expect(!cursor.isHidden)
 }
 
+@Test func slideShowRestoresTheExactCapturedScrollOffsetOnce() {
+  var scroll = WritingSlideShowScrollOffsetState()
+  let offset = PaneLayoutPoint(x: 7.5, y: 418.25)
+
+  scroll.capture(offset)
+  #expect(scroll.savedOffset == offset)
+  #expect(scroll.takeRestoration() == offset)
+  #expect(scroll.takeRestoration() == nil)
+}
+
 @Test func slideShowLeavesAnAlreadyFullScreenWindowUnchanged() {
   var window = WritingSlideShowWindowState()
 

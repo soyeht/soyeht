@@ -180,6 +180,21 @@ public struct WritingSlideShowCursorState: Equatable, Sendable {
   }
 }
 
+public struct WritingSlideShowScrollOffsetState: Equatable, Sendable {
+  public private(set) var savedOffset: PaneLayoutPoint?
+
+  public init() {}
+
+  public mutating func capture(_ offset: PaneLayoutPoint) {
+    savedOffset = offset
+  }
+
+  public mutating func takeRestoration() -> PaneLayoutPoint? {
+    defer { savedOffset = nil }
+    return savedOffset
+  }
+}
+
 public enum WritingSlideShowWindowPhase: Equatable, Sendable {
   case inactive
   case enteringFullScreen

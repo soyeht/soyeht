@@ -4,11 +4,13 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-struct WritingSlideShowRequest: Equatable, Sendable {
+struct WritingSlideShowRequest: Sendable {
   let paneId: String
   let fileId: String
   let initialIndex: Int
   let slideCount: Int
+  let captureViewportOffset: @MainActor @Sendable () -> Void
+  let restoreViewportOffset: @MainActor @Sendable () -> Void
 }
 
 struct WritingSlideShowAction: Sendable {
@@ -62,6 +64,7 @@ struct WritingSlideShowSession: Equatable, Sendable {
   @ObservationIgnored private var inputMonitor: Any?
   @ObservationIgnored private var cursorTask: Task<Void, Never>?
   @ObservationIgnored private var fullScreenEntryTask: Task<Void, Never>?
+  @ObservationIgnored private var restoreViewportOffset: (@MainActor @Sendable () -> Void)?
 
   var isPresenting: Bool { session != nil }
 
@@ -78,6 +81,8 @@ struct WritingSlideShowSession: Equatable, Sendable {
     session = WritingSlideShowSession(paneId: request.paneId, fileId: request.fileId)
     navigation = WritingSlideShowState(
       index: request.initialIndex, slideCount: request.slideCount)
+    request.captureViewportOffset()
+    restoreViewportOffset = request.restoreViewportOffset
     snapshot = WindowSnapshot(
       frame: window.frame, firstResponder: window.firstResponder,
       acceptsMouseMovedEvents: window.acceptsMouseMovedEvents)
@@ -254,15 +259,15 @@ struct WritingSlideShowSession: Equatable, Sendable {
 
   private func finish(window: NSWindow) {
     let saved = snapshot
+    let restoreViewportOffset = self.restoreViewportOffset
+    self.restoreViewportOffset = nil
     cleanUpSession()
     if !windowState.startedFullScreen, let saved {
       window.setFrame(saved.frame, display: true)
     }
-    if let responder = saved?.firstResponder {
-      DispatchQueue.main.async { [weak window, weak responder] in
-        guard let window, let responder else { return }
-        window.makeFirstResponder(responder)
-      }
+    DispatchQueue.main.async { [weak window, weak responder = saved?.firstResponder] in
+      if let window, let responder { window.makeFirstResponder(responder) }
+      restoreViewportOffset?()
     }
     snapshot = nil
     windowState = WritingSlideShowWindowState()
@@ -270,12 +275,15 @@ struct WritingSlideShowSession: Equatable, Sendable {
 
   private func forceFinish() {
     let window = windowReference.value
+    let restoreViewportOffset = self.restoreViewportOffset
+    self.restoreViewportOffset = nil
     cleanUpSession()
     windowState = WritingSlideShowWindowState()
     if let window, let saved = snapshot {
       window.acceptsMouseMovedEvents = saved.acceptsMouseMovedEvents
     }
     snapshot = nil
+    DispatchQueue.main.async { restoreViewportOffset?() }
   }
 
   private func cleanUpSession() {
@@ -326,6 +334,7 @@ struct WritingPresentationPane: View {
   @State private var showingOptions = false
   @State private var showingCloseConfirmation = false
   @State private var chromeActivity = WritingChromeActivityState()
+  @State private var viewportScroll = WritingPresentationViewportScrollState()
 
   private var writing: WritingDocumentView? {
     client.writingDocuments.values.first { $0.document.file.paneId == pane.paneId }
@@ -495,7 +504,9 @@ struct WritingPresentationPane: View {
         guard let fileId = writing?.document.file.fileId else { return }
         let request = WritingSlideShowRequest(
           paneId: pane.paneId, fileId: fileId, initialIndex: Int(selectedSlide),
-          slideCount: slides.count)
+          slideCount: slides.count,
+          captureViewportOffset: { viewportScroll.capture() },
+          restoreViewportOffset: { viewportScroll.restore() })
         Task { @MainActor in
           await Task.yield()
           slideShow(request)
@@ -625,6 +636,7 @@ struct WritingPresentationPane: View {
   private func presentationStage(_ file: EditorFileView) -> some View {
     WritingPresentationViewport(
       client: client, view: file, activeLine: $activeLine, targetLine: $targetLine,
+      scrollState: viewportScroll,
       onEditingActivity: { updateChrome(.edited) }
     )
     .background(MacTheme.face)
@@ -829,17 +841,44 @@ private struct WritingPresentedSlide: View {
   }
 }
 
+@MainActor private final class WritingPresentationViewportScrollState {
+  private weak var scrollView: NSScrollView?
+  private var state = WritingSlideShowScrollOffsetState()
+
+  func attach(_ scrollView: NSScrollView) {
+    self.scrollView = scrollView
+  }
+
+  func capture() {
+    guard let origin = scrollView?.contentView.bounds.origin else { return }
+    state.capture(PaneLayoutPoint(x: origin.x, y: origin.y))
+  }
+
+  func restore() {
+    guard let scrollView, let offset = state.takeRestoration() else { return }
+    scrollView.layoutSubtreeIfNeeded()
+    scrollView.contentView.scroll(to: NSPoint(x: offset.x, y: offset.y))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+  }
+}
+
 private struct WritingPresentationViewport: NSViewRepresentable {
   @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var activeLine: UInt32
   @Binding var targetLine: UInt32?
+  let scrollState: WritingPresentationViewportScrollState
   let onEditingActivity: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
-  func makeNSView(context: Context) -> NSScrollView { context.coordinator.makeScrollView() }
+  func makeNSView(context: Context) -> NSScrollView {
+    let scrollView = context.coordinator.makeScrollView()
+    scrollState.attach(scrollView)
+    return scrollView
+  }
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
+    scrollState.attach(scrollView)
     context.coordinator.update()
   }
 
