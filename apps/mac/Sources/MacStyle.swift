@@ -36,6 +36,7 @@ extension LocalizedStringKey.StringInterpolation {
   static var danger: Color { SoyehtThemeColors.danger }
   static var syntaxType: Color { SoyehtThemeColors.syntaxType }
   static var diffAdded: Color { SoyehtThemeColors.diffAdded }
+  static var presentationLetterbox: Color { SoyehtThemeColors.presentationLetterbox }
   static var urgent: Color { danger }
   static var agentRose: Color { SoyehtThemeColors.agentRose }
   static var agentBlue: Color { SoyehtThemeColors.agentBlue }

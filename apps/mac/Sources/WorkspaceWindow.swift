@@ -290,6 +290,7 @@ struct WorkspaceWindow: View {
   @State private var showPreferences = false
   @State private var selectedUsageProvider: UsageProvider?
   @State private var editorPaletteMode: EditorPaletteMode?
+  @State private var slideShow = MacWritingSlideShowCoordinator()
   var body: some View {
     GeometryReader { geometry in
       workspaceChrome(windowSize: geometry.size)
@@ -297,7 +298,9 @@ struct WorkspaceWindow: View {
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
     .environment(editorInputPreferences)
     .environment(webLinkPreferences)
-    .environment(\.terminalKeyboardInputEnabled, editorPaletteMode == nil)
+    .environment(
+      \.terminalKeyboardInputEnabled, editorPaletteMode == nil && !slideShow.isPresenting
+    )
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
     .alert(
       "Close pane?",
@@ -398,6 +401,7 @@ struct WorkspaceWindow: View {
     .onChange(of: client.panes.map(\.paneId)) { _, _ in webHost.reconcile(client.panes) }
     .onChange(of: client.connectionRevision) { _, _ in webHost.resynchronize() }
     .onExitCommand { showPreferences = false }
+    .modifier(WritingSlideShowHostModifier(client: client, coordinator: slideShow))
   }
 
   private func workspaceChrome(windowSize: CGSize) -> some View {
@@ -463,18 +467,21 @@ struct WorkspaceWindow: View {
     case .agents:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
-        viewportSize: viewportSize, newPane: newPanePresentation,
+        viewportSize: viewportSize, layoutPersistenceEnabled: !slideShow.isPresenting,
+        newPane: newPanePresentation,
         onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .terminal:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
-        viewportSize: viewportSize, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        viewportSize: viewportSize, layoutPersistenceEnabled: !slideShow.isPresenting,
+        onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .editor:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .editor,
-        viewportSize: viewportSize, onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        viewportSize: viewportSize, layoutPersistenceEnabled: !slideShow.isPresenting,
+        onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .web:
       WebWorkspace(
@@ -759,6 +766,66 @@ struct WorkspaceWindow: View {
       let cg = CIContext().createCGImage(image, from: image.extent)
     else { return nil }
     return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+  }
+}
+
+private struct WritingSlideShowHostModifier: ViewModifier {
+  @Bindable var client: EngineClient
+  let coordinator: MacWritingSlideShowCoordinator
+
+  func body(content: Content) -> some View {
+    content
+      .overlay {
+        if let session = coordinator.session {
+          WritingSlideShowSurface(client: client, coordinator: coordinator, session: session)
+            .zIndex(100)
+        }
+      }
+      .background(MacWindowReader { coordinator.attach(window: $0) })
+      .environment(
+        \.writingSlideShowAction,
+        WritingSlideShowAction { request in coordinator.present(request) }
+      )
+      .modifier(WritingSlideShowWindowEventsModifier(coordinator: coordinator))
+      .onChange(of: client.panes.map(\.paneId)) { _, paneIds in
+        guard let session = coordinator.session else { return }
+        coordinator.reconcile(
+          paneExists: paneIds.contains(session.paneId), connected: client.connected,
+          slideCount: coordinator.navigation.slideCount)
+      }
+      .onChange(of: client.connected) { _, connected in
+        guard let session = coordinator.session else { return }
+        coordinator.reconcile(
+          paneExists: client.panes.contains { $0.paneId == session.paneId },
+          connected: connected, slideCount: coordinator.navigation.slideCount)
+      }
+  }
+}
+
+private struct WritingSlideShowWindowEventsModifier: ViewModifier {
+  let coordinator: MacWritingSlideShowCoordinator
+
+  func body(content: Content) -> some View {
+    content
+      .onReceive(
+        NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)
+      ) {
+        coordinator.windowDidEnterFullScreen($0.object as? NSWindow)
+      }
+      .onReceive(
+        NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)
+      ) {
+        coordinator.windowDidExitFullScreen($0.object as? NSWindow)
+      }
+      .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
+        coordinator.windowDidBecomeKey($0.object as? NSWindow)
+      }
+      .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) {
+        coordinator.windowDidResignKey($0.object as? NSWindow)
+      }
+      .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) {
+        coordinator.windowWillClose($0.object as? NSWindow)
+      }
   }
 }
 
@@ -1284,6 +1351,7 @@ struct PaneGrid: View {
   let workspaceId: String?
   let mode: PaneMode?
   let viewportSize: CGSize
+  let layoutPersistenceEnabled: Bool
   fileprivate let newPane: NewPanePlaceholderPresentation?
   let onClose: (String) -> Void
   let onNewPane: () -> Void
@@ -1293,7 +1361,8 @@ struct PaneGrid: View {
 
   init(
     client: EngineClient, webHost: MacWebHost, workspaceId: String?, mode: PaneMode?,
-    viewportSize: CGSize, onClose: @escaping (String) -> Void,
+    viewportSize: CGSize, layoutPersistenceEnabled: Bool = true,
+    onClose: @escaping (String) -> Void,
     onNewPane: @escaping () -> Void, onSplit: @escaping (String, PaneSplitAxis) -> Void,
     onTasks: @escaping () -> Void
   ) {
@@ -1302,6 +1371,7 @@ struct PaneGrid: View {
     self.workspaceId = workspaceId
     self.mode = mode
     self.viewportSize = viewportSize
+    self.layoutPersistenceEnabled = layoutPersistenceEnabled
     newPane = nil
     self.onClose = onClose
     self.onNewPane = onNewPane
@@ -1311,7 +1381,8 @@ struct PaneGrid: View {
 
   fileprivate init(
     client: EngineClient, webHost: MacWebHost, workspaceId: String?, mode: PaneMode?,
-    viewportSize: CGSize, newPane: NewPanePlaceholderPresentation?,
+    viewportSize: CGSize, layoutPersistenceEnabled: Bool = true,
+    newPane: NewPanePlaceholderPresentation?,
     onClose: @escaping (String) -> Void, onNewPane: @escaping () -> Void,
     onSplit: @escaping (String, PaneSplitAxis) -> Void, onTasks: @escaping () -> Void
   ) {
@@ -1320,6 +1391,7 @@ struct PaneGrid: View {
     self.workspaceId = workspaceId
     self.mode = mode
     self.viewportSize = viewportSize
+    self.layoutPersistenceEnabled = layoutPersistenceEnabled
     self.newPane = newPane
     self.onClose = onClose
     self.onNewPane = onNewPane
@@ -1342,7 +1414,8 @@ struct PaneGrid: View {
         PaneLayoutTreeSurface(
           client: client, webHost: webHost, workspaceId: layout.workspaceId, panes: panes,
           tree: layout.tree, plan: layout.plan, viewportSize: viewportSize,
-          interaction: interaction, interactionsEnabled: mode == nil && newPane == nil,
+          interaction: interaction,
+          interactionsEnabled: mode == nil && newPane == nil && layoutPersistenceEnabled,
           newPane: newPane,
           onClose: onClose, onTasks: onTasks, onSplit: onSplit,
           onPaneDrop: commitPaneDrop
@@ -1462,7 +1535,7 @@ struct PaneGrid: View {
   }
 
   private func persistRepairIfNeeded(_ layout: ResolvedPaneGridLayout) {
-    guard !layout.isProvisional, layout.state.mode == .custom,
+    guard layoutPersistenceEnabled, !layout.isProvisional, layout.state.mode == .custom,
       !layout.insertedPaneIds.isEmpty
     else { return }
     Self.logger.notice(
