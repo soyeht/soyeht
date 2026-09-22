@@ -61,6 +61,7 @@ struct WritingSlideShowSession: Equatable, Sendable {
   @ObservationIgnored private var snapshot: WindowSnapshot?
   @ObservationIgnored private var inputMonitor: Any?
   @ObservationIgnored private var cursorTask: Task<Void, Never>?
+  @ObservationIgnored private var fullScreenEntryTask: Task<Void, Never>?
 
   var isPresenting: Bool { session != nil }
 
@@ -83,7 +84,10 @@ struct WritingSlideShowSession: Equatable, Sendable {
     window.makeFirstResponder(nil)
     window.acceptsMouseMovedEvents = true
     installInputMonitor()
-    perform(windowState.begin(isFullScreen: window.styleMask.contains(.fullScreen)))
+    perform(
+      windowState.begin(
+        isFullScreen: window.styleMask.contains(.fullScreen),
+        canEnterFullScreen: !window.collectionBehavior.contains(.fullScreenNone)))
   }
 
   func reconcile(paneExists: Bool, connected: Bool, slideCount: Int) {
@@ -102,6 +106,7 @@ struct WritingSlideShowSession: Equatable, Sendable {
 
   func windowDidEnterFullScreen(_ window: NSWindow?) {
     guard owns(window) else { return }
+    cancelFullScreenEntryTimeout()
     perform(windowState.didEnterFullScreen())
   }
 
@@ -140,13 +145,32 @@ struct WritingSlideShowSession: Equatable, Sendable {
     switch effect {
     case .none:
       break
-    case .enterFullScreen, .exitFullScreen:
+    case .enterFullScreen:
+      scheduleFullScreenEntryTimeout()
+      window.toggleFullScreen(nil)
+    case .exitFullScreen:
       window.toggleFullScreen(nil)
     case .activate:
       noteActivity()
     case .finish:
       finish(window: window)
     }
+  }
+
+  private func scheduleFullScreenEntryTimeout() {
+    cancelFullScreenEntryTimeout()
+    let delay = policy.fullScreenEntryTimeout
+    fullScreenEntryTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .seconds(delay))
+      guard !Task.isCancelled, let self else { return }
+      self.fullScreenEntryTask = nil
+      self.perform(self.windowState.didFailToEnterFullScreen())
+    }
+  }
+
+  private func cancelFullScreenEntryTimeout() {
+    fullScreenEntryTask?.cancel()
+    fullScreenEntryTask = nil
   }
 
   private func installInputMonitor() {
@@ -255,6 +279,7 @@ struct WritingSlideShowSession: Equatable, Sendable {
   }
 
   private func cleanUpSession() {
+    cancelFullScreenEntryTimeout()
     cursorTask?.cancel()
     cursorTask = nil
     applyCursor(cursorState.reduce(.sessionEnded))
@@ -776,17 +801,17 @@ private struct WritingPresentedSlide: View {
 
   var body: some View {
     GeometryReader { proxy in
-      let titleSize = min(72, max(32, proxy.size.width / 18))
-      let spacing = min(40, max(18, proxy.size.height / 18))
-      VStack(spacing: spacing) {
+      let metrics = WritingSlideShowPolicy.standard.slideSizing.metrics(
+        in: PaneLayoutSize(width: proxy.size.width, height: proxy.size.height))
+      VStack(spacing: metrics.contentSpacing) {
         Text(WritingDisplayText.slideTitle(slide.heading))
-          .font(MacTheme.prose(.sans, titleSize, weight: .bold))
+          .font(MacTheme.prose(.sans, metrics.titleSize, weight: .bold))
           .foregroundStyle(MacTheme.ink)
           .multilineTextAlignment(.center)
           .lineLimit(3)
           .minimumScaleFactor(0.55)
         if !slide.imagePaths.isEmpty {
-          VStack(spacing: spacing) {
+          VStack(spacing: metrics.contentSpacing) {
             ForEach(slide.imagePaths, id: \.self) { asset in
               WritingAssetImage(client: client, fileId: fileId, asset: asset)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -795,7 +820,7 @@ private struct WritingPresentedSlide: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
-      .padding(min(72, max(28, proxy.size.width / 24)))
+      .padding(metrics.padding)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(MacTheme.face)
     }

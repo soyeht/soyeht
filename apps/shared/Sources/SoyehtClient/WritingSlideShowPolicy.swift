@@ -20,10 +20,19 @@ public struct WritingSlideShowPolicy: Equatable, Sendable {
 
   public let aspectRatio: Double
   public let cursorIdleDelay: Double
+  public let fullScreenEntryTimeout: Double
+  public let slideSizing: WritingPresentedSlideSizing
 
-  public init(aspectRatio: Double = 16.0 / 9.0, cursorIdleDelay: Double = 2) {
+  public init(
+    aspectRatio: Double = 16.0 / 9.0,
+    cursorIdleDelay: Double = 2,
+    fullScreenEntryTimeout: Double = 5,
+    slideSizing: WritingPresentedSlideSizing = .standard
+  ) {
     self.aspectRatio = aspectRatio
     self.cursorIdleDelay = cursorIdleDelay
+    self.fullScreenEntryTimeout = fullScreenEntryTimeout
+    self.slideSizing = slideSizing
   }
 
   public func command(
@@ -55,6 +64,45 @@ public struct WritingSlideShowPolicy: Equatable, Sendable {
         x: (viewport.width - width) / 2,
         y: (viewport.height - height) / 2),
       size: PaneLayoutSize(width: width, height: height))
+  }
+}
+
+public struct WritingPresentedSlideMetrics: Equatable, Sendable {
+  public let titleSize: Double
+  public let contentSpacing: Double
+  public let padding: Double
+}
+
+public struct WritingPresentedSlideSizing: Equatable, Sendable {
+  public static let standard = WritingPresentedSlideSizing(
+    titleMinimum: 32, titleMaximum: 72, titleWidthDivisor: 18,
+    spacingMinimum: 18, spacingMaximum: 40, spacingHeightDivisor: 18,
+    paddingMinimum: 28, paddingMaximum: 72, paddingWidthDivisor: 24)
+
+  public let titleMinimum: Double
+  public let titleMaximum: Double
+  public let titleWidthDivisor: Double
+  public let spacingMinimum: Double
+  public let spacingMaximum: Double
+  public let spacingHeightDivisor: Double
+  public let paddingMinimum: Double
+  public let paddingMaximum: Double
+  public let paddingWidthDivisor: Double
+
+  public func metrics(in viewport: PaneLayoutSize) -> WritingPresentedSlideMetrics {
+    WritingPresentedSlideMetrics(
+      titleSize: Self.clamp(
+        viewport.width / titleWidthDivisor, minimum: titleMinimum, maximum: titleMaximum),
+      contentSpacing: Self.clamp(
+        viewport.height / spacingHeightDivisor,
+        minimum: spacingMinimum, maximum: spacingMaximum),
+      padding: Self.clamp(
+        viewport.width / paddingWidthDivisor,
+        minimum: paddingMinimum, maximum: paddingMaximum))
+  }
+
+  private static func clamp(_ value: Double, minimum: Double, maximum: Double) -> Double {
+    min(maximum, max(minimum, value))
   }
 }
 
@@ -154,7 +202,9 @@ public struct WritingSlideShowWindowState: Equatable, Sendable {
 
   public init() {}
 
-  public mutating func begin(isFullScreen: Bool) -> WritingSlideShowWindowEffect {
+  public mutating func begin(
+    isFullScreen: Bool, canEnterFullScreen: Bool = true
+  ) -> WritingSlideShowWindowEffect {
     guard phase == .inactive else { return .none }
     startedFullScreen = isFullScreen
     exitPending = false
@@ -162,6 +212,7 @@ public struct WritingSlideShowWindowState: Equatable, Sendable {
       phase = .active
       return .activate
     }
+    guard canEnterFullScreen else { return .finish }
     phase = .enteringFullScreen
     return .enterFullScreen
   }

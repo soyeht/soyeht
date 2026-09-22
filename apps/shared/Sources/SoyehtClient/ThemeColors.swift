@@ -48,7 +48,7 @@ public struct SoyehtThemeColorSet {
     danger = Self.color(palette.danger)
     syntaxType = Self.color(palette.syntaxType)
     diffAdded = Self.color(palette.diffAdded)
-    presentationLetterbox = Self.color(palette.ansi[0])
+    presentationLetterbox = Self.color(palette.presentationLetterbox)
     agentBlue = Self.agentColor(palette, index: 0)
     agentGreen = Self.agentColor(palette, index: 1)
     agentRose = Self.agentColor(palette, index: 2)

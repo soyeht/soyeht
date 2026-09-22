@@ -33,6 +33,18 @@ import Testing
       == PaneLayoutSize(width: 0, height: 0))
 }
 
+@Test func slideShowOwnsFullScreenTimeoutAndPresentedSlideSizing() {
+  let policy = WritingSlideShowPolicy.standard
+
+  #expect(policy.fullScreenEntryTimeout == 5)
+  #expect(
+    policy.slideSizing.metrics(in: PaneLayoutSize(width: 1_296, height: 720))
+      == WritingPresentedSlideMetrics(titleSize: 72, contentSpacing: 40, padding: 54))
+  #expect(
+    policy.slideSizing.metrics(in: PaneLayoutSize(width: 320, height: 240))
+      == WritingPresentedSlideMetrics(titleSize: 32, contentSpacing: 18, padding: 28))
+}
+
 @Test func slideShowNavigationClampsAndReconcilesWhenSlidesChange() {
   var state = WritingSlideShowState(index: 2, slideCount: 3)
 
@@ -101,5 +113,13 @@ import Testing
   let failed = window.didFailToEnterFullScreen()
   #expect(begin == .enterFullScreen)
   #expect(failed == .finish)
+  #expect(window.phase == .inactive)
+}
+
+@Test func slideShowRefusesAWindowWhoseCollectionBehaviorDisallowsFullScreen() {
+  var window = WritingSlideShowWindowState()
+
+  let begin = window.begin(isFullScreen: false, canEnterFullScreen: false)
+  #expect(begin == .finish)
   #expect(window.phase == .inactive)
 }
