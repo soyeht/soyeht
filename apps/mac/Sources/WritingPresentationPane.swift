@@ -138,7 +138,9 @@ struct WritingPresentationPane: View {
   private func presentationHeader(document: WritingDocument?) -> some View {
     WritingChromeHeader(
       paneId: pane.paneId, title: documentFileName,
-      metadata: document == nil ? nil : slideCountLabel,
+      metadata: writing?.structure.map {
+        WritingDisplayText.count($0.slides.count, kind: .slide)
+      },
       companionLinked: companionLinked, opacity: chromeOpacity,
       headerDrag: headerDrag,
       onHover: { updateChrome(.headerHoverChanged($0)) },
@@ -167,7 +169,25 @@ struct WritingPresentationPane: View {
   }
 
   private var presentationOptions: some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+    let groups = MacPaneLayoutMetrics.chromePolicy.plan(kind: .presentation).menuGroups
+    return VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+        if index > 0 { Divider().padding(.vertical, MacTheme.Space.x3) }
+        ForEach(group, id: \.rawValue) { action in
+          presentationOption(action)
+        }
+      }
+    }
+    .padding(MacTheme.Space.x8)
+    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
+    .background(MacTheme.face)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Presentation options menu")
+  }
+
+  @ViewBuilder private func presentationOption(_ action: WritingChromeAction) -> some View {
+    switch action {
+    case .present:
       optionButton(
         "Present", icon: "play.fill", disabled: slides.isEmpty,
         identifier: "writing-present-\(pane.paneId)"
@@ -175,7 +195,7 @@ struct WritingPresentationPane: View {
         showingOptions = false
         presenting = true
       }
-      Divider().padding(.vertical, MacTheme.Space.x3)
+    case .splitColumns:
       optionButton(
         "Split into columns", icon: "rectangle.split.2x1",
         disabled: !client.connected || layoutActionsDisabled,
@@ -184,6 +204,7 @@ struct WritingPresentationPane: View {
         showingOptions = false
         onSplit(pane.paneId, .columns)
       }
+    case .splitRows:
       optionButton(
         "Split into rows", icon: "rectangle.split.1x2",
         disabled: !client.connected || layoutActionsDisabled,
@@ -192,7 +213,7 @@ struct WritingPresentationPane: View {
         showingOptions = false
         onSplit(pane.paneId, .rows)
       }
-      Divider().padding(.vertical, MacTheme.Space.x3)
+    case .closePane:
       optionButton(
         "Close pane", icon: "xmark", role: .destructive,
         disabled: !client.connected || layoutActionsDisabled,
@@ -201,12 +222,10 @@ struct WritingPresentationPane: View {
         showingOptions = false
         requestClose()
       }
+    case .font, .useFullWidth, .useReadingWidth, .focusMode, .ideaBoard, .scenes,
+      .bold, .italic, .heading, .list, .quote, .link, .image:
+      EmptyView()
     }
-    .padding(MacTheme.Space.x8)
-    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
-    .background(MacTheme.face)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Presentation options menu")
   }
 
   private func optionLabel(_ title: String, icon: String) -> some View {
@@ -334,10 +353,6 @@ struct WritingPresentationPane: View {
     return URL(fileURLWithPath: path).lastPathComponent
   }
 
-  private var slideCountLabel: String {
-    slides.count == 1 ? "1 slide" : "\(slides.count) slides"
-  }
-
   private var chromeOpacity: Double {
     chromeActivity.visibility == .dimmed
       ? WritingChromeMetrics.standard.dimmedOpacity : 1
@@ -354,7 +369,7 @@ struct WritingPresentationPane: View {
   }
 
   private func requestClose() {
-    switch WritingChromePolicy().closeDisposition(
+    switch MacPaneLayoutMetrics.chromePolicy.closeDisposition(
       fileName: documentFileName, dirty: file?.file.dirty == true)
     {
     case .closeImmediately:
@@ -407,7 +422,7 @@ private struct WritingSlideThumbnail: View {
             Image(systemName: "photo").foregroundStyle(MacTheme.secondary)
           }
         }
-        Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+        Text(WritingDisplayText.slideTitle(slide.heading))
           .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
           .foregroundStyle(MacTheme.ink).lineLimit(2)
         if let asset = slide.imagePaths.first, let fileId {
@@ -455,7 +470,7 @@ private struct WritingSlideShow: View {
       }
       if let slide = slides[safe: index] {
         VStack(spacing: 28) {
-          Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+          Text(WritingDisplayText.slideTitle(slide.heading))
             .font(MacTheme.prose(.sans, 46, weight: .bold)).multilineTextAlignment(.center)
           ForEach(slide.imagePaths, id: \.self) { asset in
             WritingAssetImage(client: client, fileId: fileId, asset: asset)

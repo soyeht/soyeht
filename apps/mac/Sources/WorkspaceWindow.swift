@@ -51,6 +51,7 @@ import UniformTypeIdentifiers
     floors: footprintFloors,
     gaps: PaneLayoutGaps(
       horizontal: Double(MacTheme.Space.x18), vertical: Double(MacTheme.Space.x18)))
+  static let chromePolicy = WritingChromePolicy()
   static func sizing(newPanePlaceholderId: String) -> PaneLayoutSizingPolicy {
     sizing.overridingFloor(forPaneId: newPanePlaceholderId, with: newPaneFootprintFloor)
   }

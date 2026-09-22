@@ -23,20 +23,50 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
 
   #expect(text.headerHeight == 44)
   #expect(text.minimumActionTarget == 44)
-  #expect(text.headerIsSingleLine)
-  #expect(text.headerTextTruncates)
   #expect(text.splitKinds == [.text, .screenplay, .presentation, .agent])
   #expect(
-    text.menuActions == [
-      .font, .useFullWidth, .focusMode, .splitColumns, .splitRows, .closePane,
+    text.menuGroups == [
+      [.font, .useFullWidth, .focusMode], [.splitColumns, .splitRows], [.closePane],
     ])
   #expect(
     text.selectionActions == [.bold, .italic, .heading, .list, .quote, .link, .image])
   #expect(
-    screenplay.menuActions == [
-      .ideaBoard, .scenes, .focusMode, .splitColumns, .splitRows, .closePane,
+    screenplay.menuGroups == [
+      [.ideaBoard, .scenes, .focusMode], [.splitColumns, .splitRows], [.closePane],
     ])
-  #expect(presentation.menuActions == [.present, .splitColumns, .splitRows, .closePane])
+  #expect(
+    presentation.menuGroups == [[.present], [.splitColumns, .splitRows], [.closePane]])
+}
+
+@Test func screenplayElementOverlayConvertsCaretAtOneAndTwoTimesWithoutScalingTheTarget() {
+  let policy = PhoneScreenplayElementOverlayPolicy(minimumTarget: 44, clearance: 3)
+  let caret = PaneLayoutRect(
+    origin: PaneLayoutPoint(x: 20, y: 30), size: PaneLayoutSize(width: 2, height: 18))
+  let origin = PaneLayoutPoint(x: 5, y: 7)
+  let visible = PaneLayoutRect(
+    origin: PaneLayoutPoint(x: 0, y: 0), size: PaneLayoutSize(width: 375, height: 500))
+
+  let one = policy.caretRectInScroll(caretRect: caret, pageOrigin: origin, zoomScale: 1)
+  let two = policy.caretRectInScroll(caretRect: caret, pageOrigin: origin, zoomScale: 2)
+  #expect(
+    one
+      == PaneLayoutRect(
+        origin: PaneLayoutPoint(x: 25, y: 37), size: PaneLayoutSize(width: 2, height: 18)))
+  #expect(
+    two
+      == PaneLayoutRect(
+        origin: PaneLayoutPoint(x: 45, y: 67), size: PaneLayoutSize(width: 4, height: 36)))
+  #expect(
+    policy.buttonRect(for: one, visibleRect: visible)?.size == PaneLayoutSize(width: 44, height: 44)
+  )
+  #expect(
+    policy.buttonRect(for: two, visibleRect: visible)?.size == PaneLayoutSize(width: 44, height: 44)
+  )
+  #expect(
+    policy.buttonRect(
+      for: PaneLayoutRect(
+        origin: PaneLayoutPoint(x: 500, y: 700), size: PaneLayoutSize(width: 2, height: 18)),
+      visibleRect: visible) == nil)
 }
 
 @Test func phoneWritingChromeUsesAcceptedMetricsAndHonorsReduceMotion() {
@@ -156,11 +186,12 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
   let expected = stored
   var saves = 0
 
-  let phases: [(tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor], authoritative: Bool)] = [
-    (nil, [], false),
-    (tree, [], true),
-    (tree, fixtureDocuments(), true),
-  ]
+  let phases:
+    [(tree: PaneLayoutTree?, documents: [PhoneWritingDocumentDescriptor], authoritative: Bool)] = [
+      (nil, [], false),
+      (tree, [], true),
+      (tree, fixtureDocuments(), true),
+    ]
   for phase in phases {
     let plan = phonePolicy.layout(
       PhoneWritingLayoutRequest(

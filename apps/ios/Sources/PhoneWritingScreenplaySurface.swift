@@ -38,6 +38,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     private let pageView = UIView()
     private let textView = UITextView()
     private let elementButton = UIButton(type: .system)
+    private weak var outerScrollView: UIScrollView?
     private var source = ""
     private var firstLine: UInt32 = 0
     private var renderedIdentity: String?
@@ -49,6 +50,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
 
     func makeScrollView() -> UIScrollView {
       let scrollView = UIScrollView()
+      outerScrollView = scrollView
       scrollView.delegate = self
       scrollView.backgroundColor = UIColor(PhonePalette.face)
       scrollView.bouncesZoom = true
@@ -90,18 +92,21 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
       configuration.image = UIImage(systemName: "plus.circle")
       configuration.contentInsets = .zero
       elementButton.configuration = configuration
+      let chromePlan = PhoneWritingMetrics.chromePolicy.plan(kind: .screenplay)
       elementButton.frame.size = CGSize(
-        width: PhoneWritingLayoutMetrics.standard.minimumHitTarget,
-        height: PhoneWritingLayoutMetrics.standard.minimumHitTarget)
+        width: chromePlan.minimumActionTarget,
+        height: chromePlan.minimumActionTarget)
       elementButton.showsMenuAsPrimaryAction = true
+      elementButton.isAccessibilityElement = true
+      elementButton.accessibilityTraits = .button
       elementButton.accessibilityLabel = "Screenplay element and SmartType"
       elementButton.accessibilityIdentifier =
         "phone-writing-screenplay-element-\(parent.identity.paneId)"
       elementButton.isHidden = true
 
-      textView.addSubview(elementButton)
       pageView.addSubview(textView)
       scrollView.addSubview(pageView)
+      scrollView.addSubview(elementButton)
       update(scrollView)
       return scrollView
     }
@@ -135,10 +140,11 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         parent.writing.document.sidecarRevision,
         String(describing: SoyehtThemeStore.shared.activeTheme),
       ].joined(separator: ":")
-      guard identity != renderedIdentity else { return }
-      source = EditorEditing.viewportText(viewport.lines)
-      renderedIdentity = identity
-      render(selection: valid(textView.selectedRange))
+      if identity != renderedIdentity {
+        source = EditorEditing.viewportText(viewport.lines)
+        renderedIdentity = identity
+        render(selection: valid(textView.selectedRange))
+      }
       updateElementMenu()
     }
 
@@ -149,6 +155,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
       centerPage(in: scrollView)
       updateTextScrolling(scrollView)
+      updateElementMenu()
     }
 
     func scrollViewDidEndZooming(
@@ -164,7 +171,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-      guard scrollView === textView else { return }
+      guard scrollView === textView || scrollView === outerScrollView else { return }
       parent.onScrollActivity()
       updateElementMenu()
     }
@@ -193,6 +200,10 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     }
 
     private func updateElementMenu() {
+      guard let scrollView = outerScrollView else {
+        elementButton.isHidden = true
+        return
+      }
       let selection = textView.selectedRange
       guard selection.location != NSNotFound, selection.length == 0,
         selection.location <= source.utf16.count
@@ -209,8 +220,9 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         contentRange.length -= 1
       }
       let lineText = raw.substring(with: contentRange)
-      guard WritingChromePolicy().showsScreenplayElementMenu(
-        lineText: lineText, selectionLength: selection.length)
+      guard
+        PhoneWritingMetrics.chromePolicy.writingChrome.showsScreenplayElementMenu(
+          lineText: lineText, selectionLength: selection.length)
       else {
         elementButton.isHidden = true
         return
@@ -220,9 +232,10 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         at: activeLine, in: parent.structure)
       let suggestions = Array(
         ScreenplayInteraction.suggestions(
-          for: suggestionKind, prefix: lineText, in: parent.structure).prefix(5))
-      let elementActions = screenplayElementKinds.map { kind in
-        UIAction(title: elementTitle(kind)) { [weak self] _ in
+          for: suggestionKind, prefix: lineText, in: parent.structure
+        ).prefix(5))
+      let elementActions = WritingDisplayText.screenplayElementKinds.map { kind in
+        UIAction(title: WritingDisplayText.screenplayElementName(kind)) { [weak self] _ in
           self?.applyLine(kind: kind, value: "", range: contentRange)
         }
       }
@@ -245,15 +258,30 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         return
       }
       let caret = textView.caretRect(for: selectedTextRange.start)
-      let target = CGFloat(PhoneWritingLayoutMetrics.standard.minimumHitTarget)
-      let clearance = CGFloat(
-        PhoneWritingLayoutMetrics.standard.screenplayInlineMenuClearance)
+      let caretInPage = textView.convert(caret, to: pageView)
+      let chromePlan = PhoneWritingMetrics.chromePolicy.plan(kind: .screenplay)
+      let policy = PhoneScreenplayElementOverlayPolicy(
+        minimumTarget: chromePlan.minimumActionTarget,
+        clearance: PhoneWritingLayoutMetrics.standard.screenplayInlineMenuClearance)
+      let pageRectInScroll = pageView.convert(pageView.bounds, to: scrollView)
+      let converted = policy.caretRectInScroll(
+        caretRect: PaneLayoutRect(
+          origin: PaneLayoutPoint(x: caretInPage.minX, y: caretInPage.minY),
+          size: PaneLayoutSize(width: caretInPage.width, height: caretInPage.height)),
+        pageOrigin: PaneLayoutPoint(x: pageRectInScroll.minX, y: pageRectInScroll.minY),
+        zoomScale: scrollView.zoomScale)
+      let visible = PaneLayoutRect(
+        origin: PaneLayoutPoint(x: scrollView.bounds.minX, y: scrollView.bounds.minY),
+        size: PaneLayoutSize(width: scrollView.bounds.width, height: scrollView.bounds.height))
+      guard let button = policy.buttonRect(for: converted, visibleRect: visible) else {
+        elementButton.isHidden = true
+        return
+      }
       elementButton.frame = CGRect(
-        x: min(max(0, caret.maxX + clearance), textView.bounds.width - target),
-        y: min(max(0, caret.midY - target / 2), textView.bounds.height - target),
-        width: target, height: target)
+        x: button.origin.x, y: button.origin.y,
+        width: button.size.width, height: button.size.height)
       elementButton.isHidden = false
-      textView.bringSubviewToFront(elementButton)
+      scrollView.bringSubviewToFront(elementButton)
     }
 
     private func applyLine(kind: ScreenplayElementKind, value: String, range: NSRange) {
@@ -271,25 +299,9 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     }
 
     private func lineNumber(at utf16Offset: Int) -> UInt32 {
-      let prefix = (source as NSString).substring(
-        with: NSRange(location: 0, length: min(utf16Offset, source.utf16.count)))
-      return firstLine + UInt32(prefix.reduce(into: 0) { if $1 == "\n" { $0 += 1 } })
-    }
-
-    private var screenplayElementKinds: [ScreenplayElementKind] {
-      [.scene_heading, .action, .character, .parenthetical, .dialogue, .transition, .shot]
-    }
-
-    private func elementTitle(_ kind: ScreenplayElementKind) -> String {
-      switch kind {
-      case .scene_heading: "Scene heading"
-      case .action: "Action"
-      case .character: "Character"
-      case .parenthetical: "Parenthetical"
-      case .dialogue: "Dialogue"
-      case .transition: "Transition"
-      case .shot: "Shot"
-      }
+      EditorEditing.textPosition(
+        text: source, viewportStartLine: firstLine, utf16Offset: utf16Offset
+      )?.line ?? firstLine
     }
 
     private func centerPage(in scrollView: UIScrollView) {

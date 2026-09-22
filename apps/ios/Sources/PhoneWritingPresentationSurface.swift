@@ -18,11 +18,14 @@ struct PhoneWritingPresentationSurface: View {
   let onActivity: () -> Void
 
   private var slides: [WritingSlide] { structure.slides }
+  private var chromePlan: PhoneWritingChromePlan {
+    PhoneWritingMetrics.chromePolicy.plan(kind: .presentation)
+  }
 
   private var plan: WritingLayoutPlan? {
     try? WritingLayoutPolicy(
       metrics: PhoneWritingMetrics.bodyWritingMetrics,
-      floors: PhoneWritingMetrics.bodyFloors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18)
+      floors: PhoneWritingMetrics.bodyFloors, gaps: PhoneWritingMetrics.sizing.gaps
     ).layout(
       WritingLayoutRequest(
         kind: .presentation,
@@ -59,7 +62,8 @@ struct PhoneWritingPresentationSurface: View {
       .scrollBounceBehavior(.basedOnSize)
       .frame(width: size.width, height: size.height)
       .simultaneousGesture(
-        DragGesture(minimumDistance: 3).onChanged { _ in onActivity() })
+        DragGesture(minimumDistance: 3).onChanged { _ in onActivity() }
+      )
       .onAppear { synchronizeSelection() }
       .onChange(of: file.viewport?.fromLine) { _, _ in synchronizeSelection() }
       .onChange(of: slides.map(\.index)) { _, _ in synchronizeSelection() }
@@ -81,8 +85,9 @@ struct PhoneWritingPresentationSurface: View {
                 Spacer()
                 if !slide.imagePaths.isEmpty { Image(systemName: "photo") }
               }
-              Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+              Text(WritingDisplayText.slideTitle(slide.heading))
                 .font(.subheadline.bold())
+                .foregroundStyle(PhonePalette.ink)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -123,7 +128,10 @@ struct PhoneWritingPresentationSurface: View {
               .foregroundStyle(
                 slide.index == selectedSlide ? Color.white : PhonePalette.secondary
               )
-              .frame(width: 44, height: 44)
+              .frame(
+                width: chromePlan.minimumActionTarget,
+                height: chromePlan.minimumActionTarget
+              )
               .background(
                 slide.index == selectedSlide ? PhonePalette.accent : PhonePalette.face,
                 in: Circle())
@@ -147,8 +155,9 @@ struct PhoneWritingPresentationSurface: View {
       PhonePalette.face
       if let slide = selected {
         VStack(spacing: 14) {
-          Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+          Text(WritingDisplayText.slideTitle(slide.heading))
             .font(.system(.title2, design: .rounded, weight: .bold))
+            .foregroundStyle(PhonePalette.ink)
             .multilineTextAlignment(.center)
             .lineLimit(3)
             .minimumScaleFactor(0.55)
@@ -203,11 +212,11 @@ struct PhoneWritingPresentationSurface: View {
   private var stageAccessibilityLabel: String {
     guard let selected else { return "\(accessibilityName), presentation, no slides" }
     return "\(accessibilityName), presentation, slide \(selected.index + 1), "
-      + (selected.heading.isEmpty ? "Untitled slide" : selected.heading)
+      + WritingDisplayText.slideTitle(selected.heading)
   }
 
   private func slideAccessibilityLabel(_ slide: WritingSlide) -> String {
-    "Slide \(slide.index + 1), " + (slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+    "Slide \(slide.index + 1), " + WritingDisplayText.slideTitle(slide.heading)
   }
 
   private func select(_ slide: WritingSlide) {
@@ -261,6 +270,10 @@ struct PhoneWritingPresentationPlayer: View {
   @Environment(\.dismiss) private var dismiss
   @State private var index: Int
 
+  private var chromePlan: PhoneWritingChromePlan {
+    PhoneWritingMetrics.chromePolicy.plan(kind: .presentation)
+  }
+
   init(
     client: EngineClient, writing: WritingDocumentView, slides: [WritingSlide],
     initialSlide: UInt32, accessibilityName: String
@@ -280,9 +293,9 @@ struct PhoneWritingPresentationPlayer: View {
           Color.black.ignoresSafeArea()
           if let slide {
             VStack(spacing: 18) {
-              Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+              Text(WritingDisplayText.slideTitle(slide.heading))
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(PhonePalette.ink)
                 .multilineTextAlignment(.center)
                 .lineLimit(4)
                 .minimumScaleFactor(0.45)
@@ -299,14 +312,15 @@ struct PhoneWritingPresentationPlayer: View {
             .padding(24)
             .frame(
               width: min(proxy.size.width, proxy.size.height * 16 / 9),
-              height: min(proxy.size.height, proxy.size.width * 9 / 16))
+              height: min(proxy.size.height, proxy.size.width * 9 / 16)
+            )
             .background(PhonePalette.face)
             .foregroundStyle(PhonePalette.ink)
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .accessibilityElement(children: .contain)
             .accessibilityLabel(
               "\(accessibilityName), slide \(slide.index + 1), "
-                + (slide.heading.isEmpty ? "Untitled slide" : slide.heading))
+                + WritingDisplayText.slideTitle(slide.heading))
           } else {
             ContentUnavailableView("No slides", systemImage: "rectangle.on.rectangle")
               .foregroundStyle(.white)
@@ -315,27 +329,39 @@ struct PhoneWritingPresentationPlayer: View {
       }
       .safeAreaInset(edge: .bottom) {
         HStack(spacing: 12) {
-          Button("Previous", systemImage: "chevron.left") { index = max(0, index - 1) }
-            .frame(minWidth: 44, minHeight: 44)
-            .disabled(index == 0 || slides.isEmpty)
+          Button {
+            index = max(0, index - 1)
+          } label: {
+            PhoneWritingActionLabel(
+              title: "Previous", systemImage: "chevron.left",
+              minimumTarget: chromePlan.minimumActionTarget)
+          }
+          .disabled(index == 0 || slides.isEmpty)
           Spacer()
           Text(slides.isEmpty ? "0 / 0" : "\(index + 1) / \(slides.count)")
             .font(.subheadline.monospacedDigit())
           Spacer()
-          Button("Next", systemImage: "chevron.right") {
+          Button {
             index = min(slides.count - 1, index + 1)
+          } label: {
+            PhoneWritingActionLabel(
+              title: "Next", systemImage: "chevron.right",
+              minimumTarget: chromePlan.minimumActionTarget)
           }
-          .frame(minWidth: 44, minHeight: 44)
           .disabled(slides.isEmpty || index >= slides.count - 1)
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: chromePlan.minimumActionTarget)
         .padding(.horizontal, 18)
         .background(.ultraThinMaterial)
       }
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
-            .frame(minWidth: 44, minHeight: 44)
+          Button {
+            dismiss()
+          } label: {
+            PhoneWritingActionLabel(
+              title: "Done", minimumTarget: chromePlan.minimumActionTarget)
+          }
         }
       }
     }
@@ -345,6 +371,24 @@ struct PhoneWritingPresentationPlayer: View {
   private var slide: WritingSlide? {
     guard slides.indices.contains(index) else { return nil }
     return slides[index]
+  }
+}
+
+struct PhoneWritingActionLabel: View {
+  let title: String
+  var systemImage: String?
+  let minimumTarget: Double
+
+  var body: some View {
+    Group {
+      if let systemImage {
+        Label(title, systemImage: systemImage)
+      } else {
+        Text(title)
+      }
+    }
+    .frame(minWidth: minimumTarget, minHeight: minimumTarget)
+    .contentShape(Rectangle())
   }
 }
 

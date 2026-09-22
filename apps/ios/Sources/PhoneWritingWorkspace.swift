@@ -39,6 +39,7 @@ private enum PhoneWritingSplitChoice: String, CaseIterable, Identifiable {
 private struct PhoneWritingSplitRequest: Identifiable {
   let id = UUID()
   let anchorPaneId: String
+  let anchorKind: PaneLayoutKind
   let axis: PaneLayoutAxis
   let baseTree: PaneLayoutTree
 }
@@ -163,7 +164,7 @@ struct PhoneWritingWorkspace: View {
     NavigationStack {
       Form {
         Picker("Pane", selection: $splitChoice) {
-          ForEach(availableSplitChoices) { choice in
+          ForEach(availableSplitChoices(for: request)) { choice in
             Text(choice.title).tag(choice)
           }
         }
@@ -209,8 +210,10 @@ struct PhoneWritingWorkspace: View {
       .flatMap(\.items)
   }
 
-  private var availableSplitChoices: [PhoneWritingSplitChoice] {
-    let allowed = PhoneWritingMetrics.chromePolicy.plan(kind: .text).splitKinds
+  private func availableSplitChoices(
+    for request: PhoneWritingSplitRequest
+  ) -> [PhoneWritingSplitChoice] {
+    let allowed = PhoneWritingMetrics.chromePolicy.plan(kind: request.anchorKind).splitKinds
     return PhoneWritingSplitChoice.allCases.filter { allowed.contains($0.kind) }
   }
 
@@ -299,7 +302,7 @@ struct PhoneWritingWorkspace: View {
     client.refreshHarnesses()
     splitHarnessId = HarnessPickerModel.defaultHarness(in: client.harnesses)?.id ?? ""
     splitRequest = PhoneWritingSplitRequest(
-      anchorPaneId: leaf.identity.paneId, axis: axis, baseTree: tree)
+      anchorPaneId: leaf.identity.paneId, anchorKind: leaf.kind, axis: axis, baseTree: tree)
   }
 
   private func createSplit(_ request: PhoneWritingSplitRequest) {
@@ -537,7 +540,9 @@ private struct PhoneWritingLeaf: View {
   private var header: some View {
     VStack(spacing: 0) {
       HStack(spacing: 0) {
-        Button { toggle() } label: {
+        Button {
+          toggle()
+        } label: {
           HStack(spacing: 8) {
             Image(systemName: icon)
               .font(.system(size: PhoneWritingLayoutMetrics.standard.headerKindIconSize))
@@ -555,7 +560,12 @@ private struct PhoneWritingLeaf: View {
               .truncationMode(.middle)
               .frame(maxWidth: .infinity, alignment: .leading)
           }
-          .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
+          .frame(
+            maxWidth: .infinity,
+            minHeight: chromePlan.headerHeight,
+            maxHeight: chromePlan.headerHeight,
+            alignment: .leading
+          )
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -569,33 +579,43 @@ private struct PhoneWritingLeaf: View {
             .font(
               .custom(
                 "Nunito", size: PhoneWritingLayoutMetrics.standard.headerCountPointSize,
-                relativeTo: .subheadline))
+                relativeTo: .subheadline)
+            )
             .foregroundStyle(PhonePalette.muted)
             .lineLimit(1)
             .truncationMode(.tail)
             .layoutPriority(1)
-            .accessibilityLabel(metadataAccessibilityLabel)
+            .accessibilityLabel(metadataLabel)
         }
         if leaf.companionAgentPaneId != nil {
           Image(systemName: "link")
             .font(.system(size: 15))
             .foregroundStyle(PhonePalette.secondary)
-            .frame(width: 30, height: 44)
+            .frame(width: 30, height: chromePlan.minimumActionTarget)
             .accessibilityLabel("Linked agent")
         }
         writingOptions
-        Button { toggle() } label: {
+        Button {
+          toggle()
+        } label: {
           Image(systemName: leaf.expanded ? "chevron.up" : "chevron.down")
             .font(.system(size: PhoneWritingLayoutMetrics.standard.headerActionIconSize))
             .foregroundStyle(PhonePalette.secondary)
-            .frame(width: 44, height: 44)
+            .frame(
+              width: chromePlan.minimumActionTarget,
+              height: chromePlan.minimumActionTarget
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(leaf.expanded ? "Collapse document" : "Expand document")
       }
       .padding(.leading, PhoneWritingLayoutMetrics.standard.headerHorizontalInset)
-      .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: chromePlan.headerHeight,
+        maxHeight: chromePlan.headerHeight
+      )
       .opacity(chromeOpacity)
 
       if leaf.companionAgentPaneId != nil {
@@ -603,7 +623,7 @@ private struct PhoneWritingLeaf: View {
           tabButton(.document, title: "Document", systemImage: icon)
           tabButton(.agent, title: "Agent", systemImage: "bubble.left.and.bubble.right")
         }
-        .frame(height: 44)
+        .frame(height: chromePlan.headerHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Linked document and agent tabs")
       }
@@ -612,15 +632,20 @@ private struct PhoneWritingLeaf: View {
 
   private var writingOptions: some View {
     Menu {
-      ForEach(chromePlan.menuActions, id: \.rawValue) { action in
-        if action == .splitColumns || action == .closePane { Divider() }
-        writingMenuAction(action)
+      ForEach(Array(chromePlan.menuGroups.enumerated()), id: \.offset) { index, group in
+        if index > 0 { Divider() }
+        ForEach(group, id: \.rawValue) { action in
+          writingMenuAction(action)
+        }
       }
     } label: {
       Image(systemName: "ellipsis")
         .font(.system(size: PhoneWritingLayoutMetrics.standard.headerActionIconSize))
         .foregroundStyle(PhonePalette.secondary)
-        .frame(width: 44, height: 44)
+        .frame(
+          width: chromePlan.minimumActionTarget,
+          height: chromePlan.minimumActionTarget
+        )
         .contentShape(Rectangle())
     }
     .accessibilityLabel("Writing options")
@@ -639,9 +664,9 @@ private struct PhoneWritingLeaf: View {
     switch action {
     case .font:
       Menu("Font") {
-        fontButton("Newsreader", .reading_serif)
-        fontButton("Classic serif", .classic_serif)
-        fontButton("Sans", .sans)
+        fontButton(WritingDisplayText.fontName(.reading_serif), .reading_serif)
+        fontButton(WritingDisplayText.fontName(.classic_serif), .classic_serif)
+        fontButton(WritingDisplayText.fontName(.sans), .sans)
       }
     case .useFullWidth:
       Button("Use full width") { setFullWidth(true) }
@@ -788,24 +813,17 @@ private struct PhoneWritingLeaf: View {
   }
 
   private var metadataLabel: String? {
+    guard let structure = writing?.structure else { return nil }
     switch leaf.kind {
     case .text:
-      let text = file?.viewport?.lines.map(\.text).joined(separator: "\n") ?? ""
-      let count = text.split(whereSeparator: { $0.isWhitespace }).count
-      return count == 1 ? "1 word" : "\(count) words"
+      return WritingDisplayText.count(Int(structure.wordCount), kind: .word)
     case .screenplay:
-      let count = writing?.structure?.scenes.count ?? 0
-      return count == 1 ? "1 scene" : "\(count) scenes"
+      return WritingDisplayText.count(structure.scenes.count, kind: .scene)
     case .presentation:
-      let count = writing?.structure?.slides.count ?? 0
-      return count == 1 ? "1 slide" : "\(count) slides"
+      return WritingDisplayText.count(structure.slides.count, kind: .slide)
     default:
       return nil
     }
-  }
-
-  private var metadataAccessibilityLabel: String {
-    metadataLabel ?? ""
   }
 
   private var chromeOpacity: Double {
@@ -907,7 +925,9 @@ private struct PhoneWritingLeaf: View {
   private func requestClose() {
     updateChrome(.menuChanged(false))
     let dirty = file?.file.dirty == true
-    switch WritingChromePolicy().closeDisposition(fileName: documentFileName, dirty: dirty) {
+    switch PhoneWritingMetrics.chromePolicy.writingChrome.closeDisposition(
+      fileName: documentFileName, dirty: dirty)
+    {
     case .closeImmediately: closePane()
     case .confirm: showingCloseConfirmation = true
     }
@@ -930,7 +950,11 @@ private struct PhoneWritingLeaf: View {
       Label(title, systemImage: systemImage)
         .font(.system(.subheadline, design: .rounded, weight: .semibold))
         .lineLimit(1)
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+        .frame(
+          maxWidth: .infinity,
+          minHeight: chromePlan.minimumActionTarget,
+          maxHeight: chromePlan.minimumActionTarget
+        )
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -973,7 +997,7 @@ private struct PhoneWritingTextSurface: View {
   private var plan: WritingLayoutPlan? {
     try? WritingLayoutPolicy(
       metrics: PhoneWritingMetrics.bodyWritingMetrics,
-      floors: PhoneWritingMetrics.bodyFloors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18)
+      floors: PhoneWritingMetrics.bodyFloors, gaps: PhoneWritingMetrics.sizing.gaps
     ).layout(
       WritingLayoutRequest(
         kind: .text,
@@ -1015,9 +1039,10 @@ private struct PhoneWritingTextSurface: View {
           Form {
             TextField(
               request.kind == .image ? "Image path" : "Link destination",
-              text: $destination)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
+              text: $destination
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
           }
           .navigationTitle(request.kind == .image ? "Insert image" : "Add link")
           .navigationBarTitleDisplayMode(.inline)
@@ -1277,6 +1302,9 @@ private struct PhoneWritingScenes: View {
   let accessibilityName: String
 
   @Environment(\.dismiss) private var dismiss
+  private var chromePlan: PhoneWritingChromePlan {
+    PhoneWritingMetrics.chromePolicy.plan(kind: .screenplay)
+  }
 
   var body: some View {
     NavigationStack {
@@ -1291,7 +1319,7 @@ private struct PhoneWritingScenes: View {
             Text(scene.heading.isEmpty ? "Untitled scene" : scene.heading)
               .lineLimit(2)
           }
-          .frame(minHeight: 44)
+          .frame(minHeight: chromePlan.minimumActionTarget)
         }
         .accessibilityLabel(
           "Scene \(scene.ordinal + 1), "
@@ -1300,7 +1328,14 @@ private struct PhoneWritingScenes: View {
       .navigationTitle("Scenes")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) {
+          Button {
+            dismiss()
+          } label: {
+            PhoneWritingActionLabel(
+              title: "Done", minimumTarget: chromePlan.minimumActionTarget)
+          }
+        }
       }
     }
     .accessibilityLabel("\(accessibilityName), scenes")
@@ -1327,6 +1362,9 @@ private struct PhoneWritingIdeaBoard: View {
   let accessibilityName: String
 
   @Environment(\.dismiss) private var dismiss
+  private var chromePlan: PhoneWritingChromePlan {
+    PhoneWritingMetrics.chromePolicy.plan(kind: .screenplay)
+  }
 
   var body: some View {
     NavigationStack {
@@ -1348,14 +1386,21 @@ private struct PhoneWritingIdeaBoard: View {
                 .font(.caption)
                 .foregroundStyle(PhonePalette.muted)
             }
-            .frame(minHeight: 44, alignment: .leading)
+            .frame(minHeight: chromePlan.minimumActionTarget, alignment: .leading)
           }
         }
       }
       .navigationTitle("Idea board")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+        ToolbarItem(placement: .confirmationAction) {
+          Button {
+            dismiss()
+          } label: {
+            PhoneWritingActionLabel(
+              title: "Done", minimumTarget: chromePlan.minimumActionTarget)
+          }
+        }
       }
     }
     .accessibilityLabel("\(accessibilityName), idea board")
