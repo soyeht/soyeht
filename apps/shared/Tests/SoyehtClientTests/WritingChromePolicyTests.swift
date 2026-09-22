@@ -7,8 +7,8 @@ private let chromePolicy = WritingChromePolicy()
 @Test func textChromeMovesEveryFixedActionWithoutLosingTheSelectionTools() {
   let reading = chromePolicy.plan(kind: .text, hasSelection: true)
   #expect(
-    reading.menuActions == [
-      .font, .useFullWidth, .focusMode, .splitColumns, .splitRows, .closePane,
+    reading.menuGroups == [
+      [.font, .useFullWidth, .focusMode], [.splitColumns, .splitRows], [.closePane],
     ])
   #expect(
     reading.selectionActions == [.bold, .italic, .heading, .list, .quote, .link, .image])
@@ -20,13 +20,12 @@ private let chromePolicy = WritingChromePolicy()
 
 @Test func screenplayAndPresentationMenusKeepTheirOnlyDoors() {
   #expect(
-    chromePolicy.plan(kind: .screenplay).menuActions == [
-      .ideaBoard, .scenes, .focusMode, .splitColumns, .splitRows, .closePane,
+    chromePolicy.plan(kind: .screenplay).menuGroups == [
+      [.ideaBoard, .scenes, .focusMode], [.splitColumns, .splitRows], [.closePane],
     ])
   #expect(
-    chromePolicy.plan(kind: .presentation).menuActions == [
-      .present, .splitColumns, .splitRows, .closePane,
-    ])
+    chromePolicy.plan(kind: .presentation).menuGroups
+      == [[.present], [.splitColumns, .splitRows], [.closePane]])
 }
 
 @Test func screenplayElementMenuOnlyAppearsForAnEmptyInsertionLine() {

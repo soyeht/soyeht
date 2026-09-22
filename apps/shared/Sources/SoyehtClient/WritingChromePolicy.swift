@@ -22,13 +22,15 @@ public enum WritingChromeAction: String, CaseIterable, Equatable, Sendable {
 }
 
 public struct WritingChromePlan: Equatable, Sendable {
-  public let menuActions: [WritingChromeAction]
+  public let menuGroups: [[WritingChromeAction]]
   public let selectionActions: [WritingChromeAction]
 
+  public var menuActions: [WritingChromeAction] { menuGroups.flatMap { $0 } }
+
   public init(
-    menuActions: [WritingChromeAction], selectionActions: [WritingChromeAction]
+    menuGroups: [[WritingChromeAction]], selectionActions: [WritingChromeAction]
   ) {
-    self.menuActions = menuActions
+    self.menuGroups = menuGroups
     self.selectionActions = selectionActions
   }
 }
@@ -151,23 +153,26 @@ public struct WritingChromePolicy: Equatable, Sendable {
     switch kind {
     case .text:
       return WritingChromePlan(
-        menuActions: [
-          .font, fullWidth ? .useReadingWidth : .useFullWidth, .focusMode,
-          .splitColumns, .splitRows, .closePane,
+        menuGroups: [
+          [.font, fullWidth ? .useReadingWidth : .useFullWidth, .focusMode],
+          [.splitColumns, .splitRows],
+          [.closePane],
         ],
         selectionActions: hasSelection
           ? [.bold, .italic, .heading, .list, .quote, .link, .image] : [])
     case .screenplay:
       return WritingChromePlan(
-        menuActions: [
-          .ideaBoard, .scenes, .focusMode, .splitColumns, .splitRows, .closePane,
+        menuGroups: [
+          [.ideaBoard, .scenes, .focusMode],
+          [.splitColumns, .splitRows],
+          [.closePane],
         ], selectionActions: [])
     case .presentation:
       return WritingChromePlan(
-        menuActions: [.present, .splitColumns, .splitRows, .closePane],
+        menuGroups: [[.present], [.splitColumns, .splitRows], [.closePane]],
         selectionActions: [])
     default:
-      return WritingChromePlan(menuActions: [], selectionActions: [])
+      return WritingChromePlan(menuGroups: [], selectionActions: [])
     }
   }
 

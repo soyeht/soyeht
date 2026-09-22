@@ -3,10 +3,6 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-private let screenplayElementKinds: [ScreenplayElementKind] = [
-  .scene_heading, .action, .character, .parenthetical, .dialogue, .transition, .shot,
-]
-
 private enum ScreenplayHeaderPopover: String, Identifiable {
   case options
   case scenes
@@ -162,7 +158,7 @@ struct WritingScreenplayPane: View {
   ) -> some View {
     WritingChromeHeader(
       paneId: pane.paneId, title: documentFileName,
-      metadata: structure.map { sceneCountLabel($0.scenes.count) },
+      metadata: structure.map { WritingDisplayText.count($0.scenes.count, kind: .scene) },
       companionLinked: companionLinked, opacity: chromeOpacity,
       headerDrag: headerDrag,
       onHover: { updateChrome(.headerHoverChanged($0)) },
@@ -211,7 +207,29 @@ struct WritingScreenplayPane: View {
   }
 
   private func screenplayOptions(document: WritingDocument) -> some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+    let groups = MacPaneLayoutMetrics.chromePolicy.plan(
+      kind: .screenplay, fullWidth: document.fullWidth
+    ).menuGroups
+    return VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+        if index > 0 { Divider().padding(.vertical, MacTheme.Space.x3) }
+        ForEach(group, id: \.rawValue) { action in
+          screenplayOption(action, document: document)
+        }
+      }
+    }
+    .padding(MacTheme.Space.x8)
+    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
+    .background(MacTheme.face)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Screenplay options menu")
+  }
+
+  @ViewBuilder private func screenplayOption(
+    _ action: WritingChromeAction, document: WritingDocument
+  ) -> some View {
+    switch action {
+    case .ideaBoard:
       optionButton(
         "Idea board", icon: "lightbulb",
         identifier: "writing-show-beat-board-\(pane.paneId)"
@@ -219,12 +237,14 @@ struct WritingScreenplayPane: View {
         headerPopover = nil
         showingBeatBoard = true
       }
+    case .scenes:
       optionButton(
         "Scenes", icon: "sidebar.left",
         identifier: "writing-show-scenes-\(pane.paneId)"
       ) {
         headerPopover = .scenes
       }
+    case .focusMode:
       optionButton(
         document.focusMode ? "Turn off Focus mode" : "Focus mode", icon: "scope",
         active: document.focusMode, disabled: !client.connected,
@@ -233,7 +253,7 @@ struct WritingScreenplayPane: View {
         headerPopover = nil
         setFocus(!document.focusMode)
       }
-      Divider().padding(.vertical, MacTheme.Space.x3)
+    case .splitColumns:
       optionButton(
         "Split into columns", icon: "rectangle.split.2x1",
         disabled: !client.connected || layoutActionsDisabled,
@@ -242,6 +262,7 @@ struct WritingScreenplayPane: View {
         headerPopover = nil
         onSplit(pane.paneId, .columns)
       }
+    case .splitRows:
       optionButton(
         "Split into rows", icon: "rectangle.split.1x2",
         disabled: !client.connected || layoutActionsDisabled,
@@ -250,7 +271,7 @@ struct WritingScreenplayPane: View {
         headerPopover = nil
         onSplit(pane.paneId, .rows)
       }
-      Divider().padding(.vertical, MacTheme.Space.x3)
+    case .closePane:
       optionButton(
         "Close pane", icon: "xmark", role: .destructive,
         disabled: !client.connected || layoutActionsDisabled,
@@ -259,12 +280,10 @@ struct WritingScreenplayPane: View {
         headerPopover = nil
         requestClose()
       }
+    case .font, .useFullWidth, .useReadingWidth, .present, .bold, .italic, .heading, .list,
+      .quote, .link, .image:
+      EmptyView()
     }
-    .padding(MacTheme.Space.x8)
-    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
-    .background(MacTheme.face)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Screenplay options menu")
   }
 
   private func optionLabel(_ title: String, icon: String, active: Bool = false) -> some View {
@@ -378,7 +397,7 @@ struct WritingScreenplayPane: View {
       showingElementKindPicker.toggle()
     } label: {
       HStack(spacing: MacTheme.Space.x6) {
-        Text(smartTypeKind.label)
+        Text(WritingDisplayText.screenplayElementName(smartTypeKind))
           .lineLimit(1)
         Spacer(minLength: 0)
         Image(systemName: "chevron.down")
@@ -397,12 +416,12 @@ struct WritingScreenplayPane: View {
     .focusable(false)
     .popover(isPresented: $showingElementKindPicker, arrowEdge: .bottom) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
-        ForEach(screenplayElementKinds, id: \.self) { kind in
+        ForEach(WritingDisplayText.screenplayElementKinds, id: \.self) { kind in
           Button {
             showingElementKindPicker = false
             requestEdit(kind: kind)
           } label: {
-            Text(kind.label)
+            Text(WritingDisplayText.screenplayElementName(kind))
               .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
               .foregroundStyle(MacTheme.ink)
               .frame(
@@ -454,10 +473,6 @@ struct WritingScreenplayPane: View {
     return URL(fileURLWithPath: path).lastPathComponent
   }
 
-  private func sceneCountLabel(_ count: Int) -> String {
-    count == 1 ? "1 scene" : "\(count) scenes"
-  }
-
   private var chromeOpacity: Double {
     chromeActivity.visibility == .dimmed
       ? WritingChromeMetrics.standard.dimmedOpacity : 1
@@ -474,7 +489,7 @@ struct WritingScreenplayPane: View {
   }
 
   private func requestClose() {
-    switch WritingChromePolicy().closeDisposition(
+    switch MacPaneLayoutMetrics.chromePolicy.closeDisposition(
       fileName: documentFileName, dirty: file?.file.dirty == true)
     {
     case .closeImmediately:
@@ -1012,7 +1027,7 @@ private struct ScreenplayViewport: NSViewRepresentable {
         for: NSRange(location: min(selection.location, raw.length), length: 0))
       let contentRange = lineContentRange(lineRange)
       let lineText = raw.substring(with: contentRange)
-      let showingElementMenu = WritingChromePolicy().showsScreenplayElementMenu(
+      let showingElementMenu = MacPaneLayoutMetrics.chromePolicy.showsScreenplayElementMenu(
         lineText: lineText, selectionLength: selection.length)
       let smartTypeKind = ScreenplayInteraction.suggestionKind(
         at: position(selection.location)?.line ?? parent.activeLine, in: parent.structure)
@@ -1269,20 +1284,6 @@ private struct ScreenplayViewport: NSViewRepresentable {
           range: NSRange(location: location, length: line.utf16.count))
       }
       location += line.utf16.count + 1
-    }
-  }
-}
-
-extension ScreenplayElementKind {
-  fileprivate var label: String {
-    switch self {
-    case .scene_heading: "Scene heading"
-    case .action: "Action"
-    case .character: "Character"
-    case .parenthetical: "Parenthetical"
-    case .dialogue: "Dialogue"
-    case .transition: "Transition"
-    case .shot: "Shot"
     }
   }
 }

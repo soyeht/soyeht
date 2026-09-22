@@ -329,29 +329,56 @@ struct WritingTextPane: View {
   }
 
   private func writingOptions(_ document: WritingDocument) -> some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+    let groups = MacPaneLayoutMetrics.chromePolicy.plan(
+      kind: .text, fullWidth: document.fullWidth
+    ).menuGroups
+    return VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+        if index > 0 { Divider().padding(.vertical, MacTheme.Space.x3) }
+        ForEach(group, id: \.rawValue) { action in
+          writingOption(action, document: document)
+        }
+      }
+    }
+    .padding(MacTheme.Space.x8)
+    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
+    .background(MacTheme.face)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Writing options menu")
+  }
+
+  @ViewBuilder private func writingOption(
+    _ action: WritingChromeAction, document: WritingDocument
+  ) -> some View {
+    switch action {
+    case .font:
       Menu {
-        fontButton("Newsreader", .reading_serif, document: document)
-        fontButton("Classic serif", .classic_serif, document: document)
-        fontButton("Sans", .sans, document: document)
+        fontButton(
+          WritingDisplayText.fontName(.reading_serif), .reading_serif, document: document)
+        fontButton(
+          WritingDisplayText.fontName(.classic_serif), .classic_serif, document: document)
+        fontButton(WritingDisplayText.fontName(.sans), .sans, document: document)
       } label: {
-        optionLabel(fontLabel(document.font), icon: "textformat")
+        optionLabel(WritingDisplayText.fontName(document.font), icon: "textformat")
       }
       .menuStyle(.borderlessButton)
       .focusable(false)
       .disabled(!client.connected)
-      .accessibilityLabel("Font: \(fontLabel(document.font))")
+      .accessibilityLabel("Font: \(WritingDisplayText.fontName(document.font))")
       .accessibilityIdentifier("writing-options-font-\(pane.paneId)")
+    case .useFullWidth, .useReadingWidth:
+      let fullWidth = action == .useFullWidth
       optionButton(
-        document.fullWidth ? "Use reading width" : "Use full width",
-        icon: document.fullWidth
-          ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+        fullWidth ? "Use full width" : "Use reading width",
+        icon: fullWidth
+          ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left",
         disabled: !client.connected,
         identifier: "writing-options-width-\(pane.paneId)"
       ) {
         showingOptions = false
-        setFullWidth(!document.fullWidth)
+        setFullWidth(fullWidth)
       }
+    case .focusMode:
       optionButton(
         document.focusMode ? "Turn off Focus mode" : "Focus mode", icon: "scope",
         active: document.focusMode, disabled: !client.connected,
@@ -360,7 +387,7 @@ struct WritingTextPane: View {
         showingOptions = false
         setFocus(!document.focusMode)
       }
-      Divider().padding(.vertical, MacTheme.Space.x3)
+    case .splitColumns:
       optionButton(
         "Split into columns", icon: "rectangle.split.2x1",
         disabled: !client.connected || layoutActionsDisabled,
@@ -369,6 +396,7 @@ struct WritingTextPane: View {
         showingOptions = false
         onSplit(pane.paneId, .columns)
       }
+    case .splitRows:
       optionButton(
         "Split into rows", icon: "rectangle.split.1x2",
         disabled: !client.connected || layoutActionsDisabled,
@@ -377,7 +405,7 @@ struct WritingTextPane: View {
         showingOptions = false
         onSplit(pane.paneId, .rows)
       }
-      Divider().padding(.vertical, MacTheme.Space.x3)
+    case .closePane:
       optionButton(
         "Close pane", icon: "xmark", role: .destructive,
         disabled: !client.connected || layoutActionsDisabled,
@@ -386,12 +414,10 @@ struct WritingTextPane: View {
         showingOptions = false
         requestClose()
       }
+    case .ideaBoard, .scenes, .present, .bold, .italic, .heading, .list, .quote, .link,
+      .image:
+      EmptyView()
     }
-    .padding(MacTheme.Space.x8)
-    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
-    .background(MacTheme.face)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Writing options menu")
   }
 
   private func optionLabel(_ title: String, icon: String, active: Bool = false) -> some View {
@@ -562,20 +588,12 @@ struct WritingTextPane: View {
 
   private var wordCountLabel: String? {
     guard let count = writing?.structure?.wordCount else { return nil }
-    return count == 1 ? "1 word" : "\(count) words"
+    return WritingDisplayText.count(Int(count), kind: .word)
   }
 
   private var documentFileName: String {
     guard let path = writing?.document.file.path else { return pane.name }
     return URL(fileURLWithPath: path).lastPathComponent
-  }
-
-  private func fontLabel(_ font: WritingFont) -> String {
-    switch font {
-    case .reading_serif: "Newsreader"
-    case .classic_serif: "Classic serif"
-    case .sans: "Sans"
-    }
   }
 
   private var hasSelection: Bool {
@@ -598,7 +616,7 @@ struct WritingTextPane: View {
         x: textPlan.columnRect.origin.x + localSelection.origin.x,
         y: textPlan.columnRect.origin.y + localSelection.origin.y),
       size: localSelection.size)
-    return WritingChromePolicy().selectionToolbarRect(
+    return MacPaneLayoutMetrics.chromePolicy.selectionToolbarRect(
       selection: selectionInSurface, within: plan.contentRect)
   }
 
@@ -613,7 +631,7 @@ struct WritingTextPane: View {
   }
 
   private func requestClose() {
-    switch WritingChromePolicy().closeDisposition(
+    switch MacPaneLayoutMetrics.chromePolicy.closeDisposition(
       fileName: documentFileName, dirty: file?.file.dirty == true)
     {
     case .closeImmediately:

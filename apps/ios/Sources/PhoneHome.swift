@@ -9,6 +9,7 @@ import VisionKit
   static var face: Color { SoyehtThemeColors.face }
   static var ink: Color { SoyehtThemeColors.ink }
   static var secondary: Color { SoyehtThemeColors.secondary }
+  static var muted: Color { SoyehtThemeColors.muted }
   static var accent: Color { SoyehtThemeColors.accent }
   static var success: Color { SoyehtThemeColors.success }
   static var warning: Color { SoyehtThemeColors.warning }

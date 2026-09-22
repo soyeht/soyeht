@@ -35,6 +35,11 @@ import Testing
   #expect(palette.agentPlates == ["#D8E0FE", "#CDE7DD", "#F6D6DB", "#EEE3CD"])
 }
 
+@Test func neoMilkInkKeepsReadableContrastOnThePresentationFace() {
+  let palette = TerminalColorTheme.neoMilk.palette
+  #expect(ThemeLabColorMath.contrastRatio(palette.ink, palette.face) >= 4.5)
+}
+
 @Test func raisedAndWellPairsMatchTheProductionThemes() {
   let expected: [TerminalColorTheme: [String?]] = [
     .neoMilk: ["#A6B4C8", "#FFFFFF", "#A6B4C8", "#FFFFFF", nil],
