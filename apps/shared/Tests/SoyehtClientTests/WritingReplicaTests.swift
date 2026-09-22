@@ -97,5 +97,5 @@ private func writingDocument() -> WritingDocument {
 private func writingStructure(_ document: WritingDocument) -> WritingStructureResult {
   WritingStructureResult(
     document: document, slides: [], scenes: [], elements: [], variants: [], beats: [],
-    truncated: false)
+    wordCount: 0, truncated: false)
 }

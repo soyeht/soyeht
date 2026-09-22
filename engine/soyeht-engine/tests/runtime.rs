@@ -370,6 +370,50 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
 }
 
 #[test]
+fn writing_structure_counts_the_whole_document_and_recalculates_after_an_edit() {
+    let rig = Rig::new();
+    fs::create_dir_all(rig.path.join("Writing/Texts")).unwrap();
+    let text = format!("{}{}\n", "\n".repeat(2_100), vec!["word"; 914].join(" "));
+    fs::write(rig.path.join("Writing/Texts/ensaio.md"), text).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Whole document count","path":rig.path,"idempotencyKey":"word-count-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Texts/ensaio.md","kind":"text","idempotencyKey":"open-word-count"}),
+    );
+    let file_id = opened["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let initial = client.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    assert_eq!(initial["wordCount"], 914);
+
+    let edited = client.call(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"1","author":local_file_author(),
+            "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":0}},"text":"added\n"}],
+            "idempotencyKey":"add-counted-word"
+        }),
+    );
+    assert_eq!(edited["file"]["revision"], "2");
+    let revised = client.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"2"}),
+    );
+    assert_eq!(revised["wordCount"], 915);
+}
+
+#[test]
 fn writing_document_creation_is_durable_disjoint_and_idempotent_across_restart() {
     let mut rig = Rig::new();
     let repository = rig.path.join("writing-create-repository");

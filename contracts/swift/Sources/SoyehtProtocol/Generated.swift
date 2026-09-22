@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 bc5dd605956175ece4341e068213d424568eb26b09b274a299a269dd3f8e5b55). Do not edit.
+// Generated from contracts/protocol.json (sha256 6047da4a0a8d49ed0f97ebc9f47a97797d25cb0a9c9175af5b0b9a7bfb95867d). Do not edit.
 import Foundation
 
 
@@ -5587,14 +5587,16 @@ public struct WritingStructureResult: Codable, Sendable {
     public var `elements`: [ScreenplayElement]
     public var `variants`: [WritingLineVariants]
     public var `beats`: [BeatCard]
+    public var `wordCount`: UInt32
     public var `truncated`: Bool
-    public init(`document`: WritingDocument, `slides`: [WritingSlide], `scenes`: [ScreenplayScene], `elements`: [ScreenplayElement], `variants`: [WritingLineVariants], `beats`: [BeatCard], `truncated`: Bool) {
+    public init(`document`: WritingDocument, `slides`: [WritingSlide], `scenes`: [ScreenplayScene], `elements`: [ScreenplayElement], `variants`: [WritingLineVariants], `beats`: [BeatCard], `wordCount`: UInt32, `truncated`: Bool) {
         self.`document` = `document`
         self.`slides` = `slides`
         self.`scenes` = `scenes`
         self.`elements` = `elements`
         self.`variants` = `variants`
         self.`beats` = `beats`
+        self.`wordCount` = `wordCount`
         self.`truncated` = `truncated`
     }
 }

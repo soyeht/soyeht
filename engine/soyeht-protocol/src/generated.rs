@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 bc5dd605956175ece4341e068213d424568eb26b09b274a299a269dd3f8e5b55). Do not edit.
+// Generated from contracts/protocol.json (sha256 6047da4a0a8d49ed0f97ebc9f47a97797d25cb0a9c9175af5b0b9a7bfb95867d). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -5056,6 +5056,8 @@ pub struct WritingStructureResult {
     pub variants: Vec<WritingLineVariants>,
     #[serde(rename = "beats")]
     pub beats: Vec<BeatCard>,
+    #[serde(rename = "wordCount")]
+    pub word_count: u32,
     #[serde(rename = "truncated")]
     pub truncated: bool,
 }

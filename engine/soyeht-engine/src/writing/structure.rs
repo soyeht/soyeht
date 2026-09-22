@@ -122,11 +122,16 @@ impl Core {
             elements,
             variants: record.sidecar.line_variants,
             beats: record.sidecar.beat_cards,
+            word_count: word_count(text),
             truncated: false,
         };
         serde_json::to_value(result)
             .map_err(|_| errors::internal("Writing structure cannot be encoded"))
     }
+}
+
+fn word_count(text: &str) -> u32 {
+    u32::try_from(text.split_whitespace().count()).unwrap_or(u32::MAX)
 }
 
 fn structure(
