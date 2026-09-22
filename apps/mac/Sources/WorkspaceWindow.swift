@@ -786,6 +786,7 @@ private struct WritingSlideShowHostModifier: ViewModifier {
         \.writingSlideShowAction,
         WritingSlideShowAction { request in coordinator.present(request) }
       )
+      .environment(\.writingSlideShowViewportRegistry, coordinator.viewportRegistry)
       .modifier(WritingSlideShowWindowEventsModifier(coordinator: coordinator))
       .onChange(of: client.panes.map(\.paneId)) { _, paneIds in
         guard let session = coordinator.session else { return }

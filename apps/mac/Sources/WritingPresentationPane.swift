@@ -9,8 +9,7 @@ struct WritingSlideShowRequest: Sendable {
   let fileId: String
   let initialIndex: Int
   let slideCount: Int
-  let captureViewportOffset: @MainActor @Sendable () -> Void
-  let restoreViewportOffset: @MainActor @Sendable () -> Void
+  let viewportOffset: PaneLayoutPoint?
 }
 
 struct WritingSlideShowAction: Sendable {
@@ -36,6 +35,69 @@ extension EnvironmentValues {
     get { self[WritingSlideShowActionKey.self] }
     set { self[WritingSlideShowActionKey.self] = newValue }
   }
+
+  var writingSlideShowViewportRegistry: WritingPresentationViewportRegistry? {
+    get { self[WritingSlideShowViewportRegistryKey.self] }
+    set { self[WritingSlideShowViewportRegistryKey.self] = newValue }
+  }
+}
+
+@MainActor final class WritingPresentationViewportRegistry: @unchecked Sendable {
+  private final class WeakScrollView {
+    weak var value: NSScrollView?
+
+    init(_ value: NSScrollView) { self.value = value }
+  }
+
+  private var scrollViews: [String: WeakScrollView] = [:]
+  private var pendingRestorations: [String: PaneLayoutPoint] = [:]
+  private var restorationTasks: [String: Task<Void, Never>] = [:]
+
+  func attach(_ scrollView: NSScrollView, paneId: String) {
+    scrollViews[paneId] = WeakScrollView(scrollView)
+    if applyPendingRestoration(for: paneId) {
+      pendingRestorations[paneId] = nil
+    }
+  }
+
+  func detach(_ scrollView: NSScrollView, paneId: String) {
+    guard scrollViews[paneId]?.value === scrollView else { return }
+    scrollViews[paneId] = nil
+  }
+
+  func capture(paneId: String) -> PaneLayoutPoint? {
+    guard let origin = scrollViews[paneId]?.value?.contentView.bounds.origin else { return nil }
+    return PaneLayoutPoint(x: origin.x, y: origin.y)
+  }
+
+  func restore(_ offset: PaneLayoutPoint, paneId: String) {
+    pendingRestorations[paneId] = offset
+    restorationTasks[paneId]?.cancel()
+    restorationTasks[paneId] = Task { @MainActor [weak self] in
+      await Task.yield()
+      guard !Task.isCancelled, let self else { return }
+      var restored = applyPendingRestoration(for: paneId)
+      await Task.yield()
+      guard !Task.isCancelled else { return }
+      restored = applyPendingRestoration(for: paneId) || restored
+      if restored { pendingRestorations[paneId] = nil }
+      restorationTasks[paneId] = nil
+    }
+  }
+
+  @discardableResult private func applyPendingRestoration(for paneId: String) -> Bool {
+    guard let scrollView = scrollViews[paneId]?.value,
+      let offset = pendingRestorations[paneId]
+    else { return false }
+    scrollView.layoutSubtreeIfNeeded()
+    scrollView.contentView.scroll(to: NSPoint(x: offset.x, y: offset.y))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+    return true
+  }
+}
+
+private struct WritingSlideShowViewportRegistryKey: EnvironmentKey {
+  static let defaultValue: WritingPresentationViewportRegistry? = nil
 }
 
 struct WritingSlideShowSession: Equatable, Sendable {
@@ -64,7 +126,8 @@ struct WritingSlideShowSession: Equatable, Sendable {
   @ObservationIgnored private var inputMonitor: Any?
   @ObservationIgnored private var cursorTask: Task<Void, Never>?
   @ObservationIgnored private var fullScreenEntryTask: Task<Void, Never>?
-  @ObservationIgnored private var restoreViewportOffset: (@MainActor @Sendable () -> Void)?
+  @ObservationIgnored private var viewportOffsetState = WritingSlideShowScrollOffsetState()
+  @ObservationIgnored let viewportRegistry = WritingPresentationViewportRegistry()
 
   var isPresenting: Bool { session != nil }
 
@@ -81,8 +144,9 @@ struct WritingSlideShowSession: Equatable, Sendable {
     session = WritingSlideShowSession(paneId: request.paneId, fileId: request.fileId)
     navigation = WritingSlideShowState(
       index: request.initialIndex, slideCount: request.slideCount)
-    request.captureViewportOffset()
-    restoreViewportOffset = request.restoreViewportOffset
+    if let viewportOffset = request.viewportOffset {
+      viewportOffsetState.capture(viewportOffset)
+    }
     snapshot = WindowSnapshot(
       frame: window.frame, firstResponder: window.firstResponder,
       acceptsMouseMovedEvents: window.acceptsMouseMovedEvents)
@@ -259,15 +323,19 @@ struct WritingSlideShowSession: Equatable, Sendable {
 
   private func finish(window: NSWindow) {
     let saved = snapshot
-    let restoreViewportOffset = self.restoreViewportOffset
-    self.restoreViewportOffset = nil
+    let paneId = session?.paneId
+    let viewportOffset = viewportOffsetState.takeRestoration()
     cleanUpSession()
     if !windowState.startedFullScreen, let saved {
       window.setFrame(saved.frame, display: true)
     }
     DispatchQueue.main.async { [weak window, weak responder = saved?.firstResponder] in
       if let window, let responder { window.makeFirstResponder(responder) }
-      restoreViewportOffset?()
+      DispatchQueue.main.async {
+        if let paneId, let viewportOffset {
+          self.viewportRegistry.restore(viewportOffset, paneId: paneId)
+        }
+      }
     }
     snapshot = nil
     windowState = WritingSlideShowWindowState()
@@ -275,15 +343,19 @@ struct WritingSlideShowSession: Equatable, Sendable {
 
   private func forceFinish() {
     let window = windowReference.value
-    let restoreViewportOffset = self.restoreViewportOffset
-    self.restoreViewportOffset = nil
+    let paneId = session?.paneId
+    let viewportOffset = viewportOffsetState.takeRestoration()
     cleanUpSession()
     windowState = WritingSlideShowWindowState()
     if let window, let saved = snapshot {
       window.acceptsMouseMovedEvents = saved.acceptsMouseMovedEvents
     }
     snapshot = nil
-    DispatchQueue.main.async { restoreViewportOffset?() }
+    DispatchQueue.main.async {
+      if let paneId, let viewportOffset {
+        self.viewportRegistry.restore(viewportOffset, paneId: paneId)
+      }
+    }
   }
 
   private func cleanUpSession() {
@@ -322,6 +394,7 @@ struct MacWindowReader: NSViewRepresentable {
 struct WritingPresentationPane: View {
   @Bindable var client: EngineClient
   @Environment(\.writingSlideShowAction) private var slideShow
+  @Environment(\.writingSlideShowViewportRegistry) private var viewportRegistry
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
   let companionLinked: Bool
@@ -334,7 +407,6 @@ struct WritingPresentationPane: View {
   @State private var showingOptions = false
   @State private var showingCloseConfirmation = false
   @State private var chromeActivity = WritingChromeActivityState()
-  @State private var viewportScroll = WritingPresentationViewportScrollState()
 
   private var writing: WritingDocumentView? {
     client.writingDocuments.values.first { $0.document.file.paneId == pane.paneId }
@@ -502,11 +574,10 @@ struct WritingPresentationPane: View {
       ) {
         showingOptions = false
         guard let fileId = writing?.document.file.fileId else { return }
+        let viewportOffset = viewportRegistry?.capture(paneId: pane.paneId)
         let request = WritingSlideShowRequest(
           paneId: pane.paneId, fileId: fileId, initialIndex: Int(selectedSlide),
-          slideCount: slides.count,
-          captureViewportOffset: { viewportScroll.capture() },
-          restoreViewportOffset: { viewportScroll.restore() })
+          slideCount: slides.count, viewportOffset: viewportOffset)
         Task { @MainActor in
           await Task.yield()
           slideShow(request)
@@ -636,7 +707,7 @@ struct WritingPresentationPane: View {
   private func presentationStage(_ file: EditorFileView) -> some View {
     WritingPresentationViewport(
       client: client, view: file, activeLine: $activeLine, targetLine: $targetLine,
-      scrollState: viewportScroll,
+      paneId: pane.paneId, viewportRegistry: viewportRegistry,
       onEditingActivity: { updateChrome(.edited) }
     )
     .background(MacTheme.face)
@@ -841,45 +912,29 @@ private struct WritingPresentedSlide: View {
   }
 }
 
-@MainActor private final class WritingPresentationViewportScrollState {
-  private weak var scrollView: NSScrollView?
-  private var state = WritingSlideShowScrollOffsetState()
-
-  func attach(_ scrollView: NSScrollView) {
-    self.scrollView = scrollView
-  }
-
-  func capture() {
-    guard let origin = scrollView?.contentView.bounds.origin else { return }
-    state.capture(PaneLayoutPoint(x: origin.x, y: origin.y))
-  }
-
-  func restore() {
-    guard let scrollView, let offset = state.takeRestoration() else { return }
-    scrollView.layoutSubtreeIfNeeded()
-    scrollView.contentView.scroll(to: NSPoint(x: offset.x, y: offset.y))
-    scrollView.reflectScrolledClipView(scrollView.contentView)
-  }
-}
-
 private struct WritingPresentationViewport: NSViewRepresentable {
   @Bindable var client: EngineClient
   let view: EditorFileView
   @Binding var activeLine: UInt32
   @Binding var targetLine: UInt32?
-  let scrollState: WritingPresentationViewportScrollState
+  let paneId: String
+  let viewportRegistry: WritingPresentationViewportRegistry?
   let onEditingActivity: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeNSView(context: Context) -> NSScrollView {
     let scrollView = context.coordinator.makeScrollView()
-    scrollState.attach(scrollView)
+    viewportRegistry?.attach(scrollView, paneId: paneId)
     return scrollView
   }
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
-    scrollState.attach(scrollView)
+    viewportRegistry?.attach(scrollView, paneId: paneId)
     context.coordinator.update()
+  }
+
+  static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+    coordinator.parent.viewportRegistry?.detach(scrollView, paneId: coordinator.parent.paneId)
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
