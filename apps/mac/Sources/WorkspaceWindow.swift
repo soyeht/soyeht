@@ -241,6 +241,23 @@ struct PaneHeaderDragConfiguration {
   let tint: Color
 }
 
+private enum PaneDragTransfer {
+  static let type = UTType(exportedAs: PaneDragTransferPolicy.typeIdentifier)
+  static let acceptedTypes = [type]
+
+  static func itemProvider() -> NSItemProvider {
+    let provider = NSItemProvider()
+    provider.registerDataRepresentation(
+      forTypeIdentifier: type.identifier, visibility: .ownProcess
+    ) {
+      completion in
+      completion(Data(), nil)
+      return nil
+    }
+    return provider
+  }
+}
+
 extension View {
   @ViewBuilder
   func paneHeaderDrag(_ configuration: PaneHeaderDragConfiguration?) -> some View {
@@ -248,8 +265,7 @@ extension View {
       onDrag {
         configuration.interaction.beginPaneDrag(
           workspaceId: configuration.workspaceId, paneId: configuration.paneId)
-        return NSItemProvider(
-          object: "soyeht-pane:\(configuration.workspaceId):\(configuration.paneId)" as NSString)
+        return PaneDragTransfer.itemProvider()
       } preview: {
         PaneDragGhost(title: configuration.title, tint: configuration.tint)
       }
@@ -1629,7 +1645,7 @@ private struct PaneLayoutTreeSurface: View {
       onSplit: onSplit, onPaneDrop: onPaneDrop
     )
     .onDrop(
-      of: [UTType.plainText],
+      of: PaneDragTransfer.acceptedTypes,
       delegate: PaneLayoutFallbackDropDelegate(interaction: interaction))
   }
 
@@ -1718,7 +1734,7 @@ private struct PaneLayoutNodeSurface: View {
     .id(presentation.draft.placeholderPaneId)
     .accessibilityIdentifier("new-pane-placeholder")
     .onDrop(
-      of: [UTType.plainText],
+      of: PaneDragTransfer.acceptedTypes,
       delegate: PaneLayoutChooserDropDelegate(interaction: interaction))
   }
 
@@ -2504,7 +2520,7 @@ private struct PaneDropTargetModifier: ViewModifier {
   func body(content: Content) -> some View {
     if let interaction, let size {
       content.onDrop(
-        of: [UTType.plainText],
+        of: PaneDragTransfer.acceptedTypes,
         delegate: PaneLayoutPaneDropDelegate(
           interaction: interaction, workspaceId: workspaceId, targetPaneId: paneId,
           targetSize: size, onPaneDrop: onPaneDrop))
