@@ -2,20 +2,28 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-private enum PreferencesSection: CaseIterable, Identifiable {
+private enum PreferencesNavigationItem: CaseIterable, Identifiable {
+  case general
   case appearance
   case harnesses
   case usage
-  case editor
+  case engine
+  case phone
+  case tasks
   case links
+  case editor
 
   var id: Self { self }
 
   var title: String {
     switch self {
+    case .general: "General"
     case .appearance: "Appearance"
     case .harnesses: "Harnesses"
     case .usage: "Usage"
+    case .engine: "Engine"
+    case .phone: "Phone"
+    case .tasks: "Tasks & loops"
     case .editor: "Shortcuts"
     case .links: "Links"
     }
@@ -23,20 +31,30 @@ private enum PreferencesSection: CaseIterable, Identifiable {
 
   var icon: String {
     switch self {
+    case .general: "gearshape"
     case .appearance: "paintpalette"
     case .harnesses: "cpu"
     case .usage: "gauge.with.dots.needle.50percent"
+    case .engine: "memorychip"
+    case .phone: "iphone"
+    case .tasks: "list.bullet.clipboard"
     case .editor: "keyboard"
     case .links: "link"
+    }
+  }
+
+  var hasDetail: Bool {
+    switch self {
+    case .appearance, .harnesses, .usage, .editor, .links: true
+    case .general, .engine, .phone, .tasks: false
     }
   }
 }
 
 struct PreferencesPanel: View {
   @Bindable var client: EngineClient
-  @Environment(\.macSheetAvailableSize) private var availableSize
-  @State private var section: PreferencesSection
-  @State private var compactSection: PreferencesSection?
+  @State private var section: PreferencesNavigationItem
+  @State private var compactSection: PreferencesNavigationItem?
   @State private var selectedUsageProvider: UsageProvider?
 
   init(client: EngineClient, initialUsageProvider: UsageProvider? = nil) {
@@ -47,26 +65,23 @@ struct PreferencesPanel: View {
   }
 
   var body: some View {
-    Group {
-      if layoutPlan.navigation == .stack {
-        compactPreferences
-      } else {
-        HStack(spacing: MacTheme.Space.x10) {
-          PreferencesSidebar(client: client, selection: $section)
-          preferenceDetail(section)
+    MacSheetSurface(kind: .preferences) { layoutPlan in
+      Group {
+        if layoutPlan.navigation == .stack {
+          compactPreferences
+        } else {
+          HStack(spacing: MacTheme.Space.x10) {
+            PreferencesSidebar(client: client, selection: $section)
+            preferenceDetail(section)
+          }
         }
       }
+      .padding(MacTheme.Space.x10)
+      .foregroundStyle(MacTheme.ink)
+      .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+      .onAppear { refreshCatalogues() }
+      .onChange(of: client.harnesses.map(\.id)) { _, _ in refreshCatalogues() }
     }
-    .padding(MacTheme.Space.x10)
-    .macSheetSurface(.preferences)
-    .foregroundStyle(MacTheme.ink)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
-    .onAppear { refreshCatalogues() }
-    .onChange(of: client.harnesses.map(\.id)) { _, _ in refreshCatalogues() }
-  }
-
-  private var layoutPlan: MacSheetLayoutPlan {
-    MacSheetLayoutPolicy().plan(for: .preferences, available: availableSize)
   }
 
   @ViewBuilder private var compactPreferences: some View {
@@ -93,13 +108,9 @@ struct PreferencesPanel: View {
           Text("Preferences")
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
             .padding(.horizontal, MacTheme.Space.x8)
-          compactPlaceholder("General", icon: "gearshape")
-          ForEach(PreferencesSection.allCases) { candidate in
-            compactButton(candidate)
+          ForEach(PreferencesNavigationItem.allCases) { item in
+            if item.hasDetail { compactButton(item) } else { compactPlaceholder(item) }
           }
-          compactPlaceholder("Engine", icon: "memorychip")
-          compactPlaceholder("Phone", icon: "iphone")
-          compactPlaceholder("Tasks & loops", icon: "list.bullet.clipboard")
         }
         .padding(MacTheme.Space.x8)
       }
@@ -107,7 +118,7 @@ struct PreferencesPanel: View {
     }
   }
 
-  private func compactButton(_ candidate: PreferencesSection) -> some View {
+  private func compactButton(_ candidate: PreferencesNavigationItem) -> some View {
     Button {
       section = candidate
       compactSection = candidate
@@ -127,10 +138,10 @@ struct PreferencesPanel: View {
     .buttonStyle(.plain)
   }
 
-  private func compactPlaceholder(_ title: String, icon: String) -> some View {
+  private func compactPlaceholder(_ item: PreferencesNavigationItem) -> some View {
     HStack(spacing: MacTheme.Space.x10) {
-      Image(systemName: icon).frame(width: 18)
-      Text(title)
+      Image(systemName: item.icon).frame(width: 18)
+      Text(item.title)
       Spacer()
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
@@ -139,7 +150,7 @@ struct PreferencesPanel: View {
     .frame(maxWidth: .infinity, minHeight: 40)
   }
 
-  @ViewBuilder private func preferenceDetail(_ selected: PreferencesSection) -> some View {
+  @ViewBuilder private func preferenceDetail(_ selected: PreferencesNavigationItem) -> some View {
     switch selected {
     case .appearance: ThemePreferencesPanel()
     case .harnesses: PreferencesHarnesses(client: client)
@@ -147,6 +158,7 @@ struct PreferencesPanel: View {
       UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
     case .editor: EditorInputPreferencesPanel()
     case .links: WebLinkPreferencesPanel()
+    case .general, .engine, .phone, .tasks: EmptyView()
     }
   }
 
@@ -160,7 +172,7 @@ struct PreferencesPanel: View {
 
 private struct PreferencesSidebar: View {
   @Bindable var client: EngineClient
-  @Binding var selection: PreferencesSection
+  @Binding var selection: PreferencesNavigationItem
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
@@ -168,15 +180,9 @@ private struct PreferencesSidebar: View {
         .font(MacTheme.chrome(16, weight: .bold))
         .padding(.horizontal, MacTheme.Space.x4)
       Color.clear.frame(height: MacTheme.Space.x8)
-      sidebarRow("General", icon: "gearshape")
-      sidebarButton(.appearance)
-      sidebarButton(.harnesses)
-      sidebarButton(.usage)
-      sidebarRow("Engine", icon: "memorychip")
-      sidebarRow("Phone", icon: "iphone")
-      sidebarRow("Tasks & loops", icon: "list.bullet.clipboard")
-      sidebarButton(.links)
-      sidebarButton(.editor)
+      ForEach(PreferencesNavigationItem.allCases) { item in
+        if item.hasDetail { sidebarButton(item) } else { sidebarRow(item) }
+      }
       Spacer()
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
         Text("Soyeht \(appVersion) · Dev profile")
@@ -194,13 +200,15 @@ private struct PreferencesSidebar: View {
     .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 
-  private func sidebarRow(_ title: String, icon: String, selected: Bool = false) -> some View {
+  private func sidebarRow(
+    _ item: PreferencesNavigationItem, selected: Bool = false
+  ) -> some View {
     HStack(spacing: MacTheme.Space.x10) {
-      Image(systemName: icon)
+      Image(systemName: item.icon)
         .font(.system(size: 13, weight: .semibold))
         .frame(width: 15, height: 15)
         .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
-      Text(title)
+      Text(item.title)
         .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: selected ? .bold : .semibold))
         .foregroundStyle(selected ? MacTheme.ink : MacTheme.secondary)
       Spacer()
@@ -215,11 +223,11 @@ private struct PreferencesSidebar: View {
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 
-  private func sidebarButton(_ section: PreferencesSection) -> some View {
+  private func sidebarButton(_ section: PreferencesNavigationItem) -> some View {
     Button {
       selection = section
     } label: {
-      sidebarRow(section.title, icon: section.icon, selected: selection == section)
+      sidebarRow(section, selected: selection == section)
     }
     .buttonStyle(.plain)
   }

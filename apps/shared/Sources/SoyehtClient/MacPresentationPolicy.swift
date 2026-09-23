@@ -52,9 +52,13 @@ public struct MacSheetLayoutPolicy: Equatable, Sendable {
   }
 
   public func plan(
-    for kind: MacSheetKind, available: PaneLayoutSize
+    for kind: MacSheetKind, available: PaneLayoutSize?
   ) -> MacSheetLayoutPlan {
     let preferred = preferredSize(for: kind)
+    guard let available else {
+      return MacSheetLayoutPlan(
+        width: preferred.width, height: preferred.height, navigation: .sidebar)
+    }
     let widthLimit = usable(available.width, fallback: preferred.width)
     let heightLimit = usable(available.height, fallback: preferred.height ?? 0)
     let width = min(preferred.width, widthLimit)

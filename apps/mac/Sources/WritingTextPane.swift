@@ -362,7 +362,7 @@ struct WritingTextPane: View {
         optionLabel(WritingDisplayText.fontName(document.font), icon: "textformat")
       }
       .menuStyle(.borderlessButton)
-      .focusable(false)
+      .focusEffectDisabled()
       .disabled(!client.connected)
       .accessibilityLabel("Font: \(WritingDisplayText.fontName(document.font))")
       .accessibilityIdentifier("writing-options-font-\(pane.paneId)")
@@ -438,7 +438,7 @@ struct WritingTextPane: View {
   ) -> some View {
     Button(role: role, action: action) { optionLabel(title, icon: icon, active: active) }
       .buttonStyle(.plain)
-      .focusable(false)
+      .focusEffectDisabled()
       .disabled(disabled)
       .accessibilityIdentifier(identifier)
   }

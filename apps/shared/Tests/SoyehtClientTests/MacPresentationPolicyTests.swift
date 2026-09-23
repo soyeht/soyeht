@@ -27,6 +27,15 @@ private let sheetPolicy = MacSheetLayoutPolicy()
   }
 }
 
+@Test func missingWindowMeasurementUsesTheInventoriedSizeWithoutInventingAViewport() {
+  for kind in MacSheetKind.allCases {
+    let plan = sheetPolicy.plan(for: kind, available: nil)
+    let preferred = sheetPolicy.preferredSize(for: kind)
+    #expect(plan.width == preferred.width)
+    #expect(plan.height == preferred.height)
+  }
+}
+
 @Test func compactPreferencesStackInsteadOfKeepingTheWideSidebar() {
   #expect(
     sheetPolicy.plan(

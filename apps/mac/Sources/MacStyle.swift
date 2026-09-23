@@ -278,25 +278,26 @@ private struct NeoAccentGlow: ViewModifier {
 }
 
 private struct MacSheetAvailableSizeKey: EnvironmentKey {
-  static let defaultValue = PaneLayoutSize(width: 1_440, height: 900)
+  static let defaultValue: PaneLayoutSize? = nil
 }
 
 extension EnvironmentValues {
-  var macSheetAvailableSize: PaneLayoutSize {
+  var macSheetAvailableSize: PaneLayoutSize? {
     get { self[MacSheetAvailableSizeKey.self] }
     set { self[MacSheetAvailableSizeKey.self] = newValue }
   }
 }
 
-private struct MacSheetSurface: ViewModifier {
+struct MacSheetSurface<SheetContent: View>: View {
   @Environment(\.macSheetAvailableSize) private var availableSize
   @State private var windowAvailableSize: PaneLayoutSize?
   let kind: MacSheetKind
+  @ViewBuilder let content: (MacSheetLayoutPlan) -> SheetContent
 
-  func body(content: Content) -> some View {
+  var body: some View {
     let plan = MacSheetLayoutPolicy().plan(
       for: kind, available: windowAvailableSize ?? availableSize)
-    content.frame(
+    content(plan).frame(
       width: CGFloat(plan.width),
       height: plan.height.map { CGFloat($0) }
     )
@@ -307,6 +308,14 @@ private struct MacSheetSurface: ViewModifier {
       }
       .frame(width: 0, height: 0)
     }
+  }
+}
+
+private struct MacSheetSurfaceModifier: ViewModifier {
+  let kind: MacSheetKind
+
+  func body(content: Content) -> some View {
+    MacSheetSurface(kind: kind) { _ in content }
   }
 }
 
@@ -361,7 +370,7 @@ extension View {
   }
 
   func macSheetSurface(_ kind: MacSheetKind) -> some View {
-    modifier(MacSheetSurface(kind: kind))
+    modifier(MacSheetSurfaceModifier(kind: kind))
   }
 }
 
