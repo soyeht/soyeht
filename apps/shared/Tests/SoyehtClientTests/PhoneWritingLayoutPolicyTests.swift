@@ -117,8 +117,9 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
       == textFloor.height - WritingLayoutMetrics.standard.headerHeight)
 }
 
-@Test func compactPhonePresentationStartsImmediatelyBelowItsNumberStrip() throws {
-  let bodyMetrics = PhoneWritingLayoutMetrics.standard.bodyWritingMetrics()
+@Test func compactPhonePresentationClearsItsMinimumHitTargetNumberStrip() throws {
+  let phoneMetrics = PhoneWritingLayoutMetrics.standard
+  let bodyMetrics = phoneMetrics.bodyWritingMetrics()
   let bodyFloors = PhoneWritingLayoutMetrics.standard.bodySurfaceFloors(from: phoneFloors)
   let policy = WritingLayoutPolicy(
     metrics: bodyMetrics, floors: bodyFloors,
@@ -133,9 +134,11 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
   }
 
   #expect(presentation.navigation == .numbers)
+  #expect(presentation.navigationRect.size.height == phoneMetrics.minimumHitTarget)
+  let selectedButtonBottom = presentation.navigationRect.origin.y + phoneMetrics.minimumHitTarget
   #expect(
     presentation.stageRect.origin.y
-      == presentation.navigationRect.maxY + bodyMetrics.paneInset)
+      >= selectedButtonBottom + bodyMetrics.paneInset)
   #expect(
     abs(presentation.stageRect.size.width / presentation.stageRect.size.height - 16.0 / 9.0)
       < 0.000_001)

@@ -194,6 +194,7 @@ public struct PhoneWritingLayoutMetrics: Equatable, Sendable {
     var result = source
     result.headerHeight = 0
     result.compactStageAlignment = .belowNavigation
+    result.presentationNumericRailHeight = minimumHitTarget
     return result
   }
 
