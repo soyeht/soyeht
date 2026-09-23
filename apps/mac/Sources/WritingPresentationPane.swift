@@ -261,7 +261,8 @@ struct WritingSlideShowSession: Equatable, Sendable {
       case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
         guard event.window === self.windowReference.value else { return event }
         self.noteActivity()
-        return event
+        NSCursor.arrow.set()
+        return nil
       case .leftMouseDown:
         guard event.window === self.windowReference.value else { return event }
         self.noteActivity()
