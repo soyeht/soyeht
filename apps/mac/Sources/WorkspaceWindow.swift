@@ -741,20 +741,21 @@ struct WorkspaceWindow: View {
       }
       Button("Close") { showPairing = false }
     }.padding(32).frame(maxWidth: .infinity).background(MacTheme.canvas).foregroundStyle(
-      MacTheme.ink)
-      .confirmationDialog(
-        "Revoke this iPhone's access?",
-        isPresented: Binding(
-          get: { deviceToRevoke != nil }, set: { if !$0 { deviceToRevoke = nil } })
-      ) {
-        Button("Revoke", role: .destructive) {
-          if let id = deviceToRevoke { client.revokeDevice(id) }
-          deviceToRevoke = nil
-        }
-        Button("Cancel", role: .cancel) { deviceToRevoke = nil }
-      } message: {
-        Text("Connections will close. Access will require pairing again.")
+      MacTheme.ink
+    )
+    .confirmationDialog(
+      "Revoke this iPhone's access?",
+      isPresented: Binding(
+        get: { deviceToRevoke != nil }, set: { if !$0 { deviceToRevoke = nil } })
+    ) {
+      Button("Revoke", role: .destructive) {
+        if let id = deviceToRevoke { client.revokeDevice(id) }
+        deviceToRevoke = nil
       }
+      Button("Cancel", role: .cancel) { deviceToRevoke = nil }
+    } message: {
+      Text("Connections will close. Access will require pairing again.")
+    }
   }
 
   private var phoneWorkspace: some View {
@@ -1048,7 +1049,8 @@ private struct WorkspaceTopBar: View {
             keyboardFocusable: plan.sticky?.workspaceId != workspace.workspaceId,
             focusedWorkspaceId: $focusedWorkspaceId,
             action: { onSelectWorkspace(workspace.workspaceId) },
-            onClose: { onCloseWorkspace(workspace.workspaceId) })
+            onClose: { onCloseWorkspace(workspace.workspaceId) }
+          )
           .opacity(plan.sticky?.workspaceId == workspace.workspaceId ? 0 : 1)
           .allowsHitTesting(plan.sticky?.workspaceId != workspace.workspaceId)
           .accessibilityHidden(plan.sticky?.workspaceId == workspace.workspaceId)
@@ -1103,7 +1105,8 @@ private struct WorkspaceTopBar: View {
         .frame(
           width: stickyOcclusionWidth(for: sticky, in: measurement),
           height: MacPaneLayoutMetrics.workspaceTabViewportHeight,
-          alignment: sticky.edge == .leading ? .leading : .trailing)
+          alignment: sticky.edge == .leading ? .leading : .trailing
+        )
         .transition(.opacity)
       }
     }
@@ -1138,7 +1141,8 @@ private struct WorkspaceTopBar: View {
     measurement = nextMeasurement
     let overflowReservation =
       MacPaneLayoutMetrics.workspaceOverflowButtonWidth + Double(MacTheme.Space.x10)
-    let widthWithoutOverflow = nextMeasurement.viewportWidth
+    let widthWithoutOverflow =
+      nextMeasurement.viewportWidth
       + (showsOverflowControl ? overflowReservation : 0)
     let needsOverflow = nextMeasurement.contentWidth > widthWithoutOverflow + 0.5
     showsOverflowControl = needsOverflow
@@ -1177,7 +1181,8 @@ private struct WorkspaceTopBar: View {
   private func stickyTabWidth(
     for sticky: WorkspaceTabStickyPresentation, in measurement: WorkspaceTabStripMeasurement
   ) -> Double {
-    let measured = measurement.items.first(where: { $0.workspaceId == sticky.workspaceId })?.width
+    let measured =
+      measurement.items.first(where: { $0.workspaceId == sticky.workspaceId })?.width
       ?? MacPaneLayoutMetrics.workspaceTabMaximumWidth
     return min(
       measured,
@@ -1275,7 +1280,8 @@ private struct WorkspaceTab: View {
       .modifier(
         WorkspaceTabKeyboardFocus(
           workspaceId: workspaceId, enabled: keyboardFocusable,
-          focusedWorkspaceId: focusedWorkspaceId))
+          focusedWorkspaceId: focusedWorkspaceId)
+      )
       .onKeyPress(.return) {
         guard keyboardFocusable else { return .ignored }
         action()
@@ -1329,7 +1335,9 @@ private struct WorkspaceOverflowList: View {
       ScrollView {
         LazyVStack(alignment: .leading, spacing: MacTheme.Space.x6) {
           ForEach(workspaces, id: \.workspaceId) { workspace in
-            Button { onSelect(workspace.workspaceId) } label: {
+            Button {
+              onSelect(workspace.workspaceId)
+            } label: {
               HStack(alignment: .top, spacing: MacTheme.Space.x8) {
                 Image(systemName: "folder")
                   .foregroundStyle(MacTheme.secondary)
@@ -2695,16 +2703,16 @@ private struct PaneCard: View {
       hasSummary: pane.mode == .agent && agentSummary != nil,
       hasStatus: pane.mode == .agent)
     return headerContent(plan: plan)
-    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
-    .foregroundStyle(MacTheme.secondary)
-    .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
-    .background(tint, in: Capsule())
-    .paneHeaderDrag(dragConfiguration)
-    .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
-      AgentHarnessSwitchPicker(
-        client: client, pane: pane, isPresented: $showingHarnessSwitch)
-    }
+      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+      .foregroundStyle(MacTheme.secondary)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
+      .background(tint, in: Capsule())
+      .paneHeaderDrag(dragConfiguration)
+      .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
+        AgentHarnessSwitchPicker(
+          client: client, pane: pane, isPresented: $showingHarnessSwitch)
+      }
   }
 
   private func headerContent(plan: PaneHeaderLayoutPlan) -> some View {
@@ -2799,16 +2807,22 @@ private struct PaneCard: View {
         Label("Open workspace tasks", systemImage: "line.3.horizontal.decrease")
       }
       Divider()
-      Button { onSplit(pane.paneId, .columns) } label: {
+      Button {
+        onSplit(pane.paneId, .columns)
+      } label: {
         Label("Split into columns", systemImage: "rectangle.split.2x1")
       }
       .disabled(!client.connected || interaction?.blocksLayoutActions == true)
-      Button { onSplit(pane.paneId, .rows) } label: {
+      Button {
+        onSplit(pane.paneId, .rows)
+      } label: {
         Label("Split into rows", systemImage: "rectangle.split.1x2")
       }
       .disabled(!client.connected || interaction?.blocksLayoutActions == true)
       Divider()
-      Button(role: .destructive) { onClose(pane.paneId) } label: {
+      Button(role: .destructive) {
+        onClose(pane.paneId)
+      } label: {
         Label("Close pane", systemImage: "xmark")
       }
       .disabled(!client.connected || interaction?.blocksLayoutActions == true)
@@ -2823,7 +2837,9 @@ private struct PaneCard: View {
   }
 
   private var splitColumnButton: some View {
-    Button { onSplit(pane.paneId, .columns) } label: {
+    Button {
+      onSplit(pane.paneId, .columns)
+    } label: {
       Image(systemName: "rectangle.split.2x1")
     }
     .help("Split pane into columns")
@@ -2833,7 +2849,9 @@ private struct PaneCard: View {
   }
 
   private var splitRowButton: some View {
-    Button { onSplit(pane.paneId, .rows) } label: {
+    Button {
+      onSplit(pane.paneId, .rows)
+    } label: {
       Image(systemName: "rectangle.split.1x2")
     }
     .help("Split pane into rows")
@@ -2843,11 +2861,15 @@ private struct PaneCard: View {
   }
 
   private var closePaneButton: some View {
-    Button { onClose(pane.paneId) } label: { Image(systemName: "xmark") }
-      .help("Close this pane")
-      .accessibilityLabel("Close this pane")
-      .accessibilityIdentifier("close-pane-\(pane.paneId)")
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+    Button {
+      onClose(pane.paneId)
+    } label: {
+      Image(systemName: "xmark")
+    }
+    .help("Close this pane")
+    .accessibilityLabel("Close this pane")
+    .accessibilityIdentifier("close-pane-\(pane.paneId)")
+    .disabled(!client.connected || interaction?.blocksLayoutActions == true)
   }
 
   #if DEBUG
@@ -2884,7 +2906,9 @@ private struct PaneCard: View {
     }
 
     private var captureMenuButton: some View {
-      Button { toggleExperimentCapture() } label: {
+      Button {
+        toggleExperimentCapture()
+      } label: {
         Label(
           experimentCaptureActionTitle,
           systemImage: pane.experimentCapture?.on == true ? "stop.circle" : "record.circle")
