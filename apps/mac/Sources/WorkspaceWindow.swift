@@ -21,6 +21,7 @@ import UniformTypeIdentifiers
   static let workspaceTabFadeWidth = Double(MacTheme.Space.x18)
   static let paneVerticalInset = 17.0
   static let railWidth = 56.0
+  static let railButtonSize = 36.0
 
   static let paneHalo: Double = {
     let elevation = MacTheme.Elevation.pane
@@ -294,6 +295,9 @@ struct WorkspaceWindow: View {
   var body: some View {
     GeometryReader { geometry in
       workspaceChrome(windowSize: geometry.size)
+        .environment(
+          \.macSheetAvailableSize,
+          PaneLayoutSize(width: geometry.size.width, height: geometry.size.height))
     }
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
     .environment(editorInputPreferences)
@@ -667,7 +671,7 @@ struct WorkspaceWindow: View {
     if destination != .agents { newPaneDraft = nil }
   }
   private var pairing: some View {
-    ScrollView { pairingContent }.frame(width: 520, height: 720).background(MacTheme.canvas)
+    ScrollView { pairingContent }.macSheetSurface(.pairing).background(MacTheme.canvas)
   }
   private var pairingContent: some View {
     VStack(spacing: 20) {
@@ -714,7 +718,8 @@ struct WorkspaceWindow: View {
         }.padding(.vertical, 12)
       }
       Button("Close") { showPairing = false }
-    }.padding(32).frame(width: 460).background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
+    }.padding(32).frame(maxWidth: .infinity).background(MacTheme.canvas).foregroundStyle(
+      MacTheme.ink)
       .confirmationDialog(
         "Revoke this iPhone's access?",
         isPresented: Binding(
@@ -1712,6 +1717,9 @@ private struct PaneLayoutNodeSurface: View {
     .frame(width: width, height: height, alignment: .topLeading)
     .id(presentation.draft.placeholderPaneId)
     .accessibilityIdentifier("new-pane-placeholder")
+    .onDrop(
+      of: [UTType.plainText],
+      delegate: PaneLayoutChooserDropDelegate(interaction: interaction))
   }
 
   @ViewBuilder private func leafSurface(
@@ -2455,6 +2463,36 @@ private struct PaneLayoutFallbackDropDelegate: DropDelegate {
   }
 }
 
+private struct PaneLayoutChooserDropDelegate: DropDelegate {
+  let interaction: PaneLayoutInteractionState
+
+  private var plan: PaneLayoutDropPresentation {
+    PaneLayoutDropPresentationPolicy.plan(for: .chooser)
+  }
+
+  func validateDrop(info: DropInfo) -> Bool {
+    plan.acceptsDrop && interaction.paneSource != nil
+  }
+
+  func dropEntered(info: DropInfo) {
+    interaction.updateDropTarget(nil)
+  }
+
+  func dropUpdated(info: DropInfo) -> DropProposal? {
+    interaction.updateDropTarget(nil)
+    return DropProposal(operation: .move)
+  }
+
+  func dropExited(info: DropInfo) {
+    interaction.updateDropTarget(nil)
+  }
+
+  func performDrop(info: DropInfo) -> Bool {
+    interaction.clear()
+    return plan.completesAsNoOp
+  }
+}
+
 private struct PaneDropTargetModifier: ViewModifier {
   let interaction: PaneLayoutInteractionState?
   let workspaceId: String
@@ -2607,7 +2645,7 @@ private struct PaneCard: View {
         }
       }
       .padding(MacTheme.Space.x18)
-      .frame(width: 420)
+      .macSheetSurface(.captureDeletion)
       .interactiveDismissDisabled()
     }
     .overlay(alignment: .topTrailing) {

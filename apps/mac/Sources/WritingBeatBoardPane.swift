@@ -36,32 +36,56 @@ struct WritingBeatBoardPane: View {
   }
 
   private var header: some View {
-    HStack(spacing: MacTheme.Space.x10) {
-      Image(systemName: "lightbulb")
+    GeometryReader { geometry in
+      let plan = WritingBeatBoardHeaderPolicy().plan(viewportWidth: geometry.size.width)
+      HStack(spacing: MacTheme.Space.x10) {
+        Image(systemName: "lightbulb")
+          .foregroundStyle(MacTheme.secondary)
+        Text("Idea board — \(title)")
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Spacer(minLength: MacTheme.Space.x4)
+        Button {
+          showScreenplay()
+        } label: {
+          headerActionLabel("Screenplay", icon: "doc.text", plan: plan)
+        }
+        .buttonStyle(.plain)
         .foregroundStyle(MacTheme.secondary)
-      Text("Idea board — \(title)")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
-      Spacer()
-      Button {
-        showScreenplay()
-      } label: {
-        Label("Screenplay", systemImage: "doc.text")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+        .accessibilityLabel("Screenplay")
+        Button {
+          editor = .new(order: UInt32(clamping: beats.count))
+        } label: {
+          headerActionLabel("Idea", icon: "plus", plan: plan)
+        }
+        .buttonStyle(NeoPillButtonStyle())
+        .accessibilityLabel("New idea")
+        .accessibilityIdentifier("writing-new-beat")
       }
-      .buttonStyle(.plain).foregroundStyle(MacTheme.secondary)
-      Button {
-        editor = .new(order: UInt32(clamping: beats.count))
-      } label: {
-        Label("Idea", systemImage: "plus")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
-      }
-      .buttonStyle(NeoPillButtonStyle())
-      .accessibilityIdentifier("writing-new-beat")
+      .padding(.horizontal, MacTheme.Space.x14)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .padding(.horizontal, MacTheme.Space.x14).frame(height: 54)
+    .frame(height: 54)
     .background(MacTheme.well, in: Capsule())
     .padding(.horizontal, MacTheme.Space.x10).padding(.top, MacTheme.Space.x10)
     .padding(.bottom, MacTheme.Space.x6)
+  }
+
+  @ViewBuilder private func headerActionLabel(
+    _ title: String, icon: String, plan: WritingBeatBoardHeaderPlan
+  ) -> some View {
+    if plan.showsActionTitles {
+      Label(title, systemImage: icon)
+        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+    } else {
+      Image(systemName: icon)
+        .font(.system(size: MacTheme.TypeScale.control, weight: .bold))
+        .frame(width: 18, height: 18)
+        .accessibilityHidden(true)
+    }
   }
 
   private var board: some View {
@@ -259,16 +283,14 @@ private struct BeatEditorSheet: View {
         .font(MacTheme.chrome(MacTheme.TypeScale.caption))
         .scrollContentBackground(.hidden).padding(MacTheme.Space.x8)
         .frame(height: 112).neoWell(radius: MacTheme.Radius.control)
-      HStack(spacing: MacTheme.Space.x10) {
-        Picker("Category", selection: $category) {
-          ForEach(beatCategories, id: \.self) { value in Text(value.label).tag(value) }
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: MacTheme.Space.x10) {
+          categoryPicker
+          scenePicker
         }
-        Picker("Scene", selection: $sceneId) {
-          Text("No scene").tag(String?.none)
-          ForEach(scenes, id: \.sceneId) { scene in
-            Text("Scene \(identifier: scene.ordinal + 1) · \(scene.heading)")
-              .tag(String?.some(scene.sceneId))
-          }
+        VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+          categoryPicker
+          scenePicker
         }
       }
       .font(MacTheme.chrome(MacTheme.TypeScale.control))
@@ -279,7 +301,23 @@ private struct BeatEditorSheet: View {
           .buttonStyle(.borderedProminent).disabled(!valid || saving)
       }
     }
-    .padding(MacTheme.Space.x18).frame(width: 520).background(MacTheme.canvas)
+    .padding(MacTheme.Space.x18).macSheetSurface(.ideaEditor).background(MacTheme.canvas)
+  }
+
+  private var categoryPicker: some View {
+    Picker("Category", selection: $category) {
+      ForEach(beatCategories, id: \.self) { value in Text(value.label).tag(value) }
+    }
+  }
+
+  private var scenePicker: some View {
+    Picker("Scene", selection: $sceneId) {
+      Text("No scene").tag(String?.none)
+      ForEach(scenes, id: \.sceneId) { scene in
+        Text("Scene \(identifier: scene.ordinal + 1) · \(scene.heading)")
+          .tag(String?.some(scene.sceneId))
+      }
+    }
   }
 
   private var valid: Bool {

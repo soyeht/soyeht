@@ -171,6 +171,7 @@ struct WritingTextPane: View {
   @State private var destinationKind: WritingFormatKind?
   @State private var destination = ""
   @State private var showingOptions = false
+  @State private var clearPointerOpenedOptionsFocus = false
   @State private var showingCloseConfirmation = false
   @State private var chromeActivity = WritingChromeActivityState()
 
@@ -299,6 +300,9 @@ struct WritingTextPane: View {
       onHover: { updateChrome(.headerHoverChanged($0)) },
       trailing: {
         Button {
+          if !showingOptions {
+            clearPointerOpenedOptionsFocus = NSApp.currentEvent?.type == .leftMouseUp
+          }
           showingOptions.toggle()
         } label: {
           Image(systemName: "ellipsis")
@@ -315,7 +319,15 @@ struct WritingTextPane: View {
         .accessibilityLabel("Writing options menu")
         .accessibilityIdentifier("writing-options-\(pane.paneId)")
         .popover(isPresented: $showingOptions, arrowEdge: .bottom) {
-          if let document { writingOptions(document) }
+          if let document {
+            writingOptions(document)
+              .background(
+                MacWindowReader { window in
+                  guard clearPointerOpenedOptionsFocus, let window else { return }
+                  window.makeFirstResponder(nil)
+                  clearPointerOpenedOptionsFocus = false
+                })
+          }
         }
       }
     )
@@ -362,7 +374,7 @@ struct WritingTextPane: View {
         optionLabel(WritingDisplayText.fontName(document.font), icon: "textformat")
       }
       .menuStyle(.borderlessButton)
-      .focusable(false)
+      .focusEffectDisabled()
       .disabled(!client.connected)
       .accessibilityLabel("Font: \(WritingDisplayText.fontName(document.font))")
       .accessibilityIdentifier("writing-options-font-\(pane.paneId)")
@@ -438,6 +450,7 @@ struct WritingTextPane: View {
   ) -> some View {
     Button(role: role, action: action) { optionLabel(title, icon: icon, active: active) }
       .buttonStyle(.plain)
+      .focusEffectDisabled()
       .disabled(disabled)
       .accessibilityIdentifier(identifier)
   }

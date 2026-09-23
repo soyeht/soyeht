@@ -2,6 +2,18 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func chooserDropIsASilentNoOpWithoutTargetFeedback() {
+  let chooser = PaneLayoutDropPresentationPolicy.plan(for: .chooser)
+  let pane = PaneLayoutDropPresentationPolicy.plan(for: .pane)
+
+  #expect(chooser.acceptsDrop)
+  #expect(!chooser.showsTarget)
+  #expect(chooser.completesAsNoOp)
+  #expect(pane.acceptsDrop)
+  #expect(pane.showsTarget)
+  #expect(!pane.completesAsNoOp)
+}
+
 @Test func dropHitTestingUsesFourTwentyFivePercentEdgesAndACenter() throws {
   let area = PaneLayoutRect(size: PaneLayoutSize(width: 600, height: 500))
   let pane = PaneLayoutRect(

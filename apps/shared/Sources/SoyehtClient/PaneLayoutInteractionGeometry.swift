@@ -10,6 +10,37 @@ public struct PaneLayoutDropTarget: Equatable, Sendable {
   }
 }
 
+public enum PaneLayoutDropSurface: Equatable, Sendable {
+  case pane
+  case chooser
+  case workspace
+}
+
+public struct PaneLayoutDropPresentation: Equatable, Sendable {
+  public var acceptsDrop: Bool
+  public var showsTarget: Bool
+  public var completesAsNoOp: Bool
+
+  public init(acceptsDrop: Bool, showsTarget: Bool, completesAsNoOp: Bool) {
+    self.acceptsDrop = acceptsDrop
+    self.showsTarget = showsTarget
+    self.completesAsNoOp = completesAsNoOp
+  }
+}
+
+public enum PaneLayoutDropPresentationPolicy {
+  public static func plan(for surface: PaneLayoutDropSurface) -> PaneLayoutDropPresentation {
+    switch surface {
+    case .pane:
+      PaneLayoutDropPresentation(acceptsDrop: true, showsTarget: true, completesAsNoOp: false)
+    case .chooser:
+      PaneLayoutDropPresentation(acceptsDrop: true, showsTarget: false, completesAsNoOp: true)
+    case .workspace:
+      PaneLayoutDropPresentation(acceptsDrop: false, showsTarget: false, completesAsNoOp: true)
+    }
+  }
+}
+
 /// Pure hit testing shared by drag previews and committed drops.
 public enum PaneLayoutDropGeometry {
   public static let edgeFraction = 0.25
