@@ -126,7 +126,7 @@ struct PhoneWritingPresentationSurface: View {
             Text("\(slide.index + 1)")
               .font(.caption.monospaced().bold())
               .foregroundStyle(
-                slide.index == selectedSlide ? Color.white : PhonePalette.secondary
+                slide.index == selectedSlide ? PhonePalette.onAccent : PhonePalette.secondary
               )
               .frame(
                 width: chromePlan.minimumActionTarget,
@@ -289,42 +289,41 @@ struct PhoneWritingPresentationPlayer: View {
   var body: some View {
     NavigationStack {
       GeometryReader { proxy in
+        let stage = WritingSlideShowPolicy.standard.fittedStage(
+          in: PaneLayoutSize(width: proxy.size.width, height: proxy.size.height))
         ZStack {
-          Color.black.ignoresSafeArea()
-          if let slide {
-            VStack(spacing: 18) {
-              Text(WritingDisplayText.slideTitle(slide.heading))
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .foregroundStyle(PhonePalette.ink)
-                .multilineTextAlignment(.center)
-                .lineLimit(4)
-                .minimumScaleFactor(0.45)
-              if !slide.imagePaths.isEmpty {
-                HStack(spacing: 12) {
-                  ForEach(Array(slide.imagePaths.prefix(2)), id: \.self) { asset in
-                    PhoneWritingPresentationAsset(
-                      client: client, fileId: writing.document.file.fileId,
-                      revision: writing.document.file.revision, asset: asset)
+          PhonePalette.presentationLetterbox.ignoresSafeArea()
+          ZStack {
+            if let slide {
+              VStack(spacing: 18) {
+                Text(WritingDisplayText.slideTitle(slide.heading))
+                  .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                  .multilineTextAlignment(.center)
+                  .lineLimit(4)
+                  .minimumScaleFactor(0.45)
+                if !slide.imagePaths.isEmpty {
+                  HStack(spacing: 12) {
+                    ForEach(Array(slide.imagePaths.prefix(2)), id: \.self) { asset in
+                      PhoneWritingPresentationAsset(
+                        client: client, fileId: writing.document.file.fileId,
+                        revision: writing.document.file.revision, asset: asset)
+                    }
                   }
                 }
               }
+              .accessibilityElement(children: .contain)
+              .accessibilityLabel(
+                "\(accessibilityName), slide \(slide.index + 1), "
+                  + WritingDisplayText.slideTitle(slide.heading))
+            } else {
+              ContentUnavailableView("No slides", systemImage: "rectangle.on.rectangle")
             }
-            .padding(24)
-            .frame(
-              width: min(proxy.size.width, proxy.size.height * 16 / 9),
-              height: min(proxy.size.height, proxy.size.width * 9 / 16)
-            )
-            .background(PhonePalette.face)
-            .foregroundStyle(PhonePalette.ink)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(
-              "\(accessibilityName), slide \(slide.index + 1), "
-                + WritingDisplayText.slideTitle(slide.heading))
-          } else {
-            ContentUnavailableView("No slides", systemImage: "rectangle.on.rectangle")
-              .foregroundStyle(.white)
           }
+          .padding(24)
+          .frame(width: stage.size.width, height: stage.size.height)
+          .background(PhonePalette.face)
+          .foregroundStyle(PhonePalette.ink)
+          .clipShape(RoundedRectangle(cornerRadius: 14))
         }
       }
       .safeAreaInset(edge: .bottom) {

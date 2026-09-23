@@ -11,6 +11,8 @@ import VisionKit
   static var secondary: Color { SoyehtThemeColors.secondary }
   static var muted: Color { SoyehtThemeColors.muted }
   static var accent: Color { SoyehtThemeColors.accent }
+  static var onAccent: Color { SoyehtThemeColors.onAccent }
+  static var presentationLetterbox: Color { SoyehtThemeColors.presentationLetterbox }
   static var success: Color { SoyehtThemeColors.success }
   static var warning: Color { SoyehtThemeColors.warning }
   static var danger: Color { SoyehtThemeColors.danger }
