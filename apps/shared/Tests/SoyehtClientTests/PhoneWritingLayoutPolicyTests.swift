@@ -14,6 +14,7 @@ private let phoneFonts = PaneLayoutFontMetrics(
 private let phoneFloors = PaneLayoutFloorFormula.surfaceFloors(fonts: phoneFonts)
 private let phonePolicy = PhoneWritingLayoutPolicy(floors: phoneFloors)
 private let phoneChrome = PhoneWritingChromePolicy()
+private let phoneSheets = PhoneWritingSheetPolicy()
 private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
 
 @Test func phoneWritingChromeHasOneFixedSingleLineHeaderAndCompleteInventories() {
@@ -36,6 +37,17 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
     ])
   #expect(
     presentation.menuGroups == [[.present], [.splitColumns, .splitRows], [.closePane]])
+}
+
+@Test func phoneWritingSheetsShareOneActionTargetAndNamedDetentInventory() {
+  for kind in PhoneWritingSheetKind.allCases {
+    #expect(phoneSheets.plan(for: kind).minimumActionTarget == 44)
+  }
+  #expect(phoneSheets.plan(for: .scenes).detents == [.medium])
+  #expect(phoneSheets.plan(for: .ideaBoard).detents == [.medium])
+  #expect(phoneSheets.plan(for: .split).detents == [.medium, .large])
+  #expect(phoneSheets.plan(for: .link).detents == [.medium])
+  #expect(phoneSheets.plan(for: .image).detents == [.medium])
 }
 
 @Test func screenplayElementOverlayConvertsCaretAtOneAndTwoTimesWithoutScalingTheTarget() {
@@ -103,6 +115,33 @@ private let phoneSafeArea = PhoneWritingViewportInsets(top: 50, bottom: 34)
   #expect(
     bodyFloors[.text]?.height
       == textFloor.height - WritingLayoutMetrics.standard.headerHeight)
+}
+
+@Test func compactPhonePresentationClearsItsMinimumHitTargetNumberStrip() throws {
+  let phoneMetrics = PhoneWritingLayoutMetrics.standard
+  let bodyMetrics = phoneMetrics.bodyWritingMetrics()
+  let bodyFloors = PhoneWritingLayoutMetrics.standard.bodySurfaceFloors(from: phoneFloors)
+  let policy = WritingLayoutPolicy(
+    metrics: bodyMetrics, floors: bodyFloors,
+    gaps: PaneLayoutGaps(horizontal: 18, vertical: 18))
+  let plan = try policy.layout(
+    WritingLayoutRequest(
+      kind: .presentation, viewport: PaneLayoutSize(width: 375, height: 812),
+      font: phoneFonts.prose))
+  guard case .presentation(let presentation) = plan.surface else {
+    Issue.record("Expected presentation plan")
+    return
+  }
+
+  #expect(presentation.navigation == .numbers)
+  #expect(presentation.navigationRect.size.height == phoneMetrics.minimumHitTarget)
+  let selectedButtonBottom = presentation.navigationRect.origin.y + phoneMetrics.minimumHitTarget
+  #expect(
+    presentation.stageRect.origin.y
+      >= selectedButtonBottom + bodyMetrics.paneInset)
+  #expect(
+    abs(presentation.stageRect.size.width / presentation.stageRect.size.height - 16.0 / 9.0)
+      < 0.000_001)
 }
 
 @Test func phoneProjectionKeepsCanonicalWritingOrderAndOnlyExplicitCompanions() {

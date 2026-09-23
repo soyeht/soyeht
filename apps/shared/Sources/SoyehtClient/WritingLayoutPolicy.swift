@@ -15,6 +15,11 @@ public enum WritingSlideNavigationMode: Equatable, Sendable {
   case numbers
 }
 
+public enum WritingCompactStageAlignment: Equatable, Sendable {
+  case centered
+  case belowNavigation
+}
+
 public enum WritingCompanionPresentation: Equatable, Sendable {
   case sideBySide
   case below
@@ -54,6 +59,7 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
   public var presentationMaximumStage: PaneLayoutSize
 
   public var companionTabStripHeight: Double
+  public var compactStageAlignment: WritingCompactStageAlignment
 
   public init(
     headerHeight: Double, paneInset: Double, stackSpacing: Double,
@@ -64,7 +70,8 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
     screenplaySceneRailWidth: Double, railDividerWidth: Double,
     presentationThumbnailRailWidth: Double, presentationNumericRailHeight: Double,
     presentationFooterHeight: Double, presentationMinimumStage: PaneLayoutSize,
-    presentationMaximumStage: PaneLayoutSize, companionTabStripHeight: Double
+    presentationMaximumStage: PaneLayoutSize, companionTabStripHeight: Double,
+    compactStageAlignment: WritingCompactStageAlignment = .centered
   ) {
     self.headerHeight = headerHeight
     self.paneInset = paneInset
@@ -86,6 +93,7 @@ public struct WritingLayoutMetrics: Equatable, Sendable {
     self.presentationMinimumStage = presentationMinimumStage
     self.presentationMaximumStage = presentationMaximumStage
     self.companionTabStripHeight = companionTabStripHeight
+    self.compactStageAlignment = compactStageAlignment
   }
 
   public static let standard = WritingLayoutMetrics(
@@ -540,13 +548,20 @@ public struct WritingLayoutPolicy: Equatable, Sendable {
     var combinedOverflow = overflowAxes
     if fitted.width > stageArea.size.width { combinedOverflow.insert(.horizontal) }
     if fitted.height > stageArea.size.height { combinedOverflow.insert(.vertical) }
+    let stageRect =
+      navigation == .numbers && metrics.compactStageAlignment == .belowNavigation
+      ? rect(
+        x: stageArea.origin.x + max(0, (stageArea.size.width - fitted.width) / 2),
+        y: stageArea.origin.y,
+        width: fitted.width, height: fitted.height)
+      : centered(fitted, in: stageArea)
     return WritingLayoutPlan(
       headerRect: header, toolbarRect: nil, reviewRect: nil,
       contentRect: body, contentSize: contentSize, overflowAxes: combinedOverflow,
       surface: .presentation(
         WritingPresentationLayoutPlan(
           navigation: navigation, navigationRect: navigationRect,
-          stageRect: centered(fitted, in: stageArea),
+          stageRect: stageRect,
           footerRect: rect(
             x: 0, y: contentSize.height - footer,
             width: contentSize.width, height: footer),
