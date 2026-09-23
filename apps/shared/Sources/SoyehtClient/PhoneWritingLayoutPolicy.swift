@@ -193,6 +193,7 @@ public struct PhoneWritingLayoutMetrics: Equatable, Sendable {
   ) -> WritingLayoutMetrics {
     var result = source
     result.headerHeight = 0
+    result.compactStageAlignment = .belowNavigation
     return result
   }
 
@@ -237,6 +238,51 @@ public struct PhoneWritingChromePlan: Equatable, Sendable {
     self.splitKinds = splitKinds
     self.headerHeight = headerHeight
     self.minimumActionTarget = minimumActionTarget
+  }
+}
+
+public enum PhoneWritingSheetKind: CaseIterable, Equatable, Sendable {
+  case scenes
+  case ideaBoard
+  case split
+  case link
+  case image
+}
+
+public enum PhoneWritingSheetDetent: Equatable, Sendable {
+  case medium
+  case large
+}
+
+public struct PhoneWritingSheetPlan: Equatable, Sendable {
+  public var detents: [PhoneWritingSheetDetent]
+  public var minimumActionTarget: Double
+
+  public init(detents: [PhoneWritingSheetDetent], minimumActionTarget: Double) {
+    self.detents = detents
+    self.minimumActionTarget = minimumActionTarget
+  }
+}
+
+/// Pure inventory for writing sheets. SwiftUI consumes this plan so sheet sizing
+/// and action targets do not drift between otherwise equivalent destinations.
+public struct PhoneWritingSheetPolicy: Equatable, Sendable {
+  public var metrics: PhoneWritingLayoutMetrics
+
+  public init(metrics: PhoneWritingLayoutMetrics = .standard) {
+    self.metrics = metrics
+  }
+
+  public func plan(for kind: PhoneWritingSheetKind) -> PhoneWritingSheetPlan {
+    let detents: [PhoneWritingSheetDetent]
+    switch kind {
+    case .split:
+      detents = [.medium, .large]
+    case .scenes, .ideaBoard, .link, .image:
+      detents = [.medium]
+    }
+    return PhoneWritingSheetPlan(
+      detents: detents, minimumActionTarget: metrics.minimumHitTarget)
   }
 }
 

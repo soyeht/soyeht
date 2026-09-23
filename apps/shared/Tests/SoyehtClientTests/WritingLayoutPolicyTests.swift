@@ -77,7 +77,7 @@ private let screenplayMetric = PaneLayoutFontMetric(
   let belowFloor = try writingPolicy.layout(
     WritingLayoutRequest(
       kind: .text,
-        viewport: PaneLayoutSize(width: 316, height: 331),
+      viewport: PaneLayoutSize(width: 316, height: 331),
       font: proseMetric, reviewVisible: true))
   guard case .text(let text) = atFloor.surface else {
     Issue.record("Expected text plan")
@@ -188,6 +188,22 @@ private let screenplayMetric = PaneLayoutFontMetric(
   #expect(short.navigation == .numbers)
   let wideRatio = wide.stageRect.size.width / wide.stageRect.size.height
   #expect(abs(wideRatio - 16.0 / 9.0) < 0.000_001)
+  #expect(wide.stageRect.origin.y > wide.navigationRect.origin.y)
+
+  let tallCompact = try writingPolicy.layout(
+    WritingLayoutRequest(
+      kind: .presentation, viewport: PaneLayoutSize(width: 375, height: 812),
+      font: proseMetric))
+  guard case .presentation(let centered) = tallCompact.surface else {
+    Issue.record("Expected presentation plan")
+    return
+  }
+  let availableTop = centered.navigationRect.maxY + WritingLayoutMetrics.standard.paneInset
+  let availableBottom = centered.footerRect.origin.y - WritingLayoutMetrics.standard.paneInset
+  #expect(
+    centered.stageRect.origin.y
+      == availableTop
+      + (availableBottom - availableTop - centered.stageRect.size.height) / 2)
 }
 
 @Test func presentationStageGrowsUniformlyAndStopsAtItsNamedMaximum() throws {

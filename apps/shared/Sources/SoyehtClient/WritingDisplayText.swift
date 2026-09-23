@@ -34,6 +34,10 @@ public enum WritingDisplayText {
     heading.isEmpty ? "Untitled slide" : heading
   }
 
+  public static func sceneTitle(_ heading: String) -> String {
+    heading.isEmpty ? "Untitled scene" : heading
+  }
+
   public static func screenplayElementName(_ kind: ScreenplayElementKind) -> String {
     switch kind {
     case .scene_heading: "Scene heading"

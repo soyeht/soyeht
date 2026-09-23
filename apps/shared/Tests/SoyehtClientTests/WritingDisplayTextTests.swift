@@ -16,6 +16,8 @@ import Testing
   #expect(WritingDisplayText.fontName(.sans) == "Sans")
   #expect(WritingDisplayText.slideTitle("") == "Untitled slide")
   #expect(WritingDisplayText.slideTitle("Opening") == "Opening")
+  #expect(WritingDisplayText.sceneTitle("") == "Untitled scene")
+  #expect(WritingDisplayText.sceneTitle("INT. OFFICE — DAY") == "INT. OFFICE — DAY")
   #expect(
     WritingDisplayText.screenplayElementKinds == [
       .scene_heading, .action, .character, .parenthetical, .dialogue, .transition, .shot,

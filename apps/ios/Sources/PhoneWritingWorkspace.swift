@@ -168,24 +168,33 @@ struct PhoneWritingWorkspace: View {
             Text(choice.title).tag(choice)
           }
         }
+        .phoneWritingSheetRow()
         if splitChoice == .agent {
           Picker("Harness", selection: $splitHarnessId) {
             ForEach(readyHarnesses, id: \.id) { harness in
               Text(harness.name).tag(harness.id)
             }
           }
+          .phoneWritingSheetRow()
           if readyHarnesses.isEmpty {
             Text("No ready agent harness is available on this Mac.")
               .foregroundStyle(PhonePalette.secondary)
+              .phoneWritingSheetRow()
           }
         } else {
-          TextField("Title", text: $splitTitle)
-            .textInputAutocapitalization(.sentences)
-            .accessibilityIdentifier("phone-writing-split-title")
+          TextField(
+            "", text: $splitTitle,
+            prompt: Text("Title").foregroundStyle(PhonePalette.secondary)
+          )
+          .textInputAutocapitalization(.sentences)
+          .accessibilityIdentifier("phone-writing-split-title")
+          .phoneWritingSheetRow()
         }
       }
-      .navigationTitle(request.axis == .horizontal ? "Split columns" : "Split rows")
-      .navigationBarTitleDisplayMode(.inline)
+      .phoneWritingSheetScroll()
+      .phoneWritingSheetNavigation(
+        request.axis == .horizontal ? "Split columns" : "Split rows"
+      )
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { splitRequest = nil }
@@ -197,7 +206,7 @@ struct PhoneWritingWorkspace: View {
         }
       }
     }
-    .presentationDetents([.medium, .large])
+    .phoneWritingSheet(.split)
     .onChange(of: readyHarnesses.map(\.id)) { _, harnessIds in
       guard splitChoice == .agent, !harnessIds.contains(splitHarnessId) else { return }
       splitHarnessId = harnessIds.first ?? ""
@@ -402,6 +411,7 @@ enum PhoneWritingMetrics {
     floors: floors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18))
   static let policy = PhoneWritingLayoutPolicy(floors: floors)
   static let chromePolicy = PhoneWritingChromePolicy()
+  static let sheetPolicy = PhoneWritingSheetPolicy()
   static let bodyWritingMetrics = PhoneWritingLayoutMetrics.standard.bodyWritingMetrics()
   static let bodyFloors = PhoneWritingLayoutMetrics.standard.bodySurfaceFloors(from: floors)
 
@@ -1035,17 +1045,20 @@ private struct PhoneWritingTextSurface: View {
       }
       .frame(width: size.width, height: size.height, alignment: .topLeading)
       .sheet(item: $destinationRequest) { request in
+        let sheetKind: PhoneWritingSheetKind = request.kind == .image ? .image : .link
         NavigationStack {
           Form {
             TextField(
-              request.kind == .image ? "Image path" : "Link destination",
-              text: $destination
+              "", text: $destination,
+              prompt: Text(request.kind == .image ? "Image path" : "Link destination")
+                .foregroundStyle(PhonePalette.secondary)
             )
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+            .phoneWritingSheetRow()
           }
-          .navigationTitle(request.kind == .image ? "Insert image" : "Add link")
-          .navigationBarTitleDisplayMode(.inline)
+          .phoneWritingSheetScroll()
+          .phoneWritingSheetNavigation(request.kind == .image ? "Insert image" : "Add link")
           .toolbar {
             ToolbarItem(placement: .cancellationAction) {
               Button("Cancel") { destinationRequest = nil }
@@ -1059,7 +1072,7 @@ private struct PhoneWritingTextSurface: View {
             }
           }
         }
-        .presentationDetents([.medium])
+        .phoneWritingSheet(sheetKind)
       }
     }
   }
@@ -1302,8 +1315,8 @@ private struct PhoneWritingScenes: View {
   let accessibilityName: String
 
   @Environment(\.dismiss) private var dismiss
-  private var chromePlan: PhoneWritingChromePlan {
-    PhoneWritingMetrics.chromePolicy.plan(kind: .screenplay)
+  private var sheetPlan: PhoneWritingSheetPlan {
+    PhoneWritingMetrics.sheetPolicy.plan(for: .scenes)
   }
 
   var body: some View {
@@ -1316,28 +1329,32 @@ private struct PhoneWritingScenes: View {
             Text("\(scene.ordinal + 1)")
               .font(.subheadline.monospacedDigit().bold())
               .foregroundStyle(PhonePalette.muted)
-            Text(scene.heading.isEmpty ? "Untitled scene" : scene.heading)
+            Text(WritingDisplayText.sceneTitle(scene.heading))
               .lineLimit(2)
+              .foregroundStyle(PhonePalette.ink)
           }
-          .frame(minHeight: chromePlan.minimumActionTarget)
+          .frame(minHeight: sheetPlan.minimumActionTarget)
         }
         .accessibilityLabel(
           "Scene \(scene.ordinal + 1), "
-            + (scene.heading.isEmpty ? "Untitled scene" : scene.heading))
+            + WritingDisplayText.sceneTitle(scene.heading)
+        )
+        .phoneWritingSheetRow()
       }
-      .navigationTitle("Scenes")
-      .navigationBarTitleDisplayMode(.inline)
+      .phoneWritingSheetScroll()
+      .phoneWritingSheetNavigation("Scenes")
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button {
             dismiss()
           } label: {
             PhoneWritingActionLabel(
-              title: "Done", minimumTarget: chromePlan.minimumActionTarget)
+              title: "Done", minimumTarget: sheetPlan.minimumActionTarget)
           }
         }
       }
     }
+    .phoneWritingSheet(.scenes)
     .accessibilityLabel("\(accessibilityName), scenes")
   }
 
@@ -1362,20 +1379,30 @@ private struct PhoneWritingIdeaBoard: View {
   let accessibilityName: String
 
   @Environment(\.dismiss) private var dismiss
-  private var chromePlan: PhoneWritingChromePlan {
-    PhoneWritingMetrics.chromePolicy.plan(kind: .screenplay)
+  private var sheetPlan: PhoneWritingSheetPlan {
+    PhoneWritingMetrics.sheetPolicy.plan(for: .ideaBoard)
   }
 
   var body: some View {
     NavigationStack {
       Group {
         if structure.beats.isEmpty {
-          ContentUnavailableView("No ideas", systemImage: "rectangle.3.group")
+          VStack(spacing: 8) {
+            Image(systemName: "rectangle.3.group")
+              .font(.title)
+              .foregroundStyle(PhonePalette.muted)
+            Text("No ideas")
+              .font(.headline)
+              .foregroundStyle(PhonePalette.ink)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(PhonePalette.canvas)
         } else {
           List(structure.beats.sorted { $0.order < $1.order }, id: \.beatId) { beat in
             VStack(alignment: .leading, spacing: 5) {
               Text(beat.title.isEmpty ? "Untitled idea" : beat.title)
                 .font(.headline)
+                .foregroundStyle(PhonePalette.ink)
               if !beat.body.isEmpty {
                 Text(beat.body)
                   .font(.subheadline)
@@ -1386,23 +1413,26 @@ private struct PhoneWritingIdeaBoard: View {
                 .font(.caption)
                 .foregroundStyle(PhonePalette.muted)
             }
-            .frame(minHeight: chromePlan.minimumActionTarget, alignment: .leading)
+            .frame(minHeight: sheetPlan.minimumActionTarget, alignment: .leading)
+            .phoneWritingSheetRow()
           }
+          .phoneWritingSheetScroll()
         }
       }
-      .navigationTitle("Idea board")
-      .navigationBarTitleDisplayMode(.inline)
+      .background(PhonePalette.canvas)
+      .phoneWritingSheetNavigation("Idea board")
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button {
             dismiss()
           } label: {
             PhoneWritingActionLabel(
-              title: "Done", minimumTarget: chromePlan.minimumActionTarget)
+              title: "Done", minimumTarget: sheetPlan.minimumActionTarget)
           }
         }
       }
     }
+    .phoneWritingSheet(.ideaBoard)
     .accessibilityLabel("\(accessibilityName), idea board")
   }
 }
@@ -1413,5 +1443,55 @@ extension View {
       .position(
         x: rect.origin.x + rect.size.width / 2,
         y: rect.origin.y + rect.size.height / 2)
+  }
+
+  fileprivate func phoneWritingSheet(_ kind: PhoneWritingSheetKind) -> some View {
+    modifier(
+      PhoneWritingSheetSurface(plan: PhoneWritingMetrics.sheetPolicy.plan(for: kind)))
+  }
+
+  fileprivate func phoneWritingSheetScroll() -> some View {
+    scrollContentBackground(.hidden)
+      .background(PhonePalette.canvas)
+  }
+
+  fileprivate func phoneWritingSheetRow() -> some View {
+    foregroundStyle(PhonePalette.ink)
+      .listRowBackground(PhonePalette.face)
+  }
+
+  fileprivate func phoneWritingSheetNavigation(_ title: String) -> some View {
+    navigationTitle(title)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .principal) {
+          Text(title)
+            .font(.headline)
+            .foregroundStyle(PhonePalette.ink)
+        }
+      }
+  }
+}
+
+private struct PhoneWritingSheetSurface: ViewModifier {
+  let plan: PhoneWritingSheetPlan
+
+  func body(content: Content) -> some View {
+    content
+      .foregroundStyle(PhonePalette.ink)
+      .tint(PhonePalette.accent)
+      .background(PhonePalette.canvas.ignoresSafeArea())
+      .toolbarBackground(PhonePalette.face, for: .navigationBar)
+      .toolbarBackground(.visible, for: .navigationBar)
+      .presentationDetents(Set(plan.detents.map(\.presentationDetent)))
+  }
+}
+
+extension PhoneWritingSheetDetent {
+  fileprivate var presentationDetent: PresentationDetent {
+    switch self {
+    case .medium: .medium
+    case .large: .large
+    }
   }
 }
