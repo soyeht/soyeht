@@ -41,6 +41,15 @@ public enum PaneLayoutDropPresentationPolicy {
   }
 }
 
+/// Pane moves are local to the Mac app; their pasteboard representation must not be text.
+public enum PaneDragTransferPolicy {
+  public static let typeIdentifier = "com.soyeht.pane-drag"
+
+  public static func accepts(_ typeIdentifiers: some Sequence<String>) -> Bool {
+    typeIdentifiers.contains(typeIdentifier)
+  }
+}
+
 /// Pure hit testing shared by drag previews and committed drops.
 public enum PaneLayoutDropGeometry {
   public static let edgeFraction = 0.25

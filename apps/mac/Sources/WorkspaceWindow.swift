@@ -241,6 +241,28 @@ struct PaneHeaderDragConfiguration {
   let tint: Color
 }
 
+private enum PaneDragTransfer {
+  static let type = UTType(exportedAs: PaneDragTransferPolicy.typeIdentifier, conformingTo: .data)
+  static let acceptedTypes = [type]
+
+  static func accepts(_ info: DropInfo) -> Bool {
+    PaneDragTransferPolicy.accepts(
+      info.itemProviders(for: acceptedTypes).flatMap(\.registeredTypeIdentifiers))
+  }
+
+  static func itemProvider() -> NSItemProvider {
+    let provider = NSItemProvider()
+    provider.registerDataRepresentation(
+      forTypeIdentifier: type.identifier, visibility: .ownProcess
+    ) {
+      completion in
+      completion(Data(), nil)
+      return nil
+    }
+    return provider
+  }
+}
+
 extension View {
   @ViewBuilder
   func paneHeaderDrag(_ configuration: PaneHeaderDragConfiguration?) -> some View {
@@ -248,8 +270,7 @@ extension View {
       onDrag {
         configuration.interaction.beginPaneDrag(
           workspaceId: configuration.workspaceId, paneId: configuration.paneId)
-        return NSItemProvider(
-          object: "soyeht-pane:\(configuration.workspaceId):\(configuration.paneId)" as NSString)
+        return PaneDragTransfer.itemProvider()
       } preview: {
         PaneDragGhost(title: configuration.title, tint: configuration.tint)
       }
@@ -1629,7 +1650,7 @@ private struct PaneLayoutTreeSurface: View {
       onSplit: onSplit, onPaneDrop: onPaneDrop
     )
     .onDrop(
-      of: [UTType.plainText],
+      of: PaneDragTransfer.acceptedTypes,
       delegate: PaneLayoutFallbackDropDelegate(interaction: interaction))
   }
 
@@ -1718,7 +1739,7 @@ private struct PaneLayoutNodeSurface: View {
     .id(presentation.draft.placeholderPaneId)
     .accessibilityIdentifier("new-pane-placeholder")
     .onDrop(
-      of: [UTType.plainText],
+      of: PaneDragTransfer.acceptedTypes,
       delegate: PaneLayoutChooserDropDelegate(interaction: interaction))
   }
 
@@ -2400,7 +2421,7 @@ private struct PaneLayoutPaneDropDelegate: DropDelegate {
   let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
 
   func validateDrop(info: DropInfo) -> Bool {
-    guard let source = interaction.paneSource else { return false }
+    guard let source = interaction.paneSource, PaneDragTransfer.accepts(info) else { return false }
     return source.workspaceId == workspaceId && source.paneId != targetPaneId
   }
 
@@ -2454,7 +2475,7 @@ private struct PaneLayoutFallbackDropDelegate: DropDelegate {
   let interaction: PaneLayoutInteractionState
 
   func validateDrop(info: DropInfo) -> Bool {
-    interaction.paneSource != nil
+    interaction.paneSource != nil && PaneDragTransfer.accepts(info)
   }
 
   func performDrop(info: DropInfo) -> Bool {
@@ -2471,7 +2492,7 @@ private struct PaneLayoutChooserDropDelegate: DropDelegate {
   }
 
   func validateDrop(info: DropInfo) -> Bool {
-    plan.acceptsDrop && interaction.paneSource != nil
+    plan.acceptsDrop && interaction.paneSource != nil && PaneDragTransfer.accepts(info)
   }
 
   func dropEntered(info: DropInfo) {
@@ -2504,7 +2525,7 @@ private struct PaneDropTargetModifier: ViewModifier {
   func body(content: Content) -> some View {
     if let interaction, let size {
       content.onDrop(
-        of: [UTType.plainText],
+        of: PaneDragTransfer.acceptedTypes,
         delegate: PaneLayoutPaneDropDelegate(
           interaction: interaction, workspaceId: workspaceId, targetPaneId: paneId,
           targetSize: size, onPaneDrop: onPaneDrop))

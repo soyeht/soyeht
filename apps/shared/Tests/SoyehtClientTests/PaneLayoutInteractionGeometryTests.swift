@@ -2,6 +2,13 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func paneDragUsesOnlyItsPrivateType() {
+  #expect(PaneDragTransferPolicy.typeIdentifier == "com.soyeht.pane-drag")
+  #expect(PaneDragTransferPolicy.accepts([PaneDragTransferPolicy.typeIdentifier]))
+  #expect(!PaneDragTransferPolicy.accepts(["public.utf8-plain-text"]))
+  #expect(!PaneDragTransferPolicy.accepts(["public.file-url"]))
+}
+
 @Test func chooserDropIsASilentNoOpWithoutTargetFeedback() {
   let chooser = PaneLayoutDropPresentationPolicy.plan(for: .chooser)
   let pane = PaneLayoutDropPresentationPolicy.plan(for: .pane)

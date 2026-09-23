@@ -52,3 +52,6 @@ xcodebuild -project apps/mac/SoyehtMac.xcodeproj -scheme SoyehtMac \
     -clonedSourcePackagesDirPath .cache/apple-packages \
     -skipPackagePluginValidation ONLY_ACTIVE_ARCH=YES SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG \
     "SOYEHT_PACKAGES=$ROOT/.cache/apple-packages" "${SIGNING[@]}" build
+
+python3 scripts/check_pane_drag_type.py \
+    "$ROOT/.cache/mac-derived/Build/Products/Debug/Soyeht Dev.app/Contents/Info.plist"
