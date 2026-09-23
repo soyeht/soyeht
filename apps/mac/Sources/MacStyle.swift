@@ -277,6 +277,60 @@ private struct NeoAccentGlow: ViewModifier {
   }
 }
 
+private struct MacSheetAvailableSizeKey: EnvironmentKey {
+  static let defaultValue = PaneLayoutSize(width: 1_440, height: 900)
+}
+
+extension EnvironmentValues {
+  var macSheetAvailableSize: PaneLayoutSize {
+    get { self[MacSheetAvailableSizeKey.self] }
+    set { self[MacSheetAvailableSizeKey.self] = newValue }
+  }
+}
+
+private struct MacSheetSurface: ViewModifier {
+  @Environment(\.macSheetAvailableSize) private var availableSize
+  @State private var windowAvailableSize: PaneLayoutSize?
+  let kind: MacSheetKind
+
+  func body(content: Content) -> some View {
+    let plan = MacSheetLayoutPolicy().plan(
+      for: kind, available: windowAvailableSize ?? availableSize)
+    content.frame(
+      width: CGFloat(plan.width),
+      height: plan.height.map { CGFloat($0) }
+    )
+    .background {
+      MacSheetWindowSizeReader { size in
+        let measured = PaneLayoutSize(width: size.width, height: size.height)
+        if measured != windowAvailableSize { windowAvailableSize = measured }
+      }
+      .frame(width: 0, height: 0)
+    }
+  }
+}
+
+private struct MacSheetWindowSizeReader: NSViewRepresentable {
+  let update: (CGSize) -> Void
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    measure(view)
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    measure(view)
+  }
+
+  private func measure(_ view: NSView) {
+    DispatchQueue.main.async { [weak view] in
+      guard let window = view?.window else { return }
+      update((window.sheetParent ?? window).contentLayoutRect.size)
+    }
+  }
+}
+
 extension View {
   func forceEnclosingOverlayScrollers() -> some View {
     background { EnclosingOverlayScrollerStyle().frame(width: 0, height: 0) }
@@ -304,6 +358,10 @@ extension View {
   func pickerHeading() -> some View {
     font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
       .tracking(1).foregroundStyle(MacTheme.muted)
+  }
+
+  func macSheetSurface(_ kind: MacSheetKind) -> some View {
+    modifier(MacSheetSurface(kind: kind))
   }
 }
 

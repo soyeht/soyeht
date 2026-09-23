@@ -2,43 +2,152 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-private enum PreferencesSection {
+private enum PreferencesSection: CaseIterable, Identifiable {
   case appearance
   case harnesses
   case usage
   case editor
   case links
+
+  var id: Self { self }
+
+  var title: String {
+    switch self {
+    case .appearance: "Appearance"
+    case .harnesses: "Harnesses"
+    case .usage: "Usage"
+    case .editor: "Shortcuts"
+    case .links: "Links"
+    }
+  }
+
+  var icon: String {
+    switch self {
+    case .appearance: "paintpalette"
+    case .harnesses: "cpu"
+    case .usage: "gauge.with.dots.needle.50percent"
+    case .editor: "keyboard"
+    case .links: "link"
+    }
+  }
 }
 
 struct PreferencesPanel: View {
   @Bindable var client: EngineClient
+  @Environment(\.macSheetAvailableSize) private var availableSize
   @State private var section: PreferencesSection
+  @State private var compactSection: PreferencesSection?
   @State private var selectedUsageProvider: UsageProvider?
 
   init(client: EngineClient, initialUsageProvider: UsageProvider? = nil) {
     self.client = client
     _section = State(initialValue: initialUsageProvider == nil ? .harnesses : .usage)
+    _compactSection = State(initialValue: initialUsageProvider == nil ? nil : .usage)
     _selectedUsageProvider = State(initialValue: initialUsageProvider)
   }
 
   var body: some View {
-    HStack(spacing: MacTheme.Space.x10) {
-      PreferencesSidebar(client: client, selection: $section)
-      switch section {
-      case .appearance: ThemePreferencesPanel()
-      case .harnesses: PreferencesHarnesses(client: client)
-      case .usage:
-        UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
-      case .editor: EditorInputPreferencesPanel()
-      case .links: WebLinkPreferencesPanel()
+    Group {
+      if layoutPlan.navigation == .stack {
+        compactPreferences
+      } else {
+        HStack(spacing: MacTheme.Space.x10) {
+          PreferencesSidebar(client: client, selection: $section)
+          preferenceDetail(section)
+        }
       }
     }
     .padding(MacTheme.Space.x10)
-    .frame(width: 1080, height: 700)
+    .macSheetSurface(.preferences)
     .foregroundStyle(MacTheme.ink)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
     .onAppear { refreshCatalogues() }
     .onChange(of: client.harnesses.map(\.id)) { _, _ in refreshCatalogues() }
+  }
+
+  private var layoutPlan: MacSheetLayoutPlan {
+    MacSheetLayoutPolicy().plan(for: .preferences, available: availableSize)
+  }
+
+  @ViewBuilder private var compactPreferences: some View {
+    if let compactSection {
+      VStack(spacing: MacTheme.Space.x10) {
+        HStack(spacing: MacTheme.Space.x10) {
+          Button {
+            self.compactSection = nil
+          } label: {
+            Label("Preferences", systemImage: "chevron.left")
+              .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          }
+          .buttonStyle(.plain)
+          Spacer()
+          Text(compactSection.title)
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        }
+        .padding(.horizontal, MacTheme.Space.x8)
+        preferenceDetail(compactSection)
+      }
+    } else {
+      ScrollView(.vertical) {
+        VStack(alignment: .leading, spacing: MacTheme.Space.x6) {
+          Text("Preferences")
+            .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+            .padding(.horizontal, MacTheme.Space.x8)
+          compactPlaceholder("General", icon: "gearshape")
+          ForEach(PreferencesSection.allCases) { candidate in
+            compactButton(candidate)
+          }
+          compactPlaceholder("Engine", icon: "memorychip")
+          compactPlaceholder("Phone", icon: "iphone")
+          compactPlaceholder("Tasks & loops", icon: "list.bullet.clipboard")
+        }
+        .padding(MacTheme.Space.x8)
+      }
+      .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    }
+  }
+
+  private func compactButton(_ candidate: PreferencesSection) -> some View {
+    Button {
+      section = candidate
+      compactSection = candidate
+    } label: {
+      HStack(spacing: MacTheme.Space.x10) {
+        Image(systemName: candidate.icon).frame(width: 18)
+        Text(candidate.title)
+        Spacer()
+        Image(systemName: "chevron.right")
+      }
+      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+      .foregroundStyle(MacTheme.ink)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .frame(maxWidth: .infinity, minHeight: 40)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func compactPlaceholder(_ title: String, icon: String) -> some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      Image(systemName: icon).frame(width: 18)
+      Text(title)
+      Spacer()
+    }
+    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+    .foregroundStyle(MacTheme.muted)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(maxWidth: .infinity, minHeight: 40)
+  }
+
+  @ViewBuilder private func preferenceDetail(_ selected: PreferencesSection) -> some View {
+    switch selected {
+    case .appearance: ThemePreferencesPanel()
+    case .harnesses: PreferencesHarnesses(client: client)
+    case .usage:
+      UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
+    case .editor: EditorInputPreferencesPanel()
+    case .links: WebLinkPreferencesPanel()
+    }
   }
 
   private func refreshCatalogues() {
@@ -60,14 +169,14 @@ private struct PreferencesSidebar: View {
         .padding(.horizontal, MacTheme.Space.x4)
       Color.clear.frame(height: MacTheme.Space.x8)
       sidebarRow("General", icon: "gearshape")
-      sidebarButton("Appearance", icon: "paintpalette", section: .appearance)
-      sidebarButton("Harnesses", icon: "cpu", section: .harnesses)
-      sidebarButton("Usage", icon: "gauge.with.dots.needle.50percent", section: .usage)
+      sidebarButton(.appearance)
+      sidebarButton(.harnesses)
+      sidebarButton(.usage)
       sidebarRow("Engine", icon: "memorychip")
       sidebarRow("Phone", icon: "iphone")
       sidebarRow("Tasks & loops", icon: "list.bullet.clipboard")
-      sidebarButton("Links", icon: "link", section: .links)
-      sidebarButton("Shortcuts", icon: "keyboard", section: .editor)
+      sidebarButton(.links)
+      sidebarButton(.editor)
       Spacer()
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
         Text("Soyeht \(appVersion) · Dev profile")
@@ -106,13 +215,11 @@ private struct PreferencesSidebar: View {
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 
-  private func sidebarButton(
-    _ title: String, icon: String, section: PreferencesSection
-  ) -> some View {
+  private func sidebarButton(_ section: PreferencesSection) -> some View {
     Button {
       selection = section
     } label: {
-      sidebarRow(title, icon: icon, selected: selection == section)
+      sidebarRow(section.title, icon: section.icon, selected: selection == section)
     }
     .buttonStyle(.plain)
   }
@@ -610,7 +717,7 @@ private struct CustomHarnessEditor: View {
       }
     }
     .padding(22)
-    .frame(width: 560)
+    .macSheetSurface(.harnessEditor)
     .foregroundStyle(MacTheme.ink)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
     .onExitCommand { isPresented = false }

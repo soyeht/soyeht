@@ -438,6 +438,7 @@ struct WritingTextPane: View {
   ) -> some View {
     Button(role: role, action: action) { optionLabel(title, icon: icon, active: active) }
       .buttonStyle(.plain)
+      .focusable(false)
       .disabled(disabled)
       .accessibilityIdentifier(identifier)
   }

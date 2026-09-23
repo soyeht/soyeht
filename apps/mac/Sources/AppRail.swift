@@ -110,13 +110,14 @@ private struct AppRailButton: View {
     Button(action: action) {
       railGlyph
         .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
-        .frame(width: 36, height: 36)
+        .frame(width: MacPaneLayoutMetrics.railButtonSize, height: MacPaneLayoutMetrics.railButtonSize)
         .background {
           if selected {
             RoundedRectangle(cornerRadius: MacTheme.Radius.compact, style: .continuous)
               .fill(MacTheme.well)
           }
         }
+        .contentShape(Rectangle())
     }
     .help(label)
     .accessibilityLabel(label)

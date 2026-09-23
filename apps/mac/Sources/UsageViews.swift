@@ -197,41 +197,19 @@ struct UsageSettingsDetail: View {
       Text("Subscription windows reported by the provider tools signed in on this Mac.")
         .font(MacTheme.chrome(MacTheme.TypeScale.caption))
         .foregroundStyle(MacTheme.secondary)
-      HStack(alignment: .top, spacing: MacTheme.Space.x16) {
-        VStack(spacing: MacTheme.Space.x8) {
-          ForEach(client.usageReadings, id: \.provider) { reading in
-            Button {
-              selectedProvider = reading.provider
-            } label: {
-              HStack(spacing: MacTheme.Space.x10) {
-                ProviderGlyph(reading.provider).frame(width: 18, height: 18)
-                Text(reading.provider.displayName)
-                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-                Spacer()
-                Text(UsagePresentation(reading).percentage)
-                  .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
-              }
-              .foregroundStyle(reading.state == .stale ? MacTheme.muted : MacTheme.ink)
-              .padding(.horizontal, MacTheme.Space.x12)
-              .frame(width: 210, height: 42)
-              .background(
-                selectedProvider == reading.provider ? MacTheme.well : Color.clear,
-                in: RoundedRectangle(cornerRadius: MacTheme.Radius.compact))
-            }
-            .buttonStyle(.plain)
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .top, spacing: MacTheme.Space.x16) {
+          providerList(width: 210)
+          selectedDetail
+          Spacer(minLength: 0)
+        }
+        ScrollView(.vertical) {
+          VStack(spacing: MacTheme.Space.x12) {
+            providerList(width: nil)
+            selectedDetail
           }
+          .frame(maxWidth: .infinity)
         }
-        .padding(MacTheme.Space.x8)
-        .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
-        if let reading = selectedReading {
-          UsageDetailBalloon(reading: reading)
-        } else {
-          Text("No usage reader is available.")
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-            .foregroundStyle(MacTheme.secondary)
-            .frame(maxWidth: .infinity, minHeight: 122)
-        }
-        Spacer(minLength: 0)
       }
       Spacer(minLength: 0)
     }
@@ -245,6 +223,46 @@ struct UsageSettingsDetail: View {
 
   private var selectedReading: UsageReading? {
     client.usageReadings.first { $0.provider == selectedProvider }
+  }
+
+  private func providerList(width: CGFloat?) -> some View {
+    VStack(spacing: MacTheme.Space.x8) {
+      ForEach(client.usageReadings, id: \.provider) { reading in
+        Button {
+          selectedProvider = reading.provider
+        } label: {
+          HStack(spacing: MacTheme.Space.x10) {
+            ProviderGlyph(reading.provider).frame(width: 18, height: 18)
+            Text(reading.provider.displayName)
+              .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            Spacer()
+            Text(UsagePresentation(reading).percentage)
+              .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+          }
+          .foregroundStyle(reading.state == .stale ? MacTheme.muted : MacTheme.ink)
+          .padding(.horizontal, MacTheme.Space.x12)
+          .frame(maxWidth: .infinity, minHeight: 42)
+          .background(
+            selectedProvider == reading.provider ? MacTheme.well : Color.clear,
+            in: RoundedRectangle(cornerRadius: MacTheme.Radius.compact))
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .padding(MacTheme.Space.x8)
+    .frame(width: width)
+    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+  }
+
+  @ViewBuilder private var selectedDetail: some View {
+    if let reading = selectedReading {
+      UsageDetailBalloon(reading: reading)
+    } else {
+      Text("No usage reader is available.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .foregroundStyle(MacTheme.secondary)
+        .frame(maxWidth: .infinity, minHeight: 122)
+    }
   }
 
   private func chooseFirstProvider() {

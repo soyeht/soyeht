@@ -634,7 +634,7 @@ private struct EditorReviewCommentSheet: View {
           .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!contentReady)
       }
     }
-    .padding(MacTheme.Space.x16).frame(width: 480)
+    .padding(MacTheme.Space.x16).macSheetSurface(.reviewComment)
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
   }
 }
@@ -717,7 +717,7 @@ private struct EditorDiffSheet: View {
         diffRows
       }
     }
-    .padding(MacTheme.Space.x14).frame(width: 980, height: 620)
+    .padding(MacTheme.Space.x14).macSheetSurface(.editorDiff)
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
   }
 
@@ -887,7 +887,7 @@ private struct EditorReferencesSheet: View {
         }
       }
     }
-    .padding(MacTheme.Space.x16).frame(width: 560, height: 420)
+    .padding(MacTheme.Space.x16).macSheetSurface(.editorReferences)
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
   }
 

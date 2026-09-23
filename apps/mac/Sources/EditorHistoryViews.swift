@@ -26,7 +26,7 @@ struct EditorHistorySheet: View {
       }
       footer
     }
-    .padding(MacTheme.Space.x14).frame(width: 820, height: 560).background(MacTheme.canvas)
+    .padding(MacTheme.Space.x14).macSheetSurface(.editorHistory).background(MacTheme.canvas)
     .task(id: file.fileId) { await loadFirstPage() }
   }
 
@@ -172,7 +172,7 @@ struct EditorConflictSheet: View {
       }
       conflictFooter
     }
-    .padding(MacTheme.Space.x14).frame(width: 920, height: 580).background(MacTheme.canvas)
+    .padding(MacTheme.Space.x14).macSheetSurface(.editorConflict).background(MacTheme.canvas)
     .task(id: file.diskRevision) { await load() }
   }
 
