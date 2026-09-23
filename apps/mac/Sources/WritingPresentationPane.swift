@@ -126,6 +126,7 @@ struct WritingSlideShowSession: Equatable, Sendable {
   @ObservationIgnored private var inputMonitor: Any?
   @ObservationIgnored private var cursorTask: Task<Void, Never>?
   @ObservationIgnored private var fullScreenEntryTask: Task<Void, Never>?
+  @ObservationIgnored private var cursorRectsDisabled = false
   @ObservationIgnored private var viewportOffsetState = WritingSlideShowScrollOffsetState()
   @ObservationIgnored let viewportRegistry = WritingPresentationViewportRegistry()
 
@@ -152,6 +153,7 @@ struct WritingSlideShowSession: Equatable, Sendable {
       acceptsMouseMovedEvents: window.acceptsMouseMovedEvents)
     window.makeFirstResponder(nil)
     window.acceptsMouseMovedEvents = true
+    disableCursorRects(in: window)
     installInputMonitor()
     perform(
       windowState.begin(
@@ -185,12 +187,14 @@ struct WritingSlideShowSession: Equatable, Sendable {
   }
 
   func windowDidBecomeKey(_ window: NSWindow?) {
-    guard owns(window), isPresenting else { return }
+    guard let window, owns(window), isPresenting else { return }
+    disableCursorRects(in: window)
     noteActivity()
   }
 
   func windowDidResignKey(_ window: NSWindow?) {
     guard owns(window), isPresenting else { return }
+    enableCursorRects(in: window)
     cursorTask?.cancel()
     cursorTask = nil
     applyCursor(cursorState.reduce(.activity))
@@ -321,6 +325,22 @@ struct WritingSlideShowSession: Equatable, Sendable {
     }
   }
 
+  private func disableCursorRects(in window: NSWindow) {
+    guard !cursorRectsDisabled else {
+      NSCursor.arrow.set()
+      return
+    }
+    window.disableCursorRects()
+    cursorRectsDisabled = true
+    NSCursor.arrow.set()
+  }
+
+  private func enableCursorRects(in window: NSWindow?) {
+    guard cursorRectsDisabled else { return }
+    window?.enableCursorRects()
+    cursorRectsDisabled = false
+  }
+
   private func finish(window: NSWindow) {
     let saved = snapshot
     let paneId = session?.paneId
@@ -367,6 +387,7 @@ struct WritingSlideShowSession: Equatable, Sendable {
       NSEvent.removeMonitor(inputMonitor)
       self.inputMonitor = nil
     }
+    enableCursorRects(in: windowReference.value)
     if let window = windowReference.value, let snapshot {
       window.acceptsMouseMovedEvents = snapshot.acceptsMouseMovedEvents
     }
