@@ -242,8 +242,13 @@ struct PaneHeaderDragConfiguration {
 }
 
 private enum PaneDragTransfer {
-  static let type = UTType(exportedAs: PaneDragTransferPolicy.typeIdentifier)
+  static let type = UTType(exportedAs: PaneDragTransferPolicy.typeIdentifier, conformingTo: .data)
   static let acceptedTypes = [type]
+
+  static func accepts(_ info: DropInfo) -> Bool {
+    PaneDragTransferPolicy.accepts(
+      info.itemProviders(for: acceptedTypes).flatMap(\.registeredTypeIdentifiers))
+  }
 
   static func itemProvider() -> NSItemProvider {
     let provider = NSItemProvider()
@@ -2416,7 +2421,7 @@ private struct PaneLayoutPaneDropDelegate: DropDelegate {
   let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
 
   func validateDrop(info: DropInfo) -> Bool {
-    guard let source = interaction.paneSource else { return false }
+    guard let source = interaction.paneSource, PaneDragTransfer.accepts(info) else { return false }
     return source.workspaceId == workspaceId && source.paneId != targetPaneId
   }
 
@@ -2470,7 +2475,7 @@ private struct PaneLayoutFallbackDropDelegate: DropDelegate {
   let interaction: PaneLayoutInteractionState
 
   func validateDrop(info: DropInfo) -> Bool {
-    interaction.paneSource != nil
+    interaction.paneSource != nil && PaneDragTransfer.accepts(info)
   }
 
   func performDrop(info: DropInfo) -> Bool {
@@ -2487,7 +2492,7 @@ private struct PaneLayoutChooserDropDelegate: DropDelegate {
   }
 
   func validateDrop(info: DropInfo) -> Bool {
-    plan.acceptsDrop && interaction.paneSource != nil
+    plan.acceptsDrop && interaction.paneSource != nil && PaneDragTransfer.accepts(info)
   }
 
   func dropEntered(info: DropInfo) {
