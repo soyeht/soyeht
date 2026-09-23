@@ -1,0 +1,8 @@
+{
+  "name": "soyeht-quality-tools",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "jscpd": "4.3.0"
+  }
+}

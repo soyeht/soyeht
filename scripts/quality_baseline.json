@@ -1,0 +1,46 @@
+{
+  "duplication": {
+    "engine": {"clones": 389, "duplicated_lines": 3525, "percent": 4.32},
+    "ios": {"clones": 6, "duplicated_lines": 54, "percent": 1.76},
+    "mac": {"clones": 81, "duplicated_lines": 802, "percent": 4.96},
+    "shared": {"clones": 62, "duplicated_lines": 486, "percent": 2.48},
+    "swift_all": {"clones": 161, "duplicated_lines": 1477, "percent": 3.8}
+  },
+  "loose_literals": {
+    "engine": {"rust_limits": 71},
+    "ios": {"corner_radius": 12, "font_name": 11, "padding": 24, "system_font_size": 5},
+    "mac": {"corner_radius": 5, "font_name": 16, "padding": 58, "system_font_size": 68},
+    "shared": {"corner_radius": 2, "font_name": 3, "padding": 19, "system_font_size": 0}
+  },
+  "oversized_files": {
+    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1497,
+    "apps/mac/Sources/EditorNativeViewport.swift": 903,
+    "apps/mac/Sources/EditorPaneView.swift": 902,
+    "apps/mac/Sources/PreferencesPanel.swift": 917,
+    "apps/mac/Sources/TaskWorkspaceViews.swift": 1323,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3688,
+    "apps/mac/Sources/WritingPresentationPane.swift": 1239,
+    "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
+    "apps/mac/Sources/WritingTextPane.swift": 1132,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 953,
+    "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
+    "engine/soyeht-cli/src/task_commands.rs": 868,
+    "engine/soyeht-engine/src/agents/state.rs": 813,
+    "engine/soyeht-engine/src/agents/switching.rs": 1079,
+    "engine/soyeht-engine/src/editor/service.rs": 1146,
+    "engine/soyeht-engine/src/experiment_export.rs": 1216,
+    "engine/soyeht-engine/src/pane_observations.rs": 1666,
+    "engine/soyeht-engine/src/tasks/feedback.rs": 909,
+    "engine/soyeht-engine/src/tasks/worktree.rs": 817,
+    "engine/soyeht-engine/src/terminal_capture.rs": 1599,
+    "engine/soyeht-engine/src/web/host.rs": 956,
+    "engine/soyeht-engine/src/web/permissions.rs": 1114,
+    "engine/soyeht-engine/tests/runtime.rs": 7736,
+    "engine/soyeht-mcp/src/tools.rs": 1125,
+    "engine/soyeht-store/src/editor.rs": 848,
+    "engine/soyeht-store/src/tasks.rs": 855,
+    "engine/soyeht-store/tests/agents.rs": 1038,
+    "engine/soyeht-store/tests/tasks.rs": 992
+  },
+  "version": 1
+}

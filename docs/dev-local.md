@@ -74,3 +74,27 @@ Tests may use `--data-dir PATH` to connect to a temporary installation.
 On a runner without a graphical domain, the installer accepts `--domain user`;
 inspection and stop commands use that same domain.
 None of these options accepts another profile or service name.
+
+## Local quality ratchet
+
+Install the pinned copy/paste detector once with
+`npm ci --prefix scripts/quality --ignore-scripts`. Install the Rust unused-
+dependency scanner with `cargo install cargo-machete --locked` if it is missing.
+The quality gate fails with these commands when a required tool is absent; it
+never downloads a package from a Git hook. Periphery is optional and is reported
+as `SKIPPED` when unavailable, not as a passing check.
+
+Enable the versioned fast pre-push hook with
+`git config core.hooksPath .githooks`. It runs only
+`python3 scripts/check_quality.py`, not the full merge gate. The full
+`bash scripts/check_all.sh` remains a manual pre-merge requirement.
+
+The checked-in `scripts/quality_baseline.json` must exactly match current
+measurements. When a metric improves or an oversized file shrinks, lower its
+baseline in the same PR. Existing files above 800 lines have individual caps
+equal to their measured lines; new files above 800 lines fail. Any increase or
+new exception is a baseline relaxation requiring written justification in the
+PR. Run `python3 scripts/check_quality.py --print-baseline` to inspect current
+measurements, then update the baseline deliberately. Give reviewers the output
+of `python3 scripts/review_report.py BASE_COMMIT`; it marks every relaxation
+with a red indicator.
