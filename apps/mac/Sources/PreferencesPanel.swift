@@ -91,10 +91,17 @@ struct PreferencesPanel: View {
           Button {
             self.compactSection = nil
           } label: {
-            Label("Preferences", systemImage: "chevron.left")
-              .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            HStack(spacing: MacTheme.Space.x10) {
+              Image(systemName: "chevron.left")
+                .frame(width: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationIconWidth))
+              Text("Preferences")
+            }
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            .frame(minHeight: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationRowHeight))
+            .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
+          .accessibilityIdentifier("preferences-back")
           Spacer()
           Text(compactSection.title)
             .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
@@ -124,7 +131,8 @@ struct PreferencesPanel: View {
       compactSection = candidate
     } label: {
       HStack(spacing: MacTheme.Space.x10) {
-        Image(systemName: candidate.icon).frame(width: 18)
+        Image(systemName: candidate.icon)
+          .frame(width: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationIconWidth))
         Text(candidate.title)
         Spacer()
         Image(systemName: "chevron.right")
@@ -132,7 +140,10 @@ struct PreferencesPanel: View {
       .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
       .foregroundStyle(MacTheme.ink)
       .padding(.horizontal, MacTheme.Space.x12)
-      .frame(maxWidth: .infinity, minHeight: 40)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationRowHeight)
+      )
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -140,14 +151,17 @@ struct PreferencesPanel: View {
 
   private func compactPlaceholder(_ item: PreferencesNavigationItem) -> some View {
     HStack(spacing: MacTheme.Space.x10) {
-      Image(systemName: item.icon).frame(width: 18)
+      Image(systemName: item.icon)
+        .frame(width: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationIconWidth))
       Text(item.title)
       Spacer()
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
     .foregroundStyle(MacTheme.muted)
     .padding(.horizontal, MacTheme.Space.x12)
-    .frame(maxWidth: .infinity, minHeight: 40)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationRowHeight))
   }
 
   @ViewBuilder private func preferenceDetail(_ selected: PreferencesNavigationItem) -> some View {

@@ -47,6 +47,13 @@ private let sheetPolicy = MacSheetLayoutPolicy()
     ).navigation == .sidebar)
 }
 
+@Test func compactPreferencesNavigationHasAFullHeightHitTarget() {
+  let metrics = MacSheetLayoutMetrics.standard
+  #expect(metrics.compactNavigationRowHeight >= 40)
+  #expect(metrics.compactNavigationIconWidth > 0)
+  #expect(metrics.compactNavigationIconWidth < metrics.compactNavigationRowHeight)
+}
+
 @Test func ideaBoardHeaderRemovesOnlyActionTitlesAtCompactWidth() {
   let policy = WritingBeatBoardHeaderPolicy()
 

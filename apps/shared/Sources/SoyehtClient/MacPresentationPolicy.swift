@@ -32,15 +32,24 @@ public struct MacSheetLayoutPlan: Equatable, Sendable {
 public struct MacSheetLayoutMetrics: Equatable, Sendable {
   public var windowInset: Double
   public var compactPreferencesWidth: Double
+  public var compactNavigationRowHeight: Double
+  public var compactNavigationIconWidth: Double
 
-  public init(windowInset: Double, compactPreferencesWidth: Double) {
+  public init(
+    windowInset: Double, compactPreferencesWidth: Double,
+    compactNavigationRowHeight: Double, compactNavigationIconWidth: Double
+  ) {
     self.windowInset = windowInset
     self.compactPreferencesWidth = compactPreferencesWidth
+    self.compactNavigationRowHeight = compactNavigationRowHeight
+    self.compactNavigationIconWidth = compactNavigationIconWidth
   }
 
   public static let standard = MacSheetLayoutMetrics(
     windowInset: 12,
-    compactPreferencesWidth: 700)
+    compactPreferencesWidth: 700,
+    compactNavigationRowHeight: 40,
+    compactNavigationIconWidth: 18)
 }
 
 /// One inventory and one fit rule for every fixed-size Mac sheet-like surface.
