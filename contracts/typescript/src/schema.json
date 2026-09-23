@@ -6920,6 +6920,15 @@
         "unavailable"
       ]
     },
+    "UsageUnavailableReason": {
+      "type": "string",
+      "enum": [
+        "not_checked",
+        "tool_not_found",
+        "app_server_failed",
+        "invalid_response"
+      ]
+    },
     "UsageSource": {
       "type": "string",
       "enum": [
@@ -6964,6 +6973,9 @@
         },
         "state": {
           "$ref": "#/$defs/UsageState"
+        },
+        "unavailableReason": {
+          "$ref": "#/$defs/UsageUnavailableReason"
         },
         "primary": {
           "$ref": "#/$defs/UsageWindow"
@@ -7052,6 +7064,9 @@
         },
         "state": {
           "$ref": "#/$defs/UsageState"
+        },
+        "unavailableReason": {
+          "$ref": "#/$defs/UsageUnavailableReason"
         },
         "primary": {
           "$ref": "#/$defs/UsageWindow"

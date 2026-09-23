@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6047da4a0a8d49ed0f97ebc9f47a97797d25cb0a9c9175af5b0b9a7bfb95867d). Do not edit.
+// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -322,6 +322,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PaneRoleSetResult": return try codec(SoyehtProtocol.PaneRoleSetResult.self, data)
         case "UsageProvider": return try codec(SoyehtProtocol.UsageProvider.self, data)
         case "UsageState": return try codec(SoyehtProtocol.UsageState.self, data)
+        case "UsageUnavailableReason": return try codec(SoyehtProtocol.UsageUnavailableReason.self, data)
         case "UsageSource": return try codec(SoyehtProtocol.UsageSource.self, data)
         case "UsageWindow": return try codec(SoyehtProtocol.UsageWindow.self, data)
         case "UsageReading": return try codec(SoyehtProtocol.UsageReading.self, data)

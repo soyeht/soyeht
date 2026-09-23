@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
+use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 use soyeht_usage::{ReaderRegistry, SourceRead, UsageSourcePort};
 use std::collections::VecDeque;
 
@@ -199,7 +199,7 @@ fn scripted_sources_cover_all_five_public_states() {
         (SourceRead::Payload(ok_payload), UsageState::Ok),
         (SourceRead::LoginNeeded, UsageState::LoginNeeded),
         (SourceRead::NoAccess, UsageState::NoAccess),
-        (SourceRead::Unavailable, UsageState::Unavailable),
+        (SourceRead::Unavailable(None), UsageState::Unavailable),
     ];
     for (response, state) in cases {
         let (outcome, _) = refresh(
@@ -245,12 +245,37 @@ fn no_access_has_precedence_over_other_failed_fallbacks() {
 }
 
 #[test]
+fn codex_missing_tool_reason_survives_an_unimplemented_fallback() {
+    let (outcome, _) = refresh(
+        UsageProvider::Codex,
+        vec![
+            (
+                UsageProvider::Codex,
+                UsageSource::CodexAppServer,
+                SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound)),
+            ),
+            (
+                UsageProvider::Codex,
+                UsageSource::CodexAccountEndpoint,
+                SourceRead::Unavailable(None),
+            ),
+        ],
+    );
+    assert_eq!(outcome.reading.state, UsageState::Unavailable);
+    assert_eq!(outcome.reading.source, UsageSource::CodexAppServer);
+    assert_eq!(
+        outcome.reading.unavailable_reason,
+        Some(UsageUnavailableReason::ToolNotFound)
+    );
+}
+
+#[test]
 fn a_transient_fallback_failure_drives_retry_even_after_plain_unavailability() {
     let script = vec![
         (
             UsageProvider::Codex,
             UsageSource::CodexAppServer,
-            SourceRead::Unavailable,
+            SourceRead::Unavailable(None),
         ),
         (
             UsageProvider::Codex,

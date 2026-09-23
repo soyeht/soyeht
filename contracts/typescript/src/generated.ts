@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6047da4a0a8d49ed0f97ebc9f47a97797d25cb0a9c9175af5b0b9a7bfb95867d). Do not edit.
+// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -1939,6 +1939,8 @@ export type UsageProvider = "claude" | "codex" | "cursor";
 
 export type UsageState = "ok" | "stale" | "login_needed" | "no_access" | "unavailable";
 
+export type UsageUnavailableReason = "not_checked" | "tool_not_found" | "app_server_failed" | "invalid_response";
+
 export type UsageSource = "claude_cli_usage" | "claude_oauth_endpoint" | "claude_desktop_cache" | "codex_app_server" | "codex_account_endpoint" | "cursor_current_period";
 
 export interface UsageWindow {
@@ -1950,6 +1952,7 @@ export interface UsageWindow {
 export interface UsageReading {
   "provider": UsageProvider;
   "state": UsageState;
+  "unavailableReason"?: UsageUnavailableReason;
   "primary"?: UsageWindow;
   "secondary"?: UsageWindow;
   "source": UsageSource;
@@ -1978,6 +1981,7 @@ export interface UsageChangedEvent {
   "at": string;
   "provider": UsageProvider;
   "state": UsageState;
+  "unavailableReason"?: UsageUnavailableReason;
   "primary"?: UsageWindow;
   "secondary"?: UsageWindow;
   "source": UsageSource;

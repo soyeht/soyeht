@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6047da4a0a8d49ed0f97ebc9f47a97797d25cb0a9c9175af5b0b9a7bfb95867d). Do not edit.
+// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -3461,6 +3461,17 @@ pub enum UsageState {
     Unavailable,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum UsageUnavailableReason {
+    #[serde(rename = "not_checked")]
+    NotChecked,
+    #[serde(rename = "tool_not_found")]
+    ToolNotFound,
+    #[serde(rename = "app_server_failed")]
+    AppServerFailed,
+    #[serde(rename = "invalid_response")]
+    InvalidResponse,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageSource {
     #[serde(rename = "claude_cli_usage")]
     ClaudeCliUsage,
@@ -3490,6 +3501,8 @@ pub struct UsageReading {
     pub provider: UsageProvider,
     #[serde(rename = "state")]
     pub state: UsageState,
+    #[serde(rename = "unavailableReason", skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UsageUnavailableReason>,
     #[serde(rename = "primary", skip_serializing_if = "Option::is_none")]
     pub primary: Option<UsageWindow>,
     #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
@@ -3528,6 +3541,8 @@ pub struct UsageChangedEvent {
     pub provider: UsageProvider,
     #[serde(rename = "state")]
     pub state: UsageState,
+    #[serde(rename = "unavailableReason", skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UsageUnavailableReason>,
     #[serde(rename = "primary", skip_serializing_if = "Option::is_none")]
     pub primary: Option<UsageWindow>,
     #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]

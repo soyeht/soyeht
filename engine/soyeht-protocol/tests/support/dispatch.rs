@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6047da4a0a8d49ed0f97ebc9f47a97797d25cb0a9c9175af5b0b9a7bfb95867d). Do not edit.
+// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -319,6 +319,7 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneRoleSetResult" => roundtrip::<PaneRoleSetResult>(value),
         "UsageProvider" => roundtrip::<UsageProvider>(value),
         "UsageState" => roundtrip::<UsageState>(value),
+        "UsageUnavailableReason" => roundtrip::<UsageUnavailableReason>(value),
         "UsageSource" => roundtrip::<UsageSource>(value),
         "UsageWindow" => roundtrip::<UsageWindow>(value),
         "UsageReading" => roundtrip::<UsageReading>(value),

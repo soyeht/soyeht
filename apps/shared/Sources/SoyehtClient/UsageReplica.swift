@@ -16,6 +16,13 @@ public enum UsageTimestamp {
   }
 }
 
+enum UsageDetailsRefreshPolicy {
+  static func shouldRefresh(_ reading: UsageReading) -> Bool {
+    reading.state == .stale
+      || (reading.state == .unavailable && reading.unavailableReason == .not_checked)
+  }
+}
+
 public struct UsagePresentation: Sendable {
   public let reading: UsageReading
 
@@ -46,6 +53,16 @@ public struct UsagePresentation: Sendable {
   }
 
   public var isStale: Bool { reading.state == .stale }
+
+  public var unavailableMessage: String {
+    switch reading.unavailableReason {
+    case .not_checked: "Usage has not been checked yet."
+    case .tool_not_found: "\(reading.provider.displayName) not found on this Mac."
+    case .app_server_failed: "\(reading.provider.displayName) app server could not provide usage."
+    case .invalid_response: "Usage reader returned invalid data."
+    case nil: "Usage is unavailable."
+    }
+  }
 
   public var percentage: String {
     guard let fraction else { return "—" }
@@ -87,6 +104,13 @@ extension UsageProvider {
 }
 
 extension EngineClient {
+  public func refreshUsageOnDetailsClick(_ provider: UsageProvider) {
+    guard let reading = usageReadings.first(where: { $0.provider == provider }),
+      UsageDetailsRefreshPolicy.shouldRefresh(reading)
+    else { return }
+    perform { try await self.refreshUsageAfterRateLimitOnce(provider) }
+  }
+
   func loadUsage() async throws {
     let result = try await request("usage.list", .encoded(UsageListParams()))
       .decoded(UsageListResult.self)
@@ -181,7 +205,8 @@ extension EngineClient {
     let event = try params.decoded(UsageChangedEvent.self)
     replaceUsage(
       UsageReading(
-        provider: event.provider, state: event.state, primary: event.primary,
+        provider: event.provider, state: event.state,
+        unavailableReason: event.unavailableReason, primary: event.primary,
         secondary: event.secondary, source: event.source, fetchedAt: event.fetchedAt))
   }
 

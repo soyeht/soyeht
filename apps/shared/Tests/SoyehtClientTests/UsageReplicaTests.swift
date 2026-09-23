@@ -64,6 +64,47 @@ private final class RateLimitRetryProbe {
   #expect(UsagePresentation(reading(state: .unavailable, used: nil)).fraction == nil)
 }
 
+@Test func usageUnavailableReasonIsTypedAndSafeForDisplay() {
+  let unchecked = UsageReading(
+    provider: .codex, state: .unavailable, unavailableReason: .not_checked,
+    source: .codex_app_server, fetchedAt: "")
+  #expect(UsagePresentation(unchecked).unavailableMessage == "Usage has not been checked yet.")
+  let missing = UsageReading(
+    provider: .codex, state: .unavailable, unavailableReason: .tool_not_found,
+    source: .codex_app_server, fetchedAt: "2026-09-23T12:00:00Z")
+  #expect(UsagePresentation(missing).unavailableMessage == "Codex not found on this Mac.")
+  let failed = UsageReading(
+    provider: .codex, state: .unavailable, unavailableReason: .app_server_failed,
+    source: .codex_app_server, fetchedAt: "2026-09-23T12:00:00Z")
+  #expect(UsagePresentation(failed).unavailableMessage == "Codex app server could not provide usage.")
+}
+
+@Test func usageDetailsClickRefreshesOnlyUncheckedOrStaleForEveryProvider() {
+  for provider in [UsageProvider.claude, .codex, .cursor] {
+    let source: UsageSource = switch provider {
+    case .claude: .claude_desktop_cache
+    case .codex: .codex_app_server
+    case .cursor: .cursor_current_period
+    }
+    let unchecked = UsageReading(
+      provider: provider, state: .unavailable, unavailableReason: .not_checked,
+      source: source, fetchedAt: "")
+    let stale = UsageReading(
+      provider: provider, state: .stale, source: source,
+      fetchedAt: "2026-09-23T12:00:00Z")
+    let current = UsageReading(
+      provider: provider, state: .ok, source: source,
+      fetchedAt: "2026-09-23T12:00:00Z")
+    let failed = UsageReading(
+      provider: provider, state: .unavailable, unavailableReason: .tool_not_found,
+      source: source, fetchedAt: "2026-09-23T12:00:00Z")
+    #expect(UsageDetailsRefreshPolicy.shouldRefresh(unchecked))
+    #expect(UsageDetailsRefreshPolicy.shouldRefresh(stale))
+    #expect(!UsageDetailsRefreshPolicy.shouldRefresh(current))
+    #expect(!UsageDetailsRefreshPolicy.shouldRefresh(failed))
+  }
+}
+
 @Test func usageRingsPreferWeeklyForClaudeAndCodex() {
   #expect(UsagePresentation(reading(.claude, used: 0.1, secondaryUsed: 0.6)).fraction == 0.6)
   #expect(UsagePresentation(reading(.codex, used: 0.2, secondaryUsed: 0.7)).fraction == 0.7)
@@ -99,6 +140,19 @@ private final class RateLimitRetryProbe {
 
   #expect(client.usageReadings.map(\.provider) == [.claude, .codex, .cursor])
   #expect(client.usageReadings[1].primary?.used == 0.7)
+}
+
+@MainActor @Test func usageEventPreservesUnavailableReasonWithoutFreeFormDetails() throws {
+  let client = EngineClient(socket: "/tmp/sn-usage-reason/engine.sock")
+  try client.applyUsageEvent(
+    .encoded(
+      UsageChangedEvent(
+        eventId: "2", at: "2026-09-23T12:00:01Z", provider: .codex,
+        state: .unavailable, unavailableReason: .tool_not_found,
+        source: .codex_app_server, fetchedAt: "2026-09-23T12:00:01Z")))
+  let reading = try #require(client.usageReadings.first)
+  #expect(reading.unavailableReason == .tool_not_found)
+  #expect(UsagePresentation(reading).unavailableMessage == "Codex not found on this Mac.")
 }
 
 @MainActor @Test func usageRefreshCoalescesConcurrentCallsAndHonorsTheWireInterval() async throws {

@@ -132,7 +132,7 @@ struct UsageDetailBalloon: View {
     case .stale: "Last reading is stale."
     case .login_needed: "Sign in in your terminal."
     case .no_access: "Allow access in Settings."
-    case .unavailable: "Usage is unavailable."
+    case .unavailable: UsagePresentation(reading).unavailableMessage
     }
   }
 

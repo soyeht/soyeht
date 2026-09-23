@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 6047da4a0a8d49ed0f97ebc9f47a97797d25cb0a9c9175af5b0b9a7bfb95867d). Do not edit.
+// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
 import Foundation
 
 
@@ -3857,6 +3857,13 @@ public enum UsageState: String, Codable, Sendable {
     case `unavailable` = "unavailable"
 }
 
+public enum UsageUnavailableReason: String, Codable, Sendable {
+    case `not_checked` = "not_checked"
+    case `tool_not_found` = "tool_not_found"
+    case `app_server_failed` = "app_server_failed"
+    case `invalid_response` = "invalid_response"
+}
+
 public enum UsageSource: String, Codable, Sendable {
     case `claude_cli_usage` = "claude_cli_usage"
     case `claude_oauth_endpoint` = "claude_oauth_endpoint"
@@ -3880,13 +3887,15 @@ public struct UsageWindow: Codable, Sendable {
 public struct UsageReading: Codable, Sendable {
     public var `provider`: UsageProvider
     public var `state`: UsageState
+    public var `unavailableReason`: UsageUnavailableReason?
     public var `primary`: UsageWindow?
     public var `secondary`: UsageWindow?
     public var `source`: UsageSource
     public var `fetchedAt`: String
-    public init(`provider`: UsageProvider, `state`: UsageState, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+    public init(`provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
         self.`provider` = `provider`
         self.`state` = `state`
+        self.`unavailableReason` = `unavailableReason`
         self.`primary` = `primary`
         self.`secondary` = `secondary`
         self.`source` = `source`
@@ -3929,15 +3938,17 @@ public struct UsageChangedEvent: Codable, Sendable {
     public var `at`: String
     public var `provider`: UsageProvider
     public var `state`: UsageState
+    public var `unavailableReason`: UsageUnavailableReason?
     public var `primary`: UsageWindow?
     public var `secondary`: UsageWindow?
     public var `source`: UsageSource
     public var `fetchedAt`: String
-    public init(`eventId`: Decimal, `at`: String, `provider`: UsageProvider, `state`: UsageState, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+    public init(`eventId`: Decimal, `at`: String, `provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`provider` = `provider`
         self.`state` = `state`
+        self.`unavailableReason` = `unavailableReason`
         self.`primary` = `primary`
         self.`secondary` = `secondary`
         self.`source` = `source`

@@ -7,6 +7,7 @@ fn reading() -> Reading {
     Reading {
         provider: UsageProvider::Claude,
         state: UsageState::Ok,
+        unavailable_reason: None,
         primary: Some(Window {
             used: 0.4,
             resets_at: "later".into(),

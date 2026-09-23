@@ -6601,6 +6601,11 @@
     "value": "ok"
   },
   {
+    "name": "UsageUnavailableReason",
+    "type": "UsageUnavailableReason",
+    "value": "tool_not_found"
+  },
+  {
     "name": "UsageSource",
     "type": "UsageSource",
     "value": "claude_cli_usage"

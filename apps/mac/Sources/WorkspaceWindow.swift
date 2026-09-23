@@ -478,6 +478,7 @@ struct WorkspaceWindow: View {
       onUsageDetails: { provider in
         selectedUsageProvider = provider
         showPreferences = true
+        client.refreshUsageOnDetailsClick(provider)
       })
   }
 

@@ -1,6 +1,6 @@
 //! Bounded adapters for the verified local usage sources.
 
-use soyeht_protocol::{UsageProvider, UsageSource, limits};
+use soyeht_protocol::{UsageProvider, UsageSource, UsageUnavailableReason, limits};
 use soyeht_usage::{SourceRead, UsageSourcePort};
 use std::{
     fs,
@@ -75,7 +75,7 @@ impl UsageSourcePort for SystemSources {
             (UsageProvider::Claude, UsageSource::ClaudeDesktopCache) => self.read_claude_cache(),
             (UsageProvider::Codex, UsageSource::CodexAppServer) => self.read_second_cli(),
             (UsageProvider::Cursor, UsageSource::CursorCurrentPeriod) => self.read_current_period(),
-            _ => SourceRead::Unavailable,
+            _ => SourceRead::Unavailable(None),
         }
     }
 }
@@ -83,24 +83,24 @@ impl UsageSourcePort for SystemSources {
 impl SystemSources {
     fn read_claude_cache(&self) -> SourceRead {
         let Ok(metadata) = fs::metadata(&self.commands.claude_cache) else {
-            return SourceRead::Unavailable;
+            return SourceRead::Unavailable(None);
         };
         let Ok(max_bytes) = u64::try_from(limits::JSON_BYTES) else {
-            return SourceRead::Unavailable;
+            return SourceRead::Unavailable(None);
         };
         if metadata.len() > max_bytes {
-            return SourceRead::Unavailable;
+            return SourceRead::Unavailable(None);
         }
         fs::read(&self.commands.claude_cache)
             .ok()
             .filter(|bytes| bytes.len() <= limits::JSON_BYTES)
-            .map_or(SourceRead::Unavailable, SourceRead::Payload)
+            .map_or(SourceRead::Unavailable(None), SourceRead::Payload)
     }
 
     fn read_second_cli(&self) -> SourceRead {
         match app_server_read(&self.commands.second_cli) {
-            Some(bytes) => SourceRead::Payload(bytes),
-            None => SourceRead::Unavailable,
+            Ok(bytes) => SourceRead::Payload(bytes),
+            Err(reason) => SourceRead::Unavailable(Some(reason)),
         }
     }
 
@@ -131,7 +131,7 @@ impl SystemSources {
         };
         let token = trim_ascii(&secret);
         if !valid_token(token) {
-            return SourceRead::Unavailable;
+            return SourceRead::Unavailable(None);
         }
         current_period_request(&self.commands.http, token)
     }
@@ -180,7 +180,7 @@ fn current_period_request(program: &PathBuf, token: &[u8]) -> SourceRead {
 
 fn parse_http_output(mut output: Vec<u8>) -> SourceRead {
     let Some(status_at) = find_last(&output, b"\nSOYEHT_STATUS:") else {
-        return SourceRead::Unavailable;
+        return SourceRead::Unavailable(None);
     };
     let metadata = output.split_off(status_at + 1);
     output.truncate(status_at);
@@ -197,7 +197,7 @@ fn parse_http_output(mut output: Vec<u8>) -> SourceRead {
                 .min(soyeht_protocol::limits::USAGE_MAX_BACKOFF_SEC as u32),
         },
         Some(500..=599) | Some(0) => SourceRead::NetworkError,
-        Some(_) | None => SourceRead::Unavailable,
+        Some(_) | None => SourceRead::Unavailable(None),
     }
 }
 
@@ -297,14 +297,20 @@ fn wait_child(child: &mut Child, deadline: Instant) -> Option<bool> {
     }
 }
 
-fn app_server_read(program: &PathBuf) -> Option<Vec<u8>> {
+fn app_server_read(program: &PathBuf) -> Result<Vec<u8>, UsageUnavailableReason> {
     let mut child = Command::new(program)
         .args(["app-server", "--stdio"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .ok()?;
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                UsageUnavailableReason::ToolNotFound
+            } else {
+                UsageUnavailableReason::AppServerFailed
+            }
+        })?;
     let result = (|| {
         let mut stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
@@ -326,7 +332,7 @@ fn app_server_read(program: &PathBuf) -> Option<Vec<u8>> {
         response_with_id(&receiver, 2, deadline)
     })();
     stop_child(&mut child);
-    result
+    result.ok_or(UsageUnavailableReason::AppServerFailed)
 }
 
 fn write_json_line(stdin: &mut ChildStdin, value: &serde_json::Value) -> Option<()> {
@@ -410,6 +416,33 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn codex_reader_distinguishes_missing_tool_from_failed_app_server() {
+        let fixture = Fixture::new();
+        let missing = fixture.0.join("not-installed");
+        let broken = fixture.script("broken", "exit 1");
+        assert!(matches!(
+            SystemSources::with_commands(Commands {
+                claude_cache: missing.clone(),
+                second_cli: missing.clone(),
+                keychain: missing.clone(),
+                http: missing.clone(),
+            })
+            .read(UsageProvider::Codex, UsageSource::CodexAppServer),
+            SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound))
+        ));
+        assert!(matches!(
+            SystemSources::with_commands(Commands {
+                claude_cache: missing.clone(),
+                second_cli: broken,
+                keychain: missing.clone(),
+                http: missing,
+            })
+            .read(UsageProvider::Codex, UsageSource::CodexAppServer),
+            SourceRead::Unavailable(Some(UsageUnavailableReason::AppServerFailed))
+        ));
     }
 
     #[test]
@@ -516,7 +549,7 @@ mod tests {
         });
         assert!(
             sources.read(UsageProvider::Claude, UsageSource::ClaudeDesktopCache)
-                == SourceRead::Unavailable
+                == SourceRead::Unavailable(None)
         );
         assert!(!spawn_marker.exists());
     }

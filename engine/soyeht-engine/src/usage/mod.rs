@@ -11,7 +11,7 @@ use crate::{
 use serde_json::Value;
 use soyeht_protocol::{
     UsageListResult, UsageProvider, UsageReading, UsageRefreshParams, UsageRefreshResult,
-    UsageSource, UsageState, UsageWindow,
+    UsageSource, UsageState, UsageUnavailableReason, UsageWindow,
 };
 use soyeht_store::usage::StoredUsageReading;
 use soyeht_usage::{
@@ -191,6 +191,7 @@ fn missing_reading(
     Reading {
         provider,
         state: UsageState::Unavailable,
+        unavailable_reason: Some(UsageUnavailableReason::NotChecked),
         primary: None,
         secondary: None,
         source,
@@ -203,6 +204,7 @@ fn restored_reading(stored: StoredUsageReading) -> Reading {
     Reading {
         provider: stored.reading.provider,
         state: stored.reading.state,
+        unavailable_reason: stored.reading.unavailable_reason,
         primary: stored.reading.primary.map(domain_window),
         secondary: stored.reading.secondary.map(domain_window),
         source: stored.reading.source,
@@ -223,6 +225,7 @@ fn wire_reading(reading: &Reading) -> UsageReading {
     UsageReading {
         provider: reading.provider.clone(),
         state: reading.state.clone(),
+        unavailable_reason: reading.unavailable_reason.clone(),
         primary: reading.primary.as_ref().map(wire_window),
         secondary: reading.secondary.as_ref().map(wire_window),
         source: reading.source.clone(),
@@ -243,7 +246,7 @@ mod tests {
     use super::*;
     use crate::{dispatch::Outcome, errors, ports::testing::FixedClock};
     use serde_json::json;
-    use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
+    use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
     use soyeht_usage::{SourceRead, UsageSourcePort};
     use std::{collections::VecDeque, fs, sync::Arc};
     use uuid::Uuid;
@@ -256,7 +259,9 @@ mod tests {
     impl UsageSourcePort for Scripted {
         fn read(&mut self, _provider: UsageProvider, _source: UsageSource) -> SourceRead {
             self.calls += 1;
-            self.reads.pop_front().unwrap_or(SourceRead::Unavailable)
+            self.reads
+                .pop_front()
+                .unwrap_or(SourceRead::Unavailable(None))
         }
     }
 
@@ -301,11 +306,40 @@ mod tests {
                 .iter()
                 .all(|item| item.state == UsageState::Unavailable)
         );
+        assert!(
+            listed
+                .iter()
+                .all(|item| item.unavailable_reason == Some(UsageUnavailableReason::NotChecked))
+        );
+    }
+
+    #[test]
+    fn unavailable_reason_reaches_list_without_a_free_form_error() {
+        let mut usage = service(vec![
+            SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound)),
+            SourceRead::Unavailable(None),
+        ]);
+        let batch = usage
+            .read_refresh(Some(UsageProvider::Codex), 100, "now")
+            .unwrap();
+        usage.commit(batch);
+        let reading = usage
+            .list(100)
+            .into_iter()
+            .find(|reading| reading.provider == UsageProvider::Codex)
+            .unwrap();
+        assert_eq!(
+            reading.unavailable_reason,
+            Some(UsageUnavailableReason::ToolNotFound)
+        );
+        let wire = serde_json::to_value(reading).unwrap();
+        assert_eq!(wire["unavailableReason"], "tool_not_found");
+        assert!(wire.get("message").is_none());
     }
 
     #[test]
     fn batch_rate_limit_fails_before_any_source_and_uses_the_longest_wait() {
-        let mut usage = service(vec![SourceRead::Unavailable; 12]);
+        let mut usage = service(vec![SourceRead::Unavailable(None); 12]);
         let first = usage
             .read_refresh(Some(UsageProvider::Codex), 100, "now")
             .unwrap();
@@ -322,6 +356,7 @@ mod tests {
             reading: UsageReading {
                 provider: UsageProvider::Codex,
                 state: UsageState::Ok,
+                unavailable_reason: None,
                 primary: Some(UsageWindow {
                     used: 0.4,
                     resets_at: "later".into(),
@@ -447,7 +482,7 @@ mod tests {
         core.usage = service(vec![
             payload(40),
             SourceRead::NetworkError,
-            SourceRead::Unavailable,
+            SourceRead::Unavailable(None),
         ]);
         let (outbox, _receiver) = crate::outbox::channel();
         let connection = core.connect(true, false, outbox).unwrap();
