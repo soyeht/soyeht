@@ -124,10 +124,7 @@ def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int |
 def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
     oversized: dict[str, int] = {}
     literals: dict[str, dict[str, int]] = {}
-    for area, (relative_dir, _, suffix) in AREAS.items():
-        area_counts = dict.fromkeys(
-            SWIFT_LITERAL_PATTERNS if suffix == ".swift" else ("rust_limits",), 0
-        )
+    for relative_dir, _, suffix in AREAS.values():
         for path in source_files(repo, relative_dir, suffix):
             relative_path = path.relative_to(repo).as_posix()
             lines = path.read_text(encoding="utf-8").splitlines()
@@ -135,15 +132,19 @@ def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str,
                 oversized[relative_path] = len(lines)
             if path.name == "limits.rs":
                 continue
+            counts = dict.fromkeys(
+                SWIFT_LITERAL_PATTERNS if suffix == ".swift" else ("rust_limits",),
+                0,
+            )
             for line in lines:
                 if suffix == ".swift":
                     for name, pattern in SWIFT_LITERAL_PATTERNS.items():
-                        area_counts[name] += len(pattern.findall(line))
+                        counts[name] += len(pattern.findall(line))
                 else:
-                    area_counts["rust_limits"] += len(
-                        RUST_LITERAL_PATTERN.findall(line)
-                    )
-        literals[area] = area_counts
+                    counts["rust_limits"] += len(RUST_LITERAL_PATTERN.findall(line))
+            nonzero = {name: count for name, count in counts.items() if count}
+            if nonzero:
+                literals[relative_path] = nonzero
     return oversized, literals
 
 
@@ -212,10 +213,26 @@ def measure(repo: Path, jscpd: Path, machete: str) -> dict:
     }
     machete_status(repo, machete)
     return {
-        "version": 1,
+        "version": 2,
         "duplication": duplicates,
         "oversized_files": oversized,
         "loose_literals": literals,
+    }
+
+
+def baseline_from_measurement(measurement: dict) -> dict:
+    """Persist only gated values; percentages remain report-only information."""
+    return {
+        "version": measurement["version"],
+        "duplication": {
+            area: {
+                metric: measurement["duplication"][area][metric]
+                for metric in ("clones", "duplicated_lines")
+            }
+            for area in DUPLICATION_SCANS
+        },
+        "oversized_files": measurement["oversized_files"],
+        "loose_literals": measurement["loose_literals"],
     }
 
 
@@ -223,7 +240,8 @@ def differences(baseline: dict, actual: dict) -> list[tuple[str, str]]:
     """Return (direction, explanation); even improvements require a baseline update."""
     changes: list[tuple[str, str]] = []
     for area in DUPLICATION_SCANS:
-        for metric, current in actual["duplication"][area].items():
+        for metric in ("clones", "duplicated_lines"):
+            current = actual["duplication"][area][metric]
             previous = baseline["duplication"][area][metric]
             if current != previous:
                 direction = "RELAXATION" if current > previous else "IMPROVEMENT"
@@ -246,15 +264,20 @@ def differences(baseline: dict, actual: dict) -> list[tuple[str, str]]:
                     f"file {path}: cap {previous}, actual {current}; split the file or update its exact cap",
                 )
             )
-    for area in AREAS:
-        for kind, current in actual["loose_literals"][area].items():
-            previous = baseline["loose_literals"][area][kind]
+    previous_literals = baseline["loose_literals"]
+    current_literals = actual["loose_literals"]
+    for path in sorted(previous_literals.keys() | current_literals.keys()):
+        previous_counts = previous_literals.get(path, {})
+        current_counts = current_literals.get(path, {})
+        for kind in sorted(previous_counts.keys() | current_counts.keys()):
+            previous = previous_counts.get(kind, 0)
+            current = current_counts.get(kind, 0)
             if current != previous:
                 direction = "RELAXATION" if current > previous else "IMPROVEMENT"
                 changes.append(
                     (
                         direction,
-                        f"literal {area}.{kind}: baseline {previous}, actual {current}; use a policy, token, font source or limits",
+                        f"literal {path} {kind}: baseline {previous}, actual {current}; use a policy, token, font source or limits",
                     )
                 )
     return changes

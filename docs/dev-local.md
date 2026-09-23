@@ -77,12 +77,17 @@ None of these options accepts another profile or service name.
 
 ## Local quality ratchet
 
-Install the pinned copy/paste detector once with
+In each fresh worktree, before pushing or running `bash scripts/check_all.sh`,
+install the pinned copy/paste detector with
 `npm ci --prefix scripts/quality --ignore-scripts`. Install the Rust unused-
 dependency scanner with `cargo install cargo-machete --locked` if it is missing.
 The quality gate fails with these commands when a required tool is absent; it
 never downloads a package from a Git hook. Periphery is optional and is reported
 as `SKIPPED` when unavailable, not as a passing check.
+
+The engine and shared Swift scans include tests. The Mac and iOS apps currently
+have no Swift test directories, so their scans cover `Sources`; add any future
+test targets to the scanner when they are created.
 
 Enable the versioned fast pre-push hook with
 `git config core.hooksPath .githooks`. It runs only

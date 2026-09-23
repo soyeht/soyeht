@@ -14,6 +14,7 @@ from quality_core import (
     AREAS,
     DUPLICATION_SCANS,
     QualityError,
+    baseline_from_measurement,
     duplicate_measurement,
     differences,
     measure,
@@ -25,28 +26,28 @@ from review_report import render
 
 
 ROOT = Path(__file__).resolve().parents[1]
+REPEATED_RUST = (
+    "pub fn calculation(value: usize) -> usize {\n"
+    "    let first = value + 11;\n"
+    "    let second = first * 2;\n"
+    "    let third = second + first;\n"
+    "    let fourth = third / 3;\n"
+    "    let fifth = fourth + second;\n"
+    "    let sixth = fifth + third;\n"
+    "    sixth + fourth\n"
+    "}\n"
+)
 
 
 def empty_measurement() -> dict:
     return {
-        "version": 1,
+        "version": 2,
         "duplication": {
             area: {"clones": 0, "duplicated_lines": 0, "percent": 0}
             for area in DUPLICATION_SCANS
         },
         "oversized_files": {},
-        "loose_literals": {
-            "engine": {"rust_limits": 0},
-            **{
-                area: {
-                    "padding": 0,
-                    "corner_radius": 0,
-                    "system_font_size": 0,
-                    "font_name": 0,
-                }
-                for area in ("shared", "mac", "ios")
-            },
-        },
+        "loose_literals": {},
     }
 
 
@@ -57,6 +58,25 @@ class QualityRatchetTests(unittest.TestCase):
         actual["duplication"]["engine"]["clones"] = 1
         self.assertEqual(differences(baseline, actual)[0][0], "RELAXATION")
         self.assertEqual(differences(actual, baseline)[0][0], "IMPROVEMENT")
+
+    def test_percentage_is_informational_not_in_the_baseline(self):
+        measured = empty_measurement()
+        baseline = baseline_from_measurement(measured)
+        self.assertNotIn("percent", baseline["duplication"]["engine"])
+        measured["duplication"]["engine"]["percent"] = 1.23
+        self.assertEqual(differences(baseline, measured), [])
+
+    def test_literal_trade_between_files_is_red(self):
+        baseline = empty_measurement()
+        old_file = "apps/mac/Sources/Old.swift"
+        new_file = "apps/mac/Sources/AppRail.swift"
+        baseline["loose_literals"][old_file] = {"padding": 1}
+        actual = copy.deepcopy(baseline)
+        actual["loose_literals"] = {new_file: {"padding": 1}}
+        changes = differences(baseline, actual)
+        self.assertEqual(
+            [direction for direction, _ in changes], ["RELAXATION", "IMPROVEMENT"]
+        )
 
     def test_existing_file_cap_cannot_grow_and_must_follow_shrinking_file(self):
         baseline = empty_measurement()
@@ -73,7 +93,7 @@ class QualityRatchetTests(unittest.TestCase):
         baseline = empty_measurement()
         actual = copy.deepcopy(baseline)
         actual["oversized_files"]["apps/mac/Sources/New.swift"] = 801
-        actual["loose_literals"]["mac"]["padding"] = 1
+        actual["loose_literals"]["apps/mac/Sources/New.swift"] = {"padding": 1}
         self.assertEqual(
             [direction for direction, _ in differences(baseline, actual)],
             ["RELAXATION", "RELAXATION"],
@@ -83,10 +103,10 @@ class QualityRatchetTests(unittest.TestCase):
         before = empty_measurement()
         before["oversized_files"]["engine/existing.rs"] = 900
         after = copy.deepcopy(before)
-        after["duplication"]["engine"]["percent"] = 0.1
+        after["duplication"]["engine"]["clones"] = 1
         after["oversized_files"]["engine/existing.rs"] = 901
         after["oversized_files"]["engine/new.rs"] = 810
-        after["loose_literals"]["mac"]["font_name"] = 1
+        after["loose_literals"]["apps/mac/Sources/New.swift"] = {"font_name": 1}
         report = render(before, after, after, "main", "SKIPPED (not installed)")
         self.assertEqual(report.count("🔴 "), 5)  # heading plus four loosened entries
         self.assertIn("written justification required", report)
@@ -106,23 +126,12 @@ class QualityRatchetTests(unittest.TestCase):
 
     def test_real_clone_is_detected_in_disposable_sources(self):
         jscpd, _ = tool_paths(ROOT)
-        repeated = (
-            "fn duplicate(value: usize) -> usize {\n"
-            "    let first = value + 11;\n"
-            "    let second = first * 2;\n"
-            "    let third = second + first;\n"
-            "    let fourth = third / 3;\n"
-            "    let fifth = fourth + second;\n"
-            "    let sixth = fifth + third;\n"
-            "    sixth + fourth\n"
-            "}\n"
-        )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "engine/crate/src"
             source.mkdir(parents=True)
-            (source / "one.rs").write_text(repeated)
-            (source / "two.rs").write_text(repeated)
+            (source / "one.rs").write_text(REPEATED_RUST)
+            (source / "two.rs").write_text(REPEATED_RUST)
             actual = duplicate_measurement(root, "engine", jscpd)
         self.assertGreater(actual["clones"], 0)
 
@@ -152,7 +161,7 @@ class QualityRatchetTests(unittest.TestCase):
             (rust.parent / "limits.rs").write_text("const BUFFER: usize = 512;\n")
             _, literals = source_measurements(root)
         self.assertEqual(
-            literals["mac"],
+            literals["apps/mac/Sources/Control.swift"],
             {
                 "padding": 1,
                 "corner_radius": 1,
@@ -160,21 +169,10 @@ class QualityRatchetTests(unittest.TestCase):
                 "font_name": 1,
             },
         )
-        self.assertEqual(literals["engine"]["rust_limits"], 1)
+        self.assertEqual(literals["engine/crate/src/mod.rs"]["rust_limits"], 1)
 
     def test_full_gate_is_red_for_real_clone_and_inflated_file(self):
         jscpd, machete = tool_paths(ROOT)
-        repeated = (
-            "pub fn calculation(value: usize) -> usize {\n"
-            "    let first = value + 11;\n"
-            "    let second = first * 2;\n"
-            "    let third = second + first;\n"
-            "    let fourth = third / 3;\n"
-            "    let fifth = fourth + second;\n"
-            "    let sixth = fifth + third;\n"
-            "    sixth + fourth\n"
-            "}\n"
-        )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             bin_dir = root / "scripts/quality/node_modules/.bin"
@@ -186,7 +184,7 @@ class QualityRatchetTests(unittest.TestCase):
             (crate / "Cargo.toml").write_text(
                 '[package]\nname = "demo"\nversion = "0.1.0"\nedition = "2021"\n'
             )
-            (crate / "src/lib.rs").write_text(repeated)
+            (crate / "src/lib.rs").write_text(REPEATED_RUST)
             for area, (_, language, _) in AREAS.items():
                 if language == "swift":
                     source = (
@@ -203,8 +201,23 @@ class QualityRatchetTests(unittest.TestCase):
                         "  let one = 1\n  let two = 2\n  let three = 3\n"
                         "  let four = 4\n  let five = 5\n}\n"
                     )
+            mac_item = root / "apps/mac/Sources/Item.swift"
+            mac_original = mac_item.read_text() + ".padding(12)\n"
+            mac_item.write_text(mac_original)
+            rail = root / "apps/mac/Sources/AppRail.swift"
+            rail_original = (
+                "struct AppRailFixture {\n"
+                '  let graphite = "graphite"\n'
+                '  let amber = "amber"\n'
+                '  let indigo = "indigo"\n'
+                '  let violet = "violet"\n'
+                "}\n"
+            )
+            rail.write_text(rail_original)
             baseline = measure(root, jscpd, machete)
-            (root / "scripts/quality_baseline.json").write_text(json.dumps(baseline))
+            (root / "scripts/quality_baseline.json").write_text(
+                json.dumps(baseline_from_measurement(baseline))
+            )
 
             def gate() -> subprocess.CompletedProcess[str]:
                 return subprocess.run(
@@ -221,7 +234,7 @@ class QualityRatchetTests(unittest.TestCase):
 
             self.assertEqual(gate().returncode, 0)
             clone = crate / "src/clone.rs"
-            clone.write_text(repeated)
+            clone.write_text(REPEATED_RUST)
             clone_result = gate()
             self.assertEqual(clone_result.returncode, 1)
             self.assertIn("duplication engine.clones", clone_result.stderr)
@@ -233,8 +246,7 @@ class QualityRatchetTests(unittest.TestCase):
                 )
             )
             clone.unlink()
-            inflated = root / "apps/mac/Sources/Item.swift"
-            inflated.write_text("let value = 1\n" * 801)
+            mac_item.write_text("let value = 1\n" * 801)
             inflated_result = gate()
             self.assertEqual(inflated_result.returncode, 1)
             self.assertIn(
@@ -248,6 +260,34 @@ class QualityRatchetTests(unittest.TestCase):
                     if "file apps/mac/Sources/Item.swift" in line
                 )
             )
+            mac_item.write_text(
+                mac_original.replace(".padding(12)", ".padding(MacTheme.Space.small)")
+            )
+            rail.write_text(rail_original + ".padding(8)\n")
+            traded = gate()
+            self.assertEqual(traded.returncode, 1)
+            self.assertIn(
+                "literal apps/mac/Sources/AppRail.swift padding", traded.stderr
+            )
+            print(
+                next(
+                    line
+                    for line in traded.stderr.splitlines()
+                    if "literal apps/mac/Sources/AppRail.swift padding" in line
+                )
+            )
+            mac_item.write_text(mac_original)
+            rail.write_text(rail_original)
+            unique = root / "apps/mac/Sources/Unique.swift"
+            unique.write_text(
+                "struct TurquoiseOrbit {\n"
+                '  let nebula = "distant cloud"\n'
+                '  let compass = "northern route"\n'
+                '  let harbor = "quiet landing"\n'
+                '  let lantern = "winter beacon"\n'
+                "}\n"
+            )
+            self.assertEqual(gate().returncode, 0)
 
 
 if __name__ == "__main__":

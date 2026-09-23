@@ -10,6 +10,7 @@ from pathlib import Path
 
 from quality_core import (
     QualityError,
+    baseline_from_measurement,
     differences,
     measure,
     periphery_status,
@@ -34,7 +35,9 @@ def main() -> int:
         jscpd, machete = tool_paths(root)
         current = measure(root, jscpd, machete)
         if args.print_baseline:
-            print(json.dumps(current, indent=2, sort_keys=True))
+            print(
+                json.dumps(baseline_from_measurement(current), indent=2, sort_keys=True)
+            )
             return 0
         expected = json.loads((root / "scripts/quality_baseline.json").read_text())
         if expected["version"] != current["version"]:

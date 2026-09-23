@@ -1,16 +1,227 @@
 {
   "duplication": {
-    "engine": {"clones": 389, "duplicated_lines": 3525, "percent": 4.32},
-    "ios": {"clones": 6, "duplicated_lines": 54, "percent": 1.76},
-    "mac": {"clones": 81, "duplicated_lines": 802, "percent": 4.96},
-    "shared": {"clones": 62, "duplicated_lines": 486, "percent": 2.48},
-    "swift_all": {"clones": 161, "duplicated_lines": 1477, "percent": 3.8}
+    "engine": {
+      "clones": 389,
+      "duplicated_lines": 3525
+    },
+    "ios": {
+      "clones": 6,
+      "duplicated_lines": 54
+    },
+    "mac": {
+      "clones": 81,
+      "duplicated_lines": 802
+    },
+    "shared": {
+      "clones": 62,
+      "duplicated_lines": 486
+    },
+    "swift_all": {
+      "clones": 161,
+      "duplicated_lines": 1477
+    }
   },
   "loose_literals": {
-    "engine": {"rust_limits": 71},
-    "ios": {"corner_radius": 12, "font_name": 11, "padding": 24, "system_font_size": 5},
-    "mac": {"corner_radius": 5, "font_name": 16, "padding": 58, "system_font_size": 68},
-    "shared": {"corner_radius": 2, "font_name": 3, "padding": 19, "system_font_size": 0}
+    "apps/ios/Sources/PhoneHome.swift": {
+      "corner_radius": 1,
+      "padding": 11,
+      "system_font_size": 4
+    },
+    "apps/ios/Sources/PhoneSettings.swift": {
+      "corner_radius": 3,
+      "padding": 5
+    },
+    "apps/ios/Sources/PhoneWritingPresentationSurface.swift": {
+      "corner_radius": 5,
+      "padding": 7
+    },
+    "apps/ios/Sources/PhoneWritingWorkspace.swift": {
+      "corner_radius": 3,
+      "font_name": 11,
+      "padding": 1,
+      "system_font_size": 1
+    },
+    "apps/mac/Sources/AppRail.swift": {
+      "system_font_size": 1
+    },
+    "apps/mac/Sources/EditorHistoryViews.swift": {
+      "corner_radius": 1,
+      "system_font_size": 1
+    },
+    "apps/mac/Sources/EditorNativeViewport.swift": {
+      "font_name": 2
+    },
+    "apps/mac/Sources/EditorNavigationPalette.swift": {
+      "system_font_size": 4
+    },
+    "apps/mac/Sources/EditorPaneView.swift": {
+      "corner_radius": 3,
+      "system_font_size": 11
+    },
+    "apps/mac/Sources/MacStyle.swift": {
+      "font_name": 7
+    },
+    "apps/mac/Sources/PaneAutomationControls.swift": {
+      "padding": 4,
+      "system_font_size": 4
+    },
+    "apps/mac/Sources/PreferencesPanel.swift": {
+      "padding": 7,
+      "system_font_size": 6
+    },
+    "apps/mac/Sources/TaskWorkspaceViews.swift": {
+      "corner_radius": 1,
+      "padding": 37,
+      "system_font_size": 23
+    },
+    "apps/mac/Sources/UsageViews.swift": {
+      "padding": 1
+    },
+    "apps/mac/Sources/Web/WebWorkspace.swift": {
+      "system_font_size": 2
+    },
+    "apps/mac/Sources/WorkspaceWindow.swift": {
+      "font_name": 7,
+      "padding": 6,
+      "system_font_size": 11
+    },
+    "apps/mac/Sources/WritingBeatBoardPane.swift": {
+      "padding": 3,
+      "system_font_size": 1
+    },
+    "apps/mac/Sources/WritingSectionView.swift": {
+      "system_font_size": 4
+    },
+    "apps/shared/Sources/SoyehtClient/AgentConversation.swift": {
+      "corner_radius": 2,
+      "padding": 19
+    },
+    "apps/shared/Sources/SoyehtClient/MacTerminal.swift": {
+      "font_name": 1
+    },
+    "apps/shared/Sources/SoyehtClient/WritingDisplayText.swift": {
+      "font_name": 1
+    },
+    "apps/shared/Tests/SoyehtClientTests/WritingDisplayTextTests.swift": {
+      "font_name": 1
+    },
+    "engine/soyeht-acp/src/session.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-acp/tests/fake-agent/turns.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-editor/src/search.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-editor/src/viewport.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/agents/catalog.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/agents/environment.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/agents/failures.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/agents/forms.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/agents/questions.rs": {
+      "rust_limits": 3
+    },
+    "engine/soyeht-engine/src/agents/registry.rs": {
+      "rust_limits": 3
+    },
+    "engine/soyeht-engine/src/agents/switching.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/dispatch.rs": {
+      "rust_limits": 2
+    },
+    "engine/soyeht-engine/src/experiment_export.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/languages/runtime.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/tasks/revision.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/tasks/worktree.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/usage/sources.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-engine/src/vcs.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-lsp/src/client.rs": {
+      "rust_limits": 2
+    },
+    "engine/soyeht-lsp/src/model.rs": {
+      "rust_limits": 3
+    },
+    "engine/soyeht-lsp/tests/fake-server/program.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-mcp/src/tools.rs": {
+      "rust_limits": 5
+    },
+    "engine/soyeht-pane-state/src/model.rs": {
+      "rust_limits": 2
+    },
+    "engine/soyeht-ptyd/tests/supervisor.rs": {
+      "rust_limits": 2
+    },
+    "engine/soyeht-store/src/agents.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-store/src/editor.rs": {
+      "rust_limits": 3
+    },
+    "engine/soyeht-store/src/web.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-store/src/writing.rs": {
+      "rust_limits": 3
+    },
+    "engine/soyeht-store/tests/storage.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-vcs/src/port.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-web/src/command.rs": {
+      "rust_limits": 2
+    },
+    "engine/soyeht-web/src/element.rs": {
+      "rust_limits": 7
+    },
+    "engine/soyeht-web/src/local_server.rs": {
+      "rust_limits": 2
+    },
+    "engine/soyeht-web/src/ring.rs": {
+      "rust_limits": 3
+    },
+    "engine/soyeht-web/src/snapshot.rs": {
+      "rust_limits": 2
+    },
+    "engine/soyeht-writing/src/beats.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-writing/src/markdown.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-writing/src/sections.rs": {
+      "rust_limits": 3
+    },
+    "engine/soyeht-writing/src/slides.rs": {
+      "rust_limits": 2
+    }
   },
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1497,
@@ -42,5 +253,5 @@
     "engine/soyeht-store/tests/agents.rs": 1038,
     "engine/soyeht-store/tests/tasks.rs": 992
   },
-  "version": 1
+  "version": 2
 }
