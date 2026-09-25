@@ -3817,6 +3817,47 @@ fn request_permission(client: &mut Client, pane: &str) -> Value {
     }
 }
 
+#[test]
+fn undisplayable_execute_permission_is_rejected_and_explained_in_the_transcript() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-missing-command","idempotencyKey":"missing-command"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if let Some(message) = transcript["items"].as_array().unwrap().iter().find(|item| {
+            item["role"] == "system"
+                && item["kind"] == "system"
+                && item["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("no command to display"))
+        }) {
+            assert!(
+                message["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Nothing was approved")
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "permission rejection was not visible"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(client.section("requests").is_empty());
+    assert_eq!(
+        rig.database_probe()
+            .event_count_by_field("pane.update", "kind", "system_message")
+            .unwrap(),
+        1
+    );
+}
+
 fn answer_after_engine_adoption(
     rig: &mut Rig,
     pane: &str,

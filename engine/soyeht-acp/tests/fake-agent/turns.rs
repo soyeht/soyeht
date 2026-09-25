@@ -99,11 +99,16 @@ fn permission_turn(
         });
     }
     let edit = text == "permission-edit";
+    let mut tool_call = json!({"toolCallId":"permission-tool","title":"Run test operation",
+        "kind":if edit{"edit"}else{"execute"},"status":"pending"});
+    if !edit && text != "permission-missing-command" {
+        tool_call["rawInput"] = json!({"command":"printf 'test operation'"});
+    }
     let result = call(
         runtime,
         session,
         "session/request_permission",
-        json!({"toolCall":{"toolCallId":"permission-tool","title":"Run test operation","kind":if edit{"edit"}else{"execute"},"status":"pending"},"options":[{"optionId":"once","kind":"allow_once","name":"Allow once"},{"optionId":"always","kind":"allow_always","name":"Always allow"},{"optionId":"deny","kind":"reject_once","name":"Deny"}]}),
+        json!({"toolCall":tool_call,"options":[{"optionId":"once","kind":"allow_once","name":"Allow once"},{"optionId":"always","kind":"allow_always","name":"Always allow"},{"optionId":"deny","kind":"reject_once","name":"Deny"}]}),
         cancelled,
         text == "permission-null",
     );

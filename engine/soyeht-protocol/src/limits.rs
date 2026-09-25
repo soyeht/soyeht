@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 0e7f3a1e75f7f76bf6a9e843b9431d030e02d7a375b31ea494945ee389b57899). Do not edit.
+// Generated from contracts/protocol.json (sha256 575f970f590876a0567458ed0ed29a93577e81f9974b930c2f70c832b9c8e2c6). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -23,6 +23,11 @@ pub const TRANSCRIPT_PAGE_BYTES: usize = 524288;
 pub const TRANSCRIPT_MESSAGE_BYTES: usize = 262144;
 pub const ACP_MESSAGE_BYTES: usize = 1048576;
 pub const PERMISSION_TIMEOUT_SEC: usize = 1800;
+pub const PERMISSION_PREVIEW_PATH_CHARS: usize = 4096;
+pub const PERMISSION_PREVIEW_CHANGES: usize = 8;
+pub const PERMISSION_PREVIEW_BYTES: usize = 65536;
+pub const PERMISSION_PREVIEW_LINES: usize = 400;
+pub const PERMISSION_COMMAND_BYTES: usize = 65536;
 pub const CANCEL_TIMEOUT_SEC: usize = 10;
 pub const PROBE_TIMEOUT_SEC: usize = 10;
 pub const NO_SIGNAL_SEC: usize = 90;

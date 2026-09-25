@@ -2693,6 +2693,34 @@
       ],
       "additionalProperties": true
     },
+    "PermissionFileChange": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "oldText": { "type": "string" },
+        "newText": { "type": "string" }
+      },
+      "required": ["path", "newText"],
+      "additionalProperties": true
+    },
+    "PermissionPresentation": {
+      "type": "object",
+      "properties": {
+        "targetPath": { "type": "string" },
+        "command": { "type": "string" },
+        "executionDetails": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fileChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PermissionFileChange" }
+        },
+        "previewOmitted": { "type": "boolean" }
+      },
+      "required": ["fileChanges", "previewOmitted"],
+      "additionalProperties": true
+    },
     "PermissionRequest": {
       "type": "object",
       "properties": {
@@ -2715,6 +2743,9 @@
         },
         "detail": {
           "type": "string"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PermissionPresentation"
         },
         "options": {
           "type": "array",
@@ -4201,6 +4232,9 @@
         "detail": {
           "type": "string"
         },
+        "presentation": {
+          "$ref": "#/$defs/PermissionPresentation"
+        },
         "options": {
           "type": "array",
           "items": {
@@ -4537,7 +4571,8 @@
     "AgentMessageUpdateKind": {
       "type": "string",
       "enum": [
-        "agent_message_chunk"
+        "agent_message_chunk",
+        "system_message"
       ]
     },
     "AgentMessageUpdate": {
@@ -12494,6 +12529,11 @@
     "transcriptMessageBytes": 262144,
     "acpMessageBytes": 1048576,
     "permissionTimeoutSec": 1800,
+    "permissionPreviewPathChars": 4096,
+    "permissionPreviewChanges": 8,
+    "permissionPreviewBytes": 65536,
+    "permissionPreviewLines": 400,
+    "permissionCommandBytes": 65536,
     "cancelTimeoutSec": 10,
     "probeTimeoutSec": 10,
     "noSignalSec": 90,

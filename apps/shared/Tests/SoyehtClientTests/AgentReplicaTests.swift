@@ -95,9 +95,16 @@ import Testing
       PanePermissionRequestedEvent(
         eventId: "2", at: "2026-09-11T00:00:01Z", paneId: paneId,
         requestId: "request-1", generation: 1, promptId: "prompt-1", title: "Run",
-        detail: "Run the requested operation", options: [option],
+        detail: "Run the requested operation",
+        presentation: PermissionPresentation(
+          targetPath: "/project/note.txt", command: "ls -la\n",
+          fileChanges: [PermissionFileChange(path: "/project/note.txt", newText: "hello\n")],
+          previewOmitted: false), options: [option],
         expiresAt: "2026-09-11T00:30:01Z")))
   #expect(client.agentPanes[paneId]?.permission?.requestId == "request-1")
+  #expect(client.agentPanes[paneId]?.permission?.presentation?.command == "ls -la\n")
+  #expect(
+    client.agentPanes[paneId]?.permission?.presentation?.fileChanges.first?.newText == "hello\n")
 
   try client.applyAgentEvent(
     .paneQueuePaused,
@@ -136,6 +143,25 @@ import Testing
 
   try client.applyAgentSnapshot([:], panes: [pane])
   #expect(client.agentPanes[paneId]?.authMethods.isEmpty == true)
+}
+
+@MainActor @Test func rejectedPermissionAppearsAsSystemMessageInPane() throws {
+  let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
+  let paneId = "pane-agent"
+  try client.applyAgentEvent(
+    .paneUpdate,
+    .encoded(
+      PaneUpdateEvent.v0(
+        AgentMessageUpdate(
+          eventId: "1", at: "2026-09-25T00:00:00Z", paneId: paneId,
+          kind: .system_message, generation: 1, seq: "1", localId: "blocked-request",
+          text:
+            "Soyeht blocked this permission request: no command to display. Nothing was approved.",
+          complete: true))))
+  let message = try #require(client.agentPanes[paneId]?.messages.first)
+  #expect(message.role == .system)
+  #expect(message.kind == .system)
+  #expect(message.text.contains("Nothing was approved"))
 }
 
 @Test func remoteFailuresHideWireMethodAndKindFromPeople() {

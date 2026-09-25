@@ -257,7 +257,7 @@ extension EngineClient {
       agentPanes[event.paneId, default: AgentPaneView()].permission = PermissionRequest(
         requestId: event.requestId, paneId: event.paneId, generation: event.generation,
         promptId: event.promptId, title: event.title, detail: event.detail,
-        options: event.options, expiresAt: event.expiresAt)
+        presentation: event.presentation, options: event.options, expiresAt: event.expiresAt)
     case .panePermissionAnswered:
       let event = try params.decoded(PanePermissionAnsweredEvent.self)
       if agentPanes[event.paneId]?.permission?.requestId == event.requestId {
@@ -341,7 +341,9 @@ extension EngineClient {
         value.paneId,
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .message, text: value.text, complete: value.complete)
+          role: value.kind == .system_message ? .system : .assistant,
+          kind: value.kind == .system_message ? .system : .message,
+          text: value.text, complete: value.complete)
       )
     case .v1(let value):
       return (

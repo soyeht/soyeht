@@ -10,7 +10,10 @@ use soyeht_acp::{
     Message, RpcError, client,
     rpc::{Record as NativeRecord, decode},
 };
-use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, PromptItem, ndjson::Decoder};
+use soyeht_protocol::{
+    PaneState, ProbeCapability, ProbeResult, PromptItem, TranscriptKind, TranscriptRole,
+    ndjson::Decoder,
+};
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::segments::Record;
 use uuid::Uuid;
@@ -56,6 +59,38 @@ fn native_error_response(id: serde_json::Value, code: i32, message: String) -> M
             data: None,
         }),
     }
+}
+
+fn reject_question(
+    pane: &str,
+    state: &mut super::state::State,
+    generation: u32,
+    id: Value,
+    method: &str,
+    error: crate::errors::Error,
+    changes: &mut Changes,
+) -> Result<()> {
+    let reason = match &error {
+        errors::Error::InvalidParams(reason) => reason.as_str(),
+        _ => "The request could not be displayed safely",
+    };
+    if method == "session/request_permission" {
+        let notice =
+            format!("Soyeht blocked this permission request: {reason}. Nothing was approved.");
+        let message = transcript::new_message(
+            state,
+            generation,
+            TranscriptRole::System,
+            TranscriptKind::System,
+            notice,
+            true,
+        )?;
+        transcript::put(changes, pane, message, "system_message")?;
+    }
+    changes
+        .outgoing
+        .push(native_error_response(id, -32602, error.to_string()));
+    Ok(())
 }
 
 impl Core {
@@ -134,9 +169,15 @@ impl Core {
                         },
                         &mut question,
                     ) {
-                        changes
-                            .outgoing
-                            .push(native_error_response(id, -32602, error.to_string()));
+                        reject_question(
+                            pane,
+                            state,
+                            saved.pane.generation,
+                            id,
+                            &method,
+                            error,
+                            &mut changes,
+                        )?;
                     } else {
                         changes = question;
                     }
@@ -599,6 +640,47 @@ mod tests {
     use super::*;
     use crate::ports::testing::{FixedClock, MemoryStore};
     use soyeht_protocol::{HarnessLaunch, PermissionMode, PromptOrigin};
+
+    #[test]
+    fn rejected_permission_is_visible_without_echoing_native_payload() {
+        let mut state = super::super::state::State::new(
+            HarnessLaunch {
+                id: "test".into(),
+                name: "Test".into(),
+                command: "/test".into(),
+                args: Vec::new(),
+                version: "1".into(),
+                environment: None,
+            },
+            "digest".into(),
+            PermissionMode::Ask,
+        )
+        .unwrap();
+        let mut changes = Changes::default();
+        reject_question(
+            "pane",
+            &mut state,
+            1,
+            json!("native-id"),
+            "session/request_permission",
+            errors::invalid("Executable permission has no command to display"),
+            &mut changes,
+        )
+        .unwrap();
+        assert_eq!(changes.messages.len(), 1);
+        assert_eq!(changes.messages[0].role, TranscriptRole::System);
+        assert_eq!(changes.messages[0].kind, TranscriptKind::System);
+        assert!(changes.messages[0].text.contains("no command to display"));
+        assert!(changes.messages[0].text.contains("Nothing was approved"));
+        assert_eq!(changes.events.len(), 1);
+        assert_eq!(changes.events[0].0, "pane.update");
+        assert_eq!(changes.events[0].1["kind"], "system_message");
+        assert_eq!(changes.outgoing.len(), 1);
+        assert!(matches!(
+            &changes.outgoing[0],
+            Message::Response { result: Err(error), .. } if error.code == -32602
+        ));
+    }
 
     #[test]
     fn agent_session_rule_reads_requests_and_time_through_ports() {

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 0e7f3a1e75f7f76bf6a9e843b9431d030e02d7a375b31ea494945ee389b57899). Do not edit.
+// Generated from contracts/protocol.json (sha256 575f970f590876a0567458ed0ed29a93577e81f9974b930c2f70c832b9c8e2c6). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -781,6 +781,20 @@ export interface PermissionOption {
   "name": string;
 }
 
+export interface PermissionFileChange {
+  "path": string;
+  "oldText"?: string;
+  "newText": string;
+}
+
+export interface PermissionPresentation {
+  "targetPath"?: string;
+  "command"?: string;
+  "executionDetails"?: Array<string>;
+  "fileChanges": Array<PermissionFileChange>;
+  "previewOmitted": boolean;
+}
+
 export interface PermissionRequest {
   "requestId": Id;
   "paneId": Id;
@@ -788,6 +802,7 @@ export interface PermissionRequest {
   "promptId": Id;
   "title": string;
   "detail": string;
+  "presentation"?: PermissionPresentation;
   "options": Array<PermissionOption>;
   "expiresAt": string;
   "kind"?: PermissionRequestKind;
@@ -1214,6 +1229,7 @@ export interface PanePermissionRequestedEvent {
   "promptId": Id;
   "title": string;
   "detail": string;
+  "presentation"?: PermissionPresentation;
   "options": Array<PermissionOption>;
   "expiresAt": string;
   "kind"?: PermissionRequestKind;
@@ -1303,7 +1319,7 @@ export interface PaneAuthFinishedEvent {
   "reason"?: string;
 }
 
-export type AgentMessageUpdateKind = "agent_message_chunk";
+export type AgentMessageUpdateKind = "agent_message_chunk" | "system_message";
 
 export interface AgentMessageUpdate {
   "eventId": Decimal;

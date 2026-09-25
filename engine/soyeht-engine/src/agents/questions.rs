@@ -8,7 +8,8 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
-    PaneState, PermissionMode, PermissionOption, PermissionOptionKind, Role, limits,
+    PaneState, PermissionFileChange, PermissionMode, PermissionOption, PermissionOptionKind,
+    PermissionPresentation, Role, limits,
 };
 use soyeht_store::agents::NativeRequest;
 use uuid::Uuid;
@@ -41,6 +42,90 @@ fn bounded(text: &str, maximum: usize) -> Result<String> {
         return Err(invalid("Native question exceeds public protocol bounds"));
     }
     Ok(text.into())
+}
+
+fn permission_presentation(tool: &Value) -> Result<PermissionPresentation> {
+    let mut execution_details = Vec::new();
+    if tool["kind"] == "execute" {
+        let mut content_bytes = 0;
+        for item in tool["content"].as_array().into_iter().flatten() {
+            if item["type"] == "content" && item["content"]["type"] == "text" {
+                let Some(text) = item["content"]["text"].as_str() else {
+                    continue;
+                };
+                content_bytes += text.len();
+                if content_bytes > limits::PERMISSION_COMMAND_BYTES {
+                    return Err(invalid(
+                        "Executable permission content exceeds display limit",
+                    ));
+                }
+                execution_details.push(text.to_owned());
+            }
+        }
+    }
+    let command = if tool["kind"] == "execute" {
+        // The claude-acp adapter puts a human summary in title/content; only
+        // rawInput.command is the shell command that would actually run.
+        let value = tool["rawInput"]["command"]
+            .as_str()
+            .filter(|command| !command.trim().is_empty())
+            .ok_or_else(|| invalid("Executable permission has no command to display"))?;
+        if value.len() > limits::PERMISSION_COMMAND_BYTES {
+            return Err(invalid(
+                "Executable permission command exceeds display limit",
+            ));
+        }
+        let command = value.to_owned();
+        execution_details
+            .retain(|detail| detail != &command && tool["title"].as_str() != Some(detail.as_str()));
+        Some(command)
+    } else {
+        None
+    };
+    let target_path = tool["locations"]
+        .as_array()
+        .and_then(|locations| locations.iter().find_map(|item| item["path"].as_str()))
+        .filter(|path| path.chars().count() <= limits::PERMISSION_PREVIEW_PATH_CHARS)
+        .map(str::to_owned);
+    let mut file_changes = Vec::new();
+    let mut preview_omitted = false;
+    let mut preview_bytes = 0;
+    for item in tool["content"].as_array().into_iter().flatten() {
+        if item["type"] != "diff" {
+            continue;
+        }
+        let Some(path) = item["path"].as_str() else {
+            preview_omitted = true;
+            continue;
+        };
+        let Some(new_text) = item["newText"].as_str() else {
+            preview_omitted = true;
+            continue;
+        };
+        let old_text = item["oldText"].as_str();
+        preview_bytes += path.len() + new_text.len() + old_text.map_or(0, str::len);
+        if file_changes.len() >= limits::PERMISSION_PREVIEW_CHANGES
+            || path.chars().count() > limits::PERMISSION_PREVIEW_PATH_CHARS
+            || preview_bytes > limits::PERMISSION_PREVIEW_BYTES
+        {
+            // An incomplete diff must never look like a complete approval preview.
+            file_changes.clear();
+            preview_omitted = true;
+            break;
+        }
+        file_changes.push(PermissionFileChange {
+            path: path.into(),
+            old_text: old_text.map(str::to_owned),
+            new_text: new_text.into(),
+        });
+    }
+    Ok(PermissionPresentation {
+        target_path: target_path.or_else(|| file_changes.first().map(|change| change.path.clone())),
+        command,
+        execution_details: (!execution_details.is_empty()).then_some(execution_details),
+        file_changes,
+        preview_omitted,
+    })
 }
 
 fn public_question(
@@ -82,15 +167,32 @@ fn public_question(
                 _ => true,
             })
             .collect();
-        public["title"] = json!(bounded(
-            params["toolCall"]["title"]
+        let metadata = &params["_meta"]["permission"];
+        let title = if metadata["version"] == 1 {
+            metadata["title"].as_str()
+        } else {
+            None
+        }
+        .or_else(|| params["toolCall"]["title"].as_str())
+        .unwrap_or("Permission required");
+        let presentation = permission_presentation(&params["toolCall"])?;
+        public["title"] = json!(if params["toolCall"]["kind"] == "execute"
+            && title.chars().count() > 512
+        {
+            "Run command".to_owned()
+        } else {
+            bounded(title, 512)?
+        });
+        public["detail"] = json!(if metadata["version"] == 1 {
+            metadata["description"]
                 .as_str()
-                .unwrap_or("Permission required"),
-            512
-        )?);
-        let detail = serde_json::to_string(&params["toolCall"])
-            .map_err(|_| errors::internal("Permission detail serialization failed"))?;
-        public["detail"] = json!(bounded(&detail, 64 * 1024)?);
+                .filter(|text| text.chars().count() <= 512)
+                .unwrap_or("")
+        } else {
+            ""
+        });
+        public["presentation"] = serde_json::to_value(presentation)
+            .map_err(|_| errors::internal("Permission presentation serialization failed"))?;
         public["options"] = json!(public_options);
         "pane.permission_requested"
     } else {
@@ -454,5 +556,159 @@ impl Core {
                 result,
             )?
             .result)
+    }
+}
+
+#[cfg(test)]
+mod presentation_tests {
+    use super::*;
+
+    #[test]
+    fn permission_exposes_typed_diff_without_raw_tool_input() {
+        let params = json!({
+            "toolCall": {
+                "toolCallId": "private-id", "title": "Write note.txt", "kind": "edit",
+                "rawInput": {"token": "private-token"},
+                "locations": [{"path": "/project/note.txt"}],
+                "content": [{"type": "diff", "path": "/project/note.txt",
+                    "oldText": "before\n", "newText": "after\n"}]
+            },
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+            "_meta": {"permission": {"version": 1, "title": "Write note.txt",
+                "description": "Review this edit"}}
+        });
+        let (public, event) = public_question("session/request_permission", &params, json!({}))
+            .expect("valid permission");
+        assert_eq!(event, "pane.permission_requested");
+        assert_eq!(public["title"], "Write note.txt");
+        assert_eq!(public["detail"], "Review this edit");
+        assert_eq!(public["presentation"]["targetPath"], "/project/note.txt");
+        assert_eq!(
+            public["presentation"]["fileChanges"][0]["oldText"],
+            "before\n"
+        );
+        assert_eq!(
+            public["presentation"]["fileChanges"][0]["newText"],
+            "after\n"
+        );
+        let encoded = public.to_string();
+        assert!(!encoded.contains("private-token"));
+        assert!(!encoded.contains("private-id"));
+        assert!(!encoded.contains("rawInput"));
+    }
+
+    #[test]
+    fn large_diff_is_not_presented_as_a_complete_preview() {
+        let tool = json!({"content": [{"type": "diff", "path": "/project/large.txt",
+            "newText": "x".repeat(limits::PERMISSION_PREVIEW_BYTES + 1)}]});
+        let presentation = permission_presentation(&tool).expect("bounded presentation");
+        assert!(presentation.preview_omitted);
+        assert!(presentation.file_changes.is_empty());
+    }
+
+    #[test]
+    fn claude_execute_permission_shows_raw_command_not_summary() {
+        // Sanitized from the real claude-acp permission request observed on VM1.
+        let command = "touch made-by-shell.txt && ls -la";
+        let params = json!({
+            "toolCall": {"kind": "execute", "title": "Create file and list directory contents",
+                "rawInput": {"command": command, "description": "Create file and list directory contents",
+                    "secret": "never-public"},
+                "content": [{"type": "content", "content": {"type": "text",
+                    "text": "Create file and list directory contents"}}]},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+            "_meta": {"permission": {"version": 1,
+                "title": "Create file and list directory contents",
+                "description": "Review shell command"}}
+        });
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("complete command must be displayable");
+        assert_eq!(public["title"], "Create file and list directory contents");
+        assert_eq!(public["presentation"]["command"], command);
+        assert_eq!(public["presentation"]["executionDetails"], Value::Null);
+        assert!(!public.to_string().contains("never-public"));
+        assert!(!public.to_string().contains("rawInput"));
+    }
+
+    #[test]
+    fn execute_permission_preserves_long_multiline_command_and_extra_content() {
+        let command = format!("ls -la\nprintf '%s' {}", "x".repeat(600));
+        let params = json!({
+            "toolCall": {"kind": "execute", "title": "List and print",
+                "rawInput": {"command": command},
+                "content": [{"type": "content", "content": {"type": "text",
+                    "text": "Working directory: /project"}}]},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
+        });
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("complete command must be displayable");
+        assert_eq!(public["presentation"]["command"], command);
+        assert_eq!(
+            public["presentation"]["executionDetails"][0],
+            "Working directory: /project"
+        );
+    }
+
+    #[test]
+    fn codex_execute_permission_uses_adapter_command_not_generic_title() {
+        // codex-acp 1.11.0 constructs command approvals with a string
+        // rawInput.command, even when its internal launcher uses argv.
+        let params = json!({
+            "toolCall": {"kind": "execute", "title": "List files",
+                "rawInput": {"command": "ls -la", "cwd": "/project"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+            "_meta": {"permission": {"version": 1, "title": "Run command?"}}
+        });
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("Codex command must be displayable");
+        assert_eq!(public["title"], "Run command?");
+        assert_eq!(public["presentation"]["command"], "ls -la");
+        assert!(!public.to_string().contains("/project"));
+    }
+
+    #[test]
+    fn opencode_execute_permission_with_command_uses_command_not_bash_title() {
+        let params = json!({"toolCall": {"kind": "execute", "title": "bash",
+            "rawInput": {"command": "echo test", "description": "Print a test line"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("OpenCode command must be displayable");
+        assert_eq!(public["presentation"]["command"], "echo test");
+        assert!(!public.to_string().contains("Print a test line"));
+    }
+
+    #[test]
+    fn execute_without_displayable_command_fails_closed() {
+        let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
+            "content": [{"type": "content", "content": {"type": "text",
+                "text": "List directory"}}]},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+
+        let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
+            "rawInput": {"command": "  \n  "}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+
+        // OpenCode has emitted a pending bash permission with rawInput: {};
+        // a title of "bash" cannot authorize an undisclosed command.
+        let params = json!({"toolCall": {"kind": "execute", "title": "bash",
+            "rawInput": {}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+
+        // An argv array is not a shell command string; never join it by guesswork.
+        let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
+            "rawInput": {"command": ["ls", "-la"]}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+    }
+
+    #[test]
+    fn execute_command_over_display_limit_fails_closed() {
+        let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
+            "rawInput": {"command": "x".repeat(limits::PERMISSION_COMMAND_BYTES + 1)}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
     }
 }

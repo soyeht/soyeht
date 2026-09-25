@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 0e7f3a1e75f7f76bf6a9e843b9431d030e02d7a375b31ea494945ee389b57899). Do not edit.
+// Generated from contracts/protocol.json (sha256 575f970f590876a0567458ed0ed29a93577e81f9974b930c2f70c832b9c8e2c6). Do not edit.
 import Foundation
 
 
@@ -1607,6 +1607,32 @@ public struct PermissionOption: Codable, Sendable {
     }
 }
 
+public struct PermissionFileChange: Codable, Sendable {
+    public var `path`: String
+    public var `oldText`: String?
+    public var `newText`: String
+    public init(`path`: String, `oldText`: String? = nil, `newText`: String) {
+        self.`path` = `path`
+        self.`oldText` = `oldText`
+        self.`newText` = `newText`
+    }
+}
+
+public struct PermissionPresentation: Codable, Sendable {
+    public var `targetPath`: String?
+    public var `command`: String?
+    public var `executionDetails`: [String]?
+    public var `fileChanges`: [PermissionFileChange]
+    public var `previewOmitted`: Bool
+    public init(`targetPath`: String? = nil, `command`: String? = nil, `executionDetails`: [String]? = nil, `fileChanges`: [PermissionFileChange], `previewOmitted`: Bool) {
+        self.`targetPath` = `targetPath`
+        self.`command` = `command`
+        self.`executionDetails` = `executionDetails`
+        self.`fileChanges` = `fileChanges`
+        self.`previewOmitted` = `previewOmitted`
+    }
+}
+
 public struct PermissionRequest: Codable, Sendable {
     public var `requestId`: Id
     public var `paneId`: Id
@@ -1614,17 +1640,19 @@ public struct PermissionRequest: Codable, Sendable {
     public var `promptId`: Id
     public var `title`: String
     public var `detail`: String
+    public var `presentation`: PermissionPresentation?
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
     public var `kind`: PermissionRequestKind?
     public var `domain`: String?
-    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
+    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`requestId` = `requestId`
         self.`paneId` = `paneId`
         self.`generation` = `generation`
         self.`promptId` = `promptId`
         self.`title` = `title`
         self.`detail` = `detail`
+        self.`presentation` = `presentation`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
         self.`kind` = `kind`
@@ -2405,11 +2433,12 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
     public var `promptId`: Id
     public var `title`: String
     public var `detail`: String
+    public var `presentation`: PermissionPresentation?
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
     public var `kind`: PermissionRequestKind?
     public var `domain`: String?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2418,6 +2447,7 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
         self.`promptId` = `promptId`
         self.`title` = `title`
         self.`detail` = `detail`
+        self.`presentation` = `presentation`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
         self.`kind` = `kind`
@@ -2584,6 +2614,7 @@ public struct PaneAuthFinishedEvent: Codable, Sendable {
 
 public enum AgentMessageUpdateKind: String, Codable, Sendable {
     case `agent_message_chunk` = "agent_message_chunk"
+    case `system_message` = "system_message"
 }
 
 public struct AgentMessageUpdate: Codable, Sendable {
