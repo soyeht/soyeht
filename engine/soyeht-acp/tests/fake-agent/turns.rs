@@ -101,7 +101,7 @@ fn permission_turn(
     let edit = text == "permission-edit";
     let mut tool_call = json!({"toolCallId":"permission-tool","title":"Run test operation",
         "kind":if edit{"edit"}else{"execute"},"status":"pending"});
-    if !edit {
+    if !edit && text != "permission-missing-command" {
         tool_call["rawInput"] = json!({"command":"printf 'test operation'"});
     }
     let result = call(
