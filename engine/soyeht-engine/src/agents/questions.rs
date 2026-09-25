@@ -650,6 +650,34 @@ mod presentation_tests {
     }
 
     #[test]
+    fn codex_execute_permission_uses_adapter_command_not_generic_title() {
+        // codex-acp 1.11.0 constructs command approvals with a string
+        // rawInput.command, even when its internal launcher uses argv.
+        let params = json!({
+            "toolCall": {"kind": "execute", "title": "List files",
+                "rawInput": {"command": "ls -la", "cwd": "/project"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+            "_meta": {"permission": {"version": 1, "title": "Run command?"}}
+        });
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("Codex command must be displayable");
+        assert_eq!(public["title"], "Run command?");
+        assert_eq!(public["presentation"]["command"], "ls -la");
+        assert!(!public.to_string().contains("/project"));
+    }
+
+    #[test]
+    fn opencode_execute_permission_with_command_uses_command_not_bash_title() {
+        let params = json!({"toolCall": {"kind": "execute", "title": "bash",
+            "rawInput": {"command": "echo test", "description": "Print a test line"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("OpenCode command must be displayable");
+        assert_eq!(public["presentation"]["command"], "echo test");
+        assert!(!public.to_string().contains("Print a test line"));
+    }
+
+    #[test]
     fn execute_without_displayable_command_fails_closed() {
         let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
             "content": [{"type": "content", "content": {"type": "text",
@@ -659,6 +687,19 @@ mod presentation_tests {
 
         let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
             "rawInput": {"command": "  \n  "}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+
+        // OpenCode has emitted a pending bash permission with rawInput: {};
+        // a title of "bash" cannot authorize an undisclosed command.
+        let params = json!({"toolCall": {"kind": "execute", "title": "bash",
+            "rawInput": {}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+
+        // An argv array is not a shell command string; never join it by guesswork.
+        let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
+            "rawInput": {"command": ["ls", "-la"]}},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
         assert!(public_question("session/request_permission", &params, json!({})).is_err());
     }
