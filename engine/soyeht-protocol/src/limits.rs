@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -15,6 +15,9 @@ pub const EVENT_DAYS: usize = 7;
 pub const DEVICE_CONNECTIONS: usize = 8;
 pub const PROMPT_BYTES: usize = 65536;
 pub const PROMPT_QUEUE_COUNT: usize = 64;
+pub const AGENT_MESSAGES_PER_WINDOW: usize = 6;
+pub const AGENT_MESSAGE_WINDOW_SEC: usize = 60;
+pub const AGENT_MESSAGE_BYTES: usize = 60000;
 pub const TRANSCRIPT_PAGE_MESSAGES: usize = 200;
 pub const TRANSCRIPT_PAGE_BYTES: usize = 524288;
 pub const TRANSCRIPT_MESSAGE_BYTES: usize = 262144;

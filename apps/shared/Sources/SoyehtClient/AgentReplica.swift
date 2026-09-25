@@ -208,7 +208,7 @@ extension EngineClient {
       }
     case .paneQueued:
       let event = try params.decoded(PaneQueuedEvent.self)
-      if event.paneId == selectedPaneId { refreshAgentQueue(event.paneId) }
+      refreshAgentQueue(event.paneId)
     case .paneQueuePaused, .paneQueueResumed:
       let event = try params.decoded(PaneQueueStateEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].queuePaused = event.paused

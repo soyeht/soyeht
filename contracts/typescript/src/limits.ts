@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,
@@ -15,6 +15,9 @@ export const limits = {
   "deviceConnections": 8,
   "promptBytes": 65536,
   "promptQueueCount": 64,
+  "agentMessagesPerWindow": 6,
+  "agentMessageWindowSec": 60,
+  "agentMessageBytes": 60000,
   "transcriptPageMessages": 200,
   "transcriptPageBytes": 524288,
   "transcriptMessageBytes": 262144,

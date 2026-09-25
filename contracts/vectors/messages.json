@@ -2628,7 +2628,12 @@
       "text": "example",
       "origin": "human",
       "status": "queued",
-      "queuedAt": "example"
+      "queuedAt": "example",
+      "agentMessage": {
+        "paneId": "00000000-0000-4000-8000-000000000002",
+        "name": "Research",
+        "harness": "Codex"
+      }
     }
   },
   {
@@ -3666,6 +3671,99 @@
       "result": {
         "promptId": "00000000-0000-4000-8000-000000000001",
         "queued": false
+      }
+    }
+  },
+  {
+    "name": "AgentMessageSource",
+    "type": "AgentMessageSource",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "name": "Research",
+      "harness": "Codex"
+    }
+  },
+  {
+    "name": "AgentListParams",
+    "type": "AgentListParams",
+    "value": {}
+  },
+  {
+    "name": "AgentListResult",
+    "type": "AgentListResult",
+    "value": {
+      "items": [{
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "name": "Research",
+        "harness": "Codex"
+      }]
+    }
+  },
+  {
+    "name": "AgentMessageParams",
+    "type": "AgentMessageParams",
+    "value": {
+      "targetPaneId": "00000000-0000-4000-8000-000000000001",
+      "text": "Please review this change.",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "AgentMessageResult",
+    "type": "AgentMessageResult",
+    "value": {
+      "promptId": "00000000-0000-4000-8000-000000000003",
+      "queued": true
+    }
+  },
+  {
+    "name": "request:agent.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "agent.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:agent.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [{
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "name": "Research",
+          "harness": "Codex"
+        }]
+      }
+    }
+  },
+  {
+    "name": "request:agent.message",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "agent.message",
+      "params": {
+        "targetPaneId": "00000000-0000-4000-8000-000000000001",
+        "text": "Please review this change.",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:agent.message",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "promptId": "00000000-0000-4000-8000-000000000003",
+        "queued": true
       }
     }
   },

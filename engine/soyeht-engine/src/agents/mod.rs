@@ -75,6 +75,7 @@ pub struct Changes {
     pub model_refusal: Option<AgentModelRefusal>,
     pub workspace_layout: Option<Workspace>,
     pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
+    pub(crate) message_rate: Option<(String, String, i64, i64)>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
     pub(crate) task_blocking: Option<crate::tasks::blocking::TaskBlockingChange>,
@@ -131,12 +132,15 @@ struct AgentPersistence<'a> {
     outgoing: &'a [Outgoing],
 }
 
-fn persist_model_refusal(
+fn persist_agent_metadata(
     tx: &Change<'_>,
-    refusal: Option<&AgentModelRefusal>,
+    changes: &Changes,
 ) -> soyeht_store::database::Result<()> {
-    if let Some(refusal) = refusal {
+    if let Some(refusal) = &changes.model_refusal {
         agents::save_model_refusal(tx, refusal)?;
+    }
+    if let Some((sender, target, at_ms, since_ms)) = &changes.message_rate {
+        agents::record_message(tx, sender, target, *at_ms, *since_ms)?;
     }
     Ok(())
 }
@@ -197,7 +201,7 @@ impl AgentPersistence<'_> {
         if let Some(write) = &self.changes.editor_agent_write {
             write.persist(tx)?;
         }
-        persist_model_refusal(tx, self.changes.model_refusal.as_ref())?;
+        persist_agent_metadata(tx, self.changes)?;
         write_pane(tx, self.saved)?;
         persist_workspace_layout(tx, self.changes.workspace_layout.as_ref())?;
         agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;

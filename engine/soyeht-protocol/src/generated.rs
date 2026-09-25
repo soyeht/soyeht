@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1405,6 +1405,40 @@ pub struct PromptItem {
     pub generation: Option<u32>,
     #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<AttachmentRef>>,
+    #[serde(rename = "agentMessage", skip_serializing_if = "Option::is_none")]
+    pub agent_message: Option<AgentMessageSource>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentMessageSource {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "harness")]
+    pub harness: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<AgentMessageSource>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentMessageParams {
+    #[serde(rename = "targetPaneId")]
+    pub target_pane_id: Id,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentMessageResult {
+    #[serde(rename = "promptId")]
+    pub prompt_id: Id,
+    #[serde(rename = "queued")]
+    pub queued: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionOption {
@@ -5406,6 +5440,10 @@ pub enum Request {
     SettingsSet(SettingsSetParams),
     #[serde(rename = "pane.prompt")]
     PanePrompt(PanePromptParams),
+    #[serde(rename = "agent.list")]
+    AgentList(AgentListParams),
+    #[serde(rename = "agent.message")]
+    AgentMessage(AgentMessageParams),
     #[serde(rename = "pane.queue.list")]
     PaneQueueList(PaneQueueListParams),
     #[serde(rename = "pane.queue.remove")]
@@ -5725,6 +5763,13 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     ("pane.prompt", "PanePromptParams", "PanePromptResult", true),
+    ("agent.list", "AgentListParams", "AgentListResult", false),
+    (
+        "agent.message",
+        "AgentMessageParams",
+        "AgentMessageResult",
+        true,
+    ),
     (
         "pane.queue.list",
         "PaneQueueListParams",
@@ -6104,6 +6149,7 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.experiment.set", "paneId"),
     ("pane.experiment.delete", "paneId"),
     ("pane.prompt", "paneId"),
+    ("agent.message", "targetPaneId"),
     ("pane.queue.list", "paneId"),
     ("pane.queue.remove", "paneId"),
     ("pane.cancel", "paneId"),

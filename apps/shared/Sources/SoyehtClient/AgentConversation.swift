@@ -272,8 +272,14 @@ private struct AgentWell: ViewModifier {
   private var queue: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
+        let agentMessageCount = view.queue.filter { $0.agentMessage != nil }.count
+        let countLabel =
+          agentMessageCount > 0
+          ? "\(agentMessageCount) \(agentMessageCount == 1 ? "message" : "messages") waiting"
+          : "\(view.queue.count) queued"
         Label(
-          view.queuePaused ? "Queue paused after interruption" : "\(view.queue.count) queued",
+          view.queuePaused
+            ? "\(countLabel) · Queue paused after interruption" : countLabel,
           systemImage: view.queuePaused
             ? "pause.circle" : "text.line.last.and.arrowtriangle.forward")
         Spacer()
@@ -283,7 +289,13 @@ private struct AgentWell: ViewModifier {
       }.font(style.captionFont.weight(.semibold))
       ForEach(view.queue, id: \.promptId) { item in
         HStack(spacing: 8) {
-          Text(item.text).font(style.captionFont).lineLimit(2)
+          VStack(alignment: .leading, spacing: 2) {
+            if let sender = item.agentMessage {
+              Text("From \(sender.name) (\(sender.harness))")
+                .font(style.captionFont.weight(.semibold))
+            }
+            Text(item.text).font(style.captionFont).lineLimit(2)
+          }
           Spacer()
           unavailableSteer
           Button(role: .destructive) {

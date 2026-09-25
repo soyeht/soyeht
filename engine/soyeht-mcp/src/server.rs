@@ -80,7 +80,8 @@ fn dispatch<P: EnginePort>(
         Err(Error::Remote(remote)) => json!({
             "jsonrpc":"2.0","id":id,"result":{
                 "content":[{"type":"text","text":remote.message}],
-                "structuredContent":{"kind":remote.data.kind,"detail":remote.data.detail},
+                "structuredContent":{"kind":remote.data.kind,"detail":remote.data.detail,
+                    "retryAfterSec":remote.data.retry_after_sec},
                 "isError":true
             }
         }),

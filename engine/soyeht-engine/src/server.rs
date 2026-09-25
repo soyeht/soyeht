@@ -658,7 +658,7 @@ mod tests {
         assert!(operation_pane_id("unknown", &request).is_none());
 
         let all_routes = serde_json::json!({
-            "params": {"paneId":pane_id,"agentPaneId":pane_id},
+            "params": {"paneId":pane_id,"agentPaneId":pane_id,"targetPaneId":pane_id},
         });
         let expected_methods = soyeht_protocol::PANE_ROUTE_METHODS
             .iter()
