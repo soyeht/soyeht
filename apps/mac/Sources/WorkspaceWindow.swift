@@ -3001,24 +3001,24 @@ private struct PaneCard: View {
           trailing: 4))
     } else {
       VStack(spacing: 0) {
-        Label(
-          TerminalStatePresentation.text(for: pane.state),
-          systemImage: terminalStateSystemImage
-        )
-        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-        .foregroundStyle(stateColor)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, MacTheme.Space.x10)
-        .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
-        .background(tint.opacity(0.55))
-        .accessibilityIdentifier("terminal-state-\(pane.paneId)")
+        if let notice = TerminalStatePresentation.notice(for: pane.state) {
+          Label(notice.text, systemImage: notice.systemImage)
+            .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+            .foregroundStyle(terminalNoticeColor(notice))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, MacTheme.Space.x10)
+            .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
+            .background(terminalNoticeBackground(notice))
+            .accessibilityIdentifier("terminal-state-\(pane.paneId)")
+        }
         MacTerminal(client: client, paneId: pane.paneId)
           .environment(
             \.terminalKeyboardInputEnabled,
             terminalKeyboardInputEnabled && client.selectedPaneId == pane.paneId)
         if let gap = client.gapText(for: pane.paneId) {
-          Label(gap, systemImage: "exclamationmark.triangle")
-            .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.warning)
+          Label(gap, systemImage: TerminalStatePresentation.recordedGap.systemImage)
+            .font(MacTheme.chrome(MacTheme.TypeScale.control))
+            .foregroundStyle(terminalNoticeColor(TerminalStatePresentation.recordedGap))
             .padding(MacTheme.Space.x10)
         }
       }
@@ -3029,21 +3029,23 @@ private struct PaneCard: View {
     switch pane.state {
     case .working, .idle: MacTheme.success
     case .waiting_for_you: MacTheme.warning
-    case .dead, .no_signal: MacTheme.danger
-    default: MacTheme.ink.opacity(0.75)
+    case .no_signal: MacTheme.warning
+    case .dead, .unknown: MacTheme.muted
+    default: MacTheme.secondary
     }
   }
 
-  private var terminalStateSystemImage: String {
-    switch pane.state {
-    case .working: "bolt.fill"
-    case .idle: "checkmark.circle.fill"
-    case .waiting_for_you: "person.crop.circle.badge.questionmark"
-    case .no_signal: "exclamationmark.triangle.fill"
-    case .dead: "xmark.circle.fill"
-    case .starting, .recovering: "arrow.triangle.2.circlepath"
-    case .cancelling: "stop.circle.fill"
-    case .unknown: "questionmark.circle.fill"
+  private func terminalNoticeColor(_ notice: TerminalNotice) -> Color {
+    switch notice.severity {
+    case .neutral: MacTheme.secondary
+    case .warning: MacTheme.warning
+    }
+  }
+
+  private func terminalNoticeBackground(_ notice: TerminalNotice) -> Color {
+    switch notice.severity {
+    case .neutral: MacTheme.face
+    case .warning: MacTheme.warning.opacity(0.12)
     }
   }
 
