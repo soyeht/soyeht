@@ -209,7 +209,9 @@ struct PhoneWritingWorkspace: View {
     .phoneWritingSheet(.split)
     .onChange(of: availableHarnesses.map(\.id)) { _, harnessIds in
       guard splitChoice == .agent, !harnessIds.contains(splitHarnessId) else { return }
-      splitHarnessId = HarnessPickerModel.defaultHarness(in: availableHarnesses)?.id ?? ""
+      splitHarnessId =
+        HarnessPickerModel.defaultHarness(
+          in: availableHarnesses, preferredId: client.preferredHarnessId)?.id ?? ""
     }
   }
 
@@ -309,7 +311,9 @@ struct PhoneWritingWorkspace: View {
     splitChoice = .text
     splitTitle = ""
     client.refreshHarnesses()
-    splitHarnessId = HarnessPickerModel.defaultHarness(in: client.harnesses)?.id ?? ""
+    splitHarnessId =
+      HarnessPickerModel.defaultHarness(
+        in: client.harnesses, preferredId: client.preferredHarnessId)?.id ?? ""
     splitRequest = PhoneWritingSplitRequest(
       anchorPaneId: leaf.identity.paneId, anchorKind: leaf.kind, axis: axis, baseTree: tree)
   }

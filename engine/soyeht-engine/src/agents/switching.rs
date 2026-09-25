@@ -972,7 +972,7 @@ fn inject_screen_advance_before_switch_commit(
 }
 
 fn candidate_rpc_error(error: soyeht_acp::RpcError) -> errors::Error {
-    if error.code == -32000 {
+    if error.code == soyeht_acp::rpc::AUTH_REQUIRED_CODE {
         errors::harness_unavailable("The selected harness requires sign-in")
     } else {
         errors::harness_unavailable(error.message)

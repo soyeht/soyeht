@@ -44,7 +44,7 @@ public enum ModelPickerContentState: Sendable, Equatable {
 }
 
 public enum HarnessPickerModel {
-  public static let preferredHarnessKey = "soyeht.harness.preferred"
+  public static let preferredHarnessKey = "harness.preferredId"
 
   public static func contentState(
     harnesses: [HarnessInfo], query: String, loading: Bool
@@ -131,7 +131,8 @@ public enum HarnessPickerModel {
   }
 
   public static func statusReason(for harness: HarnessInfo) -> String {
-    switch harness.setupReason {
+    let reason = harness.setupReason ?? fallbackReason(for: setupState(for: harness))
+    return switch reason {
     case .never_started: "Installed; this agent has not been started yet. You can start it now."
     case .executable_missing: "Executable not found on the engine's launch PATH."
     case .registry_package_unverified:
@@ -140,14 +141,17 @@ public enum HarnessPickerModel {
     case .session_failed: "The agent started, but its session failed. Try starting it again."
     case .launch_failed: "The agent could not start. Check its installation and try again."
     case .environment_unavailable: "The engine could not read the launch environment."
-    case nil:
-      switch setupState(for: harness) {
-      case .ready: "An agent session opened successfully."
-      case .not_checked: "Installed; this agent has not been started yet. You can start it now."
-      case .sign_in: "This agent requires sign-in before it can start."
-      case .check_setup: "The last attempt failed. Check the agent's installation."
-      case .not_installed: "Executable not found on the engine's launch PATH."
-      }
+    case nil: "An agent session opened successfully."
+    }
+  }
+
+  private static func fallbackReason(for state: HarnessSetupState) -> HarnessSetupReason? {
+    switch state {
+    case .ready: nil
+    case .not_checked: .never_started
+    case .sign_in: .authentication_required
+    case .check_setup: .launch_failed
+    case .not_installed: .executable_missing
     }
   }
 

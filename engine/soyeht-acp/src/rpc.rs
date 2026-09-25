@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{limits, ndjson};
 
+/// ACP v1 `auth_required` JSON-RPC error code.
+pub const AUTH_REQUIRED_CODE: i32 = -32000;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RpcError {
     pub code: i32,

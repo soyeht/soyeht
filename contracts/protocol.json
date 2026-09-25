@@ -12557,6 +12557,11 @@
       "type": "boolean",
       "default": true
     },
+    "harness.preferredId": {
+      "type": "string",
+      "maxLength": 128,
+      "default": ""
+    },
     "web.openLocalLinksInSoyeht": {
       "type": "boolean",
       "default": true

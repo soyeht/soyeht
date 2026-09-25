@@ -3089,6 +3089,62 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
 }
 
 #[test]
+fn prompt_auth_required_downgrades_a_previously_ready_harness_without_guessing_from_text() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let ready = client.call("harness.list", json!({}));
+    assert_eq!(ready["items"][0]["setupState"], "ready");
+    let last_ready = ready["items"][0]["lastReadyAtMs"].clone();
+
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"auth-expired","idempotencyKey":"expired-auth"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Sign-in required" {
+        assert!(
+            Instant::now() < deadline,
+            "auth_required did not change the pane phase"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let signed_out = client.call("harness.list", json!({}));
+    assert_eq!(signed_out["items"][0]["setupState"], "sign_in");
+    assert_eq!(
+        signed_out["items"][0]["setupReason"],
+        "authentication_required"
+    );
+    assert_eq!(signed_out["items"][0]["lastReadyAtMs"], last_ready);
+}
+
+#[test]
+fn preferred_harness_setting_is_durable_and_rejects_non_string_values() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    let key = soyeht_engine::settings::PREFERRED_HARNESS_KEY;
+    assert_eq!(client.call("settings.get", json!({"key":key}))["value"], "");
+    let set = client.call(
+        "settings.set",
+        json!({"key":key,"value":"test-agent","idempotencyKey":"preferred-test-agent"}),
+    );
+    assert_eq!(set["value"], "test-agent");
+    assert_eq!(
+        client.request(
+            "settings.set",
+            json!({"key":key,"value":7,"idempotencyKey":"invalid-preference"})
+        )["error"]["data"]["kind"],
+        "invalid_params"
+    );
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    assert_eq!(
+        rig.client().call("settings.get", json!({"key":key}))["value"],
+        "test-agent"
+    );
+}
+
+#[test]
 fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
     let rig = Rig::new();
     assert!(!rig.path.join("harnesses.json").exists());

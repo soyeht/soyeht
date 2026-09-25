@@ -246,6 +246,14 @@ impl Runtime {
             self.error(id, -32603, "Internal error: Temporary upstream failure");
             return;
         }
+        if text == "auth-expired" {
+            self.error(
+                id,
+                soyeht_acp::rpc::AUTH_REQUIRED_CODE,
+                "Failed to authenticate: OAuth session expired",
+            );
+            return;
+        }
         let mut active = self.active.lock().unwrap();
         if active.contains_key(&session) {
             self.error(id, -32600, "Session already has an active turn");

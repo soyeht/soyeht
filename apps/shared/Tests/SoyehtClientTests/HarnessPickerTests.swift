@@ -86,6 +86,21 @@ import Testing
   #expect(HarnessPickerModel.statusReason(for: unknown).contains("not been started"))
 }
 
+@MainActor @Test func engineSettingEventUpdatesSharedPreferenceForMacAndPhonePickers() {
+  let client = EngineClient(socket: "/tmp/sn-harness-preference.sock")
+  let ready = harness(id: "ready", name: "Ready", state: .ready)
+  let chosen = harness(id: "chosen", name: "Chosen", state: .not_checked)
+  #expect(HarnessPickerModel.defaultHarness(in: [ready, chosen])?.id == ready.id)
+  client.applySettingsChanged(
+    SettingsChangedEvent(
+      eventId: "1", at: "2026-09-25T00:00:00Z",
+      key: HarnessPickerModel.preferredHarnessKey, value: .string(chosen.id)))
+  #expect(client.preferredHarnessId == chosen.id)
+  #expect(
+    HarnessPickerModel.defaultHarness(
+      in: [ready, chosen], preferredId: client.preferredHarnessId)?.id == chosen.id)
+}
+
 @Test func fetchedPickerStatesNeverDescribeLoadingAsAnEmptySearch() {
   let owned = harness(id: "registry.owned", name: "Owned agent", state: .ready)
 

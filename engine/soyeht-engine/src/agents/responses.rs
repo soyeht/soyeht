@@ -339,7 +339,7 @@ fn probe_new_response(
                 now_ms,
             )
         }
-        Err(error) if error.code == -32000 => {
+        Err(error) if error.code == soyeht_acp::rpc::AUTH_REQUIRED_CODE => {
             needs_login(state, saved, changes);
             Ok(())
         }
@@ -449,7 +449,7 @@ fn session_response(
 ) -> Result<()> {
     match result {
         Ok(value) => session_opened(store, state, saved, context, changes, &value),
-        Err(error) if error.code == -32000 => {
+        Err(error) if error.code == soyeht_acp::rpc::AUTH_REQUIRED_CODE => {
             needs_login(state, saved, changes);
             Ok(())
         }
@@ -544,6 +544,10 @@ fn prompt_response(
         return Err(errors::internal("Prompt response belongs to another turn"));
     }
     let cancel_requested = state.cancel_at_ms.is_some();
+    let authentication_required = matches!(
+        &result,
+        Err(error) if error.code == soyeht_acp::rpc::AUTH_REQUIRED_CODE
+    );
     let reason = match result {
         Ok(value) => session::stop_reason(&value)
             .map_err(native_error)?
@@ -617,6 +621,9 @@ fn prompt_response(
         "pane.turn_ended".into(),
         json!({"paneId":saved.pane.pane_id,"promptId":context,"stopReason":reason}),
     ));
+    if authentication_required {
+        needs_login(state, saved, changes);
+    }
     Ok(())
 }
 

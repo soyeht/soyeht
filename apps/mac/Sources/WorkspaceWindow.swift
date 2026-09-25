@@ -3076,7 +3076,6 @@ private struct PaneCard: View {
 
 private struct NewPaneSheet: View {
   @Bindable var client: EngineClient
-  @AppStorage(HarnessPickerModel.preferredHarnessKey) private var preferredHarnessId = ""
   let workspaceId: String?
   @Binding var mode: PaneMode
   let onCancel: () -> Void
@@ -3327,7 +3326,7 @@ private struct NewPaneSheet: View {
   private func selectFirstHarness() {
     guard selectedHarness?.available != true,
       let first = HarnessPickerModel.defaultHarness(
-        in: client.harnesses, preferredId: preferredHarnessId)
+        in: client.harnesses, preferredId: client.preferredHarnessId)
     else { return }
     harness = first.id
   }
@@ -3634,7 +3633,6 @@ private struct AgentHarnessPicker: View {
 
 private struct AgentHarnessSwitchPicker: View {
   @Bindable var client: EngineClient
-  @AppStorage(HarnessPickerModel.preferredHarnessKey) private var preferredHarnessId = ""
   let pane: Pane
   @Binding var isPresented: Bool
   @State private var harness = ""
@@ -3704,7 +3702,7 @@ private struct AgentHarnessSwitchPicker: View {
     guard selectedHarness?.available != true,
       let first = HarnessPickerModel.defaultHarness(
         in: client.harnesses, excluding: currentHarness,
-        preferredId: preferredHarnessId)
+        preferredId: client.preferredHarnessId)
     else { return }
     harness = first.id
   }

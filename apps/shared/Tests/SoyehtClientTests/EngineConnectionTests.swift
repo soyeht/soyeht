@@ -76,6 +76,7 @@
       Issue.record("Client connection: \(client.connectionText)")
       throw error
     }
+    try await checkPreferredHarnessSetting(client)
     try await checkEmbeddedHarnessCatalogue(client)
     try await checkCustomHarnessManagement(client)
     var screen = Data()
@@ -96,7 +97,7 @@
     try await until { !client.connected }
     #expect(client.connectionText == ClientFailure.disconnected.localizedDescription)
     engine = try launch("soyeht-engine")
-    try await until { client.connected && client.selectedPane?.pid == pid }
+    try await checkPreferredHarnessAfterReconnect(client, pid: pid)
     #expect(client.connectionRevision > revisionBeforeClose)
     try await until { String(decoding: screen, as: UTF8.self).contains("SWIFT_CLIENT_READY") }
     client.stop()
@@ -123,6 +124,21 @@
     try await until { !client.panes.contains { $0.paneId == web.paneId } }
     client.closePane(paneId)
     try await until { client.panes.isEmpty }
+  }
+
+  @MainActor private func checkPreferredHarnessSetting(_ client: EngineClient) async throws {
+    #expect(client.preferredHarnessId == nil)
+    try await client.setPreferredHarness("test-agent")
+    #expect(client.preferredHarnessId == "test-agent")
+  }
+
+  @MainActor private func checkPreferredHarnessAfterReconnect(
+    _ client: EngineClient, pid: UInt32
+  ) async throws {
+    try await until {
+      client.connected && client.selectedPane?.pid == pid
+        && client.preferredHarnessId == "test-agent"
+    }
   }
 
   @MainActor private func checkEmbeddedHarnessCatalogue(_ client: EngineClient) async throws {

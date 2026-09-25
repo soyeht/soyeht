@@ -441,7 +441,6 @@ private struct EditorInputPreferencesPanel: View {
 
 private struct PreferencesHarnesses: View {
   @Bindable var client: EngineClient
-  @AppStorage(HarnessPickerModel.preferredHarnessKey) private var preferredHarnessId = ""
   @State private var showingEditor = false
   @State private var editingHarness: HarnessLaunch?
   @State private var pendingRemoval: HarnessLaunch?
@@ -468,9 +467,9 @@ private struct PreferencesHarnesses: View {
               harness: harness, catalogue: client.agentCatalogues[harness.id],
               isDefault: harness.id
                 == HarnessPickerModel.defaultHarness(
-                  in: client.harnesses, preferredId: preferredHarnessId)?.id,
+                  in: client.harnesses, preferredId: client.preferredHarnessId)?.id,
               customLaunch: client.customHarnesses.first { $0.id == harness.id },
-              makeDefault: { preferredHarnessId = harness.id },
+              makeDefault: { makeDefault(harness.id) },
               edit: edit, remove: { pendingRemoval = $0 })
           }
           if client.harnesses.isEmpty {
@@ -506,6 +505,14 @@ private struct PreferencesHarnesses: View {
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     } message: {
       Text("Open panes using this harness must be closed first.")
+    }
+  }
+
+  private func makeDefault(_ harnessId: String) {
+    Task { @MainActor in
+      do { try await client.setPreferredHarness(harnessId) } catch {
+        client.problem = error.localizedDescription
+      }
     }
   }
 
