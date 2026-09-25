@@ -17,6 +17,10 @@ use uuid::Uuid;
 
 pub enum Outcome {
     Reply(Value),
+    Catalog {
+        method: String,
+        params: Value,
+    },
     WritingSectionList(crate::writing::PreparedWritingSectionList),
     Attachment {
         result: Value,
@@ -350,7 +354,6 @@ impl Core {
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
             "pane.role.set" => self.pane_role_set(connection, params)?,
             "pane.auth.start" => self.agent_auth_start(connection, params)?,
-            "harness.list" | "model.list" => self.agent_catalog(method, params)?,
             method if method.starts_with("harness.custom.") => {
                 self.agent_custom_harness(connection, method, params)?
             }
@@ -516,6 +519,12 @@ impl Core {
             self.repeated_result(connection, &request["id"], method, &params, &scope)?
         {
             return Ok(outcome);
+        }
+        if matches!(method, "harness.list" | "model.list") {
+            return Ok(Outcome::Catalog {
+                method: method.to_owned(),
+                params,
+            });
         }
         self.route(
             connection,

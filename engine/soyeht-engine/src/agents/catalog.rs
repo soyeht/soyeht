@@ -12,6 +12,8 @@ use soyeht_protocol::{
 };
 use soyeht_store::agents::AgentModelRefusal;
 use soyeht_store::agents::HarnessReadiness;
+use std::time::Instant;
+use std::{collections::BTreeSet, path::PathBuf};
 
 fn wire_environment_issue(issue: super::environment::LaunchPathIssue) -> HarnessEnvironmentIssue {
     use super::environment::LaunchPathIssue;
@@ -157,15 +159,114 @@ fn model_items(
         .unwrap_or_default()
 }
 
-fn harness_info(core: &Core, entry: registry::RegistryEntry, issue: bool) -> Result<Value> {
-    let resolved = registry::resolve_entry(entry.clone());
-    let has_session = core
-        .agents
-        .values()
-        .any(|agent| agent.state.launch.id == entry.launch.id);
-    let prepared = has_session
-        .then(|| registry::prepare_entry(entry.clone()).ok())
-        .flatten();
+pub(crate) struct PreparedHarness {
+    entry: registry::RegistryEntry,
+    resolved: Option<soyeht_protocol::HarnessLaunch>,
+    prepared: Option<(soyeht_protocol::HarnessLaunch, String)>,
+    installed_without_success: bool,
+    installed_with_success: bool,
+}
+
+pub(crate) enum PreparedCatalog {
+    Harness {
+        entries: Vec<PreparedHarness>,
+        issue: Option<HarnessEnvironmentIssue>,
+    },
+    Model {
+        harness: String,
+        prepared: Option<(soyeht_protocol::HarnessLaunch, String)>,
+    },
+}
+
+pub(crate) fn prepare_catalog(
+    directory: PathBuf,
+    method: &str,
+    params: &Value,
+    session_harnesses: BTreeSet<String>,
+) -> Result<PreparedCatalog> {
+    if method == "harness.list" {
+        let started = Instant::now();
+        if params["rescan"].as_bool() == Some(true) && params["cursor"].is_null() {
+            super::environment::invalidate_launch_path();
+        }
+        let issue = environment_issue();
+        let environment_ms = started.elapsed().as_millis();
+        let mut resolve_ms = 0;
+        let mut prepare_ms = 0;
+        let mut installed_ms = 0;
+        let entries = registry::catalogue_entries(&directory)?
+            .into_iter()
+            .map(|entry| {
+                let step = Instant::now();
+                let resolved = registry::resolve_entry(entry.clone());
+                resolve_ms += step.elapsed().as_millis();
+                let step = Instant::now();
+                let prepared = session_harnesses
+                    .contains(&entry.launch.id)
+                    .then(|| registry::prepare_entry(entry.clone()).ok())
+                    .flatten();
+                prepare_ms += step.elapsed().as_millis();
+                let step = Instant::now();
+                let installed_without_success = registry::locally_installed(&entry, false);
+                let installed_with_success = registry::locally_installed(&entry, true);
+                installed_ms += step.elapsed().as_millis();
+                PreparedHarness {
+                    entry,
+                    resolved,
+                    prepared,
+                    installed_without_success,
+                    installed_with_success,
+                }
+            })
+            .collect::<Vec<_>>();
+        eprintln!(
+            "{}",
+            json!({
+                "event":"engine.catalog_prepared",
+                "method":"harness.list",
+                "entries":entries.len(),
+                "environmentMs":environment_ms,
+                "resolveMs":resolve_ms,
+                "prepareMs":prepare_ms,
+                "installedMs":installed_ms,
+                "totalMs":started.elapsed().as_millis()
+            })
+        );
+        return Ok(PreparedCatalog::Harness { entries, issue });
+    }
+    let started = Instant::now();
+    let harness = errors::required(params["harness"].as_str(), "Harness ID is required")?;
+    let entries = registry::entries(&directory)?;
+    if !entries.iter().any(|entry| entry.id == harness) {
+        return Err(errors::harness_unavailable("Harness is not configured"));
+    }
+    let prepared = if params["paneId"].as_str().is_some() {
+        None
+    } else {
+        Some(registry::prepare(&directory, harness)?)
+    };
+    eprintln!(
+        "{}",
+        json!({
+            "event":"engine.catalog_prepared",
+            "method":"model.list",
+            "totalMs":started.elapsed().as_millis()
+        })
+    );
+    Ok(PreparedCatalog::Model {
+        harness: harness.to_owned(),
+        prepared,
+    })
+}
+
+fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value> {
+    let PreparedHarness {
+        entry,
+        resolved,
+        prepared,
+        installed_without_success,
+        installed_with_success,
+    } = item;
     let known = prepared.as_ref().and_then(|(launch, digest)| {
         core.agents
             .values()
@@ -189,14 +290,16 @@ fn harness_info(core: &Core, entry: registry::RegistryEntry, issue: bool) -> Res
         .store
         .harness_readiness(&entry.launch.id)
         .map_err(errors::storage)?;
-    let installed = registry::locally_installed(
-        &entry,
-        recorded
-            .as_ref()
-            .and_then(|value| value.last_ready_ms)
-            .is_some()
-            || known.is_some_and(|agent| agent.state.phase == Phase::Ready),
-    );
+    let installed = if recorded
+        .as_ref()
+        .and_then(|value| value.last_ready_ms)
+        .is_some()
+        || known.is_some_and(|agent| agent.state.phase == Phase::Ready)
+    {
+        installed_with_success
+    } else {
+        installed_without_success
+    };
     let package_runner = entry.source == HarnessSource::BuiltIn
         && matches!(entry.launch.command.as_str(), "npx" | "uvx");
     let (setup_state, setup_reason) = setup_state(
@@ -233,24 +336,21 @@ fn harness_info(core: &Core, entry: registry::RegistryEntry, issue: bool) -> Res
 }
 
 impl Core {
-    pub fn agent_catalog(&self, method: &str, params: &Value) -> Result<Value> {
-        if method == "harness.list" {
-            if params["rescan"].as_bool() == Some(true) && params["cursor"].is_null() {
-                super::environment::invalidate_launch_path();
-            }
-            let issue = environment_issue();
-            let entries = registry::catalogue_entries(&self.directory)?;
+    pub(crate) fn agent_catalog_prepared(
+        &self,
+        prepared: PreparedCatalog,
+        params: &Value,
+    ) -> Result<Value> {
+        if let PreparedCatalog::Harness { entries, issue } = prepared {
             let mut items = Vec::new();
             for entry in entries {
                 items.push(harness_info(self, entry, issue.is_some())?);
             }
             return page(items, json!({"environmentIssue":issue}), params);
         }
-        let entries = registry::entries(&self.directory)?;
-        let harness = errors::required(params["harness"].as_str(), "Harness ID is required")?;
-        if !entries.iter().any(|entry| entry.id == harness) {
-            return Err(errors::harness_unavailable("Harness is not configured"));
-        }
+        let PreparedCatalog::Model { harness, prepared } = prepared else {
+            return Err(errors::internal("Wrong catalogue preparation"));
+        };
         let known = if let Some(pane) = params["paneId"].as_str() {
             let state = self
                 .agents
@@ -262,7 +362,8 @@ impl Core {
                 .ok_or_else(|| errors::not_found("Agent pane not found for this harness"))?;
             Some(state)
         } else {
-            let (launch, digest) = registry::prepare(&self.directory, harness)?;
+            let (launch, digest) = prepared
+                .ok_or_else(|| errors::internal("Model catalogue launch was not prepared"))?;
             self.agents
                 .values()
                 .filter(|a| a.state.launch == launch && a.state.binary_digest == digest)
@@ -273,7 +374,7 @@ impl Core {
             .unwrap_or_default();
         let refusals = self
             .store
-            .agent_model_refusals(harness)
+            .agent_model_refusals(&harness)
             .map_err(errors::storage)?;
         let items = model_items(&options, &refusals);
         page(
