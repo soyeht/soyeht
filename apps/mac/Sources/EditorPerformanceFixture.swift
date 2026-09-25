@@ -49,7 +49,9 @@
       case missingScrollMovement(sample: Int, before: CGFloat, after: CGFloat)
       case invalidSampleEvents(sample: Int)
       case finalTextMismatch
-      case invalidScrollGeometry
+      case invalidScrollGeometry(
+        documentHeight: CGFloat, viewportHeight: CGFloat,
+        documentMatches: Bool, windowSize: NSSize)
       case missingScrollDraw
       case missingScrollWork
       case missingPageLoad
@@ -178,6 +180,9 @@
         container.addSubview(next)
         scrollButton = next
         window.contentView = container
+        window.contentMinSize = EditorPerformanceFixture.viewportSize
+        window.contentMaxSize = EditorPerformanceFixture.viewportSize
+        window.setContentSize(EditorPerformanceFixture.viewportSize)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(textView)
         coordinator.update(editorView)
@@ -342,9 +347,18 @@
           original.substring(to: insertionOffset) + typed
           + original.substring(from: insertionOffset)
         guard textView.string == expected else { throw Failure.finalTextMismatch }
-        guard textView.superview === scrollView.documentView,
-          (scrollView.documentView?.frame.height ?? 0) > scrollView.contentSize.height
-        else { throw Failure.invalidScrollGeometry }
+        let documentHeight = scrollView.documentView?.frame.height ?? 0
+        let viewportHeight = scrollView.contentSize.height
+        let documentMatches = scrollView.documentView === textView
+        let windowSize = window.contentView?.bounds.size ?? .zero
+        guard documentMatches, documentHeight > viewportHeight,
+          abs(windowSize.width - EditorPerformanceFixture.viewportSize.width) < 1,
+          abs(windowSize.height - EditorPerformanceFixture.viewportSize.height) < 1
+        else {
+          throw Failure.invalidScrollGeometry(
+            documentHeight: documentHeight, viewportHeight: viewportHeight,
+            documentMatches: documentMatches, windowSize: windowSize)
+        }
         let loadedQuarter =
           CGFloat(ProtocolLimits.editorViewportLines / 4)
           * EditorTextMetrics.lineHeight
