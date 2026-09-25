@@ -144,7 +144,7 @@ pub fn probe_result(response: Result<&Value, &RpcError>) -> ProbeResult {
     match response {
         Ok(_) => ProbeResult::Worked,
         Err(error) if error.code == -32601 => ProbeResult::Unsupported,
-        Err(error) if error.code == crate::rpc::AUTH_REQUIRED_CODE => ProbeResult::Unauthenticated,
+        Err(error) if crate::rpc::is_auth_required(error) => ProbeResult::Unauthenticated,
         Err(_) => ProbeResult::Inconclusive,
     }
 }

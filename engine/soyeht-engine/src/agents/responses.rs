@@ -339,7 +339,7 @@ fn probe_new_response(
                 now_ms,
             )
         }
-        Err(error) if error.code == soyeht_acp::rpc::AUTH_REQUIRED_CODE => {
+        Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
             needs_login(state, saved, changes);
             Ok(())
         }
@@ -449,7 +449,7 @@ fn session_response(
 ) -> Result<()> {
     match result {
         Ok(value) => session_opened(store, state, saved, context, changes, &value),
-        Err(error) if error.code == soyeht_acp::rpc::AUTH_REQUIRED_CODE => {
+        Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
             needs_login(state, saved, changes);
             Ok(())
         }
@@ -546,7 +546,7 @@ fn prompt_response(
     let cancel_requested = state.cancel_at_ms.is_some();
     let authentication_required = matches!(
         &result,
-        Err(error) if error.code == soyeht_acp::rpc::AUTH_REQUIRED_CODE
+        Err(error) if soyeht_acp::rpc::is_auth_required(error)
     );
     let reason = match result {
         Ok(value) => session::stop_reason(&value)

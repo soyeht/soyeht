@@ -3118,6 +3118,33 @@ fn prompt_auth_required_downgrades_a_previously_ready_harness_without_guessing_f
 }
 
 #[test]
+fn untyped_internal_error_with_auth_words_does_not_downgrade_ready() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    assert_eq!(
+        client.call("harness.list", json!({}))["items"][0]["setupState"],
+        "ready"
+    );
+
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"auth-expired-untagged","idempotencyKey":"untyped-auth"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Agent turn ended" {
+        assert!(
+            Instant::now() < deadline,
+            "untagged error did not end the turn"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        client.call("harness.list", json!({}))["items"][0]["setupState"],
+        "ready"
+    );
+}
+
+#[test]
 fn preferred_harness_setting_is_durable_and_rejects_non_string_values() {
     let mut rig = Rig::new();
     let mut client = rig.client();
