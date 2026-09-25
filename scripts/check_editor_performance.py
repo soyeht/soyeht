@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -127,7 +128,7 @@ def run_vm_measurement() -> dict:
     environment = os.environ.copy()
     environment["SOYEHT_PACKAGES"] = str(packages)
     environment["DEVELOPMENT_TEAM"] = team
-    environment["SOYEHT_EDITOR_METER_APP_BUNDLE_ID"] = METER_BUNDLE_ID
+    environment["TEST_RUNNER_SOYEHT_EDITOR_METER_APP_BUNDLE_ID"] = METER_BUNDLE_ID
     runs = []
     # Both the app and runner can access this owner-only neutral path; it is
     # outside either app's container and is removed even when a run fails.
@@ -136,7 +137,7 @@ def run_vm_measurement() -> dict:
         for index in range(RUN_COUNT):
             raw = scratch_path / f"run-{index + 1}.json"
             bundle = scratch_path / f"run-{index + 1}.xcresult"
-            environment["SOYEHT_EDITOR_PERFORMANCE_REPORT"] = str(raw)
+            environment["TEST_RUNNER_SOYEHT_EDITOR_PERFORMANCE_REPORT"] = str(raw)
             log = CACHE / f"editor-performance-run-{index + 1}.log"
             result = subprocess.run(
                 command + [
@@ -147,7 +148,12 @@ def run_vm_measurement() -> dict:
                 cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 check=False, text=True, errors="replace",
             )
-            log.write_text(result.stdout.replace(team, "[redacted]") if result.stdout else "")
+            sanitized = (result.stdout or "").replace(team, "[redacted]")
+            sanitized = re.sub(
+                r"Apple Development: [^\r\n\"]+", "Apple Development: [redacted]",
+                sanitized,
+            )
+            log.write_text(sanitized)
             if result.returncode:
                 raise RuntimeError(f"VM UI test run {index + 1} failed; inspect {log}")
             if not raw.is_file():

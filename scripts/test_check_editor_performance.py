@@ -1,7 +1,10 @@
+import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import check_editor_performance as gate
 
@@ -75,6 +78,43 @@ class EditorPerformanceGateTests(unittest.TestCase):
             self.assertEqual(gate.editor_tree_hash(root), initial)
             editor.write_text("different editor")
             self.assertNotEqual(gate.editor_tree_hash(root), initial)
+
+    def test_vm_command_uses_test_runner_environment_and_redacts_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory)
+            seen = []
+
+            def fake_xcodebuild(_command, **kwargs):
+                environment = kwargs["env"]
+                seen.append(environment.copy())
+                Path(environment["TEST_RUNNER_SOYEHT_EDITOR_PERFORMANCE_REPORT"]).write_text(
+                    json.dumps(run()))
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout="Apple Development: Example Person (EXAMPLE123)\nteam=EXAMPLE123\n",
+                )
+
+            with (
+                mock.patch.object(gate, "CACHE", cache),
+                mock.patch.object(gate, "VM_REPORT", cache / "editor-performance-vm.json"),
+                mock.patch.object(gate, "editor_tree_hash", return_value="editor-hash"),
+                mock.patch.object(gate, "head", return_value="measured-head"),
+                mock.patch.object(gate.subprocess, "run", side_effect=fake_xcodebuild),
+                mock.patch.dict(
+                    "os.environ",
+                    {"SOYEHT_EDITOR_METER_VM": "1", "SOYEHT_DEVELOPMENT_TEAM": "EXAMPLE123"},
+                    clear=True,
+                ),
+            ):
+                gate.run_vm_measurement()
+            self.assertEqual(len(seen), 3)
+            self.assertTrue(all(
+                "TEST_RUNNER_SOYEHT_EDITOR_METER_APP_BUNDLE_ID" in entry
+                and "SOYEHT_EDITOR_PERFORMANCE_REPORT" not in entry
+                for entry in seen))
+            log = (cache / "editor-performance-run-1.log").read_text()
+            self.assertNotIn("Example Person", log)
+            self.assertNotIn("EXAMPLE123", log)
 
 
 if __name__ == "__main__":
