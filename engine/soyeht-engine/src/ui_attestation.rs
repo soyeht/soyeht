@@ -187,22 +187,52 @@ mod macos {
         #[test]
         fn attested_identifier_matches_every_mac_build_configuration() {
             let project = include_str!("../../../apps/mac/SoyehtMac.xcodeproj/project.pbxproj");
-            assert_eq!(
-                project
+            fn setting<'a>(block: &'a str, key: &str) -> Option<&'a str> {
+                let prefix = format!("\"{key}\" = \"");
+                block
                     .lines()
-                    .filter(|line| line.contains("PRODUCT_BUNDLE_IDENTIFIER"))
-                    .count(),
-                2
-            );
+                    .find_map(|line| line.trim().strip_prefix(&prefix)?.strip_suffix("\";"))
+            }
+
+            let configurations: Vec<_> = project
+                .split("\n\t\t};")
+                .filter(|block| setting(block, "isa") == Some("XCBuildConfiguration"))
+                .collect();
+            let ui: Vec<_> = configurations
+                .iter()
+                .filter(|block| setting(block, "SOYEHT_APP_BUNDLE_ID").is_some())
+                .collect();
             assert_eq!(
-                project
-                    .lines()
-                    .filter(|line| {
-                        line.contains("PRODUCT_BUNDLE_IDENTIFIER") && line.contains(UI_IDENTIFIER)
-                    })
-                    .count(),
-                2
+                ui.len(),
+                2,
+                "the Mac app must have Debug and Release settings"
             );
+            for block in ui {
+                assert_eq!(setting(block, "SOYEHT_APP_BUNDLE_ID"), Some(UI_IDENTIFIER));
+                assert_eq!(
+                    setting(block, "PRODUCT_BUNDLE_IDENTIFIER"),
+                    Some("$(SOYEHT_APP_BUNDLE_ID)")
+                );
+            }
+
+            let fixture: Vec<_> = configurations
+                .iter()
+                .filter(|block| setting(block, "TEST_TARGET_NAME") == Some("SoyehtMac"))
+                .collect();
+            assert_eq!(
+                fixture.len(),
+                2,
+                "the UI test must have Debug and Release settings"
+            );
+            for block in fixture {
+                let identifier = setting(block, "PRODUCT_BUNDLE_IDENTIFIER")
+                    .expect("the UI test must have its own bundle identifier");
+                assert_ne!(
+                    identifier, UI_IDENTIFIER,
+                    "the fixture must not be an attested UI"
+                );
+                assert_ne!(identifier, "$(SOYEHT_APP_BUNDLE_ID)");
+            }
         }
     }
 }
