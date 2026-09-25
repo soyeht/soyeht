@@ -37,6 +37,33 @@ public struct AgentPaneView: Sendable {
   }
 }
 
+/// A surface reports which layout leaves are presented; the shared client decides
+/// which agent transcripts need hydration without changing the engine's focus.
+public struct PresentedPane: Equatable, Sendable {
+  public let paneId: String
+  public let isVisible: Bool
+
+  public init(paneId: String, isVisible: Bool) {
+    self.paneId = paneId
+    self.isVisible = isVisible
+  }
+}
+
+public enum AgentTranscriptHydrationPolicy {
+  public static func paneIdsToLoad(
+    presented: [PresentedPane], panes: [Pane], hydrated: Set<String>, loading: Set<String>
+  ) -> [String] {
+    let agents = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
+    var chosen = Set<String>()
+    return presented.compactMap { leaf in
+      guard leaf.isVisible, agents.contains(leaf.paneId), !hydrated.contains(leaf.paneId),
+        !loading.contains(leaf.paneId), chosen.insert(leaf.paneId).inserted
+      else { return nil }
+      return leaf.paneId
+    }
+  }
+}
+
 public struct AgentHarnessSwitchView: Sendable {
   public enum Phase: Sendable, Equatable {
     case switching
@@ -150,9 +177,36 @@ extension EngineClient {
     try await loadAgentPane(paneId, replacing: true)
   }
 
+  public func hydratePresentedAgentPanes(_ presented: [PresentedPane]) async {
+    guard connected else { return }
+    let revision = connectionRevision
+    let hydrated = Set(agentTranscriptRevisions.compactMap { $0.value == revision ? $0.key : nil })
+    let loading = Set(
+      agentTranscriptLoadsInFlight.compactMap {
+        $0.value == revision ? $0.key : nil
+      })
+    let pending = AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: presented, panes: panes, hydrated: hydrated, loading: loading)
+    for paneId in pending { agentTranscriptLoadsInFlight[paneId] = revision }
+    for paneId in pending {
+      defer {
+        if agentTranscriptLoadsInFlight[paneId] == revision {
+          agentTranscriptLoadsInFlight.removeValue(forKey: paneId)
+        }
+      }
+      do {
+        try await loadAgentPane(paneId, replacing: true)
+      } catch {
+        if connected && connectionRevision == revision { problem = error.localizedDescription }
+      }
+    }
+  }
+
   func applyAgentSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
     let paneIds = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
     agentPanes = agentPanes.filter { paneIds.contains($0.key) }
+    agentTranscriptRevisions = agentTranscriptRevisions.filter { paneIds.contains($0.key) }
+    agentTranscriptLoadsInFlight = agentTranscriptLoadsInFlight.filter { paneIds.contains($0.key) }
     for pane in panes where pane.mode == .agent {
       var view = agentPanes[pane.paneId] ?? AgentPaneView()
       view.permission = nil
@@ -333,15 +387,20 @@ extension EngineClient {
   }
 
   func loadAgentPane(_ paneId: String, replacing: Bool) async throws {
+    let revision = connectionRevision
     let result = try await request(
       "pane.transcript",
       .encoded(PaneTranscriptParams(paneId: paneId, limit: 100))
     )
     .decoded(PaneTranscriptResult.self)
+    guard connected && connectionRevision == revision,
+      panes.contains(where: { $0.paneId == paneId && $0.mode == .agent })
+    else { return }
     var view = agentPanes[paneId] ?? AgentPaneView()
     view.mergeTranscriptPage(result, replacing: replacing)
     agentPanes[paneId] = view
     try await loadAgentQueue(paneId)
+    if connected && connectionRevision == revision { agentTranscriptRevisions[paneId] = revision }
   }
 
   func olderTranscriptParams(_ paneId: String) -> PaneTranscriptParams? {

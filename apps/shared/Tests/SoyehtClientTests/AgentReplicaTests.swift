@@ -4,6 +4,49 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func visibleAgentTranscriptHydrationIncludesNewlyShownPaneWithoutDuplicates() {
+  func pane(_ id: String, mode: PaneMode, workspaceId: String = "workspace") -> Pane {
+    Pane(
+      paneId: id, workspaceId: workspaceId, name: id, cwd: "/tmp", mode: mode,
+      state: .idle, source: .protocol, confidence: 1, phrase: "Ready", generation: 1,
+      cols: 80, rows: 24, record: mode == .agent)
+  }
+  let panes = [
+    pane("codex", mode: .agent), pane("opencode", mode: .agent),
+    pane("shell", mode: .terminal),
+    pane("other-workspace", mode: .agent, workspaceId: "another-workspace"),
+  ]
+  let split = [
+    PresentedPane(paneId: "codex", isVisible: true),
+    PresentedPane(paneId: "opencode", isVisible: true),
+    PresentedPane(paneId: "shell", isVisible: true),
+    PresentedPane(paneId: "codex", isVisible: true),
+  ]
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: split, panes: panes, hydrated: [], loading: []) == ["codex", "opencode"])
+
+  // The companion tab stays mounted but hidden until selected.
+  let tabs = [
+    PresentedPane(paneId: "codex", isVisible: true),
+    PresentedPane(paneId: "opencode", isVisible: false),
+  ]
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: tabs, panes: panes, hydrated: ["codex"], loading: []) == [])
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: [PresentedPane(paneId: "opencode", isVisible: true)], panes: panes,
+      hydrated: ["codex"], loading: []) == ["opencode"])
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: split, panes: panes, hydrated: ["codex"], loading: ["opencode"]) == [])
+  // A new connection has no hydrated IDs, so both visible transcripts reload.
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: split, panes: panes, hydrated: [], loading: []) == ["codex", "opencode"])
+}
+
 @MainActor @Test func agentReplicaReplacesChunksTracksQuestionsAndResetsSnapshotState() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"

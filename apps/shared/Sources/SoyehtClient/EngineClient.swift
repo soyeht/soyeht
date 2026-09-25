@@ -74,6 +74,8 @@ public final class EngineClient {
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var responseAttachments = ResponseAttachmentAssembly()
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
+  @ObservationIgnored var agentTranscriptRevisions: [String: UInt64] = [:]
+  @ObservationIgnored var agentTranscriptLoadsInFlight: [String: UInt64] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var editorRefreshTasks: [String: Task<Void, Never>] = [:]
@@ -151,6 +153,8 @@ public final class EngineClient {
   }
   private func disconnect() {
     connected = false
+    agentTranscriptRevisions.removeAll()
+    agentTranscriptLoadsInFlight.removeAll()
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
     editorWriteQueues.removeAll()
@@ -259,7 +263,8 @@ public final class EngineClient {
           // Phone still has one selected terminal surface; Block D will define its final policy.
           try await subscribe(pane.paneId)
         #endif
-      case .agent: try await loadAgentPane(pane.paneId, replacing: true)
+      case .agent:
+        await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
       case .editor: try await loadEditorPane(pane.paneId)
       case .web: break
       case .writing: try await loadWritingPane(pane.paneId)
@@ -698,7 +703,10 @@ public final class EngineClient {
             #else
               try await self.subscribe(paneId)
             #endif
-          case .agent: try await self.loadAgentPane(paneId, replacing: true)
+          case .agent:
+            await self.hydratePresentedAgentPanes([
+              PresentedPane(paneId: paneId, isVisible: true)
+            ])
           case .editor: try await self.loadEditorPane(paneId)
           case .web: break
           case .writing: try await self.loadWritingPane(paneId)

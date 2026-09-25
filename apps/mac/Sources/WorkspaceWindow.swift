@@ -1654,7 +1654,7 @@ private struct PaneLayoutTreeSurface: View {
       workspaceId: workspaceId, tree: tree, path: PaneLayoutNodePath(), plan: plan,
       viewportSize: viewportSize, interaction: interaction,
       interactionsEnabled: interactionsEnabled, newPane: newPane,
-      companionLinked: false,
+      companionLinked: false, isVisible: true,
       onClose: onClose, onTasks: onTasks,
       onSplit: onSplit, onPaneDrop: onPaneDrop
     )
@@ -1689,6 +1689,7 @@ private struct PaneLayoutNodeSurface: View {
   let interactionsEnabled: Bool
   let newPane: NewPanePlaceholderPresentation?
   let companionLinked: Bool
+  let isVisible: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -1719,6 +1720,7 @@ private struct PaneLayoutNodeSurface: View {
             workspaceId: workspaceId, split: split, path: path, plan: plan,
             viewportSize: viewportSize, interaction: interaction,
             interactionsEnabled: interactionsEnabled, newPane: newPane,
+            isVisible: isVisible,
             onClose: onClose, onTasks: onTasks,
             onSplit: onSplit, onPaneDrop: onPaneDrop)
         }
@@ -1786,7 +1788,7 @@ private struct PaneLayoutNodeSurface: View {
       tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
       onTasks: onTasks, onSplit: onSplit,
       interaction: interactionsEnabled ? interaction : nil,
-      companionLinked: companionLinked, cardWidth: cardWidth,
+      companionLinked: companionLinked, isVisible: isVisible, cardWidth: cardWidth,
       dropTargetSize: CGSize(
         width: cardWidth,
         height: max(0, contentHeight - 2 * halo)),
@@ -1970,7 +1972,7 @@ private struct PaneLayoutCompanionSurface: View {
         tree: .leaf(leaf), path: PaneLayoutNodePath(), plan: leafPlan,
         viewportSize: CGSize(width: rect.size.width, height: rect.size.height),
         interaction: interaction, interactionsEnabled: interactionsEnabled,
-        newPane: nil, companionLinked: true,
+        newPane: nil, companionLinked: true, isVisible: visible,
         onClose: onClose, onTasks: onTasks,
         onSplit: onSplit, onPaneDrop: onPaneDrop
       )
@@ -2157,6 +2159,7 @@ private struct PaneLayoutSplitSurface: View {
   let interaction: PaneLayoutInteractionState
   let interactionsEnabled: Bool
   let newPane: NewPanePlaceholderPresentation?
+  let isVisible: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -2185,7 +2188,7 @@ private struct PaneLayoutSplitSurface: View {
                   tree: child.branch.tree, path: childPath, plan: plan,
                   viewportSize: viewportSize, interaction: interaction,
                   interactionsEnabled: interactionsEnabled, newPane: newPane,
-                  companionLinked: false,
+                  companionLinked: false, isVisible: isVisible,
                   onClose: onClose,
                   onTasks: onTasks, onSplit: onSplit, onPaneDrop: onPaneDrop
                 )
@@ -2575,6 +2578,11 @@ private struct PaneDropZonesOverlay: View {
   }
 }
 
+private struct AgentPaneHydrationTaskKey: Equatable {
+  let connectionRevision: UInt64
+  let isVisible: Bool
+}
+
 private struct PaneCard: View {
   @Bindable var client: EngineClient
   @Environment(\.terminalKeyboardInputEnabled) private var terminalKeyboardInputEnabled
@@ -2586,6 +2594,7 @@ private struct PaneCard: View {
   let onSplit: (String, PaneSplitAxis) -> Void
   let interaction: PaneLayoutInteractionState?
   let companionLinked: Bool
+  let isVisible: Bool
   let cardWidth: CGFloat
   let dropTargetSize: CGSize?
   let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
@@ -2628,6 +2637,16 @@ private struct PaneCard: View {
       }
     }
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+    .task(
+      id: AgentPaneHydrationTaskKey(
+        connectionRevision: client.connectionRevision, isVisible: isVisible
+      )
+    ) {
+      guard pane.mode == .agent else { return }
+      await client.hydratePresentedAgentPanes([
+        PresentedPane(paneId: pane.paneId, isVisible: isVisible)
+      ])
+    }
     .simultaneousGesture(TapGesture().onEnded { client.select(pane.paneId) })
     .modifier(
       PaneDropTargetModifier(
