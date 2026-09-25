@@ -29,15 +29,19 @@
     private final class PerformanceWindow: NSWindow {
       var onScrollStart: (() -> Void)?
       var onScrollEnd: (() -> Void)?
+      var onScrollDiagnostic: ((NSEvent, NSView?, String) -> Void)?
 
       override func sendEvent(_ event: NSEvent) {
         guard event.type == .scrollWheel else {
           super.sendEvent(event)
           return
         }
+        let hitView = contentView?.hitTest(event.locationInWindow)
+        onScrollDiagnostic?(event, hitView, "before")
         onScrollStart?()
         super.sendEvent(event)
         onScrollEnd?()
+        onScrollDiagnostic?(event, hitView, "after")
       }
     }
 
@@ -157,11 +161,17 @@
         textView.onPerformanceInsertText = { [weak self] in self?.recordInsertText() }
         textView.onPerformanceDrawStart = { [weak self] _ in self?.beginDraw() }
         textView.onPerformanceDraw = { [weak self] rect in self?.finishDraw(dirtyRect: rect) }
+        textView.onPerformanceScrollWheel = { [weak self, weak textView] event, stage in
+          self?.recordScrollDiagnostic(event, hitView: textView, stage: stage)
+        }
         coordinator.onPerformanceViewportRequested = { [weak self] start in
           self?.loadViewport(fromLine: start)
         }
         window.onScrollStart = { [weak self] in self?.beginScrollEvent() }
         window.onScrollEnd = { [weak self] in self?.endScrollEvent() }
+        window.onScrollDiagnostic = { [weak self] event, hitView, stage in
+          self?.recordScrollDiagnostic(event, hitView: hitView, stage: stage)
+        }
       }
 
       func start() {
@@ -425,6 +435,27 @@
         }
         scrollDispatchStart = .now
         scrollDispatchInterval = signposter.beginInterval(scrollSignpostName)
+      }
+
+      private func recordScrollDiagnostic(_ event: NSEvent, hitView: NSView?, stage: String) {
+        let clip = scrollView.contentView
+        let documentHeight = scrollView.documentView?.frame.height ?? -1
+        var hitViews: [String] = []
+        var view = hitView
+        while let current = view {
+          hitViews.append(String(describing: type(of: current)))
+          view = current.superview
+        }
+        let hitPath = hitViews.joined(separator: ">")
+        let line =
+          "scroll diagnostic \(stage): deltaY=\(event.scrollingDeltaY) "
+          + "precise=\(event.hasPreciseScrollingDeltas) phase=\(event.phase.rawValue) "
+          + "momentum=\(event.momentumPhase.rawValue) window=\(event.windowNumber) "
+          + "point=\(event.locationInWindow) hit=\(hitPath) "
+          + "clipY=\(clip.bounds.minY) clipHeight=\(clip.bounds.height) "
+          + "documentHeight=\(documentHeight) textHeight=\(textView.frame.height) "
+          + "textMinHeight=\(textView.minSize.height)\n"
+        FileHandle.standardError.write(Data(line.utf8))
       }
 
       private func endScrollEvent() {
