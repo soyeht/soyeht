@@ -255,6 +255,7 @@ impl Core {
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method.starts_with("task.")
             && !method.starts_with("web.")
+            && !matches!(method, "agent.list" | "agent.message")
             && !matches!(method, "writing.structure" | "writing.variant.add")
             && method != "loop.set"
         {
@@ -353,10 +354,10 @@ impl Core {
             method if method.starts_with("harness.custom.") => {
                 self.agent_custom_harness(connection, method, params)?
             }
-            "pane.prompt" | "pane.queue.list" | "pane.queue.remove" | "pane.queue.resume"
-            | "pane.cancel" | "pane.config.set" | "pane.transcript" | "pane.draft" => {
+            method if crate::agents::methods::handles(method) => {
                 self.agent_method(connection, method, params, prompt_attachments)?
             }
+            "agent.list" | "agent.message" => self.agent_peer_method(connection, method, params)?,
             "pane.permission.answer" => self.permission_answer(connection, method, params)?,
             "pane.elicitation.answer" => self.agent_answer(connection, method, params)?,
             "task.show" | "task.list" | "task.comments" => {

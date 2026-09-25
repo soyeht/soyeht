@@ -86,6 +86,34 @@ pub fn queue(store: &Store, pane: &str) -> Result<Vec<PromptItem>> {
     rows.map(|raw| Ok(serde_json::from_str(&raw?)?)).collect()
 }
 
+/// The Core serializes requests; the receipt is written in the same transaction
+/// as the destination prompt, so a failed or repeated request consumes no slot.
+pub fn message_times(store: &Store, sender: &str, target: &str, since_ms: i64) -> Result<Vec<i64>> {
+    let mut statement = store.connection().prepare(
+        "SELECT sent_at_ms FROM agent_message_rate WHERE sender_pane_id=?1 AND target_pane_id=?2 AND sent_at_ms>?3 ORDER BY sent_at_ms",
+    )?;
+    let rows = statement.query_map(params![sender, target, since_ms], |row| row.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn record_message(
+    change: &Change<'_>,
+    sender: &str,
+    target: &str,
+    at_ms: i64,
+    since_ms: i64,
+) -> Result<()> {
+    change.connection().execute(
+        "DELETE FROM agent_message_rate WHERE sent_at_ms<=?1",
+        [since_ms],
+    )?;
+    change.connection().execute(
+        "INSERT INTO agent_message_rate(sender_pane_id,target_pane_id,sent_at_ms) VALUES (?1,?2,?3)",
+        params![sender, target, at_ms],
+    )?;
+    Ok(())
+}
+
 pub fn enqueue_prompt(change: &Change<'_>, pane: &str, item: &PromptItem) -> Result<()> {
     enqueue_prompt_with_attachments(change, pane, item, &[])
 }

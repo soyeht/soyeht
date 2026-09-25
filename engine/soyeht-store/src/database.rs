@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 24;
+pub const SCHEMA_VERSION: u32 = 25;
 
 #[derive(Debug)]
 pub enum Error {
@@ -262,6 +262,18 @@ impl Change<'_> {
     }
 }
 
+fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
+    if version < 24 {
+        tx.execute_batch(include_str!(
+            "../migrations/024-workspace-created-sequence.sql"
+        ))?;
+    }
+    if version < 25 {
+        tx.execute_batch(include_str!("../migrations/025-agent-message-rate.sql"))?;
+    }
+    Ok(())
+}
+
 impl Store {
     pub fn open(directory: &Path) -> Result<Self> {
         fs::create_dir_all(directory)?;
@@ -371,11 +383,7 @@ impl Store {
             if version < 23 {
                 tx.execute_batch(include_str!("../migrations/023-writing-full-width.sql"))?;
             }
-            if version < 24 {
-                tx.execute_batch(include_str!(
-                    "../migrations/024-workspace-created-sequence.sql"
-                ))?;
-            }
+            apply_recent_migrations(&tx, version)?;
             tx.commit()?;
         }
         let db_id =

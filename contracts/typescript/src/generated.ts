@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -747,6 +747,32 @@ export interface PromptItem {
   "queuedAt": string;
   "generation"?: number;
   "attachments"?: Array<AttachmentRef>;
+  "agentMessage"?: AgentMessageSource;
+}
+
+export interface AgentMessageSource {
+  "paneId": Id;
+  "name": string;
+  "harness": string;
+}
+
+export interface AgentListParams {
+
+}
+
+export interface AgentListResult {
+  "items": Array<AgentMessageSource>;
+}
+
+export interface AgentMessageParams {
+  "targetPaneId": Id;
+  "text": string;
+  "idempotencyKey": Id;
+}
+
+export interface AgentMessageResult {
+  "promptId": Id;
+  "queued": boolean;
 }
 
 export interface PermissionOption {
@@ -3012,6 +3038,8 @@ export interface Methods {
   "settings.get": { params: SettingsGetParams; result: SettingsGetResult };
   "settings.set": { params: SettingsSetParams; result: SettingsSetResult };
   "pane.prompt": { params: PanePromptParams; result: PanePromptResult };
+  "agent.list": { params: AgentListParams; result: AgentListResult };
+  "agent.message": { params: AgentMessageParams; result: AgentMessageResult };
   "pane.queue.list": { params: PaneQueueListParams; result: PaneQueueListResult };
   "pane.queue.remove": { params: PaneQueueRemoveParams; result: PaneQueueRemoveResult };
   "pane.cancel": { params: PaneCancelParams; result: PaneCancelResult };

@@ -28,7 +28,21 @@ struct Tool {
     schema: fn() -> Value,
 }
 
-const TOOLS: [Tool; 33] = [
+const TOOLS: [Tool; 35] = [
+    Tool {
+        name: "list_agents",
+        method: "agent.list",
+        audience: Audience::Both,
+        description: "List other ACP agent panes in this workspace, including IDs for messaging.",
+        schema: empty_schema,
+    },
+    Tool {
+        name: "message_agent",
+        method: "agent.message",
+        audience: Audience::Both,
+        description: "Queue a message for another ACP agent; delivery waits for its clean input.",
+        schema: agent_message_schema,
+    },
     Tool {
         name: "task_create",
         method: "task.create",
@@ -409,6 +423,7 @@ fn mutating(method: &str) -> bool {
     !matches!(
         method,
         "task.show"
+            | "agent.list"
             | "task.list"
             | "writing.structure"
             | "web.snapshot"
@@ -416,6 +431,19 @@ fn mutating(method: &str) -> bool {
             | "web.screenshot"
             | "web.console"
             | "web.network"
+    )
+}
+
+fn agent_message_schema() -> Value {
+    object(
+        fields(&[
+            ("targetPaneId", id()),
+            (
+                "text",
+                bounded_string(soyeht_protocol::limits::AGENT_MESSAGE_BYTES),
+            ),
+        ]),
+        &["targetPaneId", "text"],
     )
 }
 
@@ -837,6 +865,45 @@ mod tests {
             ),
             Err(Error::TaskContextRequired)
         ));
+    }
+
+    #[test]
+    fn peer_tools_use_binding_identity_and_validate_target() {
+        let engine = FakeEngine {
+            role: Role::Agent,
+            calls: VecDeque::new(),
+        };
+        let mut service = Service::new(engine, context(false));
+        let listing = service.list();
+        let names = listing["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"list_agents"));
+        assert!(names.contains(&"message_agent"));
+        service.call("list_agents", json!({})).unwrap();
+        assert_eq!(service.engine.calls.pop_front().unwrap().0, "agent.list");
+        service
+            .call(
+                "message_agent",
+                json!({"targetPaneId":"recipient","text":"hello"}),
+            )
+            .unwrap();
+        let (method, params) = service.engine.calls.pop_front().unwrap();
+        assert_eq!(method, "agent.message");
+        assert_eq!(params["targetPaneId"], "recipient");
+        assert!(params["idempotencyKey"].as_str().is_some());
+        assert!(params.get("paneId").is_none());
+        assert!(
+            service
+                .call(
+                    "message_agent",
+                    json!({"targetPaneId":"recipient","text":"hello","paneId":"spoof"})
+                )
+                .is_err()
+        );
     }
 
     #[test]

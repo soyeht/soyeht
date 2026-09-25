@@ -77,6 +77,49 @@ fn seed(store: &mut Store) {
         })
         .unwrap();
 }
+
+#[test]
+fn agent_message_rate_is_directional_durable_and_rolls_back_with_rejected_delivery() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    for index in 0..limits::AGENT_MESSAGES_PER_WINDOW {
+        store
+            .mutate("test", &format!("message-{index}"), "message", |change| {
+                agents::record_message(change, "a", "b", 1_000, -59_000)?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        agents::message_times(&store, "a", "b", -59_000)
+            .unwrap()
+            .len(),
+        limits::AGENT_MESSAGES_PER_WINDOW
+    );
+    assert!(
+        agents::message_times(&store, "b", "a", -59_000)
+            .unwrap()
+            .is_empty()
+    );
+    let rejected = store.mutate("test", "rejected", "message", |change| {
+        agents::record_message(change, "a", "b", 1_000, -59_000)?;
+        Err(Error::TestFixture("destination queue failed"))
+    });
+    assert!(rejected.is_err());
+    drop(store);
+    let store = profile.store();
+    assert_eq!(
+        agents::message_times(&store, "a", "b", -59_000)
+            .unwrap()
+            .len(),
+        limits::AGENT_MESSAGES_PER_WINDOW
+    );
+    assert!(
+        agents::message_times(&store, "a", "b", 1_000)
+            .unwrap()
+            .is_empty()
+    );
+}
 fn incoming() -> NativeRequest {
     NativeRequest {
         request_id: "request-1".into(),
@@ -185,6 +228,7 @@ fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
     connection
         .execute_batch(
             "DROP TABLE agent_model_refusals;
+             DROP TABLE agent_message_rate;
              ALTER TABLE writing_documents DROP COLUMN full_width;
              DROP INDEX workspaces_created_sequence;
              ALTER TABLE workspaces DROP COLUMN created_seq;
@@ -431,6 +475,7 @@ fn prompt_with_image() -> (PromptItem, agents::PromptAttachment) {
             queued_at: "fixed".into(),
             generation: None,
             attachments: Some(vec![reference.clone()]),
+            agent_message: None,
         },
         agents::PromptAttachment {
             reference,

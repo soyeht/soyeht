@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -152,6 +152,11 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "ConfigOption": return try codec(SoyehtProtocol.ConfigOption.self, data)
         case "ConfigOperation": return try codec(SoyehtProtocol.ConfigOperation.self, data)
         case "PromptItem": return try codec(SoyehtProtocol.PromptItem.self, data)
+        case "AgentMessageSource": return try codec(SoyehtProtocol.AgentMessageSource.self, data)
+        case "AgentListParams": return try codec(SoyehtProtocol.AgentListParams.self, data)
+        case "AgentListResult": return try codec(SoyehtProtocol.AgentListResult.self, data)
+        case "AgentMessageParams": return try codec(SoyehtProtocol.AgentMessageParams.self, data)
+        case "AgentMessageResult": return try codec(SoyehtProtocol.AgentMessageResult.self, data)
         case "PermissionOption": return try codec(SoyehtProtocol.PermissionOption.self, data)
         case "PermissionRequest": return try codec(SoyehtProtocol.PermissionRequest.self, data)
         case "ElicitationRequest": return try codec(SoyehtProtocol.ElicitationRequest.self, data)

@@ -1308,6 +1308,119 @@ fn binding_hello(path: &std::path::Path, binding: &str) -> (UnixStream, Value) {
     (socket, serde_json::from_slice(&response).unwrap())
 }
 
+#[test]
+fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
+    let rig = Rig::new();
+    let (mut human, sender) = rig.agent();
+    let workspace = human.pane(&sender)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, target) = rig.agent_in_workspace(&workspace);
+    human.call(
+        "pane.draft",
+        json!({"paneId":target,"active":true,"idempotencyKey":"hold-agent-messages"}),
+    );
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &sender)
+        .unwrap()
+        .unwrap();
+    let binding = runtime["binding"].as_str().unwrap();
+    let (socket, hello) = binding_hello(&rig.path.join("engine.sock"), binding);
+    assert_eq!(hello["result"]["role"], "agent");
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    let listed = agent.call("agent.list", json!({}));
+    assert!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["paneId"] == target)
+    );
+    for index in 0..soyeht_protocol::limits::AGENT_MESSAGES_PER_WINDOW {
+        let result = agent.call(
+            "agent.message",
+            json!({
+                "targetPaneId":target,"text":format!("note {index}"),
+                "idempotencyKey":format!("agent-note-{index}")
+            }),
+        );
+        assert_eq!(result["queued"], true);
+    }
+    let blocked = agent.request(
+        "agent.message",
+        json!({
+            "targetPaneId":target,"text":"seventh","idempotencyKey":"agent-note-seven"
+        }),
+    );
+    assert_eq!(blocked["error"]["data"]["kind"], "rate_limited");
+    assert!(blocked["error"]["data"]["retryAfterSec"].as_u64().unwrap() > 0);
+    let queue = human.call("pane.queue.list", json!({"paneId":target,"limit":64}));
+    let items = queue["items"].as_array().unwrap();
+    assert_eq!(
+        items.len(),
+        soyeht_protocol::limits::AGENT_MESSAGES_PER_WINDOW
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| item["agentMessage"]["paneId"] == sender)
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| item["text"].as_str().unwrap().contains("message_agent"))
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| !item["text"].as_str().unwrap().contains("seventh"))
+    );
+    let other_workspace = human.call(
+        "workspace.create",
+        json!({
+            "name":"Other", "path":rig.path,
+            "idempotencyKey":"other-agent-workspace"
+        }),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, outsider) = rig.agent_in_workspace(&other_workspace);
+    let forbidden = agent.request(
+        "agent.message",
+        json!({
+            "targetPaneId":outsider,"text":"must stay local",
+            "idempotencyKey":"cross-workspace-agent-message"
+        }),
+    );
+    assert_eq!(forbidden["error"]["data"]["kind"], "not_found");
+    let target_runtime: Value = soyeht_store::agents::runtime(&store, &target)
+        .unwrap()
+        .unwrap();
+    let target_binding = target_runtime["binding"].as_str().unwrap();
+    let (reply_socket, reply_hello) = binding_hello(&rig.path.join("engine.sock"), target_binding);
+    assert_eq!(reply_hello["result"]["role"], "agent");
+    let mut recipient = Client {
+        socket: reply_socket,
+        next: 1,
+        messages: vec![],
+    };
+    assert_eq!(
+        recipient.call(
+            "agent.message",
+            json!({
+                "targetPaneId":sender,"text":"reply","idempotencyKey":"reverse-direction"
+            })
+        )["queued"],
+        true
+    );
+}
+
 fn binding_request(socket: &mut UnixStream, id: u64, method: &str, params: Value) -> Value {
     Frame::Json(
         serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))

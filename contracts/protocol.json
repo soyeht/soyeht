@@ -2623,6 +2623,9 @@
           "items": {
             "$ref": "#/$defs/AttachmentRef"
           }
+        },
+        "agentMessage": {
+          "$ref": "#/$defs/AgentMessageSource"
         }
       },
       "required": [
@@ -2633,6 +2636,42 @@
         "queuedAt"
       ],
       "additionalProperties": true
+    },
+    "AgentMessageSource": {
+      "type": "object",
+      "properties": {
+        "paneId": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string" },
+        "harness": { "type": "string" }
+      },
+      "required": ["paneId", "name", "harness"],
+      "additionalProperties": true
+    },
+    "AgentListParams": {
+      "type": "object", "properties": {}, "required": [], "additionalProperties": true
+    },
+    "AgentListResult": {
+      "type": "object",
+      "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/AgentMessageSource" } } },
+      "required": ["items"], "additionalProperties": true
+    },
+    "AgentMessageParams": {
+      "type": "object",
+      "properties": {
+        "targetPaneId": { "$ref": "#/$defs/Id" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 60000 },
+        "idempotencyKey": { "$ref": "#/$defs/Id" }
+      },
+      "required": ["targetPaneId", "text", "idempotencyKey"],
+      "additionalProperties": true
+    },
+    "AgentMessageResult": {
+      "type": "object",
+      "properties": {
+        "promptId": { "$ref": "#/$defs/Id" },
+        "queued": { "type": "boolean" }
+      },
+      "required": ["promptId", "queued"], "additionalProperties": true
     },
     "PermissionOption": {
       "type": "object",
@@ -11141,6 +11180,17 @@
       },
       "mutation": true
     },
+    "agent.list": {
+      "params": { "$ref": "#/$defs/AgentListParams" },
+      "result": { "$ref": "#/$defs/AgentListResult" },
+      "mutation": false
+    },
+    "agent.message": {
+      "params": { "$ref": "#/$defs/AgentMessageParams" },
+      "result": { "$ref": "#/$defs/AgentMessageResult" },
+      "mutation": true,
+      "x-paneRoute": "targetPaneId"
+    },
     "pane.queue.list": {
       "params": {
         "$ref": "#/$defs/PaneQueueListParams"
@@ -12417,6 +12467,9 @@
     "deviceConnections": 8,
     "promptBytes": 65536,
     "promptQueueCount": 64,
+    "agentMessagesPerWindow": 6,
+    "agentMessageWindowSec": 60,
+    "agentMessageBytes": 60000,
     "transcriptPageMessages": 200,
     "transcriptPageBytes": 524288,
     "transcriptMessageBytes": 262144,

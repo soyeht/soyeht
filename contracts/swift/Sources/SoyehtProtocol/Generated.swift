@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
 import Foundation
 
 
@@ -1538,7 +1538,8 @@ public struct PromptItem: Codable, Sendable {
     public var `queuedAt`: String
     public var `generation`: UInt32?
     public var `attachments`: [AttachmentRef]?
-    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil) {
+    public var `agentMessage`: AgentMessageSource?
+    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil, `agentMessage`: AgentMessageSource? = nil) {
         self.`promptId` = `promptId`
         self.`text` = `text`
         self.`origin` = `origin`
@@ -1546,6 +1547,52 @@ public struct PromptItem: Codable, Sendable {
         self.`queuedAt` = `queuedAt`
         self.`generation` = `generation`
         self.`attachments` = `attachments`
+        self.`agentMessage` = `agentMessage`
+    }
+}
+
+public struct AgentMessageSource: Codable, Sendable {
+    public var `paneId`: Id
+    public var `name`: String
+    public var `harness`: String
+    public init(`paneId`: Id, `name`: String, `harness`: String) {
+        self.`paneId` = `paneId`
+        self.`name` = `name`
+        self.`harness` = `harness`
+    }
+}
+
+public struct AgentListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct AgentListResult: Codable, Sendable {
+    public var `items`: [AgentMessageSource]
+    public init(`items`: [AgentMessageSource]) {
+        self.`items` = `items`
+    }
+}
+
+public struct AgentMessageParams: Codable, Sendable {
+    public var `targetPaneId`: Id
+    public var `text`: String
+    public var `idempotencyKey`: Id
+    public init(`targetPaneId`: Id, `text`: String, `idempotencyKey`: Id) {
+        self.`targetPaneId` = `targetPaneId`
+        self.`text` = `text`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AgentMessageResult: Codable, Sendable {
+    public var `promptId`: Id
+    public var `queued`: Bool
+    public init(`promptId`: Id, `queued`: Bool) {
+        self.`promptId` = `promptId`
+        self.`queued` = `queued`
     }
 }
 

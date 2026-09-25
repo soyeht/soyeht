@@ -382,6 +382,7 @@ impl State {
             queued_at: at,
             generation: None,
             attachments,
+            agent_message: None,
         };
         self.queue.push_back(prompt.clone());
         self.prioritize_queue();
@@ -790,6 +791,7 @@ mod tests {
                 queued_at: "now".into(),
                 generation: None,
                 attachments: None,
+                agent_message: None,
             });
         }
         let restored = state.queue.drain(..).collect();

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -149,6 +149,11 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "ConfigOption" => roundtrip::<ConfigOption>(value),
         "ConfigOperation" => roundtrip::<ConfigOperation>(value),
         "PromptItem" => roundtrip::<PromptItem>(value),
+        "AgentMessageSource" => roundtrip::<AgentMessageSource>(value),
+        "AgentListParams" => roundtrip::<AgentListParams>(value),
+        "AgentListResult" => roundtrip::<AgentListResult>(value),
+        "AgentMessageParams" => roundtrip::<AgentMessageParams>(value),
+        "AgentMessageResult" => roundtrip::<AgentMessageResult>(value),
         "PermissionOption" => roundtrip::<PermissionOption>(value),
         "PermissionRequest" => roundtrip::<PermissionRequest>(value),
         "ElicitationRequest" => roundtrip::<ElicitationRequest>(value),
