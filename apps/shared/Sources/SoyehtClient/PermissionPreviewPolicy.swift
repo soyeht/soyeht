@@ -1,9 +1,19 @@
 import SoyehtProtocol
 
 public struct PermissionPreview: Sendable {
-  public let removed: [String]
-  public let added: [String]
+  public let rows: [PermissionPreviewRow]
   public let unavailable: Bool
+}
+
+public struct PermissionPreviewRow: Equatable, Identifiable, Sendable {
+  public enum Kind: Equatable, Sendable {
+    case removed
+    case added
+  }
+
+  public let id: Int
+  public let kind: Kind
+  public let text: String
 }
 
 public enum PermissionPreviewPolicy {
@@ -11,7 +21,7 @@ public enum PermissionPreviewPolicy {
     let before = lines(change.oldText ?? "")
     let after = lines(change.newText)
     guard before.count + after.count <= ProtocolLimits.permissionPreviewLines else {
-      return PermissionPreview(removed: [], added: [], unavailable: true)
+      return PermissionPreview(rows: [], unavailable: true)
     }
     let difference = after.difference(from: before)
     let removed = difference.removals.compactMap { change -> String? in
@@ -22,7 +32,12 @@ public enum PermissionPreviewPolicy {
       guard case .insert(_, let line, _) = change else { return nil }
       return line
     }
-    return PermissionPreview(removed: removed, added: added, unavailable: false)
+    let rows =
+      (removed.map { (PermissionPreviewRow.Kind.removed, $0) }
+      + added.map { (PermissionPreviewRow.Kind.added, $0) })
+      .enumerated()
+      .map { index, row in PermissionPreviewRow(id: index, kind: row.0, text: row.1) }
+    return PermissionPreview(rows: rows, unavailable: false)
   }
 
   private static func lines(_ text: String) -> [String] {

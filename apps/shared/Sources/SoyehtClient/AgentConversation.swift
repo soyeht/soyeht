@@ -738,11 +738,13 @@ private struct PermissionFileChangeView: View {
       } else {
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(preview.removed.enumerated()), id: \.offset) { _, line in
-              Text("− \(line)").foregroundStyle(style.danger)
-            }
-            ForEach(Array(preview.added.enumerated()), id: \.offset) { _, line in
-              Text("+ \(line)").foregroundStyle(style.success)
+            ForEach(preview.rows) { row in
+              switch row.kind {
+              case .removed:
+                Text("− \(row.text)").foregroundStyle(style.danger)
+              case .added:
+                Text("+ \(row.text)").foregroundStyle(style.success)
+              }
             }
           }.frame(maxWidth: .infinity, alignment: .leading)
         }
