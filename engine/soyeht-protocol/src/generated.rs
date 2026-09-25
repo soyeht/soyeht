@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aae690e054d513e5ffa4aac9545fa5b2728a3eb1516f9c2678145a909d334012). Do not edit.
+// Generated from contracts/protocol.json (sha256 fbe975fe7bc27f1bf7c42c96639684a93abf665edcc0143d110fc40f2220bab0). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1462,6 +1462,10 @@ pub struct PermissionFileChange {
 pub struct PermissionPresentation {
     #[serde(rename = "targetPath", skip_serializing_if = "Option::is_none")]
     pub target_path: Option<String>,
+    #[serde(rename = "command", skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(rename = "executionDetails", skip_serializing_if = "Option::is_none")]
+    pub execution_details: Option<Vec<String>>,
     #[serde(rename = "fileChanges")]
     pub file_changes: Vec<PermissionFileChange>,
     #[serde(rename = "previewOmitted")]

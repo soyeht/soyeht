@@ -22,7 +22,8 @@ import Testing
 
 @Test func veryLongPermissionDiffFailsClosed() {
   let change = PermissionFileChange(
-    path: "/project/large.txt", newText: String(repeating: "line\n", count: 401))
+    path: "/project/large.txt",
+    newText: String(repeating: "line\n", count: ProtocolLimits.permissionPreviewLines + 1))
   let preview = PermissionPreviewPolicy.preview(change)
   #expect(preview.unavailable)
   #expect(preview.added.isEmpty)

@@ -7,12 +7,10 @@ public struct PermissionPreview: Sendable {
 }
 
 public enum PermissionPreviewPolicy {
-  private static let maximumLines = 400
-
   public static func preview(_ change: PermissionFileChange) -> PermissionPreview {
     let before = lines(change.oldText ?? "")
     let after = lines(change.newText)
-    guard before.count + after.count <= maximumLines else {
+    guard before.count + after.count <= ProtocolLimits.permissionPreviewLines else {
       return PermissionPreview(removed: [], added: [], unavailable: true)
     }
     let difference = after.difference(from: before)

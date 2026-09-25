@@ -15,9 +15,6 @@ use soyeht_store::agents::NativeRequest;
 use uuid::Uuid;
 
 pub const QUESTION_TIMEOUT_MS: i64 = limits::PERMISSION_TIMEOUT_SEC as i64 * 1_000;
-const MAX_PRESENTATION_PATH_CHARS: usize = 4096;
-const MAX_PRESENTATION_CHANGES: usize = 8;
-const MAX_PRESENTATION_DIFF_BYTES: usize = 64 * 1024;
 
 pub struct Incoming<'a> {
     pub source_seq: u64,
@@ -47,11 +44,47 @@ fn bounded(text: &str, maximum: usize) -> Result<String> {
     Ok(text.into())
 }
 
-fn permission_presentation(tool: &Value) -> PermissionPresentation {
+fn permission_presentation(tool: &Value) -> Result<PermissionPresentation> {
+    let mut execution_details = Vec::new();
+    if tool["kind"] == "execute" {
+        let mut content_bytes = 0;
+        for item in tool["content"].as_array().into_iter().flatten() {
+            if item["type"] == "content" && item["content"]["type"] == "text" {
+                let Some(text) = item["content"]["text"].as_str() else {
+                    continue;
+                };
+                content_bytes += text.len();
+                if content_bytes > limits::PERMISSION_COMMAND_BYTES {
+                    return Err(invalid(
+                        "Executable permission content exceeds display limit",
+                    ));
+                }
+                execution_details.push(text.to_owned());
+            }
+        }
+    }
+    let command = if tool["kind"] == "execute" {
+        let title = tool["title"].as_str().filter(|text| !text.is_empty());
+        let value = title
+            .or_else(|| execution_details.first().map(String::as_str))
+            .ok_or_else(|| invalid("Executable permission has no command to display"))?;
+        if value.len() > limits::PERMISSION_COMMAND_BYTES {
+            return Err(invalid(
+                "Executable permission command exceeds display limit",
+            ));
+        }
+        let command = value.to_owned();
+        if title.is_none() {
+            execution_details.remove(0);
+        }
+        Some(command)
+    } else {
+        None
+    };
     let target_path = tool["locations"]
         .as_array()
         .and_then(|locations| locations.iter().find_map(|item| item["path"].as_str()))
-        .filter(|path| path.chars().count() <= MAX_PRESENTATION_PATH_CHARS)
+        .filter(|path| path.chars().count() <= limits::PERMISSION_PREVIEW_PATH_CHARS)
         .map(str::to_owned);
     let mut file_changes = Vec::new();
     let mut preview_omitted = false;
@@ -70,9 +103,9 @@ fn permission_presentation(tool: &Value) -> PermissionPresentation {
         };
         let old_text = item["oldText"].as_str();
         preview_bytes += path.len() + new_text.len() + old_text.map_or(0, str::len);
-        if file_changes.len() >= MAX_PRESENTATION_CHANGES
-            || path.chars().count() > MAX_PRESENTATION_PATH_CHARS
-            || preview_bytes > MAX_PRESENTATION_DIFF_BYTES
+        if file_changes.len() >= limits::PERMISSION_PREVIEW_CHANGES
+            || path.chars().count() > limits::PERMISSION_PREVIEW_PATH_CHARS
+            || preview_bytes > limits::PERMISSION_PREVIEW_BYTES
         {
             // An incomplete diff must never look like a complete approval preview.
             file_changes.clear();
@@ -85,11 +118,13 @@ fn permission_presentation(tool: &Value) -> PermissionPresentation {
             new_text: new_text.into(),
         });
     }
-    PermissionPresentation {
+    Ok(PermissionPresentation {
         target_path: target_path.or_else(|| file_changes.first().map(|change| change.path.clone())),
+        command,
+        execution_details: (!execution_details.is_empty()).then_some(execution_details),
         file_changes,
         preview_omitted,
-    }
+    })
 }
 
 fn public_question(
@@ -139,7 +174,14 @@ fn public_question(
         }
         .or_else(|| params["toolCall"]["title"].as_str())
         .unwrap_or("Permission required");
-        public["title"] = json!(bounded(title, 512)?);
+        let presentation = permission_presentation(&params["toolCall"])?;
+        public["title"] = json!(if params["toolCall"]["kind"] == "execute"
+            && title.chars().count() > 512
+        {
+            "Run command".to_owned()
+        } else {
+            bounded(title, 512)?
+        });
         public["detail"] = json!(if metadata["version"] == 1 {
             metadata["description"]
                 .as_str()
@@ -148,7 +190,7 @@ fn public_question(
         } else {
             ""
         });
-        public["presentation"] = serde_json::to_value(permission_presentation(&params["toolCall"]))
+        public["presentation"] = serde_json::to_value(presentation)
             .map_err(|_| errors::internal("Permission presentation serialization failed"))?;
         public["options"] = json!(public_options);
         "pane.permission_requested"
@@ -557,9 +599,37 @@ mod presentation_tests {
     #[test]
     fn large_diff_is_not_presented_as_a_complete_preview() {
         let tool = json!({"content": [{"type": "diff", "path": "/project/large.txt",
-            "newText": "x".repeat(65_537)}]});
-        let presentation = permission_presentation(&tool);
+            "newText": "x".repeat(limits::PERMISSION_PREVIEW_BYTES + 1)}]});
+        let presentation = permission_presentation(&tool).expect("bounded presentation");
         assert!(presentation.preview_omitted);
         assert!(presentation.file_changes.is_empty());
+    }
+
+    #[test]
+    fn execute_permission_shows_complete_acp_command_and_content() {
+        let command = format!("ls -la\nprintf '%s' {}", "x".repeat(600));
+        let params = json!({
+            "toolCall": {"kind": "execute", "title": command,
+                "rawInput": {"secret": "never-public"},
+                "content": [{"type": "content", "content": {"type": "text",
+                    "text": "Working directory: /project"}}]},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
+        });
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("complete command must be displayable");
+        assert_eq!(public["title"], "Run command");
+        assert_eq!(public["presentation"]["command"], command);
+        assert_eq!(
+            public["presentation"]["executionDetails"][0],
+            "Working directory: /project"
+        );
+        assert!(!public.to_string().contains("never-public"));
+    }
+
+    #[test]
+    fn execute_without_displayable_command_fails_closed() {
+        let params = json!({"toolCall": {"kind": "execute", "rawInput": {"command": "ls"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
     }
 }

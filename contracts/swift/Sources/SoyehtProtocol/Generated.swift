@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aae690e054d513e5ffa4aac9545fa5b2728a3eb1516f9c2678145a909d334012). Do not edit.
+// Generated from contracts/protocol.json (sha256 fbe975fe7bc27f1bf7c42c96639684a93abf665edcc0143d110fc40f2220bab0). Do not edit.
 import Foundation
 
 
@@ -1620,10 +1620,14 @@ public struct PermissionFileChange: Codable, Sendable {
 
 public struct PermissionPresentation: Codable, Sendable {
     public var `targetPath`: String?
+    public var `command`: String?
+    public var `executionDetails`: [String]?
     public var `fileChanges`: [PermissionFileChange]
     public var `previewOmitted`: Bool
-    public init(`targetPath`: String? = nil, `fileChanges`: [PermissionFileChange], `previewOmitted`: Bool) {
+    public init(`targetPath`: String? = nil, `command`: String? = nil, `executionDetails`: [String]? = nil, `fileChanges`: [PermissionFileChange], `previewOmitted`: Bool) {
         self.`targetPath` = `targetPath`
+        self.`command` = `command`
+        self.`executionDetails` = `executionDetails`
         self.`fileChanges` = `fileChanges`
         self.`previewOmitted` = `previewOmitted`
     }

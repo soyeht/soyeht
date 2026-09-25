@@ -97,11 +97,12 @@ import Testing
         requestId: "request-1", generation: 1, promptId: "prompt-1", title: "Run",
         detail: "Run the requested operation",
         presentation: PermissionPresentation(
-          targetPath: "/project/note.txt",
+          targetPath: "/project/note.txt", command: "ls -la\n",
           fileChanges: [PermissionFileChange(path: "/project/note.txt", newText: "hello\n")],
           previewOmitted: false), options: [option],
         expiresAt: "2026-09-11T00:30:01Z")))
   #expect(client.agentPanes[paneId]?.permission?.requestId == "request-1")
+  #expect(client.agentPanes[paneId]?.permission?.presentation?.command == "ls -la\n")
   #expect(
     client.agentPanes[paneId]?.permission?.presentation?.fileChanges.first?.newText == "hello\n")
 

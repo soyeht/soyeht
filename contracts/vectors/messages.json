@@ -2659,6 +2659,8 @@
     "type": "PermissionPresentation",
     "value": {
       "targetPath": "/project/note.txt",
+      "command": "ls -la\n",
+      "executionDetails": ["Working directory: /project"],
       "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
       "previewOmitted": false
     }

@@ -2707,6 +2707,11 @@
       "type": "object",
       "properties": {
         "targetPath": { "type": "string" },
+        "command": { "type": "string" },
+        "executionDetails": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "fileChanges": {
           "type": "array",
           "items": { "$ref": "#/$defs/PermissionFileChange" }
@@ -12523,6 +12528,11 @@
     "transcriptMessageBytes": 262144,
     "acpMessageBytes": 1048576,
     "permissionTimeoutSec": 1800,
+    "permissionPreviewPathChars": 4096,
+    "permissionPreviewChanges": 8,
+    "permissionPreviewBytes": 65536,
+    "permissionPreviewLines": 400,
+    "permissionCommandBytes": 65536,
     "cancelTimeoutSec": 10,
     "probeTimeoutSec": 10,
     "noSignalSec": 90,

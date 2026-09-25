@@ -671,6 +671,25 @@ private struct PermissionCard: View {
           .textSelection(.enabled)
       }
       if let presentation = request.presentation {
+        if let command = presentation.command {
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Command").font(style.captionFont).foregroundStyle(style.secondary)
+            ScrollView([.horizontal, .vertical]) {
+              Text(command).font(style.monoSmallFont).foregroundStyle(style.ink)
+                .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 220)
+            .padding(8)
+            .background(style.well, in: RoundedRectangle(cornerRadius: 8))
+          }
+        }
+        if let details = presentation.executionDetails {
+          ForEach(Array(details.enumerated()), id: \.offset) { _, detail in
+            Text(detail).font(style.monoSmallFont).foregroundStyle(style.secondary)
+              .textSelection(.enabled)
+          }
+        }
         if presentation.fileChanges.isEmpty, let path = presentation.targetPath {
           Label(path, systemImage: "doc.text").font(style.monoSmallFont)
             .foregroundStyle(style.secondary).textSelection(.enabled)
