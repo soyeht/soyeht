@@ -45,8 +45,8 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
 
   var hasDetail: Bool {
     switch self {
-    case .appearance, .harnesses, .usage, .editor, .links: true
-    case .general, .engine, .phone, .tasks: false
+    case .general, .appearance, .harnesses, .usage, .editor, .links: true
+    case .engine, .phone, .tasks: false
     }
   }
 }
@@ -166,13 +166,14 @@ struct PreferencesPanel: View {
 
   @ViewBuilder private func preferenceDetail(_ selected: PreferencesNavigationItem) -> some View {
     switch selected {
+    case .general: GeneralPreferencesPanel()
     case .appearance: ThemePreferencesPanel()
     case .harnesses: PreferencesHarnesses(client: client)
     case .usage:
       UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
     case .editor: EditorInputPreferencesPanel()
     case .links: WebLinkPreferencesPanel()
-    case .general, .engine, .phone, .tasks: EmptyView()
+    case .engine, .phone, .tasks: EmptyView()
     }
   }
 
@@ -181,6 +182,32 @@ struct PreferencesPanel: View {
     for harness in client.harnesses where harness.available {
       client.refreshCatalogue(harness: harness.id)
     }
+  }
+}
+
+private struct GeneralPreferencesPanel: View {
+  @Environment(AgentAttentionNotifications.self) private var notifications
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      Text("Agent attention")
+        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+      Toggle(
+        "System notifications when agents need input",
+        isOn: Binding(
+          get: { notifications.enabled },
+          set: { enabled in Task { await notifications.setEnabled(enabled) } })
+      )
+      .tint(MacTheme.accent)
+      .accessibilityIdentifier("agent-attention-notifications")
+      Text(
+        "Off by default. Tabs, the app bar, and the Dock still show requests without notifications."
+      )
+      .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+      .foregroundStyle(MacTheme.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .padding(MacTheme.Space.x14)
   }
 }
 

@@ -299,6 +299,7 @@ private struct PaneDragGhost: View {
 }
 
 struct WorkspaceWindow: View {
+  @Environment(AgentAttentionNotifications.self) private var attentionNotifications
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
@@ -422,9 +423,24 @@ struct WorkspaceWindow: View {
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtEditorPalette)) { note in
       editorPaletteMode = note.object as? EditorPaletteMode ?? .commands
     }
-    .onAppear { webHost.reconcile(client.panes) }
+    .onAppear {
+      webHost.reconcile(client.panes)
+      attentionNotifications.observe(
+        client.agentAttention, workspaces: client.workspaces, connected: client.connected)
+      openPendingAgentAttention()
+    }
     .onChange(of: client.panes.map(\.paneId)) { _, _ in webHost.reconcile(client.panes) }
     .onChange(of: client.connectionRevision) { _, _ in webHost.resynchronize() }
+    .onChange(of: client.agentAttention) { _, summary in
+      attentionNotifications.observe(
+        summary, workspaces: client.workspaces, connected: client.connected)
+    }
+    .onChange(of: client.connected) { _, _ in
+      attentionNotifications.observe(
+        client.agentAttention, workspaces: client.workspaces, connected: client.connected)
+      openPendingAgentAttention()
+    }
+    .onChange(of: attentionNotifications.pendingRoute) { _, _ in openPendingAgentAttention() }
     .onExitCommand { showPreferences = false }
     .modifier(WritingSlideShowHostModifier(client: client, coordinator: slideShow))
   }
@@ -662,6 +678,33 @@ struct WorkspaceWindow: View {
   private func openPane(_ paneId: String) {
     client.select(paneId)
     navigation.select(.agents)
+  }
+
+  private func openPendingAgentAttention() {
+    guard let route = attentionNotifications.pendingRoute else { return }
+    guard client.connected else { return }
+    guard
+      client.panes.contains(where: {
+        $0.paneId == route.paneId && $0.workspaceId == route.workspaceId && $0.mode == .agent
+      })
+    else {
+      attentionNotifications.clearPendingRoute()
+      return
+    }
+    guard
+      client.agentAttention.requests.contains(where: {
+        $0.identity == route.requestIdentity
+      })
+    else {
+      attentionNotifications.clearPendingRoute()
+      return
+    }
+    taskWorkspaceId = route.workspaceId
+    navigation.select(.agents)
+    client.select(route.paneId)
+    NSApp.activate(ignoringOtherApps: true)
+    NSApp.windows.first(where: \.isVisible)?.makeKeyAndOrderFront(nil)
+    attentionNotifications.clearPendingRoute()
   }
   private func openFileReference(workspaceId: String, reference: FilePathReference) {
     Task { @MainActor in
@@ -989,7 +1032,7 @@ private struct WorkspaceTopBar: View {
             .accessibilityIdentifier("workspace-tabs-overflow")
             .popover(isPresented: $overflowPresented, arrowEdge: .bottom) {
               WorkspaceOverflowList(
-                workspaces: hiddenWorkspaces,
+                workspaces: hiddenWorkspaces, attention: client.agentAttention,
                 onSelect: { workspaceId in
                   overflowPresented = false
                   onSelectWorkspace(workspaceId)
@@ -1046,6 +1089,8 @@ private struct WorkspaceTopBar: View {
           WorkspaceTab(
             workspaceId: workspace.workspaceId, name: workspace.name,
             selected: workspace.workspaceId == workspaceId,
+            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
+            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
             keyboardFocusable: plan.sticky?.workspaceId != workspace.workspaceId,
             focusedWorkspaceId: $focusedWorkspaceId,
             action: { onSelectWorkspace(workspace.workspaceId) },
@@ -1094,6 +1139,8 @@ private struct WorkspaceTopBar: View {
             edge: sticky.edge, width: stickyOcclusionWidth(for: sticky, in: measurement))
           WorkspaceTab(
             workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
+            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
+            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
             keyboardFocusable: false, focusedWorkspaceId: nil,
             action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
             onClose: { onCloseWorkspace(workspace.workspaceId) },
@@ -1261,6 +1308,8 @@ private struct WorkspaceTab: View {
   let workspaceId: String
   let name: String
   let selected: Bool
+  let waitingCount: Int
+  let isWorking: Bool
   let keyboardFocusable: Bool
   let focusedWorkspaceId: FocusState<String?>.Binding?
   let action: () -> Void
@@ -1275,6 +1324,11 @@ private struct WorkspaceTab: View {
             .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
           Text(name).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
             .foregroundStyle(selected ? MacTheme.accent : MacTheme.ink).lineLimit(1)
+          if waitingCount > 0 {
+            AgentAttentionBadge(count: waitingCount)
+          } else if isWorking {
+            AgentWorkingDot()
+          }
         }
       }
       .modifier(
@@ -1288,7 +1342,11 @@ private struct WorkspaceTab: View {
         return .handled
       }
       .help(name)
-      .accessibilityLabel(name)
+      .accessibilityLabel(
+        waitingCount > 0
+          ? "\(name), \(AgentAttentionPolicy.waitingLabel(count: waitingCount))"
+          : isWorking ? "\(name), agents working" : name
+      )
       .accessibilityAddTraits(selected ? .isSelected : [])
       .accessibilityIdentifier("\(identifierPrefix)-\(workspaceId)")
 
@@ -1326,6 +1384,7 @@ private struct WorkspaceTabKeyboardFocus: ViewModifier {
 
 private struct WorkspaceOverflowList: View {
   let workspaces: [Workspace]
+  let attention: AgentAttentionSummary
   let onSelect: (String) -> Void
 
   var body: some View {
@@ -1346,6 +1405,11 @@ private struct WorkspaceOverflowList: View {
                   .foregroundStyle(MacTheme.ink)
                   .multilineTextAlignment(.leading)
                   .fixedSize(horizontal: false, vertical: true)
+                if attention.waitingCount(in: workspace.workspaceId) > 0 {
+                  AgentAttentionBadge(count: attention.waitingCount(in: workspace.workspaceId))
+                } else if attention.hasWorkingAgent(in: workspace.workspaceId) {
+                  AgentWorkingDot()
+                }
                 Spacer(minLength: 0)
               }
               .padding(.horizontal, MacTheme.Space.x10)
@@ -1353,7 +1417,12 @@ private struct WorkspaceOverflowList: View {
               .contentShape(Rectangle())
             }
             .help(workspace.name)
-            .accessibilityLabel(workspace.name)
+            .accessibilityLabel(
+              attention.waitingCount(in: workspace.workspaceId) > 0
+                ? "\(workspace.name), \(AgentAttentionPolicy.waitingLabel(count: attention.waitingCount(in: workspace.workspaceId)))"
+                : attention.hasWorkingAgent(in: workspace.workspaceId)
+                  ? "\(workspace.name), agents working" : workspace.name
+            )
             .accessibilityIdentifier("workspace-overflow-\(workspace.workspaceId)")
           }
         }
@@ -1363,6 +1432,28 @@ private struct WorkspaceOverflowList: View {
     .padding(MacTheme.Space.x14)
     .frame(width: MacPaneLayoutMetrics.workspaceOverflowPopoverWidth)
     .background(MacTheme.canvas)
+  }
+}
+
+struct AgentAttentionBadge: View {
+  let count: Int
+
+  var body: some View {
+    Text(count, format: .number)
+      .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+      .foregroundStyle(MacTheme.ink)
+      .padding(.horizontal, MacTheme.Space.x6)
+      .padding(.vertical, MacTheme.Space.x2)
+      .background(MacTheme.warning, in: Capsule())
+      .accessibilityLabel(AgentAttentionPolicy.waitingLabel(count: count))
+  }
+}
+
+struct AgentWorkingDot: View {
+  var body: some View {
+    Circle().fill(MacTheme.accent)
+      .frame(width: MacTheme.Space.x7, height: MacTheme.Space.x7)
+      .accessibilityLabel("Agents working")
   }
 }
 
