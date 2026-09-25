@@ -26,6 +26,21 @@
       let report: URL
     }
 
+    private final class PerformanceWindow: NSWindow {
+      var onScrollStart: (() -> Void)?
+      var onScrollEnd: (() -> Void)?
+
+      override func sendEvent(_ event: NSEvent) {
+        guard event.type == .scrollWheel else {
+          super.sendEvent(event)
+          return
+        }
+        onScrollStart?()
+        super.sendEvent(event)
+        onScrollEnd?()
+      }
+    }
+
     static func requestedOptions() -> Options? {
       let arguments = CommandLine.arguments
       guard let flag = arguments.firstIndex(of: "--editor-performance-window-report"),
@@ -41,14 +56,12 @@
 
     private enum Failure: Error {
       case keyEvent
-      case scrollEvent
       case missingKeyDraw
       case missingKeyProcessing(processing: Int, draw: Int, key: Int)
       case missingTextEdit
       case invalidFocus
-      case missingScrollMovement(
-        sample: Int, before: CGFloat, after: CGFloat,
-        eventWindow: Int, fixtureWindow: Int, locationInWindow: NSPoint)
+      case missingScrollEvent(sample: Int)
+      case missingScrollMovement(sample: Int, before: CGFloat, after: CGFloat)
       case invalidSampleEvents(sample: Int)
       case finalTextMismatch
       case invalidScrollGeometry(
@@ -61,7 +74,7 @@
 
     @MainActor private final class Session {
       private let options: Options
-      private let window: NSWindow
+      private let window: PerformanceWindow
       private let scrollView: NSScrollView
       private let textView: EditorTextView
       private let host: EditorViewportHostView
@@ -94,10 +107,14 @@
       private var pageLoadDurations: [Double] = []
       private var scrollWorkDurations: [Double] = []
       private var scrollIsActive = false
+      private var scrollStartOffset: CGFloat?
+      private var scrollPageLoadsBefore = 0
+      private var currentScrollDispatchDuration = 0.0
+      private var scrollDispatchStart: ContinuousClock.Instant?
+      private var scrollDispatchInterval: OSSignpostIntervalState?
       private var scrollDrawStart: ContinuousClock.Instant?
       private var scrollDrawInterval: OSSignpostIntervalState?
       private var currentScrollDrawDuration = 0.0
-      private var currentScrollDrawCount = 0
       private var dirtyRectAreas: [Double] = []
       private var statusLabel: NSTextField?
       private var pageStatusLabel: NSTextField?
@@ -121,7 +138,7 @@
         scrollView.setAccessibilityIdentifier("editor-performance-scroll")
         scrollView.verticalScroller?.setAccessibilityIdentifier(
           "editor-performance-vertical-scrollbar")
-        let window = NSWindow(
+        let window = PerformanceWindow(
           contentRect: NSRect(origin: NSPoint(x: 80, y: 80), size: viewportSize),
           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Editor Performance Fixture"
@@ -143,6 +160,8 @@
         coordinator.onPerformanceViewportRequested = { [weak self] start in
           self?.loadViewport(fromLine: start)
         }
+        window.onScrollStart = { [weak self] in self?.beginScrollEvent() }
+        window.onScrollEnd = { [weak self] in self?.endScrollEvent() }
       }
 
       func start() {
@@ -211,7 +230,7 @@
 
       @objc private func nextScroll(_ sender: NSButton) {
         do {
-          try sendScroll(scrollSample % 8 == 7 ? 1_200 : -12_000, sample: scrollSample)
+          try finishScrollSample()
           scrollSample += 1
           sender.title = "Scroll \(scrollSample); pages \(pageLoadDurations.count)"
           pageStatusLabel?.stringValue =
@@ -388,59 +407,46 @@
         else { throw Failure.missingTextEdit }
       }
 
-      private func sendScroll(_ delta: Int32, sample: Int) throws {
-        guard
-          let cgEvent = CGEvent(
-            scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
-            wheel1: delta, wheel2: 0, wheel3: 0)
-        else { throw Failure.scrollEvent }
-        let center = NSPoint(x: viewportSize.width / 2, y: viewportSize.height / 2)
-        let screenPoint = window.convertPoint(toScreen: center)
-        // Quartz event locations are top-left based; AppKit screen points are
-        // bottom-left based. Keep the synthetic event over the editor viewport.
-        guard let mainScreen = NSScreen.screens.first else { throw Failure.scrollEvent }
-        cgEvent.location = CGPoint(
-          x: screenPoint.x, y: mainScreen.frame.maxY - screenPoint.y)
-        cgEvent.setIntegerValueField(
-          .eventTargetUnixProcessID, value: Int64(ProcessInfo.processInfo.processIdentifier))
-        cgEvent.setIntegerValueField(
-          .mouseEventWindowUnderMousePointer, value: Int64(window.windowNumber))
-        guard let event = NSEvent(cgEvent: cgEvent) else { throw Failure.scrollEvent }
-        let before = scrollView.contentView.bounds.minY
-        let pageLoadsBefore = pageLoadDurations.count
-        scrollIsActive = true
-        currentScrollDrawDuration = 0
-        currentScrollDrawCount = 0
-        var processingDuration: Double = 0
-        let start = ContinuousClock.now
-        let interval = signposter.beginInterval(scrollSignpostName)
-        window.sendEvent(event)
-        signposter.endInterval(scrollSignpostName, interval)
-        processingDuration = Self.milliseconds(since: start)
-        // AppKit can apply a wheel event during its next run-loop pass. The
-        // wait is outside the measured synchronous dispatch interval.
-        let deadline = Date().addingTimeInterval(0.1)
-        while scrollView.contentView.bounds.minY == before, Date() < deadline {
-          RunLoop.current.run(until: Date().addingTimeInterval(0.002))
+      private func beginScrollEvent() {
+        if !scrollIsActive {
+          scrollIsActive = true
+          scrollStartOffset = scrollView.contentView.bounds.minY
+          scrollPageLoadsBefore = pageLoadDurations.count
+          currentScrollDispatchDuration = 0
+          currentScrollDrawDuration = 0
         }
-        let after = scrollView.contentView.bounds.minY
-        guard before != after else {
-          throw Failure.missingScrollMovement(
-            sample: sample, before: before, after: after,
-            eventWindow: event.windowNumber, fixtureWindow: window.windowNumber,
-            locationInWindow: event.locationInWindow)
+        scrollDispatchStart = .now
+        scrollDispatchInterval = signposter.beginInterval(scrollSignpostName)
+      }
+
+      private func endScrollEvent() {
+        guard let scrollDispatchStart, let scrollDispatchInterval else { return }
+        signposter.endInterval(scrollSignpostName, scrollDispatchInterval)
+        currentScrollDispatchDuration += Self.milliseconds(since: scrollDispatchStart)
+        self.scrollDispatchStart = nil
+        self.scrollDispatchInterval = nil
+      }
+
+      private func finishScrollSample() throws {
+        guard let before = scrollStartOffset else {
+          throw Failure.missingScrollEvent(sample: scrollSample)
         }
-        scrollDispatchDurations.append(processingDuration)
         window.displayIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.018))
         window.displayIfNeeded()
+        let after = scrollView.contentView.bounds.minY
+        guard before != after else {
+          throw Failure.missingScrollMovement(sample: scrollSample, before: before, after: after)
+        }
+        scrollDispatchDurations.append(currentScrollDispatchDuration)
         scrollDrawDurations.append(currentScrollDrawDuration)
         // The page swap is recorded separately for #404; ordinary scroll work
         // remains a gate even while that known layout hitch is unresolved.
-        if pageLoadDurations.count == pageLoadsBefore {
-          scrollWorkDurations.append(processingDuration + currentScrollDrawDuration)
+        if pageLoadDurations.count == scrollPageLoadsBefore {
+          scrollWorkDurations.append(currentScrollDispatchDuration + currentScrollDrawDuration)
         }
         scrollIsActive = false
+        scrollStartOffset = nil
       }
 
       private func sendMeasuredKey(_ event: NSEvent, sample: Int) throws {
@@ -524,7 +530,6 @@
           self.scrollDrawInterval = nil
           self.scrollDrawStart = nil
           currentScrollDrawDuration += Self.milliseconds(since: scrollDrawStart)
-          currentScrollDrawCount += 1
           return
         }
         guard let drawInterval, let drawStart, let eventStart, let activeSample else { return }

@@ -49,6 +49,7 @@ final class EditorPerformanceUITests: XCTestCase {
       var priorPages = pageCount(pageStatus.label)
       var validatedPages = 0
       for _ in 0..<80 {
+        editorScroll.scroll(byDeltaX: 0, deltaY: 12_000)
         next.click()
         let count = pageCount(pageStatus.label)
         if count > priorPages {
