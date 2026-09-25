@@ -155,7 +155,16 @@ impl Runtime {
                 }
                 for (prompt, text) in &session.history {
                     self.update(&session.id,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
-                    self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
+                    if prompt == "separate-message-ids" {
+                        for (message_id, chunk) in [
+                            ("first", "Failed to authenticate: OAuth session expired"),
+                            ("second", "No response requested."),
+                        ] {
+                            self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","messageId":message_id,"content":{"type":"text","text":chunk}}));
+                        }
+                    } else {
+                        self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
+                    }
                 }
                 self.answer(id, json!({"configOptions":session.options()}));
             }
@@ -250,6 +259,16 @@ impl Runtime {
             return;
         }
         if text == "auth-expired" {
+            self.error_with_data(
+                id,
+                -32603,
+                "Failed to authenticate: OAuth session expired",
+                Some(json!({"errorKind":"authentication_failed"})),
+            );
+            return;
+        }
+        if text == "auth-expired-with-chunk" {
+            self.update(&session, json!({"sessionUpdate":"agent_message_chunk","messageId":"auth-error","content":{"type":"text","text":"Failed to authenticate: OAuth session expired"}}));
             self.error_with_data(
                 id,
                 -32603,

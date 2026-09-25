@@ -17,9 +17,18 @@ fn append_replayed_user(
     state: &mut State,
     generation: u32,
     text: &str,
+    message_id: Option<&str>,
     changes: &mut Changes,
 ) -> Result<()> {
-    transcript::append_text_role(store, pane, state, generation, "user", text, changes)
+    transcript::append_text_role(
+        store,
+        pane,
+        state,
+        generation,
+        "user",
+        transcript::TextChunk { text, message_id },
+        changes,
+    )
 }
 
 fn update_user(
@@ -28,6 +37,7 @@ fn update_user(
     generation: u32,
     state: &mut State,
     content: Value,
+    message_id: Option<&str>,
     changes: &mut Changes,
 ) -> Result<()> {
     // Ordinary turns already have the accepted user prompt in the journal.
@@ -41,25 +51,7 @@ fn update_user(
     let text = content["text"]
         .as_str()
         .ok_or_else(|| errors::invalid("Replay has no text"))?;
-    append_replayed_user(store, pane, state, generation, text, changes)
-}
-
-fn update_message(
-    store: &impl StorePort,
-    pane: &str,
-    generation: u32,
-    state: &mut State,
-    thought: bool,
-    content: &Value,
-    changes: &mut Changes,
-) -> Result<()> {
-    if content["type"] != "text" {
-        return Err(errors::invalid("This pane accepts text response blocks"));
-    }
-    let text = content["text"]
-        .as_str()
-        .ok_or_else(|| errors::invalid("Text response has no text"))?;
-    transcript::append_text(store, pane, state, generation, thought, text, changes)
+    append_replayed_user(store, pane, state, generation, text, message_id, changes)
 }
 
 fn update_tool(
@@ -292,7 +284,7 @@ pub fn update(
         let role = match &update {
             Update::Message { thought: true, .. } => "thought",
             Update::Message { .. } => "message",
-            Update::UserMessage(_) => "user",
+            Update::UserMessage { .. } => "user",
             _ => "other",
         };
         if state.replay_role.as_deref() != Some(role) {
@@ -301,12 +293,44 @@ pub fn update(
         }
     }
     let observed_turn_output = match update {
-        Update::UserMessage(content) => {
-            update_user(store, pane, generation, state, content, changes)?;
+        Update::UserMessage {
+            content,
+            message_id,
+        } => {
+            update_user(
+                store,
+                pane,
+                generation,
+                state,
+                content,
+                message_id.as_deref(),
+                changes,
+            )?;
             false
         }
-        Update::Message { thought, content } => {
-            update_message(store, pane, generation, state, thought, &content, changes)?;
+        Update::Message {
+            thought,
+            content,
+            message_id,
+        } => {
+            if content["type"] != "text" {
+                return Err(errors::invalid("This pane accepts text response blocks"));
+            }
+            let text = content["text"]
+                .as_str()
+                .ok_or_else(|| errors::invalid("Text response has no text"))?;
+            transcript::append_text(
+                store,
+                pane,
+                state,
+                generation,
+                thought,
+                transcript::TextChunk {
+                    text,
+                    message_id: message_id.as_deref(),
+                },
+                changes,
+            )?;
             true
         }
         Update::Tool { update, fields } => {

@@ -608,6 +608,7 @@ public final class EngineClient {
     if pane.mode == .agent {
       var view = agentPanes[pane.paneId] ?? AgentPaneView()
       view.queuePaused = pane.agent?.queuePaused ?? false
+      view.authMethods = pane.agent?.authMethods ?? []
       agentPanes[pane.paneId] = view
     }
     upsertWebPane(pane)

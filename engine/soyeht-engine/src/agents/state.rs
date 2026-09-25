@@ -95,6 +95,9 @@ pub struct State {
     pub client: Client,
     pub initialized: Option<Initialization>,
     pub phase: Phase,
+    /// A prompt-level auth failure survives native session reopen until sign-in or a valid turn.
+    #[serde(default)]
+    pub auth_required: bool,
     pub session_id: Option<String>,
     pub options: Options,
     pub permission: PermissionMode,
@@ -164,6 +167,7 @@ impl State {
             client: Client::default(),
             initialized: None,
             phase: Phase::Initializing,
+            auth_required: false,
             session_id: None,
             options: Options::default(),
             permission,
@@ -265,7 +269,7 @@ impl State {
             fingerprint: self.fingerprint.clone(),
             session_id: self.session_id.clone(),
             options: self.options.values.clone(),
-            auth_methods: if self.phase == Phase::NeedsLogin {
+            auth_methods: if self.auth_required || self.phase == Phase::NeedsLogin {
                 self.initialized
                     .as_ref()
                     .map(|value| {

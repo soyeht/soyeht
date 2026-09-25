@@ -153,17 +153,18 @@ fn persist_harness_readiness(
     state: &State,
     changes: &Changes,
 ) -> soyeht_store::database::Result<()> {
+    if let Some((status, reason)) = readiness_after_changes(state, changes) {
+        agents::save_harness_readiness(tx, &state.launch.id, status, reason, state.last_update_ms)?;
+    }
+    Ok(())
+}
+
+fn readiness_after_changes(
+    state: &State,
+    changes: &Changes,
+) -> Option<(HarnessSetupState, Option<HarnessSetupReason>)> {
     let has_event = |name: &str| changes.events.iter().any(|(event, _)| event == name);
-    let readiness = if has_event("pane.session_started") {
-        Some((HarnessSetupState::Ready, None))
-    } else if state.phase == state::Phase::NeedsLogin
-        && (has_event("pane.needs_login") || has_event("pane.auth_finished"))
-    {
-        Some((
-            HarnessSetupState::SignIn,
-            Some(HarnessSetupReason::AuthenticationRequired),
-        ))
-    } else if state.phase == state::Phase::Faulted {
+    if state.phase == state::Phase::Faulted {
         Some((
             HarnessSetupState::CheckSetup,
             Some(if state.initialized.is_some() {
@@ -172,13 +173,23 @@ fn persist_harness_readiness(
                 HarnessSetupReason::LaunchFailed
             }),
         ))
+    } else if state.auth_required
+        && (has_event("pane.session_started")
+            || has_event("pane.needs_login")
+            || has_event("pane.auth_finished"))
+    {
+        Some((
+            HarnessSetupState::SignIn,
+            Some(HarnessSetupReason::AuthenticationRequired),
+        ))
+    } else if has_event("pane.session_started")
+        || has_event("pane.auth_finished")
+        || has_event("pane.turn_ended")
+    {
+        Some((HarnessSetupState::Ready, None))
     } else {
         None
-    };
-    if let Some((status, reason)) = readiness {
-        agents::save_harness_readiness(tx, &state.launch.id, status, reason, state.last_update_ms)?;
     }
-    Ok(())
 }
 
 fn persist_agent_checkpoint(
@@ -456,5 +467,54 @@ impl Core {
             }
         }
         Ok(mutation)
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::{
+        Changes, readiness_after_changes,
+        state::{Phase, State},
+    };
+    use serde_json::json;
+    use soyeht_protocol::{HarnessLaunch, HarnessSetupReason, HarnessSetupState, PermissionMode};
+
+    #[test]
+    fn session_started_does_not_clear_a_prior_authentication_failure() {
+        let mut state = State::new(
+            HarnessLaunch {
+                id: "fake".into(),
+                name: "Fake".into(),
+                command: "/fake".into(),
+                args: vec![],
+                version: "1".into(),
+                environment: None,
+            },
+            "digest".into(),
+            PermissionMode::Ask,
+        )
+        .unwrap();
+        state.phase = Phase::Ready;
+        state.auth_required = true;
+        let started = Changes {
+            events: vec![("pane.session_started".into(), json!({}))],
+            ..Changes::default()
+        };
+        assert_eq!(
+            readiness_after_changes(&state, &started),
+            Some((
+                HarnessSetupState::SignIn,
+                Some(HarnessSetupReason::AuthenticationRequired)
+            ))
+        );
+        state.auth_required = false;
+        let authenticated = Changes {
+            events: vec![("pane.auth_finished".into(), json!({"ok":true}))],
+            ..Changes::default()
+        };
+        assert_eq!(
+            readiness_after_changes(&state, &authenticated),
+            Some((HarnessSetupState::Ready, None))
+        );
     }
 }

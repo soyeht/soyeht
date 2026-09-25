@@ -4,6 +4,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use soyeht_protocol::{TranscriptKind, TranscriptMessage, TranscriptRole, limits};
 use uuid::Uuid;
 
@@ -116,7 +117,7 @@ pub fn append_text(
     state: &mut State,
     generation: u32,
     thought: bool,
-    text: &str,
+    chunk: TextChunk<'_>,
     changes: &mut Changes,
 ) -> Result<()> {
     append_text_role(
@@ -125,9 +126,14 @@ pub fn append_text(
         state,
         generation,
         if thought { "thought" } else { "message" },
-        text,
+        chunk,
         changes,
     )
+}
+
+pub struct TextChunk<'a> {
+    pub text: &'a str,
+    pub message_id: Option<&'a str>,
 }
 
 pub fn append_text_role(
@@ -136,15 +142,22 @@ pub fn append_text_role(
     state: &mut State,
     generation: u32,
     key: &str,
-    mut text: &str,
+    chunk: TextChunk<'_>,
     changes: &mut Changes,
 ) -> Result<()> {
+    let mut text = chunk.text;
     // Native replay may include an empty response for a cancelled turn.
     // It is a role boundary, not an additional visible conversation message.
     if text.is_empty() {
         return Ok(());
     }
     let thought = key == "thought";
+    // ACP messageId identifies a message, not a text fragment. Hash the opaque ID
+    // to keep the checkpoint key bounded without exposing adapter identifiers.
+    let key = chunk.message_id.map_or_else(
+        || key.to_owned(),
+        |id| format!("{key}:{:x}", Sha256::digest(id.as_bytes())),
+    );
     let event_kind = if thought {
         "agent_thought_chunk"
     } else {
@@ -155,7 +168,7 @@ pub fn append_text_role(
     } else {
         TranscriptKind::Message
     };
-    let mut current = if let Some(seq) = state.open_messages.get(key) {
+    let mut current = if let Some(seq) = state.open_messages.get(&key) {
         message(store, pane, *seq)?
     } else {
         None
@@ -166,7 +179,7 @@ pub fn append_text_role(
             None => new_message(
                 state,
                 generation,
-                if key == "user" {
+                if key == "user" || key.starts_with("user:") {
                     TranscriptRole::User
                 } else {
                     TranscriptRole::Assistant
@@ -179,7 +192,9 @@ pub fn append_text_role(
         let original = item.text.len();
         item.text.push_str(text);
         if errors::json_bytes(&item)?.len() <= limits::TRANSCRIPT_MESSAGE_BYTES {
-            state.open_messages.insert(key.into(), sequence(&item.seq)?);
+            state
+                .open_messages
+                .insert(key.clone(), sequence(&item.seq)?);
             put(changes, pane, item, event_kind)?;
             return Ok(());
         }
@@ -209,7 +224,7 @@ pub fn append_text_role(
             return Err(errors::invalid("Message metadata exceeds its limit"));
         }
         put(changes, pane, item, event_kind)?;
-        state.open_messages.remove(key);
+        state.open_messages.remove(&key);
         text = &text[count..];
         if text.is_empty() {
             return Ok(());
@@ -226,9 +241,13 @@ pub fn complete(
     for (key, seq) in std::mem::take(&mut state.open_messages) {
         if let Some(mut item) = message(store, pane, seq)? {
             item.complete = true;
-            let kind = if key == "thought" {
+            let kind = if key == "thought" || key.starts_with("thought:") {
                 "agent_thought_chunk"
-            } else if key == "message" || key == "user" {
+            } else if key == "message"
+                || key.starts_with("message:")
+                || key == "user"
+                || key.starts_with("user:")
+            {
                 "agent_message_chunk"
             } else if key.starts_with("tool:") {
                 "tool_call_update"

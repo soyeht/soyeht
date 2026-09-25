@@ -116,12 +116,13 @@ fn valid_custom_launch(entry: &HarnessLaunch) -> bool {
             .is_none_or(valid_custom_environment)
 }
 
-fn pinned_package(value: &str) -> bool {
-    value.rsplit_once('@').is_some_and(|(name, version)| {
-        !name.is_empty() && !version.is_empty() && version != "latest"
-    }) || value
-        .rsplit_once("==")
-        .is_some_and(|(name, version)| !name.is_empty() && !version.is_empty())
+pub(super) fn pinned_package(value: &str) -> bool {
+    !value.starts_with('-')
+        && (value.rsplit_once('@').is_some_and(|(name, version)| {
+            !name.is_empty() && !version.is_empty() && version != "latest"
+        }) || value
+            .rsplit_once("==")
+            .is_some_and(|(name, version)| !name.is_empty() && !version.is_empty()))
 }
 
 fn valid_builtin_runner(entry: &HarnessLaunch) -> bool {
