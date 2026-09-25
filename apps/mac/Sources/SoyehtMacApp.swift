@@ -177,6 +177,7 @@ final class AgentAttentionNotifications {
     NSApp.dockTile.badgeLabel =
       summary.totalWaitingCount == 0
       ? nil : String(summary.totalWaitingCount)
+    NSApp.dockTile.display()
     let newRequests = cursor.newRequests(in: summary, connected: connected)
     guard settings.shouldPost(appIsActive: NSApp.isActive) else { return }
     for request in newRequests {
