@@ -2646,6 +2646,24 @@
     }
   },
   {
+    "name": "PermissionFileChange",
+    "type": "PermissionFileChange",
+    "value": {
+      "path": "/project/note.txt",
+      "oldText": "before\n",
+      "newText": "after\n"
+    }
+  },
+  {
+    "name": "PermissionPresentation",
+    "type": "PermissionPresentation",
+    "value": {
+      "targetPath": "/project/note.txt",
+      "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
+      "previewOmitted": false
+    }
+  },
+  {
     "name": "PermissionRequest",
     "type": "PermissionRequest",
     "value": {
@@ -2655,6 +2673,11 @@
       "promptId": "00000000-0000-4000-8000-000000000001",
       "title": "example",
       "detail": "example",
+      "presentation": {
+        "targetPath": "/project/note.txt",
+        "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
+        "previewOmitted": false
+      },
       "options": [
         {
           "optionId": "00000000-0000-4000-8000-000000000001",
@@ -3296,6 +3319,11 @@
       "promptId": "00000000-0000-4000-8000-000000000001",
       "title": "example",
       "detail": "example",
+      "presentation": {
+        "targetPath": "/project/note.txt",
+        "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
+        "previewOmitted": false
+      },
       "options": [
         {
           "optionId": "00000000-0000-4000-8000-000000000001",

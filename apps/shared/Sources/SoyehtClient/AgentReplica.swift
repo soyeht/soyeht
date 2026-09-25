@@ -257,7 +257,7 @@ extension EngineClient {
       agentPanes[event.paneId, default: AgentPaneView()].permission = PermissionRequest(
         requestId: event.requestId, paneId: event.paneId, generation: event.generation,
         promptId: event.promptId, title: event.title, detail: event.detail,
-        options: event.options, expiresAt: event.expiresAt)
+        presentation: event.presentation, options: event.options, expiresAt: event.expiresAt)
     case .panePermissionAnswered:
       let event = try params.decoded(PanePermissionAnsweredEvent.self)
       if agentPanes[event.paneId]?.permission?.requestId == event.requestId {

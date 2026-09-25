@@ -666,7 +666,23 @@ private struct PermissionCard: View {
     VStack(alignment: .leading, spacing: 9) {
       Label(request.title, systemImage: "shield.lefthalf.filled.badge.checkmark")
         .font(style.headingFont).foregroundStyle(style.warning)
-      Text(request.detail).font(style.monoFont).textSelection(.enabled)
+      if !request.detail.isEmpty {
+        Text(request.detail).font(style.bodyFont).foregroundStyle(style.secondary)
+          .textSelection(.enabled)
+      }
+      if let presentation = request.presentation {
+        if presentation.fileChanges.isEmpty, let path = presentation.targetPath {
+          Label(path, systemImage: "doc.text").font(style.monoSmallFont)
+            .foregroundStyle(style.secondary).textSelection(.enabled)
+        }
+        ForEach(Array(presentation.fileChanges.enumerated()), id: \.offset) { _, change in
+          PermissionFileChangeView(change: change, style: style)
+        }
+        if presentation.previewOmitted {
+          Text("Diff preview unavailable; inspect the file before allowing.")
+            .font(style.captionFont).foregroundStyle(style.warning)
+        }
+      }
       HStack {
         ForEach(request.options, id: \.optionId) { option in
           if option.kind == .allow_once {
@@ -683,6 +699,41 @@ private struct PermissionCard: View {
         AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
       )
       .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
+  }
+}
+
+private struct PermissionFileChangeView: View {
+  let change: PermissionFileChange
+  let style: AgentConversationStyle
+
+  private var preview: PermissionPreview { PermissionPreviewPolicy.preview(change) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Label(change.path, systemImage: "doc.text")
+        .font(style.monoSmallFont).foregroundStyle(style.secondary)
+        .textSelection(.enabled)
+      if preview.unavailable {
+        Text("Diff preview unavailable; inspect the file before allowing.")
+          .font(style.captionFont).foregroundStyle(style.warning)
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(preview.removed.enumerated()), id: \.offset) { _, line in
+              Text("− \(line)").foregroundStyle(style.danger)
+            }
+            ForEach(Array(preview.added.enumerated()), id: \.offset) { _, line in
+              Text("+ \(line)").foregroundStyle(style.success)
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 220)
+        .font(style.monoSmallFont)
+        .textSelection(.enabled)
+        .padding(8)
+        .background(style.well, in: RoundedRectangle(cornerRadius: 8))
+      }
+    }
   }
 }
 

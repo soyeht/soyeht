@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 0e7f3a1e75f7f76bf6a9e843b9431d030e02d7a375b31ea494945ee389b57899). Do not edit.
+// Generated from contracts/protocol.json (sha256 aae690e054d513e5ffa4aac9545fa5b2728a3eb1516f9c2678145a909d334012). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1450,6 +1450,24 @@ pub struct PermissionOption {
     pub name: String,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PermissionFileChange {
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "oldText", skip_serializing_if = "Option::is_none")]
+    pub old_text: Option<String>,
+    #[serde(rename = "newText")]
+    pub new_text: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PermissionPresentation {
+    #[serde(rename = "targetPath", skip_serializing_if = "Option::is_none")]
+    pub target_path: Option<String>,
+    #[serde(rename = "fileChanges")]
+    pub file_changes: Vec<PermissionFileChange>,
+    #[serde(rename = "previewOmitted")]
+    pub preview_omitted: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionRequest {
     #[serde(rename = "requestId")]
     pub request_id: Id,
@@ -1463,6 +1481,8 @@ pub struct PermissionRequest {
     pub title: String,
     #[serde(rename = "detail")]
     pub detail: String,
+    #[serde(rename = "presentation", skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<PermissionPresentation>,
     #[serde(rename = "options")]
     pub options: Vec<PermissionOption>,
     #[serde(rename = "expiresAt")]
@@ -2138,6 +2158,8 @@ pub struct PanePermissionRequestedEvent {
     pub title: String,
     #[serde(rename = "detail")]
     pub detail: String,
+    #[serde(rename = "presentation", skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<PermissionPresentation>,
     #[serde(rename = "options")]
     pub options: Vec<PermissionOption>,
     #[serde(rename = "expiresAt")]

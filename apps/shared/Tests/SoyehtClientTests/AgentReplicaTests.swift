@@ -95,9 +95,15 @@ import Testing
       PanePermissionRequestedEvent(
         eventId: "2", at: "2026-09-11T00:00:01Z", paneId: paneId,
         requestId: "request-1", generation: 1, promptId: "prompt-1", title: "Run",
-        detail: "Run the requested operation", options: [option],
+        detail: "Run the requested operation",
+        presentation: PermissionPresentation(
+          targetPath: "/project/note.txt",
+          fileChanges: [PermissionFileChange(path: "/project/note.txt", newText: "hello\n")],
+          previewOmitted: false), options: [option],
         expiresAt: "2026-09-11T00:30:01Z")))
   #expect(client.agentPanes[paneId]?.permission?.requestId == "request-1")
+  #expect(
+    client.agentPanes[paneId]?.permission?.presentation?.fileChanges.first?.newText == "hello\n")
 
   try client.applyAgentEvent(
     .paneQueuePaused,

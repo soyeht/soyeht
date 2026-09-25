@@ -2693,6 +2693,29 @@
       ],
       "additionalProperties": true
     },
+    "PermissionFileChange": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "oldText": { "type": "string" },
+        "newText": { "type": "string" }
+      },
+      "required": ["path", "newText"],
+      "additionalProperties": true
+    },
+    "PermissionPresentation": {
+      "type": "object",
+      "properties": {
+        "targetPath": { "type": "string" },
+        "fileChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PermissionFileChange" }
+        },
+        "previewOmitted": { "type": "boolean" }
+      },
+      "required": ["fileChanges", "previewOmitted"],
+      "additionalProperties": true
+    },
     "PermissionRequest": {
       "type": "object",
       "properties": {
@@ -2715,6 +2738,9 @@
         },
         "detail": {
           "type": "string"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PermissionPresentation"
         },
         "options": {
           "type": "array",
@@ -4200,6 +4226,9 @@
         },
         "detail": {
           "type": "string"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PermissionPresentation"
         },
         "options": {
           "type": "array",

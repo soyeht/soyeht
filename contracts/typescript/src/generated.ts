@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 0e7f3a1e75f7f76bf6a9e843b9431d030e02d7a375b31ea494945ee389b57899). Do not edit.
+// Generated from contracts/protocol.json (sha256 aae690e054d513e5ffa4aac9545fa5b2728a3eb1516f9c2678145a909d334012). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -781,6 +781,18 @@ export interface PermissionOption {
   "name": string;
 }
 
+export interface PermissionFileChange {
+  "path": string;
+  "oldText"?: string;
+  "newText": string;
+}
+
+export interface PermissionPresentation {
+  "targetPath"?: string;
+  "fileChanges": Array<PermissionFileChange>;
+  "previewOmitted": boolean;
+}
+
 export interface PermissionRequest {
   "requestId": Id;
   "paneId": Id;
@@ -788,6 +800,7 @@ export interface PermissionRequest {
   "promptId": Id;
   "title": string;
   "detail": string;
+  "presentation"?: PermissionPresentation;
   "options": Array<PermissionOption>;
   "expiresAt": string;
   "kind"?: PermissionRequestKind;
@@ -1214,6 +1227,7 @@ export interface PanePermissionRequestedEvent {
   "promptId": Id;
   "title": string;
   "detail": string;
+  "presentation"?: PermissionPresentation;
   "options": Array<PermissionOption>;
   "expiresAt": string;
   "kind"?: PermissionRequestKind;

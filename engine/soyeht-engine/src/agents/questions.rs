@@ -8,12 +8,16 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
-    PaneState, PermissionMode, PermissionOption, PermissionOptionKind, Role, limits,
+    PaneState, PermissionFileChange, PermissionMode, PermissionOption, PermissionOptionKind,
+    PermissionPresentation, Role, limits,
 };
 use soyeht_store::agents::NativeRequest;
 use uuid::Uuid;
 
 pub const QUESTION_TIMEOUT_MS: i64 = limits::PERMISSION_TIMEOUT_SEC as i64 * 1_000;
+const MAX_PRESENTATION_PATH_CHARS: usize = 4096;
+const MAX_PRESENTATION_CHANGES: usize = 8;
+const MAX_PRESENTATION_DIFF_BYTES: usize = 64 * 1024;
 
 pub struct Incoming<'a> {
     pub source_seq: u64,
@@ -41,6 +45,51 @@ fn bounded(text: &str, maximum: usize) -> Result<String> {
         return Err(invalid("Native question exceeds public protocol bounds"));
     }
     Ok(text.into())
+}
+
+fn permission_presentation(tool: &Value) -> PermissionPresentation {
+    let target_path = tool["locations"]
+        .as_array()
+        .and_then(|locations| locations.iter().find_map(|item| item["path"].as_str()))
+        .filter(|path| path.chars().count() <= MAX_PRESENTATION_PATH_CHARS)
+        .map(str::to_owned);
+    let mut file_changes = Vec::new();
+    let mut preview_omitted = false;
+    let mut preview_bytes = 0;
+    for item in tool["content"].as_array().into_iter().flatten() {
+        if item["type"] != "diff" {
+            continue;
+        }
+        let Some(path) = item["path"].as_str() else {
+            preview_omitted = true;
+            continue;
+        };
+        let Some(new_text) = item["newText"].as_str() else {
+            preview_omitted = true;
+            continue;
+        };
+        let old_text = item["oldText"].as_str();
+        preview_bytes += path.len() + new_text.len() + old_text.map_or(0, str::len);
+        if file_changes.len() >= MAX_PRESENTATION_CHANGES
+            || path.chars().count() > MAX_PRESENTATION_PATH_CHARS
+            || preview_bytes > MAX_PRESENTATION_DIFF_BYTES
+        {
+            // An incomplete diff must never look like a complete approval preview.
+            file_changes.clear();
+            preview_omitted = true;
+            break;
+        }
+        file_changes.push(PermissionFileChange {
+            path: path.into(),
+            old_text: old_text.map(str::to_owned),
+            new_text: new_text.into(),
+        });
+    }
+    PermissionPresentation {
+        target_path: target_path.or_else(|| file_changes.first().map(|change| change.path.clone())),
+        file_changes,
+        preview_omitted,
+    }
 }
 
 fn public_question(
@@ -82,15 +131,25 @@ fn public_question(
                 _ => true,
             })
             .collect();
-        public["title"] = json!(bounded(
-            params["toolCall"]["title"]
+        let metadata = &params["_meta"]["permission"];
+        let title = if metadata["version"] == 1 {
+            metadata["title"].as_str()
+        } else {
+            None
+        }
+        .or_else(|| params["toolCall"]["title"].as_str())
+        .unwrap_or("Permission required");
+        public["title"] = json!(bounded(title, 512)?);
+        public["detail"] = json!(if metadata["version"] == 1 {
+            metadata["description"]
                 .as_str()
-                .unwrap_or("Permission required"),
-            512
-        )?);
-        let detail = serde_json::to_string(&params["toolCall"])
-            .map_err(|_| errors::internal("Permission detail serialization failed"))?;
-        public["detail"] = json!(bounded(&detail, 64 * 1024)?);
+                .filter(|text| text.chars().count() <= 512)
+                .unwrap_or("")
+        } else {
+            ""
+        });
+        public["presentation"] = serde_json::to_value(permission_presentation(&params["toolCall"]))
+            .map_err(|_| errors::internal("Permission presentation serialization failed"))?;
         public["options"] = json!(public_options);
         "pane.permission_requested"
     } else {
@@ -454,5 +513,53 @@ impl Core {
                 result,
             )?
             .result)
+    }
+}
+
+#[cfg(test)]
+mod presentation_tests {
+    use super::*;
+
+    #[test]
+    fn permission_exposes_typed_diff_without_raw_tool_input() {
+        let params = json!({
+            "toolCall": {
+                "toolCallId": "private-id", "title": "Write note.txt", "kind": "edit",
+                "rawInput": {"token": "private-token"},
+                "locations": [{"path": "/project/note.txt"}],
+                "content": [{"type": "diff", "path": "/project/note.txt",
+                    "oldText": "before\n", "newText": "after\n"}]
+            },
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+            "_meta": {"permission": {"version": 1, "title": "Write note.txt",
+                "description": "Review this edit"}}
+        });
+        let (public, event) = public_question("session/request_permission", &params, json!({}))
+            .expect("valid permission");
+        assert_eq!(event, "pane.permission_requested");
+        assert_eq!(public["title"], "Write note.txt");
+        assert_eq!(public["detail"], "Review this edit");
+        assert_eq!(public["presentation"]["targetPath"], "/project/note.txt");
+        assert_eq!(
+            public["presentation"]["fileChanges"][0]["oldText"],
+            "before\n"
+        );
+        assert_eq!(
+            public["presentation"]["fileChanges"][0]["newText"],
+            "after\n"
+        );
+        let encoded = public.to_string();
+        assert!(!encoded.contains("private-token"));
+        assert!(!encoded.contains("private-id"));
+        assert!(!encoded.contains("rawInput"));
+    }
+
+    #[test]
+    fn large_diff_is_not_presented_as_a_complete_preview() {
+        let tool = json!({"content": [{"type": "diff", "path": "/project/large.txt",
+            "newText": "x".repeat(65_537)}]});
+        let presentation = permission_presentation(&tool);
+        assert!(presentation.preview_omitted);
+        assert!(presentation.file_changes.is_empty());
     }
 }
