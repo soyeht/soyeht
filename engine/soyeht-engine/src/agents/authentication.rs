@@ -43,7 +43,7 @@ impl Core {
     pub fn agent_auth_start(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let id = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(id)?;
-        if state.phase != Phase::NeedsLogin {
+        if !state.auth_required && state.phase != Phase::NeedsLogin {
             return Err(errors::invalid("Sign-in is not required for this pane"));
         }
         if let Some(pane) = state.login_pane_id.as_ref().filter(|pane| {
@@ -175,6 +175,7 @@ impl Core {
                 .find(|i| i.spawn.instance_key == child.instance_key)
                 .is_some_and(|i| i.exit_code == Some(0));
         state.login_pane_id = None;
+        state.auth_required = !success;
         state.phase = if success {
             Phase::RestartAfterProbe
         } else {

@@ -105,6 +105,7 @@ fn open(
 
 fn needs_login(state: &mut State, saved: &mut StoredPane, changes: &mut Changes) {
     state.phase = Phase::NeedsLogin;
+    state.auth_required = true;
     state.probe_started_ms = None;
     saved.pane.state = PaneState::Starting;
     saved.pane.phrase = "Sign-in required".into();
@@ -232,6 +233,23 @@ fn clean_agent_error(message: &str) -> String {
         .to_owned()
 }
 
+fn assistant_already_reported_error(
+    store: &impl StorePort,
+    pane: &str,
+    state: &State,
+    error: &str,
+) -> Result<bool> {
+    for (key, seq) in &state.open_messages {
+        if (key == "message" || key.starts_with("message:"))
+            && let Some(message) = transcript::message(store, pane, *seq)?
+            && message.text.trim() == error
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn selected_model(state: &State) -> Option<&str> {
     state
         .options
@@ -274,6 +292,7 @@ fn auth_response(
     result: NativeResult,
 ) {
     let ok = result.is_ok();
+    state.auth_required = !ok;
     state.phase = if ok {
         Phase::RestartAfterProbe
     } else {
@@ -571,14 +590,18 @@ fn prompt_response(
             } else {
                 format!("Agent error: {clean}")
             };
-            changes.messages.push(transcript::new_message(
-                state,
-                saved.pane.generation,
-                TranscriptRole::System,
-                TranscriptKind::System,
-                text,
-                true,
-            )?);
+            // Some adapters emit the error as an assistant chunk before returning
+            // the same typed RPC error. Keep one visible copy for this turn.
+            if !assistant_already_reported_error(store, &saved.pane.pane_id, state, &clean)? {
+                changes.messages.push(transcript::new_message(
+                    state,
+                    saved.pane.generation,
+                    TranscriptRole::System,
+                    TranscriptKind::System,
+                    text,
+                    true,
+                )?);
+            }
             "error".into()
         }
     };
@@ -615,6 +638,9 @@ fn prompt_response(
     state.active_silent_since_ms = None;
     state.cancel_at_ms = None;
     state.has_finished_turn = true;
+    if !matches!(reason.as_str(), "error" | "cancelled") {
+        state.auth_required = false;
+    }
     saved.pane.state = PaneState::Idle;
     saved.pane.phrase = "Agent turn ended".into();
     changes.events.push((

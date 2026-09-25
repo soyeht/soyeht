@@ -2950,7 +2950,12 @@ private struct PaneCard: View {
   #endif
 
   private var paneStatusText: String {
-    pane.state.rawValue.replacingOccurrences(of: "_", with: " ")
+    guard pane.mode == .agent else {
+      return pane.state.rawValue.replacingOccurrences(of: "_", with: " ")
+    }
+    return AgentPaneStatusPresentation.title(
+      state: pane.state, needsAuthentication: pane.agent?.authMethods.isEmpty == false,
+      hasSession: pane.agent?.sessionId != nil)
   }
 
   private var headerActionCount: Int {

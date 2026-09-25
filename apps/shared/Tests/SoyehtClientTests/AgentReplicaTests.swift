@@ -4,6 +4,22 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func agentStatusShowsSignInInsteadOfStartingWhenAuthenticationIsRequired() {
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .starting, needsAuthentication: true, hasSession: true) == "Sign in")
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .starting, needsAuthentication: false, hasSession: false)
+      == "starting")
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .starting, needsAuthentication: false, hasSession: true) == "ready")
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .idle, needsAuthentication: false, hasSession: true) == "idle")
+}
+
 @Test func visibleAgentTranscriptHydrationIncludesNewlyShownPaneWithoutDuplicates() {
   func pane(_ id: String, mode: PaneMode, workspaceId: String = "workspace") -> Pane {
     Pane(

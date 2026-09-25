@@ -3073,6 +3073,10 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     let signed_in = client.call("harness.list", json!({}));
     assert_eq!(signed_in["items"][0]["setupState"], "ready");
     assert!(signed_in["items"][0]["lastReadyAtMs"].is_string());
+    let resumed = client.pane(&pane);
+    assert_eq!(resumed["paneId"], pane);
+    assert_eq!(resumed["state"], "starting");
+    assert_eq!(resumed["agent"]["authMethods"], json!([]));
     let models = client.call("model.list", json!({"harness":"auth-test","paneId":pane}));
     assert_eq!(models["source"], "native_session");
     assert_eq!(models["items"].as_array().unwrap().len(), 4);
@@ -3090,7 +3094,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
 
 #[test]
 fn prompt_auth_required_downgrades_a_previously_ready_harness_without_guessing_from_text() {
-    let rig = Rig::new();
+    let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();
     let ready = client.call("harness.list", json!({}));
     assert_eq!(ready["items"][0]["setupState"], "ready");
@@ -3115,6 +3119,96 @@ fn prompt_auth_required_downgrades_a_previously_ready_harness_without_guessing_f
         "authentication_required"
     );
     assert_eq!(signed_out["items"][0]["lastReadyAtMs"], last_ready);
+    assert!(
+        !client.pane(&pane)["agent"]["authMethods"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    assert_eq!(
+        restored.call("harness.list", json!({}))["items"][0]["setupState"],
+        "sign_in"
+    );
+    assert!(
+        !restored.pane(&pane)["agent"]["authMethods"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn acp_message_ids_keep_distinct_assistant_blocks_separate() {
+    fn assistant_texts(client: &mut Client, pane: &str) -> Vec<String> {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["role"] == "assistant" && item["kind"] == "message")
+            .map(|item| item["text"].as_str().unwrap().to_owned())
+            .collect()
+    }
+    let expected = [
+        "Failed to authenticate: OAuth session expired",
+        "No response requested.",
+    ];
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"separate-message-ids","idempotencyKey":"distinct-message-ids"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Agent turn ended" {
+        assert!(Instant::now() < deadline, "agent turn did not finish");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(assistant_texts(&mut client, &pane), expected);
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    assert_eq!(assistant_texts(&mut restored, &pane), expected);
+}
+
+#[test]
+fn typed_auth_error_already_streamed_by_adapter_appears_once() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"auth-expired-with-chunk","idempotencyKey":"auth-streamed-once"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Sign-in required" {
+        assert!(
+            Instant::now() < deadline,
+            "auth error did not reach the pane"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+    let errors = transcript["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| {
+            item["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("Failed to authenticate"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["role"], "assistant");
+    assert_eq!(
+        client.call("harness.list", json!({}))["items"][0]["setupState"],
+        "sign_in"
+    );
 }
 
 #[test]

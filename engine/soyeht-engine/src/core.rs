@@ -180,7 +180,11 @@ impl Core {
             .agent_runtime(pane)
             .map_err(errors::storage)?
             .ok_or_else(|| errors::internal("Agent pane has no checkpoint"))?;
-        if state.ensure_binding()? {
+        // Older checkpoints encoded sign-in solely in the phase.
+        let repaired_auth =
+            state.phase == crate::agents::state::Phase::NeedsLogin && !state.auth_required;
+        state.auth_required |= repaired_auth;
+        if state.ensure_binding()? || repaired_auth {
             StorePort::mutate(
                 &mut self.store,
                 "engine-agent",

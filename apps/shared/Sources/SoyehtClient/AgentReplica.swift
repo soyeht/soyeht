@@ -1,6 +1,16 @@
 import Foundation
 import SoyehtProtocol
 
+public enum AgentPaneStatusPresentation {
+  public static func title(
+    state: PaneState, needsAuthentication: Bool, hasSession: Bool
+  ) -> String {
+    if needsAuthentication { return "Sign in" }
+    if state == .starting && hasSession { return "ready" }
+    return state.rawValue.replacingOccurrences(of: "_", with: " ")
+  }
+}
+
 public struct AgentPaneView: Sendable {
   public var messages: [TranscriptMessage] = []
   public var permission: PermissionRequest?

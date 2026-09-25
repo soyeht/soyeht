@@ -329,6 +329,18 @@ fn execute_turn(
     text: &str,
     cancelled: &AtomicBool,
 ) -> String {
+    if text == "separate-message-ids" {
+        for (id, chunk) in [
+            ("first", "Failed to authenticate: OAuth session expired"),
+            ("second", "No response requested."),
+        ] {
+            runtime.update(
+                session,
+                json!({"sessionUpdate":"agent_message_chunk","messageId":id,"content":{"type":"text","text":chunk}}),
+            );
+        }
+        return "Failed to authenticate: OAuth session expired\n\nNo response requested.".into();
+    }
     if let Some(output) = review_turn(text) {
         emit(runtime, session, &output);
         return output;

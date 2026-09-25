@@ -354,6 +354,10 @@ private struct AgentWell: ViewModifier {
       Label("Sign in to continue", systemImage: "person.badge.key")
         .font(style.headingFont).foregroundStyle(style.warning)
       #if os(macOS)
+        if view.authMethods.contains(where: \.terminal) {
+          Text("Choose a method to open its sign-in terminal. Enter credentials there.")
+            .font(style.captionFont).foregroundStyle(style.secondary)
+        }
         ForEach(view.authMethods, id: \.id) { method in
           Button {
             client.startAgentAuthentication(paneId, methodId: method.id)
