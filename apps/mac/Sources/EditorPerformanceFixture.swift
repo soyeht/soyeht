@@ -124,6 +124,7 @@
       private var pageStatusLabel: NSTextField?
       private var scrollButton: NSButton?
       private var scrollSample = 0
+      private var scrollDiagnostics: [String] = []
 
       init(options: Options) {
         self.options = options
@@ -369,6 +370,11 @@
         if let data = String(describing: error).data(using: .utf8) {
           try? data.write(to: options.report.appendingPathExtension("error"), options: .atomic)
         }
+        let diagnostic = scrollDiagnostics.joined(separator: "\n")
+        if let data = diagnostic.data(using: .utf8) {
+          try? data.write(
+            to: options.report.appendingPathExtension("diagnostic"), options: .atomic)
+        }
       }
 
       private func measureKeys() throws {
@@ -454,8 +460,8 @@
           + "point=\(event.locationInWindow) hit=\(hitPath) "
           + "clipY=\(clip.bounds.minY) clipHeight=\(clip.bounds.height) "
           + "documentHeight=\(documentHeight) textHeight=\(textView.frame.height) "
-          + "textMinHeight=\(textView.minSize.height)\n"
-        FileHandle.standardError.write(Data(line.utf8))
+          + "textMinHeight=\(textView.minSize.height)"
+        scrollDiagnostics.append(line)
       }
 
       private func endScrollEvent() {
