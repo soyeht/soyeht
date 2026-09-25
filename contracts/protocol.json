@@ -4571,7 +4571,8 @@
     "AgentMessageUpdateKind": {
       "type": "string",
       "enum": [
-        "agent_message_chunk"
+        "agent_message_chunk",
+        "system_message"
       ]
     },
     "AgentMessageUpdate": {

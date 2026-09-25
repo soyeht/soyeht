@@ -145,6 +145,25 @@ import Testing
   #expect(client.agentPanes[paneId]?.authMethods.isEmpty == true)
 }
 
+@MainActor @Test func rejectedPermissionAppearsAsSystemMessageInPane() throws {
+  let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
+  let paneId = "pane-agent"
+  try client.applyAgentEvent(
+    .paneUpdate,
+    .encoded(
+      PaneUpdateEvent.v0(
+        AgentMessageUpdate(
+          eventId: "1", at: "2026-09-25T00:00:00Z", paneId: paneId,
+          kind: .system_message, generation: 1, seq: "1", localId: "blocked-request",
+          text:
+            "Soyeht blocked this permission request: no command to display. Nothing was approved.",
+          complete: true))))
+  let message = try #require(client.agentPanes[paneId]?.messages.first)
+  #expect(message.role == .system)
+  #expect(message.kind == .system)
+  #expect(message.text.contains("Nothing was approved"))
+}
+
 @Test func remoteFailuresHideWireMethodAndKindFromPeople() {
   let failure = ClientFailure.remote(
     "pane_busy", "This pane is not waiting for sign-in")

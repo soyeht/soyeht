@@ -341,7 +341,9 @@ extension EngineClient {
         value.paneId,
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .message, text: value.text, complete: value.complete)
+          role: value.kind == .system_message ? .system : .assistant,
+          kind: value.kind == .system_message ? .system : .message,
+          text: value.text, complete: value.complete)
       )
     case .v1(let value):
       return (

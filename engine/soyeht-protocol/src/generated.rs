@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 fbe975fe7bc27f1bf7c42c96639684a93abf665edcc0143d110fc40f2220bab0). Do not edit.
+// Generated from contracts/protocol.json (sha256 575f970f590876a0567458ed0ed29a93577e81f9974b930c2f70c832b9c8e2c6). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -2316,6 +2316,8 @@ pub struct PaneAuthFinishedEvent {
 pub enum AgentMessageUpdateKind {
     #[serde(rename = "agent_message_chunk")]
     AgentMessageChunk,
+    #[serde(rename = "system_message")]
+    SystemMessage,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentMessageUpdate {
