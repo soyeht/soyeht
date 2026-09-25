@@ -35,7 +35,18 @@ fn terminal_auth_argv(
             }
         },
         Some("uvx") => match launch.args.first() {
-            Some(package) if registry::pinned_package(package) => vec![package.clone()],
+            Some(package) if registry::pinned_package(package) => match Path::new(&launch.command)
+                .file_name()
+                .and_then(|name| name.to_str())
+            {
+                Some("uvx") => vec![package.clone()],
+                Some("uv") => vec!["tool".into(), "run".into(), package.clone()],
+                _ => {
+                    return Err(errors::invalid(
+                        "Terminal sign-in requires a recognized uv runner",
+                    ));
+                }
+            },
             _ => {
                 return Err(errors::invalid(
                     "Terminal sign-in requires a version-pinned harness package",
@@ -308,12 +319,34 @@ mod tests {
     fn uvx_authentication_keeps_the_launch_package_before_method_args() {
         let package = "fast-agent-acp==0.10.1";
         let argv = terminal_auth_argv(
+            &launch("/usr/local/bin/uvx", &[package, "--acp"]),
+            "uvx",
+            vec!["--package".into(), "evil".into()],
+        )
+        .unwrap();
+        assert_eq!(argv, ["/usr/local/bin/uvx", package, "--package", "evil"]);
+    }
+
+    #[test]
+    fn uvx_resolved_to_uv_uses_tool_run_before_the_pinned_package() {
+        let package = "fast-agent-acp==0.10.1";
+        let argv = terminal_auth_argv(
             &launch("/usr/local/bin/uv", &[package, "--acp"]),
             "uvx",
             vec!["--package".into(), "evil".into()],
         )
         .unwrap();
-        assert_eq!(argv, ["/usr/local/bin/uv", package, "--package", "evil"]);
+        assert_eq!(
+            argv,
+            [
+                "/usr/local/bin/uv",
+                "tool",
+                "run",
+                package,
+                "--package",
+                "evil"
+            ]
+        );
     }
 
     #[test]
@@ -325,8 +358,8 @@ mod tests {
                 "npx",
                 vec!["--yes", "--package=evil@1"],
             ),
-            ("/usr/local/bin/uv", "uvx", vec!["--acp"]),
-            ("/usr/local/bin/uv", "uvx", vec!["--from=evil==1"]),
+            ("/usr/local/bin/uvx", "uvx", vec!["--acp"]),
+            ("/usr/local/bin/uvx", "uvx", vec!["--from=evil==1"]),
         ] {
             assert!(
                 terminal_auth_argv(&launch(command, &args), original, vec!["login".into()])
