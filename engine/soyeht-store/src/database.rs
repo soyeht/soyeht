@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 25;
+pub const SCHEMA_VERSION: u32 = 26;
 
 #[derive(Debug)]
 pub enum Error {
@@ -271,6 +271,21 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
     if version < 25 {
         tx.execute_batch(include_str!("../migrations/025-agent-message-rate.sql"))?;
     }
+    if version < 26 {
+        tx.execute_batch(include_str!("../migrations/026-harness-readiness.sql"))?;
+    }
+    Ok(())
+}
+
+fn backup_before_migration(connection: &Connection, directory: &Path) -> Result<()> {
+    let backups = directory.join("backups");
+    fs::create_dir_all(&backups)?;
+    fs::set_permissions(&backups, fs::Permissions::from_mode(0o700))?;
+    let backup = backups.join(format!("before-v{SCHEMA_VERSION}-{}.db", Uuid::new_v4()));
+    connection.backup("main", &backup, None)?;
+    fs::set_permissions(&backup, fs::Permissions::from_mode(0o600))?;
+    fs::File::open(backup)?.sync_all()?;
+    fs::File::open(backups)?.sync_all()?;
     Ok(())
 }
 
@@ -293,15 +308,7 @@ impl Store {
         connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA wal_autocheckpoint=1000;")?;
         if version < SCHEMA_VERSION {
             if existed {
-                let backups = directory.join("backups");
-                fs::create_dir_all(&backups)?;
-                fs::set_permissions(&backups, fs::Permissions::from_mode(0o700))?;
-                let backup =
-                    backups.join(format!("before-v{SCHEMA_VERSION}-{}.db", Uuid::new_v4()));
-                connection.backup("main", &backup, None)?;
-                fs::set_permissions(&backup, fs::Permissions::from_mode(0o600))?;
-                fs::File::open(backup)?.sync_all()?;
-                fs::File::open(backups)?.sync_all()?;
+                backup_before_migration(&connection, directory)?;
             }
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             if version < 1 {

@@ -420,13 +420,16 @@ pub(crate) fn resolve_entry(mut entry: RegistryEntry) -> Option<HarnessLaunch> {
     Some(entry.launch)
 }
 
-pub(crate) fn locally_installed(entry: &RegistryEntry, known_session: bool) -> bool {
-    if known_session {
-        return true;
-    }
+// A registry package runner is locally owned only after a companion command is
+// found or an ACP session previously opened. The runner alone is launchable,
+// but its package remains unverified until the user explicitly starts it.
+pub(crate) fn locally_installed(entry: &RegistryEntry, previous_success: bool) -> bool {
     if matches!(entry.source, HarnessSource::Custom)
         || !matches!(entry.launch.command.as_str(), "npx" | "uvx")
     {
+        return resolve_entry(entry.clone()).is_some();
+    }
+    if previous_success {
         return resolve_entry(entry.clone()).is_some();
     }
     let directories = super::environment::candidate_directories(&entry.recipe_directories);
@@ -573,7 +576,6 @@ mod tests {
         let mut unowned = runner.clone();
         unowned.local_commands.clear();
         assert!(!locally_installed(&unowned, false));
-        assert!(locally_installed(&unowned, true));
     }
 
     #[test]

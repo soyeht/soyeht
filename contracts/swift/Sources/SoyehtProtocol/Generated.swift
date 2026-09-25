@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
+// Generated from contracts/protocol.json (sha256 0e7f3a1e75f7f76bf6a9e843b9431d030e02d7a375b31ea494945ee389b57899). Do not edit.
 import Foundation
 
 
@@ -1737,7 +1737,9 @@ public struct HarnessInfo: Codable, Sendable {
     public var `authMethods`: [AuthMethod]
     public var `source`: HarnessSource?
     public var `setupState`: HarnessSetupState?
-    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil) {
+    public var `setupReason`: HarnessSetupReason?
+    public var `lastReadyAtMs`: Decimal?
+    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil, `setupReason`: HarnessSetupReason? = nil, `lastReadyAtMs`: Decimal? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`available` = `available`
@@ -1749,6 +1751,8 @@ public struct HarnessInfo: Codable, Sendable {
         self.`authMethods` = `authMethods`
         self.`source` = `source`
         self.`setupState` = `setupState`
+        self.`setupReason` = `setupReason`
+        self.`lastReadyAtMs` = `lastReadyAtMs`
     }
 }
 
@@ -5896,9 +5900,20 @@ public enum HarnessSource: String, Codable, Sendable {
 
 public enum HarnessSetupState: String, Codable, Sendable {
     case `ready` = "ready"
+    case `not_checked` = "not_checked"
     case `not_installed` = "not_installed"
     case `sign_in` = "sign_in"
     case `check_setup` = "check_setup"
+}
+
+public enum HarnessSetupReason: String, Codable, Sendable {
+    case `never_started` = "never_started"
+    case `executable_missing` = "executable_missing"
+    case `registry_package_unverified` = "registry_package_unverified"
+    case `authentication_required` = "authentication_required"
+    case `session_failed` = "session_failed"
+    case `launch_failed` = "launch_failed"
+    case `environment_unavailable` = "environment_unavailable"
 }
 
 public enum HarnessEnvironmentIssue: String, Codable, Sendable {

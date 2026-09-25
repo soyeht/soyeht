@@ -5,11 +5,14 @@ use crate::{
 };
 use serde_json::{Value, json};
 
+pub const PREFERRED_HARNESS_KEY: &str = "harness.preferredId";
+
 fn default_value(key: &str) -> Result<Value> {
     match key {
         "record.default" => Ok(json!(true)),
         "terminal.defaultCols" => Ok(json!(80)),
         "terminal.defaultRows" => Ok(json!(24)),
+        PREFERRED_HARNESS_KEY => Ok(json!("")),
         _ => Err(errors::invalid("Unknown setting")),
     }
 }
@@ -32,6 +35,10 @@ impl Core {
         let default = default_value(key)?;
         if (default.is_boolean() && !value.is_boolean())
             || (default.is_number() && !value.as_u64().is_some_and(|n| (1..=1000).contains(&n)))
+            || (default.is_string()
+                && !value
+                    .as_str()
+                    .is_some_and(|id| id.len() <= 128 && !id.contains('\0')))
         {
             return Err(errors::invalid("Invalid setting value"));
         }

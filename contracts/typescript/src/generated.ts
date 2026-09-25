@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
+// Generated from contracts/protocol.json (sha256 0e7f3a1e75f7f76bf6a9e843b9431d030e02d7a375b31ea494945ee389b57899). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -855,6 +855,8 @@ export interface HarnessInfo {
   "authMethods": Array<AuthMethod>;
   "source"?: HarnessSource;
   "setupState"?: HarnessSetupState;
+  "setupReason"?: HarnessSetupReason;
+  "lastReadyAtMs"?: Decimal;
 }
 
 export interface ModelRefusal {
@@ -2984,7 +2986,9 @@ export interface WritingChangedEvent {
 
 export type HarnessSource = "built_in" | "custom";
 
-export type HarnessSetupState = "ready" | "not_installed" | "sign_in" | "check_setup";
+export type HarnessSetupState = "ready" | "not_checked" | "not_installed" | "sign_in" | "check_setup";
+
+export type HarnessSetupReason = "never_started" | "executable_missing" | "registry_package_unverified" | "authentication_required" | "session_failed" | "launch_failed" | "environment_unavailable";
 
 export type HarnessEnvironmentIssue = "missing_shell" | "unsupported_shell" | "unavailable_shell" | "probe_failed" | "probe_timed_out" | "output_too_large" | "invalid_output";
 

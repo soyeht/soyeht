@@ -216,6 +216,7 @@ extension EngineClient {
       let event = try params.decoded(PaneSessionStartedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = nil
       refreshAgent(event.paneId, replacing: true)
+      refreshHarnesses()
     case .paneTurnEnded:
       let event = try params.decoded(PaneTurnEndedEvent.self)
       refreshAgent(event.paneId, replacing: false)
@@ -225,6 +226,7 @@ extension EngineClient {
     case .paneNeedsLogin:
       let event = try params.decoded(PaneNeedsLoginEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].authMethods = event.authMethods
+      refreshHarnesses()
     case .paneAuthFinished:
       let event = try params.decoded(PaneAuthFinishedEvent.self)
       if event.ok {
@@ -232,6 +234,7 @@ extension EngineClient {
       } else {
         agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
       }
+      refreshHarnesses()
     case .paneConfigFailed:
       let event = try params.decoded(PaneConfigFailedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason

@@ -14,6 +14,7 @@ public final class EngineClient {
   public internal(set) var harnessLoadCount = 0
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
+  public private(set) var preferredHarnessId: String?
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public internal(set) var agentCatalogueLoadCounts: [String: Int] = [:]
   public internal(set) var tasks: [TaskRecord] = []
@@ -239,6 +240,7 @@ public final class EngineClient {
     connectionActor = Actor(
       role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
     _ = try await request("state.snapshot", .object([:]))
+    try await loadPreferredHarness()
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
     try await loadUsage()
     if !readOnly { try await loadLocalServers() }
@@ -465,9 +467,7 @@ public final class EngineClient {
       upsertWorkspace(workspace)
       synchronizePaneLayout(workspace)
     case .workspaceClosed:
-      let workspaceId = params["workspaceId"].string
-      workspaces.removeAll { $0.workspaceId == workspaceId }
-      if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
+      applyWorkspaceClosed(params)
     case .streamReplayStart:
       if let replay = try terminalStreams.start(params.decoded(StreamReplayStartEvent.self)),
         replay.reset
@@ -498,12 +498,44 @@ public final class EngineClient {
       try applyEditorEvent(eventName, params)
     case .serversLocalChanged, .webNavigated, .webConsoleCounts, .webAgentDriving:
       try applyWebEvent(eventName, params)
+    case .settingsChanged:
+      try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
-      .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
+      .ptydReconnected, .ptydLost, .paneConfigChanging,
       .paneConfigChanged:
       break
     case .writingChanged: try applyWritingEvent(params)
     }
+  }
+  private func applyWorkspaceClosed(_ params: JsonValue) {
+    let workspaceId = params["workspaceId"].string
+    workspaces.removeAll { $0.workspaceId == workspaceId }
+    if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
+  }
+  private func loadPreferredHarness() async throws {
+    let result = try await request(
+      "settings.get", .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
+    ).decoded(SettingsGetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  public func setPreferredHarness(_ harnessId: String) async throws {
+    guard !readOnly else {
+      throw ClientFailure.remote(
+        ErrorKind.forbidden_role.rawValue, "Only the Mac can change the preferred agent.")
+    }
+    let result = try await mutation(
+      "settings.set",
+      SettingsSetParams(
+        key: HarnessPickerModel.preferredHarnessKey, value: .string(harnessId),
+        idempotencyKey: UUID().uuidString)
+    ).decoded(SettingsSetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  func applySettingsChanged(_ event: SettingsChangedEvent) {
+    guard event.key == HarnessPickerModel.preferredHarnessKey else { return }
+    preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
   }
   private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
     switch eventName {
@@ -529,6 +561,7 @@ public final class EngineClient {
         panes[index].source = event.source
         panes[index].confidence = event.confidence
         panes[index].phrase = event.phrase
+        if panes[index].mode == .agent && event.state == .dead { refreshHarnesses() }
       }
     default: break
     }

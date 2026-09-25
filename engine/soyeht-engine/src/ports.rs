@@ -16,7 +16,7 @@ use soyeht_ptyd::{
 };
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
-    agents::{AgentModelRefusal, NativeRequest, Outgoing, PromptAttachment},
+    agents::{AgentModelRefusal, HarnessReadiness, NativeRequest, Outgoing, PromptAttachment},
     database::{Change, Mutation, Result as StoreResult, Store},
     domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
@@ -166,6 +166,7 @@ pub trait StorePort {
         limit: usize,
     ) -> StoreResult<PaneTranscriptResult>;
     fn agent_probe(&self, fingerprint: &str, method: &str) -> StoreResult<Option<ProbeCapability>>;
+    fn harness_readiness(&self, harness: &str) -> StoreResult<Option<HarnessReadiness>>;
     fn agent_model_refusals(&self, harness: &str) -> StoreResult<Vec<AgentModelRefusal>>;
     fn web_session_grant(
         &self,
@@ -354,6 +355,10 @@ impl StorePort for Store {
         soyeht_store::agents::probe(self, fingerprint, method)
     }
 
+    fn harness_readiness(&self, harness: &str) -> StoreResult<Option<HarnessReadiness>> {
+        soyeht_store::agents::harness_readiness(self, harness)
+    }
+
     fn agent_model_refusals(&self, harness: &str) -> StoreResult<Vec<AgentModelRefusal>> {
         soyeht_store::agents::model_refusals(self, harness)
     }
@@ -447,6 +452,7 @@ pub(crate) mod testing {
         pub pair_windows: BTreeMap<String, i64>,
         pub open_requests: BTreeMap<String, Vec<NativeRequest>>,
         pub probes: BTreeMap<(String, String), ProbeCapability>,
+        pub harness_readiness: BTreeMap<String, HarnessReadiness>,
         pub model_refusals: BTreeMap<(String, String), AgentModelRefusal>,
     }
 
@@ -667,6 +673,10 @@ pub(crate) mod testing {
                 .probes
                 .get(&(fingerprint.into(), method.into()))
                 .cloned())
+        }
+
+        fn harness_readiness(&self, harness: &str) -> StoreResult<Option<HarnessReadiness>> {
+            Ok(self.harness_readiness.get(harness).cloned())
         }
 
         fn agent_model_refusals(&self, harness: &str) -> StoreResult<Vec<AgentModelRefusal>> {

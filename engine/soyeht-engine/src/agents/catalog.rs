@@ -1,4 +1,4 @@
-use super::{registry, responses};
+use super::{registry, responses, state::Phase};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -7,10 +7,11 @@ use crate::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
-    HarnessEnvironmentIssue, HarnessInfo, HarnessSetupState, ModelInfo, ModelListSource,
-    ModelRefusal, ProbeResult, limits,
+    HarnessEnvironmentIssue, HarnessInfo, HarnessSetupReason, HarnessSetupState, HarnessSource,
+    ModelInfo, ModelListSource, ModelRefusal, limits,
 };
 use soyeht_store::agents::AgentModelRefusal;
+use soyeht_store::agents::HarnessReadiness;
 
 fn wire_environment_issue(issue: super::environment::LaunchPathIssue) -> HarnessEnvironmentIssue {
     use super::environment::LaunchPathIssue;
@@ -32,27 +33,53 @@ fn environment_issue() -> Option<HarnessEnvironmentIssue> {
 }
 
 fn setup_state(
-    capabilities: &[soyeht_protocol::ProbeCapability],
-    initialized: bool,
     resolved: bool,
-    issue: bool,
-) -> HarnessSetupState {
-    if capabilities
-        .iter()
-        .any(|capability| capability.result == ProbeResult::Unauthenticated)
-    {
-        HarnessSetupState::SignIn
-    } else if capabilities
-        .iter()
-        .any(|capability| capability.result == ProbeResult::Inconclusive)
-        || (resolved && (!initialized || capabilities.is_empty()))
-        || issue
-    {
-        HarnessSetupState::CheckSetup
-    } else if resolved {
-        HarnessSetupState::Ready
-    } else {
-        HarnessSetupState::NotInstalled
+    installed: bool,
+    package_runner: bool,
+    environment_issue: bool,
+    recorded: Option<&HarnessReadiness>,
+    phase: Option<&Phase>,
+) -> (HarnessSetupState, Option<HarnessSetupReason>) {
+    if !resolved {
+        return (
+            HarnessSetupState::NotInstalled,
+            Some(if environment_issue {
+                HarnessSetupReason::EnvironmentUnavailable
+            } else {
+                HarnessSetupReason::ExecutableMissing
+            }),
+        );
+    }
+    if let Some(recorded) = recorded {
+        return (recorded.state.clone(), recorded.reason.clone());
+    }
+    if !installed {
+        return if package_runner {
+            (
+                HarnessSetupState::NotChecked,
+                Some(HarnessSetupReason::RegistryPackageUnverified),
+            )
+        } else {
+            (
+                HarnessSetupState::NotInstalled,
+                Some(HarnessSetupReason::ExecutableMissing),
+            )
+        };
+    }
+    match phase {
+        Some(Phase::Ready) => (HarnessSetupState::Ready, None),
+        Some(Phase::NeedsLogin) => (
+            HarnessSetupState::SignIn,
+            Some(HarnessSetupReason::AuthenticationRequired),
+        ),
+        Some(Phase::Faulted) => (
+            HarnessSetupState::CheckSetup,
+            Some(HarnessSetupReason::SessionFailed),
+        ),
+        _ => (
+            HarnessSetupState::NotChecked,
+            Some(HarnessSetupReason::NeverStarted),
+        ),
     }
 }
 
@@ -130,6 +157,81 @@ fn model_items(
         .unwrap_or_default()
 }
 
+fn harness_info(core: &Core, entry: registry::RegistryEntry, issue: bool) -> Result<Value> {
+    let resolved = registry::resolve_entry(entry.clone());
+    let has_session = core
+        .agents
+        .values()
+        .any(|agent| agent.state.launch.id == entry.launch.id);
+    let prepared = has_session
+        .then(|| registry::prepare_entry(entry.clone()).ok())
+        .flatten();
+    let known = prepared.as_ref().and_then(|(launch, digest)| {
+        core.agents
+            .values()
+            .filter(|agent| agent.state.launch == *launch && agent.state.binary_digest == *digest)
+            .max_by_key(|agent| agent.state.last_update_ms)
+    });
+    let mut capabilities = Vec::new();
+    if let Some(known) = known {
+        for method in responses::PROBED_METHODS {
+            if let Some(capability) = core
+                .store
+                .agent_probe(&known.state.fingerprint, method)
+                .map_err(errors::storage)?
+            {
+                capabilities.push(capability);
+            }
+        }
+    }
+    let initialized = known.and_then(|agent| agent.state.initialized.as_ref());
+    let recorded = core
+        .store
+        .harness_readiness(&entry.launch.id)
+        .map_err(errors::storage)?;
+    let installed = registry::locally_installed(
+        &entry,
+        recorded
+            .as_ref()
+            .and_then(|value| value.last_ready_ms)
+            .is_some()
+            || known.is_some_and(|agent| agent.state.phase == Phase::Ready),
+    );
+    let package_runner = entry.source == HarnessSource::BuiltIn
+        && matches!(entry.launch.command.as_str(), "npx" | "uvx");
+    let (setup_state, setup_reason) = setup_state(
+        resolved.is_some(),
+        installed,
+        package_runner,
+        issue,
+        recorded.as_ref(),
+        known.map(|agent| &agent.state.phase),
+    );
+    Ok(json!(HarnessInfo {
+        id: entry.launch.id,
+        name: entry.launch.name,
+        available: resolved.is_some(),
+        installed: Some(installed),
+        version: initialized.map(|i| i.version.clone()).or_else(|| (!entry
+            .launch
+            .version
+            .is_empty())
+        .then(|| entry.launch.version.clone())),
+        fingerprint: known.map(|agent| agent.state.fingerprint.clone()),
+        capabilities,
+        options: known
+            .map(|agent| agent.state.options.values.clone())
+            .unwrap_or_default(),
+        auth_methods: initialized
+            .map(|i| i.auth_methods.iter().map(|m| m.public.clone()).collect())
+            .unwrap_or_default(),
+        source: Some(entry.source),
+        setup_state: Some(setup_state),
+        setup_reason,
+        last_ready_at_ms: recorded.and_then(|value| value.last_ready_ms.map(|ms| ms.to_string()))
+    }))
+}
+
 impl Core {
     pub fn agent_catalog(&self, method: &str, params: &Value) -> Result<Value> {
         if method == "harness.list" {
@@ -140,63 +242,7 @@ impl Core {
             let entries = registry::catalogue_entries(&self.directory)?;
             let mut items = Vec::new();
             for entry in entries {
-                let resolved = registry::resolve_entry(entry.clone());
-                let has_session = self
-                    .agents
-                    .values()
-                    .any(|agent| agent.state.launch.id == entry.launch.id);
-                let prepared = has_session
-                    .then(|| registry::prepare_entry(entry.clone()).ok())
-                    .flatten();
-                let known = prepared.as_ref().and_then(|(launch, digest)| {
-                    self.agents
-                        .values()
-                        .filter(|agent| {
-                            agent.state.launch == *launch && agent.state.binary_digest == *digest
-                        })
-                        .max_by_key(|agent| agent.state.last_update_ms)
-                });
-                let mut capabilities = Vec::new();
-                if let Some(known) = known {
-                    for method in responses::PROBED_METHODS {
-                        if let Some(capability) = self
-                            .store
-                            .agent_probe(&known.state.fingerprint, method)
-                            .map_err(errors::storage)?
-                        {
-                            capabilities.push(capability);
-                        }
-                    }
-                }
-                let initialized = known.and_then(|a| a.state.initialized.as_ref());
-                let installed = registry::locally_installed(&entry, known.is_some());
-                let setup_state = setup_state(
-                    &capabilities,
-                    initialized.is_some(),
-                    resolved.is_some(),
-                    issue.is_some(),
-                );
-                items.push(json!(HarnessInfo {
-                    id: entry.launch.id,
-                    name: entry.launch.name,
-                    available: resolved.is_some(),
-                    installed: Some(installed),
-                    version: initialized.map(|i| i.version.clone()).or_else(|| (!entry
-                        .launch
-                        .version
-                        .is_empty())
-                    .then(|| entry.launch.version.clone())),
-                    fingerprint: known.map(|a| a.state.fingerprint.clone()),
-                    capabilities,
-                    options: known
-                        .map(|a| a.state.options.values.clone())
-                        .unwrap_or_default(),
-                    auth_methods: initialized
-                        .map(|i| i.auth_methods.iter().map(|m| m.public.clone()).collect())
-                        .unwrap_or_default(),
-                    source: Some(entry.source),
-                    setup_state: Some(setup_state)
-                }));
+                items.push(harness_info(self, entry, issue.is_some())?);
             }
             return page(items, json!({"environmentIssue":issue}), params);
         }
@@ -241,46 +287,64 @@ impl Core {
 #[cfg(test)]
 mod status_tests {
     use super::*;
-    use soyeht_protocol::ProbeCapability;
-
-    fn capability(result: ProbeResult) -> ProbeCapability {
-        ProbeCapability {
-            method: "session/prompt".into(),
-            result,
-            checked_at: "2026-09-15T00:00:00Z".into(),
-        }
-    }
 
     #[test]
-    fn setup_state_requires_real_probe_facts_before_ready() {
+    fn setup_state_uses_observed_launch_facts_without_mistaking_missing_probes_for_failure() {
         assert_eq!(
-            setup_state(&[], false, true, false),
-            HarnessSetupState::CheckSetup
+            setup_state(true, true, false, false, None, None),
+            (
+                HarnessSetupState::NotChecked,
+                Some(HarnessSetupReason::NeverStarted)
+            )
+        );
+        let ready = HarnessReadiness {
+            state: HarnessSetupState::Ready,
+            reason: None,
+            last_ready_ms: Some(42),
+        };
+        assert_eq!(
+            setup_state(true, true, false, false, Some(&ready), None),
+            (HarnessSetupState::Ready, None)
         );
         assert_eq!(
-            setup_state(&[capability(ProbeResult::Worked)], true, true, false),
-            HarnessSetupState::Ready
+            setup_state(true, true, false, false, None, Some(&Phase::NeedsLogin)),
+            (
+                HarnessSetupState::SignIn,
+                Some(HarnessSetupReason::AuthenticationRequired)
+            )
         );
         assert_eq!(
-            setup_state(&[capability(ProbeResult::Inconclusive)], true, true, false),
-            HarnessSetupState::CheckSetup
+            setup_state(false, true, false, false, Some(&ready), None),
+            (
+                HarnessSetupState::NotInstalled,
+                Some(HarnessSetupReason::ExecutableMissing)
+            )
         );
         assert_eq!(
-            setup_state(
-                &[capability(ProbeResult::Unauthenticated)],
-                true,
-                true,
-                false
-            ),
-            HarnessSetupState::SignIn
+            setup_state(false, true, false, true, Some(&ready), None),
+            (
+                HarnessSetupState::NotInstalled,
+                Some(HarnessSetupReason::EnvironmentUnavailable)
+            )
         );
         assert_eq!(
-            setup_state(&[], false, false, false),
-            HarnessSetupState::NotInstalled
+            setup_state(true, false, true, false, None, None),
+            (
+                HarnessSetupState::NotChecked,
+                Some(HarnessSetupReason::RegistryPackageUnverified)
+            )
         );
+        let login = HarnessReadiness {
+            state: HarnessSetupState::SignIn,
+            reason: Some(HarnessSetupReason::AuthenticationRequired),
+            last_ready_ms: None,
+        };
         assert_eq!(
-            setup_state(&[], false, false, true),
-            HarnessSetupState::CheckSetup
+            setup_state(true, false, true, false, Some(&login), None),
+            (
+                HarnessSetupState::SignIn,
+                Some(HarnessSetupReason::AuthenticationRequired)
+            )
         );
     }
 

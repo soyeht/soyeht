@@ -3,8 +3,9 @@
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttachmentRef, Pane, PaneMode, PaneState, ProbeCapability, ProbeResult, PromptItem,
-    PromptOrigin, PromptStatus, StateSource, TranscriptMessage, Workspace, limits,
+    AttachmentRef, HarnessSetupReason, HarnessSetupState, Pane, PaneMode, PaneState,
+    ProbeCapability, ProbeResult, PromptItem, PromptOrigin, PromptStatus, StateSource,
+    TranscriptMessage, Workspace, limits,
 };
 use soyeht_store::{
     agents::{self, AgentModelRefusal, NativeRequest, Outgoing},
@@ -29,6 +30,45 @@ impl Drop for Profile {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn readiness_survives_reopen_and_later_failure_replaces_success_without_erasing_its_time() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    store
+        .mutate("test", "ready", "ready", |tx| {
+            agents::save_harness_readiness(tx, "harness", HarnessSetupState::Ready, None, 100)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+    let mut store = profile.store();
+    assert_eq!(
+        agents::harness_readiness(&store, "harness")
+            .unwrap()
+            .unwrap()
+            .state,
+        HarnessSetupState::Ready
+    );
+    store
+        .mutate("test", "failed", "failed", |tx| {
+            agents::save_harness_readiness(
+                tx,
+                "harness",
+                HarnessSetupState::CheckSetup,
+                Some(HarnessSetupReason::SessionFailed),
+                200,
+            )?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let recorded = agents::harness_readiness(&store, "harness")
+        .unwrap()
+        .unwrap();
+    assert_eq!(recorded.state, HarnessSetupState::CheckSetup);
+    assert_eq!(recorded.reason, Some(HarnessSetupReason::SessionFailed));
+    assert_eq!(recorded.last_ready_ms, Some(100));
 }
 fn seed(store: &mut Store) {
     store
@@ -229,6 +269,7 @@ fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
         .execute_batch(
             "DROP TABLE agent_model_refusals;
              DROP TABLE agent_message_rate;
+             DROP TABLE harness_readiness;
              ALTER TABLE writing_documents DROP COLUMN full_width;
              DROP INDEX workspaces_created_sequence;
              ALTER TABLE workspaces DROP COLUMN created_seq;

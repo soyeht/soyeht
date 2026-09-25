@@ -46,12 +46,15 @@ impl Runtime {
         });
     }
     fn error(&self, id: Value, code: i32, message: &str) {
+        self.error_with_data(id, code, message, None);
+    }
+    fn error_with_data(&self, id: Value, code: i32, message: &str, data: Option<Value>) {
         self.send(Message::Response {
             id,
             result: Err(RpcError {
                 code,
                 message: message.into(),
-                data: None,
+                data,
             }),
         });
     }
@@ -244,6 +247,19 @@ impl Runtime {
         }
         if text == "refuse-generic-error" {
             self.error(id, -32603, "Internal error: Temporary upstream failure");
+            return;
+        }
+        if text == "auth-expired" {
+            self.error_with_data(
+                id,
+                -32603,
+                "Failed to authenticate: OAuth session expired",
+                Some(json!({"errorKind":"authentication_failed"})),
+            );
+            return;
+        }
+        if text == "auth-expired-untagged" {
+            self.error(id, -32603, "Failed to authenticate: OAuth session expired");
             return;
         }
         let mut active = self.active.lock().unwrap();
