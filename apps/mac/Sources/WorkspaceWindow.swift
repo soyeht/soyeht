@@ -3076,6 +3076,7 @@ private struct PaneCard: View {
 
 private struct NewPaneSheet: View {
   @Bindable var client: EngineClient
+  @AppStorage(HarnessPickerModel.preferredHarnessKey) private var preferredHarnessId = ""
   let workspaceId: String?
   @Binding var mode: PaneMode
   let onCancel: () -> Void
@@ -3325,7 +3326,8 @@ private struct NewPaneSheet: View {
 
   private func selectFirstHarness() {
     guard selectedHarness?.available != true,
-      let first = HarnessPickerModel.defaultHarness(in: client.harnesses)
+      let first = HarnessPickerModel.defaultHarness(
+        in: client.harnesses, preferredId: preferredHarnessId)
     else { return }
     harness = first.id
   }
@@ -3512,6 +3514,11 @@ private struct AgentHarnessPicker: View {
 
   @ViewBuilder private var selectedConfiguration: some View {
     if let selected, selected.available {
+      Text(HarnessPickerModel.statusReason(for: selected))
+        .font(MacTheme.chrome(MacTheme.TypeScale.small))
+        .foregroundStyle(MacTheme.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("agent-setup-reason")
       Text("MODEL").pickerHeading()
       if modelContentState == .loading {
         HStack(spacing: MacTheme.Space.x8) {
@@ -3588,11 +3595,16 @@ private struct AgentHarnessPicker: View {
       }
     } else if let selected {
       Label(
-        "\(selected.name) is not installed.",
+        HarnessPickerModel.statusReason(for: selected),
         systemImage: "exclamationmark.circle"
       )
       .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
       .foregroundStyle(MacTheme.muted)
+      .accessibilityIdentifier("agent-setup-reason")
+    } else {
+      Text("Choose an agent to continue.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
     }
   }
 
@@ -3603,6 +3615,7 @@ private struct AgentHarnessPicker: View {
   private func statusSymbol(_ status: HarnessSetupState) -> String {
     switch status {
     case .ready: "checkmark.circle.fill"
+    case .not_checked: "circle.dotted"
     case .sign_in: "person.crop.circle.badge.exclamationmark"
     case .check_setup: "wrench.and.screwdriver"
     case .not_installed: "minus.circle"
@@ -3612,6 +3625,7 @@ private struct AgentHarnessPicker: View {
   private func statusColor(_ status: HarnessSetupState) -> Color {
     switch status {
     case .ready: MacTheme.success
+    case .not_checked: MacTheme.muted
     case .sign_in, .check_setup: MacTheme.warning
     case .not_installed: MacTheme.muted
     }
@@ -3620,6 +3634,7 @@ private struct AgentHarnessPicker: View {
 
 private struct AgentHarnessSwitchPicker: View {
   @Bindable var client: EngineClient
+  @AppStorage(HarnessPickerModel.preferredHarnessKey) private var preferredHarnessId = ""
   let pane: Pane
   @Binding var isPresented: Bool
   @State private var harness = ""
@@ -3688,7 +3703,8 @@ private struct AgentHarnessSwitchPicker: View {
   private func selectFirstHarness() {
     guard selectedHarness?.available != true,
       let first = HarnessPickerModel.defaultHarness(
-        in: client.harnesses, excluding: currentHarness)
+        in: client.harnesses, excluding: currentHarness,
+        preferredId: preferredHarnessId)
     else { return }
     harness = first.id
   }

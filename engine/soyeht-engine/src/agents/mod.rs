@@ -33,7 +33,10 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::Message;
-use soyeht_protocol::{ProbeCapability, PromptItem, TranscriptMessage, Workspace, ndjson::Decoder};
+use soyeht_protocol::{
+    HarnessSetupReason, HarnessSetupState, ProbeCapability, PromptItem, TranscriptMessage,
+    Workspace, ndjson::Decoder,
+};
 use soyeht_store::{
     agents::{self, AgentModelRefusal, NativeRequest, Outgoing, PromptAttachment},
     database::{Change, Mutation},
@@ -145,6 +148,67 @@ fn persist_agent_metadata(
     Ok(())
 }
 
+fn persist_harness_readiness(
+    tx: &Change<'_>,
+    state: &State,
+    changes: &Changes,
+) -> soyeht_store::database::Result<()> {
+    let has_event = |name: &str| changes.events.iter().any(|(event, _)| event == name);
+    let readiness = if has_event("pane.session_started") {
+        Some((HarnessSetupState::Ready, None))
+    } else if state.phase == state::Phase::NeedsLogin
+        && (has_event("pane.needs_login") || has_event("pane.auth_finished"))
+    {
+        Some((
+            HarnessSetupState::SignIn,
+            Some(HarnessSetupReason::AuthenticationRequired),
+        ))
+    } else if state.phase == state::Phase::Faulted {
+        Some((
+            HarnessSetupState::CheckSetup,
+            Some(if state.initialized.is_some() {
+                HarnessSetupReason::SessionFailed
+            } else {
+                HarnessSetupReason::LaunchFailed
+            }),
+        ))
+    } else {
+        None
+    };
+    if let Some((status, reason)) = readiness {
+        agents::save_harness_readiness(tx, &state.launch.id, status, reason, state.last_update_ms)?;
+    }
+    Ok(())
+}
+
+fn persist_agent_checkpoint(
+    tx: &Change<'_>,
+    id: &str,
+    generation: u32,
+    state: &State,
+    changes: &Changes,
+) -> soyeht_store::database::Result<()> {
+    agents::save_runtime(tx, id, generation, state)?;
+    persist_harness_readiness(tx, state, changes)
+}
+
+fn persist_completion(
+    tx: &Change<'_>,
+    completion: Option<&pending::Completion>,
+) -> soyeht_store::database::Result<()> {
+    if let Some(completion) = completion {
+        let changed = tx.update_idempotency_result(
+            &completion.user.scope,
+            &completion.user.key,
+            &completion.stored(),
+        )?;
+        if !changed {
+            return Err(soyeht_store::database::Error::NativeEffectNotFound);
+        }
+    }
+    Ok(())
+}
+
 fn persist_workspace_layout(
     tx: &Change<'_>,
     workspace: Option<&Workspace>,
@@ -162,16 +226,7 @@ impl AgentPersistence<'_> {
         mut events: Vec<(String, Value)>,
         result: Value,
     ) -> soyeht_store::database::Result<(Value, Vec<(String, Value)>)> {
-        if let Some(completion) = &self.changes.completed_user {
-            let changed = tx.update_idempotency_result(
-                &completion.user.scope,
-                &completion.user.key,
-                &completion.stored(),
-            )?;
-            if !changed {
-                return Err(soyeht_store::database::Error::NativeEffectNotFound);
-            }
-        }
+        persist_completion(tx, self.changes.completed_user.as_ref())?;
         if let Some((instance, supervisor)) = &self.changes.retire_instance {
             tx.retire_agent_outbox_process(self.id, instance, supervisor)?;
         }
@@ -204,7 +259,13 @@ impl AgentPersistence<'_> {
         persist_agent_metadata(tx, self.changes)?;
         write_pane(tx, self.saved)?;
         persist_workspace_layout(tx, self.changes.workspace_layout.as_ref())?;
-        agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;
+        persist_agent_checkpoint(
+            tx,
+            self.id,
+            self.saved.pane.generation,
+            self.state,
+            self.changes,
+        )?;
         let attention_changed = self.changes.clear_attention
             || !self.changes.attention.is_empty()
             || !self.changes.remove_attention.is_empty();

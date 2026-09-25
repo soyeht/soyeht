@@ -3027,6 +3027,12 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
     }
+    let signed_out = client.call("harness.list", json!({}));
+    assert_eq!(signed_out["items"][0]["setupState"], "sign_in");
+    assert_eq!(
+        signed_out["items"][0]["setupReason"],
+        "authentication_required"
+    );
     let reconnect = rig.client().pane(&pane);
     assert_eq!(reconnect["agent"]["authMethods"][0]["id"], "login");
     assert_eq!(reconnect["agent"]["authMethods"][0]["terminal"], true);
@@ -3064,6 +3070,9 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         thread::sleep(Duration::from_millis(20));
     }
     assert!(rig.path.join("native/login.ok").is_file());
+    let signed_in = client.call("harness.list", json!({}));
+    assert_eq!(signed_in["items"][0]["setupState"], "ready");
+    assert!(signed_in["items"][0]["lastReadyAtMs"].is_string());
     let models = client.call("model.list", json!({"harness":"auth-test","paneId":pane}));
     assert_eq!(models["source"], "native_session");
     assert_eq!(models["items"].as_array().unwrap().len(), 4);
@@ -3085,14 +3094,19 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
     assert!(!rig.path.join("harnesses.json").exists());
     let mut client = rig.client();
     let initial = client.call("harness.list", json!({"limit":64}));
+    let unverified = initial["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == "registry.amp-acp")
+        .unwrap();
     assert_eq!(
-        initial["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|item| item["id"] == "registry.amp-acp")
-            .unwrap()["setupState"],
-        "not_installed"
+        unverified["setupState"],
+        if unverified["available"] == true {
+            "not_checked"
+        } else {
+            "not_installed"
+        }
     );
     assert_eq!(
         initial["items"]
@@ -3122,7 +3136,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
         assert_eq!(item["source"], "built_in");
         assert!(matches!(
             item["setupState"].as_str(),
-            Some("ready" | "not_installed" | "check_setup")
+            Some("ready" | "not_checked" | "not_installed" | "check_setup")
         ));
     }
     let installed = items
@@ -3131,7 +3145,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
         .unwrap();
     assert_eq!(installed["available"], true);
     assert_eq!(installed["installed"], true);
-    assert_eq!(installed["setupState"], "check_setup");
+    assert_eq!(installed["setupState"], "not_checked");
     assert!(registry["nextCursor"].is_null());
 }
 

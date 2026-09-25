@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 933c16bf2affbb582f2ca13409dabcaedc892a04ede6b4a365b2b2100593c76f). Do not edit.
+// Generated from contracts/protocol.json (sha256 69b07d77613f4d14106fa1514bf58a1540e582ea5b2e6947a99977e8b3ebab36). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1579,6 +1579,10 @@ pub struct HarnessInfo {
     pub source: Option<HarnessSource>,
     #[serde(rename = "setupState", skip_serializing_if = "Option::is_none")]
     pub setup_state: Option<HarnessSetupState>,
+    #[serde(rename = "setupReason", skip_serializing_if = "Option::is_none")]
+    pub setup_reason: Option<HarnessSetupReason>,
+    #[serde(rename = "lastReadyAtMs", skip_serializing_if = "Option::is_none")]
+    pub last_ready_at_ms: Option<Decimal>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelRefusal {
@@ -5315,12 +5319,31 @@ pub enum HarnessSource {
 pub enum HarnessSetupState {
     #[serde(rename = "ready")]
     Ready,
+    #[serde(rename = "not_checked")]
+    NotChecked,
     #[serde(rename = "not_installed")]
     NotInstalled,
     #[serde(rename = "sign_in")]
     SignIn,
     #[serde(rename = "check_setup")]
     CheckSetup,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum HarnessSetupReason {
+    #[serde(rename = "never_started")]
+    NeverStarted,
+    #[serde(rename = "executable_missing")]
+    ExecutableMissing,
+    #[serde(rename = "registry_package_unverified")]
+    RegistryPackageUnverified,
+    #[serde(rename = "authentication_required")]
+    AuthenticationRequired,
+    #[serde(rename = "session_failed")]
+    SessionFailed,
+    #[serde(rename = "launch_failed")]
+    LaunchFailed,
+    #[serde(rename = "environment_unavailable")]
+    EnvironmentUnavailable,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HarnessEnvironmentIssue {

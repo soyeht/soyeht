@@ -5,8 +5,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::{
-    AttachmentRef, PaneTranscriptResult, ProbeCapability, TranscriptMessage,
-    attachment::attachment_header, limits,
+    AttachmentRef, HarnessSetupReason, HarnessSetupState, PaneTranscriptResult, ProbeCapability,
+    TranscriptMessage, attachment::attachment_header, limits,
 };
 use soyeht_protocol::{PromptItem, PromptStatus};
 
@@ -16,6 +16,57 @@ pub struct AgentModelRefusal {
     pub model_id: String,
     pub reason: String,
     pub observed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HarnessReadiness {
+    pub state: HarnessSetupState,
+    pub reason: Option<HarnessSetupReason>,
+    pub last_ready_ms: Option<i64>,
+}
+
+pub fn harness_readiness(store: &Store, harness: &str) -> Result<Option<HarnessReadiness>> {
+    let row: Option<(String, Option<String>, Option<i64>)> = store
+        .connection()
+        .query_row(
+            "SELECT state,reason,last_ready_ms FROM harness_readiness WHERE harness_id=?1",
+            [harness],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    row.map(|(state, reason, last_ready_ms)| {
+        Ok(HarnessReadiness {
+            state: serde_json::from_value(Value::String(state))?,
+            reason: reason
+                .map(|value| serde_json::from_value(Value::String(value)))
+                .transpose()?,
+            last_ready_ms,
+        })
+    })
+    .transpose()
+}
+
+pub fn save_harness_readiness(
+    change: &Change<'_>,
+    harness: &str,
+    state: HarnessSetupState,
+    reason: Option<HarnessSetupReason>,
+    updated_ms: i64,
+) -> Result<()> {
+    let ready = state == HarnessSetupState::Ready;
+    let state = serde_json::to_value(state)?;
+    let reason = reason.map(serde_json::to_value).transpose()?;
+    change.connection().execute(
+        "INSERT INTO harness_readiness(harness_id,state,reason,last_ready_ms,updated_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(harness_id) DO UPDATE SET state=excluded.state,reason=excluded.reason,last_ready_ms=COALESCE(excluded.last_ready_ms,harness_readiness.last_ready_ms),updated_ms=excluded.updated_ms",
+        params![
+            harness,
+            state.as_str(),
+            reason.as_ref().and_then(Value::as_str),
+            ready.then_some(updated_ms),
+            updated_ms
+        ],
+    )?;
+    Ok(())
 }
 
 fn validate_model_refusal(refusal: &AgentModelRefusal) -> Result<()> {

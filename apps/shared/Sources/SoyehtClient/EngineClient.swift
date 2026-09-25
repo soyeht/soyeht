@@ -529,6 +529,7 @@ public final class EngineClient {
         panes[index].source = event.source
         panes[index].confidence = event.confidence
         panes[index].phrase = event.phrase
+        if panes[index].mode == .agent && event.state == .dead { refreshHarnesses() }
       }
     default: break
     }

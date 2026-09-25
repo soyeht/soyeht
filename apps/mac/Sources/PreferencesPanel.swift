@@ -441,6 +441,7 @@ private struct EditorInputPreferencesPanel: View {
 
 private struct PreferencesHarnesses: View {
   @Bindable var client: EngineClient
+  @AppStorage(HarnessPickerModel.preferredHarnessKey) private var preferredHarnessId = ""
   @State private var showingEditor = false
   @State private var editingHarness: HarnessLaunch?
   @State private var pendingRemoval: HarnessLaunch?
@@ -465,8 +466,11 @@ private struct PreferencesHarnesses: View {
           ForEach(client.harnesses, id: \.id) { harness in
             HarnessPreferenceRow(
               harness: harness, catalogue: client.agentCatalogues[harness.id],
-              isDefault: harness.id == client.harnesses.first(where: \.available)?.id,
+              isDefault: harness.id
+                == HarnessPickerModel.defaultHarness(
+                  in: client.harnesses, preferredId: preferredHarnessId)?.id,
               customLaunch: client.customHarnesses.first { $0.id == harness.id },
+              makeDefault: { preferredHarnessId = harness.id },
               edit: edit, remove: { pendingRemoval = $0 })
           }
           if client.harnesses.isEmpty {
@@ -559,8 +563,10 @@ private struct HarnessPreferenceRow: View {
   let catalogue: AgentCatalogue?
   let isDefault: Bool
   let customLaunch: HarnessLaunch?
+  let makeDefault: () -> Void
   let edit: (HarnessLaunch) -> Void
   let remove: (HarnessLaunch) -> Void
+  @State private var showingStatus = false
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -614,13 +620,38 @@ private struct HarnessPreferenceRow: View {
   }
 
   private var status: some View {
-    HStack(spacing: MacTheme.Space.x6) {
-      Circle().fill(statusColor).frame(width: 7, height: 7)
-      Text(statusLabel)
-        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-        .foregroundStyle(MacTheme.secondary)
+    Button {
+      showingStatus = true
+    } label: {
+      HStack(spacing: MacTheme.Space.x6) {
+        Circle().fill(statusColor).frame(width: 7, height: 7)
+        Text(HarnessPickerModel.statusLabel(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+          .foregroundStyle(MacTheme.secondary)
+      }
+      .frame(width: 118, alignment: .leading)
+      .contentShape(Rectangle())
     }
-    .frame(width: 118, alignment: .leading)
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(harness.name): \(HarnessPickerModel.statusLabel(for: harness))")
+    .popover(isPresented: $showingStatus) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+        Text(HarnessPickerModel.statusLabel(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        Text(HarnessPickerModel.statusReason(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .fixedSize(horizontal: false, vertical: true)
+        if harness.available && !isDefault {
+          Button("Make default") {
+            makeDefault()
+            showingStatus = false
+          }
+          .buttonStyle(NeoPillButtonStyle())
+        }
+      }
+      .padding(MacTheme.Space.x16)
+      .frame(width: 260, alignment: .leading)
+    }
   }
 
   private var versionLabel: String {
@@ -650,27 +681,12 @@ private struct HarnessPreferenceRow: View {
 
   private var options: [ConfigOption] { catalogue?.options ?? harness.options }
 
-  private var statusLabel: String {
-    switch harness.setupState {
-    case .ready: return "ready"
-    case .not_installed: return "not installed"
-    case .sign_in: return "sign in"
-    case .check_setup: return "check setup"
-    case nil:
-      if !harness.available { return "not installed" }
-      if harness.capabilities.contains(where: { $0.result == .unauthenticated }) {
-        return "sign in"
-      }
-      if harness.capabilities.contains(where: { $0.result == .inconclusive }) {
-        return "check setup"
-      }
-      return "ready"
-    }
-  }
-
   private var statusColor: Color {
-    if !harness.available { return MacTheme.muted }
-    return statusLabel == "ready" ? MacTheme.success : MacTheme.warning
+    switch HarnessPickerModel.setupState(for: harness) {
+    case .ready: MacTheme.success
+    case .sign_in, .check_setup: MacTheme.warning
+    case .not_checked, .not_installed: MacTheme.muted
+    }
   }
 }
 

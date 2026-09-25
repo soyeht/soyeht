@@ -3010,6 +3010,12 @@
         },
         "setupState": {
           "$ref": "#/$defs/HarnessSetupState"
+        },
+        "setupReason": {
+          "$ref": "#/$defs/HarnessSetupReason"
+        },
+        "lastReadyAtMs": {
+          "$ref": "#/$defs/Decimal"
         }
       },
       "required": [
@@ -10826,9 +10832,22 @@
       "type": "string",
       "enum": [
         "ready",
+        "not_checked",
         "not_installed",
         "sign_in",
         "check_setup"
+      ]
+    },
+    "HarnessSetupReason": {
+      "type": "string",
+      "enum": [
+        "never_started",
+        "executable_missing",
+        "registry_package_unverified",
+        "authentication_required",
+        "session_failed",
+        "launch_failed",
+        "environment_unavailable"
       ]
     },
     "HarnessEnvironmentIssue": {
