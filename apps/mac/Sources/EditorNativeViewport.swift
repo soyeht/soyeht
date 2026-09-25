@@ -512,14 +512,6 @@ struct EditorNativeViewport: NSViewRepresentable {
     var onPerformanceInsertText: (() -> Void)?
     var onPerformanceDrawStart: ((NSRect) -> Void)?
     var onPerformanceDraw: ((NSRect) -> Void)?
-    var onPerformanceScrollWheel: ((NSEvent, String) -> Void)?
-
-    override func scrollWheel(with event: NSEvent) {
-      onPerformanceScrollWheel?(event, "text.before")
-      super.scrollWheel(with: event)
-      onPerformanceScrollWheel?(event, "text.after")
-    }
-
     override func draw(_ dirtyRect: NSRect) {
       onPerformanceDrawStart?(dirtyRect)
       super.draw(dirtyRect)

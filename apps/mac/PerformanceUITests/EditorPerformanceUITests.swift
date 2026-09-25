@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 
 final class EditorPerformanceUITests: XCTestCase {
-  @MainActor func testEditorWorkAndVisiblePages() throws {
+  @MainActor func testEditorKeyWorkAndVisibleInk() throws {
     let report = try XCTUnwrap(
       ProcessInfo.processInfo.environment["SOYEHT_EDITOR_PERFORMANCE_REPORT"])
     let bundleIdentifier = try XCTUnwrap(
@@ -20,9 +20,9 @@ final class EditorPerformanceUITests: XCTestCase {
       return
     }
     start.click()
-    let next = window.buttons["next-editor-performance-scroll"]
+    let done = window.staticTexts["editor-performance-done"]
     let ready = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "hittable == YES"), object: next)
+      predicate: NSPredicate(format: "hittable == YES"), object: done)
     guard XCTWaiter.wait(for: [ready], timeout: 30) == .completed else {
       add(XCTAttachment(string: app.debugDescription))
       let error = window.staticTexts["editor-performance-error"]
@@ -31,87 +31,14 @@ final class EditorPerformanceUITests: XCTestCase {
       )
       return
     }
-    let pageStatus = window.staticTexts["editor-performance-page-status"]
     let editorScroll = window.scrollViews["editor-performance-scroll"]
-    XCTAssertTrue(pageStatus.waitForExistence(timeout: 5))
     XCTAssertTrue(editorScroll.waitForExistence(timeout: 5))
-    let failure = window.staticTexts["editor-performance-error"]
-    let initialRawValue = pageStatus.value
-    guard let initial = readPageStatus(initialRawValue) else {
-      XCTFail("initial page status has no valid AX value: \(String(describing: initialRawValue))")
-      return
-    }
-    var priorPages = initial.pages
-    var priorOffset = initial.offset
-    var validatedPages = 0
-    var scrollTrace = ["initial: \(initial.value)"]
-    for sample in 0..<48 {
-      let delta: CGFloat = sample.isMultiple(of: 2) ? -1_000 : -36_000
-      editorScroll.scroll(byDeltaX: 0, deltaY: delta)
-      next.click()
-      let rawStatus = pageStatus.value
-      let rawValue = String(describing: rawStatus)
-      scrollTrace.append("sample \(sample), delta \(delta): \(rawValue)")
-      if failure.exists {
-        attachScrollTrace(scrollTrace)
-        XCTFail("editor fixture failed at scroll \(sample): \(String(describing: failure.value))")
-        return
-      }
-      guard let status = readPageStatus(rawStatus) else {
-        attachScrollTrace(scrollTrace)
-        XCTFail("invalid page status at sample \(sample): \(rawValue)")
-        return
-      }
-      let minimumMovement = abs(delta) * 0.4
-      guard status.offset - priorOffset >= minimumMovement else {
-        attachScrollTrace(scrollTrace)
-        XCTFail(
-          "scroll \(sample) moved \(status.offset - priorOffset) pt; expected at least \(minimumMovement) pt"
-        )
-        return
-      }
-      if status.pages > priorPages {
-        XCTAssertEqual(status.pages, priorPages + 1, "page count skipped")
-        assertVisibleInkAndGutter(window.screenshot())
-        let editorText = editorScroll.textViews.firstMatch.value as? String ?? ""
-        XCTAssertTrue(
-          editorText.contains(String(format: "// line %06d", status.fromLine)),
-          "visible page content does not match its gutter range")
-        validatedPages += 1
-      }
-      priorPages = status.pages
-      priorOffset = status.offset
-    }
-    attachScrollTrace(scrollTrace)
-    XCTAssertGreaterThanOrEqual(validatedPages, 20)
-    XCTAssertTrue(window.staticTexts["editor-performance-done"].waitForExistence(timeout: 3))
-    let receipt = XCTAttachment(string: "validated real-screen pages: \(validatedPages)")
-    receipt.lifetime = .keepAlways
-    add(receipt)
-  }
-
-  private struct PageStatus {
-    let value: String
-    let pages: Int
-    let fromLine: Int
-    let offset: CGFloat
-  }
-
-  private func readPageStatus(_ rawValue: Any?) -> PageStatus? {
-    guard let value = rawValue as? String, !value.isEmpty else { return nil }
-    let fields = value.components(separatedBy: "; ")
-    guard fields.count == 3,
-      fields[0].hasPrefix("Pages "), let pages = Int(fields[0].dropFirst("Pages ".count)),
-      fields[1].hasPrefix("fromLine "),
-      let fromLine = Int(fields[1].dropFirst("fromLine ".count)),
-      fields[2].hasPrefix("offsetPt "),
-      let offset = Double(fields[2].dropFirst("offsetPt ".count))
-    else { return nil }
-    return PageStatus(value: value, pages: pages, fromLine: fromLine, offset: CGFloat(offset))
-  }
-
-  private func attachScrollTrace(_ trace: [String]) {
-    let receipt = XCTAttachment(string: trace.joined(separator: "\n"))
+    let editorText = editorScroll.textViews.firstMatch.value as? String ?? ""
+    XCTAssertTrue(
+      editorText.contains("// line 000000" + String(repeating: "xy", count: 120) + "\n"),
+      "the editor did not expose the 240 typed characters")
+    assertVisibleInkAndGutter(window.screenshot())
+    let receipt = XCTAttachment(string: "240 typed characters; real-window ink and gutter valid")
     receipt.lifetime = .keepAlways
     add(receipt)
   }

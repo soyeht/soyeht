@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Release editor UI measurement on VM1, and report validation in check_all.
+"""Release editor key-work measurement on VM1, and validation in check_all.
 
 Run --measure in a VM1 checkout and copy .cache/editor-performance-vm.json to
 the review checkout. The ordinary gate never launches a UI test on the host.
@@ -29,6 +29,7 @@ WORK_LIMIT_MS = 8.0
 METER_BUNDLE_ID = "com.soyeht.next.dev.mac.editor-meter"
 RUST_LIMITS = {"open_100k_ms": 150.0, "search_1gb_ms": 1000.0}
 RUN_COUNT = 3
+UNMEASURED = {"scroll": "#422", "page_load": "#404"}
 
 
 def editor_path(path: str) -> bool:
@@ -75,6 +76,8 @@ def report_failures(report: dict, expected_hash: str) -> list[str]:
         failures.append("configuration must be Release; measure again on VM1")
     if report.get("editor_tree_hash") != expected_hash:
         failures.append("editor paths changed; measure this editor version again on VM1")
+    if report.get("unmeasured") != UNMEASURED:
+        failures.append("scroll/page-load status missing; mark them unmeasured, not green")
     runs = report.get("runs")
     if not isinstance(runs, list) or len(runs) != RUN_COUNT:
         return failures + [f"expected {RUN_COUNT} complete VM runs"]
@@ -83,9 +86,6 @@ def report_failures(report: dict, expected_hash: str) -> list[str]:
             ("key_event_samples", 240),
             ("validated_key_samples", 240),
             ("key_work_samples", 240),
-            ("scroll_events", 48),
-            ("scroll_work_samples", 20),
-            ("page_load_samples", 20),
         ):
             value = run.get(key)
             if not isinstance(value, int) or value < minimum:
@@ -94,18 +94,16 @@ def report_failures(report: dict, expected_hash: str) -> list[str]:
             failures.append(f"run {index}: visible ink/gutter proof missing")
         if run.get("file_line_count") != 100_000:
             failures.append(f"run {index}: wrong large-file fixture")
-        for key in ("key_work_p95_ms", "scroll_work_p95_ms", "page_load_p95_ms"):
-            value = run.get(key)
-            if not isinstance(value, (int, float)) or not 0 <= value < 10_000:
-                failures.append(f"run {index}: invalid {key}")
-    for key in ("key_work_p95_ms", "scroll_work_p95_ms"):
-        values = [run.get(key) for run in runs]
-        if all(isinstance(value, (int, float)) for value in values):
-            median = statistics.median(values)
-            if median >= WORK_LIMIT_MS:
-                failures.append(
-                    f"{key}: median {median:.3f} ms >= {WORK_LIMIT_MS:.1f} ms; "
-                    "profile synchronous editor work")
+        value = run.get("key_work_p95_ms")
+        if not isinstance(value, (int, float)) or not 0 <= value < 10_000:
+            failures.append(f"run {index}: invalid key_work_p95_ms")
+    values = [run.get("key_work_p95_ms") for run in runs]
+    if all(isinstance(value, (int, float)) for value in values):
+        median = statistics.median(values)
+        if median >= WORK_LIMIT_MS:
+            failures.append(
+                f"key_work_p95_ms: median {median:.3f} ms >= {WORK_LIMIT_MS:.1f} ms; "
+                "profile synchronous editor work")
     return failures
 
 
@@ -132,8 +130,8 @@ def run_vm_measurement() -> dict:
     environment["DEVELOPMENT_TEAM"] = team
     environment["TEST_RUNNER_SOYEHT_EDITOR_METER_APP_BUNDLE_ID"] = METER_BUNDLE_ID
     runs = []
-    # Both the app and runner can access this owner-only neutral path; it is
-    # outside either app's container and is removed even when a run fails.
+    # The app writes to this owner-only neutral path outside the runner's
+    # container; the gate removes it even when a run fails.
     with tempfile.TemporaryDirectory(prefix="soyeht-editor-meter-", dir="/private/tmp") as scratch:
         scratch_path = Path(scratch)
         for index in range(RUN_COUNT):
@@ -144,7 +142,7 @@ def run_vm_measurement() -> dict:
             result = subprocess.run(
                 command + [
                     "-resultBundlePath", str(bundle),
-                    "-only-testing:EditorPerformanceUITests/EditorPerformanceUITests/testEditorWorkAndVisiblePages",
+                    "-only-testing:EditorPerformanceUITests/EditorPerformanceUITests/testEditorKeyWorkAndVisibleInk",
                     "test",
                 ],
                 cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -160,10 +158,9 @@ def run_vm_measurement() -> dict:
                 evidence = Path(tempfile.mkdtemp(prefix="editor-performance-failure-", dir=CACHE))
                 if raw.is_file():
                     shutil.copy2(raw, evidence / raw.name)
-                for suffix in (".error", ".partial", ".diagnostic"):
-                    artifact = raw.with_suffix(raw.suffix + suffix)
-                    if artifact.is_file():
-                        shutil.copy2(artifact, evidence / artifact.name)
+                error = raw.with_suffix(raw.suffix + ".error")
+                if error.is_file():
+                    shutil.copy2(error, evidence / error.name)
                 if bundle.is_dir():
                     shutil.copytree(bundle, evidence / bundle.name)
                 raise RuntimeError(
@@ -171,7 +168,7 @@ def run_vm_measurement() -> dict:
             if not raw.is_file():
                 raise RuntimeError(f"VM UI test run {index + 1} produced no app report")
             run = json.loads(raw.read_text())
-            # xcodebuild passed the UI assertion of >=20 real-window screenshots.
+            # XCTest passed the 240-character AX assertion and real-window ink/gutter proof.
             run["visual_validation"] = "real_window_screenshot_and_gutter"
             runs.append(run)
     report = {
@@ -179,7 +176,7 @@ def run_vm_measurement() -> dict:
         "measured_head": head(),
         "editor_tree_hash": editor_tree_hash(),
         "runs": runs,
-        "known_issue": "#404: page-load work is diagnostic until the virtual editor lands",
+        "unmeasured": UNMEASURED,
     }
     VM_REPORT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     failures = report_failures(report, editor_tree_hash())
@@ -217,17 +214,13 @@ def main() -> int:
     options = parser.parse_args()
     try:
         report = run_vm_measurement() if options.measure else check()
-        for key, count_key in (
-            ("key_work_p95_ms", "key_work_samples"),
-            ("scroll_work_p95_ms", "scroll_work_samples"),
-            ("page_load_p95_ms", "page_load_samples"),
-        ):
-            values = [run[key] for run in report["runs"]]
-            counts = [run[count_key] for run in report["runs"]]
-            print(
-                f"editor-performance: {key} n={counts} runs={values} "
-                f"median={statistics.median(values):.3f}")
-        print("editor-performance: page load diagnostic #404; passed")
+        values = [run["key_work_p95_ms"] for run in report["runs"]]
+        counts = [run["key_work_samples"] for run in report["runs"]]
+        print(
+            f"editor-performance: key_work_p95_ms n={counts} runs={values} "
+            f"median={statistics.median(values):.3f}")
+        print("editor-performance: scroll NOT MEASURED (#422); page load NOT MEASURED (#404)")
+        print("editor-performance: key-work gate passed")
         return 0
     except (
         OSError, RuntimeError, KeyError, TypeError, ValueError,

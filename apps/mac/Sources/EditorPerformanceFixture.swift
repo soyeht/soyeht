@@ -13,36 +13,13 @@
     static let processingSignpostName: StaticString = "EditorKeyProcessing"
     static let insertSignpostName: StaticString = "EditorInsertText"
     static let keyToInsertSignpostName: StaticString = "EditorKeyToInsertText"
-    static let scrollSignpostName: StaticString = "EditorScrollProcessing"
-    static let pageLoadSignpostName: StaticString = "EditorPageLoad"
-    static let scrollDrawSignpostName: StaticString = "EditorScrollDraw"
     private static let viewportSize = NSSize(width: 1000, height: 720)
     private static let sampleCount = 240
-    private static let scrollSampleCount = 48
     private static let fileLineCount: UInt32 = 100_000
     private static var current: Session?
 
     struct Options {
       let report: URL
-    }
-
-    private final class PerformanceWindow: NSWindow {
-      var onScrollStart: (() -> Void)?
-      var onScrollEnd: (() -> Void)?
-      var onScrollDiagnostic: ((NSEvent, NSView?, String) -> Void)?
-
-      override func sendEvent(_ event: NSEvent) {
-        guard event.type == .scrollWheel else {
-          super.sendEvent(event)
-          return
-        }
-        let hitView = contentView?.hitTest(event.locationInWindow)
-        onScrollDiagnostic?(event, hitView, "before")
-        onScrollStart?()
-        super.sendEvent(event)
-        onScrollEnd?()
-        onScrollDiagnostic?(event, hitView, "after")
-      }
     }
 
     static func requestedOptions() -> Options? {
@@ -64,21 +41,16 @@
       case missingKeyProcessing(processing: Int, draw: Int, key: Int)
       case missingTextEdit
       case invalidFocus
-      case missingScrollEvent(sample: Int)
-      case missingScrollMovement(sample: Int, before: CGFloat, after: CGFloat)
       case invalidSampleEvents(sample: Int)
       case finalTextMismatch
-      case invalidScrollGeometry(
+      case invalidFixtureGeometry(
         documentHeight: CGFloat, viewportHeight: CGFloat,
         documentMatches: Bool, windowSize: NSSize)
-      case missingScrollDraw
-      case missingScrollWork
-      case missingPageLoad
     }
 
     @MainActor private final class Session {
       private let options: Options
-      private let window: PerformanceWindow
+      private let window: NSWindow
       private let scrollView: NSScrollView
       private let textView: EditorTextView
       private let host: EditorViewportHostView
@@ -106,25 +78,8 @@
       private var processingDurations: [Double] = []
       private var keyToInsertDurations: [Double] = []
       private var workDurations: [Double] = []
-      private var scrollDispatchDurations: [Double] = []
-      private var scrollDrawDurations: [Double] = []
-      private var pageLoadDurations: [Double] = []
-      private var scrollWorkDurations: [Double] = []
-      private var scrollIsActive = false
-      private var scrollStartOffset: CGFloat?
-      private var scrollPageLoadsBefore = 0
-      private var currentScrollDispatchDuration = 0.0
-      private var scrollDispatchStart: ContinuousClock.Instant?
-      private var scrollDispatchInterval: OSSignpostIntervalState?
-      private var scrollDrawStart: ContinuousClock.Instant?
-      private var scrollDrawInterval: OSSignpostIntervalState?
-      private var currentScrollDrawDuration = 0.0
       private var dirtyRectAreas: [Double] = []
       private var statusLabel: NSTextField?
-      private var pageStatusLabel: NSTextField?
-      private var scrollButton: NSButton?
-      private var scrollSample = 0
-      private var scrollDiagnostics: [String] = []
 
       init(options: Options) {
         self.options = options
@@ -141,9 +96,7 @@
         let textView = coordinator.performanceTextView
         let scrollView = host.scrollView
         scrollView.setAccessibilityIdentifier("editor-performance-scroll")
-        scrollView.verticalScroller?.setAccessibilityIdentifier(
-          "editor-performance-vertical-scrollbar")
-        let window = PerformanceWindow(
+        let window = NSWindow(
           contentRect: NSRect(origin: NSPoint(x: 80, y: 80), size: viewportSize),
           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Editor Performance Fixture"
@@ -162,16 +115,8 @@
         textView.onPerformanceInsertText = { [weak self] in self?.recordInsertText() }
         textView.onPerformanceDrawStart = { [weak self] _ in self?.beginDraw() }
         textView.onPerformanceDraw = { [weak self] rect in self?.finishDraw(dirtyRect: rect) }
-        textView.onPerformanceScrollWheel = { [weak self, weak textView] event, stage in
-          self?.recordScrollDiagnostic(event, hitView: textView, stage: stage)
-        }
         coordinator.onPerformanceViewportRequested = { [weak self] start in
           self?.loadViewport(fromLine: start)
-        }
-        window.onScrollStart = { [weak self] in self?.beginScrollEvent() }
-        window.onScrollEnd = { [weak self] in self?.endScrollEvent() }
-        window.onScrollDiagnostic = { [weak self] event, hitView, stage in
-          self?.recordScrollDiagnostic(event, hitView: hitView, stage: stage)
         }
       }
 
@@ -195,22 +140,6 @@
         status.isHidden = true
         container.addSubview(status)
         statusLabel = status
-        let pageStatus = NSTextField(labelWithString: "Pages 0; fromLine 0")
-        pageStatus.setAccessibilityIdentifier("editor-performance-page-status")
-        pageStatus.frame = NSRect(
-          x: viewportSize.width - 270, y: viewportSize.height - 150,
-          width: 260, height: 22)
-        container.addSubview(pageStatus)
-        pageStatusLabel = pageStatus
-        let next = NSButton(
-          title: "Next scroll", target: self, action: #selector(nextScroll(_:)))
-        next.setAccessibilityIdentifier("next-editor-performance-scroll")
-        next.frame = NSRect(
-          x: viewportSize.width - 190, y: viewportSize.height - 112,
-          width: 180, height: 32)
-        next.isHidden = true
-        container.addSubview(next)
-        scrollButton = next
         window.contentView = container
         window.contentMinSize = EditorPerformanceFixture.viewportSize
         window.contentMaxSize = EditorPerformanceFixture.viewportSize
@@ -232,33 +161,15 @@
           guard let self else { return }
           do {
             try self.measureKeys()
-            self.updatePageStatus()
-            self.scrollButton?.isHidden = false
+            try self.finishMeasurement()
+            self.statusLabel?.isHidden = false
           } catch {
             self.recordFailure(error)
           }
         }
       }
 
-      @objc private func nextScroll(_ sender: NSButton) {
-        do {
-          try finishScrollSample()
-          scrollSample += 1
-          sender.title = "Scroll \(scrollSample); pages \(pageLoadDurations.count)"
-          updatePageStatus()
-          if scrollSample == EditorPerformanceFixture.scrollSampleCount {
-            sender.isHidden = true
-            try finishMeasurement()
-            statusLabel?.isHidden = false
-          }
-        } catch {
-          recordFailure(error)
-        }
-      }
-
       private func loadViewport(fromLine start: UInt32) {
-        let begin = ContinuousClock.now
-        let interval = signposter.beginInterval(pageLoadSignpostName)
         let visibleOrigin = scrollView.contentView.bounds.origin
         let count = UInt32(ProtocolLimits.editorViewportLines)
         let end = min(start + count, EditorPerformanceFixture.fileLineCount)
@@ -275,8 +186,6 @@
         scrollView.contentView.scroll(to: visibleOrigin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         coordinator.isPerformanceLoadingViewport = false
-        signposter.endInterval(pageLoadSignpostName, interval)
-        pageLoadDurations.append(Self.milliseconds(since: begin))
       }
 
       private static func makeEditorView() -> (String, EditorFileView) {
@@ -305,17 +214,7 @@
         String(format: "// line %06d", line)
       }
 
-      private func updatePageStatus() {
-        let offset = Int(scrollView.contentView.bounds.minY.rounded())
-        pageStatusLabel?.stringValue =
-          "Pages \(pageLoadDurations.count); fromLine \(editorView.viewport?.fromLine ?? 0); offsetPt \(offset)"
-      }
-
       private func finishMeasurement() throws {
-        guard pageLoadDurations.count >= 20 else { throw Failure.missingPageLoad }
-        guard scrollDrawDurations.count == EditorPerformanceFixture.scrollSampleCount
-        else { throw Failure.missingScrollDraw }
-        guard scrollWorkDurations.count >= 20 else { throw Failure.missingScrollWork }
         let report: [String: Any] = [
           "keystroke_to_pixel_p95_ms": Self.percentile95(keyDurations),
           "key_to_draw_start_median_ms": Self.median(waitDurations),
@@ -328,19 +227,11 @@
           "key_to_insert_p95_ms": Self.percentile95(keyToInsertDurations),
           "key_work_median_ms": Self.median(workDurations),
           "key_work_p95_ms": Self.percentile95(workDurations),
-          "scroll_event_dispatch_p95_ms": Self.percentile95(scrollDispatchDurations),
-          "scroll_draw_p95_ms": Self.percentile95(scrollDrawDurations),
-          "page_load_p95_ms": Self.percentile95(pageLoadDurations),
-          "page_load_samples": pageLoadDurations.count,
-          "scroll_work_p95_ms": Self.percentile95(scrollWorkDurations),
-          "scroll_work_samples": scrollWorkDurations.count,
           "key_work_samples": workDurations.count,
           "key_event_samples": keyDurations.count,
           "validated_key_samples": sampleEvents.filter {
             $0 == [.keyDown, .insertText, .draw]
           }.count,
-          "scroll_events": scrollDispatchDurations.count,
-          "scroll_offset_pt": scrollView.contentView.bounds.minY,
           "file_line_count": EditorPerformanceFixture.fileLineCount,
           "loaded_viewport_lines": ProtocolLimits.editorViewportLines,
           "document_height_pt": textView.frame.height,
@@ -355,25 +246,11 @@
 
       private func recordFailure(_ error: Error) {
         FileHandle.standardError.write(Data("editor performance: \(error)\n".utf8))
-        scrollButton?.isEnabled = false
         statusLabel?.setAccessibilityIdentifier("editor-performance-error")
         statusLabel?.stringValue = "Measurement failed: \(error)"
         statusLabel?.isHidden = false
-        let partial: [String: Any] = [
-          "page_load_samples": pageLoadDurations.count,
-          "scroll_work_samples": scrollWorkDurations.count,
-          "scroll_offset_pt": scrollView.contentView.bounds.minY,
-        ]
-        if let data = try? JSONSerialization.data(withJSONObject: partial) {
-          try? data.write(to: options.report.appendingPathExtension("partial"), options: .atomic)
-        }
         if let data = String(describing: error).data(using: .utf8) {
           try? data.write(to: options.report.appendingPathExtension("error"), options: .atomic)
-        }
-        let diagnostic = scrollDiagnostics.joined(separator: "\n")
-        if let data = diagnostic.data(using: .utf8) {
-          try? data.write(
-            to: options.report.appendingPathExtension("diagnostic"), options: .atomic)
         }
       }
 
@@ -400,16 +277,10 @@
           abs(windowSize.width - EditorPerformanceFixture.viewportSize.width) < 1,
           abs(windowSize.height - EditorPerformanceFixture.viewportSize.height) < 1
         else {
-          throw Failure.invalidScrollGeometry(
+          throw Failure.invalidFixtureGeometry(
             documentHeight: documentHeight, viewportHeight: viewportHeight,
             documentMatches: documentMatches, windowSize: windowSize)
         }
-        let loadedQuarter =
-          CGFloat(ProtocolLimits.editorViewportLines / 4)
-          * EditorTextMetrics.lineHeight
-        scrollView.contentView.scroll(to: NSPoint(x: 0, y: loadedQuarter))
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-        window.displayIfNeeded()
       }
 
       private static func character(for sample: Int) -> String {
@@ -429,69 +300,6 @@
         try sendMeasuredKey(event, sample: sample)
         guard textView.string.utf16.count == before.utf16.count + 1
         else { throw Failure.missingTextEdit }
-      }
-
-      private func beginScrollEvent() {
-        if !scrollIsActive {
-          scrollIsActive = true
-          scrollStartOffset = scrollView.contentView.bounds.minY
-          scrollPageLoadsBefore = pageLoadDurations.count
-          currentScrollDispatchDuration = 0
-          currentScrollDrawDuration = 0
-        }
-        scrollDispatchStart = .now
-        scrollDispatchInterval = signposter.beginInterval(scrollSignpostName)
-      }
-
-      private func recordScrollDiagnostic(_ event: NSEvent, hitView: NSView?, stage: String) {
-        let clip = scrollView.contentView
-        let documentHeight = scrollView.documentView?.frame.height ?? -1
-        var hitViews: [String] = []
-        var view = hitView
-        while let current = view {
-          hitViews.append(String(describing: type(of: current)))
-          view = current.superview
-        }
-        let hitPath = hitViews.joined(separator: ">")
-        let line =
-          "scroll diagnostic \(stage): deltaY=\(event.scrollingDeltaY) "
-          + "precise=\(event.hasPreciseScrollingDeltas) phase=\(event.phase.rawValue) "
-          + "momentum=\(event.momentumPhase.rawValue) window=\(event.windowNumber) "
-          + "point=\(event.locationInWindow) hit=\(hitPath) "
-          + "clipY=\(clip.bounds.minY) clipHeight=\(clip.bounds.height) "
-          + "documentHeight=\(documentHeight) textHeight=\(textView.frame.height) "
-          + "textMinHeight=\(textView.minSize.height)"
-        scrollDiagnostics.append(line)
-      }
-
-      private func endScrollEvent() {
-        guard let scrollDispatchStart, let scrollDispatchInterval else { return }
-        signposter.endInterval(scrollSignpostName, scrollDispatchInterval)
-        currentScrollDispatchDuration += Self.milliseconds(since: scrollDispatchStart)
-        self.scrollDispatchStart = nil
-        self.scrollDispatchInterval = nil
-      }
-
-      private func finishScrollSample() throws {
-        guard let before = scrollStartOffset else {
-          throw Failure.missingScrollEvent(sample: scrollSample)
-        }
-        window.displayIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.018))
-        window.displayIfNeeded()
-        let after = scrollView.contentView.bounds.minY
-        guard before != after else {
-          throw Failure.missingScrollMovement(sample: scrollSample, before: before, after: after)
-        }
-        scrollDispatchDurations.append(currentScrollDispatchDuration)
-        scrollDrawDurations.append(currentScrollDrawDuration)
-        // The page swap is recorded separately for #404; ordinary scroll work
-        // remains a gate even while that known layout hitch is unresolved.
-        if pageLoadDurations.count == scrollPageLoadsBefore {
-          scrollWorkDurations.append(currentScrollDispatchDuration + currentScrollDrawDuration)
-        }
-        scrollIsActive = false
-        scrollStartOffset = nil
       }
 
       private func sendMeasuredKey(_ event: NSEvent, sample: Int) throws {
@@ -556,11 +364,6 @@
       }
 
       private func beginDraw() {
-        if scrollIsActive {
-          scrollDrawStart = .now
-          scrollDrawInterval = signposter.beginInterval(scrollDrawSignpostName)
-          return
-        }
         guard let waitInterval, let eventStart, let activeSignpostID else { return }
         signposter.endInterval(waitSignpostName, waitInterval)
         self.waitInterval = nil
@@ -570,13 +373,6 @@
       }
 
       private func finishDraw(dirtyRect: NSRect) {
-        if scrollIsActive, let scrollDrawInterval, let scrollDrawStart {
-          signposter.endInterval(scrollDrawSignpostName, scrollDrawInterval)
-          self.scrollDrawInterval = nil
-          self.scrollDrawStart = nil
-          currentScrollDrawDuration += Self.milliseconds(since: scrollDrawStart)
-          return
-        }
         guard let drawInterval, let drawStart, let eventStart, let activeSample else { return }
         sampleEvents[activeSample].append(.draw)
         signposter.endInterval(drawSignpostName, drawInterval)

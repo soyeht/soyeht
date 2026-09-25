@@ -9,17 +9,12 @@ from unittest import mock
 import check_editor_performance as gate
 
 
-def run(key: float = 4.0, scroll: float = 5.0) -> dict:
+def run(key: float = 4.0) -> dict:
     return {
         "key_work_p95_ms": key,
-        "scroll_work_p95_ms": scroll,
-        "page_load_p95_ms": 55.0,  # #404 is diagnostic, not green by omission.
         "key_event_samples": 240,
         "validated_key_samples": 240,
         "key_work_samples": 240,
-        "scroll_events": 48,
-        "scroll_work_samples": 24,
-        "page_load_samples": 24,
         "file_line_count": 100_000,
         "visual_validation": "real_window_screenshot_and_gutter",
     }
@@ -30,6 +25,7 @@ def report(*runs: dict) -> dict:
         "configuration": "Release",
         "editor_tree_hash": "editor-hash",
         "measured_head": "old-engine-only-head",
+        "unmeasured": gate.UNMEASURED,
         "runs": list(runs),
     }
 
@@ -44,9 +40,12 @@ class EditorPerformanceGateTests(unittest.TestCase):
         result = gate.report_failures(
             report(run(key=8.2), run(key=8.7), run(key=7.0)), "editor-hash")
         self.assertTrue(any("key_work_p95_ms" in failure for failure in result))
-        result = gate.report_failures(
-            report(run(scroll=8.1), run(scroll=8.6), run(scroll=7.0)), "editor-hash")
-        self.assertTrue(any("scroll_work_p95_ms" in failure for failure in result))
+
+    def test_scroll_and_page_load_must_be_marked_unmeasured(self):
+        proof = report(run(), run(), run())
+        del proof["unmeasured"]
+        result = gate.report_failures(proof, "editor-hash")
+        self.assertTrue(any("unmeasured" in failure for failure in result))
 
     def test_missing_visual_or_event_proof_is_red(self):
         bad = run()
