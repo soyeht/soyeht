@@ -46,7 +46,9 @@
       case missingKeyProcessing(processing: Int, draw: Int, key: Int)
       case missingTextEdit
       case invalidFocus
-      case missingScrollMovement(sample: Int, before: CGFloat, after: CGFloat)
+      case missingScrollMovement(
+        sample: Int, before: CGFloat, after: CGFloat,
+        eventWindow: Int, fixtureWindow: Int, locationInWindow: NSPoint)
       case invalidSampleEvents(sample: Int)
       case finalTextMismatch
       case invalidScrollGeometry(
@@ -393,7 +395,12 @@
             wheel1: delta, wheel2: 0, wheel3: 0)
         else { throw Failure.scrollEvent }
         let center = NSPoint(x: viewportSize.width / 2, y: viewportSize.height / 2)
-        cgEvent.location = window.convertPoint(toScreen: center)
+        let screenPoint = window.convertPoint(toScreen: center)
+        // Quartz event locations are top-left based; AppKit screen points are
+        // bottom-left based. Keep the synthetic event over the editor viewport.
+        guard let mainScreen = NSScreen.screens.first else { throw Failure.scrollEvent }
+        cgEvent.location = CGPoint(
+          x: screenPoint.x, y: mainScreen.frame.maxY - screenPoint.y)
         cgEvent.setIntegerValueField(
           .eventTargetUnixProcessID, value: Int64(ProcessInfo.processInfo.processIdentifier))
         cgEvent.setIntegerValueField(
@@ -410,9 +417,18 @@
         window.sendEvent(event)
         signposter.endInterval(scrollSignpostName, interval)
         processingDuration = Self.milliseconds(since: start)
+        // AppKit can apply a wheel event during its next run-loop pass. The
+        // wait is outside the measured synchronous dispatch interval.
+        let deadline = Date().addingTimeInterval(0.1)
+        while scrollView.contentView.bounds.minY == before, Date() < deadline {
+          RunLoop.current.run(until: Date().addingTimeInterval(0.002))
+        }
         let after = scrollView.contentView.bounds.minY
         guard before != after else {
-          throw Failure.missingScrollMovement(sample: sample, before: before, after: after)
+          throw Failure.missingScrollMovement(
+            sample: sample, before: before, after: after,
+            eventWindow: event.windowNumber, fixtureWindow: window.windowNumber,
+            locationInWindow: event.locationInWindow)
         }
         scrollDispatchDurations.append(processingDuration)
         window.displayIfNeeded()
