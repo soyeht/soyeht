@@ -16,8 +16,9 @@ def run(key: float = 4.0, scroll: float = 5.0) -> dict:
         "page_load_p95_ms": 55.0,  # #404 is diagnostic, not green by omission.
         "key_event_samples": 240,
         "validated_key_samples": 240,
-        "scroll_events": 80,
-        "scroll_work_samples": 60,
+        "key_work_samples": 240,
+        "scroll_events": 48,
+        "scroll_work_samples": 24,
         "page_load_samples": 24,
         "file_line_count": 100_000,
         "visual_validation": "real_window_screenshot_and_gutter",

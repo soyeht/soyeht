@@ -23,6 +23,9 @@ report. Key and ordinary-scroll work each require median p95 < 8 ms across the
 three runs; every run asserts real-screen text ink, aligned gutter, 240 typed
 characters, movement, and at least 20 page changes. Page-load timing remains
 diagnostic under #404; the old CPU bitmap stopwatch is gone.
+The report prints the sample count for every p95. With 24 samples, p95 is the
+second-highest observed value, not a strong population estimate; the gate uses
+the median of three Release runs.
 
 Install the tools listed in `docs/toolchains.md`. Build from the repository root:
 

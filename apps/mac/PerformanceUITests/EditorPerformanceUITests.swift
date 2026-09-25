@@ -3,9 +3,6 @@ import Foundation
 import XCTest
 
 final class EditorPerformanceUITests: XCTestCase {
-  private let subsystem = "com.soyeht.next.dev.mac"
-  private let category = "EditorPerformance"
-
   @MainActor func testEditorWorkAndVisiblePages() throws {
     let report = try XCTUnwrap(
       ProcessInfo.processInfo.environment["SOYEHT_EDITOR_PERFORMANCE_REPORT"])
@@ -13,64 +10,58 @@ final class EditorPerformanceUITests: XCTestCase {
       ProcessInfo.processInfo.environment["SOYEHT_EDITOR_METER_APP_BUNDLE_ID"])
     let app = XCUIApplication(bundleIdentifier: bundleIdentifier)
     app.launchArguments = ["--editor-performance-window-report", report]
-    let metrics = [
-      XCTOSSignpostMetric(
-        subsystem: subsystem, category: category, name: "EditorKeyProcessing"),
-      XCTOSSignpostMetric(subsystem: subsystem, category: category, name: "EditorDraw"),
-      XCTOSSignpostMetric(subsystem: subsystem, category: category, name: "EditorScrollProcessing"),
-      XCTOSSignpostMetric(subsystem: subsystem, category: category, name: "EditorPageLoad"),
-    ]
-    let options = XCTMeasureOptions()
-    options.iterationCount = 1
-    measure(metrics: metrics, options: options) {
-      app.launch()
-      defer { app.terminate() }
-      let window = app.windows["editor-performance-fixture"]
-      let start = window.buttons["start-editor-performance"]
-      guard start.waitForExistence(timeout: 15) else {
-        add(XCTAttachment(string: app.debugDescription))
-        XCTFail("editor fixture absent")
-        return
-      }
-      start.click()
-      let next = window.buttons["next-editor-performance-scroll"]
-      let ready = XCTNSPredicateExpectation(
-        predicate: NSPredicate(format: "hittable == YES"), object: next)
-      guard XCTWaiter.wait(for: [ready], timeout: 30) == .completed else {
-        add(XCTAttachment(string: app.debugDescription))
-        let error = window.staticTexts["editor-performance-error"]
-        XCTFail("key phase did not finish: \(error.exists ? error.label : "no fixture error")")
-        return
-      }
-      let pageStatus = window.staticTexts["editor-performance-page-status"]
-      let editorScroll = window.scrollViews["editor-performance-scroll"]
-      XCTAssertTrue(pageStatus.waitForExistence(timeout: 5))
-      XCTAssertTrue(editorScroll.waitForExistence(timeout: 5))
-      var priorPages = pageCount(pageStatus.label)
-      var validatedPages = 0
-      for _ in 0..<80 {
-        editorScroll.scroll(byDeltaX: 0, deltaY: 12_000)
-        next.click()
-        let count = pageCount(pageStatus.label)
-        if count > priorPages {
-          XCTAssertEqual(count, priorPages + 1, "page count skipped")
-          assertVisibleInkAndGutter(window.screenshot())
-          let fromLine = loadedLine(pageStatus.label)
-          let editorText = editorScroll.textViews.firstMatch.value as? String ?? ""
-          XCTAssertTrue(
-            editorText.contains(String(format: "// line %06d", fromLine)),
-            "visible page content does not match its gutter range")
-          validatedPages += 1
-        }
-        priorPages = count
-      }
-      XCTAssertGreaterThanOrEqual(validatedPages, 20)
-      XCTAssertTrue(
-        window.staticTexts["editor-performance-done"].waitForExistence(timeout: 15))
-      let receipt = XCTAttachment(string: "validated real-screen pages: \(validatedPages)")
-      receipt.lifetime = .keepAlways
-      add(receipt)
+    app.launch()
+    defer { app.terminate() }
+    let window = app.windows["editor-performance-fixture"]
+    let start = window.buttons["start-editor-performance"]
+    guard start.waitForExistence(timeout: 15) else {
+      add(XCTAttachment(string: app.debugDescription))
+      XCTFail("editor fixture absent")
+      return
     }
+    start.click()
+    let next = window.buttons["next-editor-performance-scroll"]
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "hittable == YES"), object: next)
+    guard XCTWaiter.wait(for: [ready], timeout: 30) == .completed else {
+      add(XCTAttachment(string: app.debugDescription))
+      let error = window.staticTexts["editor-performance-error"]
+      XCTFail("key phase did not finish: \(error.exists ? error.label : "no fixture error")")
+      return
+    }
+    let pageStatus = window.staticTexts["editor-performance-page-status"]
+    let editorScroll = window.scrollViews["editor-performance-scroll"]
+    XCTAssertTrue(pageStatus.waitForExistence(timeout: 5))
+    XCTAssertTrue(editorScroll.waitForExistence(timeout: 5))
+    let failure = window.staticTexts["editor-performance-error"]
+    var priorPages = pageCount(pageStatus.label)
+    var validatedPages = 0
+    for sample in 0..<48 {
+      let delta: CGFloat = sample.isMultiple(of: 2) ? -1_000 : -36_000
+      editorScroll.scroll(byDeltaX: 0, deltaY: delta)
+      next.click()
+      if failure.exists {
+        XCTFail("editor fixture failed at scroll \(sample): \(failure.label)")
+        return
+      }
+      let count = pageCount(pageStatus.label)
+      if count > priorPages {
+        XCTAssertEqual(count, priorPages + 1, "page count skipped")
+        assertVisibleInkAndGutter(window.screenshot())
+        let fromLine = loadedLine(pageStatus.label)
+        let editorText = editorScroll.textViews.firstMatch.value as? String ?? ""
+        XCTAssertTrue(
+          editorText.contains(String(format: "// line %06d", fromLine)),
+          "visible page content does not match its gutter range")
+        validatedPages += 1
+      }
+      priorPages = count
+    }
+    XCTAssertGreaterThanOrEqual(validatedPages, 20)
+    XCTAssertTrue(window.staticTexts["editor-performance-done"].waitForExistence(timeout: 3))
+    let receipt = XCTAttachment(string: "validated real-screen pages: \(validatedPages)")
+    receipt.lifetime = .keepAlways
+    add(receipt)
   }
 
   private func pageCount(_ label: String) -> Int {

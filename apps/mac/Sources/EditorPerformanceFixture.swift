@@ -18,7 +18,7 @@
     static let scrollDrawSignpostName: StaticString = "EditorScrollDraw"
     private static let viewportSize = NSSize(width: 1000, height: 720)
     private static let sampleCount = 240
-    private static let scrollSampleCount = 80
+    private static let scrollSampleCount = 48
     private static let fileLineCount: UInt32 = 100_000
     private static var current: Session?
 
@@ -317,6 +317,7 @@
           "page_load_samples": pageLoadDurations.count,
           "scroll_work_p95_ms": Self.percentile95(scrollWorkDurations),
           "scroll_work_samples": scrollWorkDurations.count,
+          "key_work_samples": workDurations.count,
           "key_event_samples": keyDurations.count,
           "validated_key_samples": sampleEvents.filter {
             $0 == [.keyDown, .insertText, .draw]

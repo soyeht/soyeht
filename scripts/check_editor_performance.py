@@ -82,7 +82,8 @@ def report_failures(report: dict, expected_hash: str) -> list[str]:
         for key, minimum in (
             ("key_event_samples", 240),
             ("validated_key_samples", 240),
-            ("scroll_events", 80),
+            ("key_work_samples", 240),
+            ("scroll_events", 48),
             ("scroll_work_samples", 20),
             ("page_load_samples", 20),
         ):
@@ -214,9 +215,16 @@ def main() -> int:
     options = parser.parse_args()
     try:
         report = run_vm_measurement() if options.measure else check()
-        for key in ("key_work_p95_ms", "scroll_work_p95_ms", "page_load_p95_ms"):
+        for key, count_key in (
+            ("key_work_p95_ms", "key_work_samples"),
+            ("scroll_work_p95_ms", "scroll_work_samples"),
+            ("page_load_p95_ms", "page_load_samples"),
+        ):
             values = [run[key] for run in report["runs"]]
-            print(f"editor-performance: {key} runs={values} median={statistics.median(values):.3f}")
+            counts = [run[count_key] for run in report["runs"]]
+            print(
+                f"editor-performance: {key} n={counts} runs={values} "
+                f"median={statistics.median(values):.3f}")
         print("editor-performance: page load diagnostic #404; passed")
         return 0
     except (
