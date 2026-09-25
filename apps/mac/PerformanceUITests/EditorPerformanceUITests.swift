@@ -38,7 +38,8 @@ final class EditorPerformanceUITests: XCTestCase {
         predicate: NSPredicate(format: "hittable == YES"), object: next)
       guard XCTWaiter.wait(for: [ready], timeout: 30) == .completed else {
         add(XCTAttachment(string: app.debugDescription))
-        XCTFail("key phase did not finish")
+        let error = window.staticTexts["editor-performance-error"]
+        XCTFail("key phase did not finish: \(error.exists ? error.label : "no fixture error")")
         return
       }
       let pageStatus = window.staticTexts["editor-performance-page-status"]

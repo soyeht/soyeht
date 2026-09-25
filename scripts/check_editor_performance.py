@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -155,7 +156,15 @@ def run_vm_measurement() -> dict:
             )
             log.write_text(sanitized)
             if result.returncode:
-                raise RuntimeError(f"VM UI test run {index + 1} failed; inspect {log}")
+                evidence = Path(tempfile.mkdtemp(prefix="editor-performance-failure-", dir=CACHE))
+                for suffix in (".error", ".partial"):
+                    artifact = raw.with_suffix(raw.suffix + suffix)
+                    if artifact.is_file():
+                        shutil.copy2(artifact, evidence / artifact.name)
+                if bundle.is_dir():
+                    shutil.copytree(bundle, evidence / bundle.name)
+                raise RuntimeError(
+                    f"VM UI test run {index + 1} failed; inspect {log} and {evidence}")
             if not raw.is_file():
                 raise RuntimeError(f"VM UI test run {index + 1} produced no app report")
             run = json.loads(raw.read_text())

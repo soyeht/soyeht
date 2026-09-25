@@ -311,6 +311,9 @@
       private func recordFailure(_ error: Error) {
         FileHandle.standardError.write(Data("editor performance: \(error)\n".utf8))
         scrollButton?.isEnabled = false
+        statusLabel?.setAccessibilityIdentifier("editor-performance-error")
+        statusLabel?.stringValue = "Measurement failed: \(error)"
+        statusLabel?.isHidden = false
         let partial: [String: Any] = [
           "page_load_samples": pageLoadDurations.count,
           "scroll_work_samples": scrollWorkDurations.count,
