@@ -64,9 +64,11 @@ fn permission_presentation(tool: &Value) -> Result<PermissionPresentation> {
         }
     }
     let command = if tool["kind"] == "execute" {
-        let title = tool["title"].as_str().filter(|text| !text.is_empty());
-        let value = title
-            .or_else(|| execution_details.first().map(String::as_str))
+        // The claude-acp adapter puts a human summary in title/content; only
+        // rawInput.command is the shell command that would actually run.
+        let value = tool["rawInput"]["command"]
+            .as_str()
+            .filter(|command| !command.trim().is_empty())
             .ok_or_else(|| invalid("Executable permission has no command to display"))?;
         if value.len() > limits::PERMISSION_COMMAND_BYTES {
             return Err(invalid(
@@ -74,9 +76,8 @@ fn permission_presentation(tool: &Value) -> Result<PermissionPresentation> {
             ));
         }
         let command = value.to_owned();
-        if title.is_none() {
-            execution_details.remove(0);
-        }
+        execution_details
+            .retain(|detail| detail != &command && tool["title"].as_str() != Some(detail.as_str()));
         Some(command)
     } else {
         None
@@ -606,29 +607,66 @@ mod presentation_tests {
     }
 
     #[test]
-    fn execute_permission_shows_complete_acp_command_and_content() {
+    fn claude_execute_permission_shows_raw_command_not_summary() {
+        // Sanitized from the real claude-acp permission request observed on VM1.
+        let command = "touch made-by-shell.txt && ls -la";
+        let params = json!({
+            "toolCall": {"kind": "execute", "title": "Create file and list directory contents",
+                "rawInput": {"command": command, "description": "Create file and list directory contents",
+                    "secret": "never-public"},
+                "content": [{"type": "content", "content": {"type": "text",
+                    "text": "Create file and list directory contents"}}]},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+            "_meta": {"permission": {"version": 1,
+                "title": "Create file and list directory contents",
+                "description": "Review shell command"}}
+        });
+        let (public, _) = public_question("session/request_permission", &params, json!({}))
+            .expect("complete command must be displayable");
+        assert_eq!(public["title"], "Create file and list directory contents");
+        assert_eq!(public["presentation"]["command"], command);
+        assert_eq!(public["presentation"]["executionDetails"], Value::Null);
+        assert!(!public.to_string().contains("never-public"));
+        assert!(!public.to_string().contains("rawInput"));
+    }
+
+    #[test]
+    fn execute_permission_preserves_long_multiline_command_and_extra_content() {
         let command = format!("ls -la\nprintf '%s' {}", "x".repeat(600));
         let params = json!({
-            "toolCall": {"kind": "execute", "title": command,
-                "rawInput": {"secret": "never-public"},
+            "toolCall": {"kind": "execute", "title": "List and print",
+                "rawInput": {"command": command},
                 "content": [{"type": "content", "content": {"type": "text",
                     "text": "Working directory: /project"}}]},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
         });
         let (public, _) = public_question("session/request_permission", &params, json!({}))
             .expect("complete command must be displayable");
-        assert_eq!(public["title"], "Run command");
         assert_eq!(public["presentation"]["command"], command);
         assert_eq!(
             public["presentation"]["executionDetails"][0],
             "Working directory: /project"
         );
-        assert!(!public.to_string().contains("never-public"));
     }
 
     #[test]
     fn execute_without_displayable_command_fails_closed() {
-        let params = json!({"toolCall": {"kind": "execute", "rawInput": {"command": "ls"}},
+        let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
+            "content": [{"type": "content", "content": {"type": "text",
+                "text": "List directory"}}]},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+
+        let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
+            "rawInput": {"command": "  \n  "}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+    }
+
+    #[test]
+    fn execute_command_over_display_limit_fails_closed() {
+        let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
+            "rawInput": {"command": "x".repeat(limits::PERMISSION_COMMAND_BYTES + 1)}},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
         assert!(public_question("session/request_permission", &params, json!({})).is_err());
     }
