@@ -96,6 +96,8 @@ public final class EngineClient {
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
   @ObservationIgnored var agentTranscriptRevisions: [String: UInt64] = [:]
   @ObservationIgnored var agentTranscriptLoadsInFlight: [String: UInt64] = [:]
+  @ObservationIgnored var harnessRefreshGeneration: UInt64 = 0
+  @ObservationIgnored var modelRefreshGenerations: [String: UInt64] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var editorRefreshTasks: [String: Task<Void, Never>] = [:]

@@ -4,6 +4,11 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func lateCatalogRepliesCannotReplaceTheNewestRefresh() {
+  #expect(AgentCatalogResponseOrder.accepts(request: 2, latest: 2))
+  #expect(!AgentCatalogResponseOrder.accepts(request: 1, latest: 2))
+}
+
 @Test func agentStatusShowsSignInInsteadOfStartingWhenAuthenticationIsRequired() {
   #expect(
     AgentPaneStatusPresentation.title(

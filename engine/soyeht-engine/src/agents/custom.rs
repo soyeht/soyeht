@@ -29,11 +29,13 @@ impl Core {
         params: &Value,
         result: Value,
     ) -> Result<Value> {
-        Ok(self
+        let result = self
             .mutate(connection, method, params, |_| {
                 Ok((result.clone(), Vec::new()))
             })?
-            .result)
+            .result;
+        self.catalog_epoch = self.catalog_epoch.wrapping_add(1);
+        Ok(result)
     }
 
     fn create_custom_harness(&mut self, connection: &str, params: &Value) -> Result<Value> {

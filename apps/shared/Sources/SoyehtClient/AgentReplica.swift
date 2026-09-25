@@ -1,6 +1,10 @@
 import Foundation
 import SoyehtProtocol
 
+enum AgentCatalogResponseOrder {
+  static func accepts(request: UInt64, latest: UInt64) -> Bool { request == latest }
+}
+
 public enum AgentPaneStatusPresentation {
   public static func title(
     state: PaneState, needsAuthentication: Bool, hasSession: Bool
@@ -459,6 +463,8 @@ extension EngineClient {
   }
 
   private func loadHarnesses(rescan: Bool) async throws {
+    harnessRefreshGeneration &+= 1
+    let generation = harnessRefreshGeneration
     harnessLoadCount += 1
     defer { harnessLoadCount -= 1 }
     var cursor: String?
@@ -474,8 +480,10 @@ extension EngineClient {
       environmentIssue = environmentIssue ?? page.environmentIssue
       cursor = page.nextCursor
     } while cursor != nil
-    harnesses = items
-    harnessEnvironmentIssue = environmentIssue
+    if AgentCatalogResponseOrder.accepts(request: generation, latest: harnessRefreshGeneration) {
+      harnesses = items
+      harnessEnvironmentIssue = environmentIssue
+    }
   }
 
   public func refreshHarnesses(rescan: Bool = false) {
@@ -526,6 +534,8 @@ extension EngineClient {
 
   public func refreshCatalogue(harness: String, paneId: String? = nil) {
     perform {
+      self.modelRefreshGenerations[harness, default: 0] &+= 1
+      let generation = self.modelRefreshGenerations[harness, default: 0]
       self.agentCatalogueLoadCounts[harness, default: 0] += 1
       defer {
         let remaining = self.agentCatalogueLoadCounts[harness, default: 1] - 1
@@ -552,8 +562,12 @@ extension EngineClient {
         source = page.source
         cursor = page.nextCursor
       } while cursor != nil
-      self.agentCatalogues[harness] = AgentCatalogue(
-        models: models, options: options, source: source)
+      if AgentCatalogResponseOrder.accepts(
+        request: generation, latest: self.modelRefreshGenerations[harness, default: 0]
+      ) {
+        self.agentCatalogues[harness] = AgentCatalogue(
+          models: models, options: options, source: source)
+      }
     }
   }
 
