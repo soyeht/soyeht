@@ -221,6 +221,7 @@
           guard let self else { return }
           do {
             try self.measureKeys()
+            self.updatePageStatus()
             self.scrollButton?.isHidden = false
           } catch {
             self.recordFailure(error)
@@ -233,8 +234,7 @@
           try finishScrollSample()
           scrollSample += 1
           sender.title = "Scroll \(scrollSample); pages \(pageLoadDurations.count)"
-          pageStatusLabel?.stringValue =
-            "Pages \(pageLoadDurations.count); fromLine \(editorView.viewport?.fromLine ?? 0)"
+          updatePageStatus()
           if scrollSample == EditorPerformanceFixture.scrollSampleCount {
             sender.isHidden = true
             try finishMeasurement()
@@ -294,6 +294,12 @@
         String(format: "// line %06d", line)
       }
 
+      private func updatePageStatus() {
+        let offset = Int(scrollView.contentView.bounds.minY.rounded())
+        pageStatusLabel?.stringValue =
+          "Pages \(pageLoadDurations.count); fromLine \(editorView.viewport?.fromLine ?? 0); offsetPt \(offset)"
+      }
+
       private func finishMeasurement() throws {
         guard pageLoadDurations.count >= 20 else { throw Failure.missingPageLoad }
         guard scrollDrawDurations.count == EditorPerformanceFixture.scrollSampleCount
@@ -323,6 +329,7 @@
             $0 == [.keyDown, .insertText, .draw]
           }.count,
           "scroll_events": scrollDispatchDurations.count,
+          "scroll_offset_pt": scrollView.contentView.bounds.minY,
           "file_line_count": EditorPerformanceFixture.fileLineCount,
           "loaded_viewport_lines": ProtocolLimits.editorViewportLines,
           "document_height_pt": textView.frame.height,

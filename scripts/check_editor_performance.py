@@ -158,6 +158,8 @@ def run_vm_measurement() -> dict:
             log.write_text(sanitized)
             if result.returncode:
                 evidence = Path(tempfile.mkdtemp(prefix="editor-performance-failure-", dir=CACHE))
+                if raw.is_file():
+                    shutil.copy2(raw, evidence / raw.name)
                 for suffix in (".error", ".partial"):
                     artifact = raw.with_suffix(raw.suffix + suffix)
                     if artifact.is_file():

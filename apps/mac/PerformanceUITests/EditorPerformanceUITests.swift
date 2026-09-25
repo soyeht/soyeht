@@ -34,21 +34,45 @@ final class EditorPerformanceUITests: XCTestCase {
     XCTAssertTrue(pageStatus.waitForExistence(timeout: 5))
     XCTAssertTrue(editorScroll.waitForExistence(timeout: 5))
     let failure = window.staticTexts["editor-performance-error"]
-    var priorPages = pageCount(pageStatus.label)
+    let initialLabel = pageStatus.label
+    guard let initialOffset = scrollOffset(initialLabel) else {
+      XCTFail("initial scroll offset missing: \(initialLabel)")
+      return
+    }
+    var priorPages = pageCount(initialLabel)
+    var priorOffset = initialOffset
     var validatedPages = 0
+    var scrollTrace = ["initial: \(initialLabel)"]
     for sample in 0..<48 {
       let delta: CGFloat = sample.isMultiple(of: 2) ? -1_000 : -36_000
       editorScroll.scroll(byDeltaX: 0, deltaY: delta)
       next.click()
+      let label = pageStatus.label
+      let offset = scrollOffset(label)
+      scrollTrace.append("sample \(sample), delta \(delta): \(label)")
       if failure.exists {
+        attachScrollTrace(scrollTrace)
         XCTFail("editor fixture failed at scroll \(sample): \(failure.label)")
         return
       }
-      let count = pageCount(pageStatus.label)
+      guard let offset else {
+        attachScrollTrace(scrollTrace)
+        XCTFail("scroll offset missing at sample \(sample): \(label)")
+        return
+      }
+      let minimumMovement = abs(delta) * 0.4
+      guard offset - priorOffset >= minimumMovement else {
+        attachScrollTrace(scrollTrace)
+        XCTFail(
+          "scroll \(sample) moved \(offset - priorOffset) pt; expected at least \(minimumMovement) pt"
+        )
+        return
+      }
+      let count = pageCount(label)
       if count > priorPages {
         XCTAssertEqual(count, priorPages + 1, "page count skipped")
         assertVisibleInkAndGutter(window.screenshot())
-        let fromLine = loadedLine(pageStatus.label)
+        let fromLine = loadedLine(label)
         let editorText = editorScroll.textViews.firstMatch.value as? String ?? ""
         XCTAssertTrue(
           editorText.contains(String(format: "// line %06d", fromLine)),
@@ -56,7 +80,9 @@ final class EditorPerformanceUITests: XCTestCase {
         validatedPages += 1
       }
       priorPages = count
+      priorOffset = offset
     }
+    attachScrollTrace(scrollTrace)
     XCTAssertGreaterThanOrEqual(validatedPages, 20)
     XCTAssertTrue(window.staticTexts["editor-performance-done"].waitForExistence(timeout: 3))
     let receipt = XCTAttachment(string: "validated real-screen pages: \(validatedPages)")
@@ -71,7 +97,22 @@ final class EditorPerformanceUITests: XCTestCase {
   }
 
   private func loadedLine(_ label: String) -> Int {
-    Int(label.components(separatedBy: "fromLine ").last ?? "") ?? -1
+    Int(
+      label.components(separatedBy: "fromLine ").last?
+        .components(separatedBy: ";").first ?? "") ?? -1
+  }
+
+  private func scrollOffset(_ label: String) -> CGFloat? {
+    guard let value = label.components(separatedBy: "offsetPt ").last,
+      let offset = Double(value)
+    else { return nil }
+    return CGFloat(offset)
+  }
+
+  private func attachScrollTrace(_ trace: [String]) {
+    let receipt = XCTAttachment(string: trace.joined(separator: "\n"))
+    receipt.lifetime = .keepAlways
+    add(receipt)
   }
 
   @MainActor private func assertVisibleInkAndGutter(_ screenshot: XCUIScreenshot) {
