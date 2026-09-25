@@ -26,7 +26,9 @@ final class EditorPerformanceUITests: XCTestCase {
     guard XCTWaiter.wait(for: [ready], timeout: 30) == .completed else {
       add(XCTAttachment(string: app.debugDescription))
       let error = window.staticTexts["editor-performance-error"]
-      XCTFail("key phase did not finish: \(error.exists ? error.label : "no fixture error")")
+      XCTFail(
+        "key phase did not finish: \(error.exists ? String(describing: error.value) : "no fixture error")"
+      )
       return
     }
     let pageStatus = window.staticTexts["editor-performance-page-status"]
@@ -34,53 +36,51 @@ final class EditorPerformanceUITests: XCTestCase {
     XCTAssertTrue(pageStatus.waitForExistence(timeout: 5))
     XCTAssertTrue(editorScroll.waitForExistence(timeout: 5))
     let failure = window.staticTexts["editor-performance-error"]
-    let initialLabel = pageStatus.label
-    guard let initialOffset = scrollOffset(initialLabel) else {
-      XCTFail("initial scroll offset missing: \(initialLabel)")
+    let initialRawValue = pageStatus.value
+    guard let initial = readPageStatus(initialRawValue) else {
+      XCTFail("initial page status has no valid AX value: \(String(describing: initialRawValue))")
       return
     }
-    var priorPages = pageCount(initialLabel)
-    var priorOffset = initialOffset
+    var priorPages = initial.pages
+    var priorOffset = initial.offset
     var validatedPages = 0
-    var scrollTrace = ["initial: \(initialLabel)"]
+    var scrollTrace = ["initial: \(initial.value)"]
     for sample in 0..<48 {
       let delta: CGFloat = sample.isMultiple(of: 2) ? -1_000 : -36_000
       editorScroll.scroll(byDeltaX: 0, deltaY: delta)
       next.click()
-      let label = pageStatus.label
-      let offset = scrollOffset(label)
-      scrollTrace.append("sample \(sample), delta \(delta): \(label)")
+      let rawStatus = pageStatus.value
+      let rawValue = String(describing: rawStatus)
+      scrollTrace.append("sample \(sample), delta \(delta): \(rawValue)")
       if failure.exists {
         attachScrollTrace(scrollTrace)
-        XCTFail("editor fixture failed at scroll \(sample): \(failure.label)")
+        XCTFail("editor fixture failed at scroll \(sample): \(String(describing: failure.value))")
         return
       }
-      guard let offset else {
+      guard let status = readPageStatus(rawStatus) else {
         attachScrollTrace(scrollTrace)
-        XCTFail("scroll offset missing at sample \(sample): \(label)")
+        XCTFail("invalid page status at sample \(sample): \(rawValue)")
         return
       }
       let minimumMovement = abs(delta) * 0.4
-      guard offset - priorOffset >= minimumMovement else {
+      guard status.offset - priorOffset >= minimumMovement else {
         attachScrollTrace(scrollTrace)
         XCTFail(
-          "scroll \(sample) moved \(offset - priorOffset) pt; expected at least \(minimumMovement) pt"
+          "scroll \(sample) moved \(status.offset - priorOffset) pt; expected at least \(minimumMovement) pt"
         )
         return
       }
-      let count = pageCount(label)
-      if count > priorPages {
-        XCTAssertEqual(count, priorPages + 1, "page count skipped")
+      if status.pages > priorPages {
+        XCTAssertEqual(status.pages, priorPages + 1, "page count skipped")
         assertVisibleInkAndGutter(window.screenshot())
-        let fromLine = loadedLine(label)
         let editorText = editorScroll.textViews.firstMatch.value as? String ?? ""
         XCTAssertTrue(
-          editorText.contains(String(format: "// line %06d", fromLine)),
+          editorText.contains(String(format: "// line %06d", status.fromLine)),
           "visible page content does not match its gutter range")
         validatedPages += 1
       }
-      priorPages = count
-      priorOffset = offset
+      priorPages = status.pages
+      priorOffset = status.offset
     }
     attachScrollTrace(scrollTrace)
     XCTAssertGreaterThanOrEqual(validatedPages, 20)
@@ -90,23 +90,24 @@ final class EditorPerformanceUITests: XCTestCase {
     add(receipt)
   }
 
-  private func pageCount(_ label: String) -> Int {
-    Int(
-      label.components(separatedBy: ";").first?
-        .replacingOccurrences(of: "Pages ", with: "") ?? "") ?? -1
+  private struct PageStatus {
+    let value: String
+    let pages: Int
+    let fromLine: Int
+    let offset: CGFloat
   }
 
-  private func loadedLine(_ label: String) -> Int {
-    Int(
-      label.components(separatedBy: "fromLine ").last?
-        .components(separatedBy: ";").first ?? "") ?? -1
-  }
-
-  private func scrollOffset(_ label: String) -> CGFloat? {
-    guard let value = label.components(separatedBy: "offsetPt ").last,
-      let offset = Double(value)
+  private func readPageStatus(_ rawValue: Any?) -> PageStatus? {
+    guard let value = rawValue as? String, !value.isEmpty else { return nil }
+    let fields = value.components(separatedBy: "; ")
+    guard fields.count == 3,
+      fields[0].hasPrefix("Pages "), let pages = Int(fields[0].dropFirst("Pages ".count)),
+      fields[1].hasPrefix("fromLine "),
+      let fromLine = Int(fields[1].dropFirst("fromLine ".count)),
+      fields[2].hasPrefix("offsetPt "),
+      let offset = Double(fields[2].dropFirst("offsetPt ".count))
     else { return nil }
-    return CGFloat(offset)
+    return PageStatus(value: value, pages: pages, fromLine: fromLine, offset: CGFloat(offset))
   }
 
   private func attachScrollTrace(_ trace: [String]) {
