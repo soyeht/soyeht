@@ -1,6 +1,26 @@
 import Foundation
 import Observation
 import SoyehtProtocol
+import os
+
+private let engineTimeoutLogger = Logger(
+  subsystem: "com.soyeht.next", category: "engine-client-timeout")
+
+struct EngineTimeoutDiagnostic: Equatable {
+  let method: String
+  let durationMs: UInt64
+  let paneId: String?
+
+  init(method: String, params: JsonValue, durationMs: UInt64) {
+    self.method = method
+    self.durationMs = durationMs
+    self.paneId = params["paneId"].string.flatMap(UUID.init(uuidString:))?.uuidString.lowercased()
+  }
+
+  var logLine: String {
+    "method=\(method) durationMs=\(durationMs) paneId=\(paneId ?? "none")"
+  }
+}
 
 @MainActor @Observable
 public final class EngineClient {
@@ -97,6 +117,7 @@ public final class EngineClient {
   private struct Pending {
     var method: String
     var params: JsonValue
+    var startedAtNs: UInt64
     var continuation: CheckedContinuation<EngineResponse, Error>
     var timeout: Task<Void, Never>
   }
@@ -290,11 +311,16 @@ public final class EngineClient {
       let timeout = Task { [weak self] in
         do { try await Task.sleep(for: .seconds(timeoutSeconds)) } catch { return }
         guard let request = self?.pending.removeValue(forKey: id) else { return }
+        let elapsedNs = DispatchTime.now().uptimeNanoseconds - request.startedAtNs
+        let diagnostic = EngineTimeoutDiagnostic(
+          method: request.method, params: request.params, durationMs: elapsedNs / 1_000_000)
+        engineTimeoutLogger.error("Engine RPC timeout: \(diagnostic.logLine, privacy: .public)")
         request.continuation.resume(throwing: ClientFailure.timeout)
         self?.wire?.close()
       }
       pending[id] = Pending(
-        method: method, params: params, continuation: continuation, timeout: timeout)
+        method: method, params: params, startedAtNs: DispatchTime.now().uptimeNanoseconds,
+        continuation: continuation, timeout: timeout)
       Task {
         do {
           try await wire.send(
