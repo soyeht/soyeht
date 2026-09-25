@@ -1,26 +1,41 @@
 import SoyehtProtocol
 
+public struct TerminalNotice: Equatable, Sendable {
+  public enum Severity: Equatable, Sendable {
+    case neutral
+    case warning
+  }
+
+  public let text: String
+  public let systemImage: String
+  public let severity: Severity
+
+  public init(text: String, systemImage: String, severity: Severity) {
+    self.text = text
+    self.systemImage = systemImage
+    self.severity = severity
+  }
+}
+
 public enum TerminalStatePresentation {
-  public static func text(for state: PaneState) -> String {
+  /// Normal activity and an unclassified shell do not warrant an alert banner.
+  /// A process exit is informational because Pane does not carry its exit code.
+  public static func notice(for state: PaneState) -> TerminalNotice? {
     switch state {
-    case .starting:
-      "Terminal is starting."
-    case .working:
-      "Terminal is working."
-    case .idle:
-      "Terminal is idle."
-    case .waiting_for_you:
-      "Terminal is waiting for your input."
-    case .cancelling:
-      "Terminal work is being cancelled."
-    case .no_signal:
-      "The terminal has stopped sending signals. You can keep waiting or press Control-C."
-    case .recovering:
-      "Terminal is being restored."
     case .dead:
-      "Terminal process exited."
-    case .unknown:
-      "Terminal state is unknown. Soyeht cannot tell whether work is still running. You can keep using the terminal."
+      TerminalNotice(
+        text: "Terminal process exited.", systemImage: "stop.circle",
+        severity: .neutral)
+    case .no_signal:
+      TerminalNotice(
+        text: "The terminal has stopped sending signals. You can keep waiting or press Control-C.",
+        systemImage: "exclamationmark.triangle.fill", severity: .warning)
+    case .starting, .working, .idle, .waiting_for_you, .cancelling, .recovering, .unknown:
+      nil
     }
   }
+
+  public static let recordedGap = TerminalNotice(
+    text: "Some output was not recorded. The screen contains a gap.",
+    systemImage: "exclamationmark.triangle", severity: .warning)
 }

@@ -51,7 +51,7 @@ private func terminal(reference: UInt32 = 2, generation: UInt32 = 1, offset: UIn
   }
   #expect(try stream.accept(terminal(offset: 10, bytes: Data([27, 91]))) == Data([27, 91]))
   #expect(stream.next == 12)
-  try stream.gap(StreamGapEvent(streamId: "s", fromOffset: "12", toOffset: "19"))
+  #expect(try stream.gap(StreamGapEvent(streamId: "s", fromOffset: "12", toOffset: "19")))
   #expect(try stream.accept(terminal(offset: 19, bytes: Data([65]))) == Data([65]))
   #expect(
     try !stream.start(
@@ -141,6 +141,26 @@ private func terminal(reference: UInt32 = 2, generation: UInt32 = 1, offset: UIn
     try streams.accept(terminal(reference: 2, generation: 1, offset: 4, bytes: Data([3]))) == nil)
   streams.retainOnly([])
   #expect(streams.count == 0)
+}
+
+@Test func emptyStreamGapDoesNotClaimOutputWasLost() throws {
+  var streams = TerminalStreamReplica()
+  try streams.install(
+    paneId: "pane-a",
+    info: StreamInfo(
+      streamId: "stream-a", paneId: "pane-a", generation: 1,
+      firstRetainedOffset: "0", nextOffset: "0", binaryPaneRef: 2))
+  _ = try streams.start(
+    StreamReplayStartEvent(
+      streamId: "stream-a", generation: 1, fromOffset: "0", toOffset: "0", reset: true))
+
+  #expect(
+    try streams.gap(StreamGapEvent(streamId: "stream-a", fromOffset: "0", toOffset: "0")) == nil)
+  #expect(streams.gapText(for: "pane-a") == nil)
+  #expect(
+    try streams.gap(StreamGapEvent(streamId: "stream-a", fromOffset: "0", toOffset: "1"))
+      == "pane-a")
+  #expect(streams.gapText(for: "pane-a") == TerminalStatePresentation.recordedGap.text)
 }
 
 @Test func terminalStreamReplacementRejectsReferenceAndStreamAliasing() throws {

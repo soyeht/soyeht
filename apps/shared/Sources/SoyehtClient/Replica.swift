@@ -53,11 +53,12 @@ struct StreamPosition {
     next = offset + UInt64(frame.payload.count)
     return frame.payload
   }
-  mutating func gap(_ event: StreamGapEvent) throws {
+  mutating func gap(_ event: StreamGapEvent) throws -> Bool {
     guard event.streamId == streamId, let from = UInt64(event.fromOffset),
       let to = UInt64(event.toOffset), next == from, to >= from
     else { throw ClientFailure.invalidStream }
     next = to
+    return to > from
   }
 }
 
@@ -125,9 +126,10 @@ struct TerminalStreamReplica {
     guard let paneId = paneByStream[event.streamId], var position = positions[paneId] else {
       return nil
     }
-    try position.gap(event)
+    let omittedBytes = try position.gap(event)
     positions[paneId] = position
-    gapTextByPane[paneId] = "Some output was not recorded. The screen contains a gap."
+    guard omittedBytes else { return nil }
+    gapTextByPane[paneId] = TerminalStatePresentation.recordedGap.text
     return paneId
   }
 
