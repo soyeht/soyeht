@@ -8,6 +8,21 @@ the final title/body, pass `--base FULL_BASE_OID --event-file PATH_TO_EVENT_JSON
 Keep the vocabulary outside the repository. The workflows remain available for
 when hosted CI resumes.
 
+The editor performance proof is collected separately on VM1, from the same
+checkout as the PR. Set `SOYEHT_EDITOR_METER_VM=1` and a locally configured
+`SOYEHT_DEVELOPMENT_TEAM` in the VM (never commit either value), then run
+`python3 scripts/check_editor_performance.py --measure`. The command builds
+and UI-tests a signed Release app three times; it does not run on the host.
+Copy `.cache/editor-performance-vm.json` to the review checkout's `.cache`
+before `check_all.sh`. Configure the VM's SSH address outside the repository
+(for example, `SOYEHT_VM_SSH`), never in a script or report. The local gate
+rejects a missing/Debug/slow report or one whose editor Mac, SoyehtClient,
+protocol, or meter files changed. An engine-only commit can reuse a still-valid
+report. Key and ordinary-scroll work each require median p95 < 8 ms across the
+three runs; every run asserts real-screen text ink, aligned gutter, 240 typed
+characters, movement, and at least 20 page changes. Page-load timing remains
+diagnostic under #404; the old CPU bitmap stopwatch is gone.
+
 Install the tools listed in `docs/toolchains.md`. Build from the repository root:
 
 ```sh
