@@ -193,7 +193,7 @@ private struct GeneralPreferencesPanel: View {
       Text("Agent attention")
         .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
       Toggle(
-        "System notifications when agents need input",
+        "System alerts and Dock badges when agents need input",
         isOn: Binding(
           get: { notifications.enabled },
           set: { enabled in Task { await notifications.setEnabled(enabled) } })
@@ -201,7 +201,7 @@ private struct GeneralPreferencesPanel: View {
       .tint(MacTheme.accent)
       .accessibilityIdentifier("agent-attention-notifications")
       Text(
-        "Off by default. Tabs, the app bar, and the Dock still show requests without notifications."
+        "Off by default. Tabs and the app bar still show requests; Dock badges depend on macOS notification settings."
       )
       .font(MacTheme.chrome(MacTheme.TypeScale.caption))
       .foregroundStyle(MacTheme.secondary)
