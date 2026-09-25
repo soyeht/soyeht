@@ -1,3 +1,4 @@
+import AppKit
 import SoyehtClient
 import SwiftUI
 
@@ -14,24 +15,22 @@ struct SoyehtMacApp: App {
     webHost = host
     _client = State(initialValue: client)
     MacTheme.registerFonts()
-    #if DEBUG
-      if let report = EditorPerformanceProbe.requestedReportURL() {
-        EditorPerformanceProbe.runAndExit(report: report)
-      }
-    #endif
   }
 
   var body: some Scene {
     Window("Soyeht · Dev", id: "main") {
-      WorkspaceWindow(client: client, webHost: webHost)
-        .ignoresSafeArea(.container, edges: .top)
-        .frame(
-          minWidth: MacPaneLayoutMetrics.minimumExercisedViewport.width,
-          minHeight: MacPaneLayoutMetrics.minimumExercisedViewport.height
-        )
-        .environment(themeStore)
-        .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
-        .task { client.start() }
+      #if SOYEHT_PERFORMANCE_METER
+        if let options = EditorPerformanceFixture.requestedOptions() {
+          Color.clear.onAppear {
+            NSApp.mainWindow?.orderOut(nil)
+            EditorPerformanceFixture.launch(options)
+          }
+        } else {
+          workspaceContent
+        }
+      #else
+        workspaceContent
+      #endif
     }
     .defaultSize(width: 1440, height: 900)
     .windowStyle(.hiddenTitleBar)
@@ -81,6 +80,18 @@ struct SoyehtMacApp: App {
         .keyboardShortcut(",", modifiers: .command)
       }
     }
+  }
+
+  private var workspaceContent: some View {
+    WorkspaceWindow(client: client, webHost: webHost)
+      .ignoresSafeArea(.container, edges: .top)
+      .frame(
+        minWidth: MacPaneLayoutMetrics.minimumExercisedViewport.width,
+        minHeight: MacPaneLayoutMetrics.minimumExercisedViewport.height
+      )
+      .environment(themeStore)
+      .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
+      .task { client.start() }
   }
 
   private func workspaceViewCommand(
