@@ -9,7 +9,9 @@ final class EditorPerformanceUITests: XCTestCase {
   @MainActor func testEditorWorkAndVisiblePages() throws {
     let report = try XCTUnwrap(
       ProcessInfo.processInfo.environment["SOYEHT_EDITOR_PERFORMANCE_REPORT"])
-    let app = XCUIApplication(bundleIdentifier: "com.soyeht.next.dev.mac")
+    let bundleIdentifier = try XCTUnwrap(
+      ProcessInfo.processInfo.environment["SOYEHT_EDITOR_METER_APP_BUNDLE_ID"])
+    let app = XCUIApplication(bundleIdentifier: bundleIdentifier)
     app.launchArguments = ["--editor-performance-window-report", report]
     let metrics = [
       XCTOSSignpostMetric(

@@ -13,6 +13,7 @@ checkout as the PR. Set `SOYEHT_EDITOR_METER_VM=1` and a locally configured
 `SOYEHT_DEVELOPMENT_TEAM` in the VM (never commit either value), then run
 `python3 scripts/check_editor_performance.py --measure`. The command builds
 and UI-tests a signed Release app three times; it does not run on the host.
+The measurement app has its own bundle ID and does not replace a running Dev app.
 Copy `.cache/editor-performance-vm.json` to the review checkout's `.cache`
 before `check_all.sh`. Configure the VM's SSH address outside the repository
 (for example, `SOYEHT_VM_SSH`), never in a script or report. The local gate

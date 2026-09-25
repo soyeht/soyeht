@@ -24,6 +24,7 @@ VM_REPORT = CACHE / "editor-performance-vm.json"
 REPORT = CACHE / "editor-performance.json"
 RUST_REPORT = CACHE / "editor-performance-rust.json"
 WORK_LIMIT_MS = 8.0
+METER_BUNDLE_ID = "com.soyeht.next.dev.mac.editor-meter"
 RUST_LIMITS = {"open_100k_ms": 150.0, "search_1gb_ms": 1000.0}
 RUN_COUNT = 3
 
@@ -121,11 +122,12 @@ def run_vm_measurement() -> dict:
         "-derivedDataPath", str(derived), "-clonedSourcePackagesDirPath", str(packages),
         "-skipPackagePluginValidation", "-parallel-testing-enabled", "NO",
         "ONLY_ACTIVE_ARCH=YES", "SWIFT_ACTIVE_COMPILATION_CONDITIONS=SOYEHT_PERFORMANCE_METER",
-        "CODE_SIGN_STYLE=Automatic",
+        "CODE_SIGN_STYLE=Automatic", f"SOYEHT_APP_BUNDLE_ID={METER_BUNDLE_ID}",
     ]
     environment = os.environ.copy()
     environment["SOYEHT_PACKAGES"] = str(packages)
     environment["DEVELOPMENT_TEAM"] = team
+    environment["SOYEHT_EDITOR_METER_APP_BUNDLE_ID"] = METER_BUNDLE_ID
     runs = []
     # Both the app and runner can access this owner-only neutral path; it is
     # outside either app's container and is removed even when a run fails.

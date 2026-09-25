@@ -130,7 +130,8 @@
 				"MARKETING_VERSION" = "0.1.0";
 				"CURRENT_PROJECT_VERSION" = "1";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.developer-tools";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.soyeht.next.dev.mac";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(SOYEHT_APP_BUNDLE_ID)";
+				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.mac";
 				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
 				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "Soyeht Dev";
@@ -206,7 +207,8 @@
 				"MARKETING_VERSION" = "0.1.0";
 				"CURRENT_PROJECT_VERSION" = "1";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.developer-tools";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.soyeht.next.dev.mac";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(SOYEHT_APP_BUNDLE_ID)";
+				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.mac";
 				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
 				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "Soyeht Dev";
