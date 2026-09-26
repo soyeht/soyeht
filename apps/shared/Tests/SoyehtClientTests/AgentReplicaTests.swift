@@ -170,6 +170,15 @@ import Testing
   #expect(failure.localizedDescription == "This pane is not waiting for sign-in")
 }
 
+@Test func paneDisplayNameResolvesCommentAuthorIdentity() {
+  let pane = Pane(
+    paneId: "pane-agent", workspaceId: "workspace", name: "Claude", cwd: "/tmp",
+    mode: .agent, state: .idle, source: .protocol, confidence: 1, phrase: "Ready",
+    generation: 1, cols: 80, rows: 24, record: true)
+  #expect(PaneDisplayName.resolve("pane-agent", panes: [pane]) == "Claude")
+  #expect(PaneDisplayName.resolve("unknown", panes: [pane]) == "unknown")
+}
+
 @MainActor @Test func agentTranscriptPagingUsesTheServerCursor() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-paging/engine.sock")
   let paneId = "pane-agent"
