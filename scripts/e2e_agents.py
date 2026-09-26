@@ -328,10 +328,14 @@ def acceptance_login(services, client, workspace, results):
     login = client.mutate("pane.create", workspaceId=workspace, mode="agent", harness="login")["paneId"]
     until(lambda: events(services, "pane.needs_login", login), "native login requirement missing")
     started = client.mutate("pane.auth.start", paneId=login, authMethodId="login")
-    require(started["terminalPaneId"] != login and client.pane(started["terminalPaneId"])["mode"] == "terminal",
+    terminal = started["terminalPaneId"]
+    created = next((event["pane"] for event in events(services, "pane.created")
+                    if event["pane"]["paneId"] == terminal), None)
+    require(terminal != login and created is not None and created["mode"] == "terminal",
             "login did not use a separate raw terminal")
     until(lambda: events(services, "pane.auth_finished", login)
           and client.pane(login)["agent"].get("sessionId"), "login did not unlock a session")
+    require(client.pane(terminal) is None, "completed sign-in terminal remained open")
     results.append({"acceptance": 10, "name": "native_login_terminal", "passed": True})
 
 
