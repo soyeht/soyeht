@@ -135,6 +135,10 @@ pub struct State {
     pub probe_session_id: Option<String>,
     pub probe_started_ms: Option<i64>,
     pub login_pane_id: Option<String>,
+    /// A sign-in terminal whose command exited 0. It stays open until the
+    /// restarted agent opens a session, and is kept for review if it does not.
+    #[serde(default)]
+    pub unconfirmed_login_pane_id: Option<String>,
     pub has_finished_turn: bool,
     pub permission_rules: BTreeMap<String, bool>,
     pub terminals: BTreeMap<String, super::terminals::Terminal>,
@@ -199,6 +203,7 @@ impl State {
             probe_session_id: None,
             probe_started_ms: None,
             login_pane_id: None,
+            unconfirmed_login_pane_id: None,
             has_finished_turn: false,
             permission_rules: BTreeMap::new(),
             terminals: BTreeMap::new(),

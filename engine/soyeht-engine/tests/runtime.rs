@@ -3036,6 +3036,10 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     let reconnect = rig.client().pane(&pane);
     assert_eq!(reconnect["agent"]["authMethods"][0]["id"], "login");
     assert_eq!(reconnect["agent"]["authMethods"][0]["terminal"], true);
+    let mut observer = rig.client();
+    let (snapshot, _) = observer.snapshot();
+    observer.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+    observer.messages.clear();
     let params = json!({"paneId":pane,"authMethodId":"login","idempotencyKey":"auth-start"});
     let start = client.call("pane.auth.start", params.clone());
     assert_eq!(start, client.call("pane.auth.start", params));
@@ -3070,15 +3074,14 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         thread::sleep(Duration::from_millis(20));
     }
     assert!(rig.path.join("native/login.ok").is_file());
+    let finished = wait_for_pane_event(&mut observer, "pane.auth_finished", &pane);
+    assert_eq!(finished["ok"], true, "{finished}");
     assert!(
         client
-            .snapshot()
-            .1
+            .section("panes")
             .iter()
-            .filter(|part| part["section"] == "panes")
-            .flat_map(|part| part["data"].as_array().unwrap())
             .all(|item| item["paneId"] != terminal),
-        "successful one-shot sign-in must close its temporary terminal"
+        "confirmed sign-in must close its temporary terminal with the success event"
     );
     let signed_in = client.call("harness.list", json!({}));
     assert_eq!(signed_in["items"][0]["setupState"], "ready");
@@ -3102,9 +3105,56 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     );
 }
 
+#[derive(Clone, Copy, Debug)]
+enum SignInEnding {
+    Failed,
+    Interrupted,
+    ExitedWithoutSigningIn,
+}
+
+fn wait_for_pane_event(observer: &mut Client, method: &str, pane: &str) -> Value {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        observer.call("engine.status", json!({}));
+        let found = observer.messages.iter().find_map(|frame| {
+            let Frame::Json(bytes) = frame else {
+                return None;
+            };
+            let value: Value = serde_json::from_slice(bytes).ok()?;
+            (value["method"] == method && value["params"]["paneId"] == pane)
+                .then(|| value["params"].clone())
+        });
+        if let Some(event) = found {
+            return event;
+        }
+        assert!(Instant::now() < deadline, "{method} was not published");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn sign_in_output_is_readable(client: &mut Client, terminal: &str) -> bool {
+    let (_, frames) = client.tail(terminal);
+    let marker = b"Test sign-in waiting.";
+    frames
+        .iter()
+        .filter_map(|frame| match frame {
+            Frame::Terminal { bytes, .. } => Some(bytes.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect::<Vec<u8>>()
+        .windows(marker.len())
+        .any(|window| window == marker)
+}
+
 #[test]
-fn failed_and_interrupted_sign_in_keep_the_agent_signed_out() {
-    for interrupted in [false, true] {
+fn sign_in_that_is_not_confirmed_keeps_its_terminal_and_the_agent_signed_out() {
+    for ending in [
+        SignInEnding::Failed,
+        SignInEnding::Interrupted,
+        SignInEnding::ExitedWithoutSigningIn,
+    ] {
         let rig = Rig::new();
         let binary =
             PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
@@ -3118,27 +3168,24 @@ fn failed_and_interrupted_sign_in_keep_the_agent_signed_out() {
             .unwrap(),
         )
         .unwrap();
+        let (fixture, reason) = match ending {
+            SignInEnding::Failed => ("login.fail", "Sign-in failed or was interrupted"),
+            SignInEnding::Interrupted => ("login.wait", "Sign-in failed or was interrupted"),
+            SignInEnding::ExitedWithoutSigningIn => ("login.cancel", "Sign-in did not complete"),
+        };
         fs::create_dir_all(rig.path.join("native")).unwrap();
-        fs::write(
-            rig.path.join(if interrupted {
-                "native/login.wait"
-            } else {
-                "native/login.fail"
-            }),
-            b"fixture",
-        )
-        .unwrap();
+        fs::write(rig.path.join("native").join(fixture), b"fixture").unwrap();
         let mut client = rig.client();
         let workspace = client.call(
             "workspace.create",
-            json!({"name":"Sign-in failure","path":rig.path,
-                "idempotencyKey":"failed-auth-workspace"}),
+            json!({"name":"Sign-in ending","path":rig.path,
+                "idempotencyKey":"unconfirmed-auth-workspace"}),
         )["workspace"]["workspaceId"]
             .clone();
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent","harness":"auth-test",
-                "idempotencyKey":"failed-auth-pane"}),
+                "idempotencyKey":"unconfirmed-auth-pane"}),
         )["paneId"]
             .as_str()
             .unwrap()
@@ -3148,38 +3195,65 @@ fn failed_and_interrupted_sign_in_keep_the_agent_signed_out() {
             assert!(Instant::now() < deadline, "agent did not request sign-in");
             thread::sleep(Duration::from_millis(20));
         }
+        let mut observer = rig.client();
+        let (snapshot, _) = observer.snapshot();
+        observer.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+        observer.messages.clear();
         let terminal = client.call(
             "pane.auth.start",
             json!({"paneId":pane,"authMethodId":"login",
-                "idempotencyKey":"failed-auth-start"}),
+                "idempotencyKey":"unconfirmed-auth-start"}),
         )["terminalPaneId"]
             .as_str()
             .unwrap()
             .to_owned();
-        if interrupted {
-            while !rig.path.join("native/login.started").exists() {
-                assert!(Instant::now() < deadline, "login fixture did not start");
-                thread::sleep(Duration::from_millis(20));
-            }
+        while !sign_in_output_is_readable(&mut client, &terminal) {
+            assert!(
+                Instant::now() < deadline,
+                "{ending:?}: login fixture did not start"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        if matches!(ending, SignInEnding::Interrupted) {
             client.call(
-                "pane.close",
-                json!({"paneId":terminal,"idempotencyKey":"interrupt-auth"}),
+                "pane.input",
+                json!({"paneId":terminal,"bytes":STANDARD.encode([0x03]),
+                    "idempotencyKey":"interrupt-auth"}),
             );
         } else {
-            while client.pane(&terminal)["state"] != "dead" {
-                assert!(Instant::now() < deadline, "failed login did not exit");
-                thread::sleep(Duration::from_millis(20));
-            }
-            assert_eq!(client.pane(&terminal)["mode"], "terminal");
+            fs::write(rig.path.join("native/login.release"), b"release").unwrap();
         }
+
+        let finished = wait_for_pane_event(&mut observer, "pane.auth_finished", &pane);
+        assert_eq!(finished["ok"], false, "{ending:?}: {finished}");
+        assert!(
+            finished["reason"].as_str().unwrap().starts_with(reason),
+            "{ending:?}: {finished}"
+        );
+        let kept = client.pane(&terminal);
+        assert_eq!(kept["mode"], "terminal", "{ending:?}");
+        assert_eq!(kept["state"], "dead", "{ending:?}");
+        assert!(
+            sign_in_output_is_readable(&mut client, &terminal),
+            "{ending:?}: sign-in output is not readable"
+        );
         assert!(!rig.path.join("native/login.ok").exists());
         let signed_out = client.pane(&pane);
-        assert!(signed_out["agent"]["sessionId"].is_null());
+        assert!(signed_out["agent"]["sessionId"].is_null(), "{ending:?}");
         assert_eq!(signed_out["agent"]["authMethods"][0]["id"], "login");
         assert_eq!(
             client.call("harness.list", json!({}))["items"][0]["setupState"],
-            "sign_in"
+            "sign_in",
+            "{ending:?}"
         );
+        // A second attempt opens a fresh terminal beside the kept one.
+        let retry = client.call(
+            "pane.auth.start",
+            json!({"paneId":pane,"authMethodId":"login",
+                "idempotencyKey":"unconfirmed-auth-retry"}),
+        );
+        assert_ne!(retry["terminalPaneId"], terminal.as_str(), "{ending:?}");
+        assert_eq!(client.pane(&terminal)["state"], "dead", "{ending:?}");
     }
 }
 

@@ -26,7 +26,7 @@ pub mod transcript;
 pub mod updates;
 
 use crate::{
-    core::{Core, write_pane},
+    core::{Core, persist_pane},
     errors::{self, Result},
     model::StoredPane,
     ports::StorePort,
@@ -77,6 +77,7 @@ pub struct Changes {
     pub events: Vec<(String, Value)>,
     pub model_refusal: Option<AgentModelRefusal>,
     pub workspace_layout: Option<Workspace>,
+    /// A sign-in terminal closed with this commit once the agent confirmed sign-in.
     pub closed_login_pane: Option<StoredPane>,
     pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
     pub(crate) message_rate: Option<(String, String, i64, i64)>,
@@ -231,17 +232,6 @@ fn persist_workspace_layout(
     Ok(())
 }
 
-fn persist_closed_login_pane(
-    tx: &Change<'_>,
-    pane: Option<&StoredPane>,
-) -> soyeht_store::database::Result<()> {
-    if let Some(pane) = pane {
-        write_pane(tx, pane)?;
-        tx.close_pane(&pane.pane.pane_id)?;
-    }
-    Ok(())
-}
-
 impl AgentPersistence<'_> {
     fn apply(
         self,
@@ -280,8 +270,10 @@ impl AgentPersistence<'_> {
             write.persist(tx)?;
         }
         persist_agent_metadata(tx, self.changes)?;
-        write_pane(tx, self.saved)?;
-        persist_closed_login_pane(tx, self.changes.closed_login_pane.as_ref())?;
+        persist_pane(tx, self.saved)?;
+        if let Some(login) = &self.changes.closed_login_pane {
+            persist_pane(tx, login)?;
+        }
         persist_workspace_layout(tx, self.changes.workspace_layout.as_ref())?;
         persist_agent_checkpoint(
             tx,
