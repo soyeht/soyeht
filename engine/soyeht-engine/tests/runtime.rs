@@ -3563,7 +3563,7 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
 }
 
 #[test]
-fn shared_daemon_mcp_connections_keep_each_pane_identity_and_reject_spoofs() {
+fn mcp_connections_outside_the_pane_process_tree_keep_each_pane_identity() {
     let rig = Rig::new();
     let (mut human, first) = rig.agent();
     let workspace = human.pane(&first)["workspaceId"]
@@ -3573,24 +3573,9 @@ fn shared_daemon_mcp_connections_keep_each_pane_identity_and_reject_spoofs() {
     let (_, second) = rig.agent_in_workspace(&workspace);
 
     // Both connections originate in this test process, outside either pane's
-    // process tree. This models a shared harness daemon spawning MCP clients.
-    let mut binding_for = |pane: &str| {
-        let session_id = human.pane(pane)["agent"]["sessionId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        rig.native_session(&session_id)["mcp_servers"][0]["env"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|entry| entry["name"] == "SOYEHT_MCP_BINDING")
-            .unwrap()["value"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    };
-    let first_binding = binding_for(&first);
-    let second_binding = binding_for(&second);
+    // process tree, so no process ancestry or TTY lookup can identify them.
+    let first_binding = binding_env(&mcp_server_for(&rig, &mut human, &first));
+    let second_binding = binding_env(&mcp_server_for(&rig, &mut human, &second));
     assert_ne!(first_binding, second_binding);
 
     let (mut first_socket, first_hello) =
@@ -3605,12 +3590,19 @@ fn shared_daemon_mcp_connections_keep_each_pane_identity_and_reject_spoofs() {
     assert_eq!(first_peers["result"]["items"][0]["paneId"], second);
     assert_eq!(second_peers["result"]["items"][0]["paneId"], first);
 
-    let (_, spoofed) = binding_hello(&rig.path.join("engine.sock"), "spoofed-pane-binding");
-    assert_eq!(spoofed["error"]["data"]["kind"], "unauthorized");
+    // A binding stops authenticating once its pane is closed.
+    human.call(
+        "pane.close",
+        json!({"paneId":first,"idempotencyKey":"close-first-bound-pane"}),
+    );
+    let (_, closed) = binding_hello(&rig.path.join("engine.sock"), &first_binding);
+    assert_eq!(closed["error"]["data"]["kind"], "unauthorized");
+    let (_, still_open) = binding_hello(&rig.path.join("engine.sock"), &second_binding);
+    assert_eq!(still_open["result"]["role"], "agent");
 }
 
 #[test]
-fn daemon_spawned_mcp_process_uses_its_declared_pane_binding() {
+fn mcp_process_launched_outside_the_pane_resolves_identity_from_its_binding() {
     let rig = Rig::new();
     let (mut human, first) = rig.agent();
     let workspace = human.pane(&first)["workspaceId"]
@@ -3618,22 +3610,81 @@ fn daemon_spawned_mcp_process_uses_its_declared_pane_binding() {
         .unwrap()
         .to_owned();
     let (_, second) = rig.agent_in_workspace(&workspace);
-    let session_id = human.pane(&first)["agent"]["sessionId"]
+    let server = mcp_server_for(&rig, &mut human, &first);
+
+    // The test runner launches MCP directly, outside either pane's TTY
+    // process tree, with the declared args and env.
+    let replies = run_mcp(
+        &server,
+        &first,
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n"
+        ),
+    );
+    assert_eq!(replies[0]["result"]["serverInfo"]["name"], "Soyeht");
+    assert_eq!(replies[1]["result"]["isError"], false);
+    assert_eq!(
+        replies[1]["result"]["structuredContent"]["items"][0]["paneId"],
+        second
+    );
+
+    // Pane A's binding launched with pane B's --pane-id still acts as A: it
+    // sees B as its peer and cannot configure B's loop.
+    let crossed = run_mcp(
+        &server,
+        &second,
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"loop_set\",\"arguments\":{\"prompt\":\"impersonate\",\"interval\":60,\"maxRounds\":1,\"stopWhen\":\"round_limit\",\"enabled\":false}}}\n"
+        ),
+    );
+    assert_eq!(crossed[1]["result"]["isError"], false);
+    assert_eq!(
+        crossed[1]["result"]["structuredContent"]["items"][0]["paneId"],
+        second
+    );
+    assert_eq!(crossed[2]["result"]["isError"], true);
+    assert_eq!(
+        crossed[2]["result"]["structuredContent"]["kind"],
+        "forbidden_role"
+    );
+}
+
+fn mcp_server_for(rig: &Rig, human: &mut Client, pane: &str) -> Value {
+    let session_id = human.pane(pane)["agent"]["sessionId"]
         .as_str()
         .unwrap()
         .to_owned();
-    let server = rig.native_session(&session_id)["mcp_servers"][0].clone();
+    rig.native_session(&session_id)["mcp_servers"][0].clone()
+}
 
-    // The test runner launches MCP directly, as a shared app-server daemon
-    // would. It is not descended from either pane's TTY process.
+fn binding_env(server: &Value) -> String {
+    server["env"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "SOYEHT_MCP_BINDING")
+        .unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Runs the declared MCP server with its env, overriding `--pane-id`, and
+/// returns one parsed reply per request line.
+fn run_mcp(server: &Value, pane_id: &str, requests: &str) -> Vec<Value> {
+    let mut args: Vec<String> = server["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect();
+    let pane_arg = args.iter().position(|value| value == "--pane-id").unwrap() + 1;
+    args[pane_arg] = pane_id.to_owned();
     let mut command = Command::new(server["command"].as_str().unwrap());
-    command.args(
-        server["args"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_str().unwrap()),
-    );
+    command.args(&args);
     for entry in server["env"].as_array().unwrap() {
         command.env(
             entry["name"].as_str().unwrap(),
@@ -3643,13 +3694,9 @@ fn daemon_spawned_mcp_process_uses_its_declared_pane_binding() {
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let requests = concat!(
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
-        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n"
-    );
     child
         .stdin
         .take()
@@ -3657,18 +3704,19 @@ fn daemon_spawned_mcp_process_uses_its_declared_pane_binding() {
         .write_all(requests.as_bytes())
         .unwrap();
     let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    let replies = String::from_utf8(output.stdout)
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "soyeht-mcp failed: {stderr}");
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect::<Vec<_>>();
-    assert_eq!(replies[0]["result"]["serverInfo"]["name"], "Soyeht");
-    assert_eq!(replies[1]["result"]["isError"], false);
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
     assert_eq!(
-        replies[1]["result"]["structuredContent"]["items"][0]["paneId"],
-        second
+        replies.len(),
+        requests.lines().count(),
+        "missing replies; stderr: {stderr}"
     );
+    replies
 }
 
 #[test]
