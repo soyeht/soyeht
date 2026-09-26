@@ -3610,6 +3610,68 @@ fn shared_daemon_mcp_connections_keep_each_pane_identity_and_reject_spoofs() {
 }
 
 #[test]
+fn daemon_spawned_mcp_process_uses_its_declared_pane_binding() {
+    let rig = Rig::new();
+    let (mut human, first) = rig.agent();
+    let workspace = human.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    let session_id = human.pane(&first)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let server = rig.native_session(&session_id)["mcp_servers"][0].clone();
+
+    // The test runner launches MCP directly, as a shared app-server daemon
+    // would. It is not descended from either pane's TTY process.
+    let mut command = Command::new(server["command"].as_str().unwrap());
+    command.args(
+        server["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap()),
+    );
+    for entry in server["env"].as_array().unwrap() {
+        command.env(
+            entry["name"].as_str().unwrap(),
+            entry["value"].as_str().unwrap(),
+        );
+    }
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let requests = concat!(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n"
+    );
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(requests.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let replies = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(replies[0]["result"]["serverInfo"]["name"], "Soyeht");
+    assert_eq!(replies[1]["result"]["isError"], false);
+    assert_eq!(
+        replies[1]["result"]["structuredContent"]["items"][0]["paneId"],
+        second
+    );
+}
+
+#[test]
 fn a_legacy_agent_checkpoint_gets_one_binding_that_survives_the_next_restart() {
     let mut rig = Rig::new();
     let (_, pane) = rig.agent();
