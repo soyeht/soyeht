@@ -109,6 +109,12 @@ binary with login arguments in a raw terminal pane for the user to authenticate,
 then relaunches the agent; `agent` type = `auth/login` through the protocol.
 Until logged in, the pane shows “login required” with a button.
 
+A zero exit status from the login terminal is not proof of sign-in. The engine
+closes that terminal, with `pane.auth_finished {ok: true}`, only after the
+relaunched agent opens a session. If the command fails, is interrupted, or exits 0
+while the agent still requires sign-in, the terminal and its output stay open for
+review and `pane.auth_finished {ok: false, reason}` says what happened.
+
 ## 8. Derived pane state (input to contract 05)
 
 `working` = between prompt acceptance and `idle`. From prompt acceptance until the

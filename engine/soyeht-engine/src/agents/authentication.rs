@@ -223,7 +223,19 @@ impl Core {
     }
 
     pub fn poll_agent_authentication(&mut self, id: &str) -> Result<()> {
-        let mut state = self.agent_state(id)?;
+        let state = self.agent_state(id)?;
+        if state.login_pane_id.is_some() {
+            self.finish_login_terminal(id, state)
+        } else if state.unconfirmed_login_pane_id.is_some() {
+            self.confirm_login_terminal(id, state)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// A zero exit status is only a claim that sign-in worked. The agent
+    /// restarts to check it, and the terminal stays open until that check ends.
+    fn finish_login_terminal(&mut self, id: &str, mut state: State) -> Result<()> {
         let Some(child_id) = state.login_pane_id.clone() else {
             return Ok(());
         };
@@ -236,24 +248,28 @@ impl Core {
         let Response::Instances(instances) = self.pty_request(Request::List)? else {
             return Err(errors::ptyd_unavailable("Invalid sign-in process registry"));
         };
-        let success = !child.closed
+        let exited_cleanly = !child.closed
             && instances
                 .iter()
                 .find(|i| i.spawn.instance_key == child.instance_key)
                 .is_some_and(|i| i.exit_code == Some(0));
         state.login_pane_id = None;
-        state.auth_required = !success;
-        state.phase = if success {
-            Phase::RestartAfterProbe
-        } else {
-            Phase::NeedsLogin
-        };
         state.last_update_ms = self.now_ms();
-        let mut changes = Changes {
-            clear_failed_probes: success,
-            ..Changes::default()
-        };
-        changes.events.push(("pane.auth_finished".into(),json!({"paneId":id,"ok":success,"reason":if success {"Sign-in completed"} else {"Sign-in failed or was interrupted"}})));
+        let mut changes = Changes::default();
+        if exited_cleanly {
+            state.unconfirmed_login_pane_id = Some(child_id);
+            state.auth_required = false;
+            state.phase = Phase::RestartAfterProbe;
+            changes.clear_failed_probes = true;
+        } else {
+            state.auth_required = true;
+            state.phase = Phase::NeedsLogin;
+            changes.events.push(auth_finished(
+                id,
+                false,
+                "Sign-in failed or was interrupted. Review its terminal, then sign in again.",
+            ));
+        }
         self.commit_agent(
             self.panes[id].stored.clone(),
             state,
@@ -263,6 +279,53 @@ impl Core {
         )?;
         Ok(())
     }
+
+    /// Closes the sign-in terminal only once the restarted agent has a
+    /// session. If the agent still asks for sign-in, the terminal and its
+    /// output stay available for review.
+    fn confirm_login_terminal(&mut self, id: &str, mut state: State) -> Result<()> {
+        let signed_in =
+            state.phase == Phase::Ready && !state.auth_required && state.session_id.is_some();
+        let reason = match state.phase {
+            _ if signed_in => "Sign-in completed",
+            Phase::NeedsLogin => {
+                "Sign-in did not complete. Review its terminal, then sign in again."
+            }
+            Phase::Faulted => "The agent stopped before sign-in could be confirmed.",
+            _ => return Ok(()),
+        };
+        let Some(child_id) = state.unconfirmed_login_pane_id.take() else {
+            return Ok(());
+        };
+        state.last_update_ms = self.now_ms();
+        let mut changes = Changes::default();
+        if signed_in
+            && let Some(mut child) = self
+                .panes
+                .get(&child_id)
+                .map(|p| p.stored.clone())
+                .filter(|p| !p.closed)
+        {
+            changes.workspace_layout = self.prepare_pane_close(&mut child, &mut changes.events)?;
+            changes.closed_login_pane = Some(child);
+        }
+        changes.events.push(auth_finished(id, signed_in, reason));
+        self.commit_agent(
+            self.panes[id].stored.clone(),
+            state,
+            changes,
+            None,
+            json!({}),
+        )?;
+        Ok(())
+    }
+}
+
+fn auth_finished(id: &str, ok: bool, reason: &str) -> (String, Value) {
+    (
+        "pane.auth_finished".into(),
+        json!({"paneId":id,"ok":ok,"reason":reason}),
+    )
 }
 
 #[cfg(test)]

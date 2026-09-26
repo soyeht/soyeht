@@ -1,5 +1,5 @@
 use crate::{
-    core::{Core, write_pane},
+    core::{Core, persist_pane},
     errors::{self, Result},
     model::{self, RunningPane, StoredPane},
     ports::StorePort,
@@ -374,10 +374,7 @@ impl Core {
             events.push(("pane.updated".into(), json!({"pane":saved.pane})));
         }
         let mutation = self.mutate(connection, method, params, |tx| {
-            write_pane(tx, &saved)?;
-            if saved.closed {
-                tx.close_pane(id)?;
-            }
+            persist_pane(tx, &saved)?;
             if let Some(workspace) = &layout_workspace {
                 tx.update_workspace(workspace)?;
             }
@@ -426,7 +423,6 @@ impl Core {
             }
         }
         if saved.closed {
-            self.editor.remove_pane(id);
             self.finish_close(id)?;
         }
         if method == "pane.resize" && saved.pane.mode == PaneMode::Terminal {
@@ -443,6 +439,7 @@ impl Core {
     }
 
     pub fn finish_close(&mut self, id: &str) -> Result<()> {
+        self.editor.remove_pane(id);
         self.terminal_captures.remove(id);
         self.agent_captures.remove(id);
         for client in self.clients.values_mut() {

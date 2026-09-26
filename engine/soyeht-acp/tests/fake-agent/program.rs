@@ -331,6 +331,28 @@ fn main() -> Result<()> {
     let settings = Settings::parse()?;
     if settings.login {
         std::fs::create_dir_all(&settings.directory)?;
+        let failed = settings.directory.join("login.fail").exists();
+        // A real login CLI can exit 0 after its browser flow is cancelled.
+        let cancelled = settings.directory.join("login.cancel").exists();
+        if failed || cancelled || settings.directory.join("login.wait").exists() {
+            println!("Test sign-in waiting.");
+            std::fs::write(settings.directory.join("login.started"), b"started")?;
+            let deadline = std::time::Instant::now() + FIXTURE_RELEASE_TIMEOUT;
+            while !settings.directory.join("login.release").exists() {
+                if std::time::Instant::now() >= deadline {
+                    std::process::exit(1);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        if failed {
+            println!("Test sign-in failed.");
+            std::process::exit(1);
+        }
+        if cancelled {
+            println!("Test sign-in cancelled.");
+            return Ok(());
+        }
         std::fs::write(settings.directory.join("login.ok"), b"signed in\n")?;
         println!("Test sign-in complete.");
         return Ok(());
