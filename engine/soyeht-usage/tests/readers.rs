@@ -146,11 +146,20 @@ fn third_reader_normalizes_the_verified_current_period_shape() {
 #[test]
 fn missing_or_invalid_cached_usage_is_unavailable() {
     let cases = [
-        br#"{"other":true}"#.as_slice(),
-        br#"{"cachedUsageUtilization":{"fetchedAtMs":"wrong","utilization":{}}}"#.as_slice(),
-        br#"{"cachedUsageUtilization":{"fetchedAtMs":1789729200000,"utilization":{"five_hour":{"utilization":"wrong","resets_at":"later"},"seven_day":{"utilization":20,"resets_at":"later"}}}}"#.as_slice(),
+        (
+            include_bytes!("fixtures/claude-cache-absent.json").as_slice(),
+            None,
+        ),
+        (
+            include_bytes!("fixtures/claude-cache-partial.json").as_slice(),
+            Some(UsageUnavailableReason::InvalidResponse),
+        ),
+        (
+            br#"{"cachedUsageUtilization":{"fetchedAtMs":1789729200000,"utilization":{"five_hour":{"utilization":"wrong","resets_at":"later"},"seven_day":{"utilization":20,"resets_at":"later"}}}}"#.as_slice(),
+            Some(UsageUnavailableReason::InvalidResponse),
+        ),
     ];
-    for payload in cases {
+    for (payload, expected_reason) in cases {
         let (outcome, source) = refresh(
             UsageProvider::Claude,
             vec![(
@@ -161,8 +170,24 @@ fn missing_or_invalid_cached_usage_is_unavailable() {
         );
         assert_eq!(source.calls.len(), 1);
         assert_eq!(outcome.reading.state, UsageState::Unavailable);
+        assert_eq!(outcome.reading.unavailable_reason, expected_reason);
         assert_eq!(outcome.reading.source, UsageSource::ClaudeDesktopCache);
     }
+}
+
+#[test]
+fn sanitized_valid_claude_cache_fixture_still_reads_both_windows() {
+    let (outcome, _) = refresh(
+        UsageProvider::Claude,
+        vec![(
+            UsageProvider::Claude,
+            UsageSource::ClaudeDesktopCache,
+            SourceRead::Payload(include_bytes!("fixtures/claude-cache-valid.json").to_vec()),
+        )],
+    );
+    assert_eq!(outcome.reading.state, UsageState::Ok);
+    assert_eq!(outcome.reading.primary.unwrap().used, 0.25);
+    assert_eq!(outcome.reading.secondary.unwrap().used, 0.75);
 }
 
 #[test]

@@ -27,11 +27,12 @@ impl ProviderReader for Reader {
 
 fn parse_cache(payload: &[u8], source: UsageSource) -> Result<ParsedReading> {
     let document = super::json(payload, source.clone())?;
-    let cached = document
-        .get("cachedUsageUtilization")
-        .ok_or_else(|| Error::InvalidResponse {
-            source: source.clone(),
-        })?;
+    let cached =
+        document
+            .get("cachedUsageUtilization")
+            .ok_or_else(|| Error::CacheNotPopulated {
+                source: source.clone(),
+            })?;
     let fetched_at_ms = cached["fetchedAtMs"]
         .as_u64()
         .and_then(|value| i64::try_from(value).ok())

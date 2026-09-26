@@ -5,6 +5,7 @@ use std::fmt;
 pub enum Error {
     ReaderMissing { provider: UsageProvider },
     ReaderHasNoSource { provider: UsageProvider },
+    CacheNotPopulated { source: UsageSource },
     InvalidResponse { source: UsageSource },
     InvalidWindow { source: UsageSource },
     UnverifiedResponse { source: UsageSource },
@@ -20,6 +21,9 @@ impl fmt::Display for Error {
             }
             Self::ReaderHasNoSource { provider } => {
                 write!(formatter, "usage reader has no source for {provider:?}")
+            }
+            Self::CacheNotPopulated { source } => {
+                write!(formatter, "usage cache is not populated for {source:?}")
             }
             Self::InvalidResponse { source } => {
                 write!(formatter, "invalid response from {source:?}")
