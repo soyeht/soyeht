@@ -3084,7 +3084,8 @@ private struct PaneCard: View {
           .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
         }
         AgentConversationView(
-          client: client, paneId: pane.paneId, showsConfiguration: false,
+          client: client, paneId: pane.paneId, isVisible: isVisible,
+          showsConfiguration: false,
           style: MacTheme.agentConversation)
       }.padding(
         EdgeInsets(

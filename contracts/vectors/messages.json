@@ -2526,6 +2526,11 @@
     "value": "message"
   },
   {
+    "name": "TranscriptKindHandover",
+    "type": "TranscriptKind",
+    "value": "handover"
+  },
+  {
     "name": "PermissionOptionKind",
     "type": "PermissionOptionKind",
     "value": "allow_once"

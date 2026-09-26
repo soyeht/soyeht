@@ -35,6 +35,19 @@ pub fn new_message(
     })
 }
 
+/// The typed marker for a harness switch; it names the agent that continues.
+pub fn handover(state: &mut State, generation: u32) -> Result<TranscriptMessage> {
+    let name = state.launch.name.clone();
+    new_message(
+        state,
+        generation,
+        TranscriptRole::System,
+        TranscriptKind::Handover,
+        name,
+        true,
+    )
+}
+
 pub fn user_prompt(
     state: &mut State,
     generation: u32,

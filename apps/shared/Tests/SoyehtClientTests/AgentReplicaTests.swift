@@ -68,6 +68,41 @@ import Testing
       presented: split, panes: panes, hydrated: [], loading: []) == ["codex", "opencode"])
 }
 
+@Test func hiddenAgentTabCatchesUpWithMessagesThatArrivedWhileHidden() {
+  var follow = AgentConversationFollow()
+  let shown = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: nil, elicitationId: nil)
+  let hidden = AgentConversationFollow.RevealKey(
+    isVisible: false, permissionId: nil, elicitationId: nil)
+  let followsWhileVisible = follow.messagesChanged(isVisible: true)
+  #expect(followsWhileVisible)
+  #expect(!follow.scrollsOnReveal(shown))
+
+  let followsWhileHidden = follow.messagesChanged(isVisible: false)
+  #expect(!followsWhileHidden)
+  #expect(!follow.scrollsOnReveal(hidden))
+  #expect(follow.scrollsOnReveal(shown))
+  follow.revealed()
+  #expect(!follow.scrollsOnReveal(shown))
+}
+
+@Test func revealFollowsEachPendingRequestEvenWhenAnotherStaysPending() {
+  let follow = AgentConversationFollow()
+  let permission = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: "permission", elicitationId: nil)
+  let firstQuestion = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: "permission", elicitationId: "question-1")
+  let secondQuestion = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: "permission", elicitationId: "question-2")
+  #expect(firstQuestion != permission)
+  #expect(secondQuestion != firstQuestion)
+  #expect(follow.scrollsOnReveal(secondQuestion))
+  #expect(
+    !follow.scrollsOnReveal(
+      AgentConversationFollow.RevealKey(
+        isVisible: false, permissionId: "permission", elicitationId: "question-2")))
+}
+
 @MainActor @Test func agentReplicaReplacesChunksTracksQuestionsAndResetsSnapshotState() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"

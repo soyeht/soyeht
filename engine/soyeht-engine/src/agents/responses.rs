@@ -69,7 +69,16 @@ fn open(
         state.phase = Phase::Loading;
         changes.clear_replay = true;
         state.replay_role = None;
+        state.replay_user = None;
+        state.replay_continuation_turn = false;
         state.open_messages.clear();
+        // A switched session starts at the switch, so its marker leads the
+        // replay. The replayed continuation prompt itself is suppressed.
+        if state.internal_continuation.is_some() {
+            changes.replay_messages = true;
+            let marker = transcript::handover(state, saved.pane.generation)?;
+            changes.messages.push(marker);
+        }
         call(
             state,
             changes,
@@ -498,6 +507,13 @@ fn session_opened(
     }
     if context == "load" {
         changes.replay_messages = true;
+        super::updates::finish_replayed_user(
+            store,
+            &saved.pane.pane_id,
+            saved.pane.generation,
+            state,
+            changes,
+        )?;
         transcript::complete(store, &saved.pane.pane_id, state, changes)?;
         changes.publish_replay = true;
         state.replay_role = None;

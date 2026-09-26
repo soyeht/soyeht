@@ -2407,7 +2407,8 @@
         "terminal",
         "plan",
         "usage",
-        "system"
+        "system",
+        "handover"
       ]
     },
     "PermissionOptionKind": {

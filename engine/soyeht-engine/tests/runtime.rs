@@ -1122,6 +1122,11 @@ impl Rig {
                         "--initialize-padding-bytes","65000"],"version":"test"
                 },
                 {
+                    "id":"chunked-agent","name":"Chunked agent","command":binary,
+                    "args":["--state-dir",self.path.join("chunked-native"),
+                        "--replay-user-chunk-bytes","64"],"version":"test"
+                },
+                {
                     "id":"broken-agent","name":"Broken agent","command":binary,
                     "args":["--state-dir",self.path.join("broken-native"),"--require-login"],
                     "version":"test"
@@ -1886,6 +1891,139 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
         );
         thread::sleep(Duration::from_millis(20));
     }
+}
+
+fn transcript_items(client: &mut Client, pane: &str) -> Vec<Value> {
+    client.call("pane.transcript", json!({"paneId":pane}))["items"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+fn wait_for_user_message(client: &mut Client, pane: &str, text: &str) -> Vec<Value> {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let items = transcript_items(client, pane);
+        if items
+            .iter()
+            .any(|message| message["role"] == "user" && message["text"] == text)
+        {
+            return items;
+        }
+        assert!(Instant::now() < deadline, "{text} was not recorded");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Restarts the engine and its agents, then waits until the native replay has
+/// replaced every message the live transcript held.
+fn restart_and_wait_for_replay(rig: &mut Rig, pane: &str, live: &[Value]) -> Vec<Value> {
+    rig.kill_engine();
+    rig.restart_ptyd();
+    rig.start();
+    let mut restored = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let items = transcript_items(&mut restored, pane);
+        if !items.is_empty()
+            && items
+                .iter()
+                .all(|item| live.iter().all(|old| old["localId"] != item["localId"]))
+        {
+            return items;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the native replay did not replace the transcript"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// The replay after the switch: one handover marker first, then later turns,
+/// and never the engine's continuation package.
+fn assert_handover_replay(messages: &[Value], name: &str, later_prompt: &str) {
+    let handovers = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message["kind"] == "handover")
+        .collect::<Vec<_>>();
+    assert_eq!(handovers.len(), 1, "{messages:?}");
+    let (marker, handover) = handovers[0];
+    assert_eq!(handover["text"], name);
+    assert_eq!(handover["role"], "system");
+    let later = messages
+        .iter()
+        .position(|message| message["role"] == "user" && message["text"] == later_prompt)
+        .expect("later prompt was not replayed");
+    assert!(marker < later, "marker left the switch point: {messages:?}");
+    assert!(
+        messages.iter().all(|message| {
+            !message["text"]
+                .as_str()
+                .unwrap_or("")
+                .contains("[last messages]")
+        }),
+        "continuation package leaked: {messages:?}"
+    );
+}
+
+fn switch_with_context_and_restart(harness: &str, name: &str) {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"before-switch","idempotencyKey":"handover-before"}),
+    );
+    client.wait_state(&pane, "idle");
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":harness,"idempotencyKey":"handover-switch"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after-switch","idempotencyKey":"handover-after"}),
+    );
+    let live = wait_for_user_message(&mut client, &pane, "after-switch");
+    assert_handover_replay(&live, name, "after-switch");
+    client.wait_state(&pane, "idle");
+    let live = transcript_items(&mut client, &pane);
+    drop(client);
+    let replayed = restart_and_wait_for_replay(&mut rig, &pane, &live);
+    assert_handover_replay(&replayed, name, "after-switch");
+}
+
+#[test]
+fn harness_switch_replay_shows_a_marker_instead_of_the_internal_prompt() {
+    switch_with_context_and_restart("next-agent", "Next agent");
+}
+
+#[test]
+fn harness_switch_replay_hides_a_continuation_prompt_replayed_in_chunks() {
+    switch_with_context_and_restart("chunked-agent", "Chunked agent");
+}
+
+#[test]
+fn harness_switch_without_prior_turn_keeps_its_marker_at_the_switch_after_recovery() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"empty-handover-switch"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after-empty-switch","idempotencyKey":"empty-handover-after"}),
+    );
+    wait_for_user_message(&mut client, &pane, "after-empty-switch");
+    client.wait_state(&pane, "idle");
+    let live = transcript_items(&mut client, &pane);
+    assert_handover_replay(&live, "Next agent", "after-empty-switch");
+    drop(client);
+    let replayed = restart_and_wait_for_replay(&mut rig, &pane, &live);
+    assert_handover_replay(&replayed, "Next agent", "after-empty-switch");
 }
 
 #[test]
