@@ -16,7 +16,8 @@ worktree, and creates a missing one with `switch --create --no-cd
 --format=json`. Project hooks are disabled for engine-owned operations so a
 repository hook cannot turn an internal retry into a second external effect.
 
-Cleanup is available only to a local human client. The engine first reads the
+Cleanup is available only to a person: the local human client or a paired
+device, which has the same powers since the 2026-09-26 owner decision. The engine first reads the
 structured listing and refuses when cleanliness is unknown, the worktree is
 dirty, its HEAD is not reachable from another branch, its recorded path does
 not match, or a process has a current directory inside it. It then uses

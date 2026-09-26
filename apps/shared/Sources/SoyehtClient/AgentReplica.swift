@@ -542,7 +542,6 @@ extension EngineClient {
   }
 
   public func refreshCustomHarnesses() {
-    guard !readOnly else { return }
     perform { try await self.loadCustomHarnesses() }
   }
 
@@ -776,10 +775,6 @@ extension EngineClient {
   }
 
   public func startAgentAuthentication(_ paneId: String, methodId: String?) {
-    guard !readOnly else {
-      problem = "Finish agent sign-in on the Mac."
-      return
-    }
     perform {
       let result = try await self.mutation(
         "pane.auth.start",

@@ -267,16 +267,9 @@ impl Core {
                 "Agent binding method is not allowed",
             ));
         }
-        if actor.role == Role::HumanDevice
-            && (method == "pane.input"
-                || method == "settings.set"
-                || method.starts_with("harness.custom.")
-                || method.starts_with("device.") && method != "device.list")
-        {
-            return Err(errors::forbidden_role(
-                "Operation requires the local human client",
-            ));
-        }
+        // A paired device is a full remote control of this Mac (owner
+        // decision 2026-09-26): once its hello is signed by an approved,
+        // unrevoked key, it has the same powers as the local human.
         Ok(client.scope.clone())
     }
 
