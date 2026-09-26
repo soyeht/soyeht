@@ -314,6 +314,19 @@ fn main() -> Result<()> {
     let settings = Settings::parse()?;
     if settings.login {
         std::fs::create_dir_all(&settings.directory)?;
+        if settings.directory.join("login.fail").exists() {
+            std::process::exit(1);
+        }
+        if settings.directory.join("login.wait").exists() {
+            std::fs::write(settings.directory.join("login.started"), b"started")?;
+            let deadline = std::time::Instant::now() + FIXTURE_RELEASE_TIMEOUT;
+            while !settings.directory.join("login.release").exists() {
+                if std::time::Instant::now() >= deadline {
+                    std::process::exit(1);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
         std::fs::write(settings.directory.join("login.ok"), b"signed in\n")?;
         println!("Test sign-in complete.");
         return Ok(());

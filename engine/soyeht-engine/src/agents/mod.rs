@@ -77,6 +77,7 @@ pub struct Changes {
     pub events: Vec<(String, Value)>,
     pub model_refusal: Option<AgentModelRefusal>,
     pub workspace_layout: Option<Workspace>,
+    pub closed_login_pane: Option<StoredPane>,
     pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
     pub(crate) message_rate: Option<(String, String, i64, i64)>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
@@ -230,6 +231,17 @@ fn persist_workspace_layout(
     Ok(())
 }
 
+fn persist_closed_login_pane(
+    tx: &Change<'_>,
+    pane: Option<&StoredPane>,
+) -> soyeht_store::database::Result<()> {
+    if let Some(pane) = pane {
+        write_pane(tx, pane)?;
+        tx.close_pane(&pane.pane.pane_id)?;
+    }
+    Ok(())
+}
+
 impl AgentPersistence<'_> {
     fn apply(
         self,
@@ -269,6 +281,7 @@ impl AgentPersistence<'_> {
         }
         persist_agent_metadata(tx, self.changes)?;
         write_pane(tx, self.saved)?;
+        persist_closed_login_pane(tx, self.changes.closed_login_pane.as_ref())?;
         persist_workspace_layout(tx, self.changes.workspace_layout.as_ref())?;
         persist_agent_checkpoint(
             tx,
@@ -459,6 +472,14 @@ impl Core {
                 self.publish_native_completion(completion)?;
             }
             self.install_committed_agent(&id, saved, state)?;
+            if let Some(login) = &changes.closed_login_pane {
+                errors::invariant(
+                    self.panes.get_mut(&login.pane.pane_id),
+                    "Completed sign-in pane disappeared before commit publication",
+                )?
+                .stored = login.clone();
+                self.finish_close(&login.pane.pane_id)?;
+            }
             if protocol_label_changed && self.agent_captures.contains_key(&id) {
                 self.record_agent_label(&id)?;
             }

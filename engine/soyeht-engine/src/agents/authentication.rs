@@ -227,7 +227,7 @@ impl Core {
         let Some(child_id) = state.login_pane_id.clone() else {
             return Ok(());
         };
-        let Some(child) = self.panes.get(&child_id).map(|p| p.stored.clone()) else {
+        let Some(mut child) = self.panes.get(&child_id).map(|p| p.stored.clone()) else {
             return Err(errors::internal("Sign-in pane is missing"));
         };
         if !child.closed && child.pane.state != PaneState::Dead {
@@ -253,6 +253,10 @@ impl Core {
             clear_failed_probes: success,
             ..Changes::default()
         };
+        if success {
+            changes.workspace_layout = self.prepare_pane_close(&mut child, &mut changes.events)?;
+            changes.closed_login_pane = Some(child);
+        }
         changes.events.push(("pane.auth_finished".into(),json!({"paneId":id,"ok":success,"reason":if success {"Sign-in completed"} else {"Sign-in failed or was interrupted"}})));
         self.commit_agent(
             self.panes[id].stored.clone(),

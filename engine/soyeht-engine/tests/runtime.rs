@@ -3070,6 +3070,16 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         thread::sleep(Duration::from_millis(20));
     }
     assert!(rig.path.join("native/login.ok").is_file());
+    assert!(
+        client
+            .snapshot()
+            .1
+            .iter()
+            .filter(|part| part["section"] == "panes")
+            .flat_map(|part| part["data"].as_array().unwrap())
+            .all(|item| item["paneId"] != terminal),
+        "successful one-shot sign-in must close its temporary terminal"
+    );
     let signed_in = client.call("harness.list", json!({}));
     assert_eq!(signed_in["items"][0]["setupState"], "ready");
     assert!(signed_in["items"][0]["lastReadyAtMs"].is_string());
@@ -3090,6 +3100,87 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         repeated["error"]["message"],
         "Sign-in is not required for this pane"
     );
+}
+
+#[test]
+fn failed_and_interrupted_sign_in_keep_the_agent_signed_out() {
+    for interrupted in [false, true] {
+        let rig = Rig::new();
+        let binary =
+            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+        fs::write(
+            rig.path.join("harnesses.json"),
+            serde_json::to_vec(&json!([{
+                "id":"auth-test","name":"Auth test","command":binary,
+                "args":["--state-dir",rig.path.join("native"),"--require-login"],
+                "version":"test"
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(rig.path.join("native")).unwrap();
+        fs::write(
+            rig.path.join(if interrupted {
+                "native/login.wait"
+            } else {
+                "native/login.fail"
+            }),
+            b"fixture",
+        )
+        .unwrap();
+        let mut client = rig.client();
+        let workspace = client.call(
+            "workspace.create",
+            json!({"name":"Sign-in failure","path":rig.path,
+                "idempotencyKey":"failed-auth-workspace"}),
+        )["workspace"]["workspaceId"]
+            .clone();
+        let pane = client.call(
+            "pane.create",
+            json!({"workspaceId":workspace,"mode":"agent","harness":"auth-test",
+                "idempotencyKey":"failed-auth-pane"}),
+        )["paneId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+        while client.pane(&pane)["phrase"] != "Sign-in required" {
+            assert!(Instant::now() < deadline, "agent did not request sign-in");
+            thread::sleep(Duration::from_millis(20));
+        }
+        let terminal = client.call(
+            "pane.auth.start",
+            json!({"paneId":pane,"authMethodId":"login",
+                "idempotencyKey":"failed-auth-start"}),
+        )["terminalPaneId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        if interrupted {
+            while !rig.path.join("native/login.started").exists() {
+                assert!(Instant::now() < deadline, "login fixture did not start");
+                thread::sleep(Duration::from_millis(20));
+            }
+            client.call(
+                "pane.close",
+                json!({"paneId":terminal,"idempotencyKey":"interrupt-auth"}),
+            );
+        } else {
+            while client.pane(&terminal)["state"] != "dead" {
+                assert!(Instant::now() < deadline, "failed login did not exit");
+                thread::sleep(Duration::from_millis(20));
+            }
+            assert_eq!(client.pane(&terminal)["mode"], "terminal");
+        }
+        assert!(!rig.path.join("native/login.ok").exists());
+        let signed_out = client.pane(&pane);
+        assert!(signed_out["agent"]["sessionId"].is_null());
+        assert_eq!(signed_out["agent"]["authMethods"][0]["id"], "login");
+        assert_eq!(
+            client.call("harness.list", json!({}))["items"][0]["setupState"],
+            "sign_in"
+        );
+    }
 }
 
 #[test]
