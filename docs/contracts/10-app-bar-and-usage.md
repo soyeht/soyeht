@@ -52,6 +52,14 @@ balloon shows which one answered. Verified sources are recorded in
   `~/.claude.json` by Claude Code. The reader parses that key once and ignores
   account identifiers and every unrelated key. Soyeht never launches `claude`
   to obtain usage and never reads or reuses its OAuth credential.
+  *Absent vs malformed:* a JSON object without the key is an unpopulated cache
+  and shows ordinary "unavailable". Anything else that cannot be read is
+  "invalid data": a top-level value that is not an object, or a present key
+  with a missing, partial or mistyped `fetchedAtMs` or `utilization`.
+  *Tradeoff:* a missing key looks the same as Claude Code renaming the key. A
+  rename would therefore show "unavailable" indefinitely rather than "invalid
+  data", even after Claude Code has fetched usage. If the ring stays
+  unavailable on a Mac where Claude Code shows usage, check the key name first.
 - **Codex**: (1) a disposable `codex app-server` asked for
   `account/rateLimits/read` (the same channel the harness already uses in
   contract 04); (2) the access token in the Codex login file sent to the

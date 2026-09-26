@@ -160,19 +160,41 @@ fn missing_or_invalid_cached_usage_is_unavailable() {
         ),
     ];
     for (payload, expected_reason) in cases {
-        let (outcome, source) = refresh(
-            UsageProvider::Claude,
-            vec![(
-                UsageProvider::Claude,
-                UsageSource::ClaudeDesktopCache,
-                SourceRead::Payload(payload.to_vec()),
-            )],
-        );
-        assert_eq!(source.calls.len(), 1);
-        assert_eq!(outcome.reading.state, UsageState::Unavailable);
-        assert_eq!(outcome.reading.unavailable_reason, expected_reason);
-        assert_eq!(outcome.reading.source, UsageSource::ClaudeDesktopCache);
+        assert_eq!(claude_unavailable_reason(payload), expected_reason);
     }
+}
+
+#[test]
+fn malformed_claude_cache_is_invalid_data_not_unpopulated() {
+    let cases = [
+        br#"{"cachedUsageUtilization":{"fetchedAtMs":"wrong","utilization":{}}}"#.as_slice(),
+        b"null".as_slice(),
+        b"[]".as_slice(),
+        b"42".as_slice(),
+    ];
+    for payload in cases {
+        assert_eq!(
+            claude_unavailable_reason(payload),
+            Some(UsageUnavailableReason::InvalidResponse),
+            "{}",
+            String::from_utf8_lossy(payload)
+        );
+    }
+}
+
+fn claude_unavailable_reason(payload: &[u8]) -> Option<UsageUnavailableReason> {
+    let (outcome, source) = refresh(
+        UsageProvider::Claude,
+        vec![(
+            UsageProvider::Claude,
+            UsageSource::ClaudeDesktopCache,
+            SourceRead::Payload(payload.to_vec()),
+        )],
+    );
+    assert_eq!(source.calls.len(), 1);
+    assert_eq!(outcome.reading.state, UsageState::Unavailable);
+    assert_eq!(outcome.reading.source, UsageSource::ClaudeDesktopCache);
+    outcome.reading.unavailable_reason
 }
 
 #[test]
