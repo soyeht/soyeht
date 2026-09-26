@@ -78,13 +78,45 @@ public enum AgentTranscriptHydrationPolicy {
   }
 }
 
-public enum AgentConversationScrollPolicy {
+/// When the agent transcript follows its newest message. Hidden tabs stay
+/// mounted but do not scroll; they catch up when they become visible again.
+public struct AgentConversationFollow: Equatable, Sendable {
   public static let bottomAnchor = "agent-bottom"
 
-  public static func targetOnReveal(
-    isVisible: Bool, hasPendingRequest: Bool
-  ) -> String? {
-    isVisible && hasPendingRequest ? bottomAnchor : nil
+  /// Identifies what a reveal must react to: visibility and each pending
+  /// request, so a new question fires even while a permission stays pending.
+  public struct RevealKey: Equatable, Sendable {
+    public let isVisible: Bool
+    public let permissionId: String?
+    public let elicitationId: String?
+
+    public init(isVisible: Bool, permissionId: String?, elicitationId: String?) {
+      self.isVisible = isVisible
+      self.permissionId = permissionId
+      self.elicitationId = elicitationId
+    }
+
+    var hasPendingRequest: Bool { permissionId != nil || elicitationId != nil }
+  }
+
+  public private(set) var hasUnseenMessages = false
+
+  public init() {}
+
+  /// Records a transcript change; returns whether to scroll to the bottom now.
+  public mutating func messagesChanged(isVisible: Bool) -> Bool {
+    if isVisible { return true }
+    hasUnseenMessages = true
+    return false
+  }
+
+  /// Whether a reveal must bring the newest messages and pending request into view.
+  public func scrollsOnReveal(_ key: RevealKey) -> Bool {
+    key.isVisible && (hasUnseenMessages || key.hasPendingRequest)
+  }
+
+  public mutating func revealed() {
+    hasUnseenMessages = false
   }
 }
 

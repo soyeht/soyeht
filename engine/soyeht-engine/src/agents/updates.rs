@@ -1,6 +1,6 @@
 use super::{
     Changes, native_error,
-    state::{Phase, State},
+    state::{InternalContinuation, Phase, ReplayedUserMessage, State},
     transcript,
 };
 use crate::{
@@ -51,26 +51,79 @@ fn update_user(
     let text = content["text"]
         .as_str()
         .ok_or_else(|| errors::invalid("Replay has no text"))?;
-    let handover_name = state
+    let Some(continuation) = state
         .internal_continuation
+        .clone()
+        .filter(InternalContinuation::has_prompt)
+    else {
+        return append_replayed_user(store, pane, state, generation, text, message_id, changes);
+    };
+    // Adapters replay a long prompt in several chunks under one messageId.
+    // Hold each user message until it is complete so the continuation prompt
+    // is recognized as a whole and none of it reaches the transcript.
+    if state
+        .replay_user
         .as_ref()
-        .filter(|continuation| continuation.matches_replayed_prompt(text))
-        .map(|continuation| continuation.to_name.clone());
-    if let Some(name) = handover_name {
-        if !state.replay_handover_seen {
-            changes.messages.push(transcript::new_message(
-                state,
-                generation,
-                TranscriptRole::System,
-                TranscriptKind::Handover,
-                name,
-                true,
-            )?);
-            state.replay_handover_seen = true;
+        .is_some_and(|pending| pending.message_id.as_deref() != message_id)
+    {
+        finish_replayed_user(store, pane, generation, state, changes)?;
+        // This new user message starts the next turn, which is visible.
+        state.replay_continuation_turn = false;
+    }
+    let pending = state
+        .replay_user
+        .get_or_insert_with(|| ReplayedUserMessage {
+            message_id: message_id.map(Into::into),
+            text: String::new(),
+            streaming: false,
+        });
+    let text = if pending.streaming {
+        text.to_owned()
+    } else {
+        pending.text.push_str(text);
+        if continuation.could_match(pending.text.len()) {
+            return Ok(());
         }
+        // Too long to be the continuation prompt: stream it as a user turn.
+        pending.streaming = true;
+        std::mem::take(&mut pending.text)
+    };
+    append_replayed_user(store, pane, state, generation, &text, message_id, changes)
+}
+
+/// Emits the held replayed user message unless it is the engine's own
+/// continuation prompt, which the leading handover marker already represents.
+/// The agent's reply to that prompt is hidden too, as it is during the switch.
+pub(super) fn finish_replayed_user(
+    store: &impl StorePort,
+    pane: &str,
+    generation: u32,
+    state: &mut State,
+    changes: &mut Changes,
+) -> Result<()> {
+    let Some(pending) = state.replay_user.take() else {
+        return Ok(());
+    };
+    if pending.streaming {
         return Ok(());
     }
-    append_replayed_user(store, pane, state, generation, text, message_id, changes)
+    if state
+        .internal_continuation
+        .as_ref()
+        .is_some_and(|continuation| continuation.matches_replayed_prompt(&pending.text))
+    {
+        state.replay_continuation_turn = true;
+        return Ok(());
+    }
+    append_replayed_user(
+        store,
+        pane,
+        state,
+        generation,
+        &pending.text,
+        pending.message_id.as_deref(),
+        changes,
+    )
 }
 
 fn update_tool(
@@ -307,8 +360,19 @@ pub fn update(
             _ => "other",
         };
         if state.replay_role.as_deref() != Some(role) {
+            finish_replayed_user(store, pane, generation, state, changes)?;
             transcript::complete(store, pane, state, changes)?;
             state.replay_role = Some(role.into());
+        }
+        if role == "user" {
+            state.replay_continuation_turn = false;
+        } else if state.replay_continuation_turn
+            && matches!(
+                update,
+                Update::Message { .. } | Update::Tool { .. } | Update::Plan(_)
+            )
+        {
+            return Ok(false);
         }
     }
     let observed_turn_output = match update {

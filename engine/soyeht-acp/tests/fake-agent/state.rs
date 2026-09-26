@@ -11,6 +11,9 @@ pub struct Settings {
     pub require_login: bool,
     pub login: bool,
     pub initialize_padding_bytes: usize,
+    /// Replays each user prompt trimmed and split into chunks of this many
+    /// bytes under one messageId, as real adapters do for long prompts.
+    pub replay_user_chunk_bytes: Option<usize>,
 }
 impl Settings {
     pub fn parse() -> Result<Self> {
@@ -20,6 +23,7 @@ impl Settings {
         let mut require_login = false;
         let mut login = false;
         let mut initialize_padding_bytes = 0;
+        let mut replay_user_chunk_bytes = None;
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -37,6 +41,18 @@ impl Settings {
                         .ok()
                         .filter(|bytes| *bytes <= 128 * 1024)
                         .ok_or(Error::UnknownOption(value))?;
+                }
+                "--replay-user-chunk-bytes" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| Error::UnknownOption(arg.clone()))?;
+                    replay_user_chunk_bytes = Some(
+                        value
+                            .parse()
+                            .ok()
+                            .filter(|bytes| *bytes > 0)
+                            .ok_or(Error::UnknownOption(value))?,
+                    );
                 }
                 _ => return Err(Error::UnknownOption(arg)),
             }
@@ -57,6 +73,7 @@ impl Settings {
             require_login,
             login,
             initialize_padding_bytes,
+            replay_user_chunk_bytes,
         })
     }
     pub fn logged_in(&self) -> bool {

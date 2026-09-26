@@ -355,7 +355,7 @@ impl Core {
             runtime.binary_digest.clone(),
             original.permission.clone(),
         )?;
-        state.internal_continuation = Some(InternalContinuation::new(runtime.launch.name.clone()));
+        state.internal_continuation = Some(InternalContinuation::default());
         state.binding = original.binding.clone();
         state.mcp_role = original.mcp_role.clone();
         state.mcp_enabled = original.mcp_enabled;
@@ -639,20 +639,8 @@ impl Core {
         {
             candidate.state.retired_processes.push(retired);
         }
-        let marker = candidate
-            .state
-            .internal_continuation
-            .as_ref()
-            .map(|continuation| continuation.to_name.clone())
-            .unwrap_or_else(|| next_name.to_owned());
-        let marker_message = transcript::new_message(
-            &mut candidate.state,
-            candidate.saved.pane.generation,
-            TranscriptRole::System,
-            TranscriptKind::Handover,
-            marker,
-            true,
-        )?;
+        let marker_message =
+            transcript::handover(&mut candidate.state, candidate.saved.pane.generation)?;
         let marker_seq = marker_message.seq.clone();
         let result = json!({
             "paneId":pane,"fromHarness":checkpoint.from_harness,

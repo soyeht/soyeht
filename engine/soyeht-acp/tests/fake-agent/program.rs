@@ -153,8 +153,8 @@ impl Runtime {
                         .unwrap()
                         .insert(session.id.clone(), mcp);
                 }
-                for (prompt, text) in &session.history {
-                    self.update(&session.id,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
+                for (index, (prompt, text)) in session.history.iter().enumerate() {
+                    self.replay_user(&session.id, index, prompt);
                     if prompt == "separate-message-ids" {
                         for (message_id, chunk) in [
                             ("first", "Failed to authenticate: OAuth session expired"),
@@ -169,6 +169,23 @@ impl Runtime {
                 self.answer(id, json!({"configOptions":session.options()}));
             }
             Err(_) => self.error(id, -32002, "Session not found"),
+        }
+    }
+
+    fn replay_user(&self, session: &str, index: usize, prompt: &str) {
+        let Some(size) = self.settings.replay_user_chunk_bytes else {
+            self.update(session,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
+            return;
+        };
+        let message_id = format!("user-{index}");
+        let mut rest = prompt.trim();
+        while !rest.is_empty() {
+            let mut end = size.min(rest.len());
+            while !rest.is_char_boundary(end) {
+                end += 1;
+            }
+            self.update(session,json!({"sessionUpdate":"user_message_chunk","messageId":message_id,"content":{"type":"text","text":&rest[..end]}}));
+            rest = &rest[end..];
         }
     }
 

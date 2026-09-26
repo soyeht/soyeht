@@ -28,29 +28,64 @@ pub(crate) struct RetiredAgentProcess {
     pub(crate) supervisor_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Marks a session the engine started through a harness switch. The handover
+/// marker takes the new agent's name from `State::launch`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct InternalContinuation {
-    pub(crate) to_name: String,
-    pub(crate) prompt_digest: Option<String>,
+    /// Identifies the continuation prompt without persisting its contents.
+    /// Absent when the switch had no history to carry over.
+    prompt: Option<PromptIdentity>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PromptIdentity {
+    digest: String,
+    bytes: usize,
+}
+
+/// Adapters may pad a replayed prompt; beyond this the message is not ours.
+const REPLAY_WHITESPACE_SLACK_BYTES: usize = 4096;
+
+fn prompt_digest(text: &str) -> String {
+    format!("{:x}", Sha256::digest(text.trim().as_bytes()))
 }
 
 impl InternalContinuation {
-    pub(crate) fn new(to_name: String) -> Self {
-        Self {
-            to_name,
-            prompt_digest: None,
-        }
-    }
-
     pub(crate) fn record_prompt(&mut self, prompt: &str) {
-        self.prompt_digest = Some(format!("{:x}", Sha256::digest(prompt.as_bytes())));
+        self.prompt = Some(PromptIdentity {
+            digest: prompt_digest(prompt),
+            bytes: prompt.trim().len(),
+        });
     }
 
-    pub(crate) fn matches_replayed_prompt(&self, text: &str) -> bool {
-        self.prompt_digest
-            .as_ref()
-            .is_some_and(|digest| *digest == format!("{:x}", Sha256::digest(text.as_bytes())))
+    pub(crate) fn has_prompt(&self) -> bool {
+        self.prompt.is_some()
     }
+
+    /// Whether a replayed user message of this size could still be the prompt.
+    pub(crate) fn could_match(&self, bytes: usize) -> bool {
+        self.prompt
+            .as_ref()
+            .is_some_and(|prompt| bytes <= prompt.bytes + REPLAY_WHITESPACE_SLACK_BYTES)
+    }
+
+    /// Compares a fully assembled replayed user message, ignoring the
+    /// surrounding whitespace adapters commonly trim or add.
+    pub(crate) fn matches_replayed_prompt(&self, text: &str) -> bool {
+        self.prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.digest == prompt_digest(text))
+    }
+}
+
+/// A replayed user message held back until it is complete, so the engine's
+/// continuation prompt is recognized however the adapter splits it.
+#[derive(Debug, Clone)]
+pub(crate) struct ReplayedUserMessage {
+    pub(crate) message_id: Option<String>,
+    pub(crate) text: String,
+    /// Set once the message outgrew the prompt and streams as a user turn.
+    pub(crate) streaming: bool,
 }
 
 #[cfg(test)]
@@ -58,14 +93,17 @@ mod continuation_tests {
     use super::InternalContinuation;
 
     #[test]
-    fn continuation_identity_is_exact_and_does_not_store_the_prompt() {
-        let mut continuation = InternalContinuation::new("Codex".into());
-        continuation.record_prompt("[last messages] private context");
+    fn continuation_identity_tolerates_trimming_and_does_not_store_the_prompt() {
+        let mut continuation = InternalContinuation::default();
+        continuation.record_prompt("[last messages] private context\n");
         assert!(continuation.matches_replayed_prompt("[last messages] private context"));
+        assert!(continuation.matches_replayed_prompt("  [last messages] private context\n\n"));
         assert!(!continuation.matches_replayed_prompt("[last messages] other context"));
+        assert!(!continuation.matches_replayed_prompt("[last messages]"));
+        assert!(continuation.could_match(31));
+        assert!(!continuation.could_match(31 + 4097));
         let persisted = serde_json::to_string(&continuation).unwrap();
         assert!(!persisted.contains("private context"));
-        assert!(persisted.contains("Codex"));
     }
 }
 
@@ -186,7 +224,10 @@ pub struct State {
     #[serde(default)]
     pub(crate) internal_continuation: Option<InternalContinuation>,
     #[serde(skip)]
-    pub(crate) replay_handover_seen: bool,
+    pub(crate) replay_user: Option<ReplayedUserMessage>,
+    /// Replay is inside the continuation turn, which the handover marker represents.
+    #[serde(skip)]
+    pub(crate) replay_continuation_turn: bool,
     #[serde(default)]
     pub(crate) retired_processes: Vec<RetiredAgentProcess>,
 }
@@ -251,7 +292,8 @@ impl State {
             terminals: BTreeMap::new(),
             harness_switch: None,
             internal_continuation: None,
-            replay_handover_seen: false,
+            replay_user: None,
+            replay_continuation_turn: false,
             retired_processes: Vec::new(),
         })
     }

@@ -150,11 +150,6 @@ private struct AgentWell: ViewModifier {
   }
 }
 
-private struct AgentConversationRevealKey: Equatable {
-  let isVisible: Bool
-  let requestId: String?
-}
-
 @MainActor public struct AgentConversationView: View {
   @Bindable private var client: EngineClient
   private let paneId: String
@@ -163,6 +158,7 @@ private struct AgentConversationRevealKey: Equatable {
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
   @State private var prompt = ""
+  @State private var follow = AgentConversationFollow()
   @FocusState private var promptFocused: Bool
 
   public init(
@@ -267,33 +263,31 @@ private struct AgentConversationRevealKey: Equatable {
               message: message, workspaceId: pane?.workspaceId ?? "", style: style
             ).id(message.localId)
           }
-          Color.clear.frame(height: 1).id(AgentConversationScrollPolicy.bottomAnchor)
+          Color.clear.frame(height: 1).id(AgentConversationFollow.bottomAnchor)
         }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
           .padding(.vertical, style.canonicalLayout ? 12 : 16)
       }
       .onChange(of: view.messages.count) { _, _ in
-        guard isVisible else { return }
+        guard follow.messagesChanged(isVisible: isVisible) else { return }
         withAnimation(.easeOut(duration: 0.18)) {
-          proxy.scrollTo(AgentConversationScrollPolicy.bottomAnchor, anchor: .bottom)
+          proxy.scrollTo(AgentConversationFollow.bottomAnchor, anchor: .bottom)
         }
       }
-      .task(
-        id: AgentConversationRevealKey(
-          isVisible: isVisible,
-          requestId: view.permission?.requestId ?? view.elicitation?.requestId
-        )
-      ) {
-        guard
-          let target = AgentConversationScrollPolicy.targetOnReveal(
-            isVisible: isVisible,
-            hasPendingRequest: view.permission != nil || view.elicitation != nil
-          )
-        else { return }
+      .task(id: revealKey) {
+        let key = revealKey
+        guard follow.scrollsOnReveal(key) else { return }
         await Task.yield()
         guard !Task.isCancelled else { return }
-        proxy.scrollTo(target, anchor: .bottom)
+        proxy.scrollTo(AgentConversationFollow.bottomAnchor, anchor: .bottom)
+        follow.revealed()
       }
     }
+  }
+
+  private var revealKey: AgentConversationFollow.RevealKey {
+    AgentConversationFollow.RevealKey(
+      isVisible: isVisible, permissionId: view.permission?.requestId,
+      elicitationId: view.elicitation?.requestId)
   }
 
   private var queue: some View {
