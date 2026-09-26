@@ -3563,6 +3563,53 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
 }
 
 #[test]
+fn shared_daemon_mcp_connections_keep_each_pane_identity_and_reject_spoofs() {
+    let rig = Rig::new();
+    let (mut human, first) = rig.agent();
+    let workspace = human.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+
+    // Both connections originate in this test process, outside either pane's
+    // process tree. This models a shared harness daemon spawning MCP clients.
+    let mut binding_for = |pane: &str| {
+        let session_id = human.pane(pane)["agent"]["sessionId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        rig.native_session(&session_id)["mcp_servers"][0]["env"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == "SOYEHT_MCP_BINDING")
+            .unwrap()["value"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let first_binding = binding_for(&first);
+    let second_binding = binding_for(&second);
+    assert_ne!(first_binding, second_binding);
+
+    let (mut first_socket, first_hello) =
+        binding_hello(&rig.path.join("engine.sock"), &first_binding);
+    let (mut second_socket, second_hello) =
+        binding_hello(&rig.path.join("engine.sock"), &second_binding);
+    assert_eq!(first_hello["result"]["role"], "agent");
+    assert_eq!(second_hello["result"]["role"], "agent");
+
+    let first_peers = binding_request(&mut first_socket, 2, "agent.list", json!({}));
+    let second_peers = binding_request(&mut second_socket, 2, "agent.list", json!({}));
+    assert_eq!(first_peers["result"]["items"][0]["paneId"], second);
+    assert_eq!(second_peers["result"]["items"][0]["paneId"], first);
+
+    let (_, spoofed) = binding_hello(&rig.path.join("engine.sock"), "spoofed-pane-binding");
+    assert_eq!(spoofed["error"]["data"]["kind"], "unauthorized");
+}
+
+#[test]
 fn a_legacy_agent_checkpoint_gets_one_binding_that_survives_the_next_restart() {
     let mut rig = Rig::new();
     let (_, pane) = rig.agent();
