@@ -116,6 +116,15 @@ impl Core {
         } else {
             requested_cwd
         };
+        let name = match (params["name"].as_str(), agent) {
+            (Some(name), _) => name.to_owned(),
+            (None, Some(state)) => self.default_agent_name(
+                &workspace.workspace_id,
+                crate::agents::naming::harness_label(&state.launch),
+                None,
+            ),
+            (None, None) => "Shell".into(),
+        };
         let instance_key = Uuid::new_v4().to_string();
         let mut pane = Pane {
             agent: agent.map(|state| state.public(self.now_ms())),
@@ -129,10 +138,7 @@ impl Core {
             pane_id: Uuid::new_v4().to_string(),
             workspace_id: workspace.workspace_id,
             cwd: cwd.into(),
-            name: params["name"]
-                .as_str()
-                .unwrap_or(if agent_mode { "Agent" } else { "Shell" })
-                .into(),
+            name,
             mode: if agent_mode {
                 PaneMode::Agent
             } else {

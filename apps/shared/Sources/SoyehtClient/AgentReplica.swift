@@ -593,7 +593,6 @@ extension EngineClient {
       "pane.create",
       PaneCreateParams(
         workspaceId: workspaceId, mode: .agent, cwd: path,
-        name: harnesses.first(where: { $0.id == harness })?.name ?? harness,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
         effort: effort, permission: permission))
     let paneId = try result.decoded(PaneCreateResult.self).paneId

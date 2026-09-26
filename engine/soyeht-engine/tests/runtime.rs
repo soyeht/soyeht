@@ -1965,6 +1965,66 @@ fn harness_switch_retry_returns_the_same_session_without_spawning_again() {
 }
 
 #[test]
+fn unnamed_agent_panes_take_unique_harness_names_in_their_workspace() {
+    let rig = Rig::new();
+    let (mut client, first) = rig.agent();
+    let workspace = client.pane(&first)["workspaceId"].clone();
+    let second = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent",
+            "idempotencyKey":"second-agent"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let named = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent",
+            "name":"Reviewer","idempotencyKey":"named-agent"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    assert_eq!(client.pane(&first)["name"], "Test agent");
+    assert_eq!(client.pane(&second)["name"], "Test agent 2");
+    assert_eq!(client.pane(&named)["name"], "Reviewer");
+}
+
+#[test]
+fn harness_switch_renames_a_default_named_pane_to_the_new_harness() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    assert_eq!(client.pane(&pane)["name"], "Test agent");
+
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-default-name"}),
+    );
+
+    assert_eq!(client.pane(&pane)["name"], "Next agent");
+}
+
+#[test]
+fn harness_switch_keeps_a_name_the_user_chose() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.rename",
+        json!({"paneId":pane,"name":"Planner","idempotencyKey":"rename-planner"}),
+    );
+
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-user-name"}),
+    );
+
+    assert_eq!(client.pane(&pane)["name"], "Planner");
+}
+
+#[test]
 fn harness_switch_carries_a_frozen_pending_prompt_once_and_removes_it_from_the_queue() {
     let rig = Rig::new();
     let (mut client, pane) = rig.agent();

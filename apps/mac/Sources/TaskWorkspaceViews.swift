@@ -297,7 +297,7 @@ private struct TaskColumn: View {
 
   private func ownerName(_ task: TaskRecord) -> String? {
     guard let owner = task.ownerPaneId else { return nil }
-    return client.paneDisplayName(for: owner)
+    return client.panes.first { $0.paneId == owner }?.name ?? owner
   }
 
   private func commentCount(_ task: TaskRecord) -> Int {
@@ -472,7 +472,7 @@ private struct TaskListGroup: View {
 
   private func ownerName(_ task: TaskRecord) -> String? {
     guard let owner = task.ownerPaneId else { return nil }
-    return client.paneDisplayName(for: owner)
+    return client.panes.first { $0.paneId == owner }?.name ?? owner
   }
 
   private func commentCount(_ task: TaskRecord) -> Int {
@@ -681,7 +681,7 @@ private struct TaskDetailSheet: View {
 
   private func ownerName(_ task: TaskRecord) -> String? {
     guard let owner = task.ownerPaneId else { return nil }
-    return client.paneDisplayName(for: owner)
+    return client.panes.first { $0.paneId == owner }?.name ?? owner
   }
 
   private func protectedBoundary(_ text: String) -> some View {
@@ -800,8 +800,7 @@ private struct TaskDetailSheet: View {
     }
     let comments = (detail?.comments ?? []).map { comment in
       TaskTimelineEntry(
-        id: "comment-\(comment.commentId)",
-        author: client.paneDisplayName(for: comment.author), text: comment.text,
+        id: "comment-\(comment.commentId)", author: comment.author, text: comment.text,
         at: comment.at)
     }
     return (moves + comments).sorted { $0.at < $1.at }
