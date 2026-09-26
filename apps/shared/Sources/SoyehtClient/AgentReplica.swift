@@ -78,6 +78,16 @@ public enum AgentTranscriptHydrationPolicy {
   }
 }
 
+public enum AgentConversationScrollPolicy {
+  public static let bottomAnchor = "agent-bottom"
+
+  public static func targetOnReveal(
+    isVisible: Bool, hasPendingRequest: Bool
+  ) -> String? {
+    isVisible && hasPendingRequest ? bottomAnchor : nil
+  }
+}
+
 public struct AgentHarnessSwitchView: Sendable {
   public enum Phase: Sendable, Equatable {
     case switching
@@ -319,6 +329,7 @@ extension EngineClient {
       view.notice = nil
       view.authMethods = []
       agentPanes[event.paneId] = view
+      refreshAgent(event.paneId, replacing: false)
     case .paneHarnessSwitchFailed:
       let event = try params.decoded(PaneHarnessSwitchFailedEvent.self)
       var view = agentPanes[event.paneId, default: AgentPaneView()]

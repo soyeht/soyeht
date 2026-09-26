@@ -51,6 +51,25 @@ fn update_user(
     let text = content["text"]
         .as_str()
         .ok_or_else(|| errors::invalid("Replay has no text"))?;
+    let handover_name = state
+        .internal_continuation
+        .as_ref()
+        .filter(|continuation| continuation.matches_replayed_prompt(text))
+        .map(|continuation| continuation.to_name.clone());
+    if let Some(name) = handover_name {
+        if !state.replay_handover_seen {
+            changes.messages.push(transcript::new_message(
+                state,
+                generation,
+                TranscriptRole::System,
+                TranscriptKind::Handover,
+                name,
+                true,
+            )?);
+            state.replay_handover_seen = true;
+        }
+        return Ok(());
+    }
     append_replayed_user(store, pane, state, generation, text, message_id, changes)
 }
 

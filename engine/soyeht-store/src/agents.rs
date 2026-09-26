@@ -711,6 +711,7 @@ fn save_message_in(
                     soyeht_protocol::TranscriptKind::Message
                         | soyeht_protocol::TranscriptKind::Thought
                         | soyeht_protocol::TranscriptKind::System
+                        | soyeht_protocol::TranscriptKind::Handover
                 )
                 && prior != *message)
         {

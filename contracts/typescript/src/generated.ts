@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 575f970f590876a0567458ed0ed29a93577e81f9974b930c2f70c832b9c8e2c6). Do not edit.
+// Generated from contracts/protocol.json (sha256 a159f459c07a25cc5cf5778637e1cecd726d62db11f4a4acc7601159b4fa16a1). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -689,7 +689,7 @@ export type PromptStatus = "queued" | "active" | "completed" | "cancelled";
 
 export type TranscriptRole = "user" | "assistant" | "system";
 
-export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system";
+export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system" | "handover";
 
 export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always";
 

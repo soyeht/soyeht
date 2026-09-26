@@ -67,6 +67,7 @@ fn open(
     };
     if let Some(id) = state.session_id.clone() {
         state.phase = Phase::Loading;
+        state.replay_handover_seen = false;
         changes.clear_replay = true;
         state.replay_role = None;
         state.open_messages.clear();
@@ -499,6 +500,18 @@ fn session_opened(
     if context == "load" {
         changes.replay_messages = true;
         transcript::complete(store, &saved.pane.pane_id, state, changes)?;
+        if !state.replay_handover_seen
+            && let Some(continuation) = state.internal_continuation.as_ref()
+        {
+            changes.messages.push(transcript::new_message(
+                state,
+                saved.pane.generation,
+                TranscriptRole::System,
+                TranscriptKind::Handover,
+                continuation.to_name.clone(),
+                true,
+            )?);
+        }
         changes.publish_replay = true;
         state.replay_role = None;
     }

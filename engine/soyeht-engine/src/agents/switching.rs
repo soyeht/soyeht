@@ -8,7 +8,7 @@
 use super::{
     Changes, native_error,
     pending::{Completion, UserOperation},
-    state::{HarnessSwitchCheckpoint, Phase, RetiredAgentProcess, State},
+    state::{HarnessSwitchCheckpoint, InternalContinuation, Phase, RetiredAgentProcess, State},
     transcript,
 };
 use crate::{
@@ -355,6 +355,7 @@ impl Core {
             runtime.binary_digest.clone(),
             original.permission.clone(),
         )?;
+        state.internal_continuation = Some(InternalContinuation::new(runtime.launch.name.clone()));
         state.binding = original.binding.clone();
         state.mcp_role = original.mcp_role.clone();
         state.mcp_enabled = original.mcp_enabled;
@@ -562,6 +563,9 @@ impl Core {
             self.commit_switch_candidate(pane, next_name, candidate, &[])?;
             return Ok(true);
         };
+        if let Some(continuation) = candidate.state.internal_continuation.as_mut() {
+            continuation.record_prompt(&package);
+        }
         let session_id = errors::invariant(
             candidate.state.session_id.as_deref(),
             "Candidate continuation has no session",
@@ -635,15 +639,17 @@ impl Core {
         {
             candidate.state.retired_processes.push(retired);
         }
-        let marker = format!(
-            "Conversation restarted with {}; recent messages and pending prompts were supplied as historical data.",
-            next_name
-        );
+        let marker = candidate
+            .state
+            .internal_continuation
+            .as_ref()
+            .map(|continuation| continuation.to_name.clone())
+            .unwrap_or_else(|| next_name.to_owned());
         let marker_message = transcript::new_message(
             &mut candidate.state,
             candidate.saved.pane.generation,
             TranscriptRole::System,
-            TranscriptKind::System,
+            TranscriptKind::Handover,
             marker,
             true,
         )?;
@@ -663,7 +669,9 @@ impl Core {
                 .zip(old_saved.supervisor_id.clone()),
             ..Changes::default()
         };
-        transcript::put(&mut changes, pane, marker_message, "agent_message_chunk")?;
+        // The generic pane.update event cannot carry TranscriptKind::Handover.
+        // The client reloads the typed transcript on pane.harness_switch_done.
+        changes.messages.push(marker_message);
         changes.events.push((
             "pane.harness_switch_done".into(),
             json!({"paneId":pane,"fromHarness":checkpoint.from_harness,

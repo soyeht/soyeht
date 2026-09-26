@@ -1889,6 +1889,127 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
 }
 
 #[test]
+fn harness_switch_replay_shows_a_marker_instead_of_the_internal_prompt() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"before-switch","idempotencyKey":"handover-before"}),
+    );
+    client.wait_state(&pane, "idle");
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"handover-switch"}),
+    );
+    let live = client.call("pane.transcript", json!({"paneId":pane}));
+    assert!(
+        live["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["kind"] == "handover" && message["text"] == "Next agent")
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after-switch","idempotencyKey":"handover-after"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["role"] == "user" && message["text"] == "after-switch")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "post-switch prompt was not recorded"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    drop(client);
+    rig.kill_engine();
+    rig.restart_ptyd();
+    rig.start();
+    let mut restored = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let transcript = loop {
+        let transcript = restored.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["kind"] == "handover" && message["text"] == "Next agent")
+        {
+            break transcript;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "handover marker was not replayed"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    let messages = transcript["items"].as_array().unwrap();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|message| message["kind"] == "handover")
+            .count(),
+        1
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| { message["role"] == "user" && message["text"] == "after-switch" })
+    );
+    assert!(messages.iter().all(|message| {
+        !message["text"]
+            .as_str()
+            .unwrap_or("")
+            .contains("[last messages]")
+    }));
+}
+
+#[test]
+fn harness_switch_without_prior_turn_keeps_its_marker_after_recovery() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"empty-handover-switch"}),
+    );
+
+    drop(client);
+    rig.kill_engine();
+    rig.restart_ptyd();
+    rig.start();
+    let mut restored = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let transcript = restored.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|message| message["kind"] == "handover" && message["text"] == "Next agent")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "empty switch marker was not restored"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
 fn a_missing_current_agent_recovers_before_accepting_more_work() {
     let rig = Rig::new();
     let (mut client, pane) = rig.agent();

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 575f970f590876a0567458ed0ed29a93577e81f9974b930c2f70c832b9c8e2c6). Do not edit.
+// Generated from contracts/protocol.json (sha256 a159f459c07a25cc5cf5778637e1cecd726d62db11f4a4acc7601159b4fa16a1). Do not edit.
 import Foundation
 
 
@@ -1397,6 +1397,7 @@ public enum TranscriptKind: String, Codable, Sendable {
     case `plan` = "plan"
     case `usage` = "usage"
     case `system` = "system"
+    case `handover` = "handover"
 }
 
 public enum PermissionOptionKind: String, Codable, Sendable {

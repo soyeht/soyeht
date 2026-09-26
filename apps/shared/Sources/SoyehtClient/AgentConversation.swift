@@ -150,9 +150,15 @@ private struct AgentWell: ViewModifier {
   }
 }
 
+private struct AgentConversationRevealKey: Equatable {
+  let isVisible: Bool
+  let requestId: String?
+}
+
 @MainActor public struct AgentConversationView: View {
   @Bindable private var client: EngineClient
   private let paneId: String
+  private let isVisible: Bool
   private let showsConfiguration: Bool
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
@@ -160,12 +166,14 @@ private struct AgentWell: ViewModifier {
   @FocusState private var promptFocused: Bool
 
   public init(
-    client: EngineClient, paneId: String, showsConfiguration: Bool = true,
+    client: EngineClient, paneId: String, isVisible: Bool = true,
+    showsConfiguration: Bool = true,
     style: AgentConversationStyle = .standard,
     onExplicitRemoteAction: @escaping () -> Void = {}
   ) {
     self.client = client
     self.paneId = paneId
+    self.isVisible = isVisible
     self.showsConfiguration = showsConfiguration
     self.style = style
     self.onExplicitRemoteAction = onExplicitRemoteAction
@@ -259,12 +267,31 @@ private struct AgentWell: ViewModifier {
               message: message, workspaceId: pane?.workspaceId ?? "", style: style
             ).id(message.localId)
           }
-          Color.clear.frame(height: 1).id("agent-bottom")
+          Color.clear.frame(height: 1).id(AgentConversationScrollPolicy.bottomAnchor)
         }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
           .padding(.vertical, style.canonicalLayout ? 12 : 16)
       }
       .onChange(of: view.messages.count) { _, _ in
-        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("agent-bottom", anchor: .bottom) }
+        guard isVisible else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+          proxy.scrollTo(AgentConversationScrollPolicy.bottomAnchor, anchor: .bottom)
+        }
+      }
+      .task(
+        id: AgentConversationRevealKey(
+          isVisible: isVisible,
+          requestId: view.permission?.requestId ?? view.elicitation?.requestId
+        )
+      ) {
+        guard
+          let target = AgentConversationScrollPolicy.targetOnReveal(
+            isVisible: isVisible,
+            hasPendingRequest: view.permission != nil || view.elicitation != nil
+          )
+        else { return }
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        proxy.scrollTo(target, anchor: .bottom)
       }
     }
   }
@@ -586,6 +613,14 @@ private struct TranscriptRow: View {
   var body: some View {
     Group {
       switch message.kind {
+      case .handover:
+        Label {
+          Text("Conversation continued with \(message.text)")
+        } icon: {
+          Image(systemName: "arrow.triangle.2.circlepath")
+        }
+        .font(style.captionFont).foregroundStyle(style.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
       case .thought:
         DisclosureGroup("Thought", isExpanded: $showsThought) {
           FilePathText(message.text, workspaceId: workspaceId)

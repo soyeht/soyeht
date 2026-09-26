@@ -1,5 +1,6 @@
 use crate::errors::{self, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
     AgentHarnessSwitch, AgentPaneRole, AgentSession, AttachmentRef, ConfigOperation, ConfigValue,
@@ -25,6 +26,47 @@ pub(crate) struct RetiredAgentProcess {
     pub(crate) instance_key: String,
     pub(crate) instance_id: String,
     pub(crate) supervisor_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct InternalContinuation {
+    pub(crate) to_name: String,
+    pub(crate) prompt_digest: Option<String>,
+}
+
+impl InternalContinuation {
+    pub(crate) fn new(to_name: String) -> Self {
+        Self {
+            to_name,
+            prompt_digest: None,
+        }
+    }
+
+    pub(crate) fn record_prompt(&mut self, prompt: &str) {
+        self.prompt_digest = Some(format!("{:x}", Sha256::digest(prompt.as_bytes())));
+    }
+
+    pub(crate) fn matches_replayed_prompt(&self, text: &str) -> bool {
+        self.prompt_digest
+            .as_ref()
+            .is_some_and(|digest| *digest == format!("{:x}", Sha256::digest(text.as_bytes())))
+    }
+}
+
+#[cfg(test)]
+mod continuation_tests {
+    use super::InternalContinuation;
+
+    #[test]
+    fn continuation_identity_is_exact_and_does_not_store_the_prompt() {
+        let mut continuation = InternalContinuation::new("Codex".into());
+        continuation.record_prompt("[last messages] private context");
+        assert!(continuation.matches_replayed_prompt("[last messages] private context"));
+        assert!(!continuation.matches_replayed_prompt("[last messages] other context"));
+        let persisted = serde_json::to_string(&continuation).unwrap();
+        assert!(!persisted.contains("private context"));
+        assert!(persisted.contains("Codex"));
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -140,6 +182,11 @@ pub struct State {
     pub terminals: BTreeMap<String, super::terminals::Terminal>,
     #[serde(default)]
     pub(crate) harness_switch: Option<HarnessSwitchCheckpoint>,
+    /// Identifies the engine's own continuation prompt without persisting its contents.
+    #[serde(default)]
+    pub(crate) internal_continuation: Option<InternalContinuation>,
+    #[serde(skip)]
+    pub(crate) replay_handover_seen: bool,
     #[serde(default)]
     pub(crate) retired_processes: Vec<RetiredAgentProcess>,
 }
@@ -203,6 +250,8 @@ impl State {
             permission_rules: BTreeMap::new(),
             terminals: BTreeMap::new(),
             harness_switch: None,
+            internal_continuation: None,
+            replay_handover_seen: false,
             retired_processes: Vec::new(),
         })
     }

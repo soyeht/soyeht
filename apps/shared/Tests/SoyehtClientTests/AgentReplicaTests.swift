@@ -68,6 +68,19 @@ import Testing
       presented: split, panes: panes, hydrated: [], loading: []) == ["codex", "opencode"])
 }
 
+@Test func returningToHiddenAgentTabRevealsItsPendingRequestContext() {
+  #expect(
+    AgentConversationScrollPolicy.targetOnReveal(
+      isVisible: false, hasPendingRequest: true) == nil)
+  #expect(
+    AgentConversationScrollPolicy.targetOnReveal(
+      isVisible: true, hasPendingRequest: false) == nil)
+  #expect(
+    AgentConversationScrollPolicy.targetOnReveal(
+      isVisible: true, hasPendingRequest: true)
+      == AgentConversationScrollPolicy.bottomAnchor)
+}
+
 @MainActor @Test func agentReplicaReplacesChunksTracksQuestionsAndResetsSnapshotState() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"
