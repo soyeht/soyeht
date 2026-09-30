@@ -4751,10 +4751,12 @@ fn undisplayable_execute_permission_is_rejected_and_explained_in_the_transcript(
     );
 }
 
-fn mcp_permission(client: &mut Client, pane: &str, tool: &str, key: &str) -> Value {
+/// Runs a fake MCP approval turn, `tracked-mcp:<tool>` or
+/// `subagent-mcp:<tool>`, and returns the presented request.
+fn mcp_permission(client: &mut Client, pane: &str, turn: &str, key: &str) -> Value {
     client.call(
         "pane.prompt",
-        json!({"paneId":pane,"text":format!("permission-tracked-mcp:{tool}"),"idempotencyKey":key}),
+        json!({"paneId":pane,"text":format!("permission-{turn}"),"idempotencyKey":key}),
     );
     client.wait_state(pane, "waiting_for_you");
     client.section("requests")[0]["request"].clone()
@@ -4764,7 +4766,7 @@ fn mcp_permission(client: &mut Client, pane: &str, tool: &str, key: &str) -> Val
 fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_tracked_call() {
     let rig = Rig::new();
     let (mut client, pane) = rig.agent();
-    let first = mcp_permission(&mut client, &pane, "list_agents", "list-agents");
+    let first = mcp_permission(&mut client, &pane, "tracked-mcp:list_agents", "list-agents");
     assert_eq!(first["title"], "Use soyeht-workspace · list_agents");
     assert_eq!(first["presentation"]["command"], Value::Null);
     assert_eq!(
@@ -4775,7 +4777,12 @@ fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_track
     client.wait_state(&pane, "idle");
     // A grant for one tool never covers another tool whose request looks
     // the same without its tracked call.
-    let second = mcp_permission(&mut client, &pane, "message_agent", "message-agent");
+    let second = mcp_permission(
+        &mut client,
+        &pane,
+        "tracked-mcp:message_agent",
+        "message-agent",
+    );
     assert_eq!(second["title"], "Use soyeht-workspace · message_agent");
     client.call("pane.permission.answer", json!({"paneId":pane,"requestId":second["requestId"],"optionId":"deny","idempotencyKey":"deny-message"}));
     client.wait_state(&pane, "idle");
@@ -4802,6 +4809,60 @@ fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_track
             .event_count("pane.permission_requested")
             .unwrap(),
         2
+    );
+}
+
+#[test]
+fn subagent_mcp_approval_is_presented_from_the_subagents_tracked_call() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let request = mcp_permission(
+        &mut client,
+        &pane,
+        "subagent-mcp:message_agent",
+        "subagent-message",
+    );
+    assert_eq!(request["title"], "Use soyeht-workspace · message_agent");
+    assert_eq!(request["presentation"]["command"], Value::Null);
+    assert_eq!(
+        request["presentation"]["toolArguments"],
+        json!([{"name":"text","value":"  first line\n  second line"}])
+    );
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":request["requestId"],"optionId":"once","idempotencyKey":"once-subagent"}));
+    client.wait_state(&pane, "idle");
+    let items = transcript_items(&mut client, &pane);
+    let row = items
+        .iter()
+        .find(|item| item["kind"] == "subagent")
+        .expect("the asking subagent's row");
+    let tool = items
+        .iter()
+        .find(|item| item["kind"] == "tool")
+        .expect("the subagent's tool call");
+    assert_eq!(tool["subagentId"], row["subagent"]["subagentId"]);
+}
+
+#[test]
+fn a_parent_grant_never_approves_a_subagents_request_for_the_same_call() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let parent = mcp_permission(&mut client, &pane, "tracked-mcp:list_agents", "parent-list");
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":parent["requestId"],"optionId":"always","idempotencyKey":"always-parent"}));
+    client.wait_state(&pane, "idle");
+    // Same tool call id, tool and arguments, asked from a subagent session.
+    let subagent = mcp_permission(
+        &mut client,
+        &pane,
+        "subagent-mcp:list_agents",
+        "subagent-list",
+    );
+    assert_eq!(subagent["title"], parent["title"]);
+    assert_eq!(subagent["presentation"], parent["presentation"]);
+    assert_eq!(
+        rig.database_probe()
+            .event_count_by_field("pane.permission_answered", "by", "rule")
+            .unwrap(),
+        0
     );
 }
 

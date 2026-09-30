@@ -41,6 +41,12 @@ pub(crate) fn scope<'a>(state: &State, session: &'a str) -> Scope<'a> {
     }
 }
 
+/// The reported subagent session a native request comes from, if it is not
+/// the pane's own session.
+pub(crate) fn owner<'a>(state: &State, session: Option<&'a str>) -> Option<&'a str> {
+    session.filter(|session| state.subagents.contains_key(*session))
+}
+
 fn status(outcome: Outcome) -> SubagentStatus {
     match outcome {
         Outcome::Completed => SubagentStatus::Completed,

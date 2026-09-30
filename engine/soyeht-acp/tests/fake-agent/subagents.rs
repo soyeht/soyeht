@@ -7,12 +7,12 @@ use serde_json::{Value, json};
 /// One update in the order the adapter sends it: (session, update).
 type Script = Vec<(String, Value)>;
 
-fn spawned(id: &str, name: &str, task: &str) -> Value {
+pub fn spawned(id: &str, name: &str, task: &str) -> Value {
     json!({"sessionUpdate":"subagent_spawned","subagentSessionId":id,"name":name,"task":task,
         "capabilities":{}})
 }
 
-fn state(id: &str, state: &str) -> Value {
+pub fn state(id: &str, state: &str) -> Value {
     json!({"sessionUpdate":"subagent_state_update","subagentSessionId":id,"state":state})
 }
 

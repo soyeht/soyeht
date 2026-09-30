@@ -137,15 +137,17 @@ pub(super) fn finish_replayed_user(
 
 /// The transcript item holding the latest reported state of a tool call in
 /// the current prompt, if the agent has reported it.
+/// `subagent` names the subagent session that reported it, if not the parent.
 pub fn tracked_tool(
     store: &impl StorePort,
     pane: &str,
     state: &State,
+    subagent: Option<&str>,
     id: &str,
 ) -> Result<Option<TranscriptMessage>> {
     state
         .open_messages
-        .get(&format!("tool:{id}"))
+        .get(&transcript::open_key("tool", subagent, Some(id)))
         .map(|seq| transcript::message(store, pane, *seq))
         .transpose()
         .map(Option::flatten)
@@ -182,17 +184,7 @@ fn update_tool(
     {
         return Ok(());
     }
-    let key = transcript::open_key("tool", subagent, Some(id));
-    let prior = match subagent {
-        None => tracked_tool(store, pane, state, id)?,
-        Some(_) => state
-            .open_messages
-            .get(&key)
-            .map(|seq| transcript::message(store, pane, *seq))
-            .transpose()?
-            .flatten(),
-    };
-    let mut item = match prior {
+    let mut item = match tracked_tool(store, pane, state, subagent, id)? {
         Some(item) => item,
         None => transcript::new_message(
             state,
@@ -223,9 +215,10 @@ fn update_tool(
     item.complete = matches!(tool["status"].as_str(), Some("completed" | "failed"));
     item.tool =
         Some(serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))?);
-    state
-        .open_messages
-        .insert(key, transcript::sequence(&item.seq)?);
+    state.open_messages.insert(
+        transcript::open_key("tool", subagent, Some(id)),
+        transcript::sequence(&item.seq)?,
+    );
     transcript::put(
         changes,
         pane,

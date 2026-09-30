@@ -217,9 +217,10 @@ impl Core {
             .filter(|other| other.workspace_id == saved.pane.workspace_id)
             .map(|other| (other.pane_id.as_str(), other.name.as_str()))
             .collect();
+        let subagent = super::subagents::owner(state, params["sessionId"].as_str());
         let tracked_tool = params["toolCall"]["toolCallId"]
             .as_str()
-            .map(|id| updates::tracked_tool(&self.store, context.pane, state, id))
+            .map(|id| updates::tracked_tool(&self.store, context.pane, state, subagent, id))
             .transpose()?
             .flatten()
             .and_then(|message| message.tool)

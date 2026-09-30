@@ -63,7 +63,10 @@ Raw terminal panes continue to exist and do not use this path.
    never becomes a tool row. Codex reports no model. Times are wall-clock
    times the engine observed live; a replay leaves them absent. Permission,
    file and terminal requests from a reported subagent session are accepted
-   like the parent's. When the harness process ends, subagents still running
+   like the parent's; a subagent's permission request is presented from the
+   tool call that subagent reported, and a persistent grant made for a
+   subagent's request never covers the parent's requests, nor the reverse.
+   When the harness process ends, subagents still running
    are marked `disconnected`. An engine restart keeps the stored rows; a native
    `session/load` replaces them with what the adapter replays. Codex replays
    its subagents; Claude Code (pinned 0.77) replays neither the subagents nor

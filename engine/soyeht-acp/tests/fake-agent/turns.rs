@@ -107,19 +107,36 @@ fn permission_turn(
     let mut tool_call = json!({"toolCallId":"permission-tool","title":"Run test operation",
         "kind":if edit{"edit"}else{"execute"},"status":"pending"});
     // codex-acp 1.11.0 reports an MCP call as a tool_call and then asks to
-    // approve it with only the id, kind and status.
-    let mcp_tool = text.strip_prefix("permission-tracked-mcp:");
+    // approve it with only the id, kind and status. A subagent does both
+    // from its own session.
+    let subagent_tool = text.strip_prefix("permission-subagent-mcp:");
+    let asking = match subagent_tool {
+        Some(_) => {
+            let turn = runtime.sessions.lock().unwrap()[session].history.len();
+            let child = format!("{session}-asking-{turn}");
+            runtime.update(
+                session,
+                crate::subagents::spawned(&child, "Messenger", "Use the workspace tools"),
+            );
+            child
+        }
+        None => session.to_owned(),
+    };
+    let mcp_tool = text
+        .strip_prefix("permission-tracked-mcp:")
+        .or(subagent_tool);
     if let Some(tool) = mcp_tool {
         let id = format!("exec-{tool}");
         runtime.update(
-            session,
+            &asking,
             json!({"sessionUpdate":"tool_call","toolCallId":id,"kind":"execute",
                 "title":format!("mcp.soyeht-workspace.{tool}"),"status":"in_progress",
                 "rawInput":{"server":"soyeht-workspace","tool":tool,
                     "arguments":{"text":"  first line\n  second line"}},
                 "_meta":{"is_mcp_tool_call":true}}),
         );
-        tool_call = json!({"toolCallId":id,"kind":"execute","status":"pending"});
+        tool_call = json!({"toolCallId":id,"kind":"execute","status":"pending",
+            "_meta":{"is_mcp_tool_approval":true}});
     } else if text == "permission-untracked-mcp" {
         tool_call = json!({"toolCallId":"exec-never-reported","kind":"execute","status":"pending"});
     } else if !edit && text != "permission-missing-command" {
@@ -127,12 +144,15 @@ fn permission_turn(
     }
     let result = call(
         runtime,
-        session,
+        &asking,
         "session/request_permission",
         json!({"toolCall":tool_call,"options":[{"optionId":"once","kind":"allow_once","name":"Allow once"},{"optionId":"always","kind":"allow_always","name":"Always allow"},{"optionId":"deny","kind":"reject_once","name":"Deny"}]}),
         cancelled,
         text == "permission-null",
     );
+    if asking != session {
+        runtime.update(session, crate::subagents::state(&asking, "completed"));
+    }
     result.map_or_else(String::new, |result| {
         let output = format!("Permission result: {}", result["outcome"]);
         emit(runtime, session, &output);
