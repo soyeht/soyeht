@@ -1387,10 +1387,13 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
             .iter()
             .all(|item| item["agentMessage"]["paneId"] == sender)
     );
+    // The queue holds the sender's words; the reply route is added only for
+    // the harness, so no bubble or queue row shows a pane identifier.
     assert!(
         items
             .iter()
-            .all(|item| item["text"].as_str().unwrap().contains("message_agent"))
+            .enumerate()
+            .all(|(index, item)| item["text"] == format!("note {index}"))
     );
     assert!(
         items
@@ -1436,6 +1439,110 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
         )["queued"],
         true
     );
+}
+
+#[test]
+fn held_agent_message_follows_the_sent_draft_as_its_own_attributed_turn() {
+    let mut rig = Rig::new();
+    let (mut human, sender) = rig.agent();
+    let workspace = human.pane(&sender)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, target) = rig.agent_in_workspace(&workspace);
+    let sender_name = human.pane(&sender)["name"].as_str().unwrap().to_owned();
+    human.call(
+        "pane.draft",
+        json!({"paneId":target,"active":true,"idempotencyKey":"typing-in-target"}),
+    );
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &sender)
+        .unwrap()
+        .unwrap();
+    let (socket, _) = binding_hello(
+        &rig.path.join("engine.sock"),
+        runtime["binding"].as_str().unwrap(),
+    );
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    agent.call(
+        "agent.message",
+        json!({"targetPaneId":target,"text":"peer note","idempotencyKey":"held-peer-note"}),
+    );
+    thread::sleep(Duration::from_millis(500));
+    assert!(
+        transcript_items(&mut human, &target)
+            .iter()
+            .all(|item| item["role"] != "user"),
+        "an agent message reached the pane while its user had a draft"
+    );
+    let queued = human.call("pane.queue.list", json!({"paneId":target,"limit":64}));
+    assert_eq!(queued["items"][0]["text"], "peer note");
+    assert_eq!(queued["items"][0]["agentMessage"]["name"], sender_name);
+
+    human.call(
+        "pane.prompt",
+        json!({"paneId":target,"text":"typed draft","idempotencyKey":"send-typed-draft"}),
+    );
+    // Sending the composer's text ends its draft in the same commit.
+    assert_eq!(
+        human.call("pane.queue.list", json!({"paneId":target,"limit":64}))["draft"],
+        false
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let users = loop {
+        let users: Vec<Value> = transcript_items(&mut human, &target)
+            .into_iter()
+            .filter(|item| item["role"] == "user")
+            .collect();
+        if users.len() == 2 {
+            break users;
+        }
+        assert!(Instant::now() < deadline, "held message was not delivered");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(users[0]["text"], "typed draft");
+    assert!(users[0].get("agentMessage").is_none());
+    assert_eq!(users[1]["text"], "peer note");
+    assert_eq!(users[1]["agentMessage"]["paneId"], sender);
+    assert_eq!(users[1]["agentMessage"]["name"], sender_name);
+
+    let session = human.pane(&target)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let prompts = loop {
+        let prompts: Vec<String> = rig.native_session(&session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|turn| turn[0].as_str().unwrap().to_owned())
+            .collect();
+        if prompts.len() == 2 {
+            break prompts;
+        }
+        assert!(Instant::now() < deadline, "native turns were not recorded");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(prompts[0], "typed draft");
+    assert!(prompts[1].contains(&format!("targetPaneId={sender}")));
+    assert!(prompts[1].ends_with("\n\npeer note"));
+
+    // Native replay after supervisor loss restores the same attributed bubble.
+    let live = transcript_items(&mut human, &target);
+    let restored = restart_and_wait_for_replay(&mut rig, &target, &live);
+    let users: Vec<&Value> = restored
+        .iter()
+        .filter(|item| item["role"] == "user")
+        .collect();
+    assert_eq!(users.len(), 2, "{restored:?}");
+    assert_eq!(users[0]["text"], "typed draft");
+    assert_eq!(users[1]["text"], "peer note");
+    assert_eq!(users[1]["agentMessage"]["name"], sender_name);
 }
 
 fn binding_request(socket: &mut UnixStream, id: u64, method: &str, params: Value) -> Value {

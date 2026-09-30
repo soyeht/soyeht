@@ -409,7 +409,7 @@ fn injected_stdio_mcp_drives_the_deterministic_task_workflow() {
     let directory = Directory::new();
     let log = directory.0.join("task-tools.ndjson");
     let server = StdioMcpServer {
-        name: "Soyeht".into(),
+        name: "soyeht-workspace".into(),
         command: env!("CARGO_BIN_EXE_soyeht-fake-mcp").into(),
         args: vec!["--log".into(), log.to_string_lossy().into_owned()],
         env: vec![EnvVariable {

@@ -220,11 +220,7 @@ impl Core {
             name: sender.name,
             harness,
         };
-        let body = format!(
-            "Message from {} ({}; pane {}). Reply using soyeht-mcp message_agent with targetPaneId={}.\n\n{}",
-            source.name, source.harness, source.pane_id, source.pane_id, text,
-        );
-        let prompt = state.enqueue(body, PromptOrigin::Automatic, self.timestamp())?;
+        let prompt = state.enqueue(text.into(), PromptOrigin::Automatic, self.timestamp())?;
         let item = state
             .queue
             .iter_mut()
@@ -353,6 +349,11 @@ impl Core {
             "pane.prompt" => {
                 changes.clear_attention = true;
                 let origin = prompt_origin(params)?;
+                if origin == PromptOrigin::Human {
+                    // Sending the composer's text ends its draft in the same
+                    // commit, so held agent messages follow it, never precede it.
+                    state.draft_until_ms = 0;
+                }
                 let references = (!prompt_attachments.is_empty()).then(|| {
                     prompt_attachments
                         .iter()

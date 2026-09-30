@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 71a82b64e5cfd4de0b1d1a51a6b21e8d496d6cc52ca989a1f198bccc71d39733). Do not edit.
+// Generated from contracts/protocol.json (sha256 b101472e0f1d7bc6f1e9b6147424fecfc1d032cfa5f6009f434a1899e8df3145). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),

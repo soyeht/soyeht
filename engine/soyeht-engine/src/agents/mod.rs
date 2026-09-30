@@ -15,6 +15,7 @@ pub mod lifecycle;
 pub mod mcp;
 pub mod methods;
 pub mod naming;
+pub mod peer;
 pub mod pending;
 pub mod questions;
 pub mod recovery;
