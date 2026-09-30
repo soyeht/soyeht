@@ -541,10 +541,7 @@ fn create_schema() -> Value {
                 json!({"type":"string","enum":["urgent","high","medium","low"]}),
             ),
             ("createWorktree", json!({"type":"boolean"})),
-            (
-                "permission",
-                json!({"type":"string","enum":["ask","accept_edits","allow_all"]}),
-            ),
+            ("permissionMode", id()),
             ("dependencies", strings()),
             ("dispatch", json!({"type":"boolean"})),
         ]),

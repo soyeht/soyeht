@@ -615,19 +615,22 @@ extension EngineClient {
     }
   }
 
+  /// `permissionMode` is one of the harness's own mode IDs; `nil` lets the
+  /// engine apply the harness's preferred mode.
   public func createAgentPane(
-    directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode
+    directory: URL, harness: String, model: String?, effort: String?,
+    permissionMode: String? = nil
   ) {
     perform {
       _ = try await self.createAgentPaneNow(
         directory: directory, harness: harness, model: model, effort: effort,
-        permission: permission)
+        permissionMode: permissionMode)
     }
   }
 
   public func createAgentPaneNow(
-    directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode,
-    selectPane: Bool = true
+    directory: URL, harness: String, model: String?, effort: String?,
+    permissionMode: String? = nil, selectPane: Bool = true
   ) async throws -> String {
     let path = directory.standardizedFileURL.path
     let workspaceId = try await workspaceId(for: directory, path: path)
@@ -636,7 +639,7 @@ extension EngineClient {
       PaneCreateParams(
         workspaceId: workspaceId, mode: .agent, cwd: path,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
-        effort: effort, permission: permission))
+        effort: effort, permissionMode: permissionMode))
     let paneId = try result.decoded(PaneCreateResult.self).paneId
     if selectPane { select(paneId) }
     return paneId
@@ -737,15 +740,6 @@ extension EngineClient {
     ).decoded(PaneHarnessSwitchResult.self)
     try await loadAgentPane(paneId, replacing: false)
     return result
-  }
-
-  public func setYolo(_ paneId: String, on: Bool) {
-    perform {
-      _ = try await self.mutation(
-        "pane.yolo",
-        PaneYoloParams(paneId: paneId, on: on, idempotencyKey: UUID().uuidString),
-        timeoutSeconds: 95)
-    }
   }
 
   public func setDraft(_ paneId: String, active: Bool) {

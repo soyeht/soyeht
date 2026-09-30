@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
     AgentHarnessSwitch, AgentPaneRole, AgentSession, AttachmentRef, ConfigOperation, ConfigValue,
-    HarnessLaunch, PaneQueueListResult, PermissionMode, PromptItem, PromptOrigin, PromptStatus,
+    HarnessLaunch, PaneQueueListResult, PromptItem, PromptOrigin, PromptStatus,
     QueuedPromptSummary, Role, TaskExecutor, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
@@ -180,12 +180,11 @@ pub struct State {
     pub auth_required: bool,
     pub session_id: Option<String>,
     pub options: Options,
-    pub permission: PermissionMode,
-    pub previous_permission: Option<PermissionMode>,
-    pub previous_effective_mode: Option<String>,
-    pub pending_policy: Option<super::configuration::PolicyChange>,
-    pub yolo: bool,
-    pub effective_mode: Option<String>,
+    /// The permission mode this pane keeps: the one requested at creation,
+    /// then the last one the harness confirmed. Re-applied after a restart or
+    /// harness switch when the harness offers the same mode.
+    #[serde(default)]
+    pub mode: Option<String>,
     pub operation: Option<ConfigOperation>,
     #[serde(default)]
     pub operation_timed_out: bool,
@@ -237,17 +236,7 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(
-        launch: HarnessLaunch,
-        binary_digest: String,
-        permission: PermissionMode,
-    ) -> Result<Self> {
-        let policy = match &permission {
-            PermissionMode::Ask => "ask",
-            PermissionMode::AcceptEdits => "accept_edits",
-            PermissionMode::AllowAll => "allow_all",
-        }
-        .to_owned();
+    pub fn new(launch: HarnessLaunch, binary_digest: String, mode: Option<String>) -> Result<Self> {
         Ok(Self {
             binding: Binding::generate()?,
             hook_binding: Binding::generate()?,
@@ -262,16 +251,19 @@ impl State {
             auth_required: false,
             session_id: None,
             options: Options::default(),
-            permission,
-            previous_permission: None,
-            previous_effective_mode: None,
-            pending_policy: None,
-            yolo: false,
-            effective_mode: None,
+            requested_options: mode
+                .iter()
+                .map(|mode| {
+                    (
+                        super::configuration::MODE_KEY.to_owned(),
+                        ConfigValue::V0(mode.clone()),
+                    )
+                })
+                .collect(),
+            mode,
             operation: None,
             operation_user: None,
             operation_timed_out: false,
-            requested_options: BTreeMap::from([("permission".into(), ConfigValue::V0(policy))]),
             initial_option: None,
             initial_config_failed: false,
             queue: VecDeque::new(),
@@ -331,11 +323,8 @@ impl State {
         binary_digest: String,
         preset: &TaskExecutor,
     ) -> Result<Self> {
-        let permission = preset
-            .permission
-            .clone()
-            .unwrap_or_else(|| self.permission.clone());
-        let mut state = Self::new(launch, binary_digest, permission)?;
+        let mode = preset.permission_mode.clone().or_else(|| self.mode.clone());
+        let mut state = Self::new(launch, binary_digest, mode)?;
         state.binding = self.binding.clone();
         state.mcp_role = self.mcp_role.clone();
         state.mcp_enabled = self.mcp_enabled;
@@ -379,10 +368,6 @@ impl State {
             } else {
                 Vec::new()
             },
-            permission: self.permission.clone(),
-            yolo: self.yolo,
-            previous_permission: self.previous_permission.clone(),
-            effective_mode: self.effective_mode.clone(),
             operation: self.operation.clone(),
             queue: self
                 .queue
@@ -644,7 +629,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            Some("default".into()),
         )
         .unwrap()
     }
@@ -769,7 +754,7 @@ mod tests {
             harness: Some("task-harness".into()),
             model: Some("task-model".into()),
             effort: Some("high".into()),
-            permission: Some(PermissionMode::AcceptEdits),
+            permission_mode: Some("acceptEdits".into()),
         };
         let launch = HarnessLaunch {
             id: "task-harness".into(),
@@ -789,7 +774,7 @@ mod tests {
         assert_eq!(restarted.next_message_seq, 17);
         assert!(restarted.session_id.is_none());
         assert!(restarted.queue.is_empty());
-        assert_eq!(restarted.permission, PermissionMode::AcceptEdits);
+        assert_eq!(restarted.mode.as_deref(), Some("acceptEdits"));
         assert_eq!(
             restarted.requested_options.get("model"),
             Some(&ConfigValue::V0("task-model".into()))

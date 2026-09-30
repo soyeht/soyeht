@@ -108,7 +108,7 @@ impl Runtime {
                 .unwrap()
                 .insert(session.id.clone(), mcp);
         }
-        self.answer(id, session.response());
+        self.answer(id, session.response(&self.settings));
     }
 
     fn load_session(&self, id: Value, params: &Value) {
@@ -130,6 +130,8 @@ impl Runtime {
         };
         match Session::load(&self.settings, session_id) {
             Ok(mut session) => {
+                // Like real adapters, a reloaded session starts in the default mode.
+                session.values.insert("mode".into(), json!("ask"));
                 session.mcp_servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
                 session.session_meta = params.get("_meta").cloned();
                 let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
@@ -166,7 +168,9 @@ impl Runtime {
                         self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
                     }
                 }
-                self.answer(id, json!({"configOptions":session.options()}));
+                let mut response = session.response(&self.settings);
+                response.as_object_mut().unwrap().remove("sessionId");
+                self.answer(id, response);
             }
             Err(_) => self.error(id, -32002, "Session not found"),
         }
@@ -207,7 +211,10 @@ impl Runtime {
                 Some("model-a" | "model-b" | "delayed-model")
             ),
             "effort" => matches!(value.as_str(), Some("low" | "medium" | "high")),
-            "mode" => matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all")),
+            "mode" => {
+                self.settings.modes == "config"
+                    && matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all"))
+            }
             "fast" => value.is_boolean() && params["type"] == "boolean",
             _ => false,
         };
@@ -222,7 +229,7 @@ impl Runtime {
             return;
         }
         *session = next;
-        let response = json!({"configOptions":session.options()});
+        let response = json!({"configOptions":session.options(&self.settings)});
         if value == "delayed-model" {
             let runtime = self.clone();
             std::fs::write(self.settings.directory.join("config-waiting"), b"ready").unwrap();
@@ -239,6 +246,55 @@ impl Runtime {
         } else {
             self.answer(id, response);
         }
+    }
+
+    fn set_mode(&self, id: Value, params: &Value) {
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(session) = params["sessionId"]
+            .as_str()
+            .and_then(|session| sessions.get_mut(session))
+        else {
+            self.error(id, -32002, "Session not found");
+            return;
+        };
+        let mode = params["modeId"].as_str().unwrap_or("");
+        if self.settings.modes != "legacy" || !matches!(mode, "ask" | "accept_edits" | "allow_all")
+        {
+            self.error(id, -32602, "Mode refused");
+            return;
+        }
+        session.values.insert("mode".into(), json!(mode));
+        if session.save(&self.settings).is_err() {
+            self.error(id, -32603, "Could not save mode");
+            return;
+        }
+        self.answer(id, json!({}));
+    }
+
+    /// Changes the mode as the agent itself would, then announces it.
+    pub(crate) fn switch_mode(&self, session_id: &str, mode: &str) {
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(session) = sessions.get_mut(session_id) else {
+            return;
+        };
+        session.values.insert("mode".into(), json!(mode));
+        session.save(&self.settings).expect("fake mode switch");
+        let update = if self.settings.modes == "legacy" {
+            json!({"sessionUpdate":"current_mode_update","currentModeId":mode})
+        } else {
+            json!({"sessionUpdate":"config_option_update","configOptions":session.options(&self.settings)})
+        };
+        drop(sessions);
+        self.update(session_id, update);
+    }
+
+    pub(crate) fn session_mode(&self, session_id: &str) -> String {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .map(|session| session.mode().to_owned())
+            .unwrap_or_default()
     }
 
     fn prompt(self: &Arc<Self>, id: Value, params: &Value) {
@@ -322,6 +378,7 @@ impl Runtime {
             "session/new" => self.new_session(id, &params),
             "session/load" => self.load_session(id, &params),
             "session/set_config_option" => self.set_config_option(id, &params),
+            "session/set_mode" => self.set_mode(id, &params),
             "session/prompt" => self.prompt(id, &params),
             _ => self.error(id, -32601, "Method not found"),
         }

@@ -3202,7 +3202,7 @@ private struct NewPaneSheet: View {
   @State private var harness = ""
   @State private var model = ""
   @State private var effort = ""
-  @State private var permission = PermissionMode.ask
+  @State private var permissionMode: String?
   @State private var showsAgentPicker = false
   @State private var submitting = false
   @State private var prompt = ""
@@ -3359,6 +3359,7 @@ private struct NewPaneSheet: View {
     .onChange(of: harness) { _, value in
       model = ""
       effort = ""
+      permissionMode = nil
       if selectedHarness?.available == true { client.refreshCatalogue(harness: value) }
     }
   }
@@ -3409,11 +3410,13 @@ private struct NewPaneSheet: View {
       Spacer()
       if mode == .agent {
         Menu {
-          Button("Ask every time") { permission = .ask }
-          Button("Accept edits") { permission = .accept_edits }
-          Button("Allow all") { permission = .allow_all }
+          PermissionModeChoices(modes: permissionModes, selection: $permissionMode)
         } label: {
-          Label(permissionLabel, systemImage: "shield.checkered")
+          Label(
+            PermissionModeChoices.title(
+              modes: permissionModes, selection: permissionMode,
+              preferred: client.defaultPermissionMode(harness: harness)),
+            systemImage: "checkmark.shield")
         }.menuStyle(.borderlessButton).fixedSize()
       }
     }
@@ -3433,12 +3436,8 @@ private struct NewPaneSheet: View {
     return modelName ?? selectedHarness?.name ?? "Choose agent"
   }
 
-  private var permissionLabel: String {
-    switch permission {
-    case .ask: "Ask"
-    case .accept_edits: "Edits"
-    case .allow_all: "Allow all"
-    }
+  private var permissionModes: AgentPermissionModes? {
+    catalogue.flatMap { AgentPermissionModes(options: $0.options) }
   }
 
   private func selectFirstHarness() {
@@ -3480,7 +3479,7 @@ private struct NewPaneSheet: View {
         } else {
           paneId = try await client.createAgentPaneNow(
             directory: directory, harness: harness, model: model.isEmpty ? nil : model,
-            effort: effort.isEmpty ? nil : effort, permission: permission)
+            effort: effort.isEmpty ? nil : effort, permissionMode: permissionMode)
         }
         onCreated(paneId, PaneLayoutKind(mode: mode))
         if mode == .agent {

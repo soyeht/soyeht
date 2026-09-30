@@ -491,7 +491,7 @@ mod readiness_tests {
         state::{Phase, State},
     };
     use serde_json::json;
-    use soyeht_protocol::{HarnessLaunch, HarnessSetupReason, HarnessSetupState, PermissionMode};
+    use soyeht_protocol::{HarnessLaunch, HarnessSetupReason, HarnessSetupState};
 
     #[test]
     fn session_started_does_not_clear_a_prior_authentication_failure() {
@@ -505,7 +505,7 @@ mod readiness_tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap();
         state.phase = Phase::Ready;

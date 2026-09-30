@@ -152,7 +152,7 @@ import Testing
   let authMethod = AuthMethod(id: "login", name: "Sign in", terminal: true)
   let session = AgentSession(
     harness: "agent", version: "1", fingerprint: "fingerprint", options: [],
-    authMethods: [], permission: .ask, yolo: false, queue: [], draft: false,
+    authMethods: [], queue: [], draft: false,
     role: .worker,
     harnessSwitch: AgentHarnessSwitch(fromHarness: "first", toHarness: "second"))
   let pane = Pane(

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a159f459c07a25cc5cf5778637e1cecd726d62db11f4a4acc7601159b4fa16a1). Do not edit.
+// Generated from contracts/protocol.json (sha256 71a82b64e5cfd4de0b1d1a51a6b21e8d496d6cc52ca989a1f198bccc71d39733). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -128,7 +128,6 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "SettingsChangedEvent" => roundtrip::<SettingsChangedEvent>(value),
         "DevicePairPending" => roundtrip::<DevicePairPending>(value),
         "ClientFocus" => roundtrip::<ClientFocus>(value),
-        "PermissionMode" => roundtrip::<PermissionMode>(value),
         "PromptOrigin" => roundtrip::<PromptOrigin>(value),
         "PromptStatus" => roundtrip::<PromptStatus>(value),
         "TranscriptRole" => roundtrip::<TranscriptRole>(value),
@@ -143,7 +142,6 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PlanStatus" => roundtrip::<PlanStatus>(value),
         "PlanPriority" => roundtrip::<PlanPriority>(value),
         "SessionRecovery" => roundtrip::<SessionRecovery>(value),
-        "ConfigOperationKind" => roundtrip::<ConfigOperationKind>(value),
         "ConfigValue" => roundtrip::<ConfigValue>(value),
         "ConfigChoice" => roundtrip::<ConfigChoice>(value),
         "ConfigOption" => roundtrip::<ConfigOption>(value),
@@ -195,8 +193,6 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneHarnessSwitchStartedEvent" => roundtrip::<PaneHarnessSwitchStartedEvent>(value),
         "PaneHarnessSwitchDoneEvent" => roundtrip::<PaneHarnessSwitchDoneEvent>(value),
         "PaneHarnessSwitchFailedEvent" => roundtrip::<PaneHarnessSwitchFailedEvent>(value),
-        "PaneYoloParams" => roundtrip::<PaneYoloParams>(value),
-        "PaneYoloResult" => roundtrip::<PaneYoloResult>(value),
         "PaneAuthStartParams" => roundtrip::<PaneAuthStartParams>(value),
         "PaneAuthStartResult" => roundtrip::<PaneAuthStartResult>(value),
         "PaneTranscriptParams" => roundtrip::<PaneTranscriptParams>(value),

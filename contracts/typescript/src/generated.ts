@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a159f459c07a25cc5cf5778637e1cecd726d62db11f4a4acc7601159b4fa16a1). Do not edit.
+// Generated from contracts/protocol.json (sha256 71a82b64e5cfd4de0b1d1a51a6b21e8d496d6cc52ca989a1f198bccc71d39733). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -253,7 +253,7 @@ export interface PaneCreateParams {
   "harness"?: Id;
   "model"?: string;
   "effort"?: string;
-  "permission"?: PermissionMode;
+  "permissionMode"?: Id;
   "url"?: string;
   "incognito"?: boolean;
   "path"?: string;
@@ -681,8 +681,6 @@ export interface ClientFocus {
   "paneId"?: Id;
 }
 
-export type PermissionMode = "ask" | "accept_edits" | "allow_all";
-
 export type PromptOrigin = "human" | "automatic";
 
 export type PromptStatus = "queued" | "active" | "completed" | "cancelled";
@@ -711,14 +709,13 @@ export type PlanPriority = "high" | "medium" | "low";
 
 export type SessionRecovery = "resumed" | "new_session" | "needs_login";
 
-export type ConfigOperationKind = "config" | "yolo";
-
 export type ConfigValue = string | boolean;
 
 export interface ConfigChoice {
   "value": Id;
   "name": string;
   "description"?: string;
+  "kind"?: string;
 }
 
 export interface ConfigOption {
@@ -733,7 +730,6 @@ export interface ConfigOption {
 
 export interface ConfigOperation {
   "operationId": Id;
-  "kind": ConfigOperationKind;
   "configId": Id;
   "value": ConfigValue;
   "startedAt": string;
@@ -831,10 +827,6 @@ export interface AgentSession {
   "sessionId"?: Id;
   "options": Array<ConfigOption>;
   "authMethods": Array<AuthMethod>;
-  "permission": PermissionMode;
-  "yolo": boolean;
-  "previousPermission"?: PermissionMode;
-  "effectiveMode"?: string;
   "operation"?: ConfigOperation;
   "queue": Array<QueuedPromptSummary>;
   "draft": boolean;
@@ -1089,17 +1081,6 @@ export interface PaneHarnessSwitchFailedEvent {
   "toHarness": Id;
   "reason": string;
   "restored": boolean;
-}
-
-export interface PaneYoloParams {
-  "paneId": Id;
-  "on": boolean;
-  "idempotencyKey": Id;
-}
-
-export interface PaneYoloResult {
-  "effectiveMode": PermissionMode;
-  "on": boolean;
 }
 
 export interface PaneAuthStartParams {
@@ -1499,7 +1480,7 @@ export interface TaskExecutor {
   "harness"?: Id;
   "model"?: string;
   "effort"?: string;
-  "permission"?: PermissionMode;
+  "permissionMode"?: Id;
 }
 
 export interface TaskWorktree {
@@ -1616,7 +1597,7 @@ export interface TaskCreateParams {
   "executor"?: TaskExecutor;
   "priority"?: TaskPriority;
   "createWorktree"?: boolean;
-  "permission"?: PermissionMode;
+  "permissionMode"?: Id;
   "dependencies"?: Array<string>;
   "dispatch"?: boolean;
   "idempotencyKey": Id;
@@ -3067,7 +3048,6 @@ export interface Methods {
   "pane.elicitation.answer": { params: PaneElicitationAnswerParams; result: PaneElicitationAnswerResult };
   "pane.config.set": { params: PaneConfigSetParams; result: PaneConfigSetResult };
   "pane.harness.switch": { params: PaneHarnessSwitchParams; result: PaneHarnessSwitchResult };
-  "pane.yolo": { params: PaneYoloParams; result: PaneYoloResult };
   "pane.auth.start": { params: PaneAuthStartParams; result: PaneAuthStartResult };
   "pane.transcript": { params: PaneTranscriptParams; result: PaneTranscriptResult };
   "pane.draft": { params: PaneDraftParams; result: PaneDraftResult };

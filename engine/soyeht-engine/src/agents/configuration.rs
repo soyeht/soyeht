@@ -3,65 +3,165 @@ use crate::{
     core::Core,
     errors::{self, Result},
 };
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use soyeht_protocol::{ConfigOperation, ConfigOperationKind, ConfigValue, PermissionMode};
+use serde_json::json;
+use soyeht_acp::config::{FULL_ACCESS_KIND, MODE_CATEGORY, Options, Route};
+use soyeht_protocol::{ConfigChoice, ConfigOperation, ConfigOption, ConfigType, ConfigValue};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PolicyChange {
-    pub permission: PermissionMode,
-    pub yolo: bool,
-    pub previous_permission: Option<PermissionMode>,
-    pub previous_mode: Option<String>,
+/// `State::requested_options` key of the permission mode.
+pub const MODE_KEY: &str = "mode";
+
+/// Permission modes the engine enforces itself, only for agents that
+/// announce no native modes. Agents with native modes answer their own
+/// permission policy; the engine then never approves on the person's behalf.
+pub(super) const ASK: &str = "ask";
+pub(super) const ACCEPT_EDITS: &str = "accept_edits";
+pub(super) const ALLOW_ALL: &str = "allow_all";
+
+fn client_modes(current: Option<&str>) -> ConfigOption {
+    let choice = |value: &str, name: &str, description: &str, kind: &str| ConfigChoice {
+        value: value.into(),
+        name: name.into(),
+        description: Some(description.into()),
+        kind: Some(kind.into()),
+    };
+    let options = vec![
+        choice(ASK, "Ask every time", "Ask before every action", "standard"),
+        choice(
+            ACCEPT_EDITS,
+            "Accept edits",
+            "Approve file edits inside the pane directory",
+            "standard",
+        ),
+        choice(
+            ALLOW_ALL,
+            "Allow all",
+            "Approve every action",
+            FULL_ACCESS_KIND,
+        ),
+    ];
+    let current = current
+        .filter(|value| options.iter().any(|choice| choice.value == *value))
+        .unwrap_or(ASK);
+    ConfigOption {
+        id: MODE_CATEGORY.into(),
+        name: "Mode".into(),
+        description: Some("Enforced by Soyeht: this agent announces no permission modes".into()),
+        category: Some(MODE_CATEGORY.into()),
+        r#type: ConfigType::Select,
+        current_value: ConfigValue::V0(current.into()),
+        options,
+    }
+}
+
+/// The mode the engine enforces, when the agent announces none of its own.
+pub(super) fn engine_policy(state: &State) -> Option<&str> {
+    let option = state.options.mode()?;
+    (state.options.route(&option.id) == Some(&Route::Client))
+        .then(|| state.options.current_mode())
+        .flatten()
+}
+
+/// The announced option a `requested_options` key selects.
+pub(super) fn requested_option<'a>(options: &'a Options, key: &str) -> Option<&'a ConfigOption> {
+    let category = if key == "effort" {
+        "thought_level"
+    } else {
+        key
+    };
+    options
+        .values
+        .iter()
+        .find(|option| option.category.as_deref() == Some(category) || option.id == category)
+}
+
+/// The `requested_options` key an announced option satisfies.
+fn requested_key(option: &ConfigOption) -> &str {
+    match option.category.as_deref().unwrap_or(&option.id) {
+        "thought_level" => "effort",
+        other => other,
+    }
+}
+
+/// Gives an agent that announces no modes the engine's own, starting in the
+/// pane's mode when it is one of them.
+fn ensure_engine_modes(state: &mut State) -> Result<()> {
+    let mode = state.mode.clone();
+    state
+        .options
+        .ensure_mode(|| client_modes(mode.as_deref()))
+        .map_err(native_error)
+}
+
+/// Adopts the options a new or reloaded session announced. Agents without
+/// native modes get the engine's modes; the pane's mode is queued for
+/// re-application when the agent offers it but reports another one.
+pub(super) fn open_session(state: &mut State, options: Options) -> Result<()> {
+    state.options = options;
+    ensure_engine_modes(state)?;
+    if let Some(mode) = state.mode.clone()
+        && engine_policy(state).is_none()
+        && state.options.offers_mode(&mode)
+        && state.options.current_mode() != Some(mode.as_str())
+    {
+        state
+            .requested_options
+            .insert(MODE_KEY.into(), ConfigValue::V0(mode));
+    }
+    Ok(())
+}
+
+/// Records a confirmed option; a confirmed mode becomes the pane's mode.
+pub(super) fn confirmed(state: &mut State, options: Options, config: &str) {
+    state.options = options;
+    if let Some(option) = state
+        .options
+        .values
+        .iter()
+        .find(|option| option.id == config)
+    {
+        let key = requested_key(option).to_owned();
+        state.requested_options.remove(&key);
+        if key == MODE_KEY {
+            state.mode = state.options.current_mode().map(str::to_owned);
+        }
+    }
+}
+
+/// Applies an announcement the agent made on its own. A mode it chose itself
+/// becomes the pane's mode unless the engine is still applying one.
+pub(super) fn agent_changed(state: &mut State, options: Options) -> Result<()> {
+    state.options = state.options.adopt(options).map_err(native_error)?;
+    ensure_engine_modes(state)?;
+    if state.phase == super::state::Phase::Ready
+        && !state.requested_options.contains_key(MODE_KEY)
+        && state.operation.is_none()
+    {
+        state.mode = state.options.current_mode().map(str::to_owned);
+    }
+    Ok(())
 }
 
 pub struct ChangeRequest<'a> {
     pub config: &'a str,
     pub value: ConfigValue,
     pub user: Option<UserOperation>,
-    pub kind: ConfigOperationKind,
     pub started_at: String,
     pub now_ms: i64,
 }
 
-pub fn native_policy(value: &str) -> Option<PermissionMode> {
-    match value {
-        "default" | "ask" => Some(PermissionMode::Ask),
-        "acceptEdits" | "accept_edits" => Some(PermissionMode::AcceptEdits),
-        "bypassPermissions" | "allow_all" => Some(PermissionMode::AllowAll),
-        _ => None,
-    }
-}
-
-pub(super) fn require_native_policy(value: &str) -> Result<PermissionMode> {
-    native_policy(value)
-        .ok_or_else(|| errors::invalid("Agent reported an unsupported permission mode"))
-}
-
-pub fn observe_mode(state: &mut State, value: &str, explicit_selection: bool) -> Result<()> {
-    let permission = require_native_policy(value)?;
-    state.effective_mode = Some(value.into());
-    state.permission = permission;
-    if explicit_selection || state.permission != PermissionMode::AllowAll {
-        state.yolo = false;
-        state.previous_permission = None;
-        state.previous_effective_mode = None;
-    }
-    Ok(())
-}
-
+/// Starts a configuration change. Returns the pending operation, or `None`
+/// when the engine enforces the option itself and applied it at once.
 pub fn begin(
     state: &mut State,
     pane: &str,
     request: ChangeRequest<'_>,
     changes: &mut Changes,
-) -> Result<String> {
+) -> Result<Option<String>> {
     let ChangeRequest {
         config,
         value,
         user,
-        kind,
         started_at,
         now_ms,
     } = request;
@@ -72,14 +172,22 @@ pub fn begin(
         .session_id
         .as_deref()
         .ok_or_else(|| errors::pane_busy("Agent session is not ready"))?;
-    let (method, params) = state
+    let Some((method, params)) = state
         .options
         .request(session, config, &value)
-        .map_err(native_error)?;
+        .map_err(native_error)?
+    else {
+        let options = state
+            .options
+            .confirmed(config, &value, &json!({}))
+            .map_err(native_error)?;
+        confirmed(state, options, config);
+        changes.events.push(("pane.config_changed".into(),json!({"paneId":pane,"configId":config,"value":value,"options":state.options.values,"sessionPreserved":true})));
+        return Ok(None);
+    };
     let id = Uuid::new_v4().to_string();
     state.operation = Some(ConfigOperation {
         operation_id: id.clone(),
-        kind,
         config_id: config.into(),
         value: value.clone(),
         started_at,
@@ -91,86 +199,68 @@ pub fn begin(
         json!({"paneId":pane,"configId":config,"value":value,"operationId":id}),
     ));
     responses::call(state, changes, method, params, &id, now_ms)?;
-    Ok(id)
+    Ok(Some(id))
+}
+
+pub fn applied(value: &ConfigValue) -> serde_json::Value {
+    json!({"applied":true,"effective":value,"sessionPreserved":true})
 }
 
 impl Core {
+    /// Applies the options a pane was opened with, one native change at a
+    /// time. A mode the agent does not offer is dropped: the agent keeps its
+    /// own mode rather than a guessed one.
     pub fn configure_initial_agent(&mut self, pane: &str) -> Result<()> {
         let mut state = self.agent_state(pane)?;
         if state.operation.is_some() || state.initial_config_failed {
             return Ok(());
         }
-        let Some((key, desired)) = state
+        let mut changes = Changes::default();
+        while let Some((key, desired)) = state
             .requested_options
             .first_key_value()
             .map(|(k, v)| (k.clone(), v.clone()))
-        else {
-            return Ok(());
-        };
-        let category = match key.as_str() {
-            "effort" => "thought_level",
-            "permission" => "mode",
-            _ => key.as_str(),
-        };
-        let option = state
-            .options
-            .values
-            .iter()
-            .find(|o| o.category.as_deref() == Some(category) || o.id == category)
-            .cloned();
-        let mut changes = Changes::default();
-        if key == "permission" && option.is_none() {
-            state.requested_options.remove(&key);
-        } else {
-            let selected = option.as_ref().and_then(|option| {
-                if key == "permission" {
-                    option
-                        .options
-                        .iter()
-                        .find(|choice| {
-                            native_policy(&choice.value).as_ref() == Some(&state.permission)
-                        })
-                        .map(|choice| ConfigValue::V0(choice.value.clone()))
-                } else {
-                    Some(desired.clone())
-                }
+        {
+            let offered = requested_option(&state.options, &key).filter(|_| {
+                key != MODE_KEY
+                    || matches!(&desired, ConfigValue::V0(mode) if state.options.offers_mode(mode))
             });
-            if let Some((option, value)) = option.zip(selected) {
-                if option.current_value == value {
-                    if key == "permission"
-                        && let ConfigValue::V0(mode) = &value
-                    {
-                        observe_mode(&mut state, mode, false)?;
-                    }
+            let Some(option) = offered.cloned() else {
+                if key == MODE_KEY {
                     state.requested_options.remove(&key);
-                } else {
-                    match begin(
-                        &mut state,
-                        pane,
-                        ChangeRequest {
-                            config: &option.id,
-                            value,
-                            user: None,
-                            kind: ConfigOperationKind::Config,
-                            started_at: self.timestamp(),
-                            now_ms: self.now_ms(),
-                        },
-                        &mut changes,
-                    ) {
-                        Ok(_) => state.initial_option = Some(key.clone()),
-                        Err(error) => {
-                            state.initial_config_failed = true;
-                            changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":option.id,"value":desired,"reason":error.to_string()})));
-                        }
-                    }
+                    continue;
                 }
-            } else if key == "permission" {
-                // No recognized native preset: enforce the engine's question
-                // policy without inventing an undocumented configuration value.
-                state.requested_options.remove(&key);
-            } else {
                 state.initial_config_failed = true;
                 changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":key,"value":desired,"reason":"Requested selector is not offered by this session"})));
+                break;
+            };
+            if option.current_value == desired {
+                let options = state.options.clone();
+                confirmed(&mut state, options, &option.id);
+                continue;
+            }
+            match begin(
+                &mut state,
+                pane,
+                ChangeRequest {
+                    config: &option.id,
+                    value: desired.clone(),
+                    user: None,
+                    started_at: self.timestamp(),
+                    now_ms: self.now_ms(),
+                },
+                &mut changes,
+            ) {
+                Ok(Some(_)) => {
+                    state.initial_option = Some(key);
+                    break;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    state.initial_config_failed = true;
+                    changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":option.id,"value":desired,"reason":error.to_string()})));
+                    break;
+                }
             }
         }
         self.commit_agent(
@@ -181,157 +271,5 @@ impl Core {
             json!({}),
         )?;
         Ok(())
-    }
-
-    pub fn agent_yolo(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        let pane = errors::param_str(params, "paneId")?;
-        let mut state = self.agent_state(pane)?;
-        if state.operation.is_some()
-            || state.cancel_at_ms.is_some()
-            || state.harness_switch.is_some()
-        {
-            return Err(errors::pane_busy("Another pane operation is pending"));
-        }
-        let on = errors::param_bool(params, "on")?;
-        if on == state.yolo {
-            let result = json!({"effectiveMode":state.permission,"on":state.yolo});
-            return Ok(self
-                .commit_agent(
-                    self.panes[pane].stored.clone(),
-                    state,
-                    Changes::default(),
-                    Some((connection, "pane.yolo", params)),
-                    result,
-                )?
-                .result);
-        }
-        let desired = if on {
-            PermissionMode::AllowAll
-        } else {
-            state
-                .previous_permission
-                .clone()
-                .unwrap_or(PermissionMode::Ask)
-        };
-        let option = state
-            .options
-            .values
-            .iter()
-            .find(|o| o.category.as_deref() == Some("mode") || o.id == "mode")
-            .cloned();
-        let policy = PolicyChange {
-            permission: desired.clone(),
-            yolo: on,
-            previous_permission: if on {
-                Some(state.permission.clone())
-            } else {
-                None
-            },
-            previous_mode: if on {
-                option.as_ref().and_then(|o| match &o.current_value {
-                    ConfigValue::V0(v) => Some(v.clone()),
-                    _ => None,
-                })
-            } else {
-                None
-            },
-        };
-        let selection = option.as_ref().and_then(|option| {
-            if !on && let Some(previous) = &state.previous_effective_mode {
-                return option
-                    .options
-                    .iter()
-                    .find(|choice| &choice.value == previous)
-                    .map(|choice| choice.value.clone());
-            }
-            option
-                .options
-                .iter()
-                .find(|choice| native_policy(&choice.value).as_ref() == Some(&desired))
-                .map(|choice| choice.value.clone())
-        });
-        let mut changes = Changes::default();
-        let result = if let Some(selection) = selection {
-            let user = UserOperation {
-                scope: self.clients[connection].scope.clone(),
-                key: errors::param_str(params, "idempotencyKey")?.into(),
-            };
-            let native_option = errors::invariant(
-                option.as_ref(),
-                "Selected native mode has no configuration option",
-            )?;
-            let operation = begin(
-                &mut state,
-                pane,
-                ChangeRequest {
-                    config: &native_option.id,
-                    value: ConfigValue::V0(selection),
-                    user: Some(user),
-                    kind: ConfigOperationKind::Yolo,
-                    started_at: self.timestamp(),
-                    now_ms: self.now_ms(),
-                },
-                &mut changes,
-            )?;
-            state.pending_policy = Some(policy);
-            json!({"_nativePending":operation})
-        } else {
-            if !on && state.previous_effective_mode.is_some() {
-                return Err(errors::invalid(
-                    "The previous native mode is no longer offered",
-                ));
-            }
-            state.permission = policy.permission;
-            state.yolo = policy.yolo;
-            state.previous_permission = policy.previous_permission;
-            state.previous_effective_mode = policy.previous_mode;
-            json!({"effectiveMode":state.permission,"on":state.yolo})
-        };
-        Ok(self
-            .commit_agent(
-                self.panes[pane].stored.clone(),
-                state,
-                changes,
-                Some((connection, "pane.yolo", params)),
-                result,
-            )?
-            .result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use soyeht_protocol::ErrorKind;
-    use soyeht_protocol::HarnessLaunch;
-
-    #[test]
-    fn unsupported_native_mode_is_rejected_without_changing_policy() {
-        let mut state = State::new(
-            HarnessLaunch {
-                id: "test".into(),
-                name: "Test".into(),
-                command: "/bin/false".into(),
-                args: vec![],
-                version: "test".into(),
-                environment: None,
-            },
-            "digest".into(),
-            PermissionMode::AllowAll,
-        )
-        .unwrap();
-        state.effective_mode = Some("bypassPermissions".into());
-        state.yolo = true;
-        state.previous_permission = Some(PermissionMode::Ask);
-        state.previous_effective_mode = Some("default".into());
-
-        let error = observe_mode(&mut state, "unexpected", false).unwrap_err();
-
-        assert_eq!(errors::kind(&error), ErrorKind::InvalidParams);
-        assert_eq!(state.permission, PermissionMode::AllowAll);
-        assert_eq!(state.effective_mode.as_deref(), Some("bypassPermissions"));
-        assert!(state.yolo);
-        assert_eq!(state.previous_permission, Some(PermissionMode::Ask));
-        assert_eq!(state.previous_effective_mode.as_deref(), Some("default"));
     }
 }

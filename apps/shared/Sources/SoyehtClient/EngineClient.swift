@@ -35,6 +35,8 @@ public final class EngineClient {
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
   public private(set) var preferredHarnessId: String?
+  /// Preferred permission mode for new panes, per harness, as the harness names it.
+  public internal(set) var harnessDefaultModes: [String: String] = [:]
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public internal(set) var agentCatalogueLoadCounts: [String: Int] = [:]
   public internal(set) var tasks: [TaskRecord] = []
@@ -566,6 +568,7 @@ public final class EngineClient {
   }
 
   func applySettingsChanged(_ event: SettingsChangedEvent) {
+    if applyDefaultPermissionModeChanged(event) { return }
     guard event.key == HarnessPickerModel.preferredHarnessKey else { return }
     preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
   }

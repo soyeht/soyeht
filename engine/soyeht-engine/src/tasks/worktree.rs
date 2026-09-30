@@ -562,7 +562,7 @@ mod tests {
     use super::*;
     use crate::tasks::rules::tests::task_fixture;
     use serde_json::json;
-    use soyeht_protocol::{PermissionMode, TaskState};
+    use soyeht_protocol::TaskState;
     use std::{
         collections::BTreeMap,
         fs,
@@ -664,7 +664,7 @@ mod tests {
             harness: Some("test-acp".into()),
             model: Some("test-model".into()),
             effort: None,
-            permission: Some(PermissionMode::Ask),
+            permission_mode: Some("ask".into()),
         }
     }
 

@@ -12,8 +12,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, Pane, PaneMode, PaneState, PermissionMode, PromptOrigin, Role, StateSource, Task,
-    TaskDispatchParams, TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree,
+    Actor, Pane, PaneMode, PaneState, PromptOrigin, Role, StateSource, Task, TaskDispatchParams,
+    TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree,
 };
 use soyeht_store::{
     database::Change,
@@ -341,7 +341,7 @@ impl Core {
             harness: None,
             model: None,
             effort: None,
-            permission: None,
+            permission_mode: None,
         });
         if !requested.workspace_default && requested.harness.is_some() {
             return Ok(requested);
@@ -358,7 +358,7 @@ impl Core {
                 harness: Some(harness),
                 model,
                 effort,
-                permission: requested.permission.or(Some(state.permission)),
+                permission_mode: requested.permission_mode.or(state.mode),
             });
         }
         self.resolve_new_preset(&requested)
@@ -572,8 +572,12 @@ fn prepare_new_pane(
 ) -> Result<(StoredPane, State, Screen)> {
     let (launch, digest) =
         crate::agents::registry::prepare(&core.directory, required_harness(preset)?)?;
-    let permission = preset.permission.clone().unwrap_or(PermissionMode::Ask);
-    let mut state = State::new(launch, digest, permission)?;
+    let harness = launch.id.clone();
+    let mode = match &preset.permission_mode {
+        Some(mode) => Some(mode.clone()),
+        None => crate::settings::default_agent_mode(&core.store, &harness)?,
+    };
+    let mut state = State::new(launch, digest, mode)?;
     for (name, value) in [("model", &preset.model), ("effort", &preset.effort)] {
         if let Some(value) = value {
             state

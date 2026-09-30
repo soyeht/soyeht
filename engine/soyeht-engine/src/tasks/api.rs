@@ -265,7 +265,7 @@ impl Core {
             harness: None,
             model: None,
             effort: None,
-            permission: None,
+            permission_mode: None,
         });
         let key = URL_SAFE_NO_PAD.encode(crate::auth::token_hash(create_key));
         let request = TaskDispatchParams {

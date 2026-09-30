@@ -31,7 +31,7 @@ A paired iPhone or iPad is a full remote control of the Mac (owner decision,
 2026-09-26). Tap a terminal to type: the software keyboard has an Esc, Ctrl,
 Tab and arrow row, and a hardware keyboard sends Return, Backspace, Tab, arrows,
 Ctrl-C, Ctrl-D and Esc. For agent panes it also sends prompts, answers
-permission requests and changes yolo after engine confirmation. Both devices must be connected to the same tailnet.
+permission requests and changes the harness's permission mode after engine confirmation. Both devices must be connected to the same tailnet.
 
 On returning from the background, wait for full synchronization. If access was
 revoked, pair again. “Forget this Mac” removes the iPhone's credential; revoking

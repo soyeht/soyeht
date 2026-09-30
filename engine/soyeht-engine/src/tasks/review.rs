@@ -17,9 +17,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttemptResult, Comment, ConfigValue, Pane, PaneMode, PaneState, PermissionMode, PromptOrigin,
-    StateSource, Task, TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole,
-    limits,
+    AttemptResult, Comment, Pane, PaneMode, PaneState, PromptOrigin, StateSource, Task,
+    TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole, limits,
 };
 use soyeht_store::{
     agents,
@@ -588,10 +587,16 @@ fn prepare_reviewer(
         .as_deref()
         .ok_or_else(|| errors::stale_attempt("Task has no executor"))?;
     let executor = core.agent_state(executor_id)?;
+    // Adapters announce their most restrictive mode first; a reviewer starts there.
+    let mode = executor
+        .options
+        .mode()
+        .and_then(|option| option.options.first())
+        .map(|choice| choice.value.clone());
     let mut state = State::new(
         executor.launch.clone(),
         executor.binary_digest.clone(),
-        PermissionMode::Ask,
+        mode,
     )?;
     copy_review_options(&executor, &mut state);
     state.disable_mcp();
@@ -630,9 +635,6 @@ fn copy_review_options(executor: &State, reviewer: &mut State) {
                 .insert(option.id.clone(), option.current_value.clone());
         }
     }
-    reviewer
-        .requested_options
-        .insert("permission".into(), ConfigValue::V0("ask".into()));
 }
 
 fn reviewer_pane(core: &Core, task: &Task, state: &State, repository: &Path) -> Result<StoredPane> {

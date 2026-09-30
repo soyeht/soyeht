@@ -88,4 +88,4 @@ the value is passed at launch through a flag.
 In other words, everyone effectively uses C already.
 
 ## Review applied (2026-09-10, findings R01, R15, R16, R25)
-Canonical events: `pane.config_changing {configId, value}`, `pane.config_changed {configId, value, options, sessionPreserved}`, `pane.config_failed {configId, value, reason}`. Yolo and “accept edits” follow contract 04 R15. A parameter error or application timeout does NOT restart the session (04 R25); only proven `unsupported` triggers a new session with a package (Caio's decision B).
+Canonical events: `pane.config_changing {configId, value}`, `pane.config_changed {configId, value, options, sessionPreserved}`, `pane.config_failed {configId, value, reason}`. Permission modes are the harness's own mode option (ADR 0070). A parameter error or application timeout does NOT restart the session (04 R25); only proven `unsupported` triggers a new session with a package (Caio's decision B).
