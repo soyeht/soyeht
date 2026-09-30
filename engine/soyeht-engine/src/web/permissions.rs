@@ -233,6 +233,7 @@ impl Core {
             prompt_id: params.operation_key.clone(),
             title: permission_title(&kind).into(),
             detail: permission.domain.clone(),
+            presentation: None,
             options: permission_options(&kind, permission.task_id.is_some()),
             expires_at,
             kind: Some(kind.clone()),

@@ -15,9 +15,10 @@ SOYEHT_REAL_ACP=1 python3 scripts/e2e_real_acp.py \
   --report .cache/e2e-real-acp.json
 ```
 
-The check installs adapter version `0.76.0` under a temporary directory. It opens
-an authenticated session, forces and answers a harmless permission, changes the
-model without replacing the session, turns yolo on and off, and kills only its
+The check installs the Claude and Codex adapter versions the registry snapshot
+pins under a temporary directory. For each it opens an authenticated session,
+switches between the adapter's own permission modes, answers a harmless
+permission, changes the model without replacing the session, and kills only its
 randomly named disposable engine during a turn. A pass does not establish the
 physical-device steps below.
 
@@ -66,7 +67,7 @@ the end.
 ## Prompt and answer from the iPhone
 
 1. In the new Mac app, create an agent pane with harness “Claude Code”, mode
-   “Ask”, yolo off, and the empty test directory as its working directory.
+   “Manual”, and the empty test directory as its working directory.
 2. Wait for the pane to become ready. Record the pane ID, session ID, process ID,
    generation, adapter version and current model. Do not record authentication
    data or the contents of the pairing link.
@@ -82,15 +83,16 @@ the end.
    came from the phone, the request must disappear on both clients, and the file
    must contain exactly `SAFE`.
 
-## Model, yolo and engine recovery
+## Model, permission mode and engine recovery
 
 1. On the Mac, select another model advertised by the live session. Keep the
    session ID visible. The control must show an applying state, then the confirmed
    model. The session ID and process ID must stay unchanged. Restore the original
    model and confirm it in the same way.
-2. Turn yolo on. Send: `Use the shell to run: printf SAFE > yolo-check.txt. Then
-   reply DONE.` The file must contain exactly `SAFE`, and neither client may show
-   a permission request. Turn yolo off and wait for confirmation before proceeding.
+2. Choose “Bypass permissions” in the pane's mode menu. Send: `Use the shell to
+   run: printf SAFE > full-access-check.txt. Then reply DONE.` The file must
+   contain exactly `SAFE`, and neither client may show a permission request.
+   Choose “Manual” again and wait for the menu to confirm it before proceeding.
 3. Send: `Write the integers 1 through 200, one per line, and nothing else.` As
    soon as output begins, run this exact command in a separate terminal:
 

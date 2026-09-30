@@ -27,16 +27,18 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
     self.client = client
     self.paneId = paneId
     self.acceptsInput = acceptsInput
-    self.sendInput = sendInput ?? { data in
-      if let paneId { client.input(data, paneId: paneId) } else { client.input(data) }
-    }
-    self.resizeTerminal = resizeTerminal ?? { paneId, cols, rows in
-      if let paneId {
-        client.resize(paneId: paneId, cols: cols, rows: rows)
-      } else {
-        client.resize(cols: cols, rows: rows)
+    self.sendInput =
+      sendInput ?? { data in
+        if let paneId { client.input(data, paneId: paneId) } else { client.input(data) }
       }
-    }
+    self.resizeTerminal =
+      resizeTerminal ?? { paneId, cols, rows in
+        if let paneId {
+          client.resize(paneId: paneId, cols: cols, rows: rows)
+        } else {
+          client.resize(cols: cols, rows: rows)
+        }
+      }
     self.ringBell = ringBell
     self.openFile = openFile
     self.openWeb = openWeb

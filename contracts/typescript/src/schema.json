@@ -923,8 +923,8 @@
         "effort": {
           "type": "string"
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
+        "permissionMode": {
+          "$ref": "#/$defs/Id"
         },
         "url": {
           "type": "string",
@@ -2366,14 +2366,6 @@
       "required": [],
       "additionalProperties": true
     },
-    "PermissionMode": {
-      "type": "string",
-      "enum": [
-        "ask",
-        "accept_edits",
-        "allow_all"
-      ]
-    },
     "PromptOrigin": {
       "type": "string",
       "enum": [
@@ -2407,7 +2399,8 @@
         "terminal",
         "plan",
         "usage",
-        "system"
+        "system",
+        "handover"
       ]
     },
     "PermissionOptionKind": {
@@ -2493,13 +2486,6 @@
         "needs_login"
       ]
     },
-    "ConfigOperationKind": {
-      "type": "string",
-      "enum": [
-        "config",
-        "yolo"
-      ]
-    },
     "ConfigValue": {
       "oneOf": [
         {
@@ -2521,6 +2507,11 @@
         },
         "description": {
           "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "required": [
@@ -2572,9 +2563,6 @@
         "operationId": {
           "$ref": "#/$defs/Id"
         },
-        "kind": {
-          "$ref": "#/$defs/ConfigOperationKind"
-        },
         "configId": {
           "$ref": "#/$defs/Id"
         },
@@ -2587,7 +2575,6 @@
       },
       "required": [
         "operationId",
-        "kind",
         "configId",
         "value",
         "startedAt"
@@ -2623,6 +2610,9 @@
           "items": {
             "$ref": "#/$defs/AttachmentRef"
           }
+        },
+        "agentMessage": {
+          "$ref": "#/$defs/AgentMessageSource"
         }
       },
       "required": [
@@ -2631,6 +2621,85 @@
         "origin",
         "status",
         "queuedAt"
+      ],
+      "additionalProperties": true
+    },
+    "AgentMessageSource": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "paneId",
+        "name",
+        "harness"
+      ],
+      "additionalProperties": true
+    },
+    "AgentListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "AgentListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentMessageSource"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "AgentMessageParams": {
+      "type": "object",
+      "properties": {
+        "targetPaneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60000
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "targetPaneId",
+        "text",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "AgentMessageResult": {
+      "type": "object",
+      "properties": {
+        "promptId": {
+          "$ref": "#/$defs/Id"
+        },
+        "queued": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "promptId",
+        "queued"
       ],
       "additionalProperties": true
     },
@@ -2651,6 +2720,78 @@
         "optionId",
         "kind",
         "name"
+      ],
+      "additionalProperties": true
+    },
+    "PermissionFileChange": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "oldText": {
+          "type": "string"
+        },
+        "newText": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "newText"
+      ],
+      "additionalProperties": true
+    },
+    "PermissionToolArgument": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "additionalProperties": true
+    },
+    "PermissionPresentation": {
+      "type": "object",
+      "properties": {
+        "targetPath": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "executionDetails": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "toolArguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PermissionToolArgument"
+          }
+        },
+        "fileChanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PermissionFileChange"
+          }
+        },
+        "previewOmitted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fileChanges",
+        "previewOmitted"
       ],
       "additionalProperties": true
     },
@@ -2676,6 +2817,9 @@
         },
         "detail": {
           "type": "string"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PermissionPresentation"
         },
         "options": {
           "type": "array",
@@ -2787,18 +2931,6 @@
             "$ref": "#/$defs/AuthMethod"
           }
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
-        },
-        "yolo": {
-          "type": "boolean"
-        },
-        "previousPermission": {
-          "$ref": "#/$defs/PermissionMode"
-        },
-        "effectiveMode": {
-          "type": "string"
-        },
         "operation": {
           "$ref": "#/$defs/ConfigOperation"
         },
@@ -2833,8 +2965,6 @@
         "fingerprint",
         "options",
         "authMethods",
-        "permission",
-        "yolo",
         "queue",
         "draft",
         "role"
@@ -2928,6 +3058,12 @@
         },
         "setupState": {
           "$ref": "#/$defs/HarnessSetupState"
+        },
+        "setupReason": {
+          "$ref": "#/$defs/HarnessSetupReason"
+        },
+        "lastReadyAtMs": {
+          "$ref": "#/$defs/Decimal"
         }
       },
       "required": [
@@ -3195,6 +3331,9 @@
         },
         "usage": {
           "$ref": "#/$defs/TokenUsage"
+        },
+        "agentMessage": {
+          "$ref": "#/$defs/AgentMessageSource"
         }
       },
       "required": [
@@ -3689,42 +3828,6 @@
       ],
       "additionalProperties": true
     },
-    "PaneYoloParams": {
-      "type": "object",
-      "properties": {
-        "paneId": {
-          "$ref": "#/$defs/Id"
-        },
-        "on": {
-          "type": "boolean"
-        },
-        "idempotencyKey": {
-          "$ref": "#/$defs/Id"
-        }
-      },
-      "required": [
-        "paneId",
-        "on",
-        "idempotencyKey"
-      ],
-      "additionalProperties": true
-    },
-    "PaneYoloResult": {
-      "type": "object",
-      "properties": {
-        "effectiveMode": {
-          "$ref": "#/$defs/PermissionMode"
-        },
-        "on": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "effectiveMode",
-        "on"
-      ],
-      "additionalProperties": true
-    },
     "PaneAuthStartParams": {
       "type": "object",
       "properties": {
@@ -4156,6 +4259,9 @@
         "detail": {
           "type": "string"
         },
+        "presentation": {
+          "$ref": "#/$defs/PermissionPresentation"
+        },
         "options": {
           "type": "array",
           "items": {
@@ -4492,7 +4598,8 @@
     "AgentMessageUpdateKind": {
       "type": "string",
       "enum": [
-        "agent_message_chunk"
+        "agent_message_chunk",
+        "system_message"
       ]
     },
     "AgentMessageUpdate": {
@@ -5193,8 +5300,8 @@
         "effort": {
           "type": "string"
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
+        "permissionMode": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -5611,8 +5718,8 @@
         "createWorktree": {
           "type": "boolean"
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
+        "permissionMode": {
+          "$ref": "#/$defs/Id"
         },
         "dependencies": {
           "type": "array",
@@ -10744,9 +10851,22 @@
       "type": "string",
       "enum": [
         "ready",
+        "not_checked",
         "not_installed",
         "sign_in",
         "check_setup"
+      ]
+    },
+    "HarnessSetupReason": {
+      "type": "string",
+      "enum": [
+        "never_started",
+        "executable_missing",
+        "registry_package_unverified",
+        "authentication_required",
+        "session_failed",
+        "launch_failed",
+        "environment_unavailable"
       ]
     },
     "HarnessEnvironmentIssue": {
@@ -10841,6 +10961,7 @@
     "operationKey",
     "optionId",
     "paneIds",
+    "permissionMode",
     "plannedOwner",
     "promptId",
     "ref",
@@ -11141,6 +11262,25 @@
       },
       "mutation": true
     },
+    "agent.list": {
+      "params": {
+        "$ref": "#/$defs/AgentListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AgentListResult"
+      },
+      "mutation": false
+    },
+    "agent.message": {
+      "params": {
+        "$ref": "#/$defs/AgentMessageParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AgentMessageResult"
+      },
+      "mutation": true,
+      "x-paneRoute": "targetPaneId"
+    },
     "pane.queue.list": {
       "params": {
         "$ref": "#/$defs/PaneQueueListParams"
@@ -11201,15 +11341,6 @@
       },
       "result": {
         "$ref": "#/$defs/PaneHarnessSwitchResult"
-      },
-      "mutation": true
-    },
-    "pane.yolo": {
-      "params": {
-        "$ref": "#/$defs/PaneYoloParams"
-      },
-      "result": {
-        "$ref": "#/$defs/PaneYoloResult"
       },
       "mutation": true
     },
@@ -12417,11 +12548,19 @@
     "deviceConnections": 8,
     "promptBytes": 65536,
     "promptQueueCount": 64,
+    "agentMessagesPerWindow": 6,
+    "agentMessageWindowSec": 60,
+    "agentMessageBytes": 60000,
     "transcriptPageMessages": 200,
     "transcriptPageBytes": 524288,
     "transcriptMessageBytes": 262144,
     "acpMessageBytes": 1048576,
     "permissionTimeoutSec": 1800,
+    "permissionPreviewPathChars": 4096,
+    "permissionPreviewChanges": 8,
+    "permissionPreviewBytes": 65536,
+    "permissionPreviewLines": 400,
+    "permissionCommandBytes": 65536,
     "cancelTimeoutSec": 10,
     "probeTimeoutSec": 10,
     "noSignalSec": 90,
@@ -12484,6 +12623,16 @@
     "record.default": {
       "type": "boolean",
       "default": true
+    },
+    "harness.preferredId": {
+      "type": "string",
+      "maxLength": 128,
+      "default": ""
+    },
+    "harness.defaultMode.<harnessId>": {
+      "type": "string",
+      "maxLength": 128,
+      "default": ""
     },
     "web.openLocalLinksInSoyeht": {
       "type": "boolean",

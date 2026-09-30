@@ -76,16 +76,18 @@ private final class RateLimitRetryProbe {
   let failed = UsageReading(
     provider: .codex, state: .unavailable, unavailableReason: .app_server_failed,
     source: .codex_app_server, fetchedAt: "2026-09-23T12:00:00Z")
-  #expect(UsagePresentation(failed).unavailableMessage == "Codex app server could not provide usage.")
+  #expect(
+    UsagePresentation(failed).unavailableMessage == "Codex app server could not provide usage.")
 }
 
 @Test func usageDetailsClickRefreshesOnlyUncheckedOrStaleForEveryProvider() {
   for provider in [UsageProvider.claude, .codex, .cursor] {
-    let source: UsageSource = switch provider {
-    case .claude: .claude_desktop_cache
-    case .codex: .codex_app_server
-    case .cursor: .cursor_current_period
-    }
+    let source: UsageSource =
+      switch provider {
+      case .claude: .claude_desktop_cache
+      case .codex: .codex_app_server
+      case .cursor: .cursor_current_period
+      }
     let unchecked = UsageReading(
       provider: provider, state: .unavailable, unavailableReason: .not_checked,
       source: source, fetchedAt: "")

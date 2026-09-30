@@ -246,19 +246,24 @@ def acceptance_configuration(services, client, pane, results):
     results.append({"acceptance": 5, "name": "native_configuration_confirmation", "passed": True})
 
 
-def acceptance_yolo_forms(services, client, pane, results):
-    require(client.mutate("pane.yolo", paneId=pane, on=True)["on"], "yolo was not confirmed")
+def set_mode(client, pane, mode):
+    applied = client.mutate("pane.config.set", paneId=pane, configId="mode", value=mode)
+    require(applied["effective"] == mode, f"the harness did not confirm mode {mode}")
+
+
+def acceptance_full_access_forms(services, client, pane, results):
+    set_mode(client, pane, "allow_all")
     count = len(events(services, "pane.permission_requested", pane))
     turn(services, client, pane, "permission")
     require(len(events(services, "pane.permission_requested", pane)) == count,
-            "automatic permission appeared to clients")
+            "the harness's full-access mode still asked")
     form_prompt = client.mutate("pane.prompt", paneId=pane, text="elicitation")["promptId"]
-    form = until(lambda: question(client, pane, "elicitation"), "yolo hid an elicitation")
-    require(not ended(services, form_prompt), "yolo answered the form")
+    form = until(lambda: question(client, pane, "elicitation"), "full access hid an elicitation")
+    require(not ended(services, form_prompt), "full access answered the form")
     client.mutate("pane.elicitation.answer", paneId=pane, requestId=form["requestId"], fields={"answer": "yes"})
     until(lambda: ended(services, form_prompt), "form response did not finish")
-    require(not client.mutate("pane.yolo", paneId=pane, on=False)["on"], "yolo restoration was not confirmed")
-    results.append({"acceptance": 6, "name": "yolo_never_answers_forms", "passed": True})
+    set_mode(client, pane, "ask")
+    results.append({"acceptance": 6, "name": "permission_modes_never_answer_forms", "passed": True})
 
 
 def acceptance_queue(services, client, pane, results):
@@ -328,10 +333,14 @@ def acceptance_login(services, client, workspace, results):
     login = client.mutate("pane.create", workspaceId=workspace, mode="agent", harness="login")["paneId"]
     until(lambda: events(services, "pane.needs_login", login), "native login requirement missing")
     started = client.mutate("pane.auth.start", paneId=login, authMethodId="login")
-    require(started["terminalPaneId"] != login and client.pane(started["terminalPaneId"])["mode"] == "terminal",
+    terminal = started["terminalPaneId"]
+    created = next((event["pane"] for event in events(services, "pane.created")
+                    if event["pane"]["paneId"] == terminal), None)
+    require(terminal != login and created is not None and created["mode"] == "terminal",
             "login did not use a separate raw terminal")
     until(lambda: events(services, "pane.auth_finished", login)
           and client.pane(login)["agent"].get("sessionId"), "login did not unlock a session")
+    require(client.pane(terminal) is None, "completed sign-in terminal remained open")
     results.append({"acceptance": 10, "name": "native_login_terminal", "passed": True})
 
 
@@ -345,7 +354,7 @@ def acceptances(services, results):
     acceptance_cancel(services, client, pane, results)
     client = acceptance_engine_outage(services, client, pane, results)
     acceptance_configuration(services, client, pane, results)
-    acceptance_yolo_forms(services, client, pane, results)
+    acceptance_full_access_forms(services, client, pane, results)
     client = acceptance_queue(services, client, pane, results)
     acceptance_supervisor_loss(services, client, workspace, pane, results)
     acceptance_probe_cache(services, client, workspace, entries, registry, results)

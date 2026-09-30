@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -253,7 +253,7 @@ export interface PaneCreateParams {
   "harness"?: Id;
   "model"?: string;
   "effort"?: string;
-  "permission"?: PermissionMode;
+  "permissionMode"?: Id;
   "url"?: string;
   "incognito"?: boolean;
   "path"?: string;
@@ -681,15 +681,13 @@ export interface ClientFocus {
   "paneId"?: Id;
 }
 
-export type PermissionMode = "ask" | "accept_edits" | "allow_all";
-
 export type PromptOrigin = "human" | "automatic";
 
 export type PromptStatus = "queued" | "active" | "completed" | "cancelled";
 
 export type TranscriptRole = "user" | "assistant" | "system";
 
-export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system";
+export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system" | "handover";
 
 export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always";
 
@@ -711,14 +709,13 @@ export type PlanPriority = "high" | "medium" | "low";
 
 export type SessionRecovery = "resumed" | "new_session" | "needs_login";
 
-export type ConfigOperationKind = "config" | "yolo";
-
 export type ConfigValue = string | boolean;
 
 export interface ConfigChoice {
   "value": Id;
   "name": string;
   "description"?: string;
+  "kind"?: string;
 }
 
 export interface ConfigOption {
@@ -733,7 +730,6 @@ export interface ConfigOption {
 
 export interface ConfigOperation {
   "operationId": Id;
-  "kind": ConfigOperationKind;
   "configId": Id;
   "value": ConfigValue;
   "startedAt": string;
@@ -747,12 +743,58 @@ export interface PromptItem {
   "queuedAt": string;
   "generation"?: number;
   "attachments"?: Array<AttachmentRef>;
+  "agentMessage"?: AgentMessageSource;
+}
+
+export interface AgentMessageSource {
+  "paneId": Id;
+  "name": string;
+  "harness": string;
+}
+
+export interface AgentListParams {
+
+}
+
+export interface AgentListResult {
+  "items": Array<AgentMessageSource>;
+}
+
+export interface AgentMessageParams {
+  "targetPaneId": Id;
+  "text": string;
+  "idempotencyKey": Id;
+}
+
+export interface AgentMessageResult {
+  "promptId": Id;
+  "queued": boolean;
 }
 
 export interface PermissionOption {
   "optionId": Id;
   "kind": PermissionOptionKind;
   "name": string;
+}
+
+export interface PermissionFileChange {
+  "path": string;
+  "oldText"?: string;
+  "newText": string;
+}
+
+export interface PermissionToolArgument {
+  "name": string;
+  "value": string;
+}
+
+export interface PermissionPresentation {
+  "targetPath"?: string;
+  "command"?: string;
+  "executionDetails"?: Array<string>;
+  "toolArguments"?: Array<PermissionToolArgument>;
+  "fileChanges": Array<PermissionFileChange>;
+  "previewOmitted": boolean;
 }
 
 export interface PermissionRequest {
@@ -762,6 +804,7 @@ export interface PermissionRequest {
   "promptId": Id;
   "title": string;
   "detail": string;
+  "presentation"?: PermissionPresentation;
   "options": Array<PermissionOption>;
   "expiresAt": string;
   "kind"?: PermissionRequestKind;
@@ -790,10 +833,6 @@ export interface AgentSession {
   "sessionId"?: Id;
   "options": Array<ConfigOption>;
   "authMethods": Array<AuthMethod>;
-  "permission": PermissionMode;
-  "yolo": boolean;
-  "previousPermission"?: PermissionMode;
-  "effectiveMode"?: string;
   "operation"?: ConfigOperation;
   "queue": Array<QueuedPromptSummary>;
   "draft": boolean;
@@ -829,6 +868,8 @@ export interface HarnessInfo {
   "authMethods": Array<AuthMethod>;
   "source"?: HarnessSource;
   "setupState"?: HarnessSetupState;
+  "setupReason"?: HarnessSetupReason;
+  "lastReadyAtMs"?: Decimal;
 }
 
 export interface ModelRefusal {
@@ -906,6 +947,7 @@ export interface TranscriptMessage {
   "terminal"?: TerminalOutput;
   "plan"?: Array<PlanEntry>;
   "usage"?: TokenUsage;
+  "agentMessage"?: AgentMessageSource;
 }
 
 export interface AttachmentRef {
@@ -1048,17 +1090,6 @@ export interface PaneHarnessSwitchFailedEvent {
   "restored": boolean;
 }
 
-export interface PaneYoloParams {
-  "paneId": Id;
-  "on": boolean;
-  "idempotencyKey": Id;
-}
-
-export interface PaneYoloResult {
-  "effectiveMode": PermissionMode;
-  "on": boolean;
-}
-
 export interface PaneAuthStartParams {
   "paneId": Id;
   "authMethodId"?: Id;
@@ -1186,6 +1217,7 @@ export interface PanePermissionRequestedEvent {
   "promptId": Id;
   "title": string;
   "detail": string;
+  "presentation"?: PermissionPresentation;
   "options": Array<PermissionOption>;
   "expiresAt": string;
   "kind"?: PermissionRequestKind;
@@ -1275,7 +1307,7 @@ export interface PaneAuthFinishedEvent {
   "reason"?: string;
 }
 
-export type AgentMessageUpdateKind = "agent_message_chunk";
+export type AgentMessageUpdateKind = "agent_message_chunk" | "system_message";
 
 export interface AgentMessageUpdate {
   "eventId": Decimal;
@@ -1455,7 +1487,7 @@ export interface TaskExecutor {
   "harness"?: Id;
   "model"?: string;
   "effort"?: string;
-  "permission"?: PermissionMode;
+  "permissionMode"?: Id;
 }
 
 export interface TaskWorktree {
@@ -1572,7 +1604,7 @@ export interface TaskCreateParams {
   "executor"?: TaskExecutor;
   "priority"?: TaskPriority;
   "createWorktree"?: boolean;
-  "permission"?: PermissionMode;
+  "permissionMode"?: Id;
   "dependencies"?: Array<string>;
   "dispatch"?: boolean;
   "idempotencyKey": Id;
@@ -2958,7 +2990,9 @@ export interface WritingChangedEvent {
 
 export type HarnessSource = "built_in" | "custom";
 
-export type HarnessSetupState = "ready" | "not_installed" | "sign_in" | "check_setup";
+export type HarnessSetupState = "ready" | "not_checked" | "not_installed" | "sign_in" | "check_setup";
+
+export type HarnessSetupReason = "never_started" | "executable_missing" | "registry_package_unverified" | "authentication_required" | "session_failed" | "launch_failed" | "environment_unavailable";
 
 export type HarnessEnvironmentIssue = "missing_shell" | "unsupported_shell" | "unavailable_shell" | "probe_failed" | "probe_timed_out" | "output_too_large" | "invalid_output";
 
@@ -3012,6 +3046,8 @@ export interface Methods {
   "settings.get": { params: SettingsGetParams; result: SettingsGetResult };
   "settings.set": { params: SettingsSetParams; result: SettingsSetResult };
   "pane.prompt": { params: PanePromptParams; result: PanePromptResult };
+  "agent.list": { params: AgentListParams; result: AgentListResult };
+  "agent.message": { params: AgentMessageParams; result: AgentMessageResult };
   "pane.queue.list": { params: PaneQueueListParams; result: PaneQueueListResult };
   "pane.queue.remove": { params: PaneQueueRemoveParams; result: PaneQueueRemoveResult };
   "pane.cancel": { params: PaneCancelParams; result: PaneCancelResult };
@@ -3019,7 +3055,6 @@ export interface Methods {
   "pane.elicitation.answer": { params: PaneElicitationAnswerParams; result: PaneElicitationAnswerResult };
   "pane.config.set": { params: PaneConfigSetParams; result: PaneConfigSetResult };
   "pane.harness.switch": { params: PaneHarnessSwitchParams; result: PaneHarnessSwitchResult };
-  "pane.yolo": { params: PaneYoloParams; result: PaneYoloResult };
   "pane.auth.start": { params: PaneAuthStartParams; result: PaneAuthStartResult };
   "pane.transcript": { params: PaneTranscriptParams; result: PaneTranscriptResult };
   "pane.draft": { params: PaneDraftParams; result: PaneDraftResult };

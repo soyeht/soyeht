@@ -2,6 +2,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{limits, ndjson};
 
+/// ACP v1 `auth_required` JSON-RPC error code.
+pub const AUTH_REQUIRED_CODE: i32 = -32000;
+
+pub fn is_auth_required(error: &RpcError) -> bool {
+    error.code == AUTH_REQUIRED_CODE
+        // The claude-acp adapter reports authentication failures as an internal error with
+        // a typed errorKind in data, rather than the ACP auth_required code.
+        || error
+            .data
+            .as_ref()
+            .and_then(|data| data.get("errorKind"))
+            .and_then(Value::as_str)
+            == Some("authentication_failed")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RpcError {
     pub code: i32,

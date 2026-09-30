@@ -6,6 +6,13 @@ import SwiftUI
   import AppKit
 #endif
 
+extension AgentMessageSource {
+  /// Who sent a peer message, by name; the pane identifier only routes replies.
+  var displayName: String {
+    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? harness : name
+  }
+}
+
 struct AgentSilencePresentation: Sendable {
   let elapsedSeconds: Int?
   private let paneState: PaneState?
@@ -153,19 +160,23 @@ private struct AgentWell: ViewModifier {
 @MainActor public struct AgentConversationView: View {
   @Bindable private var client: EngineClient
   private let paneId: String
+  private let isVisible: Bool
   private let showsConfiguration: Bool
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
   @State private var prompt = ""
+  @State private var follow = AgentConversationFollow()
   @FocusState private var promptFocused: Bool
 
   public init(
-    client: EngineClient, paneId: String, showsConfiguration: Bool = true,
+    client: EngineClient, paneId: String, isVisible: Bool = true,
+    showsConfiguration: Bool = true,
     style: AgentConversationStyle = .standard,
     onExplicitRemoteAction: @escaping () -> Void = {}
   ) {
     self.client = client
     self.paneId = paneId
+    self.isVisible = isVisible
     self.showsConfiguration = showsConfiguration
     self.style = style
     self.onExplicitRemoteAction = onExplicitRemoteAction
@@ -201,7 +212,9 @@ private struct AgentWell: ViewModifier {
           remove: { client.discardWebAttachmentDraft(paneId) })
       }
       composer
-      if showsConfiguration, let options = pane?.agent?.options, !options.isEmpty {
+      if showsConfiguration, let options = pane?.agent?.options.filter({ !$0.isPermissionMode }),
+        !options.isEmpty
+      {
         configuration(options)
       }
     }
@@ -221,16 +234,12 @@ private struct AgentWell: ViewModifier {
   private var controls: some View {
     HStack(spacing: 10) {
       if let usage = contextUsage { ContextRing(used: usage.0, total: usage.1, style: style) }
-      if let agent = pane?.agent {
-        Button {
-          client.setYolo(paneId, on: !agent.yolo)
-        } label: {
-          Label(agent.yolo ? "Yolo on" : "Yolo off", systemImage: agent.yolo ? "bolt.fill" : "bolt")
-        }
-        .buttonStyle(.bordered).tint(agent.yolo ? style.warning : style.secondary)
-        .disabled(agent.operation != nil || !client.connected)
+      if let agent = pane?.agent, let modes = AgentPermissionModes(agent: agent) {
+        AgentPermissionModeMenu(
+          modes: modes, enabled: agent.operation == nil && client.connected, style: style,
+          select: { client.setPermissionMode(paneId, to: $0) })
       }
-      Spacer()
+      Spacer(minLength: 0)
       if isWorking {
         Button(role: .destructive) {
           client.cancelAgent(paneId)
@@ -259,21 +268,44 @@ private struct AgentWell: ViewModifier {
               message: message, workspaceId: pane?.workspaceId ?? "", style: style
             ).id(message.localId)
           }
-          Color.clear.frame(height: 1).id("agent-bottom")
+          Color.clear.frame(height: 1).id(AgentConversationFollow.bottomAnchor)
         }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
           .padding(.vertical, style.canonicalLayout ? 12 : 16)
       }
       .onChange(of: view.messages.count) { _, _ in
-        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("agent-bottom", anchor: .bottom) }
+        guard follow.messagesChanged(isVisible: isVisible) else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+          proxy.scrollTo(AgentConversationFollow.bottomAnchor, anchor: .bottom)
+        }
+      }
+      .task(id: revealKey) {
+        let key = revealKey
+        guard follow.scrollsOnReveal(key) else { return }
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        proxy.scrollTo(AgentConversationFollow.bottomAnchor, anchor: .bottom)
+        follow.revealed()
       }
     }
+  }
+
+  private var revealKey: AgentConversationFollow.RevealKey {
+    AgentConversationFollow.RevealKey(
+      isVisible: isVisible, permissionId: view.permission?.requestId,
+      elicitationId: view.elicitation?.requestId)
   }
 
   private var queue: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
+        let agentMessageCount = view.queue.filter { $0.agentMessage != nil }.count
+        let countLabel =
+          agentMessageCount > 0
+          ? "\(agentMessageCount) \(agentMessageCount == 1 ? "message" : "messages") waiting"
+          : "\(view.queue.count) queued"
         Label(
-          view.queuePaused ? "Queue paused after interruption" : "\(view.queue.count) queued",
+          view.queuePaused
+            ? "\(countLabel) · Queue paused after interruption" : countLabel,
           systemImage: view.queuePaused
             ? "pause.circle" : "text.line.last.and.arrowtriangle.forward")
         Spacer()
@@ -283,7 +315,13 @@ private struct AgentWell: ViewModifier {
       }.font(style.captionFont.weight(.semibold))
       ForEach(view.queue, id: \.promptId) { item in
         HStack(spacing: 8) {
-          Text(item.text).font(style.captionFont).lineLimit(2)
+          VStack(alignment: .leading, spacing: 2) {
+            if let sender = item.agentMessage {
+              Text("From \(sender.displayName)")
+                .font(style.captionFont.weight(.semibold))
+            }
+            Text(item.text).font(style.captionFont).lineLimit(2)
+          }
           Spacer()
           unavailableSteer
           Button(role: .destructive) {
@@ -342,6 +380,10 @@ private struct AgentWell: ViewModifier {
       Label("Sign in to continue", systemImage: "person.badge.key")
         .font(style.headingFont).foregroundStyle(style.warning)
       #if os(macOS)
+        if view.authMethods.contains(where: \.terminal) {
+          Text("Choose a method to open its sign-in terminal. Enter credentials there.")
+            .font(style.captionFont).foregroundStyle(style.secondary)
+        }
         ForEach(view.authMethods, id: \.id) { method in
           Button {
             client.startAgentAuthentication(paneId, methodId: method.id)
@@ -384,6 +426,11 @@ private struct AgentWell: ViewModifier {
       TextField("Message the agent", text: $prompt, axis: .vertical)
         .lineLimit(1...6).textFieldStyle(.plain).focused($promptFocused)
         .onSubmit { submit() }
+        .onKeyPress(.tab, phases: .down) { press in
+          guard press.modifiers.contains(.shift) else { return .ignored }
+          client.cyclePermissionMode(paneId)
+          return .handled
+        }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
       Button(action: submit) {
@@ -438,7 +485,6 @@ private struct AgentWell: ViewModifier {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     prompt = ""
-    client.setDraft(paneId, active: false)
     onExplicitRemoteAction()
     client.sendPrompt(paneId, text: text)
     promptFocused = true
@@ -455,7 +501,6 @@ private struct AgentWell: ViewModifier {
     switch option.category ?? option.id {
     case "model": "cpu"
     case "thought_level": "brain"
-    case "mode": "shield.checkered"
     default: "slider.horizontal.3"
     }
   }
@@ -570,6 +615,14 @@ private struct TranscriptRow: View {
   var body: some View {
     Group {
       switch message.kind {
+      case .handover:
+        Label {
+          Text("Conversation continued with \(message.text)")
+        } icon: {
+          Image(systemName: "arrow.triangle.2.circlepath")
+        }
+        .font(style.captionFont).foregroundStyle(style.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
       case .thought:
         DisclosureGroup("Thought", isExpanded: $showsThought) {
           FilePathText(message.text, workspaceId: workspaceId)
@@ -627,16 +680,23 @@ private struct TranscriptRow: View {
       case .usage:
         EmptyView()
       default:
-        FilePathText(message.text, workspaceId: workspaceId)
-          .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-          .padding(12)
-          .background(
-            message.role == .user
-              ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
-            in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
-          )
-          .padding(.leading, message.role == .user ? 48 : 0)
-          .padding(.trailing, message.role == .user ? 0 : 48)
+        VStack(alignment: .leading, spacing: 4) {
+          if let sender = message.agentMessage {
+            Text(sender.displayName).font(style.captionFont).textCase(.uppercase)
+              .foregroundStyle(style.muted)
+          }
+          FilePathText(message.text, workspaceId: workspaceId)
+            .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+          message.role == .user
+            ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
+          in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
+        )
+        .padding(.leading, message.role == .user ? 48 : 0)
+        .padding(.trailing, message.role == .user ? 0 : 48)
       }
     }.font(style.bodyFont)
   }
@@ -650,7 +710,13 @@ private struct PermissionCard: View {
     VStack(alignment: .leading, spacing: 9) {
       Label(request.title, systemImage: "shield.lefthalf.filled.badge.checkmark")
         .font(style.headingFont).foregroundStyle(style.warning)
-      Text(request.detail).font(style.monoFont).textSelection(.enabled)
+      if !request.detail.isEmpty {
+        Text(request.detail).font(style.bodyFont).foregroundStyle(style.secondary)
+          .textSelection(.enabled)
+      }
+      if let presentation = request.presentation {
+        PermissionPresentationView(presentation: presentation, style: style)
+      }
       HStack {
         ForEach(request.options, id: \.optionId) { option in
           if option.kind == .allow_once {

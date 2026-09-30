@@ -1,6 +1,20 @@
 import Foundation
 import SoyehtProtocol
 
+enum AgentCatalogResponseOrder {
+  static func accepts(request: UInt64, latest: UInt64) -> Bool { request == latest }
+}
+
+public enum AgentPaneStatusPresentation {
+  public static func title(
+    state: PaneState, needsAuthentication: Bool, hasSession: Bool
+  ) -> String {
+    if needsAuthentication { return "Sign in" }
+    if state == .starting && hasSession { return "ready" }
+    return state.rawValue.replacingOccurrences(of: "_", with: " ")
+  }
+}
+
 public struct AgentPaneView: Sendable {
   public var messages: [TranscriptMessage] = []
   public var permission: PermissionRequest?
@@ -34,6 +48,75 @@ public struct AgentPaneView: Sendable {
     if replacing { messages = [] }
     merge(page.items)
     nextTranscriptCursor = page.nextCursor
+  }
+}
+
+/// A surface reports which layout leaves are presented; the shared client decides
+/// which agent transcripts need hydration without changing the engine's focus.
+public struct PresentedPane: Equatable, Sendable {
+  public let paneId: String
+  public let isVisible: Bool
+
+  public init(paneId: String, isVisible: Bool) {
+    self.paneId = paneId
+    self.isVisible = isVisible
+  }
+}
+
+public enum AgentTranscriptHydrationPolicy {
+  public static func paneIdsToLoad(
+    presented: [PresentedPane], panes: [Pane], hydrated: Set<String>, loading: Set<String>
+  ) -> [String] {
+    let agents = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
+    var chosen = Set<String>()
+    return presented.compactMap { leaf in
+      guard leaf.isVisible, agents.contains(leaf.paneId), !hydrated.contains(leaf.paneId),
+        !loading.contains(leaf.paneId), chosen.insert(leaf.paneId).inserted
+      else { return nil }
+      return leaf.paneId
+    }
+  }
+}
+
+/// When the agent transcript follows its newest message. Hidden tabs stay
+/// mounted but do not scroll; they catch up when they become visible again.
+public struct AgentConversationFollow: Equatable, Sendable {
+  public static let bottomAnchor = "agent-bottom"
+
+  /// Identifies what a reveal must react to: visibility and each pending
+  /// request, so a new question fires even while a permission stays pending.
+  public struct RevealKey: Equatable, Sendable {
+    public let isVisible: Bool
+    public let permissionId: String?
+    public let elicitationId: String?
+
+    public init(isVisible: Bool, permissionId: String?, elicitationId: String?) {
+      self.isVisible = isVisible
+      self.permissionId = permissionId
+      self.elicitationId = elicitationId
+    }
+
+    var hasPendingRequest: Bool { permissionId != nil || elicitationId != nil }
+  }
+
+  public private(set) var hasUnseenMessages = false
+
+  public init() {}
+
+  /// Records a transcript change; returns whether to scroll to the bottom now.
+  public mutating func messagesChanged(isVisible: Bool) -> Bool {
+    if isVisible { return true }
+    hasUnseenMessages = true
+    return false
+  }
+
+  /// Whether a reveal must bring the newest messages and pending request into view.
+  public func scrollsOnReveal(_ key: RevealKey) -> Bool {
+    key.isVisible && (hasUnseenMessages || key.hasPendingRequest)
+  }
+
+  public mutating func revealed() {
+    hasUnseenMessages = false
   }
 }
 
@@ -150,9 +233,36 @@ extension EngineClient {
     try await loadAgentPane(paneId, replacing: true)
   }
 
+  public func hydratePresentedAgentPanes(_ presented: [PresentedPane]) async {
+    guard connected else { return }
+    let revision = connectionRevision
+    let hydrated = Set(agentTranscriptRevisions.compactMap { $0.value == revision ? $0.key : nil })
+    let loading = Set(
+      agentTranscriptLoadsInFlight.compactMap {
+        $0.value == revision ? $0.key : nil
+      })
+    let pending = AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: presented, panes: panes, hydrated: hydrated, loading: loading)
+    for paneId in pending { agentTranscriptLoadsInFlight[paneId] = revision }
+    for paneId in pending {
+      defer {
+        if agentTranscriptLoadsInFlight[paneId] == revision {
+          agentTranscriptLoadsInFlight.removeValue(forKey: paneId)
+        }
+      }
+      do {
+        try await loadAgentPane(paneId, replacing: true)
+      } catch {
+        if connected && connectionRevision == revision { problem = error.localizedDescription }
+      }
+    }
+  }
+
   func applyAgentSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
     let paneIds = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
     agentPanes = agentPanes.filter { paneIds.contains($0.key) }
+    agentTranscriptRevisions = agentTranscriptRevisions.filter { paneIds.contains($0.key) }
+    agentTranscriptLoadsInFlight = agentTranscriptLoadsInFlight.filter { paneIds.contains($0.key) }
     for pane in panes where pane.mode == .agent {
       var view = agentPanes[pane.paneId] ?? AgentPaneView()
       view.permission = nil
@@ -189,7 +299,7 @@ extension EngineClient {
       agentPanes[event.paneId, default: AgentPaneView()].permission = PermissionRequest(
         requestId: event.requestId, paneId: event.paneId, generation: event.generation,
         promptId: event.promptId, title: event.title, detail: event.detail,
-        options: event.options, expiresAt: event.expiresAt)
+        presentation: event.presentation, options: event.options, expiresAt: event.expiresAt)
     case .panePermissionAnswered:
       let event = try params.decoded(PanePermissionAnsweredEvent.self)
       if agentPanes[event.paneId]?.permission?.requestId == event.requestId {
@@ -208,7 +318,7 @@ extension EngineClient {
       }
     case .paneQueued:
       let event = try params.decoded(PaneQueuedEvent.self)
-      if event.paneId == selectedPaneId { refreshAgentQueue(event.paneId) }
+      refreshAgentQueue(event.paneId)
     case .paneQueuePaused, .paneQueueResumed:
       let event = try params.decoded(PaneQueueStateEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].queuePaused = event.paused
@@ -216,6 +326,7 @@ extension EngineClient {
       let event = try params.decoded(PaneSessionStartedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = nil
       refreshAgent(event.paneId, replacing: true)
+      refreshHarnesses()
     case .paneTurnEnded:
       let event = try params.decoded(PaneTurnEndedEvent.self)
       refreshAgent(event.paneId, replacing: false)
@@ -225,6 +336,7 @@ extension EngineClient {
     case .paneNeedsLogin:
       let event = try params.decoded(PaneNeedsLoginEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].authMethods = event.authMethods
+      refreshHarnesses()
     case .paneAuthFinished:
       let event = try params.decoded(PaneAuthFinishedEvent.self)
       if event.ok {
@@ -232,6 +344,7 @@ extension EngineClient {
       } else {
         agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
       }
+      refreshHarnesses()
     case .paneConfigFailed:
       let event = try params.decoded(PaneConfigFailedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
@@ -248,6 +361,7 @@ extension EngineClient {
       view.notice = nil
       view.authMethods = []
       agentPanes[event.paneId] = view
+      refreshAgent(event.paneId, replacing: false)
     case .paneHarnessSwitchFailed:
       let event = try params.decoded(PaneHarnessSwitchFailedEvent.self)
       var view = agentPanes[event.paneId, default: AgentPaneView()]
@@ -270,7 +384,9 @@ extension EngineClient {
         value.paneId,
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .message, text: value.text, complete: value.complete)
+          role: value.kind == .system_message ? .system : .assistant,
+          kind: value.kind == .system_message ? .system : .message,
+          text: value.text, complete: value.complete)
       )
     case .v1(let value):
       return (
@@ -330,15 +446,20 @@ extension EngineClient {
   }
 
   func loadAgentPane(_ paneId: String, replacing: Bool) async throws {
+    let revision = connectionRevision
     let result = try await request(
       "pane.transcript",
       .encoded(PaneTranscriptParams(paneId: paneId, limit: 100))
     )
     .decoded(PaneTranscriptResult.self)
+    guard connected && connectionRevision == revision,
+      panes.contains(where: { $0.paneId == paneId && $0.mode == .agent })
+    else { return }
     var view = agentPanes[paneId] ?? AgentPaneView()
     view.mergeTranscriptPage(result, replacing: replacing)
     agentPanes[paneId] = view
     try await loadAgentQueue(paneId)
+    if connected && connectionRevision == revision { agentTranscriptRevisions[paneId] = revision }
   }
 
   func olderTranscriptParams(_ paneId: String) -> PaneTranscriptParams? {
@@ -387,6 +508,8 @@ extension EngineClient {
   }
 
   private func loadHarnesses(rescan: Bool) async throws {
+    harnessRefreshGeneration &+= 1
+    let generation = harnessRefreshGeneration
     harnessLoadCount += 1
     defer { harnessLoadCount -= 1 }
     var cursor: String?
@@ -402,8 +525,10 @@ extension EngineClient {
       environmentIssue = environmentIssue ?? page.environmentIssue
       cursor = page.nextCursor
     } while cursor != nil
-    harnesses = items
-    harnessEnvironmentIssue = environmentIssue
+    if AgentCatalogResponseOrder.accepts(request: generation, latest: harnessRefreshGeneration) {
+      harnesses = items
+      harnessEnvironmentIssue = environmentIssue
+    }
   }
 
   public func refreshHarnesses(rescan: Bool = false) {
@@ -417,7 +542,6 @@ extension EngineClient {
   }
 
   public func refreshCustomHarnesses() {
-    guard !readOnly else { return }
     perform { try await self.loadCustomHarnesses() }
   }
 
@@ -454,6 +578,8 @@ extension EngineClient {
 
   public func refreshCatalogue(harness: String, paneId: String? = nil) {
     perform {
+      self.modelRefreshGenerations[harness, default: 0] &+= 1
+      let generation = self.modelRefreshGenerations[harness, default: 0]
       self.agentCatalogueLoadCounts[harness, default: 0] += 1
       defer {
         let remaining = self.agentCatalogueLoadCounts[harness, default: 1] - 1
@@ -480,33 +606,40 @@ extension EngineClient {
         source = page.source
         cursor = page.nextCursor
       } while cursor != nil
-      self.agentCatalogues[harness] = AgentCatalogue(
-        models: models, options: options, source: source)
+      if AgentCatalogResponseOrder.accepts(
+        request: generation, latest: self.modelRefreshGenerations[harness, default: 0]
+      ) {
+        self.agentCatalogues[harness] = AgentCatalogue(
+          models: models, options: options, source: source)
+      }
     }
   }
 
+  /// `permissionMode` is one of the harness's own mode IDs; `nil` lets the
+  /// engine apply the harness's preferred mode.
   public func createAgentPane(
-    directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode
+    directory: URL, harness: String, model: String?, effort: String?,
+    permissionMode: String? = nil
   ) {
     perform {
       _ = try await self.createAgentPaneNow(
         directory: directory, harness: harness, model: model, effort: effort,
-        permission: permission)
+        permissionMode: permissionMode)
     }
   }
 
   public func createAgentPaneNow(
-    directory: URL, harness: String, model: String?, effort: String?, permission: PermissionMode,
-    selectPane: Bool = true
+    directory: URL, harness: String, model: String?, effort: String?,
+    permissionMode: String? = nil, selectPane: Bool = true
   ) async throws -> String {
     let path = directory.standardizedFileURL.path
     let workspaceId = try await workspaceId(for: directory, path: path)
     let result = try await mutation(
       "pane.create",
       PaneCreateParams(
-        workspaceId: workspaceId, mode: .agent, cwd: path, name: "Agent",
+        workspaceId: workspaceId, mode: .agent, cwd: path,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
-        effort: effort, permission: permission))
+        effort: effort, permissionMode: permissionMode))
     let paneId = try result.decoded(PaneCreateResult.self).paneId
     if selectPane { select(paneId) }
     return paneId
@@ -609,15 +742,6 @@ extension EngineClient {
     return result
   }
 
-  public func setYolo(_ paneId: String, on: Bool) {
-    perform {
-      _ = try await self.mutation(
-        "pane.yolo",
-        PaneYoloParams(paneId: paneId, on: on, idempotencyKey: UUID().uuidString),
-        timeoutSeconds: 95)
-    }
-  }
-
   public func setDraft(_ paneId: String, active: Bool) {
     perform {
       _ = try await self.mutation(
@@ -645,10 +769,6 @@ extension EngineClient {
   }
 
   public func startAgentAuthentication(_ paneId: String, methodId: String?) {
-    guard !readOnly else {
-      problem = "Finish agent sign-in on the Mac."
-      return
-    }
     perform {
       let result = try await self.mutation(
         "pane.auth.start",

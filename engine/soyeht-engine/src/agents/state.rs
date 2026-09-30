@@ -1,9 +1,10 @@
 use crate::errors::{self, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use sha2::{Digest, Sha256};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
     AgentHarnessSwitch, AgentPaneRole, AgentSession, AttachmentRef, ConfigOperation, ConfigValue,
-    HarnessLaunch, PaneQueueListResult, PermissionMode, PromptItem, PromptOrigin, PromptStatus,
+    HarnessLaunch, PaneQueueListResult, PromptItem, PromptOrigin, PromptStatus,
     QueuedPromptSummary, Role, TaskExecutor, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
@@ -25,6 +26,85 @@ pub(crate) struct RetiredAgentProcess {
     pub(crate) instance_key: String,
     pub(crate) instance_id: String,
     pub(crate) supervisor_id: String,
+}
+
+/// Marks a session the engine started through a harness switch. The handover
+/// marker takes the new agent's name from `State::launch`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct InternalContinuation {
+    /// Identifies the continuation prompt without persisting its contents.
+    /// Absent when the switch had no history to carry over.
+    prompt: Option<PromptIdentity>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PromptIdentity {
+    digest: String,
+    bytes: usize,
+}
+
+/// Adapters may pad a replayed prompt; beyond this the message is not ours.
+const REPLAY_WHITESPACE_SLACK_BYTES: usize = 4096;
+
+fn prompt_digest(text: &str) -> String {
+    format!("{:x}", Sha256::digest(text.trim().as_bytes()))
+}
+
+impl InternalContinuation {
+    pub(crate) fn record_prompt(&mut self, prompt: &str) {
+        self.prompt = Some(PromptIdentity {
+            digest: prompt_digest(prompt),
+            bytes: prompt.trim().len(),
+        });
+    }
+
+    pub(crate) fn has_prompt(&self) -> bool {
+        self.prompt.is_some()
+    }
+
+    /// Whether a replayed user message of this size could still be the prompt.
+    pub(crate) fn could_match(&self, bytes: usize) -> bool {
+        self.prompt
+            .as_ref()
+            .is_some_and(|prompt| bytes <= prompt.bytes + REPLAY_WHITESPACE_SLACK_BYTES)
+    }
+
+    /// Compares a fully assembled replayed user message, ignoring the
+    /// surrounding whitespace adapters commonly trim or add.
+    pub(crate) fn matches_replayed_prompt(&self, text: &str) -> bool {
+        self.prompt
+            .as_ref()
+            .is_some_and(|prompt| prompt.digest == prompt_digest(text))
+    }
+}
+
+/// A replayed user message held back until it is complete, so the engine's
+/// continuation prompt is recognized however the adapter splits it.
+#[derive(Debug, Clone)]
+pub(crate) struct ReplayedUserMessage {
+    pub(crate) message_id: Option<String>,
+    pub(crate) text: String,
+    /// Set once the message outgrew the prompt and streams as a user turn.
+    pub(crate) streaming: bool,
+}
+
+#[cfg(test)]
+mod continuation_tests {
+    use super::InternalContinuation;
+
+    #[test]
+    fn continuation_identity_tolerates_trimming_and_does_not_store_the_prompt() {
+        let mut continuation = InternalContinuation::default();
+        continuation.record_prompt("[last messages] private context\n");
+        assert!(continuation.matches_replayed_prompt("[last messages] private context"));
+        assert!(continuation.matches_replayed_prompt("  [last messages] private context\n\n"));
+        assert!(!continuation.matches_replayed_prompt("[last messages] other context"));
+        assert!(!continuation.matches_replayed_prompt("[last messages]"));
+        assert!(continuation.could_match(31));
+        assert!(!continuation.could_match(31 + 4097));
+        let persisted = serde_json::to_string(&continuation).unwrap();
+        assert!(!persisted.contains("private context"));
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -95,18 +175,21 @@ pub struct State {
     pub client: Client,
     pub initialized: Option<Initialization>,
     pub phase: Phase,
+    /// A prompt-level auth failure survives native session reopen until sign-in or a valid turn.
+    #[serde(default)]
+    pub auth_required: bool,
     pub session_id: Option<String>,
     pub options: Options,
-    pub permission: PermissionMode,
-    pub previous_permission: Option<PermissionMode>,
-    pub previous_effective_mode: Option<String>,
-    pub pending_policy: Option<super::configuration::PolicyChange>,
-    pub yolo: bool,
-    pub effective_mode: Option<String>,
+    /// The permission mode this pane keeps: the one requested at creation,
+    /// then the last one the harness confirmed. Re-applied after a restart or
+    /// harness switch when the harness offers the same mode.
+    #[serde(default)]
+    pub mode: Option<String>,
     pub operation: Option<ConfigOperation>,
     #[serde(default)]
     pub operation_timed_out: bool,
     pub operation_user: Option<super::pending::UserOperation>,
+    #[serde(deserialize_with = "requestable_options")]
     pub requested_options: BTreeMap<String, ConfigValue>,
     pub initial_option: Option<String>,
     pub initial_config_failed: bool,
@@ -132,27 +215,29 @@ pub struct State {
     pub probe_session_id: Option<String>,
     pub probe_started_ms: Option<i64>,
     pub login_pane_id: Option<String>,
+    /// A sign-in terminal whose command exited 0. It stays open until the
+    /// restarted agent opens a session, and is kept for review if it does not.
+    #[serde(default)]
+    pub unconfirmed_login_pane_id: Option<String>,
     pub has_finished_turn: bool,
     pub permission_rules: BTreeMap<String, bool>,
     pub terminals: BTreeMap<String, super::terminals::Terminal>,
     #[serde(default)]
     pub(crate) harness_switch: Option<HarnessSwitchCheckpoint>,
+    /// Identifies the engine's own continuation prompt without persisting its contents.
+    #[serde(default)]
+    pub(crate) internal_continuation: Option<InternalContinuation>,
+    #[serde(skip)]
+    pub(crate) replay_user: Option<ReplayedUserMessage>,
+    /// Replay is inside the continuation turn, which the handover marker represents.
+    #[serde(skip)]
+    pub(crate) replay_continuation_turn: bool,
     #[serde(default)]
     pub(crate) retired_processes: Vec<RetiredAgentProcess>,
 }
 
 impl State {
-    pub fn new(
-        launch: HarnessLaunch,
-        binary_digest: String,
-        permission: PermissionMode,
-    ) -> Result<Self> {
-        let policy = match &permission {
-            PermissionMode::Ask => "ask",
-            PermissionMode::AcceptEdits => "accept_edits",
-            PermissionMode::AllowAll => "allow_all",
-        }
-        .to_owned();
+    pub fn new(launch: HarnessLaunch, binary_digest: String, mode: Option<String>) -> Result<Self> {
         Ok(Self {
             binding: Binding::generate()?,
             hook_binding: Binding::generate()?,
@@ -164,18 +249,22 @@ impl State {
             client: Client::default(),
             initialized: None,
             phase: Phase::Initializing,
+            auth_required: false,
             session_id: None,
             options: Options::default(),
-            permission,
-            previous_permission: None,
-            previous_effective_mode: None,
-            pending_policy: None,
-            yolo: false,
-            effective_mode: None,
+            requested_options: mode
+                .iter()
+                .map(|mode| {
+                    (
+                        super::configuration::MODE_KEY.to_owned(),
+                        ConfigValue::V0(mode.clone()),
+                    )
+                })
+                .collect(),
+            mode,
             operation: None,
             operation_user: None,
             operation_timed_out: false,
-            requested_options: BTreeMap::from([("permission".into(), ConfigValue::V0(policy))]),
             initial_option: None,
             initial_config_failed: false,
             queue: VecDeque::new(),
@@ -195,10 +284,14 @@ impl State {
             probe_session_id: None,
             probe_started_ms: None,
             login_pane_id: None,
+            unconfirmed_login_pane_id: None,
             has_finished_turn: false,
             permission_rules: BTreeMap::new(),
             terminals: BTreeMap::new(),
             harness_switch: None,
+            internal_continuation: None,
+            replay_user: None,
+            replay_continuation_turn: false,
             retired_processes: Vec::new(),
         })
     }
@@ -231,11 +324,8 @@ impl State {
         binary_digest: String,
         preset: &TaskExecutor,
     ) -> Result<Self> {
-        let permission = preset
-            .permission
-            .clone()
-            .unwrap_or_else(|| self.permission.clone());
-        let mut state = Self::new(launch, binary_digest, permission)?;
+        let mode = preset.permission_mode.clone().or_else(|| self.mode.clone());
+        let mut state = Self::new(launch, binary_digest, mode)?;
         state.binding = self.binding.clone();
         state.mcp_role = self.mcp_role.clone();
         state.mcp_enabled = self.mcp_enabled;
@@ -265,7 +355,7 @@ impl State {
             fingerprint: self.fingerprint.clone(),
             session_id: self.session_id.clone(),
             options: self.options.values.clone(),
-            auth_methods: if self.phase == Phase::NeedsLogin {
+            auth_methods: if self.auth_required || self.phase == Phase::NeedsLogin {
                 self.initialized
                     .as_ref()
                     .map(|value| {
@@ -279,10 +369,6 @@ impl State {
             } else {
                 Vec::new()
             },
-            permission: self.permission.clone(),
-            yolo: self.yolo,
-            previous_permission: self.previous_permission.clone(),
-            effective_mode: self.effective_mode.clone(),
             operation: self.operation.clone(),
             queue: self
                 .queue
@@ -382,6 +468,7 @@ impl State {
             queued_at: at,
             generation: None,
             attachments,
+            agent_message: None,
         };
         self.queue.push_back(prompt.clone());
         self.prioritize_queue();
@@ -510,6 +597,19 @@ impl State {
     }
 }
 
+/// Options a pane can ask its session for. Checkpoints written before native
+/// permission modes also carry a `permission` request no session can satisfy;
+/// keeping it would hold the prompt queue forever.
+const REQUESTABLE_OPTIONS: [&str; 3] = ["model", "effort", super::configuration::MODE_KEY];
+
+fn requestable_options<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<BTreeMap<String, ConfigValue>, D::Error> {
+    let mut options = BTreeMap::<String, ConfigValue>::deserialize(deserializer)?;
+    options.retain(|key, _| REQUESTABLE_OPTIONS.contains(&key.as_str()));
+    Ok(options)
+}
+
 fn mcp_enabled() -> bool {
     true
 }
@@ -543,7 +643,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            Some("default".into()),
         )
         .unwrap()
     }
@@ -648,6 +748,29 @@ mod tests {
     }
 
     #[test]
+    fn checkpoints_from_before_native_modes_do_not_hold_the_queue() {
+        for phase in ["NeedsLogin", "Faulted"] {
+            let mut legacy = serde_json::to_value(state()).unwrap();
+            legacy["phase"] = serde_json::json!(phase);
+            legacy["requested_options"] = serde_json::json!({"permission": "ask"});
+            legacy["initial_config_failed"] = serde_json::json!(true);
+            legacy["permission"] = serde_json::json!("ask");
+            legacy["yolo"] = serde_json::json!(false);
+
+            let mut restored: State = serde_json::from_value(legacy).unwrap();
+
+            assert!(restored.requested_options.is_empty(), "{phase}");
+            restored.phase = Phase::Ready;
+            let prompt = restored
+                .enqueue("after upgrade".into(), PromptOrigin::Human, "now".into())
+                .unwrap();
+            let taken = restored.take_next(1, 0, false).unwrap().unwrap();
+            assert_eq!(taken.prompt_id, prompt.prompt_id, "{phase}");
+            assert!(restored.queue.is_empty(), "{phase}");
+        }
+    }
+
+    #[test]
     fn checkpoints_from_before_reviewer_isolation_keep_the_task_server_enabled() {
         let serialized = serde_json::to_value(state()).unwrap();
         let mut object = serialized.as_object().unwrap().clone();
@@ -668,7 +791,7 @@ mod tests {
             harness: Some("task-harness".into()),
             model: Some("task-model".into()),
             effort: Some("high".into()),
-            permission: Some(PermissionMode::AcceptEdits),
+            permission_mode: Some("acceptEdits".into()),
         };
         let launch = HarnessLaunch {
             id: "task-harness".into(),
@@ -688,7 +811,7 @@ mod tests {
         assert_eq!(restarted.next_message_seq, 17);
         assert!(restarted.session_id.is_none());
         assert!(restarted.queue.is_empty());
-        assert_eq!(restarted.permission, PermissionMode::AcceptEdits);
+        assert_eq!(restarted.mode.as_deref(), Some("acceptEdits"));
         assert_eq!(
             restarted.requested_options.get("model"),
             Some(&ConfigValue::V0("task-model".into()))
@@ -790,6 +913,7 @@ mod tests {
                 queued_at: "now".into(),
                 generation: None,
                 attachments: None,
+                agent_message: None,
             });
         }
         let restored = state.queue.drain(..).collect();

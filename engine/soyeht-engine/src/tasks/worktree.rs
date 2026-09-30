@@ -329,10 +329,8 @@ impl crate::core::Core {
         }
         let params: TaskWorktreeCleanParams = crate::tasks::api::parameters(raw)?;
         let actor = self.task_actor(connection)?;
-        if actor.role != Role::HumanLocal {
-            return Err(errors::forbidden_role(
-                "Worktree cleanup requires the local human client",
-            ));
+        if !matches!(actor.role, Role::HumanLocal | Role::HumanDevice) {
+            return Err(errors::forbidden_role("Worktree cleanup requires a person"));
         }
         let task = crate::tasks::api::task(&self.store, &params.workspace_id, &params.task_id)?;
         let Some(worktree) = task.worktree else {
@@ -564,7 +562,7 @@ mod tests {
     use super::*;
     use crate::tasks::rules::tests::task_fixture;
     use serde_json::json;
-    use soyeht_protocol::{PermissionMode, TaskState};
+    use soyeht_protocol::TaskState;
     use std::{
         collections::BTreeMap,
         fs,
@@ -666,7 +664,7 @@ mod tests {
             harness: Some("test-acp".into()),
             model: Some("test-model".into()),
             effort: None,
-            permission: Some(PermissionMode::Ask),
+            permission_mode: Some("ask".into()),
         }
     }
 

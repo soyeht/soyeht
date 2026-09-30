@@ -299,6 +299,7 @@ private struct PaneDragGhost: View {
 }
 
 struct WorkspaceWindow: View {
+  @Environment(AgentAttentionNotifications.self) private var attentionNotifications
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
@@ -422,9 +423,24 @@ struct WorkspaceWindow: View {
     .onReceive(NotificationCenter.default.publisher(for: .showSoyehtEditorPalette)) { note in
       editorPaletteMode = note.object as? EditorPaletteMode ?? .commands
     }
-    .onAppear { webHost.reconcile(client.panes) }
+    .onAppear {
+      webHost.reconcile(client.panes)
+      attentionNotifications.observe(
+        client.agentAttention, workspaces: client.workspaces, connected: client.connected)
+      openPendingAgentAttention()
+    }
     .onChange(of: client.panes.map(\.paneId)) { _, _ in webHost.reconcile(client.panes) }
     .onChange(of: client.connectionRevision) { _, _ in webHost.resynchronize() }
+    .onChange(of: client.agentAttention) { _, summary in
+      attentionNotifications.observe(
+        summary, workspaces: client.workspaces, connected: client.connected)
+    }
+    .onChange(of: client.connected) { _, _ in
+      attentionNotifications.observe(
+        client.agentAttention, workspaces: client.workspaces, connected: client.connected)
+      openPendingAgentAttention()
+    }
+    .onChange(of: attentionNotifications.pendingRoute) { _, _ in openPendingAgentAttention() }
     .onExitCommand { showPreferences = false }
     .modifier(WritingSlideShowHostModifier(client: client, coordinator: slideShow))
   }
@@ -663,6 +679,33 @@ struct WorkspaceWindow: View {
     client.select(paneId)
     navigation.select(.agents)
   }
+
+  private func openPendingAgentAttention() {
+    guard let route = attentionNotifications.pendingRoute else { return }
+    guard client.connected else { return }
+    guard
+      client.panes.contains(where: {
+        $0.paneId == route.paneId && $0.workspaceId == route.workspaceId && $0.mode == .agent
+      })
+    else {
+      attentionNotifications.clearPendingRoute()
+      return
+    }
+    guard
+      client.agentAttention.requests.contains(where: {
+        $0.identity == route.requestIdentity
+      })
+    else {
+      attentionNotifications.clearPendingRoute()
+      return
+    }
+    taskWorkspaceId = route.workspaceId
+    navigation.select(.agents)
+    client.select(route.paneId)
+    NSApp.activate(ignoringOtherApps: true)
+    NSApp.windows.first(where: \.isVisible)?.makeKeyAndOrderFront(nil)
+    attentionNotifications.clearPendingRoute()
+  }
   private func openFileReference(workspaceId: String, reference: FilePathReference) {
     Task { @MainActor in
       do {
@@ -741,20 +784,21 @@ struct WorkspaceWindow: View {
       }
       Button("Close") { showPairing = false }
     }.padding(32).frame(maxWidth: .infinity).background(MacTheme.canvas).foregroundStyle(
-      MacTheme.ink)
-      .confirmationDialog(
-        "Revoke this iPhone's access?",
-        isPresented: Binding(
-          get: { deviceToRevoke != nil }, set: { if !$0 { deviceToRevoke = nil } })
-      ) {
-        Button("Revoke", role: .destructive) {
-          if let id = deviceToRevoke { client.revokeDevice(id) }
-          deviceToRevoke = nil
-        }
-        Button("Cancel", role: .cancel) { deviceToRevoke = nil }
-      } message: {
-        Text("Connections will close. Access will require pairing again.")
+      MacTheme.ink
+    )
+    .confirmationDialog(
+      "Revoke this iPhone's access?",
+      isPresented: Binding(
+        get: { deviceToRevoke != nil }, set: { if !$0 { deviceToRevoke = nil } })
+    ) {
+      Button("Revoke", role: .destructive) {
+        if let id = deviceToRevoke { client.revokeDevice(id) }
+        deviceToRevoke = nil
       }
+      Button("Cancel", role: .cancel) { deviceToRevoke = nil }
+    } message: {
+      Text("Connections will close. Access will require pairing again.")
+    }
   }
 
   private var phoneWorkspace: some View {
@@ -988,7 +1032,7 @@ private struct WorkspaceTopBar: View {
             .accessibilityIdentifier("workspace-tabs-overflow")
             .popover(isPresented: $overflowPresented, arrowEdge: .bottom) {
               WorkspaceOverflowList(
-                workspaces: hiddenWorkspaces,
+                workspaces: hiddenWorkspaces, attention: client.agentAttention,
                 onSelect: { workspaceId in
                   overflowPresented = false
                   onSelectWorkspace(workspaceId)
@@ -1045,10 +1089,13 @@ private struct WorkspaceTopBar: View {
           WorkspaceTab(
             workspaceId: workspace.workspaceId, name: workspace.name,
             selected: workspace.workspaceId == workspaceId,
+            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
+            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
             keyboardFocusable: plan.sticky?.workspaceId != workspace.workspaceId,
             focusedWorkspaceId: $focusedWorkspaceId,
             action: { onSelectWorkspace(workspace.workspaceId) },
-            onClose: { onCloseWorkspace(workspace.workspaceId) })
+            onClose: { onCloseWorkspace(workspace.workspaceId) }
+          )
           .opacity(plan.sticky?.workspaceId == workspace.workspaceId ? 0 : 1)
           .allowsHitTesting(plan.sticky?.workspaceId != workspace.workspaceId)
           .accessibilityHidden(plan.sticky?.workspaceId == workspace.workspaceId)
@@ -1092,6 +1139,8 @@ private struct WorkspaceTopBar: View {
             edge: sticky.edge, width: stickyOcclusionWidth(for: sticky, in: measurement))
           WorkspaceTab(
             workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
+            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
+            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
             keyboardFocusable: false, focusedWorkspaceId: nil,
             action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
             onClose: { onCloseWorkspace(workspace.workspaceId) },
@@ -1103,7 +1152,8 @@ private struct WorkspaceTopBar: View {
         .frame(
           width: stickyOcclusionWidth(for: sticky, in: measurement),
           height: MacPaneLayoutMetrics.workspaceTabViewportHeight,
-          alignment: sticky.edge == .leading ? .leading : .trailing)
+          alignment: sticky.edge == .leading ? .leading : .trailing
+        )
         .transition(.opacity)
       }
     }
@@ -1138,7 +1188,8 @@ private struct WorkspaceTopBar: View {
     measurement = nextMeasurement
     let overflowReservation =
       MacPaneLayoutMetrics.workspaceOverflowButtonWidth + Double(MacTheme.Space.x10)
-    let widthWithoutOverflow = nextMeasurement.viewportWidth
+    let widthWithoutOverflow =
+      nextMeasurement.viewportWidth
       + (showsOverflowControl ? overflowReservation : 0)
     let needsOverflow = nextMeasurement.contentWidth > widthWithoutOverflow + 0.5
     showsOverflowControl = needsOverflow
@@ -1177,7 +1228,8 @@ private struct WorkspaceTopBar: View {
   private func stickyTabWidth(
     for sticky: WorkspaceTabStickyPresentation, in measurement: WorkspaceTabStripMeasurement
   ) -> Double {
-    let measured = measurement.items.first(where: { $0.workspaceId == sticky.workspaceId })?.width
+    let measured =
+      measurement.items.first(where: { $0.workspaceId == sticky.workspaceId })?.width
       ?? MacPaneLayoutMetrics.workspaceTabMaximumWidth
     return min(
       measured,
@@ -1256,6 +1308,8 @@ private struct WorkspaceTab: View {
   let workspaceId: String
   let name: String
   let selected: Bool
+  let waitingCount: Int
+  let isWorking: Bool
   let keyboardFocusable: Bool
   let focusedWorkspaceId: FocusState<String?>.Binding?
   let action: () -> Void
@@ -1270,19 +1324,29 @@ private struct WorkspaceTab: View {
             .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
           Text(name).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
             .foregroundStyle(selected ? MacTheme.accent : MacTheme.ink).lineLimit(1)
+          if waitingCount > 0 {
+            AgentAttentionBadge(count: waitingCount)
+          } else if isWorking {
+            AgentWorkingDot()
+          }
         }
       }
       .modifier(
         WorkspaceTabKeyboardFocus(
           workspaceId: workspaceId, enabled: keyboardFocusable,
-          focusedWorkspaceId: focusedWorkspaceId))
+          focusedWorkspaceId: focusedWorkspaceId)
+      )
       .onKeyPress(.return) {
         guard keyboardFocusable else { return .ignored }
         action()
         return .handled
       }
       .help(name)
-      .accessibilityLabel(name)
+      .accessibilityLabel(
+        waitingCount > 0
+          ? "\(name), \(AgentAttentionPolicy.waitingLabel(count: waitingCount))"
+          : isWorking ? "\(name), agents working" : name
+      )
       .accessibilityAddTraits(selected ? .isSelected : [])
       .accessibilityIdentifier("\(identifierPrefix)-\(workspaceId)")
 
@@ -1320,6 +1384,7 @@ private struct WorkspaceTabKeyboardFocus: ViewModifier {
 
 private struct WorkspaceOverflowList: View {
   let workspaces: [Workspace]
+  let attention: AgentAttentionSummary
   let onSelect: (String) -> Void
 
   var body: some View {
@@ -1329,7 +1394,9 @@ private struct WorkspaceOverflowList: View {
       ScrollView {
         LazyVStack(alignment: .leading, spacing: MacTheme.Space.x6) {
           ForEach(workspaces, id: \.workspaceId) { workspace in
-            Button { onSelect(workspace.workspaceId) } label: {
+            Button {
+              onSelect(workspace.workspaceId)
+            } label: {
               HStack(alignment: .top, spacing: MacTheme.Space.x8) {
                 Image(systemName: "folder")
                   .foregroundStyle(MacTheme.secondary)
@@ -1338,6 +1405,11 @@ private struct WorkspaceOverflowList: View {
                   .foregroundStyle(MacTheme.ink)
                   .multilineTextAlignment(.leading)
                   .fixedSize(horizontal: false, vertical: true)
+                if attention.waitingCount(in: workspace.workspaceId) > 0 {
+                  AgentAttentionBadge(count: attention.waitingCount(in: workspace.workspaceId))
+                } else if attention.hasWorkingAgent(in: workspace.workspaceId) {
+                  AgentWorkingDot()
+                }
                 Spacer(minLength: 0)
               }
               .padding(.horizontal, MacTheme.Space.x10)
@@ -1345,7 +1417,12 @@ private struct WorkspaceOverflowList: View {
               .contentShape(Rectangle())
             }
             .help(workspace.name)
-            .accessibilityLabel(workspace.name)
+            .accessibilityLabel(
+              attention.waitingCount(in: workspace.workspaceId) > 0
+                ? "\(workspace.name), \(AgentAttentionPolicy.waitingLabel(count: attention.waitingCount(in: workspace.workspaceId)))"
+                : attention.hasWorkingAgent(in: workspace.workspaceId)
+                  ? "\(workspace.name), agents working" : workspace.name
+            )
             .accessibilityIdentifier("workspace-overflow-\(workspace.workspaceId)")
           }
         }
@@ -1355,6 +1432,28 @@ private struct WorkspaceOverflowList: View {
     .padding(MacTheme.Space.x14)
     .frame(width: MacPaneLayoutMetrics.workspaceOverflowPopoverWidth)
     .background(MacTheme.canvas)
+  }
+}
+
+struct AgentAttentionBadge: View {
+  let count: Int
+
+  var body: some View {
+    Text(count, format: .number)
+      .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+      .foregroundStyle(MacTheme.ink)
+      .padding(.horizontal, MacTheme.Space.x6)
+      .padding(.vertical, MacTheme.Space.x2)
+      .background(MacTheme.warning, in: Capsule())
+      .accessibilityLabel(AgentAttentionPolicy.waitingLabel(count: count))
+  }
+}
+
+struct AgentWorkingDot: View {
+  var body: some View {
+    Circle().fill(MacTheme.accent)
+      .frame(width: MacTheme.Space.x7, height: MacTheme.Space.x7)
+      .accessibilityLabel("Agents working")
   }
 }
 
@@ -1646,7 +1745,7 @@ private struct PaneLayoutTreeSurface: View {
       workspaceId: workspaceId, tree: tree, path: PaneLayoutNodePath(), plan: plan,
       viewportSize: viewportSize, interaction: interaction,
       interactionsEnabled: interactionsEnabled, newPane: newPane,
-      companionLinked: false,
+      companionLinked: false, isVisible: true,
       onClose: onClose, onTasks: onTasks,
       onSplit: onSplit, onPaneDrop: onPaneDrop
     )
@@ -1681,6 +1780,7 @@ private struct PaneLayoutNodeSurface: View {
   let interactionsEnabled: Bool
   let newPane: NewPanePlaceholderPresentation?
   let companionLinked: Bool
+  let isVisible: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -1711,6 +1811,7 @@ private struct PaneLayoutNodeSurface: View {
             workspaceId: workspaceId, split: split, path: path, plan: plan,
             viewportSize: viewportSize, interaction: interaction,
             interactionsEnabled: interactionsEnabled, newPane: newPane,
+            isVisible: isVisible,
             onClose: onClose, onTasks: onTasks,
             onSplit: onSplit, onPaneDrop: onPaneDrop)
         }
@@ -1778,7 +1879,7 @@ private struct PaneLayoutNodeSurface: View {
       tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
       onTasks: onTasks, onSplit: onSplit,
       interaction: interactionsEnabled ? interaction : nil,
-      companionLinked: companionLinked, cardWidth: cardWidth,
+      companionLinked: companionLinked, isVisible: isVisible, cardWidth: cardWidth,
       dropTargetSize: CGSize(
         width: cardWidth,
         height: max(0, contentHeight - 2 * halo)),
@@ -1962,7 +2063,7 @@ private struct PaneLayoutCompanionSurface: View {
         tree: .leaf(leaf), path: PaneLayoutNodePath(), plan: leafPlan,
         viewportSize: CGSize(width: rect.size.width, height: rect.size.height),
         interaction: interaction, interactionsEnabled: interactionsEnabled,
-        newPane: nil, companionLinked: true,
+        newPane: nil, companionLinked: true, isVisible: visible,
         onClose: onClose, onTasks: onTasks,
         onSplit: onSplit, onPaneDrop: onPaneDrop
       )
@@ -2149,6 +2250,7 @@ private struct PaneLayoutSplitSurface: View {
   let interaction: PaneLayoutInteractionState
   let interactionsEnabled: Bool
   let newPane: NewPanePlaceholderPresentation?
+  let isVisible: Bool
   let onClose: (String) -> Void
   let onTasks: () -> Void
   let onSplit: (String, PaneSplitAxis) -> Void
@@ -2177,7 +2279,7 @@ private struct PaneLayoutSplitSurface: View {
                   tree: child.branch.tree, path: childPath, plan: plan,
                   viewportSize: viewportSize, interaction: interaction,
                   interactionsEnabled: interactionsEnabled, newPane: newPane,
-                  companionLinked: false,
+                  companionLinked: false, isVisible: isVisible,
                   onClose: onClose,
                   onTasks: onTasks, onSplit: onSplit, onPaneDrop: onPaneDrop
                 )
@@ -2567,6 +2669,11 @@ private struct PaneDropZonesOverlay: View {
   }
 }
 
+private struct AgentPaneHydrationTaskKey: Equatable {
+  let connectionRevision: UInt64
+  let isVisible: Bool
+}
+
 private struct PaneCard: View {
   @Bindable var client: EngineClient
   @Environment(\.terminalKeyboardInputEnabled) private var terminalKeyboardInputEnabled
@@ -2578,6 +2685,7 @@ private struct PaneCard: View {
   let onSplit: (String, PaneSplitAxis) -> Void
   let interaction: PaneLayoutInteractionState?
   let companionLinked: Bool
+  let isVisible: Bool
   let cardWidth: CGFloat
   let dropTargetSize: CGSize?
   let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
@@ -2620,6 +2728,16 @@ private struct PaneCard: View {
       }
     }
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+    .task(
+      id: AgentPaneHydrationTaskKey(
+        connectionRevision: client.connectionRevision, isVisible: isVisible
+      )
+    ) {
+      guard pane.mode == .agent else { return }
+      await client.hydratePresentedAgentPanes([
+        PresentedPane(paneId: pane.paneId, isVisible: isVisible)
+      ])
+    }
     .simultaneousGesture(TapGesture().onEnded { client.select(pane.paneId) })
     .modifier(
       PaneDropTargetModifier(
@@ -2695,16 +2813,16 @@ private struct PaneCard: View {
       hasSummary: pane.mode == .agent && agentSummary != nil,
       hasStatus: pane.mode == .agent)
     return headerContent(plan: plan)
-    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
-    .foregroundStyle(MacTheme.secondary)
-    .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
-    .background(tint, in: Capsule())
-    .paneHeaderDrag(dragConfiguration)
-    .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
-      AgentHarnessSwitchPicker(
-        client: client, pane: pane, isPresented: $showingHarnessSwitch)
-    }
+      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+      .foregroundStyle(MacTheme.secondary)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
+      .background(tint, in: Capsule())
+      .paneHeaderDrag(dragConfiguration)
+      .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
+        AgentHarnessSwitchPicker(
+          client: client, pane: pane, isPresented: $showingHarnessSwitch)
+      }
   }
 
   private func headerContent(plan: PaneHeaderLayoutPlan) -> some View {
@@ -2799,16 +2917,22 @@ private struct PaneCard: View {
         Label("Open workspace tasks", systemImage: "line.3.horizontal.decrease")
       }
       Divider()
-      Button { onSplit(pane.paneId, .columns) } label: {
+      Button {
+        onSplit(pane.paneId, .columns)
+      } label: {
         Label("Split into columns", systemImage: "rectangle.split.2x1")
       }
       .disabled(!client.connected || interaction?.blocksLayoutActions == true)
-      Button { onSplit(pane.paneId, .rows) } label: {
+      Button {
+        onSplit(pane.paneId, .rows)
+      } label: {
         Label("Split into rows", systemImage: "rectangle.split.1x2")
       }
       .disabled(!client.connected || interaction?.blocksLayoutActions == true)
       Divider()
-      Button(role: .destructive) { onClose(pane.paneId) } label: {
+      Button(role: .destructive) {
+        onClose(pane.paneId)
+      } label: {
         Label("Close pane", systemImage: "xmark")
       }
       .disabled(!client.connected || interaction?.blocksLayoutActions == true)
@@ -2823,7 +2947,9 @@ private struct PaneCard: View {
   }
 
   private var splitColumnButton: some View {
-    Button { onSplit(pane.paneId, .columns) } label: {
+    Button {
+      onSplit(pane.paneId, .columns)
+    } label: {
       Image(systemName: "rectangle.split.2x1")
     }
     .help("Split pane into columns")
@@ -2833,7 +2959,9 @@ private struct PaneCard: View {
   }
 
   private var splitRowButton: some View {
-    Button { onSplit(pane.paneId, .rows) } label: {
+    Button {
+      onSplit(pane.paneId, .rows)
+    } label: {
       Image(systemName: "rectangle.split.1x2")
     }
     .help("Split pane into rows")
@@ -2843,11 +2971,15 @@ private struct PaneCard: View {
   }
 
   private var closePaneButton: some View {
-    Button { onClose(pane.paneId) } label: { Image(systemName: "xmark") }
-      .help("Close this pane")
-      .accessibilityLabel("Close this pane")
-      .accessibilityIdentifier("close-pane-\(pane.paneId)")
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+    Button {
+      onClose(pane.paneId)
+    } label: {
+      Image(systemName: "xmark")
+    }
+    .help("Close this pane")
+    .accessibilityLabel("Close this pane")
+    .accessibilityIdentifier("close-pane-\(pane.paneId)")
+    .disabled(!client.connected || interaction?.blocksLayoutActions == true)
   }
 
   #if DEBUG
@@ -2884,7 +3016,9 @@ private struct PaneCard: View {
     }
 
     private var captureMenuButton: some View {
-      Button { toggleExperimentCapture() } label: {
+      Button {
+        toggleExperimentCapture()
+      } label: {
         Label(
           experimentCaptureActionTitle,
           systemImage: pane.experimentCapture?.on == true ? "stop.circle" : "record.circle")
@@ -2907,7 +3041,12 @@ private struct PaneCard: View {
   #endif
 
   private var paneStatusText: String {
-    pane.state.rawValue.replacingOccurrences(of: "_", with: " ")
+    guard pane.mode == .agent else {
+      return pane.state.rawValue.replacingOccurrences(of: "_", with: " ")
+    }
+    return AgentPaneStatusPresentation.title(
+      state: pane.state, needsAuthentication: pane.agent?.authMethods.isEmpty == false,
+      hasSession: pane.agent?.sessionId != nil)
   }
 
   private var headerActionCount: Int {
@@ -2945,7 +3084,8 @@ private struct PaneCard: View {
           .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
         }
         AgentConversationView(
-          client: client, paneId: pane.paneId, showsConfiguration: false,
+          client: client, paneId: pane.paneId, isVisible: isVisible,
+          showsConfiguration: false,
           style: MacTheme.agentConversation)
       }.padding(
         EdgeInsets(
@@ -2953,24 +3093,24 @@ private struct PaneCard: View {
           trailing: 4))
     } else {
       VStack(spacing: 0) {
-        Label(
-          TerminalStatePresentation.text(for: pane.state),
-          systemImage: terminalStateSystemImage
-        )
-        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-        .foregroundStyle(stateColor)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, MacTheme.Space.x10)
-        .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
-        .background(tint.opacity(0.55))
-        .accessibilityIdentifier("terminal-state-\(pane.paneId)")
+        if let notice = TerminalStatePresentation.notice(for: pane.state) {
+          Label(notice.text, systemImage: notice.systemImage)
+            .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+            .foregroundStyle(terminalNoticeColor(notice))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, MacTheme.Space.x10)
+            .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
+            .background(terminalNoticeBackground(notice))
+            .accessibilityIdentifier("terminal-state-\(pane.paneId)")
+        }
         MacTerminal(client: client, paneId: pane.paneId)
           .environment(
             \.terminalKeyboardInputEnabled,
             terminalKeyboardInputEnabled && client.selectedPaneId == pane.paneId)
         if let gap = client.gapText(for: pane.paneId) {
-          Label(gap, systemImage: "exclamationmark.triangle")
-            .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.warning)
+          Label(gap, systemImage: TerminalStatePresentation.recordedGap.systemImage)
+            .font(MacTheme.chrome(MacTheme.TypeScale.control))
+            .foregroundStyle(terminalNoticeColor(TerminalStatePresentation.recordedGap))
             .padding(MacTheme.Space.x10)
         }
       }
@@ -2981,21 +3121,23 @@ private struct PaneCard: View {
     switch pane.state {
     case .working, .idle: MacTheme.success
     case .waiting_for_you: MacTheme.warning
-    case .dead, .no_signal: MacTheme.danger
-    default: MacTheme.ink.opacity(0.75)
+    case .no_signal: MacTheme.warning
+    case .dead, .unknown: MacTheme.muted
+    default: MacTheme.secondary
     }
   }
 
-  private var terminalStateSystemImage: String {
-    switch pane.state {
-    case .working: "bolt.fill"
-    case .idle: "checkmark.circle.fill"
-    case .waiting_for_you: "person.crop.circle.badge.questionmark"
-    case .no_signal: "exclamationmark.triangle.fill"
-    case .dead: "xmark.circle.fill"
-    case .starting, .recovering: "arrow.triangle.2.circlepath"
-    case .cancelling: "stop.circle.fill"
-    case .unknown: "questionmark.circle.fill"
+  private func terminalNoticeColor(_ notice: TerminalNotice) -> Color {
+    switch notice.severity {
+    case .neutral: MacTheme.secondary
+    case .warning: MacTheme.warning
+    }
+  }
+
+  private func terminalNoticeBackground(_ notice: TerminalNotice) -> Color {
+    switch notice.severity {
+    case .neutral: MacTheme.face
+    case .warning: MacTheme.warning.opacity(0.12)
     }
   }
 
@@ -3060,7 +3202,7 @@ private struct NewPaneSheet: View {
   @State private var harness = ""
   @State private var model = ""
   @State private var effort = ""
-  @State private var permission = PermissionMode.ask
+  @State private var permissionMode: String?
   @State private var showsAgentPicker = false
   @State private var submitting = false
   @State private var prompt = ""
@@ -3217,6 +3359,7 @@ private struct NewPaneSheet: View {
     .onChange(of: harness) { _, value in
       model = ""
       effort = ""
+      permissionMode = nil
       if selectedHarness?.available == true { client.refreshCatalogue(harness: value) }
     }
   }
@@ -3267,11 +3410,13 @@ private struct NewPaneSheet: View {
       Spacer()
       if mode == .agent {
         Menu {
-          Button("Ask every time") { permission = .ask }
-          Button("Accept edits") { permission = .accept_edits }
-          Button("Allow all") { permission = .allow_all }
+          PermissionModeChoices(modes: permissionModes, selection: $permissionMode)
         } label: {
-          Label(permissionLabel, systemImage: "shield.checkered")
+          Label(
+            PermissionModeChoices.title(
+              modes: permissionModes, selection: permissionMode,
+              preferred: client.defaultPermissionMode(harness: harness)),
+            systemImage: "checkmark.shield")
         }.menuStyle(.borderlessButton).fixedSize()
       }
     }
@@ -3291,17 +3436,14 @@ private struct NewPaneSheet: View {
     return modelName ?? selectedHarness?.name ?? "Choose agent"
   }
 
-  private var permissionLabel: String {
-    switch permission {
-    case .ask: "Ask"
-    case .accept_edits: "Edits"
-    case .allow_all: "Allow all"
-    }
+  private var permissionModes: AgentPermissionModes? {
+    catalogue.flatMap { AgentPermissionModes(options: $0.options) }
   }
 
   private func selectFirstHarness() {
     guard selectedHarness?.available != true,
-      let first = HarnessPickerModel.defaultHarness(in: client.harnesses)
+      let first = HarnessPickerModel.defaultHarness(
+        in: client.harnesses, preferredId: client.preferredHarnessId)
     else { return }
     harness = first.id
   }
@@ -3337,7 +3479,7 @@ private struct NewPaneSheet: View {
         } else {
           paneId = try await client.createAgentPaneNow(
             directory: directory, harness: harness, model: model.isEmpty ? nil : model,
-            effort: effort.isEmpty ? nil : effort, permission: permission)
+            effort: effort.isEmpty ? nil : effort, permissionMode: permissionMode)
         }
         onCreated(paneId, PaneLayoutKind(mode: mode))
         if mode == .agent {
@@ -3488,6 +3630,11 @@ private struct AgentHarnessPicker: View {
 
   @ViewBuilder private var selectedConfiguration: some View {
     if let selected, selected.available {
+      Text(HarnessPickerModel.statusReason(for: selected))
+        .font(MacTheme.chrome(MacTheme.TypeScale.small))
+        .foregroundStyle(MacTheme.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("agent-setup-reason")
       Text("MODEL").pickerHeading()
       if modelContentState == .loading {
         HStack(spacing: MacTheme.Space.x8) {
@@ -3564,11 +3711,16 @@ private struct AgentHarnessPicker: View {
       }
     } else if let selected {
       Label(
-        "\(selected.name) is not installed.",
+        HarnessPickerModel.statusReason(for: selected),
         systemImage: "exclamationmark.circle"
       )
       .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
       .foregroundStyle(MacTheme.muted)
+      .accessibilityIdentifier("agent-setup-reason")
+    } else {
+      Text("Choose an agent to continue.")
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
     }
   }
 
@@ -3579,6 +3731,7 @@ private struct AgentHarnessPicker: View {
   private func statusSymbol(_ status: HarnessSetupState) -> String {
     switch status {
     case .ready: "checkmark.circle.fill"
+    case .not_checked: "circle.dotted"
     case .sign_in: "person.crop.circle.badge.exclamationmark"
     case .check_setup: "wrench.and.screwdriver"
     case .not_installed: "minus.circle"
@@ -3588,6 +3741,7 @@ private struct AgentHarnessPicker: View {
   private func statusColor(_ status: HarnessSetupState) -> Color {
     switch status {
     case .ready: MacTheme.success
+    case .not_checked: MacTheme.muted
     case .sign_in, .check_setup: MacTheme.warning
     case .not_installed: MacTheme.muted
     }
@@ -3664,7 +3818,8 @@ private struct AgentHarnessSwitchPicker: View {
   private func selectFirstHarness() {
     guard selectedHarness?.available != true,
       let first = HarnessPickerModel.defaultHarness(
-        in: client.harnesses, excluding: currentHarness)
+        in: client.harnesses, excluding: currentHarness,
+        preferredId: client.preferredHarnessId)
     else { return }
     harness = first.id
   }

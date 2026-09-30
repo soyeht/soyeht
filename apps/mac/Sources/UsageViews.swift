@@ -94,9 +94,9 @@ struct UsageDetailBalloon: View {
           + (reading.state == .stale
             ? UsageTimeText.asOf(reading.fetchedAt) : UsageTimeText.fetched(reading.fetchedAt))
       )
-        .font(MacTheme.chrome(MacTheme.TypeScale.micro))
-        .foregroundStyle(MacTheme.muted)
-        .lineLimit(1)
+      .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+      .foregroundStyle(MacTheme.muted)
+      .lineLimit(1)
     }
     .padding(MacTheme.Space.x12)
     .frame(width: 250, alignment: .leading)

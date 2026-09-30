@@ -10,7 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from e2e import ROOT, Services, require
+from e2e import ROOT, require
 from e2e_agents import AgentServices, request, until
 
 
@@ -23,9 +23,10 @@ class EditorServices(AgentServices):
         (self.binaries / "rust-analyzer").chmod(0o700)
         readers = self.data / "usage-readers"
         readers.mkdir(mode=0o700)
+        # Keep this fixture beside the other readers in default_commands (sources.rs).
+        self.usage_cache = readers / "claude-cache.json"
         self.usage_mode = readers / "mode.json"
         self.set_usage_modes(first="ok", second="ok", third="ok")
-        self._write_reader(readers / "first-source", FIRST_SOURCE)
         self._write_reader(readers / "second-source", SECOND_SOURCE)
         self._write_reader(readers / "keychain-source", KEYCHAIN_SOURCE)
         self._write_reader(readers / "http-source", HTTP_SOURCE)
@@ -37,6 +38,19 @@ class EditorServices(AgentServices):
             current = json.loads(self.usage_mode.read_text())
         current.update(values)
         self.usage_mode.write_text(json.dumps(current))
+        if "first" in values:
+            if values["first"] == "ok":
+                self.usage_cache.write_text(json.dumps({
+                    "cachedUsageUtilization": {
+                        "fetchedAtMs": int(time.time() * 1000),
+                        "utilization": {
+                            "five_hour": {"utilization": 25, "resets_at": "later"},
+                            "seven_day": {"utilization": 50, "resets_at": "next week"},
+                        },
+                    },
+                }))
+            else:
+                self.usage_cache.unlink(missing_ok=True)
 
     def _write_reader(self, path, source):
         path.write_text(source)
@@ -53,13 +67,6 @@ class EditorServices(AgentServices):
                 environment["SOYEHT_TEST_USAGE_MODE"] = str(self.usage_mode)
             path.write_bytes(plistlib.dumps(values))
 
-
-FIRST_SOURCE = """#!/usr/bin/env python3
-import json, os, sys
-mode=json.load(open(os.environ["SOYEHT_TEST_USAGE_MODE"]))["first"]
-if mode != "ok": sys.exit(1)
-print(json.dumps({"result":"Current session: 25% used · resets later\\nCurrent week (all models): 50% used · resets next week"}))
-"""
 
 SECOND_SOURCE = """#!/usr/bin/env python3
 import json, os, sys

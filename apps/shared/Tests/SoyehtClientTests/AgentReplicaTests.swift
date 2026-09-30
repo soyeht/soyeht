@@ -4,6 +4,105 @@ import Testing
 
 @testable import SoyehtClient
 
+@Test func lateCatalogRepliesCannotReplaceTheNewestRefresh() {
+  #expect(AgentCatalogResponseOrder.accepts(request: 2, latest: 2))
+  #expect(!AgentCatalogResponseOrder.accepts(request: 1, latest: 2))
+}
+
+@Test func agentStatusShowsSignInInsteadOfStartingWhenAuthenticationIsRequired() {
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .starting, needsAuthentication: true, hasSession: true) == "Sign in")
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .starting, needsAuthentication: false, hasSession: false)
+      == "starting")
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .starting, needsAuthentication: false, hasSession: true) == "ready")
+  #expect(
+    AgentPaneStatusPresentation.title(
+      state: .idle, needsAuthentication: false, hasSession: true) == "idle")
+}
+
+@Test func visibleAgentTranscriptHydrationIncludesNewlyShownPaneWithoutDuplicates() {
+  func pane(_ id: String, mode: PaneMode, workspaceId: String = "workspace") -> Pane {
+    Pane(
+      paneId: id, workspaceId: workspaceId, name: id, cwd: "/tmp", mode: mode,
+      state: .idle, source: .protocol, confidence: 1, phrase: "Ready", generation: 1,
+      cols: 80, rows: 24, record: mode == .agent)
+  }
+  let panes = [
+    pane("codex", mode: .agent), pane("opencode", mode: .agent),
+    pane("shell", mode: .terminal),
+    pane("other-workspace", mode: .agent, workspaceId: "another-workspace"),
+  ]
+  let split = [
+    PresentedPane(paneId: "codex", isVisible: true),
+    PresentedPane(paneId: "opencode", isVisible: true),
+    PresentedPane(paneId: "shell", isVisible: true),
+    PresentedPane(paneId: "codex", isVisible: true),
+  ]
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: split, panes: panes, hydrated: [], loading: []) == ["codex", "opencode"])
+
+  // The companion tab stays mounted but hidden until selected.
+  let tabs = [
+    PresentedPane(paneId: "codex", isVisible: true),
+    PresentedPane(paneId: "opencode", isVisible: false),
+  ]
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: tabs, panes: panes, hydrated: ["codex"], loading: []) == [])
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: [PresentedPane(paneId: "opencode", isVisible: true)], panes: panes,
+      hydrated: ["codex"], loading: []) == ["opencode"])
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: split, panes: panes, hydrated: ["codex"], loading: ["opencode"]) == [])
+  // A new connection has no hydrated IDs, so both visible transcripts reload.
+  #expect(
+    AgentTranscriptHydrationPolicy.paneIdsToLoad(
+      presented: split, panes: panes, hydrated: [], loading: []) == ["codex", "opencode"])
+}
+
+@Test func hiddenAgentTabCatchesUpWithMessagesThatArrivedWhileHidden() {
+  var follow = AgentConversationFollow()
+  let shown = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: nil, elicitationId: nil)
+  let hidden = AgentConversationFollow.RevealKey(
+    isVisible: false, permissionId: nil, elicitationId: nil)
+  let followsWhileVisible = follow.messagesChanged(isVisible: true)
+  #expect(followsWhileVisible)
+  #expect(!follow.scrollsOnReveal(shown))
+
+  let followsWhileHidden = follow.messagesChanged(isVisible: false)
+  #expect(!followsWhileHidden)
+  #expect(!follow.scrollsOnReveal(hidden))
+  #expect(follow.scrollsOnReveal(shown))
+  follow.revealed()
+  #expect(!follow.scrollsOnReveal(shown))
+}
+
+@Test func revealFollowsEachPendingRequestEvenWhenAnotherStaysPending() {
+  let follow = AgentConversationFollow()
+  let permission = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: "permission", elicitationId: nil)
+  let firstQuestion = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: "permission", elicitationId: "question-1")
+  let secondQuestion = AgentConversationFollow.RevealKey(
+    isVisible: true, permissionId: "permission", elicitationId: "question-2")
+  #expect(firstQuestion != permission)
+  #expect(secondQuestion != firstQuestion)
+  #expect(follow.scrollsOnReveal(secondQuestion))
+  #expect(
+    !follow.scrollsOnReveal(
+      AgentConversationFollow.RevealKey(
+        isVisible: false, permissionId: "permission", elicitationId: "question-2")))
+}
+
 @MainActor @Test func agentReplicaReplacesChunksTracksQuestionsAndResetsSnapshotState() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"
@@ -31,9 +130,16 @@ import Testing
       PanePermissionRequestedEvent(
         eventId: "2", at: "2026-09-11T00:00:01Z", paneId: paneId,
         requestId: "request-1", generation: 1, promptId: "prompt-1", title: "Run",
-        detail: "Run the requested operation", options: [option],
+        detail: "Run the requested operation",
+        presentation: PermissionPresentation(
+          targetPath: "/project/note.txt", command: "ls -la\n",
+          fileChanges: [PermissionFileChange(path: "/project/note.txt", newText: "hello\n")],
+          previewOmitted: false), options: [option],
         expiresAt: "2026-09-11T00:30:01Z")))
   #expect(client.agentPanes[paneId]?.permission?.requestId == "request-1")
+  #expect(client.agentPanes[paneId]?.permission?.presentation?.command == "ls -la\n")
+  #expect(
+    client.agentPanes[paneId]?.permission?.presentation?.fileChanges.first?.newText == "hello\n")
 
   try client.applyAgentEvent(
     .paneQueuePaused,
@@ -46,7 +152,7 @@ import Testing
   let authMethod = AuthMethod(id: "login", name: "Sign in", terminal: true)
   let session = AgentSession(
     harness: "agent", version: "1", fingerprint: "fingerprint", options: [],
-    authMethods: [], permission: .ask, yolo: false, queue: [], draft: false,
+    authMethods: [], queue: [], draft: false,
     role: .worker,
     harnessSwitch: AgentHarnessSwitch(fromHarness: "first", toHarness: "second"))
   let pane = Pane(
@@ -72,6 +178,25 @@ import Testing
 
   try client.applyAgentSnapshot([:], panes: [pane])
   #expect(client.agentPanes[paneId]?.authMethods.isEmpty == true)
+}
+
+@MainActor @Test func rejectedPermissionAppearsAsSystemMessageInPane() throws {
+  let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
+  let paneId = "pane-agent"
+  try client.applyAgentEvent(
+    .paneUpdate,
+    .encoded(
+      PaneUpdateEvent.v0(
+        AgentMessageUpdate(
+          eventId: "1", at: "2026-09-25T00:00:00Z", paneId: paneId,
+          kind: .system_message, generation: 1, seq: "1", localId: "blocked-request",
+          text:
+            "Soyeht blocked this permission request: no command to display. Nothing was approved.",
+          complete: true))))
+  let message = try #require(client.agentPanes[paneId]?.messages.first)
+  #expect(message.role == .system)
+  #expect(message.kind == .system)
+  #expect(message.text.contains("Nothing was approved"))
 }
 
 @Test func remoteFailuresHideWireMethodAndKindFromPeople() {
@@ -138,14 +263,16 @@ import Testing
       == "The switch failed. The original agent is still running.")
 }
 
-@MainActor @Test func remoteClientCannotStartAgentAuthentication() throws {
+@MainActor @Test func pairedDeviceStartsAgentAuthenticationLikeTheMac() throws {
   let credential = DeviceCredential(
     engineId: "engine", deviceId: "device",
     address: try #require(URL(string: "ws://100.64.0.1:8291")),
     token: "token", key: Data(repeating: 0, count: 32))
   let client = EngineClient(credential: credential)
 
+  #expect(client.pairedDevice)
   client.startAgentAuthentication("pane-agent", methodId: "login")
 
-  #expect(client.problem == "Finish agent sign-in on the Mac.")
+  // A paired device is a full remote control: no client-side refusal.
+  #expect(client.problem != "Finish agent sign-in on the Mac.")
 }

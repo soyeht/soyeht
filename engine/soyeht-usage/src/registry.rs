@@ -104,6 +104,9 @@ fn refresh_reader(
                         transient: None,
                     });
                 }
+                Err(crate::Error::CacheNotPopulated { .. }) => {
+                    choose_failure(&mut failure, source.clone(), SourceRead::Unavailable(None))
+                }
                 Err(_) => choose_failure(
                     &mut failure,
                     source.clone(),

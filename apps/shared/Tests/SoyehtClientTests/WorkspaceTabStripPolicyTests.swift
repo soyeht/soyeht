@@ -63,10 +63,12 @@ private func stripItems(spacing: Double = 10) -> [WorkspaceTabStripItem] {
   let trailing = WorkspaceTabStripPolicy.plan(
     items: items, activeWorkspaceId: "workspace-15", viewport: middleViewport)
 
-  #expect(leading.sticky == WorkspaceTabStickyPresentation(workspaceId: "workspace-0", edge: .leading))
+  #expect(
+    leading.sticky == WorkspaceTabStickyPresentation(workspaceId: "workspace-0", edge: .leading))
   #expect(leading.hiddenCount == 14)
   #expect(!leading.hiddenWorkspaceIds.contains("workspace-0"))
-  #expect(trailing.sticky == WorkspaceTabStickyPresentation(workspaceId: "workspace-15", edge: .trailing))
+  #expect(
+    trailing.sticky == WorkspaceTabStickyPresentation(workspaceId: "workspace-15", edge: .trailing))
   #expect(trailing.hiddenCount == 14)
   #expect(!trailing.hiddenWorkspaceIds.contains("workspace-15"))
 }

@@ -27,9 +27,14 @@ impl ProviderReader for Reader {
 
 fn parse_cache(payload: &[u8], source: UsageSource) -> Result<ParsedReading> {
     let document = super::json(payload, source.clone())?;
-    let cached = document
+    // Only an object without the key is an unpopulated cache. Any other
+    // top-level value (null, array, number) is malformed data.
+    let object = document.as_object().ok_or_else(|| Error::InvalidResponse {
+        source: source.clone(),
+    })?;
+    let cached = object
         .get("cachedUsageUtilization")
-        .ok_or_else(|| Error::InvalidResponse {
+        .ok_or_else(|| Error::CacheNotPopulated {
             source: source.clone(),
         })?;
     let fetched_at_ms = cached["fetchedAtMs"]

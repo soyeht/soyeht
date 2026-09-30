@@ -45,8 +45,8 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
 
   var hasDetail: Bool {
     switch self {
-    case .appearance, .harnesses, .usage, .editor, .links: true
-    case .general, .engine, .phone, .tasks: false
+    case .general, .appearance, .harnesses, .usage, .editor, .links: true
+    case .engine, .phone, .tasks: false
     }
   }
 }
@@ -166,21 +166,49 @@ struct PreferencesPanel: View {
 
   @ViewBuilder private func preferenceDetail(_ selected: PreferencesNavigationItem) -> some View {
     switch selected {
+    case .general: GeneralPreferencesPanel()
     case .appearance: ThemePreferencesPanel()
     case .harnesses: PreferencesHarnesses(client: client)
     case .usage:
       UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
     case .editor: EditorInputPreferencesPanel()
     case .links: WebLinkPreferencesPanel()
-    case .general, .engine, .phone, .tasks: EmptyView()
+    case .engine, .phone, .tasks: EmptyView()
     }
   }
 
   private func refreshCatalogues() {
     client.refreshHarnesses()
+    client.refreshDefaultPermissionModes()
     for harness in client.harnesses where harness.available {
       client.refreshCatalogue(harness: harness.id)
     }
+  }
+}
+
+private struct GeneralPreferencesPanel: View {
+  @Environment(AgentAttentionNotifications.self) private var notifications
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      Text("Agent attention")
+        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+      Toggle(
+        "System alerts and Dock badges when agents need input",
+        isOn: Binding(
+          get: { notifications.enabled },
+          set: { enabled in Task { await notifications.setEnabled(enabled) } })
+      )
+      .tint(MacTheme.accent)
+      .accessibilityIdentifier("agent-attention-notifications")
+      Text(
+        "Off by default. Tabs and the app bar still show requests; Dock badges depend on macOS notification settings."
+      )
+      .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+      .foregroundStyle(MacTheme.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .padding(MacTheme.Space.x14)
   }
 }
 
@@ -465,8 +493,14 @@ private struct PreferencesHarnesses: View {
           ForEach(client.harnesses, id: \.id) { harness in
             HarnessPreferenceRow(
               harness: harness, catalogue: client.agentCatalogues[harness.id],
-              isDefault: harness.id == client.harnesses.first(where: \.available)?.id,
+              isDefault: harness.id
+                == HarnessPickerModel.defaultHarness(
+                  in: client.harnesses, preferredId: client.preferredHarnessId)?.id,
               customLaunch: client.customHarnesses.first { $0.id == harness.id },
+              defaultMode: Binding(
+                get: { client.defaultPermissionMode(harness: harness.id) },
+                set: { setDefaultMode($0, harness: harness.id) }),
+              makeDefault: { makeDefault(harness.id) },
               edit: edit, remove: { pendingRemoval = $0 })
           }
           if client.harnesses.isEmpty {
@@ -502,6 +536,22 @@ private struct PreferencesHarnesses: View {
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     } message: {
       Text("Open panes using this harness must be closed first.")
+    }
+  }
+
+  private func setDefaultMode(_ mode: String?, harness: String) {
+    Task { @MainActor in
+      do { try await client.setDefaultPermissionMode(mode, harness: harness) } catch {
+        client.problem = error.localizedDescription
+      }
+    }
+  }
+
+  private func makeDefault(_ harnessId: String) {
+    Task { @MainActor in
+      do { try await client.setPreferredHarness(harnessId) } catch {
+        client.problem = error.localizedDescription
+      }
     }
   }
 
@@ -559,8 +609,12 @@ private struct HarnessPreferenceRow: View {
   let catalogue: AgentCatalogue?
   let isDefault: Bool
   let customLaunch: HarnessLaunch?
+  /// The mode new panes of this harness start in; `nil` keeps the harness's own.
+  @Binding var defaultMode: String?
+  let makeDefault: () -> Void
   let edit: (HarnessLaunch) -> Void
   let remove: (HarnessLaunch) -> Void
+  @State private var showingStatus = false
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -568,7 +622,19 @@ private struct HarnessPreferenceRow: View {
       HStack(spacing: MacTheme.Space.x8) {
         PreferenceChip(icon: "cpu", text: modelLabel)
         PreferenceChip(icon: "gauge.with.dots.needle.50percent", text: effortLabel)
-        PreferenceChip(icon: "checkmark.shield", text: "Ask every time")
+        Menu {
+          PermissionModeChoices(modes: permissionModes, selection: $defaultMode)
+        } label: {
+          PreferenceChip(
+            icon: "checkmark.shield",
+            text: PermissionModeChoices.title(
+              modes: permissionModes, selection: defaultMode, preferred: nil))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Permission mode new \(harness.name) panes start in")
+        .accessibilityLabel("Default permission mode for \(harness.name)")
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       status
@@ -614,13 +680,38 @@ private struct HarnessPreferenceRow: View {
   }
 
   private var status: some View {
-    HStack(spacing: MacTheme.Space.x6) {
-      Circle().fill(statusColor).frame(width: 7, height: 7)
-      Text(statusLabel)
-        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-        .foregroundStyle(MacTheme.secondary)
+    Button {
+      showingStatus = true
+    } label: {
+      HStack(spacing: MacTheme.Space.x6) {
+        Circle().fill(statusColor).frame(width: 7, height: 7)
+        Text(HarnessPickerModel.statusLabel(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+          .foregroundStyle(MacTheme.secondary)
+      }
+      .frame(width: 118, alignment: .leading)
+      .contentShape(Rectangle())
     }
-    .frame(width: 118, alignment: .leading)
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(harness.name): \(HarnessPickerModel.statusLabel(for: harness))")
+    .popover(isPresented: $showingStatus) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+        Text(HarnessPickerModel.statusLabel(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        Text(HarnessPickerModel.statusReason(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .fixedSize(horizontal: false, vertical: true)
+        if harness.available && !isDefault {
+          Button("Make default") {
+            makeDefault()
+            showingStatus = false
+          }
+          .buttonStyle(NeoPillButtonStyle())
+        }
+      }
+      .padding(MacTheme.Space.x16)
+      .frame(width: 260, alignment: .leading)
+    }
   }
 
   private var versionLabel: String {
@@ -650,27 +741,14 @@ private struct HarnessPreferenceRow: View {
 
   private var options: [ConfigOption] { catalogue?.options ?? harness.options }
 
-  private var statusLabel: String {
-    switch harness.setupState {
-    case .ready: return "ready"
-    case .not_installed: return "not installed"
-    case .sign_in: return "sign in"
-    case .check_setup: return "check setup"
-    case nil:
-      if !harness.available { return "not installed" }
-      if harness.capabilities.contains(where: { $0.result == .unauthenticated }) {
-        return "sign in"
-      }
-      if harness.capabilities.contains(where: { $0.result == .inconclusive }) {
-        return "check setup"
-      }
-      return "ready"
-    }
-  }
+  private var permissionModes: AgentPermissionModes? { AgentPermissionModes(options: options) }
 
   private var statusColor: Color {
-    if !harness.available { return MacTheme.muted }
-    return statusLabel == "ready" ? MacTheme.success : MacTheme.warning
+    switch HarnessPickerModel.setupState(for: harness) {
+    case .ready: MacTheme.success
+    case .sign_in, .check_setup: MacTheme.warning
+    case .not_checked, .not_installed: MacTheme.muted
+    }
   }
 }
 

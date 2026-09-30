@@ -171,12 +171,12 @@ struct PhoneWritingWorkspace: View {
         .phoneWritingSheetRow()
         if splitChoice == .agent {
           Picker("Harness", selection: $splitHarnessId) {
-            ForEach(readyHarnesses, id: \.id) { harness in
+            ForEach(availableHarnesses, id: \.id) { harness in
               Text(harness.name).tag(harness.id)
             }
           }
           .phoneWritingSheetRow()
-          if readyHarnesses.isEmpty {
+          if availableHarnesses.isEmpty {
             Text("No ready agent harness is available on this Mac.")
               .foregroundStyle(PhonePalette.secondary)
               .phoneWritingSheetRow()
@@ -207,16 +207,18 @@ struct PhoneWritingWorkspace: View {
       }
     }
     .phoneWritingSheet(.split)
-    .onChange(of: readyHarnesses.map(\.id)) { _, harnessIds in
+    .onChange(of: availableHarnesses.map(\.id)) { _, harnessIds in
       guard splitChoice == .agent, !harnessIds.contains(splitHarnessId) else { return }
-      splitHarnessId = harnessIds.first ?? ""
+      splitHarnessId =
+        HarnessPickerModel.defaultHarness(
+          in: availableHarnesses, preferredId: client.preferredHarnessId)?.id ?? ""
     }
   }
 
-  private var readyHarnesses: [HarnessInfo] {
+  private var availableHarnesses: [HarnessInfo] {
     HarnessPickerModel.sections(client.harnesses)
-      .filter { $0.group == .ready || $0.group == .needsSetup }
       .flatMap(\.items)
+      .filter(\.available)
   }
 
   private func availableSplitChoices(
@@ -227,7 +229,7 @@ struct PhoneWritingWorkspace: View {
   }
 
   private var splitIsReady: Bool {
-    if splitChoice == .agent { return readyHarnesses.contains { $0.id == splitHarnessId } }
+    if splitChoice == .agent { return availableHarnesses.contains { $0.id == splitHarnessId } }
     return !splitTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
@@ -284,7 +286,7 @@ struct PhoneWritingWorkspace: View {
   }
 
   private func reconcile(_ state: PhoneWritingLocalState) {
-    // A read-only disconnect clears replicas by design. Do not mistake that transient
+    // A paired-device disconnect clears replicas by design. Do not mistake that transient
     // empty snapshot for panes being closed and overwrite the last local presentation.
     guard client.connected else { return }
     guard localState != state else { return }
@@ -309,7 +311,9 @@ struct PhoneWritingWorkspace: View {
     splitChoice = .text
     splitTitle = ""
     client.refreshHarnesses()
-    splitHarnessId = HarnessPickerModel.defaultHarness(in: client.harnesses)?.id ?? ""
+    splitHarnessId =
+      HarnessPickerModel.defaultHarness(
+        in: client.harnesses, preferredId: client.preferredHarnessId)?.id ?? ""
     splitRequest = PhoneWritingSplitRequest(
       anchorPaneId: leaf.identity.paneId, anchorKind: leaf.kind, axis: axis, baseTree: tree)
   }
@@ -347,7 +351,7 @@ struct PhoneWritingWorkspace: View {
           else { throw PhoneWritingSplitFailure.missingWorkspace }
           paneId = try await client.createAgentPaneNow(
             directory: URL(fileURLWithPath: workspace.path), harness: harnessId,
-            model: nil, effort: nil, permission: .ask, selectPane: false)
+            model: nil, effort: nil, selectPane: false)
           completed = try insertion.completedWritingCompanionTree(
             with: PaneLayoutLeaf(paneId: paneId, kind: .agent),
             writingPaneId: request.anchorPaneId, sizing: PhoneWritingMetrics.sizing)

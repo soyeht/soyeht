@@ -54,6 +54,7 @@ python3 scripts/e2e_web.py --report .cache/e2e-web.json
 python3 scripts/e2e_writing.py --report .cache/e2e-writing.json
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
     python3 scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
+    python3 scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
 fi
 
 bash scripts/check_swift.sh

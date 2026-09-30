@@ -38,9 +38,12 @@ impl Core {
             .filter(|pane| !pane.stored.closed && pane.stored.pane.mode == PaneMode::Web)
             .ok_or_else(|| errors::not_found("Web pane not found"))?;
         self.authorize_web_workspace(&actor, &pane.stored.pane.workspace_id)?;
-        if !matches!(actor.role, Role::Agent | Role::Chief | Role::HumanLocal) {
+        if !matches!(
+            actor.role,
+            Role::Agent | Role::Chief | Role::HumanLocal | Role::HumanDevice
+        ) {
             return Err(errors::forbidden_role(
-                "Web panes may be closed only by their local owner or a bound agent",
+                "Web panes may be closed only by a person or a bound agent",
             ));
         }
         self.pane_edit(connection, "pane.close", params)

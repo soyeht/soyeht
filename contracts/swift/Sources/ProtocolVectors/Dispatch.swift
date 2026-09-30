@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -131,7 +131,6 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "SettingsChangedEvent": return try codec(SoyehtProtocol.SettingsChangedEvent.self, data)
         case "DevicePairPending": return try codec(SoyehtProtocol.DevicePairPending.self, data)
         case "ClientFocus": return try codec(SoyehtProtocol.ClientFocus.self, data)
-        case "PermissionMode": return try codec(SoyehtProtocol.PermissionMode.self, data)
         case "PromptOrigin": return try codec(SoyehtProtocol.PromptOrigin.self, data)
         case "PromptStatus": return try codec(SoyehtProtocol.PromptStatus.self, data)
         case "TranscriptRole": return try codec(SoyehtProtocol.TranscriptRole.self, data)
@@ -146,13 +145,20 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PlanStatus": return try codec(SoyehtProtocol.PlanStatus.self, data)
         case "PlanPriority": return try codec(SoyehtProtocol.PlanPriority.self, data)
         case "SessionRecovery": return try codec(SoyehtProtocol.SessionRecovery.self, data)
-        case "ConfigOperationKind": return try codec(SoyehtProtocol.ConfigOperationKind.self, data)
         case "ConfigValue": return try codec(SoyehtProtocol.ConfigValue.self, data)
         case "ConfigChoice": return try codec(SoyehtProtocol.ConfigChoice.self, data)
         case "ConfigOption": return try codec(SoyehtProtocol.ConfigOption.self, data)
         case "ConfigOperation": return try codec(SoyehtProtocol.ConfigOperation.self, data)
         case "PromptItem": return try codec(SoyehtProtocol.PromptItem.self, data)
+        case "AgentMessageSource": return try codec(SoyehtProtocol.AgentMessageSource.self, data)
+        case "AgentListParams": return try codec(SoyehtProtocol.AgentListParams.self, data)
+        case "AgentListResult": return try codec(SoyehtProtocol.AgentListResult.self, data)
+        case "AgentMessageParams": return try codec(SoyehtProtocol.AgentMessageParams.self, data)
+        case "AgentMessageResult": return try codec(SoyehtProtocol.AgentMessageResult.self, data)
         case "PermissionOption": return try codec(SoyehtProtocol.PermissionOption.self, data)
+        case "PermissionFileChange": return try codec(SoyehtProtocol.PermissionFileChange.self, data)
+        case "PermissionToolArgument": return try codec(SoyehtProtocol.PermissionToolArgument.self, data)
+        case "PermissionPresentation": return try codec(SoyehtProtocol.PermissionPresentation.self, data)
         case "PermissionRequest": return try codec(SoyehtProtocol.PermissionRequest.self, data)
         case "ElicitationRequest": return try codec(SoyehtProtocol.ElicitationRequest.self, data)
         case "AgentHarnessSwitch": return try codec(SoyehtProtocol.AgentHarnessSwitch.self, data)
@@ -191,8 +197,6 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PaneHarnessSwitchStartedEvent": return try codec(SoyehtProtocol.PaneHarnessSwitchStartedEvent.self, data)
         case "PaneHarnessSwitchDoneEvent": return try codec(SoyehtProtocol.PaneHarnessSwitchDoneEvent.self, data)
         case "PaneHarnessSwitchFailedEvent": return try codec(SoyehtProtocol.PaneHarnessSwitchFailedEvent.self, data)
-        case "PaneYoloParams": return try codec(SoyehtProtocol.PaneYoloParams.self, data)
-        case "PaneYoloResult": return try codec(SoyehtProtocol.PaneYoloResult.self, data)
         case "PaneAuthStartParams": return try codec(SoyehtProtocol.PaneAuthStartParams.self, data)
         case "PaneAuthStartResult": return try codec(SoyehtProtocol.PaneAuthStartResult.self, data)
         case "PaneTranscriptParams": return try codec(SoyehtProtocol.PaneTranscriptParams.self, data)
@@ -492,6 +496,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "WritingChangedEvent": return try codec(SoyehtProtocol.WritingChangedEvent.self, data)
         case "HarnessSource": return try codec(SoyehtProtocol.HarnessSource.self, data)
         case "HarnessSetupState": return try codec(SoyehtProtocol.HarnessSetupState.self, data)
+        case "HarnessSetupReason": return try codec(SoyehtProtocol.HarnessSetupReason.self, data)
         case "HarnessEnvironmentIssue": return try codec(SoyehtProtocol.HarnessEnvironmentIssue.self, data)
         case "HarnessEnvironmentVariable": return try codec(SoyehtProtocol.HarnessEnvironmentVariable.self, data)
         case "ExperimentHookEvent": return try codec(SoyehtProtocol.ExperimentHookEvent.self, data)

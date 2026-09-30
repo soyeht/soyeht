@@ -20,6 +20,8 @@ struct AppRail: View {
               glyph: item.glyph,
               label: item.label,
               selected: destination == item.destination,
+              badgeCount: item.destination == .agents ? client.agentAttention.totalWaitingCount : 0,
+              isWorking: item.destination == .agents && client.agentAttention.hasWorkingAgent,
               action: { onSelect(item.destination) })
           }
           Rectangle()
@@ -104,13 +106,24 @@ private struct AppRailButton: View {
   let glyph: AppRailGlyph
   let label: String
   let selected: Bool
+  var badgeCount = 0
+  var isWorking = false
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
       railGlyph
         .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
-        .frame(width: MacPaneLayoutMetrics.railButtonSize, height: MacPaneLayoutMetrics.railButtonSize)
+        .frame(
+          width: MacPaneLayoutMetrics.railButtonSize, height: MacPaneLayoutMetrics.railButtonSize
+        )
+        .overlay(alignment: .topTrailing) {
+          if badgeCount > 0 {
+            AgentAttentionBadge(count: badgeCount)
+          } else if isWorking {
+            AgentWorkingDot().padding(MacTheme.Space.x2)
+          }
+        }
         .background {
           if selected {
             RoundedRectangle(cornerRadius: MacTheme.Radius.compact, style: .continuous)
@@ -120,7 +133,11 @@ private struct AppRailButton: View {
         .contentShape(Rectangle())
     }
     .help(label)
-    .accessibilityLabel(label)
+    .accessibilityLabel(
+      badgeCount > 0
+        ? "\(label), \(AgentAttentionPolicy.waitingLabel(count: badgeCount))"
+        : isWorking ? "\(label), agents working" : label
+    )
     .accessibilityIdentifier("app-bar-\(label.lowercased())")
   }
 

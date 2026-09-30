@@ -146,23 +146,70 @@ fn third_reader_normalizes_the_verified_current_period_shape() {
 #[test]
 fn missing_or_invalid_cached_usage_is_unavailable() {
     let cases = [
-        br#"{"other":true}"#.as_slice(),
+        (
+            include_bytes!("fixtures/claude-cache-absent.json").as_slice(),
+            None,
+        ),
+        (
+            include_bytes!("fixtures/claude-cache-partial.json").as_slice(),
+            Some(UsageUnavailableReason::InvalidResponse),
+        ),
+        (
+            br#"{"cachedUsageUtilization":{"fetchedAtMs":1789729200000,"utilization":{"five_hour":{"utilization":"wrong","resets_at":"later"},"seven_day":{"utilization":20,"resets_at":"later"}}}}"#.as_slice(),
+            Some(UsageUnavailableReason::InvalidResponse),
+        ),
+    ];
+    for (payload, expected_reason) in cases {
+        assert_eq!(claude_unavailable_reason(payload), expected_reason);
+    }
+}
+
+#[test]
+fn malformed_claude_cache_is_invalid_data_not_unpopulated() {
+    let cases = [
         br#"{"cachedUsageUtilization":{"fetchedAtMs":"wrong","utilization":{}}}"#.as_slice(),
-        br#"{"cachedUsageUtilization":{"fetchedAtMs":1789729200000,"utilization":{"five_hour":{"utilization":"wrong","resets_at":"later"},"seven_day":{"utilization":20,"resets_at":"later"}}}}"#.as_slice(),
+        b"null".as_slice(),
+        b"[]".as_slice(),
+        b"42".as_slice(),
     ];
     for payload in cases {
-        let (outcome, source) = refresh(
-            UsageProvider::Claude,
-            vec![(
-                UsageProvider::Claude,
-                UsageSource::ClaudeDesktopCache,
-                SourceRead::Payload(payload.to_vec()),
-            )],
+        assert_eq!(
+            claude_unavailable_reason(payload),
+            Some(UsageUnavailableReason::InvalidResponse),
+            "{}",
+            String::from_utf8_lossy(payload)
         );
-        assert_eq!(source.calls.len(), 1);
-        assert_eq!(outcome.reading.state, UsageState::Unavailable);
-        assert_eq!(outcome.reading.source, UsageSource::ClaudeDesktopCache);
     }
+}
+
+fn claude_unavailable_reason(payload: &[u8]) -> Option<UsageUnavailableReason> {
+    let (outcome, source) = refresh(
+        UsageProvider::Claude,
+        vec![(
+            UsageProvider::Claude,
+            UsageSource::ClaudeDesktopCache,
+            SourceRead::Payload(payload.to_vec()),
+        )],
+    );
+    assert_eq!(source.calls.len(), 1);
+    assert_eq!(outcome.reading.state, UsageState::Unavailable);
+    assert_eq!(outcome.reading.source, UsageSource::ClaudeDesktopCache);
+    outcome.reading.unavailable_reason
+}
+
+#[test]
+fn sanitized_valid_claude_cache_fixture_still_reads_both_windows() {
+    let (outcome, _) = refresh(
+        UsageProvider::Claude,
+        vec![(
+            UsageProvider::Claude,
+            UsageSource::ClaudeDesktopCache,
+            SourceRead::Payload(include_bytes!("fixtures/claude-cache-valid.json").to_vec()),
+        )],
+    );
+    assert_eq!(outcome.reading.state, UsageState::Ok);
+    assert_eq!(outcome.reading.primary.unwrap().used, 0.25);
+    assert_eq!(outcome.reading.secondary.unwrap().used, 0.75);
 }
 
 #[test]

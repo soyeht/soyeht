@@ -46,12 +46,15 @@ impl Runtime {
         });
     }
     fn error(&self, id: Value, code: i32, message: &str) {
+        self.error_with_data(id, code, message, None);
+    }
+    fn error_with_data(&self, id: Value, code: i32, message: &str, data: Option<Value>) {
         self.send(Message::Response {
             id,
             result: Err(RpcError {
                 code,
                 message: message.into(),
-                data: None,
+                data,
             }),
         });
     }
@@ -105,7 +108,7 @@ impl Runtime {
                 .unwrap()
                 .insert(session.id.clone(), mcp);
         }
-        self.answer(id, session.response());
+        self.answer(id, session.response(&self.settings));
     }
 
     fn load_session(&self, id: Value, params: &Value) {
@@ -127,6 +130,8 @@ impl Runtime {
         };
         match Session::load(&self.settings, session_id) {
             Ok(mut session) => {
+                // Like real adapters, a reloaded session starts in the default mode.
+                session.values.insert("mode".into(), json!("ask"));
                 session.mcp_servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
                 session.session_meta = params.get("_meta").cloned();
                 let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
@@ -150,13 +155,41 @@ impl Runtime {
                         .unwrap()
                         .insert(session.id.clone(), mcp);
                 }
-                for (prompt, text) in &session.history {
-                    self.update(&session.id,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
-                    self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
+                for (index, (prompt, text)) in session.history.iter().enumerate() {
+                    self.replay_user(&session.id, index, prompt);
+                    if prompt == "separate-message-ids" {
+                        for (message_id, chunk) in [
+                            ("first", "Failed to authenticate: OAuth session expired"),
+                            ("second", "No response requested."),
+                        ] {
+                            self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","messageId":message_id,"content":{"type":"text","text":chunk}}));
+                        }
+                    } else {
+                        self.update(&session.id,json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":text}}));
+                    }
                 }
-                self.answer(id, json!({"configOptions":session.options()}));
+                let mut response = session.response(&self.settings);
+                response.as_object_mut().unwrap().remove("sessionId");
+                self.answer(id, response);
             }
             Err(_) => self.error(id, -32002, "Session not found"),
+        }
+    }
+
+    fn replay_user(&self, session: &str, index: usize, prompt: &str) {
+        let Some(size) = self.settings.replay_user_chunk_bytes else {
+            self.update(session,json!({"sessionUpdate":"user_message_chunk","content":{"type":"text","text":prompt}}));
+            return;
+        };
+        let message_id = format!("user-{index}");
+        let mut rest = prompt.trim();
+        while !rest.is_empty() {
+            let mut end = size.min(rest.len());
+            while !rest.is_char_boundary(end) {
+                end += 1;
+            }
+            self.update(session,json!({"sessionUpdate":"user_message_chunk","messageId":message_id,"content":{"type":"text","text":&rest[..end]}}));
+            rest = &rest[end..];
         }
     }
 
@@ -175,10 +208,15 @@ impl Runtime {
         let allowed = match config {
             "model" => matches!(
                 value.as_str(),
-                Some("model-a" | "model-b" | "delayed-model")
+                Some("model-a" | "model-b" | "delayed-model" | "mode-shifting-model")
             ),
             "effort" => matches!(value.as_str(), Some("low" | "medium" | "high")),
-            "mode" => matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all")),
+            "mode" => {
+                self.settings.announces_mode_option()
+                    && value
+                        .as_str()
+                        .is_some_and(|mode| self.settings.accepts_mode(mode))
+            }
             "fast" => value.is_boolean() && params["type"] == "boolean",
             _ => false,
         };
@@ -193,7 +231,15 @@ impl Runtime {
             return;
         }
         *session = next;
-        let response = json!({"configOptions":session.options()});
+        if value == "mode-shifting-model" {
+            // Like an adapter whose model change resets its mode: the agent
+            // announces the new mode before it confirms the model.
+            session.values.insert("mode".into(), json!("accept_edits"));
+            let update = json!({"sessionUpdate":"config_option_update",
+                "configOptions":session.options(&self.settings)});
+            self.update(session_id, update);
+        }
+        let response = json!({"configOptions":session.options(&self.settings)});
         if value == "delayed-model" {
             let runtime = self.clone();
             std::fs::write(self.settings.directory.join("config-waiting"), b"ready").unwrap();
@@ -210,6 +256,54 @@ impl Runtime {
         } else {
             self.answer(id, response);
         }
+    }
+
+    fn set_mode(&self, id: Value, params: &Value) {
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(session) = params["sessionId"]
+            .as_str()
+            .and_then(|session| sessions.get_mut(session))
+        else {
+            self.error(id, -32002, "Session not found");
+            return;
+        };
+        let mode = params["modeId"].as_str().unwrap_or("");
+        if self.settings.modes != "legacy" || !self.settings.accepts_mode(mode) {
+            self.error(id, -32602, "Mode refused");
+            return;
+        }
+        session.values.insert("mode".into(), json!(mode));
+        if session.save(&self.settings).is_err() {
+            self.error(id, -32603, "Could not save mode");
+            return;
+        }
+        self.answer(id, json!({}));
+    }
+
+    /// Changes the mode as the agent itself would, then announces it.
+    pub(crate) fn switch_mode(&self, session_id: &str, mode: &str) {
+        let mut sessions = self.sessions.lock().unwrap();
+        let Some(session) = sessions.get_mut(session_id) else {
+            return;
+        };
+        session.values.insert("mode".into(), json!(mode));
+        session.save(&self.settings).expect("fake mode switch");
+        let update = if self.settings.modes == "legacy" {
+            json!({"sessionUpdate":"current_mode_update","currentModeId":mode})
+        } else {
+            json!({"sessionUpdate":"config_option_update","configOptions":session.options(&self.settings)})
+        };
+        drop(sessions);
+        self.update(session_id, update);
+    }
+
+    pub(crate) fn session_mode(&self, session_id: &str) -> String {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .map(|session| session.mode().to_owned())
+            .unwrap_or_default()
     }
 
     fn prompt(self: &Arc<Self>, id: Value, params: &Value) {
@@ -246,6 +340,29 @@ impl Runtime {
             self.error(id, -32603, "Internal error: Temporary upstream failure");
             return;
         }
+        if text == "auth-expired" {
+            self.error_with_data(
+                id,
+                -32603,
+                "Failed to authenticate: OAuth session expired",
+                Some(json!({"errorKind":"authentication_failed"})),
+            );
+            return;
+        }
+        if text == "auth-expired-with-chunk" {
+            self.update(&session, json!({"sessionUpdate":"agent_message_chunk","messageId":"auth-error","content":{"type":"text","text":"Failed to authenticate: OAuth session expired"}}));
+            self.error_with_data(
+                id,
+                -32603,
+                "Failed to authenticate: OAuth session expired",
+                Some(json!({"errorKind":"authentication_failed"})),
+            );
+            return;
+        }
+        if text == "auth-expired-untagged" {
+            self.error(id, -32603, "Failed to authenticate: OAuth session expired");
+            return;
+        }
         let mut active = self.active.lock().unwrap();
         if active.contains_key(&session) {
             self.error(id, -32600, "Session already has an active turn");
@@ -270,6 +387,7 @@ impl Runtime {
             "session/new" => self.new_session(id, &params),
             "session/load" => self.load_session(id, &params),
             "session/set_config_option" => self.set_config_option(id, &params),
+            "session/set_mode" => self.set_mode(id, &params),
             "session/prompt" => self.prompt(id, &params),
             _ => self.error(id, -32601, "Method not found"),
         }
@@ -279,6 +397,28 @@ fn main() -> Result<()> {
     let settings = Settings::parse()?;
     if settings.login {
         std::fs::create_dir_all(&settings.directory)?;
+        let failed = settings.directory.join("login.fail").exists();
+        // A real login CLI can exit 0 after its browser flow is cancelled.
+        let cancelled = settings.directory.join("login.cancel").exists();
+        if failed || cancelled || settings.directory.join("login.wait").exists() {
+            println!("Test sign-in waiting.");
+            std::fs::write(settings.directory.join("login.started"), b"started")?;
+            let deadline = std::time::Instant::now() + FIXTURE_RELEASE_TIMEOUT;
+            while !settings.directory.join("login.release").exists() {
+                if std::time::Instant::now() >= deadline {
+                    std::process::exit(1);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        if failed {
+            println!("Test sign-in failed.");
+            std::process::exit(1);
+        }
+        if cancelled {
+            println!("Test sign-in cancelled.");
+            return Ok(());
+        }
         std::fs::write(settings.directory.join("login.ok"), b"signed in\n")?;
         println!("Test sign-in complete.");
         return Ok(());

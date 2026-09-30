@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5064869e7c68f34a44871d9d5b19ec56878e840f160974c2d1732aa9853de54f). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 import Foundation
 
 
@@ -558,13 +558,13 @@ public struct PaneCreateParams: Codable, Sendable {
     public var `harness`: Id?
     public var `model`: String?
     public var `effort`: String?
-    public var `permission`: PermissionMode?
+    public var `permissionMode`: Id?
     public var `url`: String?
     public var `incognito`: Bool?
     public var `path`: String?
     public var `writingKind`: WritingKind?
     public var `writingSection`: WritingSection?
-    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil, `url`: String? = nil, `incognito`: Bool? = nil, `path`: String? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
+    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permissionMode`: Id? = nil, `url`: String? = nil, `incognito`: Bool? = nil, `path`: String? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
         self.`workspaceId` = `workspaceId`
         self.`mode` = `mode`
         self.`cwd` = `cwd`
@@ -575,7 +575,7 @@ public struct PaneCreateParams: Codable, Sendable {
         self.`harness` = `harness`
         self.`model` = `model`
         self.`effort` = `effort`
-        self.`permission` = `permission`
+        self.`permissionMode` = `permissionMode`
         self.`url` = `url`
         self.`incognito` = `incognito`
         self.`path` = `path`
@@ -1365,12 +1365,6 @@ public struct ClientFocus: Codable, Sendable {
     }
 }
 
-public enum PermissionMode: String, Codable, Sendable {
-    case `ask` = "ask"
-    case `accept_edits` = "accept_edits"
-    case `allow_all` = "allow_all"
-}
-
 public enum PromptOrigin: String, Codable, Sendable {
     case `human` = "human"
     case `automatic` = "automatic"
@@ -1397,6 +1391,7 @@ public enum TranscriptKind: String, Codable, Sendable {
     case `plan` = "plan"
     case `usage` = "usage"
     case `system` = "system"
+    case `handover` = "handover"
 }
 
 public enum PermissionOptionKind: String, Codable, Sendable {
@@ -1462,11 +1457,6 @@ public enum SessionRecovery: String, Codable, Sendable {
     case `needs_login` = "needs_login"
 }
 
-public enum ConfigOperationKind: String, Codable, Sendable {
-    case `config` = "config"
-    case `yolo` = "yolo"
-}
-
 public enum ConfigValue: Codable, Sendable {
     case v0(String)
     case v1(Bool)
@@ -1489,10 +1479,12 @@ public struct ConfigChoice: Codable, Sendable {
     public var `value`: Id
     public var `name`: String
     public var `description`: String?
-    public init(`value`: Id, `name`: String, `description`: String? = nil) {
+    public var `kind`: String?
+    public init(`value`: Id, `name`: String, `description`: String? = nil, `kind`: String? = nil) {
         self.`value` = `value`
         self.`name` = `name`
         self.`description` = `description`
+        self.`kind` = `kind`
     }
 }
 
@@ -1517,13 +1509,11 @@ public struct ConfigOption: Codable, Sendable {
 
 public struct ConfigOperation: Codable, Sendable {
     public var `operationId`: Id
-    public var `kind`: ConfigOperationKind
     public var `configId`: Id
     public var `value`: ConfigValue
     public var `startedAt`: String
-    public init(`operationId`: Id, `kind`: ConfigOperationKind, `configId`: Id, `value`: ConfigValue, `startedAt`: String) {
+    public init(`operationId`: Id, `configId`: Id, `value`: ConfigValue, `startedAt`: String) {
         self.`operationId` = `operationId`
-        self.`kind` = `kind`
         self.`configId` = `configId`
         self.`value` = `value`
         self.`startedAt` = `startedAt`
@@ -1538,7 +1528,8 @@ public struct PromptItem: Codable, Sendable {
     public var `queuedAt`: String
     public var `generation`: UInt32?
     public var `attachments`: [AttachmentRef]?
-    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil) {
+    public var `agentMessage`: AgentMessageSource?
+    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil, `agentMessage`: AgentMessageSource? = nil) {
         self.`promptId` = `promptId`
         self.`text` = `text`
         self.`origin` = `origin`
@@ -1546,6 +1537,52 @@ public struct PromptItem: Codable, Sendable {
         self.`queuedAt` = `queuedAt`
         self.`generation` = `generation`
         self.`attachments` = `attachments`
+        self.`agentMessage` = `agentMessage`
+    }
+}
+
+public struct AgentMessageSource: Codable, Sendable {
+    public var `paneId`: Id
+    public var `name`: String
+    public var `harness`: String
+    public init(`paneId`: Id, `name`: String, `harness`: String) {
+        self.`paneId` = `paneId`
+        self.`name` = `name`
+        self.`harness` = `harness`
+    }
+}
+
+public struct AgentListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct AgentListResult: Codable, Sendable {
+    public var `items`: [AgentMessageSource]
+    public init(`items`: [AgentMessageSource]) {
+        self.`items` = `items`
+    }
+}
+
+public struct AgentMessageParams: Codable, Sendable {
+    public var `targetPaneId`: Id
+    public var `text`: String
+    public var `idempotencyKey`: Id
+    public init(`targetPaneId`: Id, `text`: String, `idempotencyKey`: Id) {
+        self.`targetPaneId` = `targetPaneId`
+        self.`text` = `text`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AgentMessageResult: Codable, Sendable {
+    public var `promptId`: Id
+    public var `queued`: Bool
+    public init(`promptId`: Id, `queued`: Bool) {
+        self.`promptId` = `promptId`
+        self.`queued` = `queued`
     }
 }
 
@@ -1560,6 +1597,43 @@ public struct PermissionOption: Codable, Sendable {
     }
 }
 
+public struct PermissionFileChange: Codable, Sendable {
+    public var `path`: String
+    public var `oldText`: String?
+    public var `newText`: String
+    public init(`path`: String, `oldText`: String? = nil, `newText`: String) {
+        self.`path` = `path`
+        self.`oldText` = `oldText`
+        self.`newText` = `newText`
+    }
+}
+
+public struct PermissionToolArgument: Codable, Sendable {
+    public var `name`: String
+    public var `value`: String
+    public init(`name`: String, `value`: String) {
+        self.`name` = `name`
+        self.`value` = `value`
+    }
+}
+
+public struct PermissionPresentation: Codable, Sendable {
+    public var `targetPath`: String?
+    public var `command`: String?
+    public var `executionDetails`: [String]?
+    public var `toolArguments`: [PermissionToolArgument]?
+    public var `fileChanges`: [PermissionFileChange]
+    public var `previewOmitted`: Bool
+    public init(`targetPath`: String? = nil, `command`: String? = nil, `executionDetails`: [String]? = nil, `toolArguments`: [PermissionToolArgument]? = nil, `fileChanges`: [PermissionFileChange], `previewOmitted`: Bool) {
+        self.`targetPath` = `targetPath`
+        self.`command` = `command`
+        self.`executionDetails` = `executionDetails`
+        self.`toolArguments` = `toolArguments`
+        self.`fileChanges` = `fileChanges`
+        self.`previewOmitted` = `previewOmitted`
+    }
+}
+
 public struct PermissionRequest: Codable, Sendable {
     public var `requestId`: Id
     public var `paneId`: Id
@@ -1567,17 +1641,19 @@ public struct PermissionRequest: Codable, Sendable {
     public var `promptId`: Id
     public var `title`: String
     public var `detail`: String
+    public var `presentation`: PermissionPresentation?
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
     public var `kind`: PermissionRequestKind?
     public var `domain`: String?
-    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
+    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`requestId` = `requestId`
         self.`paneId` = `paneId`
         self.`generation` = `generation`
         self.`promptId` = `promptId`
         self.`title` = `title`
         self.`detail` = `detail`
+        self.`presentation` = `presentation`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
         self.`kind` = `kind`
@@ -1620,10 +1696,6 @@ public struct AgentSession: Codable, Sendable {
     public var `sessionId`: Id?
     public var `options`: [ConfigOption]
     public var `authMethods`: [AuthMethod]
-    public var `permission`: PermissionMode
-    public var `yolo`: Bool
-    public var `previousPermission`: PermissionMode?
-    public var `effectiveMode`: String?
     public var `operation`: ConfigOperation?
     public var `queue`: [QueuedPromptSummary]
     public var `draft`: Bool
@@ -1632,17 +1704,13 @@ public struct AgentSession: Codable, Sendable {
     public var `queuePaused`: Bool?
     public var `role`: AgentPaneRole
     public var `harnessSwitch`: AgentHarnessSwitch?
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `silentSince`: String? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `silentSince`: String? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
         self.`sessionId` = `sessionId`
         self.`options` = `options`
         self.`authMethods` = `authMethods`
-        self.`permission` = `permission`
-        self.`yolo` = `yolo`
-        self.`previousPermission` = `previousPermission`
-        self.`effectiveMode` = `effectiveMode`
         self.`operation` = `operation`
         self.`queue` = `queue`
         self.`draft` = `draft`
@@ -1690,7 +1758,9 @@ public struct HarnessInfo: Codable, Sendable {
     public var `authMethods`: [AuthMethod]
     public var `source`: HarnessSource?
     public var `setupState`: HarnessSetupState?
-    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil) {
+    public var `setupReason`: HarnessSetupReason?
+    public var `lastReadyAtMs`: Decimal?
+    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil, `setupReason`: HarnessSetupReason? = nil, `lastReadyAtMs`: Decimal? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`available` = `available`
@@ -1702,6 +1772,8 @@ public struct HarnessInfo: Codable, Sendable {
         self.`authMethods` = `authMethods`
         self.`source` = `source`
         self.`setupState` = `setupState`
+        self.`setupReason` = `setupReason`
+        self.`lastReadyAtMs` = `lastReadyAtMs`
     }
 }
 
@@ -1833,7 +1905,8 @@ public struct TranscriptMessage: Codable, Sendable {
     public var `terminal`: TerminalOutput?
     public var `plan`: [PlanEntry]?
     public var `usage`: TokenUsage?
-    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil) {
+    public var `agentMessage`: AgentMessageSource?
+    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil) {
         self.`localId` = `localId`
         self.`generation` = `generation`
         self.`seq` = `seq`
@@ -1846,6 +1919,7 @@ public struct TranscriptMessage: Codable, Sendable {
         self.`terminal` = `terminal`
         self.`plan` = `plan`
         self.`usage` = `usage`
+        self.`agentMessage` = `agentMessage`
     }
 }
 
@@ -2109,26 +2183,6 @@ public struct PaneHarnessSwitchFailedEvent: Codable, Sendable {
     }
 }
 
-public struct PaneYoloParams: Codable, Sendable {
-    public var `paneId`: Id
-    public var `on`: Bool
-    public var `idempotencyKey`: Id
-    public init(`paneId`: Id, `on`: Bool, `idempotencyKey`: Id) {
-        self.`paneId` = `paneId`
-        self.`on` = `on`
-        self.`idempotencyKey` = `idempotencyKey`
-    }
-}
-
-public struct PaneYoloResult: Codable, Sendable {
-    public var `effectiveMode`: PermissionMode
-    public var `on`: Bool
-    public init(`effectiveMode`: PermissionMode, `on`: Bool) {
-        self.`effectiveMode` = `effectiveMode`
-        self.`on` = `on`
-    }
-}
-
 public struct PaneAuthStartParams: Codable, Sendable {
     public var `paneId`: Id
     public var `authMethodId`: Id?
@@ -2354,11 +2408,12 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
     public var `promptId`: Id
     public var `title`: String
     public var `detail`: String
+    public var `presentation`: PermissionPresentation?
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
     public var `kind`: PermissionRequestKind?
     public var `domain`: String?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2367,6 +2422,7 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
         self.`promptId` = `promptId`
         self.`title` = `title`
         self.`detail` = `detail`
+        self.`presentation` = `presentation`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
         self.`kind` = `kind`
@@ -2533,6 +2589,7 @@ public struct PaneAuthFinishedEvent: Codable, Sendable {
 
 public enum AgentMessageUpdateKind: String, Codable, Sendable {
     case `agent_message_chunk` = "agent_message_chunk"
+    case `system_message` = "system_message"
 }
 
 public struct AgentMessageUpdate: Codable, Sendable {
@@ -2941,13 +2998,13 @@ public struct TaskExecutor: Codable, Sendable {
     public var `harness`: Id?
     public var `model`: String?
     public var `effort`: String?
-    public var `permission`: PermissionMode?
-    public init(`workspaceDefault`: Bool, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil) {
+    public var `permissionMode`: Id?
+    public init(`workspaceDefault`: Bool, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permissionMode`: Id? = nil) {
         self.`workspaceDefault` = `workspaceDefault`
         self.`harness` = `harness`
         self.`model` = `model`
         self.`effort` = `effort`
-        self.`permission` = `permission`
+        self.`permissionMode` = `permissionMode`
     }
 }
 
@@ -3159,11 +3216,11 @@ public struct TaskCreateParams: Codable, Sendable {
     public var `executor`: TaskExecutor?
     public var `priority`: TaskPriority?
     public var `createWorktree`: Bool?
-    public var `permission`: PermissionMode?
+    public var `permissionMode`: Id?
     public var `dependencies`: [String]?
     public var `dispatch`: Bool?
     public var `idempotencyKey`: Id
-    public init(`workspaceId`: Id, `title`: String, `description`: String? = nil, `howToVerify`: String? = nil, `mustNotChange`: String, `executor`: TaskExecutor? = nil, `priority`: TaskPriority? = nil, `createWorktree`: Bool? = nil, `permission`: PermissionMode? = nil, `dependencies`: [String]? = nil, `dispatch`: Bool? = nil, `idempotencyKey`: Id) {
+    public init(`workspaceId`: Id, `title`: String, `description`: String? = nil, `howToVerify`: String? = nil, `mustNotChange`: String, `executor`: TaskExecutor? = nil, `priority`: TaskPriority? = nil, `createWorktree`: Bool? = nil, `permissionMode`: Id? = nil, `dependencies`: [String]? = nil, `dispatch`: Bool? = nil, `idempotencyKey`: Id) {
         self.`workspaceId` = `workspaceId`
         self.`title` = `title`
         self.`description` = `description`
@@ -3172,7 +3229,7 @@ public struct TaskCreateParams: Codable, Sendable {
         self.`executor` = `executor`
         self.`priority` = `priority`
         self.`createWorktree` = `createWorktree`
-        self.`permission` = `permission`
+        self.`permissionMode` = `permissionMode`
         self.`dependencies` = `dependencies`
         self.`dispatch` = `dispatch`
         self.`idempotencyKey` = `idempotencyKey`
@@ -5849,9 +5906,20 @@ public enum HarnessSource: String, Codable, Sendable {
 
 public enum HarnessSetupState: String, Codable, Sendable {
     case `ready` = "ready"
+    case `not_checked` = "not_checked"
     case `not_installed` = "not_installed"
     case `sign_in` = "sign_in"
     case `check_setup` = "check_setup"
+}
+
+public enum HarnessSetupReason: String, Codable, Sendable {
+    case `never_started` = "never_started"
+    case `executable_missing` = "executable_missing"
+    case `registry_package_unverified` = "registry_package_unverified"
+    case `authentication_required` = "authentication_required"
+    case `session_failed` = "session_failed"
+    case `launch_failed` = "launch_failed"
+    case `environment_unavailable` = "environment_unavailable"
 }
 
 public enum HarnessEnvironmentIssue: String, Codable, Sendable {

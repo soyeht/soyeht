@@ -3,8 +3,9 @@
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttachmentRef, Pane, PaneMode, PaneState, ProbeCapability, ProbeResult, PromptItem,
-    PromptOrigin, PromptStatus, StateSource, TranscriptMessage, Workspace, limits,
+    AttachmentRef, HarnessSetupReason, HarnessSetupState, Pane, PaneMode, PaneState,
+    ProbeCapability, ProbeResult, PromptItem, PromptOrigin, PromptStatus, StateSource,
+    TranscriptMessage, Workspace, limits,
 };
 use soyeht_store::{
     agents::{self, AgentModelRefusal, NativeRequest, Outgoing},
@@ -29,6 +30,45 @@ impl Drop for Profile {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn readiness_survives_reopen_and_later_failure_replaces_success_without_erasing_its_time() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    store
+        .mutate("test", "ready", "ready", |tx| {
+            agents::save_harness_readiness(tx, "harness", HarnessSetupState::Ready, None, 100)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    drop(store);
+    let mut store = profile.store();
+    assert_eq!(
+        agents::harness_readiness(&store, "harness")
+            .unwrap()
+            .unwrap()
+            .state,
+        HarnessSetupState::Ready
+    );
+    store
+        .mutate("test", "failed", "failed", |tx| {
+            agents::save_harness_readiness(
+                tx,
+                "harness",
+                HarnessSetupState::CheckSetup,
+                Some(HarnessSetupReason::SessionFailed),
+                200,
+            )?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    let recorded = agents::harness_readiness(&store, "harness")
+        .unwrap()
+        .unwrap();
+    assert_eq!(recorded.state, HarnessSetupState::CheckSetup);
+    assert_eq!(recorded.reason, Some(HarnessSetupReason::SessionFailed));
+    assert_eq!(recorded.last_ready_ms, Some(100));
 }
 fn seed(store: &mut Store) {
     store
@@ -76,6 +116,49 @@ fn seed(store: &mut Store) {
             Ok((json!({}), vec![]))
         })
         .unwrap();
+}
+
+#[test]
+fn agent_message_rate_is_directional_durable_and_rolls_back_with_rejected_delivery() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    for index in 0..limits::AGENT_MESSAGES_PER_WINDOW {
+        store
+            .mutate("test", &format!("message-{index}"), "message", |change| {
+                agents::record_message(change, "a", "b", 1_000, -59_000)?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        agents::message_times(&store, "a", "b", -59_000)
+            .unwrap()
+            .len(),
+        limits::AGENT_MESSAGES_PER_WINDOW
+    );
+    assert!(
+        agents::message_times(&store, "b", "a", -59_000)
+            .unwrap()
+            .is_empty()
+    );
+    let rejected = store.mutate("test", "rejected", "message", |change| {
+        agents::record_message(change, "a", "b", 1_000, -59_000)?;
+        Err(Error::TestFixture("destination queue failed"))
+    });
+    assert!(rejected.is_err());
+    drop(store);
+    let store = profile.store();
+    assert_eq!(
+        agents::message_times(&store, "a", "b", -59_000)
+            .unwrap()
+            .len(),
+        limits::AGENT_MESSAGES_PER_WINDOW
+    );
+    assert!(
+        agents::message_times(&store, "a", "b", 1_000)
+            .unwrap()
+            .is_empty()
+    );
 }
 fn incoming() -> NativeRequest {
     NativeRequest {
@@ -185,9 +268,13 @@ fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
     connection
         .execute_batch(
             "DROP TABLE agent_model_refusals;
+             DROP TABLE agent_message_rate;
+             DROP TABLE harness_readiness;
              ALTER TABLE writing_documents DROP COLUMN full_width;
              DROP INDEX workspaces_created_sequence;
              ALTER TABLE workspaces DROP COLUMN created_seq;
+             DROP INDEX panes_created_sequence;
+             ALTER TABLE panes DROP COLUMN created_seq;
              PRAGMA user_version=21;",
         )
         .unwrap();
@@ -431,6 +518,7 @@ fn prompt_with_image() -> (PromptItem, agents::PromptAttachment) {
             queued_at: "fixed".into(),
             generation: None,
             attachments: Some(vec![reference.clone()]),
+            agent_message: None,
         },
         agents::PromptAttachment {
             reference,

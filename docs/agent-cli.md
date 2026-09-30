@@ -36,8 +36,7 @@ the CLI allocates a fresh key and retains it across its connection retries.
 ```sh
 soyeht --profile dev pane config PANE_ID model MODEL
 soyeht --profile dev pane config PANE_ID effort EFFORT
-soyeht --profile dev pane yolo PANE_ID on
-soyeht --profile dev pane yolo PANE_ID off
+soyeht --profile dev pane mode PANE_ID MODE
 soyeht --profile dev pane permission PANE_ID allow
 soyeht --profile dev pane permission PANE_ID deny --request REQUEST_ID
 ```

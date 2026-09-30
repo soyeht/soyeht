@@ -5,8 +5,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::{
-    AttachmentRef, PaneTranscriptResult, ProbeCapability, TranscriptMessage,
-    attachment::attachment_header, limits,
+    AttachmentRef, HarnessSetupReason, HarnessSetupState, PaneTranscriptResult, ProbeCapability,
+    TranscriptMessage, attachment::attachment_header, limits,
 };
 use soyeht_protocol::{PromptItem, PromptStatus};
 
@@ -16,6 +16,57 @@ pub struct AgentModelRefusal {
     pub model_id: String,
     pub reason: String,
     pub observed_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct HarnessReadiness {
+    pub state: HarnessSetupState,
+    pub reason: Option<HarnessSetupReason>,
+    pub last_ready_ms: Option<i64>,
+}
+
+pub fn harness_readiness(store: &Store, harness: &str) -> Result<Option<HarnessReadiness>> {
+    let row: Option<(String, Option<String>, Option<i64>)> = store
+        .connection()
+        .query_row(
+            "SELECT state,reason,last_ready_ms FROM harness_readiness WHERE harness_id=?1",
+            [harness],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    row.map(|(state, reason, last_ready_ms)| {
+        Ok(HarnessReadiness {
+            state: serde_json::from_value(Value::String(state))?,
+            reason: reason
+                .map(|value| serde_json::from_value(Value::String(value)))
+                .transpose()?,
+            last_ready_ms,
+        })
+    })
+    .transpose()
+}
+
+pub fn save_harness_readiness(
+    change: &Change<'_>,
+    harness: &str,
+    state: HarnessSetupState,
+    reason: Option<HarnessSetupReason>,
+    updated_ms: i64,
+) -> Result<()> {
+    let ready = state == HarnessSetupState::Ready;
+    let state = serde_json::to_value(state)?;
+    let reason = reason.map(serde_json::to_value).transpose()?;
+    change.connection().execute(
+        "INSERT INTO harness_readiness(harness_id,state,reason,last_ready_ms,updated_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(harness_id) DO UPDATE SET state=excluded.state,reason=excluded.reason,last_ready_ms=COALESCE(excluded.last_ready_ms,harness_readiness.last_ready_ms),updated_ms=excluded.updated_ms",
+        params![
+            harness,
+            state.as_str(),
+            reason.as_ref().and_then(Value::as_str),
+            ready.then_some(updated_ms),
+            updated_ms
+        ],
+    )?;
+    Ok(())
 }
 
 fn validate_model_refusal(refusal: &AgentModelRefusal) -> Result<()> {
@@ -84,6 +135,34 @@ pub fn queue(store: &Store, pane: &str) -> Result<Vec<PromptItem>> {
         db.prepare("SELECT payload FROM agent_prompt_queue WHERE pane_id=?1 ORDER BY ordinal")?;
     let rows = statement.query_map([pane], |r| r.get::<_, String>(0))?;
     rows.map(|raw| Ok(serde_json::from_str(&raw?)?)).collect()
+}
+
+/// The Core serializes requests; the receipt is written in the same transaction
+/// as the destination prompt, so a failed or repeated request consumes no slot.
+pub fn message_times(store: &Store, sender: &str, target: &str, since_ms: i64) -> Result<Vec<i64>> {
+    let mut statement = store.connection().prepare(
+        "SELECT sent_at_ms FROM agent_message_rate WHERE sender_pane_id=?1 AND target_pane_id=?2 AND sent_at_ms>?3 ORDER BY sent_at_ms",
+    )?;
+    let rows = statement.query_map(params![sender, target, since_ms], |row| row.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn record_message(
+    change: &Change<'_>,
+    sender: &str,
+    target: &str,
+    at_ms: i64,
+    since_ms: i64,
+) -> Result<()> {
+    change.connection().execute(
+        "DELETE FROM agent_message_rate WHERE sent_at_ms<=?1",
+        [since_ms],
+    )?;
+    change.connection().execute(
+        "INSERT INTO agent_message_rate(sender_pane_id,target_pane_id,sent_at_ms) VALUES (?1,?2,?3)",
+        params![sender, target, at_ms],
+    )?;
+    Ok(())
 }
 
 pub fn enqueue_prompt(change: &Change<'_>, pane: &str, item: &PromptItem) -> Result<()> {
@@ -632,6 +711,7 @@ fn save_message_in(
                     soyeht_protocol::TranscriptKind::Message
                         | soyeht_protocol::TranscriptKind::Thought
                         | soyeht_protocol::TranscriptKind::System
+                        | soyeht_protocol::TranscriptKind::Handover
                 )
                 && prior != *message)
         {

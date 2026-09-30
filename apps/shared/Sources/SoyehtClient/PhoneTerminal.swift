@@ -3,21 +3,21 @@
   import SwiftTerm
   import UIKit
 
-  @MainActor private final class ReadOnlyTerminal: TerminalView {
-    override var canBecomeFirstResponder: Bool { false }
-  }
-
+  /// A paired device drives the terminal like the Mac does. SwiftTerm turns the software
+  /// keyboard, its Esc/Ctrl/Tab/arrow accessory row and hardware keys (Return, Backspace,
+  /// Tab, arrows, Ctrl-C, Ctrl-D, Esc) into terminal bytes, and `TerminalHost` sends them
+  /// with the same `pane.input` path as the Mac terminal.
   @MainActor public struct PhoneTerminal: UIViewRepresentable {
     let client: EngineClient
     public init(client: EngineClient) { self.client = client }
     public func makeCoordinator() -> TerminalHost {
-      TerminalHost(client: client, acceptsInput: false)
+      TerminalHost(client: client, acceptsInput: true)
     }
     public func makeUIView(context: Context) -> TerminalView {
-      let view = ReadOnlyTerminal(
+      let view = TerminalView(
         frame: .zero, font: .monospacedSystemFont(ofSize: 12, weight: .regular))
       applyTheme(to: view)
-      view.accessibilityLabel = "Terminal screen, read-only"
+      view.accessibilityLabel = "Terminal"
       context.coordinator.attach(view)
       return view
     }

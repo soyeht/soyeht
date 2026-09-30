@@ -1,0 +1,15 @@
+# Engine timeout after an agent prompt (#413)
+
+## Evidence checked
+
+- The original sign-in proof reported a client timeout modal after the agent had answered. Its engine operation record shows `pane.prompt` replied in 1 ms. Engine processing of that prompt did not consume the client's 12-second deadline; response delivery to the client remains unverified.
+- The same proof recorded later `model.list` and `harness.list` replies around 4.4 seconds and a connection `write_error`. Those records did not name the timed-out client request.
+- The existing client timeout diagnostic (method, elapsed time and pane ID, without request payload) was queried from VM1's unified log. Two records at the same second on 2026-09-25 identify `pane.draft` at 12,263 ms and `harness.list` at 12,431 ms. This identifies the RPCs that timed out in that later observation; it does not establish that both were part of the original proof.
+- The VM1 engine log contains 77 `pane.draft` operations with a maximum recorded processing duration of 8 ms and 78 `harness.list` operations with a maximum of 8,952 ms. Each operation record carries `connectionId` and, for pane-routed methods, `paneId`; the client diagnostic also carries `paneId`. So the `pane.draft` entries can be narrowed to the timed-out pane, but not to one request. `harness.list` has no pane, so its entries cannot be narrowed at all. The operation log has no timestamp and no request ID shared with the client, so no entry can be paired exactly with either client timeout. The shorter engine durations suggest time outside engine processing, but do not distinguish queueing, transport, response delivery, or another client delay.
+- A separate headless engine test run recorded 59 `pane.prompt` calls (maximum 34 ms), 12 `harness.list` calls (maximum 1,284 ms), and 6 `model.list` calls (maximum 151 ms). It did not reproduce a 12-second operation or the modal. This does not exercise the macOS window or authenticated session.
+
+## Remaining identification step
+
+The client timer in `EngineClient.requestResponse` already records the timed-out method, elapsed time, and a validated pane ID in the `engine-client-timeout` log category. That line is logged with `privacy: .public`, which is safe because it carries no request parameters. The engine's `engine.operation` log records an independent operation ID, connection ID, method, pane ID (for pane-routed methods), outcome, and processing duration, but excludes wire request IDs and parameters. Pane ID narrows pane-scoped requests but cannot single out one request, and requests without a pane such as `harness.list` cannot be narrowed. The two streams therefore cannot show where the extra time accrued for either specific request. To pair the next timeout exactly, the client diagnostic and the engine operation record need a monotonic timestamp and a shared, non-sensitive request correlation ID. Do not record request parameters, prompt text, credentials, or account data.
+
+No source fix is claimed. The timed-out RPC names are known for the later VM1 observation, but the cause of their delay is not.

@@ -1,6 +1,26 @@
 import Foundation
 import Observation
 import SoyehtProtocol
+import os
+
+private let engineTimeoutLogger = Logger(
+  subsystem: "com.soyeht.next", category: "engine-client-timeout")
+
+struct EngineTimeoutDiagnostic: Equatable {
+  let method: String
+  let durationMs: UInt64
+  let paneId: String?
+
+  init(method: String, params: JsonValue, durationMs: UInt64) {
+    self.method = method
+    self.durationMs = durationMs
+    self.paneId = params["paneId"].string.flatMap(UUID.init(uuidString:))?.uuidString.lowercased()
+  }
+
+  var logLine: String {
+    "method=\(method) durationMs=\(durationMs) paneId=\(paneId ?? "none")"
+  }
+}
 
 @MainActor @Observable
 public final class EngineClient {
@@ -14,6 +34,9 @@ public final class EngineClient {
   public internal(set) var harnessLoadCount = 0
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
+  public private(set) var preferredHarnessId: String?
+  /// Preferred permission mode for new panes, per harness, as the harness names it.
+  public internal(set) var harnessDefaultModes: [String: String] = [:]
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public internal(set) var agentCatalogueLoadCounts: [String: Int] = [:]
   public internal(set) var tasks: [TaskRecord] = []
@@ -73,6 +96,10 @@ public final class EngineClient {
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var responseAttachments = ResponseAttachmentAssembly()
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
+  @ObservationIgnored var agentTranscriptRevisions: [String: UInt64] = [:]
+  @ObservationIgnored var agentTranscriptLoadsInFlight: [String: UInt64] = [:]
+  @ObservationIgnored var harnessRefreshGeneration: UInt64 = 0
+  @ObservationIgnored var modelRefreshGenerations: [String: UInt64] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var editorRefreshTasks: [String: Task<Void, Never>] = [:]
@@ -83,7 +110,9 @@ public final class EngineClient {
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
-  public var readOnly: Bool { credential != nil }
+  /// True for a paired iPhone or iPad. A paired device is a full remote control of the Mac;
+  /// this only selects its transport, handshake and background behavior, never fewer powers.
+  public var pairedDevice: Bool { credential != nil }
   /// Stable namespace for device-local presentation state. It is not a credential or token.
   public var engineId: String? { credential?.engineId }
   public var harnessesLoading: Bool { harnessLoadCount > 0 }
@@ -94,6 +123,7 @@ public final class EngineClient {
   private struct Pending {
     var method: String
     var params: JsonValue
+    var startedAtNs: UInt64
     var continuation: CheckedContinuation<EngineResponse, Error>
     var timeout: Task<Void, Never>
   }
@@ -128,7 +158,7 @@ public final class EngineClient {
         do { try await self.session() } catch {
           self.connectionText = error.localizedDescription
           if case ClientFailure.remote(let kind, _, _) = error,
-            self.readOnly
+            self.pairedDevice
               && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
                 .contains(kind)
           {
@@ -150,6 +180,8 @@ public final class EngineClient {
   }
   private func disconnect() {
     connected = false
+    agentTranscriptRevisions.removeAll()
+    agentTranscriptLoadsInFlight.removeAll()
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
     editorWriteQueues.removeAll()
@@ -167,7 +199,7 @@ public final class EngineClient {
     resizeTasks.removeAll()
     resizeGenerations.removeAll()
     terminalSubscriptionsInFlight.removeAll()
-    if readOnly {
+    if pairedDevice {
       panes = []
       workspaces = []
       paneLayouts.removeAll()
@@ -232,16 +264,18 @@ public final class EngineClient {
         capabilities: webHost == nil ? nil : [.web_host])
     }
     let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
-    guard welcome.role == (readOnly ? .human_device : .human_local), welcome.protocolVersion == 1
+    guard welcome.role == (pairedDevice ? .human_device : .human_local),
+      welcome.protocolVersion == 1
     else {
       throw ClientFailure.invalidFrame
     }
     connectionActor = Actor(
       role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
     _ = try await request("state.snapshot", .object([:]))
+    try await loadPreferredHarness()
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
     try await loadUsage()
-    if !readOnly { try await loadLocalServers() }
+    if !pairedDevice { try await loadLocalServers() }
     connectionRevision &+= 1
     connected = true
     connectionText = "Dev profile · connected"
@@ -257,7 +291,8 @@ public final class EngineClient {
           // Phone still has one selected terminal surface; Block D will define its final policy.
           try await subscribe(pane.paneId)
         #endif
-      case .agent: try await loadAgentPane(pane.paneId, replacing: true)
+      case .agent:
+        await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
       case .editor: try await loadEditorPane(pane.paneId)
       case .web: break
       case .writing: try await loadWritingPane(pane.paneId)
@@ -283,11 +318,16 @@ public final class EngineClient {
       let timeout = Task { [weak self] in
         do { try await Task.sleep(for: .seconds(timeoutSeconds)) } catch { return }
         guard let request = self?.pending.removeValue(forKey: id) else { return }
+        let elapsedNs = DispatchTime.now().uptimeNanoseconds - request.startedAtNs
+        let diagnostic = EngineTimeoutDiagnostic(
+          method: request.method, params: request.params, durationMs: elapsedNs / 1_000_000)
+        engineTimeoutLogger.error("Engine RPC timeout: \(diagnostic.logLine, privacy: .public)")
         request.continuation.resume(throwing: ClientFailure.timeout)
         self?.wire?.close()
       }
       pending[id] = Pending(
-        method: method, params: params, continuation: continuation, timeout: timeout)
+        method: method, params: params, startedAtNs: DispatchTime.now().uptimeNanoseconds,
+        continuation: continuation, timeout: timeout)
       Task {
         do {
           try await wire.send(
@@ -465,9 +505,7 @@ public final class EngineClient {
       upsertWorkspace(workspace)
       synchronizePaneLayout(workspace)
     case .workspaceClosed:
-      let workspaceId = params["workspaceId"].string
-      workspaces.removeAll { $0.workspaceId == workspaceId }
-      if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
+      applyWorkspaceClosed(params)
     case .streamReplayStart:
       if let replay = try terminalStreams.start(params.decoded(StreamReplayStartEvent.self)),
         replay.reset
@@ -498,12 +536,41 @@ public final class EngineClient {
       try applyEditorEvent(eventName, params)
     case .serversLocalChanged, .webNavigated, .webConsoleCounts, .webAgentDriving:
       try applyWebEvent(eventName, params)
+    case .settingsChanged:
+      try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
-      .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
+      .ptydReconnected, .ptydLost, .paneConfigChanging,
       .paneConfigChanged:
       break
     case .writingChanged: try applyWritingEvent(params)
     }
+  }
+  private func applyWorkspaceClosed(_ params: JsonValue) {
+    let workspaceId = params["workspaceId"].string
+    workspaces.removeAll { $0.workspaceId == workspaceId }
+    if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
+  }
+  private func loadPreferredHarness() async throws {
+    let result = try await request(
+      "settings.get", .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
+    ).decoded(SettingsGetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  public func setPreferredHarness(_ harnessId: String) async throws {
+    let result = try await mutation(
+      "settings.set",
+      SettingsSetParams(
+        key: HarnessPickerModel.preferredHarnessKey, value: .string(harnessId),
+        idempotencyKey: UUID().uuidString)
+    ).decoded(SettingsSetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  func applySettingsChanged(_ event: SettingsChangedEvent) {
+    if applyDefaultPermissionModeChanged(event) { return }
+    guard event.key == HarnessPickerModel.preferredHarnessKey else { return }
+    preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
   }
   private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
     switch eventName {
@@ -529,6 +596,7 @@ public final class EngineClient {
         panes[index].source = event.source
         panes[index].confidence = event.confidence
         panes[index].phrase = event.phrase
+        if panes[index].mode == .agent && event.state == .dead { refreshHarnesses() }
       }
     default: break
     }
@@ -570,6 +638,7 @@ public final class EngineClient {
     if pane.mode == .agent {
       var view = agentPanes[pane.paneId] ?? AgentPaneView()
       view.queuePaused = pane.agent?.queuePaused ?? false
+      view.authMethods = pane.agent?.authMethods ?? []
       agentPanes[pane.paneId] = view
     }
     upsertWebPane(pane)
@@ -665,7 +734,10 @@ public final class EngineClient {
             #else
               try await self.subscribe(paneId)
             #endif
-          case .agent: try await self.loadAgentPane(paneId, replacing: true)
+          case .agent:
+            await self.hydratePresentedAgentPanes([
+              PresentedPane(paneId: paneId, isVisible: true)
+            ])
           case .editor: try await self.loadEditorPane(paneId)
           case .web: break
           case .writing: try await self.loadWritingPane(paneId)
@@ -843,7 +915,7 @@ public final class EngineClient {
     input(data, paneId: pane)
   }
   func input(_ data: Data, paneId pane: String) {
-    guard !readOnly, connected, selectedPaneId == pane,
+    guard connected, selectedPaneId == pane,
       panes.contains(where: { $0.paneId == pane && $0.mode == .terminal }), !data.isEmpty
     else { return }
     guard queuedInputBytes + data.count <= 1_048_576 else {

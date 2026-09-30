@@ -518,8 +518,8 @@ mod tests {
         },
     };
     use soyeht_protocol::{
-        HarnessLaunch, Pane, PaneMode, PermissionMode, PromptOrigin, StateSource, TaskReviewBadge,
-        TaskState, TaskWorktree, Workspace,
+        HarnessLaunch, Pane, PaneMode, PromptOrigin, StateSource, TaskReviewBadge, TaskState,
+        TaskWorktree, Workspace,
     };
     use std::{fs, path::PathBuf, sync::Arc};
 
@@ -756,7 +756,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap();
         state.phase = Phase::Ready;

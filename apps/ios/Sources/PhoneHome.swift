@@ -11,6 +11,8 @@ import VisionKit
   static var secondary: Color { SoyehtThemeColors.secondary }
   static var muted: Color { SoyehtThemeColors.muted }
   static var accent: Color { SoyehtThemeColors.accent }
+  static var onAccent: Color { SoyehtThemeColors.onAccent }
+  static var presentationLetterbox: Color { SoyehtThemeColors.presentationLetterbox }
   static var success: Color { SoyehtThemeColors.success }
   static var warning: Color { SoyehtThemeColors.warning }
   static var danger: Color { SoyehtThemeColors.danger }
@@ -136,8 +138,10 @@ struct PhoneHome: View {
             .disabled(uri.isEmpty)
           }.padding(.top, 10)
         }
-        Text("Terminal screens are read-only. You can message agents and answer permissions.")
-          .font(.footnote).foregroundStyle(PhonePalette.secondary).multilineTextAlignment(.center)
+        Text(
+          "This device controls your Mac: type in terminals, drive agents and answer permissions."
+        )
+        .font(.footnote).foregroundStyle(PhonePalette.secondary).multilineTextAlignment(.center)
       }.padding(28)
     }
   }
@@ -229,7 +233,6 @@ private struct PhonePane: View {
             Text(pane.phrase)
             if pane.generation > 1 { Text("· new shell") }
             Spacer()
-            Image(systemName: "eye").accessibilityLabel("Read-only")
           }.font(.caption).padding(12).foregroundStyle(PhonePalette.secondary)
           PhoneTerminal(client: client)
           if let gap = client.gapText {

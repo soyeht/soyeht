@@ -29,6 +29,7 @@ pub struct Core {
     pub store: Store,
     pub directory: PathBuf,
     pub generation: u64,
+    pub(crate) catalog_epoch: u64,
     pub ptyd: Option<Box<dyn SupervisorPort>>,
     pub clock: Arc<dyn Clock>,
     pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
@@ -102,6 +103,7 @@ impl Core {
             store,
             directory: directory.into(),
             generation,
+            catalog_epoch: 0,
             ptyd: None,
             clock: Arc::new(SystemClock),
             revision: Box::new(crate::tasks::revision::GitRevision),
@@ -180,7 +182,11 @@ impl Core {
             .agent_runtime(pane)
             .map_err(errors::storage)?
             .ok_or_else(|| errors::internal("Agent pane has no checkpoint"))?;
-        if state.ensure_binding()? {
+        // Older checkpoints encoded sign-in solely in the phase.
+        let repaired_auth =
+            state.phase == crate::agents::state::Phase::NeedsLogin && !state.auth_required;
+        state.auth_required |= repaired_auth;
+        if state.ensure_binding()? || repaired_auth {
             StorePort::mutate(
                 &mut self.store,
                 "engine-agent",
@@ -688,6 +694,15 @@ impl Core {
 
 pub fn write_pane(tx: &Change<'_>, saved: &StoredPane) -> soyeht_store::database::Result<()> {
     tx.update_pane(saved)
+}
+
+/// Writes a pane and, once it is closed, releases any client focus on it.
+pub fn persist_pane(tx: &Change<'_>, saved: &StoredPane) -> soyeht_store::database::Result<()> {
+    write_pane(tx, saved)?;
+    if saved.closed {
+        tx.close_pane(&saved.pane.pane_id)?;
+    }
+    Ok(())
 }
 pub fn state_event(saved: &StoredPane) -> Value {
     json!({"paneId":saved.pane.pane_id,"state":saved.pane.state,"source":saved.pane.source,"confidence":saved.pane.confidence,"phrase":saved.pane.phrase,"generation":saved.pane.generation})

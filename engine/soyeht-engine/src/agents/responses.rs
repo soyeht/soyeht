@@ -69,7 +69,16 @@ fn open(
         state.phase = Phase::Loading;
         changes.clear_replay = true;
         state.replay_role = None;
+        state.replay_user = None;
+        state.replay_continuation_turn = false;
         state.open_messages.clear();
+        // A switched session starts at the switch, so its marker leads the
+        // replay. The replayed continuation prompt itself is suppressed.
+        if state.internal_continuation.is_some() {
+            changes.replay_messages = true;
+            let marker = transcript::handover(state, saved.pane.generation)?;
+            changes.messages.push(marker);
+        }
         call(
             state,
             changes,
@@ -105,6 +114,7 @@ fn open(
 
 fn needs_login(state: &mut State, saved: &mut StoredPane, changes: &mut Changes) {
     state.phase = Phase::NeedsLogin;
+    state.auth_required = true;
     state.probe_started_ms = None;
     saved.pane.state = PaneState::Starting;
     saved.pane.phrase = "Sign-in required".into();
@@ -147,52 +157,27 @@ fn finish_configuration(
         });
     let result = match confirmation {
         Ok(options) => {
-            state.options = options;
             if let Some(key) = state.initial_option.take() {
                 state.requested_options.remove(&key);
             }
-            if let Some(option) = state
-                .options
-                .values
-                .iter()
-                .find(|option| option.id == operation.config_id)
-            {
-                let key = match option.category.as_deref().unwrap_or(&option.id) {
-                    "thought_level" => "effort",
-                    "mode" => "permission",
-                    other => other,
-                };
-                state.requested_options.remove(key);
-            }
+            super::configuration::confirmed(state, options, &operation.config_id);
             state.initial_config_failed = false;
-            if let Some(option) = state.options.values.iter().find(|option| {
-                option.id == operation.config_id
-                    && (option.category.as_deref() == Some("mode") || option.id == "mode")
-            }) && let soyeht_protocol::ConfigValue::V0(value) = &option.current_value
-            {
-                let value = value.clone();
-                super::configuration::observe_mode(state, &value, state.pending_policy.is_none())?;
-            }
-            if let Some(policy) = state.pending_policy.take() {
-                state.permission = policy.permission;
-                state.yolo = policy.yolo;
-                state.previous_permission = policy.previous_permission;
-                state.previous_effective_mode = policy.previous_mode;
-            }
             changes.events.push(("pane.config_changed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"options":state.options.values,"sessionPreserved":true})));
-            Ok(
-                if operation.kind == soyeht_protocol::ConfigOperationKind::Yolo {
-                    json!({"effectiveMode":state.permission,"on":state.yolo})
-                } else {
-                    json!({"applied":true,"effective":operation.value,"sessionPreserved":true})
-                },
-            )
+            Ok(super::configuration::applied(&operation.value))
         }
         Err(error) => {
-            if state.initial_option.take().is_some() {
-                state.initial_config_failed = true;
+            match state.initial_option.take() {
+                Some(key) if key == super::configuration::MODE_KEY => {
+                    super::configuration::refused_mode(
+                        state,
+                        saved.pane.generation,
+                        &operation.value,
+                        changes,
+                    )?;
+                }
+                Some(_) => state.initial_config_failed = true,
+                None => {}
             }
-            state.pending_policy = None;
             changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.to_string()})));
             Err(error)
         }
@@ -230,6 +215,23 @@ fn clean_agent_error(message: &str) -> String {
         .unwrap_or(message)
         .trim()
         .to_owned()
+}
+
+fn assistant_already_reported_error(
+    store: &impl StorePort,
+    pane: &str,
+    state: &State,
+    error: &str,
+) -> Result<bool> {
+    for (key, seq) in &state.open_messages {
+        if (key == "message" || key.starts_with("message:"))
+            && let Some(message) = transcript::message(store, pane, *seq)?
+            && message.text.trim() == error
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn selected_model(state: &State) -> Option<&str> {
@@ -274,6 +276,7 @@ fn auth_response(
     result: NativeResult,
 ) {
     let ok = result.is_ok();
+    state.auth_required = !ok;
     state.phase = if ok {
         Phase::RestartAfterProbe
     } else {
@@ -339,7 +342,7 @@ fn probe_new_response(
                 now_ms,
             )
         }
-        Err(error) if error.code == -32000 => {
+        Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
             needs_login(state, saved, changes);
             Ok(())
         }
@@ -423,7 +426,8 @@ fn probe_configuration(
         let (method, params) = state
             .options
             .request(session_id, &option.id, &option.current_value)
-            .map_err(native_error)?;
+            .map_err(native_error)?
+            .ok_or_else(|| errors::internal("A native option has no native request"))?;
         call(state, changes, method, params, "probe:config", now_ms)
     } else {
         // No advertised option supplies valid probe parameters. This is
@@ -449,7 +453,7 @@ fn session_response(
 ) -> Result<()> {
     match result {
         Ok(value) => session_opened(store, state, saved, context, changes, &value),
-        Err(error) if error.code == -32000 => {
+        Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
             needs_login(state, saved, changes);
             Ok(())
         }
@@ -479,12 +483,22 @@ fn session_opened(
     }
     if context == "load" {
         changes.replay_messages = true;
+        super::updates::finish_replayed_user(
+            store,
+            &saved.pane.pane_id,
+            saved.pane.generation,
+            state,
+            changes,
+        )?;
         transcript::complete(store, &saved.pane.pane_id, state, changes)?;
         changes.publish_replay = true;
         state.replay_role = None;
     }
     if value.get("configOptions").is_some() || value.get("modes").is_some() || context == "open" {
-        state.options = Options::from_response(value).map_err(native_error)?;
+        super::configuration::open_session(
+            state,
+            Options::from_response(value).map_err(native_error)?,
+        )?;
     }
     state.phase = Phase::Ready;
     saved.pane.state = if state.has_finished_turn {
@@ -544,6 +558,10 @@ fn prompt_response(
         return Err(errors::internal("Prompt response belongs to another turn"));
     }
     let cancel_requested = state.cancel_at_ms.is_some();
+    let authentication_required = matches!(
+        &result,
+        Err(error) if soyeht_acp::rpc::is_auth_required(error)
+    );
     let reason = match result {
         Ok(value) => session::stop_reason(&value)
             .map_err(native_error)?
@@ -567,14 +585,18 @@ fn prompt_response(
             } else {
                 format!("Agent error: {clean}")
             };
-            changes.messages.push(transcript::new_message(
-                state,
-                saved.pane.generation,
-                TranscriptRole::System,
-                TranscriptKind::System,
-                text,
-                true,
-            )?);
+            // Some adapters emit the error as an assistant chunk before returning
+            // the same typed RPC error. Keep one visible copy for this turn.
+            if !assistant_already_reported_error(store, &saved.pane.pane_id, state, &clean)? {
+                changes.messages.push(transcript::new_message(
+                    state,
+                    saved.pane.generation,
+                    TranscriptRole::System,
+                    TranscriptKind::System,
+                    text,
+                    true,
+                )?);
+            }
             "error".into()
         }
     };
@@ -611,12 +633,18 @@ fn prompt_response(
     state.active_silent_since_ms = None;
     state.cancel_at_ms = None;
     state.has_finished_turn = true;
+    if !matches!(reason.as_str(), "error" | "cancelled") {
+        state.auth_required = false;
+    }
     saved.pane.state = PaneState::Idle;
     saved.pane.phrase = "Agent turn ended".into();
     changes.events.push((
         "pane.turn_ended".into(),
         json!({"paneId":saved.pane.pane_id,"promptId":context,"stopReason":reason}),
     ));
+    if authentication_required {
+        needs_login(state, saved, changes);
+    }
     Ok(())
 }
 
