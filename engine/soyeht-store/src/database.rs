@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 26;
+pub const SCHEMA_VERSION: u32 = 27;
 
 #[derive(Debug)]
 pub enum Error {
@@ -274,6 +274,9 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
     if version < 26 {
         tx.execute_batch(include_str!("../migrations/026-harness-readiness.sql"))?;
     }
+    if version < 27 {
+        tx.execute_batch(include_str!("../migrations/027-pane-created-sequence.sql"))?;
+    }
     Ok(())
 }
 
@@ -520,7 +523,10 @@ impl Store {
             &tx,
             "SELECT payload FROM workspaces WHERE closed=0 ORDER BY created_seq",
         )?;
-        let panes = rows_json(&tx, "SELECT payload FROM panes WHERE closed=0 ORDER BY id")?;
+        let panes = rows_json(
+            &tx,
+            "SELECT payload FROM panes WHERE closed=0 ORDER BY created_seq",
+        )?;
         let devices = rows_json(
             &tx,
             "SELECT payload FROM devices WHERE revoked=0 ORDER BY id",

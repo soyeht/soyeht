@@ -23,7 +23,7 @@ pub(crate) fn handles(method: &str) -> bool {
     )
 }
 
-fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
+pub(crate) fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
     (
         "pane.queued".into(),
         json!({"paneId":pane,"n":state.queue.len(),

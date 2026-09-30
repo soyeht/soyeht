@@ -9,10 +9,14 @@ use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
     PaneState, PermissionFileChange, PermissionOption, PermissionOptionKind,
-    PermissionPresentation, Role, limits,
+    PermissionPresentation, PermissionToolArgument, Role, limits,
 };
 use soyeht_store::agents::NativeRequest;
+use std::collections::BTreeMap;
 use uuid::Uuid;
+
+/// Display names of the panes in the asking pane's workspace, by pane id.
+pub type PaneNames<'a> = BTreeMap<&'a str, &'a str>;
 
 pub const QUESTION_TIMEOUT_MS: i64 = limits::PERMISSION_TIMEOUT_SEC as i64 * 1_000;
 
@@ -23,6 +27,7 @@ pub struct Incoming<'a> {
     pub params: Value,
     pub now_ms: i64,
     pub timestamp: &'a str,
+    pub pane_names: &'a PaneNames<'a>,
 }
 
 pub struct Decision<'a> {
@@ -44,7 +49,80 @@ fn bounded(text: &str, maximum: usize) -> Result<String> {
     Ok(text.into())
 }
 
-fn permission_presentation(tool: &Value) -> Result<PermissionPresentation> {
+/// An MCP tool call awaiting approval. Harnesses describe it differently:
+/// codex-acp sends kind "execute" with rawInput {server, tool, arguments} and
+/// no command; claude-acp names the tool `mcp__<server>__<tool>` and sends the
+/// arguments as rawInput. Both are presented the same way.
+struct McpToolCall<'a> {
+    server: &'a str,
+    tool: &'a str,
+    arguments: Option<&'a serde_json::Map<String, Value>>,
+}
+
+impl<'a> McpToolCall<'a> {
+    fn recognise(tool: &'a Value) -> Option<Self> {
+        let input = &tool["rawInput"];
+        if let (Some(server), Some(name), None) = (
+            input["server"].as_str(),
+            input["tool"].as_str(),
+            input.get("command"),
+        ) {
+            let arguments = match input.get("arguments") {
+                None => None,
+                Some(arguments) => Some(arguments.as_object()?),
+            };
+            return Some(Self {
+                server,
+                tool: name,
+                arguments,
+            });
+        }
+        let (server, name) = tool["name"]
+            .as_str()?
+            .strip_prefix("mcp__")?
+            .split_once("__")?;
+        Some(Self {
+            server,
+            tool: name,
+            arguments: Some(input.as_object()?),
+        })
+    }
+
+    fn title(&self) -> String {
+        format!("Use {} · {}", self.server, self.tool)
+    }
+
+    /// Every argument is shown in full, or the request is not presented.
+    fn arguments(&self, pane_names: &PaneNames<'_>) -> Result<Vec<PermissionToolArgument>> {
+        let mut bytes = 0;
+        let mut arguments = Vec::new();
+        for (name, value) in self.arguments.into_iter().flatten() {
+            let value = match value {
+                Value::String(text) => pane_names
+                    .get(text.as_str())
+                    .map_or_else(|| text.clone(), |pane| (*pane).to_owned()),
+                Value::Array(_) | Value::Object(_) => serde_json::to_string_pretty(value)
+                    .map_err(|_| errors::internal("Tool argument serialization failed"))?,
+                scalar => scalar.to_string(),
+            };
+            bytes += name.len() + value.len();
+            if bytes > limits::PERMISSION_COMMAND_BYTES {
+                return Err(invalid("Tool request arguments exceed display limit"));
+            }
+            arguments.push(PermissionToolArgument {
+                name: name.clone(),
+                value,
+            });
+        }
+        Ok(arguments)
+    }
+}
+
+fn permission_presentation(
+    tool: &Value,
+    mcp: Option<&McpToolCall<'_>>,
+    pane_names: &PaneNames<'_>,
+) -> Result<PermissionPresentation> {
     let mut execution_details = Vec::new();
     if tool["kind"] == "execute" {
         let mut content_bytes = 0;
@@ -63,7 +141,7 @@ fn permission_presentation(tool: &Value) -> Result<PermissionPresentation> {
             }
         }
     }
-    let command = if tool["kind"] == "execute" {
+    let command = if tool["kind"] == "execute" && mcp.is_none() {
         // The claude-acp adapter puts a human summary in title/content; only
         // rawInput.command is the shell command that would actually run.
         let value = tool["rawInput"]["command"]
@@ -123,6 +201,7 @@ fn permission_presentation(tool: &Value) -> Result<PermissionPresentation> {
         target_path: target_path.or_else(|| file_changes.first().map(|change| change.path.clone())),
         command,
         execution_details: (!execution_details.is_empty()).then_some(execution_details),
+        tool_arguments: mcp.map(|call| call.arguments(pane_names)).transpose()?,
         file_changes,
         preview_omitted,
     })
@@ -132,6 +211,7 @@ fn public_question(
     method: &str,
     params: &Value,
     mut public: Value,
+    pane_names: &PaneNames<'_>,
 ) -> Result<(Value, &'static str)> {
     let event = if method == "session/request_permission" {
         let options: Vec<PermissionOption> = serde_json::from_value(params["options"].clone())
@@ -168,20 +248,26 @@ fn public_question(
             })
             .collect();
         let metadata = &params["_meta"]["permission"];
-        let title = if metadata["version"] == 1 {
-            metadata["title"].as_str()
-        } else {
-            None
-        }
-        .or_else(|| params["toolCall"]["title"].as_str())
-        .unwrap_or("Permission required");
-        let presentation = permission_presentation(&params["toolCall"])?;
+        let mcp = McpToolCall::recognise(&params["toolCall"]);
+        let title = match &mcp {
+            Some(call) => call.title(),
+            None => if metadata["version"] == 1 {
+                metadata["title"].as_str()
+            } else {
+                None
+            }
+            .or_else(|| params["toolCall"]["title"].as_str())
+            .unwrap_or("Permission required")
+            .to_owned(),
+        };
+        let presentation = permission_presentation(&params["toolCall"], mcp.as_ref(), pane_names)?;
         public["title"] = json!(if params["toolCall"]["kind"] == "execute"
+            && mcp.is_none()
             && title.chars().count() > 512
         {
             "Run command".to_owned()
         } else {
-            bounded(title, 512)?
+            bounded(&title, 512)?
         });
         public["detail"] = json!(if metadata["version"] == 1 {
             metadata["description"]
@@ -230,6 +316,7 @@ pub fn receive(
         params,
         now_ms,
         timestamp,
+        pane_names,
     } = incoming;
     if params["sessionId"].as_str() != state.session_id.as_deref() {
         return Err(invalid("Question belongs to another session"));
@@ -245,7 +332,7 @@ pub fn receive(
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let public = json!({"paneId":saved.pane.pane_id,"requestId":request_id,
         "generation":saved.pane.generation,"promptId":prompt.prompt_id,"expiresAt":expires_at});
-    let (public, event) = public_question(method, &params, public)?;
+    let (public, event) = public_question(method, &params, public, pane_names)?;
     changes.received.push(NativeRequest {
         request_id,
         pane_id: saved.pane.pane_id.clone(),
@@ -580,8 +667,13 @@ mod presentation_tests {
             "_meta": {"permission": {"version": 1, "title": "Write note.txt",
                 "description": "Review this edit"}}
         });
-        let (public, event) = public_question("session/request_permission", &params, json!({}))
-            .expect("valid permission");
+        let (public, event) = public_question(
+            "session/request_permission",
+            &params,
+            json!({}),
+            &PaneNames::new(),
+        )
+        .expect("valid permission");
         assert_eq!(event, "pane.permission_requested");
         assert_eq!(public["title"], "Write note.txt");
         assert_eq!(public["detail"], "Review this edit");
@@ -604,7 +696,8 @@ mod presentation_tests {
     fn large_diff_is_not_presented_as_a_complete_preview() {
         let tool = json!({"content": [{"type": "diff", "path": "/project/large.txt",
             "newText": "x".repeat(limits::PERMISSION_PREVIEW_BYTES + 1)}]});
-        let presentation = permission_presentation(&tool).expect("bounded presentation");
+        let presentation =
+            permission_presentation(&tool, None, &PaneNames::new()).expect("bounded presentation");
         assert!(presentation.preview_omitted);
         assert!(presentation.file_changes.is_empty());
     }
@@ -624,8 +717,13 @@ mod presentation_tests {
                 "title": "Create file and list directory contents",
                 "description": "Review shell command"}}
         });
-        let (public, _) = public_question("session/request_permission", &params, json!({}))
-            .expect("complete command must be displayable");
+        let (public, _) = public_question(
+            "session/request_permission",
+            &params,
+            json!({}),
+            &PaneNames::new(),
+        )
+        .expect("complete command must be displayable");
         assert_eq!(public["title"], "Create file and list directory contents");
         assert_eq!(public["presentation"]["command"], command);
         assert_eq!(public["presentation"]["executionDetails"], Value::Null);
@@ -643,8 +741,13 @@ mod presentation_tests {
                     "text": "Working directory: /project"}}]},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
         });
-        let (public, _) = public_question("session/request_permission", &params, json!({}))
-            .expect("complete command must be displayable");
+        let (public, _) = public_question(
+            "session/request_permission",
+            &params,
+            json!({}),
+            &PaneNames::new(),
+        )
+        .expect("complete command must be displayable");
         assert_eq!(public["presentation"]["command"], command);
         assert_eq!(
             public["presentation"]["executionDetails"][0],
@@ -662,11 +765,111 @@ mod presentation_tests {
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
             "_meta": {"permission": {"version": 1, "title": "Run command?"}}
         });
-        let (public, _) = public_question("session/request_permission", &params, json!({}))
-            .expect("Codex command must be displayable");
+        let (public, _) = public_question(
+            "session/request_permission",
+            &params,
+            json!({}),
+            &PaneNames::new(),
+        )
+        .expect("Codex command must be displayable");
         assert_eq!(public["title"], "Run command?");
         assert_eq!(public["presentation"]["command"], "ls -la");
+        assert_eq!(public["presentation"]["toolArguments"], Value::Null);
         assert!(!public.to_string().contains("/project"));
+    }
+
+    fn workspace_panes() -> PaneNames<'static> {
+        PaneNames::from([("pane-claude", "Claude"), ("pane-codex", "Codex")])
+    }
+
+    #[test]
+    fn codex_mcp_tool_approval_shows_server_tool_and_arguments() {
+        // Shape of the codex-acp request recorded in a real Claude and Codex
+        // run: an MCP call arrives as kind "execute" with no command.
+        let params = json!({
+            "toolCall": {"toolCallId": "exec-d712", "title": "mcp.soyeht-workspace.message_agent",
+                "kind": "execute", "status": "pending",
+                "rawInput": {"arguments": {"targetPaneId": "pane-claude", "text": "HTTP/2 200 \r\n"},
+                    "server": "soyeht-workspace", "tool": "message_agent"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
+        });
+        let (public, _) = public_question(
+            "session/request_permission",
+            &params,
+            json!({}),
+            &workspace_panes(),
+        )
+        .expect("MCP tool approval must be displayable");
+        assert_eq!(public["title"], "Use soyeht-workspace · message_agent");
+        assert_eq!(public["presentation"]["command"], Value::Null);
+        assert_eq!(
+            public["presentation"]["toolArguments"],
+            json!([{"name": "targetPaneId", "value": "Claude"},
+                {"name": "text", "value": "HTTP/2 200 \r\n"}])
+        );
+        assert!(!public.to_string().contains("pane-claude"));
+        assert!(!public.to_string().contains("rawInput"));
+    }
+
+    #[test]
+    fn claude_and_codex_mcp_approvals_render_identically() {
+        let arguments = json!({"targetPaneId": "pane-codex", "text": "Please rerun it.",
+            "attempt": 2, "urgent": false, "tags": ["proof"]});
+        let codex = json!({
+            "toolCall": {"toolCallId": "exec-1", "title": "mcp.soyeht-workspace.message_agent",
+                "kind": "execute", "status": "pending",
+                "rawInput": {"arguments": arguments, "server": "soyeht-workspace",
+                    "tool": "message_agent"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
+        });
+        // claude-acp names MCP tools and repeats the name as the title.
+        let claude = json!({
+            "toolCall": {"toolCallId": "toolu_1", "name": "mcp__soyeht-workspace__message_agent",
+                "title": "mcp__soyeht-workspace__message_agent", "kind": "other",
+                "status": "pending", "rawInput": arguments, "content": []},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+            "_meta": {"permission": {"version": 1,
+                "title": "mcp__soyeht-workspace__message_agent"}}
+        });
+        let present = |params: &Value| {
+            public_question(
+                "session/request_permission",
+                params,
+                json!({}),
+                &workspace_panes(),
+            )
+            .expect("MCP tool approval must be displayable")
+            .0
+        };
+        let (codex, claude) = (present(&codex), present(&claude));
+        assert_eq!(claude["title"], "Use soyeht-workspace · message_agent");
+        assert_eq!(codex["title"], claude["title"]);
+        assert_eq!(codex["presentation"], claude["presentation"]);
+        assert_eq!(
+            claude["presentation"]["toolArguments"],
+            json!([{"name": "attempt", "value": "2"},
+                {"name": "tags", "value": "[\n  \"proof\"\n]"},
+                {"name": "targetPaneId", "value": "Codex"},
+                {"name": "text", "value": "Please rerun it."},
+                {"name": "urgent", "value": "false"}])
+        );
+    }
+
+    #[test]
+    fn mcp_arguments_over_display_limit_fail_closed() {
+        let params = json!({"toolCall": {"kind": "execute", "title": "mcp.server.tool",
+            "rawInput": {"server": "server", "tool": "tool",
+                "arguments": {"text": "x".repeat(limits::PERMISSION_COMMAND_BYTES)}}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+        assert!(
+            public_question(
+                "session/request_permission",
+                &params,
+                json!({}),
+                &PaneNames::new()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -674,8 +877,13 @@ mod presentation_tests {
         let params = json!({"toolCall": {"kind": "execute", "title": "bash",
             "rawInput": {"command": "echo test", "description": "Print a test line"}},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-        let (public, _) = public_question("session/request_permission", &params, json!({}))
-            .expect("OpenCode command must be displayable");
+        let (public, _) = public_question(
+            "session/request_permission",
+            &params,
+            json!({}),
+            &PaneNames::new(),
+        )
+        .expect("OpenCode command must be displayable");
         assert_eq!(public["presentation"]["command"], "echo test");
         assert!(!public.to_string().contains("Print a test line"));
     }
@@ -686,25 +894,76 @@ mod presentation_tests {
             "content": [{"type": "content", "content": {"type": "text",
                 "text": "List directory"}}]},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+        assert!(
+            public_question(
+                "session/request_permission",
+                &params,
+                json!({}),
+                &PaneNames::new()
+            )
+            .is_err()
+        );
 
         let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
             "rawInput": {"command": "  \n  "}},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+        assert!(
+            public_question(
+                "session/request_permission",
+                &params,
+                json!({}),
+                &PaneNames::new()
+            )
+            .is_err()
+        );
 
         // OpenCode has emitted a pending bash permission with rawInput: {};
         // a title of "bash" cannot authorize an undisclosed command.
         let params = json!({"toolCall": {"kind": "execute", "title": "bash",
             "rawInput": {}},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+        assert!(
+            public_question(
+                "session/request_permission",
+                &params,
+                json!({}),
+                &PaneNames::new()
+            )
+            .is_err()
+        );
+
+        // A partial or malformed MCP shape is not a recognised tool request.
+        for raw_input in [
+            json!({"server": "soyeht-workspace"}),
+            json!({"server": "soyeht-workspace", "tool": "message_agent", "arguments": "text"}),
+        ] {
+            let params = json!({"toolCall": {"kind": "execute", "title": "Run tool",
+                "rawInput": raw_input},
+                "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
+            assert!(
+                public_question(
+                    "session/request_permission",
+                    &params,
+                    json!({}),
+                    &PaneNames::new()
+                )
+                .is_err()
+            );
+        }
 
         // An argv array is not a shell command string; never join it by guesswork.
         let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
             "rawInput": {"command": ["ls", "-la"]}},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+        assert!(
+            public_question(
+                "session/request_permission",
+                &params,
+                json!({}),
+                &PaneNames::new()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -712,6 +971,14 @@ mod presentation_tests {
         let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
             "rawInput": {"command": "x".repeat(limits::PERMISSION_COMMAND_BYTES + 1)}},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-        assert!(public_question("session/request_permission", &params, json!({})).is_err());
+        assert!(
+            public_question(
+                "session/request_permission",
+                &params,
+                json!({}),
+                &PaneNames::new()
+            )
+            .is_err()
+        );
     }
 }

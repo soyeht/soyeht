@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b101472e0f1d7bc6f1e9b6147424fecfc1d032cfa5f6009f434a1899e8df3145). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1445,6 +1445,13 @@ pub struct PermissionFileChange {
     pub new_text: String,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PermissionToolArgument {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "value")]
+    pub value: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionPresentation {
     #[serde(rename = "targetPath", skip_serializing_if = "Option::is_none")]
     pub target_path: Option<String>,
@@ -1452,6 +1459,8 @@ pub struct PermissionPresentation {
     pub command: Option<String>,
     #[serde(rename = "executionDetails", skip_serializing_if = "Option::is_none")]
     pub execution_details: Option<Vec<String>>,
+    #[serde(rename = "toolArguments", skip_serializing_if = "Option::is_none")]
+    pub tool_arguments: Option<Vec<PermissionToolArgument>>,
     #[serde(rename = "fileChanges")]
     pub file_changes: Vec<PermissionFileChange>,
     #[serde(rename = "previewOmitted")]

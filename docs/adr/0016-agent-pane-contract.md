@@ -10,7 +10,8 @@ remain valid without that field.
 Each accepted prompt receives a `promptId`; its origin is `human` or `automatic`.
 The limit is 64 KiB of text and 64 waiting prompts. `pane.draft` indicates human
 text that has not been sent, without transmitting that text. Aggregate state
-lives in the snapshot; `pane.queued` also reports the draft.
+lives in the snapshot; `pane.queued` also reports the draft. It is published
+whenever the waiting list changes, including when a prompt leaves it to run.
 
 `pane.update` is a closed union of contract 08's eight types, with message identity,
 generation and sequence. Thought, tool, plan, usage and terminal are distinct.

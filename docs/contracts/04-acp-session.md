@@ -71,6 +71,11 @@ shows those names; the harness decides which actions it asks about.
   first response wins; the engine answers the agent and notifies the other
   clients. No answer within 30 min: the engine responds `cancelled`, and the
   pane shows “waiting for your permission” in the attention inbox.
+- An MCP tool request is shown as “Use <server> · <tool>” with each argument
+  in full, whichever harness sends it (codex-acp: kind `execute` with
+  `rawInput {server, tool, arguments}`; claude-acp: tool name
+  `mcp__<server>__<tool>`). Pane ids of the same workspace show as pane names.
+  An `execute` request with neither a command nor this shape is refused.
 - A user's `allow_always` selection applies only to this pane (DECIDED,
   Caio 2026-09-10).
 - Only an agent that announces no modes gets the engine's own `ask`,

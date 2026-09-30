@@ -2690,6 +2690,15 @@
       "required": ["path", "newText"],
       "additionalProperties": true
     },
+    "PermissionToolArgument": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string" }
+      },
+      "required": ["name", "value"],
+      "additionalProperties": true
+    },
     "PermissionPresentation": {
       "type": "object",
       "properties": {
@@ -2698,6 +2707,10 @@
         "executionDetails": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "toolArguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PermissionToolArgument" }
         },
         "fileChanges": {
           "type": "array",

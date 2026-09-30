@@ -47,6 +47,7 @@ fn prompt_payload(store: &impl StorePort, session: &str, prompt: &PromptItem) ->
     ))
 }
 
+#[derive(Clone, Copy)]
 struct NativeContext<'a> {
     pane: &'a str,
     source_seq: u64,
@@ -159,32 +160,7 @@ impl Core {
                     method.as_str(),
                     "session/request_permission" | "elicitation/create"
                 ) {
-                    let mut question = Changes::default();
-                    if let Err(error) = questions::receive(
-                        state,
-                        saved,
-                        questions::Incoming {
-                            source_seq,
-                            native_id: id.clone(),
-                            method: &method,
-                            params,
-                            now_ms,
-                            timestamp,
-                        },
-                        &mut question,
-                    ) {
-                        reject_question(
-                            pane,
-                            state,
-                            saved.pane.generation,
-                            id,
-                            &method,
-                            error,
-                            &mut changes,
-                        )?;
-                    } else {
-                        changes = question;
-                    }
+                    changes = self.receive_question(context, id, &method, params, state, saved)?;
                 } else if matches!(
                     method.as_str(),
                     "fs/read_text_file"
@@ -221,6 +197,50 @@ impl Core {
             }
         };
         Ok((changes, observed_turn_activity))
+    }
+
+    /// Stages a permission or form question, or refuses one that cannot be shown safely.
+    fn receive_question(
+        &self,
+        context: NativeContext<'_>,
+        id: Value,
+        method: &str,
+        params: Value,
+        state: &mut super::state::State,
+        saved: &mut crate::model::StoredPane,
+    ) -> Result<Changes> {
+        let pane_names: questions::PaneNames<'_> = self
+            .panes
+            .values()
+            .map(|running| &running.stored.pane)
+            .filter(|other| other.workspace_id == saved.pane.workspace_id)
+            .map(|other| (other.pane_id.as_str(), other.name.as_str()))
+            .collect();
+        let mut question = Changes::default();
+        let incoming = questions::Incoming {
+            source_seq: context.source_seq,
+            native_id: id.clone(),
+            method,
+            params,
+            now_ms: context.now_ms,
+            timestamp: context.timestamp,
+            pane_names: &pane_names,
+        };
+        if let Err(error) = questions::receive(state, saved, incoming, &mut question) {
+            let mut refusal = Changes::default();
+            let generation = saved.pane.generation;
+            reject_question(
+                context.pane,
+                state,
+                generation,
+                id,
+                method,
+                error,
+                &mut refusal,
+            )?;
+            return Ok(refusal);
+        }
+        Ok(question)
     }
 
     pub(crate) fn native_record(
@@ -580,6 +600,10 @@ impl Core {
             .clone()
             .ok_or_else(|| errors::internal("Ready agent has no session"))?;
         let mut changes = Changes::default();
+        // The prompt left the queue when it became active; clients drop its queued row now.
+        changes
+            .events
+            .push(super::methods::queued(pane, &state, self.now_ms()));
         transcript::user_prompt(&mut state, saved.pane.generation, &prompt, &mut changes)?;
         responses::call(
             &mut state,

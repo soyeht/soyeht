@@ -2650,12 +2650,18 @@
     }
   },
   {
+    "name": "PermissionToolArgument",
+    "type": "PermissionToolArgument",
+    "value": { "name": "text", "value": "HTTP/2 200" }
+  },
+  {
     "name": "PermissionPresentation",
     "type": "PermissionPresentation",
     "value": {
       "targetPath": "/project/note.txt",
       "command": "ls -la\n",
       "executionDetails": ["Working directory: /project"],
+      "toolArguments": [{ "name": "targetPaneId", "value": "Codex" }],
       "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
       "previewOmitted": false
     }

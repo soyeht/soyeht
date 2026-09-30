@@ -127,7 +127,8 @@ and pane-state experiment data is recorded only in the signed Mac app.
   loop and counters, role; tasks with state, badges, blocking, owner, active
   attempt, subitems, last 20 comments and `commentCount`; open permission/
   elicitation requests with deadline; attention inbox; devices; effective
-  per-harness capabilities; `streams` (§6).
+  per-harness capabilities; `streams` (§6). Workspaces and panes are listed
+  in creation order, the order in which live `created` events append them.
 - `events.subscribe {since}` (exclusive `since`): the engine **registers the
   subscription before** reading the replay boundary, sends events
   `(since, boundary]` in order, then new ones; events arriving in the live queue

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b101472e0f1d7bc6f1e9b6147424fecfc1d032cfa5f6009f434a1899e8df3145). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 import Foundation
 
 
@@ -1608,16 +1608,27 @@ public struct PermissionFileChange: Codable, Sendable {
     }
 }
 
+public struct PermissionToolArgument: Codable, Sendable {
+    public var `name`: String
+    public var `value`: String
+    public init(`name`: String, `value`: String) {
+        self.`name` = `name`
+        self.`value` = `value`
+    }
+}
+
 public struct PermissionPresentation: Codable, Sendable {
     public var `targetPath`: String?
     public var `command`: String?
     public var `executionDetails`: [String]?
+    public var `toolArguments`: [PermissionToolArgument]?
     public var `fileChanges`: [PermissionFileChange]
     public var `previewOmitted`: Bool
-    public init(`targetPath`: String? = nil, `command`: String? = nil, `executionDetails`: [String]? = nil, `fileChanges`: [PermissionFileChange], `previewOmitted`: Bool) {
+    public init(`targetPath`: String? = nil, `command`: String? = nil, `executionDetails`: [String]? = nil, `toolArguments`: [PermissionToolArgument]? = nil, `fileChanges`: [PermissionFileChange], `previewOmitted`: Bool) {
         self.`targetPath` = `targetPath`
         self.`command` = `command`
         self.`executionDetails` = `executionDetails`
+        self.`toolArguments` = `toolArguments`
         self.`fileChanges` = `fileChanges`
         self.`previewOmitted` = `previewOmitted`
     }
