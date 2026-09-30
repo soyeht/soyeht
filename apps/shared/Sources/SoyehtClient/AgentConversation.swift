@@ -6,6 +6,13 @@ import SwiftUI
   import AppKit
 #endif
 
+extension AgentMessageSource {
+  /// Who sent a peer message, by name; the pane identifier only routes replies.
+  var displayName: String {
+    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? harness : name
+  }
+}
+
 struct AgentSilencePresentation: Sendable {
   let elapsedSeconds: Int?
   private let paneState: PaneState?
@@ -310,7 +317,7 @@ private struct AgentWell: ViewModifier {
         HStack(spacing: 8) {
           VStack(alignment: .leading, spacing: 2) {
             if let sender = item.agentMessage {
-              Text("From \(sender.name) (\(sender.harness))")
+              Text("From \(sender.displayName)")
                 .font(style.captionFont.weight(.semibold))
             }
             Text(item.text).font(style.captionFont).lineLimit(2)
@@ -478,7 +485,6 @@ private struct AgentWell: ViewModifier {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     prompt = ""
-    client.setDraft(paneId, active: false)
     onExplicitRemoteAction()
     client.sendPrompt(paneId, text: text)
     promptFocused = true
@@ -674,16 +680,23 @@ private struct TranscriptRow: View {
       case .usage:
         EmptyView()
       default:
-        FilePathText(message.text, workspaceId: workspaceId)
-          .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-          .padding(12)
-          .background(
-            message.role == .user
-              ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
-            in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
-          )
-          .padding(.leading, message.role == .user ? 48 : 0)
-          .padding(.trailing, message.role == .user ? 0 : 48)
+        VStack(alignment: .leading, spacing: 4) {
+          if let sender = message.agentMessage {
+            Text(sender.displayName).font(style.captionFont).textCase(.uppercase)
+              .foregroundStyle(style.muted)
+          }
+          FilePathText(message.text, workspaceId: workspaceId)
+            .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+          message.role == .user
+            ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
+          in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
+        )
+        .padding(.leading, message.role == .user ? 48 : 0)
+        .padding(.trailing, message.role == .user ? 0 : 48)
       }
     }.font(style.bodyFont)
   }

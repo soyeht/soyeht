@@ -40,7 +40,11 @@ fn prompt_payload(store: &impl StorePort, session: &str, prompt: &PromptItem) ->
             bytes: &attachment.bytes,
         })
         .collect();
-    Ok(client::prompt_with_images(session, &prompt.text, &images))
+    Ok(client::prompt_with_images(
+        session,
+        &super::peer::native_text(prompt),
+        &images,
+    ))
 }
 
 struct NativeContext<'a> {
@@ -576,12 +580,7 @@ impl Core {
             .clone()
             .ok_or_else(|| errors::internal("Ready agent has no session"))?;
         let mut changes = Changes::default();
-        transcript::user_prompt(
-            &mut state,
-            saved.pane.generation,
-            &prompt.text,
-            &mut changes,
-        )?;
+        transcript::user_prompt(&mut state, saved.pane.generation, &prompt, &mut changes)?;
         responses::call(
             &mut state,
             &mut changes,

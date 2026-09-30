@@ -10,6 +10,9 @@ use soyeht_acp::client::{EnvVariable, StdioMcpServer};
 use std::path::{Path, PathBuf};
 
 const BINDING_ENV: &str = "SOYEHT_MCP_BINDING";
+/// A name no user-level MCP configuration shares, so a harness that also
+/// loads the user's own Soyeht servers still routes this pane's tools here.
+pub(crate) const SERVER_NAME: &str = "soyeht-workspace";
 
 pub fn declaration(
     store: &impl TaskStorePort,
@@ -62,7 +65,7 @@ fn declaration_with_executable(
         ]);
     }
     Ok(StdioMcpServer {
-        name: "Soyeht".into(),
+        name: SERVER_NAME.into(),
         command: path_text(executable)?,
         args,
         env: vec![EnvVariable {
@@ -155,7 +158,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(declaration.name, "Soyeht");
+        assert_eq!(declaration.name, SERVER_NAME);
         assert_eq!(declaration.command, "/opt/soyeht/bin/soyeht-mcp");
         assert_eq!(declaration.env[0].name, BINDING_ENV);
         assert_eq!(declaration.env[0].value, state.binding.expose());

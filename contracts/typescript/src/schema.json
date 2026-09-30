@@ -3309,6 +3309,9 @@
         },
         "usage": {
           "$ref": "#/$defs/TokenUsage"
+        },
+        "agentMessage": {
+          "$ref": "#/$defs/AgentMessageSource"
         }
       },
       "required": [
