@@ -208,7 +208,7 @@ impl Runtime {
         let allowed = match config {
             "model" => matches!(
                 value.as_str(),
-                Some("model-a" | "model-b" | "delayed-model")
+                Some("model-a" | "model-b" | "delayed-model" | "mode-shifting-model")
             ),
             "effort" => matches!(value.as_str(), Some("low" | "medium" | "high")),
             "mode" => {
@@ -231,6 +231,14 @@ impl Runtime {
             return;
         }
         *session = next;
+        if value == "mode-shifting-model" {
+            // Like an adapter whose model change resets its mode: the agent
+            // announces the new mode before it confirms the model.
+            session.values.insert("mode".into(), json!("accept_edits"));
+            let update = json!({"sessionUpdate":"config_option_update",
+                "configOptions":session.options(&self.settings)});
+            self.update(session_id, update);
+        }
         let response = json!({"configOptions":session.options(&self.settings)});
         if value == "delayed-model" {
             let runtime = self.clone();

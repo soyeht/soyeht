@@ -180,13 +180,20 @@ pub(super) fn confirmed(state: &mut State, options: Options, config: &str) {
 }
 
 /// Applies an announcement the agent made on its own. A mode it chose itself
-/// becomes the pane's mode unless the engine is still applying one.
+/// becomes the pane's mode unless the engine is still applying a mode; a
+/// pending change of another option does not hide it.
 pub(super) fn agent_changed(state: &mut State, options: Options) -> Result<()> {
     state.options = state.options.adopt(options).map_err(native_error)?;
     ensure_engine_modes(state)?;
+    let applying_mode = state.operation.as_ref().is_some_and(|operation| {
+        state
+            .options
+            .mode()
+            .is_some_and(|option| option.id == operation.config_id)
+    });
     if state.phase == super::state::Phase::Ready
         && !state.requested_options.contains_key(MODE_KEY)
-        && state.operation.is_none()
+        && !applying_mode
     {
         state.mode = state.options.current_mode().map(str::to_owned);
     }

@@ -142,7 +142,13 @@ impl Session {
                 "model",
                 "Model",
                 "model",
-                &["model-a", "model-b", "rejected-model", "delayed-model"],
+                &[
+                    "model-a",
+                    "model-b",
+                    "rejected-model",
+                    "delayed-model",
+                    "mode-shifting-model",
+                ],
             ),
             select(
                 "effort",

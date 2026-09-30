@@ -3303,7 +3303,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     assert_eq!(resumed["agent"]["authMethods"], json!([]));
     let models = client.call("model.list", json!({"harness":"auth-test","paneId":pane}));
     assert_eq!(models["source"], "native_session");
-    assert_eq!(models["items"].as_array().unwrap().len(), 4);
+    assert_eq!(models["items"].as_array().unwrap().len(), 5);
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
     let repeated = client.request(
         "pane.auth.start",
@@ -4709,6 +4709,23 @@ fn new_panes_start_in_the_preferred_mode_only_when_offered() {
         .to_owned();
     run_turn(&mut client, &unoffered, "hello");
     assert_eq!(current_mode(&mut client, &unoffered), "ask");
+}
+
+#[test]
+fn a_mode_the_agent_changes_during_a_model_change_is_kept() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"model","value":"mode-shifting-model","idempotencyKey":"model"}),
+    );
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+    run_turn(&mut client, &pane, "before restart");
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    // The fake reloads in its default mode; the pane restores the agent's choice.
+    wait_for_mode(&mut client, &pane, "accept_edits");
 }
 
 #[test]
