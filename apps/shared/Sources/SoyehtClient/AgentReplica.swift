@@ -635,7 +635,7 @@ extension EngineClient {
     let result = try await mutation(
       "pane.create",
       PaneCreateParams(
-        workspaceId: workspaceId, mode: .agent, cwd: path, name: "Agent",
+        workspaceId: workspaceId, mode: .agent, cwd: path,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
         effort: effort, permission: permission))
     let paneId = try result.decoded(PaneCreateResult.self).paneId
