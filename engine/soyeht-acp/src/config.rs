@@ -25,6 +25,11 @@ pub struct Options {
     pub routes: BTreeMap<String, Route>,
 }
 
+/// Whether an adapter that predates `_meta.kind` names this mode full access.
+pub fn is_known_full_access_id(mode: &str) -> bool {
+    FULL_ACCESS_MODE_IDS.contains(&mode)
+}
+
 pub fn is_mode(option: &ConfigOption) -> bool {
     option.category.as_deref() == Some(MODE_CATEGORY) || option.id == MODE_CATEGORY
 }
@@ -68,7 +73,7 @@ fn classify_full_access(option: &mut ConfigOption) {
         return;
     }
     for choice in &mut option.options {
-        if choice.kind.is_none() && FULL_ACCESS_MODE_IDS.contains(&choice.value.as_str()) {
+        if choice.kind.is_none() && is_known_full_access_id(&choice.value) {
             choice.kind = Some(FULL_ACCESS_KIND.into());
         }
     }

@@ -6,7 +6,7 @@ use crate::{
 use serde_json::json;
 use soyeht_acp::config::{FULL_ACCESS_KIND, MODE_CATEGORY, Options, Route};
 use soyeht_protocol::{
-    ConfigChoice, ConfigOperation, ConfigOption, ConfigType, ConfigValue, TranscriptKind,
+    ConfigChoice, ConfigOperation, ConfigOption, ConfigType, ConfigValue, Role, TranscriptKind,
     TranscriptRole,
 };
 use uuid::Uuid;
@@ -258,6 +258,40 @@ pub fn applied(value: &ConfigValue) -> serde_json::Value {
 }
 
 impl Core {
+    /// Whether `mode` approves everything: the engine's own `allow_all`, a
+    /// well-known full-access identifier, or a mode a running harness marks so.
+    pub(crate) fn is_full_access_mode(&self, mode: &str) -> bool {
+        mode == ALLOW_ALL
+            || soyeht_acp::config::is_known_full_access_id(mode)
+            || self.agents.values().any(|agent| {
+                agent.state.options.mode().is_some_and(|option| {
+                    option.options.iter().any(|choice| {
+                        choice.value == mode && choice.kind.as_deref() == Some(FULL_ACCESS_KIND)
+                    })
+                })
+            })
+    }
+
+    /// Only a person may start work in a mode that approves everything; a
+    /// chief agent writing tasks cannot grant it to itself or other agents.
+    pub(crate) fn require_person_for_full_access<'a>(
+        &self,
+        role: &Role,
+        modes: impl IntoIterator<Item = Option<&'a str>>,
+    ) -> Result<()> {
+        if matches!(role, Role::HumanLocal | Role::HumanDevice)
+            || !modes
+                .into_iter()
+                .flatten()
+                .any(|mode| self.is_full_access_mode(mode))
+        {
+            return Ok(());
+        }
+        Err(errors::forbidden_role(
+            "Only a person can give a task full access",
+        ))
+    }
+
     /// Applies the options a pane was opened with, one native change at a
     /// time. A mode the agent does not offer is dropped: the agent keeps its
     /// own mode rather than a guessed one.
@@ -327,5 +361,42 @@ impl Core {
             json!({}),
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod full_access_tests {
+    use crate::core::Core;
+    use soyeht_protocol::Role;
+
+    #[test]
+    fn only_people_may_request_full_access_for_tasks() {
+        let root =
+            std::env::temp_dir().join(format!("soyeht-full-access-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let core = Core::open(&root).unwrap();
+        for mode in ["bypassPermissions", "agent-full-access", "allow_all"] {
+            assert!(
+                core.require_person_for_full_access(&Role::Chief, [Some(mode)])
+                    .is_err()
+            );
+            assert!(
+                core.require_person_for_full_access(&Role::Agent, [None, Some(mode)])
+                    .is_err()
+            );
+            assert!(
+                core.require_person_for_full_access(&Role::HumanLocal, [Some(mode)])
+                    .is_ok()
+            );
+            assert!(
+                core.require_person_for_full_access(&Role::HumanDevice, [Some(mode)])
+                    .is_ok()
+            );
+        }
+        assert!(
+            core.require_person_for_full_access(&Role::Chief, [Some("read-only"), None])
+                .is_ok()
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -48,6 +48,10 @@ impl Core {
         let params: TaskDispatchParams = parameters(raw)?;
         let actor = self.task_actor(connection)?;
         require_dispatch_role(&actor)?;
+        self.require_person_for_full_access(
+            &actor.role,
+            [params.preset.permission_mode.as_deref()],
+        )?;
         let current = super::api::task(&self.store, &params.workspace_id, &params.task_id)?;
         ensure_dependencies_closed(self, &current)?;
         let preset = self.resolve_new_preset(&params.preset)?;
