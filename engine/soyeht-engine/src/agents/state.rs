@@ -1,5 +1,5 @@
 use crate::errors::{self, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
@@ -189,6 +189,7 @@ pub struct State {
     #[serde(default)]
     pub operation_timed_out: bool,
     pub operation_user: Option<super::pending::UserOperation>,
+    #[serde(deserialize_with = "requestable_options")]
     pub requested_options: BTreeMap<String, ConfigValue>,
     pub initial_option: Option<String>,
     pub initial_config_failed: bool,
@@ -596,6 +597,19 @@ impl State {
     }
 }
 
+/// Options a pane can ask its session for. Checkpoints written before native
+/// permission modes also carry a `permission` request no session can satisfy;
+/// keeping it would hold the prompt queue forever.
+const REQUESTABLE_OPTIONS: [&str; 3] = ["model", "effort", super::configuration::MODE_KEY];
+
+fn requestable_options<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<BTreeMap<String, ConfigValue>, D::Error> {
+    let mut options = BTreeMap::<String, ConfigValue>::deserialize(deserializer)?;
+    options.retain(|key, _| REQUESTABLE_OPTIONS.contains(&key.as_str()));
+    Ok(options)
+}
+
 fn mcp_enabled() -> bool {
     true
 }
@@ -731,6 +745,29 @@ mod tests {
         let switch = public.harness_switch.unwrap();
         assert_eq!(switch.from_harness, "first");
         assert_eq!(switch.to_harness, "second");
+    }
+
+    #[test]
+    fn checkpoints_from_before_native_modes_do_not_hold_the_queue() {
+        for phase in ["NeedsLogin", "Faulted"] {
+            let mut legacy = serde_json::to_value(state()).unwrap();
+            legacy["phase"] = serde_json::json!(phase);
+            legacy["requested_options"] = serde_json::json!({"permission": "ask"});
+            legacy["initial_config_failed"] = serde_json::json!(true);
+            legacy["permission"] = serde_json::json!("ask");
+            legacy["yolo"] = serde_json::json!(false);
+
+            let mut restored: State = serde_json::from_value(legacy).unwrap();
+
+            assert!(restored.requested_options.is_empty(), "{phase}");
+            restored.phase = Phase::Ready;
+            let prompt = restored
+                .enqueue("after upgrade".into(), PromptOrigin::Human, "now".into())
+                .unwrap();
+            let taken = restored.take_next(1, 0, false).unwrap().unwrap();
+            assert_eq!(taken.prompt_id, prompt.prompt_id, "{phase}");
+            assert!(restored.queue.is_empty(), "{phase}");
+        }
     }
 
     #[test]
