@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
+// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -176,6 +176,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PlanEntry": return try codec(SoyehtProtocol.PlanEntry.self, data)
         case "TokenUsage": return try codec(SoyehtProtocol.TokenUsage.self, data)
         case "TerminalOutput": return try codec(SoyehtProtocol.TerminalOutput.self, data)
+        case "SubagentStatus": return try codec(SoyehtProtocol.SubagentStatus.self, data)
+        case "SubagentRun": return try codec(SoyehtProtocol.SubagentRun.self, data)
         case "TranscriptMessage": return try codec(SoyehtProtocol.TranscriptMessage.self, data)
         case "AttachmentRef": return try codec(SoyehtProtocol.AttachmentRef.self, data)
         case "PanePromptParams": return try codec(SoyehtProtocol.PanePromptParams.self, data)
@@ -237,6 +239,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "ToolProgressUpdate": return try codec(SoyehtProtocol.ToolProgressUpdate.self, data)
         case "PlanUpdateKind": return try codec(SoyehtProtocol.PlanUpdateKind.self, data)
         case "PlanUpdate": return try codec(SoyehtProtocol.PlanUpdate.self, data)
+        case "SubagentUpdateKind": return try codec(SoyehtProtocol.SubagentUpdateKind.self, data)
+        case "SubagentUpdate": return try codec(SoyehtProtocol.SubagentUpdate.self, data)
         case "UsageUpdateKind": return try codec(SoyehtProtocol.UsageUpdateKind.self, data)
         case "UsageUpdate": return try codec(SoyehtProtocol.UsageUpdate.self, data)
         case "TerminalOutputUpdateKind": return try codec(SoyehtProtocol.TerminalOutputUpdateKind.self, data)

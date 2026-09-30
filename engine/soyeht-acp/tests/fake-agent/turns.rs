@@ -355,6 +355,15 @@ fn execute_turn(
         emit(runtime, session, &output);
         return output;
     }
+    let turn = runtime.sessions.lock().unwrap()[session].history.len();
+    if let Some(script) = crate::subagents::script(text, session, turn) {
+        if !runtime.native_subagents.load(Ordering::SeqCst) {
+            let output = "The client did not advertise native subagents.".to_owned();
+            emit(runtime, session, &output);
+            return output;
+        }
+        return crate::subagents::emit(runtime, session, script);
+    }
     if let Some(output) = crate::mcp::task_turn(runtime, session, text) {
         emit(runtime, session, &output);
         return output;

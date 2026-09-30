@@ -44,11 +44,7 @@ impl Core {
         // The old process is absent from the reconciled supervisor registry.
         // Close its decisions locally, without delivering them to a new process.
         changes.outgoing.clear();
-        if state.phase == Phase::Loading {
-            state.open_messages.clear();
-        } else {
-            super::transcript::complete(&self.store, id, &mut state, &mut changes)?;
-        }
+        super::transcript::close(&self.store, id, &mut state, &mut changes)?;
         if let Some(prompt) = state.active.take() {
             changes.events.push((
                 "pane.turn_ended".into(),

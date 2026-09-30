@@ -188,6 +188,33 @@ def model_change_preserves_session(mac, pane_id):
     )
 
 
+SUBAGENT_PROMPT = (
+    "Spawn exactly two subagents in parallel. Without using any tools, the first must "
+    "reply with the single word ALPHA and the second with the single word BETA. Wait for "
+    "both, then reply DONE."
+)
+
+
+def subagents_are_grouped(services, mac, pane_id, name):
+    """Each subagent is one completed row that owns its activity."""
+    prompt_id = mac.mutate("pane.prompt", paneId=pane_id, text=SUBAGENT_PROMPT)["promptId"]
+    until(lambda: ended(services, prompt_id), "the subagent turn did not finish", seconds=300)
+    items = mac.call("pane.transcript", {"paneId": pane_id, "limit": 100})["items"]
+    rows = [item["subagent"] for item in items if item["kind"] == "subagent"]
+    require(len(rows) >= 2, f"{name} reported {len(rows)} subagent rows, expected 2")
+    for run in rows:
+        owned = [item for item in items if item.get("subagentId") == run["subagentId"]]
+        require(run["status"] == "completed", f"subagent {run['name']} ended {run['status']}")
+        require(owned, f"subagent {run['name']} owns no activity")
+    # Claude's spawning Agent calls report into the rows, never as parent tool rows.
+    require(not any(item["kind"] == "tool" and not item.get("subagentId")
+                    and item["tool"].get("title") in ("Agent", "Task") for item in items),
+            "a spawning Agent call appears as the parent's own tool call")
+    return [{"name": run["name"], "model": run.get("model"),
+             "owned": sum(item.get("subagentId") == run["subagentId"] for item in items)}
+            for run in rows]
+
+
 def engine_restart_preserves_process(services, mac, pane_id):
     before = mac.pane(pane_id)
     restart_prompt = mac.mutate(
@@ -254,6 +281,9 @@ def run_harness(binaries, name, adapter, version, report, model=None):
                             "mode": full_access, "passed": True})
         model_change_preserves_session(mac, pane_id)
         results.append({"name": "real_model_change_preserves_session", "passed": True})
+        subagents = subagents_are_grouped(services, mac, pane_id, name)
+        results.append({"name": "real_subagents_are_grouped", "subagents": subagents,
+                        "passed": True})
         engine_restart_preserves_process(services, mac, pane_id)
         results.append({"name": "real_engine_restart_preserves_process", "passed": True})
         report["status"] = "passed"

@@ -65,6 +65,8 @@ fn open(
     } else {
         Vec::new()
     };
+    // A new harness process cannot report the previous one's subagents.
+    super::subagents::disconnect_all(store, &saved.pane.pane_id, state, changes)?;
     if let Some(id) = state.session_id.clone() {
         state.phase = Phase::Loading;
         changes.clear_replay = true;
@@ -521,6 +523,8 @@ fn session_lost(
 ) -> Result<()> {
     changes.clear_replay = true;
     state.open_messages.clear();
+    // The discarded replay may have reported subagents; none of them exist.
+    state.subagents.clear();
     state.replay_role = None;
     let text = "Native session lost; opening a new session without a continuation package";
     changes.events.push((

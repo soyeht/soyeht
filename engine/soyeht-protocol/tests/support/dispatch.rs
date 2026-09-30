@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
+// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -173,6 +173,8 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PlanEntry" => roundtrip::<PlanEntry>(value),
         "TokenUsage" => roundtrip::<TokenUsage>(value),
         "TerminalOutput" => roundtrip::<TerminalOutput>(value),
+        "SubagentStatus" => roundtrip::<SubagentStatus>(value),
+        "SubagentRun" => roundtrip::<SubagentRun>(value),
         "TranscriptMessage" => roundtrip::<TranscriptMessage>(value),
         "AttachmentRef" => roundtrip::<AttachmentRef>(value),
         "PanePromptParams" => roundtrip::<PanePromptParams>(value),
@@ -234,6 +236,8 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "ToolProgressUpdate" => roundtrip::<ToolProgressUpdate>(value),
         "PlanUpdateKind" => roundtrip::<PlanUpdateKind>(value),
         "PlanUpdate" => roundtrip::<PlanUpdate>(value),
+        "SubagentUpdateKind" => roundtrip::<SubagentUpdateKind>(value),
+        "SubagentUpdate" => roundtrip::<SubagentUpdate>(value),
         "UsageUpdateKind" => roundtrip::<UsageUpdateKind>(value),
         "UsageUpdate" => roundtrip::<UsageUpdate>(value),
         "TerminalOutputUpdateKind" => roundtrip::<TerminalOutputUpdateKind>(value),

@@ -2400,7 +2400,8 @@
         "plan",
         "usage",
         "system",
-        "handover"
+        "handover",
+        "subagent"
       ]
     },
     "PermissionOptionKind": {
@@ -3288,6 +3289,52 @@
       ],
       "additionalProperties": true
     },
+    "SubagentStatus": {
+      "type": "string",
+      "enum": [
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+        "disconnected"
+      ]
+    },
+    "SubagentRun": {
+      "type": "object",
+      "properties": {
+        "subagentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SubagentStatus"
+        },
+        "model": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "finishedAt": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subagentId",
+        "name",
+        "task",
+        "status"
+      ],
+      "additionalProperties": true
+    },
     "TranscriptMessage": {
       "type": "object",
       "properties": {
@@ -3334,6 +3381,12 @@
         },
         "agentMessage": {
           "$ref": "#/$defs/AgentMessageSource"
+        },
+        "subagent": {
+          "$ref": "#/$defs/SubagentRun"
+        },
+        "subagentId": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -4633,6 +4686,9 @@
         },
         "complete": {
           "type": "boolean"
+        },
+        "subagentId": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -4685,6 +4741,9 @@
         },
         "complete": {
           "type": "boolean"
+        },
+        "subagentId": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -4734,6 +4793,9 @@
         },
         "tool": {
           "$ref": "#/$defs/ToolCall"
+        },
+        "subagentId": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -4782,6 +4844,9 @@
         },
         "tool": {
           "$ref": "#/$defs/ToolCall"
+        },
+        "subagentId": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -4833,6 +4898,9 @@
           "items": {
             "$ref": "#/$defs/PlanEntry"
           }
+        },
+        "subagentId": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -4844,6 +4912,57 @@
         "seq",
         "localId",
         "entries"
+      ],
+      "additionalProperties": true
+    },
+    "SubagentUpdateKind": {
+      "type": "string",
+      "enum": [
+        "subagent"
+      ]
+    },
+    "SubagentUpdate": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/SubagentUpdateKind"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "localId": {
+          "$ref": "#/$defs/Id"
+        },
+        "subagent": {
+          "$ref": "#/$defs/SubagentRun"
+        },
+        "subagentId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId",
+        "kind",
+        "generation",
+        "seq",
+        "localId",
+        "subagent"
       ],
       "additionalProperties": true
     },
@@ -5031,6 +5150,9 @@
         },
         {
           "$ref": "#/$defs/ConfigOptionUpdate"
+        },
+        {
+          "$ref": "#/$defs/SubagentUpdate"
         }
       ]
     },

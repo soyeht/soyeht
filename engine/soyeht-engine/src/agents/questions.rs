@@ -318,7 +318,7 @@ pub fn receive(
         timestamp,
         pane_names,
     } = incoming;
-    if params["sessionId"].as_str() != state.session_id.as_deref() {
+    if !state.owns_session(params["sessionId"].as_str()) {
         return Err(invalid("Question belongs to another session"));
     }
     let prompt = state

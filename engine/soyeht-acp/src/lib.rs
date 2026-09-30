@@ -5,6 +5,7 @@ pub mod config;
 pub mod continuation;
 pub mod rpc;
 pub mod session;
+pub mod subagents;
 
 pub use client::Client;
 pub use rpc::{Error, Message, RpcError};

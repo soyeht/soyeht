@@ -74,6 +74,8 @@ pub enum Error {
     MissingToolCallId,
     MissingPlanEntries,
     MissingModeId,
+    MissingSubagentId,
+    InvalidSubagentState,
     ContinuationTemplate,
     ContinuationMetadata,
     ContinuationMessages,
@@ -164,6 +166,12 @@ impl std::fmt::Display for Error {
             Self::MissingToolCallId => formatter.write_str("tool update has no call ID"),
             Self::MissingPlanEntries => formatter.write_str("plan has no entries"),
             Self::MissingModeId => formatter.write_str("mode update has no mode ID"),
+            Self::MissingSubagentId => {
+                formatter.write_str("subagent update has no valid subagent session ID")
+            }
+            Self::InvalidSubagentState => {
+                formatter.write_str("subagent state update has no recognized state")
+            }
             Self::ContinuationTemplate => formatter.write_str("continuation template is invalid"),
             Self::ContinuationMetadata => {
                 formatter.write_str("continuation metadata exceeds its bound")

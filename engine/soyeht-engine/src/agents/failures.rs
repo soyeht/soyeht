@@ -70,10 +70,7 @@ impl Core {
             )?;
         }
         changes.outgoing.clear();
-        if state.phase != Phase::Loading {
-            transcript::complete(&self.store, pane, &mut state, &mut changes)?;
-        }
-        state.open_messages.clear();
+        transcript::close(&self.store, pane, &mut state, &mut changes)?;
         changes.messages.push(transcript::new_message(
             &mut state,
             saved.pane.generation,

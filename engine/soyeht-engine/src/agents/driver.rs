@@ -137,6 +137,7 @@ impl Core {
                         saved.pane.generation,
                         state,
                         &params,
+                        timestamp,
                         &mut changes,
                     )?
                 } else {

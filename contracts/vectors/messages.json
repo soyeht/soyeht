@@ -2953,6 +2953,25 @@
     }
   },
   {
+    "name": "SubagentStatus",
+    "type": "SubagentStatus",
+    "value": "running"
+  },
+  {
+    "name": "SubagentRun",
+    "type": "SubagentRun",
+    "value": {
+      "subagentId": "00000000-0000-4000-8000-000000000001",
+      "name": "example",
+      "task": "example",
+      "status": "running",
+      "model": "example",
+      "startedAt": "example",
+      "finishedAt": "example",
+      "summary": "example"
+    }
+  },
+  {
     "name": "TranscriptMessage",
     "type": "TranscriptMessage",
     "value": {
@@ -3573,6 +3592,35 @@
           "status": "pending"
         }
       ]
+    }
+  },
+  {
+    "name": "SubagentUpdateKind",
+    "type": "SubagentUpdateKind",
+    "value": "subagent"
+  },
+  {
+    "name": "SubagentUpdate",
+    "type": "SubagentUpdate",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "example",
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "kind": "subagent",
+      "generation": 0,
+      "seq": "18446744073709551615",
+      "localId": "00000000-0000-4000-8000-000000000001",
+      "subagent": {
+        "subagentId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "task": "example",
+        "status": "running",
+        "model": "example",
+        "startedAt": "example",
+        "finishedAt": "example",
+        "summary": "example"
+      },
+      "subagentId": "00000000-0000-4000-8000-000000000001"
     }
   },
   {

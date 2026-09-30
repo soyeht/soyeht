@@ -1,6 +1,7 @@
 use super::{
     Changes, native_error,
     state::{InternalContinuation, Phase, ReplayedUserMessage, State},
+    subagents::{self, Scope},
     transcript,
 };
 use crate::{
@@ -8,7 +9,10 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_acp::session::{self, Update};
+use soyeht_acp::{
+    session::{self, Update},
+    subagents::Lifecycle,
+};
 use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptRole};
 
 fn append_replayed_user(
@@ -26,9 +30,14 @@ fn append_replayed_user(
         state,
         generation,
         "user",
-        transcript::TextChunk { text, message_id },
+        transcript::TextChunk {
+            text,
+            message_id,
+            subagent: None,
+        },
         changes,
     )
+    .map(drop)
 }
 
 fn update_user(
@@ -126,20 +135,38 @@ pub(super) fn finish_replayed_user(
     )
 }
 
+struct ToolUpdate<'a> {
+    update: bool,
+    fields: &'a Value,
+    subagent: Option<&'a str>,
+}
+
 fn update_tool(
     store: &impl StorePort,
     pane: &str,
     generation: u32,
     state: &mut State,
-    update: bool,
-    fields: &Value,
+    tool_update: ToolUpdate<'_>,
     changes: &mut Changes,
 ) -> Result<()> {
+    let ToolUpdate {
+        update,
+        fields,
+        subagent,
+    } = tool_update;
     let id = errors::param_str(fields, "toolCallId")?;
     if id.is_empty() || id.chars().count() > 128 {
         return Err(errors::invalid("Tool ID exceeds public protocol bounds"));
     }
-    let key = format!("tool:{id}");
+    // Claude Code reports a subagent's model on the Agent call that spawned
+    // it; that call is the subagent's row, not a tool row of its own.
+    if subagent.is_none()
+        && let Some(report) = soyeht_acp::subagents::report(fields)
+        && super::subagents::reported(store, pane, state, report, changes)?
+    {
+        return Ok(());
+    }
+    let key = transcript::open_key("tool", subagent, Some(id));
     let prior = state
         .open_messages
         .get(&key)
@@ -157,6 +184,7 @@ fn update_tool(
             false,
         )?,
     };
+    item.subagent_id = subagent.map(Into::into);
     let mut tool = item.tool.as_ref().map(|tool| json!(tool)).unwrap_or_else(
         || json!({"toolCallId":id,"title":"Tool","status":"pending","locations":[]}),
     );
@@ -196,6 +224,7 @@ fn update_plan(
     generation: u32,
     state: &mut State,
     entries: Value,
+    subagent: Option<&str>,
     changes: &mut Changes,
 ) -> Result<()> {
     let mut item = transcript::new_message(
@@ -206,6 +235,7 @@ fn update_plan(
         String::new(),
         true,
     )?;
+    item.subagent_id = subagent.map(Into::into);
     item.plan =
         Some(serde_json::from_value(entries).map_err(|_| errors::invalid("Invalid plan entries"))?);
     transcript::put(changes, pane, item, "plan")
@@ -297,18 +327,142 @@ fn update_mode(
     configuration_event(pane, generation, state, "Agent updated its mode", changes)
 }
 
+/// Where a session update lands and when it happened, if it is live.
+struct Context<'a> {
+    pane: &'a str,
+    generation: u32,
+    timestamp: Option<&'a str>,
+}
+
+/// Subagent lifecycle reports, from the parent session or a subagent's own.
+fn update_subagent_lifecycle(
+    store: &impl StorePort,
+    context: &Context<'_>,
+    state: &mut State,
+    owner: Scope<'_>,
+    lifecycle: Lifecycle,
+    changes: &mut Changes,
+) -> Result<()> {
+    match lifecycle {
+        Lifecycle::Spawned(spawned) => {
+            let hidden = state.phase == Phase::Loading && state.replay_continuation_turn;
+            subagents::spawned(
+                store,
+                context.pane,
+                context.generation,
+                state,
+                spawned,
+                subagents::Spawn {
+                    owner,
+                    hidden,
+                    timestamp: context.timestamp,
+                },
+                changes,
+            )
+        }
+        Lifecycle::Finished(session, outcome) => subagents::finished(
+            store,
+            context.pane,
+            state,
+            &session,
+            outcome,
+            context.timestamp,
+            changes,
+        ),
+    }
+}
+
+/// A subagent's own activity stays under its row. Its accounting, mode, and
+/// configuration are its own, not the pane's, and its prompt is the row's task.
+fn update_in_subagent(
+    store: &impl StorePort,
+    context: &Context<'_>,
+    state: &mut State,
+    subagent: &str,
+    update: Update,
+    changes: &mut Changes,
+) -> Result<bool> {
+    let Context {
+        pane, generation, ..
+    } = *context;
+    match update {
+        Update::Message {
+            thought,
+            content,
+            message_id,
+        } => {
+            let text = text_block(&content)?;
+            let written = transcript::append_text(
+                store,
+                pane,
+                state,
+                generation,
+                thought,
+                transcript::TextChunk {
+                    text,
+                    message_id: message_id.as_deref(),
+                    subagent: Some(subagent),
+                },
+                changes,
+            )?;
+            if let Some(seq) = written.filter(|_| !thought) {
+                subagents::wrote(state, subagent, seq);
+            }
+        }
+        Update::Tool { update, fields } => update_tool(
+            store,
+            pane,
+            generation,
+            state,
+            ToolUpdate {
+                update,
+                fields: &fields,
+                subagent: Some(subagent),
+            },
+            changes,
+        )?,
+        Update::Plan(entries) => {
+            update_plan(pane, generation, state, entries, Some(subagent), changes)?
+        }
+        Update::Subagent(lifecycle) => update_subagent_lifecycle(
+            store,
+            context,
+            state,
+            Scope::Subagent(subagent),
+            lifecycle,
+            changes,
+        )?,
+        Update::UserMessage { .. }
+        | Update::Usage(_)
+        | Update::Configuration(_)
+        | Update::Mode(_) => return Ok(false),
+    }
+    Ok(true)
+}
+
+fn text_block(content: &Value) -> Result<&str> {
+    if content["type"] != "text" {
+        return Err(errors::invalid("This pane accepts text response blocks"));
+    }
+    content["text"]
+        .as_str()
+        .ok_or_else(|| errors::invalid("Text response has no text"))
+}
+
 pub fn update(
     store: &impl StorePort,
     pane: &str,
     generation: u32,
     state: &mut State,
     params: &Value,
+    timestamp: &str,
     changes: &mut Changes,
 ) -> Result<bool> {
-    let expected = if matches!(
+    let probing = matches!(
         state.phase,
         Phase::ProbeLoad | Phase::ProbeList | Phase::ProbeConfig
-    ) {
+    );
+    let expected = if probing {
         state.probe_session_id.as_deref()
     } else {
         state.session_id.as_deref()
@@ -316,40 +470,80 @@ pub fn update(
     let Some(expected) = expected else {
         return Err(errors::invalid("Update arrived before a session identity"));
     };
-    let update = session::update(expected, params).map_err(native_error)?;
-    if matches!(
-        state.phase,
-        Phase::ProbeLoad | Phase::ProbeList | Phase::ProbeConfig
-    ) {
+    let update = session::update(
+        |session| session == expected || (!probing && state.subagents.contains_key(session)),
+        params,
+    )
+    .map_err(native_error)?;
+    if probing {
         return Ok(false);
     }
     let Some(update) = update else {
         return Ok(false);
     };
-    if state.phase == Phase::Loading {
-        changes.replay_messages = true;
-        let role = match &update {
-            Update::Message { thought: true, .. } => "thought",
-            Update::Message { .. } => "message",
-            Update::UserMessage { .. } => "user",
-            _ => "other",
-        };
-        if state.replay_role.as_deref() != Some(role) {
-            finish_replayed_user(store, pane, generation, state, changes)?;
-            transcript::complete(store, pane, state, changes)?;
-            state.replay_role = Some(role.into());
-        }
-        if role == "user" {
-            state.replay_continuation_turn = false;
-        } else if state.replay_continuation_turn
-            && matches!(
-                update,
-                Update::Message { .. } | Update::Tool { .. } | Update::Plan(_)
-            )
-        {
-            return Ok(false);
+    let session = params["sessionId"].as_str().unwrap_or_default();
+    let context = Context {
+        pane,
+        generation,
+        timestamp: (state.phase != Phase::Loading).then_some(timestamp),
+    };
+    if state.phase == Phase::Loading && replay_hides(store, &context, state, &update, changes)? {
+        return Ok(false);
+    }
+    match subagents::scope(state, session) {
+        Scope::Parent => update_in_parent(store, &context, state, update, changes),
+        Scope::Hidden => Ok(false),
+        Scope::Subagent(subagent) => {
+            update_in_subagent(store, &context, state, subagent, update, changes)
         }
     }
+}
+
+/// Native replay: each change of speaker ends the previous one's open items.
+/// Returns whether the update belongs to the hidden continuation turn.
+fn replay_hides(
+    store: &impl StorePort,
+    context: &Context<'_>,
+    state: &mut State,
+    update: &Update,
+    changes: &mut Changes,
+) -> Result<bool> {
+    let Context {
+        pane, generation, ..
+    } = *context;
+    changes.replay_messages = true;
+    let role = match update {
+        Update::Message { thought: true, .. } => "thought",
+        Update::Message { .. } => "message",
+        Update::UserMessage { .. } => "user",
+        _ => "other",
+    };
+    if state.replay_role.as_deref() != Some(role) {
+        finish_replayed_user(store, pane, generation, state, changes)?;
+        transcript::complete(store, pane, state, changes)?;
+        state.replay_role = Some(role.into());
+    }
+    if role == "user" {
+        state.replay_continuation_turn = false;
+        return Ok(false);
+    }
+    Ok(state.replay_continuation_turn
+        && matches!(
+            update,
+            Update::Message { .. } | Update::Tool { .. } | Update::Plan(_)
+        ))
+}
+
+fn update_in_parent(
+    store: &impl StorePort,
+    context: &Context<'_>,
+    state: &mut State,
+    update: Update,
+    changes: &mut Changes,
+) -> Result<bool> {
+    let Context {
+        pane, generation, ..
+    } = *context;
     let observed_turn_output = match update {
         Update::UserMessage {
             content,
@@ -371,12 +565,6 @@ pub fn update(
             content,
             message_id,
         } => {
-            if content["type"] != "text" {
-                return Err(errors::invalid("This pane accepts text response blocks"));
-            }
-            let text = content["text"]
-                .as_str()
-                .ok_or_else(|| errors::invalid("Text response has no text"))?;
             transcript::append_text(
                 store,
                 pane,
@@ -384,19 +572,35 @@ pub fn update(
                 generation,
                 thought,
                 transcript::TextChunk {
-                    text,
+                    text: text_block(&content)?,
                     message_id: message_id.as_deref(),
+                    subagent: None,
                 },
                 changes,
             )?;
             true
         }
         Update::Tool { update, fields } => {
-            update_tool(store, pane, generation, state, update, &fields, changes)?;
+            update_tool(
+                store,
+                pane,
+                generation,
+                state,
+                ToolUpdate {
+                    update,
+                    fields: &fields,
+                    subagent: None,
+                },
+                changes,
+            )?;
             true
         }
         Update::Plan(entries) => {
-            update_plan(pane, generation, state, entries, changes)?;
+            update_plan(pane, generation, state, entries, None, changes)?;
+            true
+        }
+        Update::Subagent(lifecycle) => {
+            update_subagent_lifecycle(store, context, state, Scope::Parent, lifecycle, changes)?;
             true
         }
         // Some adapters emit accounting while a provider is wedged. Usage is

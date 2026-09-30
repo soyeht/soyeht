@@ -397,11 +397,7 @@ impl Core {
             .client
             .request(
                 "initialize",
-                json!({"protocolVersion":1,
-                    "clientInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")},
-                    "clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true},
-                        "terminal":true,"auth":{"terminal":true},"elicitation":{"form":{}},
-                        "session":{"configOptions":{"boolean":{}}}}}),
+                soyeht_acp::client::initialize_params(),
                 "switch:initialize",
                 self.now_ms() as u64,
             )
