@@ -108,7 +108,9 @@ public final class EngineClient {
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
-  public var readOnly: Bool { credential != nil }
+  /// True for a paired iPhone or iPad. A paired device is a full remote control of the Mac;
+  /// this only selects its transport, handshake and background behavior, never fewer powers.
+  public var pairedDevice: Bool { credential != nil }
   /// Stable namespace for device-local presentation state. It is not a credential or token.
   public var engineId: String? { credential?.engineId }
   public var harnessesLoading: Bool { harnessLoadCount > 0 }
@@ -154,7 +156,7 @@ public final class EngineClient {
         do { try await self.session() } catch {
           self.connectionText = error.localizedDescription
           if case ClientFailure.remote(let kind, _, _) = error,
-            self.readOnly
+            self.pairedDevice
               && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
                 .contains(kind)
           {
@@ -195,7 +197,7 @@ public final class EngineClient {
     resizeTasks.removeAll()
     resizeGenerations.removeAll()
     terminalSubscriptionsInFlight.removeAll()
-    if readOnly {
+    if pairedDevice {
       panes = []
       workspaces = []
       paneLayouts.removeAll()
@@ -260,7 +262,8 @@ public final class EngineClient {
         capabilities: webHost == nil ? nil : [.web_host])
     }
     let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
-    guard welcome.role == (readOnly ? .human_device : .human_local), welcome.protocolVersion == 1
+    guard welcome.role == (pairedDevice ? .human_device : .human_local),
+      welcome.protocolVersion == 1
     else {
       throw ClientFailure.invalidFrame
     }
@@ -270,7 +273,7 @@ public final class EngineClient {
     try await loadPreferredHarness()
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
     try await loadUsage()
-    if !readOnly { try await loadLocalServers() }
+    if !pairedDevice { try await loadLocalServers() }
     connectionRevision &+= 1
     connected = true
     connectionText = "Dev profile · connected"
@@ -553,10 +556,6 @@ public final class EngineClient {
   }
 
   public func setPreferredHarness(_ harnessId: String) async throws {
-    guard !readOnly else {
-      throw ClientFailure.remote(
-        ErrorKind.forbidden_role.rawValue, "Only the Mac can change the preferred agent.")
-    }
     let result = try await mutation(
       "settings.set",
       SettingsSetParams(
@@ -913,7 +912,7 @@ public final class EngineClient {
     input(data, paneId: pane)
   }
   func input(_ data: Data, paneId pane: String) {
-    guard !readOnly, connected, selectedPaneId == pane,
+    guard connected, selectedPaneId == pane,
       panes.contains(where: { $0.paneId == pane && $0.mode == .terminal }), !data.isEmpty
     else { return }
     guard queuedInputBytes + data.count <= 1_048_576 else {

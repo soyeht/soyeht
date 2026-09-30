@@ -385,7 +385,7 @@ public struct PhoneWritingLayoutRequest: Equatable, Sendable {
   public var selectedPaneId: String?
   /// `nil` means this device has never stored state for this workspace.
   public var localState: PhoneWritingLocalState?
-  /// False while the read-only client is disconnected and its replicas are intentionally empty.
+  /// False while the paired-device client is disconnected and its replicas are intentionally empty.
   /// Such a gap must never prune or persist device-local presentation state.
   public var snapshotIsAuthoritative: Bool
   public var viewport: PaneLayoutSize

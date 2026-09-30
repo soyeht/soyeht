@@ -286,7 +286,7 @@ struct PhoneWritingWorkspace: View {
   }
 
   private func reconcile(_ state: PhoneWritingLocalState) {
-    // A read-only disconnect clears replicas by design. Do not mistake that transient
+    // A paired-device disconnect clears replicas by design. Do not mistake that transient
     // empty snapshot for panes being closed and overwrite the last local presentation.
     guard client.connected else { return }
     guard localState != state else { return }

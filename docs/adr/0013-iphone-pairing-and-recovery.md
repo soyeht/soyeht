@@ -28,8 +28,8 @@ subscription. It shows the list only after completing this cycle. Revocation clo
 the connection, and a refused credential requires new pairing. The shell and history
 remain on the Mac.
 
-The iPhone screen accepts no keyboard input, remote clipboard or terminal-triggered
-link opening. Resize remains an allowed request: the last resize wins. Applying
+The iPhone screen accepts no remote clipboard or terminal-triggered link opening.
+Keyboard input follows the 2026-09-26 decision below. Resize remains an allowed request: the last resize wins. Applying
 received dimensions to the interpreter does not generate another request, preventing
 contention between the two clients.
 
@@ -37,3 +37,21 @@ Local signing uses automatic development signing. The iPhone build passed with
 the existing development certificate and profile. CI builds Mac and iOS Simulator
 without signing. Physical reboot, a real camera and switching to the mobile network
 remain in the manual procedure for acceptance 7; protocol testing does not replace them.
+
+## Decision note (2026-09-26)
+
+By owner decision, a paired iPhone or iPad is a full remote control of the Mac,
+exactly like sitting in front of it. It types into terminals, drives agents,
+creates, closes and moves panes and workspaces, and changes settings. The engine
+gives `human_device` the same powers as `human_local`. This supersedes the
+earlier rule that the iPhone terminal was read-only, which the owner had never
+agreed.
+
+Authentication does not change. A device must still be approved on the Mac
+during pairing and sign every `hello` with its key. An unpaired, unsigned or
+revoked connection gets nothing. Agents keep their own limits.
+
+The phone terminal sends keystrokes through the same `TerminalHost` and
+`pane.input` path as the Mac terminal. SwiftTerm encodes the software keyboard,
+its Esc, Ctrl, Tab and arrow accessory row, and hardware keys, so there is no
+second encoder.

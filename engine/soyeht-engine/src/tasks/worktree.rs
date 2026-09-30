@@ -329,10 +329,8 @@ impl crate::core::Core {
         }
         let params: TaskWorktreeCleanParams = crate::tasks::api::parameters(raw)?;
         let actor = self.task_actor(connection)?;
-        if actor.role != Role::HumanLocal {
-            return Err(errors::forbidden_role(
-                "Worktree cleanup requires the local human client",
-            ));
+        if !matches!(actor.role, Role::HumanLocal | Role::HumanDevice) {
+            return Err(errors::forbidden_role("Worktree cleanup requires a person"));
         }
         let task = crate::tasks::api::task(&self.store, &params.workspace_id, &params.task_id)?;
         let Some(worktree) = task.worktree else {

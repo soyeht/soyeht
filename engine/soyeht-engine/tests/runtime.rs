@@ -3883,6 +3883,30 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
         serde_json::from_slice::<Value>(&response).unwrap()["error"]["data"]["kind"],
         "forbidden_role"
     );
+    // Device parity must not widen agent powers.
+    for (id, method, params) in [
+        (
+            3,
+            "pane.input",
+            json!({"paneId":"any","bytes":STANDARD.encode(b"x"),"idempotencyKey":"agent-input"}),
+        ),
+        (
+            4,
+            "settings.set",
+            json!({"key":soyeht_engine::settings::PREFERRED_HARNESS_KEY,"value":"agent","idempotencyKey":"agent-setting"}),
+        ),
+        (
+            5,
+            "device.pair.start",
+            json!({"idempotencyKey":"agent-pair"}),
+        ),
+    ] {
+        assert_eq!(
+            binding_request(&mut bound_socket, id, method, params)["error"]["data"]["kind"],
+            "forbidden_role",
+            "agent {method}"
+        );
+    }
     let (_, unknown) = binding_hello(&rig.path.join("engine.sock"), "unknown-binding");
     assert_eq!(unknown["error"]["data"]["kind"], "unauthorized");
 
@@ -6965,6 +6989,26 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
         phone.request("workspace.list", json!({}))["error"]["data"]["kind"],
         "unauthorized"
     );
+    for (method, params) in [
+        (
+            "pane.input",
+            json!({"paneId":pane,"bytes":STANDARD.encode(b"echo no\n"),"idempotencyKey":"unpaired-input"}),
+        ),
+        (
+            "settings.set",
+            json!({"key":soyeht_engine::settings::PREFERRED_HARNESS_KEY,"value":"unpaired","idempotencyKey":"unpaired-setting"}),
+        ),
+        (
+            "device.pair.start",
+            json!({"idempotencyKey":"unpaired-pair-window"}),
+        ),
+    ] {
+        assert_eq!(
+            phone.request(method, params)["error"]["data"]["kind"],
+            "unauthorized",
+            "{method} before pairing"
+        );
+    }
     let key = ed25519_dalek::SigningKey::from_bytes(&[17; 32]);
     let begin=phone.request("pair.begin",json!({"code":window["code"],"deviceName":"Test phone","devicePublicKey":STANDARD.encode(key.verifying_key().to_bytes()),"idempotencyKey":"begin"}));
     assert!(begin.get("error").is_none(), "{begin}");
@@ -7040,7 +7084,30 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     drop(phone);
     let mut phone = Phone::connect(address);
     assert_eq!(phone.hello(&key, token)["result"]["role"], "human_device");
-    assert_eq!(phone.request("pane.input",json!({"paneId":pane,"bytes":STANDARD.encode(b"echo no\n"),"idempotencyKey":"forbidden"}))["error"]["data"]["kind"],"forbidden_role");
+    // A paired device is a full remote control: it types into terminals and
+    // changes settings exactly like the local human.
+    let typed = phone.request("pane.input",json!({"paneId":pane,"bytes":STANDARD.encode(b"echo from-phone\n"),"idempotencyKey":"phone-input"}));
+    assert!(typed.get("error").is_none(), "{typed}");
+    assert!(
+        typed["result"]["acceptedBytes"].as_u64().unwrap() > 0,
+        "{typed}"
+    );
+    let key_name = soyeht_engine::settings::PREFERRED_HARNESS_KEY;
+    let set = phone.request(
+        "settings.set",
+        json!({"key":key_name,"value":"phone-choice","idempotencyKey":"phone-setting"}),
+    );
+    assert_eq!(set["result"]["value"], "phone-choice", "{set}");
+    assert_eq!(
+        local.call("settings.get", json!({"key":key_name}))["value"],
+        "phone-choice"
+    );
+    let listed = phone.request("device.list", json!({}));
+    assert_eq!(
+        listed["result"]["items"].as_array().unwrap().len(),
+        1,
+        "{listed}"
+    );
     assert_eq!(
         phone.request("workspace.list", json!({}))["result"]["items"]
             .as_array()
@@ -7060,6 +7127,13 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     assert_eq!(
         phone.hello(&key, token)["error"]["data"]["kind"],
         "unauthorized"
+    );
+    assert!(
+        matches!(
+            phone.socket.read(),
+            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) | Err(_)
+        ),
+        "a revoked device keeps no connection to type through"
     );
 }
 

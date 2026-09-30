@@ -24,13 +24,27 @@ it has been confirmed to work”. Evidence of today's behavior is in
 6. **Push**: the engine on the Mac sends directly to APNs (as today) for:
    permission requests, tasks marked “your turn”, “no signal”, pane death.
    Live Activity for “agent running” (already exists for deployment; reuse it).
-7. **What the iPhone does in v1**: view workspaces, panes and state; read the
-   pane (agent and raw terminal); answer permission requests; send text;
-   task board (view, drag, dispatch); yolo button; change model/effort.
+7. **What the iPhone does in v1**: everything the person can do at the Mac.
+   A paired iPhone or iPad is a full remote control (owner decision,
+   2026-09-26): view workspaces, panes and state; type into raw terminals
+   (software keyboard with Esc, Ctrl, Tab and arrow keys, or a hardware
+   keyboard); drive agents, answer permission requests, send text; task board
+   (view, drag, dispatch); yolo button; change model/effort; create, close and
+   move panes and workspaces; change settings. The engine grants the paired
+   device the same role powers as the local human (contract 08 §2.4); a phone
+   screen that lacks a control for one of these is a missing feature, not a
+   permission boundary.
 
 ## 2. Outside v1
 Cloud relay; connections without Tailscale; a custom mesh (10.44/16) for the
-iPhone; live typing into the raw terminal from the iPhone.
+iPhone.
 
 ## Review applied (2026-09-10, finding R10)
-The QR → challenge → consent → `deviceToken` path is defined in contract 08 §2.2; push and Live Activity in 08 §2.3; revocation invalidates the token, connections and push. Typing into a raw terminal from the iPhone is outside v1 (role matrix, 08 §2.4).
+The QR → challenge → consent → `deviceToken` path is defined in contract 08 §2.2; push and Live Activity in 08 §2.3; revocation invalidates the token, connections and push.
+
+## Owner decision (2026-09-26)
+The earlier rule that the iPhone reads terminals without typing was never
+agreed by the owner and is superseded: a paired device has the same powers as
+the local human, including live typing into the raw terminal (role matrix,
+08 §2.4). Pairing consent on the Mac and the signed `hello` remain the only
+gate.

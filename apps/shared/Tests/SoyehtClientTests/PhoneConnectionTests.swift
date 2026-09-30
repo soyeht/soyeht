@@ -231,11 +231,14 @@
     }
     reader.start()
     try await phoneWait { reader.connected && !reader.panes.isEmpty }
-    #expect(reader.readOnly)
+    #expect(reader.pairedDevice)
     #expect(reader.selectedPane?.pid == local.selectedPane?.pid)
     try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READY>") }
     local.input(Data("printf 'PHONE_READER_%s\\n' OK\r".utf8))
     try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READER_OK") }
+    // The paired device types through the same pane.input path as the Mac.
+    reader.input(Data("printf 'PHONE_WRITER_%s\\n' OK\r".utf8))
+    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_WRITER_OK") }
     try await exerciseAgentPane(local: local, reader: reader, data: fixture.data)
     try await reconnectAndRevoke(
       local: local, reader: reader, credential: credential, data: fixture.data)

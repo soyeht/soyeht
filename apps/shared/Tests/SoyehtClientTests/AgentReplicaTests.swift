@@ -263,14 +263,16 @@ import Testing
       == "The switch failed. The original agent is still running.")
 }
 
-@MainActor @Test func remoteClientCannotStartAgentAuthentication() throws {
+@MainActor @Test func pairedDeviceStartsAgentAuthenticationLikeTheMac() throws {
   let credential = DeviceCredential(
     engineId: "engine", deviceId: "device",
     address: try #require(URL(string: "ws://100.64.0.1:8291")),
     token: "token", key: Data(repeating: 0, count: 32))
   let client = EngineClient(credential: credential)
 
+  #expect(client.pairedDevice)
   client.startAgentAuthentication("pane-agent", methodId: "login")
 
-  #expect(client.problem == "Finish agent sign-in on the Mac.")
+  // A paired device is a full remote control: no client-side refusal.
+  #expect(client.problem != "Finish agent sign-in on the Mac.")
 }

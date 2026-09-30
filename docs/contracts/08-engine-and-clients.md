@@ -95,16 +95,26 @@ per device; renewal = register again. Push-triggering events:
 `pane.state_changed` to `no_signal`, `pane.session_lost`.
 
 **2.4 Role matrix** (who may do what):
-| Operation | human_local | human_device (iPhone) | agent (pane MCP) | chief |
+
+A paired device (`human_device`, iPhone or iPad) is a full remote control of
+the Mac by owner decision on 2026-09-26: it has exactly the powers of
+`human_local`. Pairing is what protects the Mac: a device must be approved on
+the Mac (§2.2) and sign every `hello` with its key (§2.1); an unpaired, unsigned
+or revoked connection gets nothing. Two differences are about where code runs,
+not about permission: only the local Mac app may register as the web host,
+and pane-state experiment data is recorded only in the signed Mac app.
+
+| Operation | human_local | human_device (iPhone, iPad) | agent (pane MCP) | chief |
 |---|---|---|---|---|
 | view everything in the workspace | yes | yes | own task/pane only | yes |
-| `pane.input` (type into raw terminal) | yes | not in v1 (read only) | no | no |
+| `pane.input` (type into raw terminal) | yes | yes | no | no |
 | `pane.prompt`, `pane.cancel`, permission, yolo, config | yes | yes | no | no |
 | `task.create/comment/subitem/block/release/request_review/complete` | yes | yes | own task only | yes |
 | `task.next` | no | no | yes | no |
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
-| `device.*`, `settings.set`, `experiment.*` | yes | `device.list` | no | no |
+| `device.*`, `settings.set`, `harness.custom.*` | yes | yes | no | no |
+| `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
 
 ## 3. State snapshot and events without loss (R05)
 - **State change and event originate in the same database transaction.** Every
@@ -343,7 +353,7 @@ the client repeats the request; parts from an old `snapshotId` are discarded.
 
 ## 10. Outside v1
 More than one Mac in the same engine; cloud relay; HTTPS through `tailscale
-serve`; per-workspace event subscriptions; typing into a raw terminal from iPhone.
+serve`; per-workspace event subscriptions.
 
 ## Decisions applied to the two earlier questions
 1. MCP = separate thin client; rules and persistence in the engine;
