@@ -3926,6 +3926,163 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
 }
 
 #[test]
+fn mcp_connections_outside_the_pane_process_tree_keep_each_pane_identity() {
+    let rig = Rig::new();
+    let (mut human, first) = rig.agent();
+    let workspace = human.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+
+    // Both connections originate in this test process, outside either pane's
+    // process tree, so no process ancestry or TTY lookup can identify them.
+    let first_binding = binding_env(&mcp_server_for(&rig, &mut human, &first));
+    let second_binding = binding_env(&mcp_server_for(&rig, &mut human, &second));
+    assert_ne!(first_binding, second_binding);
+
+    let (mut first_socket, first_hello) =
+        binding_hello(&rig.path.join("engine.sock"), &first_binding);
+    let (mut second_socket, second_hello) =
+        binding_hello(&rig.path.join("engine.sock"), &second_binding);
+    assert_eq!(first_hello["result"]["role"], "agent");
+    assert_eq!(second_hello["result"]["role"], "agent");
+
+    let first_peers = binding_request(&mut first_socket, 2, "agent.list", json!({}));
+    let second_peers = binding_request(&mut second_socket, 2, "agent.list", json!({}));
+    assert_eq!(first_peers["result"]["items"][0]["paneId"], second);
+    assert_eq!(second_peers["result"]["items"][0]["paneId"], first);
+
+    // A binding stops authenticating once its pane is closed.
+    human.call(
+        "pane.close",
+        json!({"paneId":first,"idempotencyKey":"close-first-bound-pane"}),
+    );
+    let (_, closed) = binding_hello(&rig.path.join("engine.sock"), &first_binding);
+    assert_eq!(closed["error"]["data"]["kind"], "unauthorized");
+    let (_, still_open) = binding_hello(&rig.path.join("engine.sock"), &second_binding);
+    assert_eq!(still_open["result"]["role"], "agent");
+}
+
+#[test]
+fn mcp_process_launched_outside_the_pane_resolves_identity_from_its_binding() {
+    let rig = Rig::new();
+    let (mut human, first) = rig.agent();
+    let workspace = human.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    let server = mcp_server_for(&rig, &mut human, &first);
+
+    // The test runner launches MCP directly, outside either pane's TTY
+    // process tree, with the declared args and env.
+    let replies = run_mcp(
+        &server,
+        &first,
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n"
+        ),
+    );
+    assert_eq!(replies[0]["result"]["serverInfo"]["name"], "Soyeht");
+    assert_eq!(replies[1]["result"]["isError"], false);
+    assert_eq!(
+        replies[1]["result"]["structuredContent"]["items"][0]["paneId"],
+        second
+    );
+
+    // Pane A's binding launched with pane B's --pane-id still acts as A: it
+    // sees B as its peer and cannot configure B's loop.
+    let crossed = run_mcp(
+        &server,
+        &second,
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"loop_set\",\"arguments\":{\"prompt\":\"impersonate\",\"interval\":60,\"maxRounds\":1,\"stopWhen\":\"round_limit\",\"enabled\":false}}}\n"
+        ),
+    );
+    assert_eq!(crossed[1]["result"]["isError"], false);
+    assert_eq!(
+        crossed[1]["result"]["structuredContent"]["items"][0]["paneId"],
+        second
+    );
+    assert_eq!(crossed[2]["result"]["isError"], true);
+    assert_eq!(
+        crossed[2]["result"]["structuredContent"]["kind"],
+        "forbidden_role"
+    );
+}
+
+fn mcp_server_for(rig: &Rig, human: &mut Client, pane: &str) -> Value {
+    let session_id = human.pane(pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    rig.native_session(&session_id)["mcp_servers"][0].clone()
+}
+
+fn binding_env(server: &Value) -> String {
+    server["env"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "SOYEHT_MCP_BINDING")
+        .unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Runs the declared MCP server with its env, overriding `--pane-id`, and
+/// returns one parsed reply per request line.
+fn run_mcp(server: &Value, pane_id: &str, requests: &str) -> Vec<Value> {
+    let mut args: Vec<String> = server["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect();
+    let pane_arg = args.iter().position(|value| value == "--pane-id").unwrap() + 1;
+    args[pane_arg] = pane_id.to_owned();
+    let mut command = Command::new(server["command"].as_str().unwrap());
+    command.args(&args);
+    for entry in server["env"].as_array().unwrap() {
+        command.env(
+            entry["name"].as_str().unwrap(),
+            entry["value"].as_str().unwrap(),
+        );
+    }
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(requests.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "soyeht-mcp failed: {stderr}");
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        replies.len(),
+        requests.lines().count(),
+        "missing replies; stderr: {stderr}"
+    );
+    replies
+}
+
+#[test]
 fn a_legacy_agent_checkpoint_gets_one_binding_that_survives_the_next_restart() {
     let mut rig = Rig::new();
     let (_, pane) = rig.agent();
