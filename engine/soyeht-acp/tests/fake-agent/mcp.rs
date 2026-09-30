@@ -37,7 +37,10 @@ pub struct Client {
 
 impl Client {
     pub fn from_servers(servers: &[Value]) -> Result<Option<Self>> {
-        let Some(server) = servers.iter().find(|server| server["name"] == "Soyeht") else {
+        let Some(server) = servers
+            .iter()
+            .find(|server| server["name"] == "soyeht-workspace")
+        else {
             return Ok(None);
         };
         let command = server["command"]

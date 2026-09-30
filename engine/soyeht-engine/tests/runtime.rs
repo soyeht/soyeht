@@ -1078,14 +1078,14 @@ impl Rig {
             thread::sleep(Duration::from_millis(10));
         }
     }
-    fn install_fake_harness(&self) {
+    fn install_fake_harness(&self, modes: &str) {
         let binary =
             PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
         fs::write(
             self.path.join("harnesses.json"),
             serde_json::to_vec(&json!([{
                 "id":"test-agent","name":"Test agent","command":binary,
-                "args":["--state-dir",self.path.join("native")],"version":"test"
+                "args":["--state-dir",self.path.join("native"),"--modes",modes],"version":"test"
             }]))
             .unwrap(),
         )
@@ -1136,8 +1136,16 @@ impl Rig {
         )
         .unwrap();
     }
-    fn open_agent(&self, mut client: Client, workspace: &Value) -> (Client, String) {
-        self.install_fake_harness();
+    fn open_agent(&self, client: Client, workspace: &Value) -> (Client, String) {
+        self.open_agent_announcing(client, workspace, "config")
+    }
+    fn open_agent_announcing(
+        &self,
+        mut client: Client,
+        workspace: &Value,
+        modes: &str,
+    ) -> (Client, String) {
+        self.install_fake_harness(modes);
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent",
@@ -1154,6 +1162,10 @@ impl Rig {
         (client, pane)
     }
     fn agent(&self) -> (Client, String) {
+        self.agent_announcing("config")
+    }
+    /// An agent pane whose fake announces its modes as `config`, `legacy` or `none`.
+    fn agent_announcing(&self, modes: &str) -> (Client, String) {
         let mut client = self.client();
         let workspace = client.call(
             "workspace.create",
@@ -1161,7 +1173,7 @@ impl Rig {
             "idempotencyKey":"agent-workspace"}),
         )["workspace"]["workspaceId"]
             .clone();
-        self.open_agent(client, &workspace)
+        self.open_agent_announcing(client, &workspace, modes)
     }
     fn agent_in_workspace(&self, workspace: &str) -> (Client, String) {
         self.open_agent(self.client(), &json!(workspace))
@@ -1375,10 +1387,13 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
             .iter()
             .all(|item| item["agentMessage"]["paneId"] == sender)
     );
+    // The queue holds the sender's words; the reply route is added only for
+    // the harness, so no bubble or queue row shows a pane identifier.
     assert!(
         items
             .iter()
-            .all(|item| item["text"].as_str().unwrap().contains("message_agent"))
+            .enumerate()
+            .all(|(index, item)| item["text"] == format!("note {index}"))
     );
     assert!(
         items
@@ -1424,6 +1439,110 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
         )["queued"],
         true
     );
+}
+
+#[test]
+fn held_agent_message_follows_the_sent_draft_as_its_own_attributed_turn() {
+    let mut rig = Rig::new();
+    let (mut human, sender) = rig.agent();
+    let workspace = human.pane(&sender)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, target) = rig.agent_in_workspace(&workspace);
+    let sender_name = human.pane(&sender)["name"].as_str().unwrap().to_owned();
+    human.call(
+        "pane.draft",
+        json!({"paneId":target,"active":true,"idempotencyKey":"typing-in-target"}),
+    );
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &sender)
+        .unwrap()
+        .unwrap();
+    let (socket, _) = binding_hello(
+        &rig.path.join("engine.sock"),
+        runtime["binding"].as_str().unwrap(),
+    );
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    agent.call(
+        "agent.message",
+        json!({"targetPaneId":target,"text":"peer note","idempotencyKey":"held-peer-note"}),
+    );
+    thread::sleep(Duration::from_millis(500));
+    assert!(
+        transcript_items(&mut human, &target)
+            .iter()
+            .all(|item| item["role"] != "user"),
+        "an agent message reached the pane while its user had a draft"
+    );
+    let queued = human.call("pane.queue.list", json!({"paneId":target,"limit":64}));
+    assert_eq!(queued["items"][0]["text"], "peer note");
+    assert_eq!(queued["items"][0]["agentMessage"]["name"], sender_name);
+
+    human.call(
+        "pane.prompt",
+        json!({"paneId":target,"text":"typed draft","idempotencyKey":"send-typed-draft"}),
+    );
+    // Sending the composer's text ends its draft in the same commit.
+    assert_eq!(
+        human.call("pane.queue.list", json!({"paneId":target,"limit":64}))["draft"],
+        false
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let users = loop {
+        let users: Vec<Value> = transcript_items(&mut human, &target)
+            .into_iter()
+            .filter(|item| item["role"] == "user")
+            .collect();
+        if users.len() == 2 {
+            break users;
+        }
+        assert!(Instant::now() < deadline, "held message was not delivered");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(users[0]["text"], "typed draft");
+    assert!(users[0].get("agentMessage").is_none());
+    assert_eq!(users[1]["text"], "peer note");
+    assert_eq!(users[1]["agentMessage"]["paneId"], sender);
+    assert_eq!(users[1]["agentMessage"]["name"], sender_name);
+
+    let session = human.pane(&target)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let prompts = loop {
+        let prompts: Vec<String> = rig.native_session(&session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|turn| turn[0].as_str().unwrap().to_owned())
+            .collect();
+        if prompts.len() == 2 {
+            break prompts;
+        }
+        assert!(Instant::now() < deadline, "native turns were not recorded");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(prompts[0], "typed draft");
+    assert!(prompts[1].contains(&format!("targetPaneId={sender}")));
+    assert!(prompts[1].ends_with("\n\npeer note"));
+
+    // Native replay after supervisor loss restores the same attributed bubble.
+    let live = transcript_items(&mut human, &target);
+    let restored = restart_and_wait_for_replay(&mut rig, &target, &live);
+    let users: Vec<&Value> = restored
+        .iter()
+        .filter(|item| item["role"] == "user")
+        .collect();
+    assert_eq!(users.len(), 2, "{restored:?}");
+    assert_eq!(users[0]["text"], "typed draft");
+    assert_eq!(users[1]["text"], "peer note");
+    assert_eq!(users[1]["agentMessage"]["name"], sender_name);
 }
 
 fn binding_request(socket: &mut UnixStream, id: u64, method: &str, params: Value) -> Value {
@@ -2717,6 +2836,77 @@ fn a_lost_output_page_preserves_pending_permission_and_declares_the_gap() {
 }
 
 #[test]
+fn an_active_prompt_leaves_the_published_queue_when_it_starts() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let prompt = client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission","idempotencyKey":"leaves-queue"}),
+    );
+    client.wait_state(&pane, "waiting_for_you");
+    // The enqueue announced one queued prompt. Clients refresh their queue
+    // row only from pane.queued, so starting the prompt must announce the
+    // shrink too, not wait for the turn to end.
+    let queued = rig
+        .database_probe()
+        .latest_event("pane.queued")
+        .unwrap()
+        .expect("queue event");
+    assert_eq!(queued["paneId"], pane);
+    assert_eq!(queued["n"], 0);
+    assert_eq!(queued["promptIds"], json!([]));
+    assert_eq!(
+        client.section("requests")[0]["request"]["promptId"],
+        prompt["promptId"]
+    );
+    let listed = client.call("pane.queue.list", json!({"paneId":pane,"limit":64}));
+    assert!(listed["items"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn agent_panes_keep_creation_order_while_one_asks_and_the_other_is_messaged() {
+    let rig = Rig::new();
+    let (mut client, first) = rig.agent();
+    let workspace = client.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    client.call(
+        "pane.prompt",
+        json!({"paneId":first,"text":"permission","idempotencyKey":"order-asks"}),
+    );
+    client.wait_state(&first, "waiting_for_you");
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &first)
+        .unwrap()
+        .unwrap();
+    let (socket, _) = binding_hello(
+        &rig.path.join("engine.sock"),
+        runtime["binding"].as_str().unwrap(),
+    );
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    agent.call(
+        "agent.message",
+        json!({"targetPaneId":second,"text":"hello","idempotencyKey":"order-message"}),
+    );
+    // A reconnecting client lays out an automatic workspace in snapshot pane
+    // order, so that order must be creation order, not identifier order.
+    let order: Vec<_> = rig
+        .client()
+        .section("panes")
+        .into_iter()
+        .filter(|pane| pane["workspaceId"] == workspace)
+        .map(|pane| pane["paneId"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(order, [first, second]);
+}
+
+#[test]
 fn a_permission_created_during_engine_outage_is_recovered_once() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();
@@ -2811,11 +3001,12 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
 #[test]
 fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
     let mut rig = Rig::new();
-    let (mut client, pane) = rig.agent();
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"on"}),
+    let (mut client, pane) = rig.agent_announcing("none");
+    let applied = client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"on"}),
     );
+    assert_eq!(applied["effective"], "allow_all");
     let prompt = client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"permission","idempotencyKey":"auto"}),
@@ -2857,8 +3048,8 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
         .unwrap();
     assert_eq!(by_rule, 1);
     client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"off"}),
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"off"}),
     );
     client.call(
         "pane.prompt",
@@ -3290,7 +3481,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     assert_eq!(resumed["agent"]["authMethods"], json!([]));
     let models = client.call("model.list", json!({"harness":"auth-test","paneId":pane}));
     assert_eq!(models["source"], "native_session");
-    assert_eq!(models["items"].as_array().unwrap().len(), 4);
+    assert_eq!(models["items"].as_array().unwrap().len(), 5);
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
     let repeated = client.request(
         "pane.auth.start",
@@ -4402,6 +4593,91 @@ fn undisplayable_execute_permission_is_rejected_and_explained_in_the_transcript(
     );
 }
 
+fn mcp_permission(client: &mut Client, pane: &str, tool: &str, key: &str) -> Value {
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":format!("permission-tracked-mcp:{tool}"),"idempotencyKey":key}),
+    );
+    client.wait_state(pane, "waiting_for_you");
+    client.section("requests")[0]["request"].clone()
+}
+
+#[test]
+fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_tracked_call() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let first = mcp_permission(&mut client, &pane, "list_agents", "list-agents");
+    assert_eq!(first["title"], "Use soyeht-workspace · list_agents");
+    assert_eq!(first["presentation"]["command"], Value::Null);
+    assert_eq!(
+        first["presentation"]["toolArguments"],
+        json!([{"name":"text","value":"  first line\n  second line"}])
+    );
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":first["requestId"],"optionId":"always","idempotencyKey":"always-list"}));
+    client.wait_state(&pane, "idle");
+    // A grant for one tool never covers another tool whose request looks
+    // the same without its tracked call.
+    let second = mcp_permission(&mut client, &pane, "message_agent", "message-agent");
+    assert_eq!(second["title"], "Use soyeht-workspace · message_agent");
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":second["requestId"],"optionId":"deny","idempotencyKey":"deny-message"}));
+    client.wait_state(&pane, "idle");
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-tracked-mcp:list_agents","idempotencyKey":"list-again"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while rig
+        .database_probe()
+        .event_count_by_field("pane.permission_answered", "by", "rule")
+        .unwrap()
+        == 0
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the granted tool was not approved by its rule"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    client.wait_state(&pane, "idle");
+    assert_eq!(
+        rig.database_probe()
+            .event_count("pane.permission_requested")
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
+fn approval_for_an_unreported_tool_call_without_input_stays_blocked() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-untracked-mcp","idempotencyKey":"untracked"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"].as_array().unwrap().iter().any(|item| {
+            item["role"] == "system"
+                && item["text"].as_str().is_some_and(|text| {
+                    text.contains("no command to display") && text.contains("Nothing was approved")
+                })
+        }) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the approval was not blocked");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(client.section("requests").is_empty());
+    assert_eq!(
+        rig.database_probe()
+            .event_count("pane.permission_requested")
+            .unwrap(),
+        0
+    );
+}
+
 fn answer_after_engine_adoption(
     rig: &mut Rig,
     pane: &str,
@@ -4501,35 +4777,14 @@ fn restart_supervisor_and_assert_load(
     );
 }
 
-fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
-    let toggled = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-on"}),
-    );
-    assert_eq!(toggled["effectiveMode"], "allow_all");
-    assert_eq!(toggled["on"], true);
-    client.call("pane.config.set", json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"manual-mode"}));
-    let manual = client.pane(pane);
-    assert_eq!(manual["agent"]["permission"], "accept_edits");
-    assert_eq!(manual["agent"]["yolo"], false);
-    assert!(manual["agent"]["previousPermission"].is_null());
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-after-manual"}),
-    );
-    let restored = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"restore-manual"}),
-    );
-    assert_eq!(restored["effectiveMode"], "accept_edits");
-    client.call(
+/// A full-access mode is the agent's own policy: it never answers a form.
+fn exercise_full_access_mode_and_form(client: &mut Client, pane: &str) {
+    let applied = client.call(
         "pane.config.set",
-        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"restore-ask"}),
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"full-access"}),
     );
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-before-form"}),
-    );
+    assert_eq!(applied["effective"], "allow_all");
+    assert_eq!(current_mode(client, pane), "allow_all");
     client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"elicitation","idempotencyKey":"form-prompt"}),
@@ -4547,7 +4802,7 @@ fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
         }
         assert!(
             Instant::now() < deadline,
-            "form was not presented while yolo was enabled"
+            "form was not presented in a full-access mode"
         );
         thread::sleep(Duration::from_millis(20));
     };
@@ -4560,12 +4815,236 @@ fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
         assert!(Instant::now() < deadline, "form turn did not end");
         thread::sleep(Duration::from_millis(20));
     }
-    let off = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"yolo-off"}),
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"restore-ask"}),
     );
-    assert_eq!(off["effectiveMode"], "ask");
-    assert_eq!(off["on"], false);
+    assert_eq!(current_mode(client, pane), "ask");
+}
+
+fn mode_option(client: &mut Client, pane: &str) -> Value {
+    client.pane(pane)["agent"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|option| option["category"] == "mode")
+        .cloned()
+        .expect("pane announces a mode selector")
+}
+
+fn current_mode(client: &mut Client, pane: &str) -> Value {
+    mode_option(client, pane)["currentValue"].clone()
+}
+
+fn wait_for_mode(client: &mut Client, pane: &str, mode: &str) {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while current_mode(client, pane) != mode {
+        assert!(Instant::now() < deadline, "mode did not become {mode}");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn run_turn(client: &mut Client, pane: &str, text: &str) {
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":text,"idempotencyKey":Uuid::new_v4().to_string()}),
+    );
+    client.wait_state(pane, "idle");
+}
+
+#[test]
+fn native_modes_change_only_on_confirmation_and_follow_the_agent() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let modes = mode_option(&mut client, &pane);
+    let kinds: Vec<_> = modes["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| (choice["value"].clone(), choice["kind"].clone()))
+        .collect();
+    assert_eq!(kinds[2], (json!("allow_all"), json!("full_access")));
+    assert_eq!(modes["currentValue"], "ask");
+    let applied = client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"edits"}),
+    );
+    assert_eq!(applied["effective"], "accept_edits");
+    let refused = client.request(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"locked","idempotencyKey":"locked"}),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+    assert!(client.pane(&pane)["agent"]["operation"].is_null());
+    run_turn(&mut client, &pane, "switch-mode:allow_all");
+    wait_for_mode(&mut client, &pane, "allow_all");
+    run_turn(&mut client, &pane, "permission");
+    assert!(client.section("requests").is_empty());
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"ask"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission","idempotencyKey":"asks"}),
+    );
+    client.wait_state(&pane, "waiting_for_you");
+    assert_eq!(client.section("requests")[0]["kind"], "permission");
+}
+
+#[test]
+fn legacy_session_modes_use_set_mode_and_follow_the_agent() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent_announcing("legacy");
+    assert_eq!(
+        mode_option(&mut client, &pane)["options"][2]["kind"],
+        "full_access"
+    );
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"all"}),
+    );
+    let session = client.pane(&pane)["agent"]["sessionId"].clone();
+    assert_eq!(
+        rig.native_session(session.as_str().unwrap())["values"]["mode"],
+        "allow_all"
+    );
+    run_turn(&mut client, &pane, "switch-mode:accept_edits");
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let refused = client.request(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"locked","idempotencyKey":"locked"}),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+}
+
+#[test]
+fn chosen_mode_returns_after_restart_and_harness_switch() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"edits"}),
+    );
+    run_turn(&mut client, &pane, "before restart");
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    // The fake reloads sessions in its default mode, as real adapters do.
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let session = client.pane(&pane)["agent"]["sessionId"].clone();
+    assert_eq!(
+        rig.native_session(session.as_str().unwrap())["values"]["mode"],
+        "accept_edits"
+    );
+    rig.install_switch_harnesses();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.next-agent","value":"allow_all","idempotencyKey":"default"}),
+    );
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch"}),
+    );
+    wait_for_mode(&mut client, &pane, "accept_edits");
+}
+
+#[test]
+fn new_panes_start_in_the_preferred_mode_only_when_offered() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.test-agent","value":"accept_edits","idempotencyKey":"default"}),
+    );
+    let (mut client, pane) = rig.agent();
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let workspace = client.pane(&pane)["workspaceId"].clone();
+    let unoffered = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent",
+            "permissionMode":"plan","idempotencyKey":"unoffered"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    run_turn(&mut client, &unoffered, "hello");
+    assert_eq!(current_mode(&mut client, &unoffered), "ask");
+}
+
+#[test]
+fn a_mode_the_agent_changes_during_a_model_change_is_kept() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"model","value":"mode-shifting-model","idempotencyKey":"model"}),
+    );
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+    run_turn(&mut client, &pane, "before restart");
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    // The fake reloads in its default mode; the pane restores the agent's choice.
+    wait_for_mode(&mut client, &pane, "accept_edits");
+}
+
+#[test]
+fn a_refused_mode_leaves_the_queue_running_in_the_agents_mode() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.test-agent","value":"locked","idempotencyKey":"locked"}),
+    );
+    let (mut client, pane) = rig.agent();
+    run_turn(&mut client, &pane, "hello");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+    let notice = transcript_items(&mut client, &pane);
+    assert!(
+        notice.iter().any(|item| item["role"] == "system"
+            && item["text"] == "The agent did not enter Locked; it stays in Ask"),
+        "{notice:?}"
+    );
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    run_turn(&mut client, &pane, "after restart");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+}
+
+#[test]
+fn a_mode_the_next_harness_lacks_is_not_restored_on_the_way_back() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let binary =
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    fs::write(
+        rig.path.join("harnesses.json"),
+        serde_json::to_vec(&json!([
+            {"id":"test-agent","name":"Test agent","command":binary,
+                "args":["--state-dir",rig.path.join("native"),"--modes","config"],"version":"test"},
+            {"id":"restricted-agent","name":"Restricted agent","command":binary,
+                "args":["--state-dir",rig.path.join("restricted-native"),"--modes","restricted"],
+                "version":"test"}
+        ]))
+        .unwrap(),
+    )
+    .unwrap();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"all"}),
+    );
+    for (harness, key) in [("restricted-agent", "away"), ("test-agent", "back")] {
+        client.call(
+            "pane.harness.switch",
+            json!({"paneId":pane,"harness":harness,"idempotencyKey":key}),
+        );
+        run_turn(&mut client, &pane, key);
+        assert_eq!(current_mode(&mut client, &pane), "ask", "{harness}");
+    }
 }
 
 fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
@@ -4643,7 +5122,7 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         &native_pid,
         &native_session,
     );
-    exercise_yolo_and_form(&mut first, &pane);
+    exercise_full_access_mode_and_form(&mut first, &pane);
     exercise_cancel_and_tools(&rig, &mut first, &pane);
 }
 
@@ -7281,7 +7760,7 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
 #[test]
 fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     let rig = Rig::new();
-    rig.install_fake_harness();
+    rig.install_fake_harness("config");
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",
@@ -7340,7 +7819,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
 #[test]
 fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch() {
     let rig = Rig::new();
-    rig.install_fake_harness();
+    rig.install_fake_harness("config");
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",

@@ -923,8 +923,8 @@
         "effort": {
           "type": "string"
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
+        "permissionMode": {
+          "$ref": "#/$defs/Id"
         },
         "url": {
           "type": "string",
@@ -2366,14 +2366,6 @@
       "required": [],
       "additionalProperties": true
     },
-    "PermissionMode": {
-      "type": "string",
-      "enum": [
-        "ask",
-        "accept_edits",
-        "allow_all"
-      ]
-    },
     "PromptOrigin": {
       "type": "string",
       "enum": [
@@ -2494,13 +2486,6 @@
         "needs_login"
       ]
     },
-    "ConfigOperationKind": {
-      "type": "string",
-      "enum": [
-        "config",
-        "yolo"
-      ]
-    },
     "ConfigValue": {
       "oneOf": [
         {
@@ -2522,6 +2507,11 @@
         },
         "description": {
           "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "required": [
@@ -2573,9 +2563,6 @@
         "operationId": {
           "$ref": "#/$defs/Id"
         },
-        "kind": {
-          "$ref": "#/$defs/ConfigOperationKind"
-        },
         "configId": {
           "$ref": "#/$defs/Id"
         },
@@ -2588,7 +2575,6 @@
       },
       "required": [
         "operationId",
-        "kind",
         "configId",
         "value",
         "startedAt"
@@ -2704,6 +2690,15 @@
       "required": ["path", "newText"],
       "additionalProperties": true
     },
+    "PermissionToolArgument": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string" }
+      },
+      "required": ["name", "value"],
+      "additionalProperties": true
+    },
     "PermissionPresentation": {
       "type": "object",
       "properties": {
@@ -2712,6 +2707,10 @@
         "executionDetails": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "toolArguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PermissionToolArgument" }
         },
         "fileChanges": {
           "type": "array",
@@ -2858,18 +2857,6 @@
             "$ref": "#/$defs/AuthMethod"
           }
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
-        },
-        "yolo": {
-          "type": "boolean"
-        },
-        "previousPermission": {
-          "$ref": "#/$defs/PermissionMode"
-        },
-        "effectiveMode": {
-          "type": "string"
-        },
         "operation": {
           "$ref": "#/$defs/ConfigOperation"
         },
@@ -2904,8 +2891,6 @@
         "fingerprint",
         "options",
         "authMethods",
-        "permission",
-        "yolo",
         "queue",
         "draft",
         "role"
@@ -3272,6 +3257,9 @@
         },
         "usage": {
           "$ref": "#/$defs/TokenUsage"
+        },
+        "agentMessage": {
+          "$ref": "#/$defs/AgentMessageSource"
         }
       },
       "required": [
@@ -3763,42 +3751,6 @@
         "toHarness",
         "reason",
         "restored"
-      ],
-      "additionalProperties": true
-    },
-    "PaneYoloParams": {
-      "type": "object",
-      "properties": {
-        "paneId": {
-          "$ref": "#/$defs/Id"
-        },
-        "on": {
-          "type": "boolean"
-        },
-        "idempotencyKey": {
-          "$ref": "#/$defs/Id"
-        }
-      },
-      "required": [
-        "paneId",
-        "on",
-        "idempotencyKey"
-      ],
-      "additionalProperties": true
-    },
-    "PaneYoloResult": {
-      "type": "object",
-      "properties": {
-        "effectiveMode": {
-          "$ref": "#/$defs/PermissionMode"
-        },
-        "on": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "effectiveMode",
-        "on"
       ],
       "additionalProperties": true
     },
@@ -5274,8 +5226,8 @@
         "effort": {
           "type": "string"
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
+        "permissionMode": {
+          "$ref": "#/$defs/Id"
         }
       },
       "required": [
@@ -5692,8 +5644,8 @@
         "createWorktree": {
           "type": "boolean"
         },
-        "permission": {
-          "$ref": "#/$defs/PermissionMode"
+        "permissionMode": {
+          "$ref": "#/$defs/Id"
         },
         "dependencies": {
           "type": "array",
@@ -10935,6 +10887,7 @@
     "operationKey",
     "optionId",
     "paneIds",
+    "permissionMode",
     "plannedOwner",
     "promptId",
     "ref",
@@ -11306,15 +11259,6 @@
       },
       "result": {
         "$ref": "#/$defs/PaneHarnessSwitchResult"
-      },
-      "mutation": true
-    },
-    "pane.yolo": {
-      "params": {
-        "$ref": "#/$defs/PaneYoloParams"
-      },
-      "result": {
-        "$ref": "#/$defs/PaneYoloResult"
       },
       "mutation": true
     },
@@ -12599,6 +12543,11 @@
       "default": true
     },
     "harness.preferredId": {
+      "type": "string",
+      "maxLength": 128,
+      "default": ""
+    },
+    "harness.defaultMode.<harnessId>": {
       "type": "string",
       "maxLength": 128,
       "default": ""

@@ -48,10 +48,7 @@ fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
 }
 
 fn uses_native_rpc_result(method: &str) -> bool {
-    matches!(
-        method,
-        "pane.config.set" | "pane.yolo" | "pane.harness.switch"
-    )
+    matches!(method, "pane.config.set" | "pane.harness.switch")
 }
 
 impl Core {
@@ -302,10 +299,7 @@ impl Core {
                     ));
                 }
                 let value = previous.result;
-                if matches!(
-                    method,
-                    "pane.config.set" | "pane.yolo" | "pane.harness.switch"
-                ) {
+                if uses_native_rpc_result(method) {
                     return self
                         .native_rpc_result(connection, request_id.clone(), key, value)
                         .map(Some);
@@ -343,7 +337,6 @@ impl Core {
             "pane.experiment.export" => self.export_experiment(connection, params)?,
             "pane.experiment.hook" => self.record_hook_event(connection, params)?,
             "pane.input" => self.pane_input(connection, params)?,
-            "pane.yolo" => self.agent_yolo(connection, params)?,
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
             "pane.role.set" => self.pane_role_set(connection, params)?,
             "pane.auth.start" => self.agent_auth_start(connection, params)?,

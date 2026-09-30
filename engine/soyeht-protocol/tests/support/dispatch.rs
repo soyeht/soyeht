@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a159f459c07a25cc5cf5778637e1cecd726d62db11f4a4acc7601159b4fa16a1). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -128,7 +128,6 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "SettingsChangedEvent" => roundtrip::<SettingsChangedEvent>(value),
         "DevicePairPending" => roundtrip::<DevicePairPending>(value),
         "ClientFocus" => roundtrip::<ClientFocus>(value),
-        "PermissionMode" => roundtrip::<PermissionMode>(value),
         "PromptOrigin" => roundtrip::<PromptOrigin>(value),
         "PromptStatus" => roundtrip::<PromptStatus>(value),
         "TranscriptRole" => roundtrip::<TranscriptRole>(value),
@@ -143,7 +142,6 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PlanStatus" => roundtrip::<PlanStatus>(value),
         "PlanPriority" => roundtrip::<PlanPriority>(value),
         "SessionRecovery" => roundtrip::<SessionRecovery>(value),
-        "ConfigOperationKind" => roundtrip::<ConfigOperationKind>(value),
         "ConfigValue" => roundtrip::<ConfigValue>(value),
         "ConfigChoice" => roundtrip::<ConfigChoice>(value),
         "ConfigOption" => roundtrip::<ConfigOption>(value),
@@ -156,6 +154,7 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "AgentMessageResult" => roundtrip::<AgentMessageResult>(value),
         "PermissionOption" => roundtrip::<PermissionOption>(value),
         "PermissionFileChange" => roundtrip::<PermissionFileChange>(value),
+        "PermissionToolArgument" => roundtrip::<PermissionToolArgument>(value),
         "PermissionPresentation" => roundtrip::<PermissionPresentation>(value),
         "PermissionRequest" => roundtrip::<PermissionRequest>(value),
         "ElicitationRequest" => roundtrip::<ElicitationRequest>(value),
@@ -195,8 +194,6 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneHarnessSwitchStartedEvent" => roundtrip::<PaneHarnessSwitchStartedEvent>(value),
         "PaneHarnessSwitchDoneEvent" => roundtrip::<PaneHarnessSwitchDoneEvent>(value),
         "PaneHarnessSwitchFailedEvent" => roundtrip::<PaneHarnessSwitchFailedEvent>(value),
-        "PaneYoloParams" => roundtrip::<PaneYoloParams>(value),
-        "PaneYoloResult" => roundtrip::<PaneYoloResult>(value),
         "PaneAuthStartParams" => roundtrip::<PaneAuthStartParams>(value),
         "PaneAuthStartResult" => roundtrip::<PaneAuthStartResult>(value),
         "PaneTranscriptParams" => roundtrip::<PaneTranscriptParams>(value),

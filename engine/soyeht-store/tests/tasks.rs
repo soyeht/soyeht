@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use soyeht_protocol::{
     Attempt, AttemptResult, Comment, LoopConfig, LoopStopWhen, Pane, PaneMode, PaneState,
-    PermissionMode, StateSource, Subitem, SubitemState, Task, TaskExecutor, TaskMove, TaskPriority,
-    TaskState, Workspace,
+    StateSource, Subitem, SubitemState, Task, TaskExecutor, TaskMove, TaskPriority, TaskState,
+    Workspace,
 };
 use soyeht_store::{
     database::Store,
@@ -932,7 +932,7 @@ fn explicit_dispatch_reserves_once_and_records_the_selected_preset() {
         harness: Some("harness-a".into()),
         model: Some("model-a".into()),
         effort: Some("high".into()),
-        permission: Some(PermissionMode::Ask),
+        permission_mode: Some("ask".into()),
     };
     let claimed = store
         .mutate("test", "dispatch", "dispatch", |change| {

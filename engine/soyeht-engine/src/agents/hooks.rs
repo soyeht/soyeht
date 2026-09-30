@@ -224,7 +224,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soyeht_protocol::{HarnessLaunch, PermissionMode};
+    use soyeht_protocol::HarnessLaunch;
 
     fn state(id: &str) -> State {
         State::new(
@@ -237,7 +237,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap()
     }

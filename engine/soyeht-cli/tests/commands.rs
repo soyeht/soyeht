@@ -465,7 +465,7 @@ fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
         "model-b",
         "--effort",
         "high",
-        "--permission",
+        "--permission-mode",
         "ask",
         "--idempotency-key",
         "agent-create",
@@ -516,8 +516,10 @@ fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
     }
-    assert_eq!(rig.command(&["pane", "yolo", pane, "on"])["on"], true);
-    assert_eq!(rig.command(&["pane", "yolo", pane, "off"])["on"], false);
+    assert_eq!(
+        rig.command(&["pane", "mode", pane, "accept_edits"])["effective"],
+        "accept_edits"
+    );
     let binding = DatabaseProbe::open(&rig.path)
         .unwrap()
         .agent_binding(pane)

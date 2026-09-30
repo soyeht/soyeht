@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::{self, Update};
-use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptRole};
+use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptMessage, TranscriptRole};
 
 fn append_replayed_user(
     store: &impl StorePort,
@@ -126,6 +126,22 @@ pub(super) fn finish_replayed_user(
     )
 }
 
+/// The transcript item holding the latest reported state of a tool call in
+/// the current prompt, if the agent has reported it.
+pub fn tracked_tool(
+    store: &impl StorePort,
+    pane: &str,
+    state: &State,
+    id: &str,
+) -> Result<Option<TranscriptMessage>> {
+    state
+        .open_messages
+        .get(&format!("tool:{id}"))
+        .map(|seq| transcript::message(store, pane, *seq))
+        .transpose()
+        .map(Option::flatten)
+}
+
 fn update_tool(
     store: &impl StorePort,
     pane: &str,
@@ -139,14 +155,7 @@ fn update_tool(
     if id.is_empty() || id.chars().count() > 128 {
         return Err(errors::invalid("Tool ID exceeds public protocol bounds"));
     }
-    let key = format!("tool:{id}");
-    let prior = state
-        .open_messages
-        .get(&key)
-        .map(|seq| transcript::message(store, pane, *seq))
-        .transpose()?
-        .flatten();
-    let mut item = match prior {
+    let mut item = match tracked_tool(store, pane, state, id)? {
         Some(item) => item,
         None => transcript::new_message(
             state,
@@ -178,7 +187,7 @@ fn update_tool(
         Some(serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))?);
     state
         .open_messages
-        .insert(key, transcript::sequence(&item.seq)?);
+        .insert(format!("tool:{id}"), transcript::sequence(&item.seq)?);
     transcript::put(
         changes,
         pane,
@@ -241,16 +250,6 @@ fn update_usage(
     transcript::put(changes, pane, item, "usage")
 }
 
-fn apply_mode(state: &mut State, mode: &str) -> Result<()> {
-    super::configuration::require_native_policy(mode)?;
-    if state.pending_policy.is_none() && state.requested_options.is_empty() {
-        super::configuration::observe_mode(state, mode, false)
-    } else {
-        state.effective_mode = Some(mode.into());
-        Ok(())
-    }
-}
-
 fn configuration_event(
     pane: &str,
     generation: u32,
@@ -280,19 +279,7 @@ fn update_configuration(
     options: soyeht_acp::config::Options,
     changes: &mut Changes,
 ) -> Result<()> {
-    state.options = options;
-    let mode = state
-        .options
-        .values
-        .iter()
-        .find(|option| option.category.as_deref() == Some("mode") || option.id == "mode")
-        .and_then(|option| match &option.current_value {
-            ConfigValue::V0(value) => Some(value.clone()),
-            _ => None,
-        });
-    if let Some(mode) = mode {
-        apply_mode(state, &mode)?;
-    }
+    super::configuration::agent_changed(state, options)?;
     configuration_event(
         pane,
         generation,
@@ -309,16 +296,13 @@ fn update_mode(
     mode: String,
     changes: &mut Changes,
 ) -> Result<()> {
-    super::configuration::require_native_policy(&mode)?;
-    if let Some(option) = state
-        .options
-        .values
-        .iter_mut()
-        .find(|option| option.category.as_deref() == Some("mode") || option.id == "mode")
+    let mut options = state.options.clone();
+    if super::configuration::engine_policy(state).is_none()
+        && let Some(option) = options.mode_mut()
     {
-        option.current_value = ConfigValue::V0(mode.clone());
+        option.current_value = ConfigValue::V0(mode);
     }
-    apply_mode(state, &mode)?;
+    super::configuration::agent_changed(state, options)?;
     configuration_event(pane, generation, state, "Agent updated its mode", changes)
 }
 

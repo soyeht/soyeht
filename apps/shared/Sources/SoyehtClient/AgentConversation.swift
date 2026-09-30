@@ -6,6 +6,13 @@ import SwiftUI
   import AppKit
 #endif
 
+extension AgentMessageSource {
+  /// Who sent a peer message, by name; the pane identifier only routes replies.
+  var displayName: String {
+    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? harness : name
+  }
+}
+
 struct AgentSilencePresentation: Sendable {
   let elapsedSeconds: Int?
   private let paneState: PaneState?
@@ -205,7 +212,9 @@ private struct AgentWell: ViewModifier {
           remove: { client.discardWebAttachmentDraft(paneId) })
       }
       composer
-      if showsConfiguration, let options = pane?.agent?.options, !options.isEmpty {
+      if showsConfiguration, let options = pane?.agent?.options.filter({ !$0.isPermissionMode }),
+        !options.isEmpty
+      {
         configuration(options)
       }
     }
@@ -225,16 +234,12 @@ private struct AgentWell: ViewModifier {
   private var controls: some View {
     HStack(spacing: 10) {
       if let usage = contextUsage { ContextRing(used: usage.0, total: usage.1, style: style) }
-      if let agent = pane?.agent {
-        Button {
-          client.setYolo(paneId, on: !agent.yolo)
-        } label: {
-          Label(agent.yolo ? "Yolo on" : "Yolo off", systemImage: agent.yolo ? "bolt.fill" : "bolt")
-        }
-        .buttonStyle(.bordered).tint(agent.yolo ? style.warning : style.secondary)
-        .disabled(agent.operation != nil || !client.connected)
+      if let agent = pane?.agent, let modes = AgentPermissionModes(agent: agent) {
+        AgentPermissionModeMenu(
+          modes: modes, enabled: agent.operation == nil && client.connected, style: style,
+          select: { client.setPermissionMode(paneId, to: $0) })
       }
-      Spacer()
+      Spacer(minLength: 0)
       if isWorking {
         Button(role: .destructive) {
           client.cancelAgent(paneId)
@@ -312,7 +317,7 @@ private struct AgentWell: ViewModifier {
         HStack(spacing: 8) {
           VStack(alignment: .leading, spacing: 2) {
             if let sender = item.agentMessage {
-              Text("From \(sender.name) (\(sender.harness))")
+              Text("From \(sender.displayName)")
                 .font(style.captionFont.weight(.semibold))
             }
             Text(item.text).font(style.captionFont).lineLimit(2)
@@ -421,6 +426,11 @@ private struct AgentWell: ViewModifier {
       TextField("Message the agent", text: $prompt, axis: .vertical)
         .lineLimit(1...6).textFieldStyle(.plain).focused($promptFocused)
         .onSubmit { submit() }
+        .onKeyPress(.tab, phases: .down) { press in
+          guard press.modifiers.contains(.shift) else { return .ignored }
+          client.cyclePermissionMode(paneId)
+          return .handled
+        }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
       sendButton
@@ -486,7 +496,6 @@ private struct AgentWell: ViewModifier {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
     prompt = ""
-    client.setDraft(paneId, active: false)
     onExplicitRemoteAction()
     client.sendPrompt(paneId, text: text)
     promptFocused = true
@@ -503,7 +512,6 @@ private struct AgentWell: ViewModifier {
     switch option.category ?? option.id {
     case "model": "cpu"
     case "thought_level": "brain"
-    case "mode": "shield.checkered"
     default: "slider.horizontal.3"
     }
   }
@@ -683,16 +691,23 @@ private struct TranscriptRow: View {
       case .usage:
         EmptyView()
       default:
-        FilePathText(message.text, workspaceId: workspaceId)
-          .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-          .padding(12)
-          .background(
-            message.role == .user
-              ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
-            in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
-          )
-          .padding(.leading, message.role == .user ? 48 : 0)
-          .padding(.trailing, message.role == .user ? 0 : 48)
+        VStack(alignment: .leading, spacing: 4) {
+          if let sender = message.agentMessage {
+            Text(sender.displayName).font(style.captionFont).textCase(.uppercase)
+              .foregroundStyle(style.muted)
+          }
+          FilePathText(message.text, workspaceId: workspaceId)
+            .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+          message.role == .user
+            ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
+          in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
+        )
+        .padding(.leading, message.role == .user ? 48 : 0)
+        .padding(.trailing, message.role == .user ? 0 : 48)
       }
     }.font(style.bodyFont)
   }
@@ -711,36 +726,7 @@ private struct PermissionCard: View {
           .textSelection(.enabled)
       }
       if let presentation = request.presentation {
-        if let command = presentation.command {
-          VStack(alignment: .leading, spacing: 6) {
-            Text("Command").font(style.captionFont).foregroundStyle(style.secondary)
-            ScrollView([.horizontal, .vertical]) {
-              Text(command).font(style.monoSmallFont).foregroundStyle(style.ink)
-                .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 220)
-            .padding(8)
-            .background(style.well, in: RoundedRectangle(cornerRadius: 8))
-          }
-        }
-        if let details = presentation.executionDetails {
-          ForEach(Array(details.enumerated()), id: \.offset) { _, detail in
-            Text(detail).font(style.monoSmallFont).foregroundStyle(style.secondary)
-              .textSelection(.enabled)
-          }
-        }
-        if presentation.fileChanges.isEmpty, let path = presentation.targetPath {
-          Label(path, systemImage: "doc.text").font(style.monoSmallFont)
-            .foregroundStyle(style.secondary).textSelection(.enabled)
-        }
-        ForEach(Array(presentation.fileChanges.enumerated()), id: \.offset) { _, change in
-          PermissionFileChangeView(change: change, style: style)
-        }
-        if presentation.previewOmitted {
-          Text("Diff preview unavailable; inspect the file before allowing.")
-            .font(style.captionFont).foregroundStyle(style.warning)
-        }
+        PermissionPresentationView(presentation: presentation, style: style)
       }
       HStack {
         ForEach(request.options, id: \.optionId) { option in
@@ -758,43 +744,6 @@ private struct PermissionCard: View {
         AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
       )
       .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
-  }
-}
-
-private struct PermissionFileChangeView: View {
-  let change: PermissionFileChange
-  let style: AgentConversationStyle
-
-  private var preview: PermissionPreview { PermissionPreviewPolicy.preview(change) }
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Label(change.path, systemImage: "doc.text")
-        .font(style.monoSmallFont).foregroundStyle(style.secondary)
-        .textSelection(.enabled)
-      if preview.unavailable {
-        Text("Diff preview unavailable; inspect the file before allowing.")
-          .font(style.captionFont).foregroundStyle(style.warning)
-      } else {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(preview.rows) { row in
-              switch row.kind {
-              case .removed:
-                Text("− \(row.text)").foregroundStyle(style.danger)
-              case .added:
-                Text("+ \(row.text)").foregroundStyle(style.success)
-              }
-            }
-          }.frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxHeight: 220)
-        .font(style.monoSmallFont)
-        .textSelection(.enabled)
-        .padding(8)
-        .background(style.well, in: RoundedRectangle(cornerRadius: 8))
-      }
-    }
   }
 }
 

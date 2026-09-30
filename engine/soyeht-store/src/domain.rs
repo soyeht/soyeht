@@ -98,7 +98,7 @@ impl Store {
 
     pub fn panes(&self) -> Result<Vec<PaneRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT payload,closed,instance_key,instance_id,supervisor_id,sequence_base FROM panes ORDER BY rowid",
+            "SELECT payload,closed,instance_key,instance_id,supervisor_id,sequence_base FROM panes ORDER BY created_seq",
         )?;
         Ok(statement
             .query_map([], pane_row)?
@@ -324,7 +324,7 @@ impl Change<'_> {
 
     pub fn insert_pane(&self, pane: &PaneRecord) -> Result<()> {
         self.transaction.execute(
-            "INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base) VALUES (?1,?2,?3,?4,?5)",
+            "INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base,created_seq) VALUES (?1,?2,?3,?4,?5,(SELECT COALESCE(MAX(created_seq),0)+1 FROM panes))",
             params![pane.pane.pane_id, pane.pane.workspace_id, serde_json::to_string(&pane.pane)?, pane.instance_key, pane.sequence_base.to_string()],
         )?;
         Ok(())

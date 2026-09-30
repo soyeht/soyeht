@@ -98,10 +98,31 @@ fn permission_turn(
                 .expect("fake overflow marker");
         });
     }
+    if runtime.session_mode(session) == "allow_all" {
+        let output = "Permission result: approved by the agent's own mode".to_owned();
+        emit(runtime, session, &output);
+        return output;
+    }
     let edit = text == "permission-edit";
     let mut tool_call = json!({"toolCallId":"permission-tool","title":"Run test operation",
         "kind":if edit{"edit"}else{"execute"},"status":"pending"});
-    if !edit && text != "permission-missing-command" {
+    // codex-acp 1.11.0 reports an MCP call as a tool_call and then asks to
+    // approve it with only the id, kind and status.
+    let mcp_tool = text.strip_prefix("permission-tracked-mcp:");
+    if let Some(tool) = mcp_tool {
+        let id = format!("exec-{tool}");
+        runtime.update(
+            session,
+            json!({"sessionUpdate":"tool_call","toolCallId":id,"kind":"execute",
+                "title":format!("mcp.soyeht-workspace.{tool}"),"status":"in_progress",
+                "rawInput":{"server":"soyeht-workspace","tool":tool,
+                    "arguments":{"text":"  first line\n  second line"}},
+                "_meta":{"is_mcp_tool_call":true}}),
+        );
+        tool_call = json!({"toolCallId":id,"kind":"execute","status":"pending"});
+    } else if text == "permission-untracked-mcp" {
+        tool_call = json!({"toolCallId":"exec-never-reported","kind":"execute","status":"pending"});
+    } else if !edit && text != "permission-missing-command" {
         tool_call["rawInput"] = json!({"command":"printf 'test operation'"});
     }
     let result = call(
@@ -351,6 +372,12 @@ fn execute_turn(
         return output;
     }
     if let Some(output) = crate::mcp::task_turn(runtime, session, text) {
+        emit(runtime, session, &output);
+        return output;
+    }
+    if let Some(mode) = text.strip_prefix("switch-mode:") {
+        runtime.switch_mode(session, mode);
+        let output = format!("Switched to {mode}");
         emit(runtime, session, &output);
         return output;
     }

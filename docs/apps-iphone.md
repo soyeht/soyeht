@@ -36,7 +36,7 @@ A paired iPhone or iPad is a full remote control of the Mac (owner decision,
 2026-09-26). Tap a terminal to type: the software keyboard has an Esc, Ctrl,
 Tab and arrow row, and a hardware keyboard sends Return, Backspace, Tab, arrows,
 Ctrl-C, Ctrl-D and Esc. For agent panes it also sends prompts, answers
-permission requests and changes yolo after engine confirmation. Both devices must be connected to the same tailnet.
+permission requests and changes the harness's permission mode after engine confirmation. Both devices must be connected to the same tailnet.
 
 ## Layout
 
@@ -62,6 +62,7 @@ also appear in the iPad menu bar and when holding Command:
 | Control-Command-S | Show and focus the sidebar |
 | Command-1 … Command-9 | Jump to that workspace |
 | Command-Return | Send the agent prompt (Return adds a line) |
+| Shift-Tab (agent prompt) | Move to the harness's next permission mode, as on the Mac |
 
 ## Access
 

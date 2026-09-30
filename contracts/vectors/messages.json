@@ -2501,11 +2501,6 @@
     }
   },
   {
-    "name": "PermissionMode",
-    "type": "PermissionMode",
-    "value": "ask"
-  },
-  {
     "name": "PromptOrigin",
     "type": "PromptOrigin",
     "value": "human"
@@ -2581,11 +2576,6 @@
     "value": "resumed"
   },
   {
-    "name": "ConfigOperationKind",
-    "type": "ConfigOperationKind",
-    "value": "config"
-  },
-  {
     "name": "ConfigValue",
     "type": "ConfigValue",
     "value": "example"
@@ -2595,7 +2585,8 @@
     "type": "ConfigChoice",
     "value": {
       "value": "00000000-0000-4000-8000-000000000001",
-      "name": "example"
+      "name": "example",
+      "kind": "full_access"
     }
   },
   {
@@ -2619,7 +2610,6 @@
     "type": "ConfigOperation",
     "value": {
       "operationId": "00000000-0000-4000-8000-000000000001",
-      "kind": "config",
       "configId": "00000000-0000-4000-8000-000000000001",
       "value": "example",
       "startedAt": "example"
@@ -2660,12 +2650,18 @@
     }
   },
   {
+    "name": "PermissionToolArgument",
+    "type": "PermissionToolArgument",
+    "value": { "name": "text", "value": "HTTP/2 200" }
+  },
+  {
     "name": "PermissionPresentation",
     "type": "PermissionPresentation",
     "value": {
       "targetPath": "/project/note.txt",
       "command": "ls -la\n",
       "executionDetails": ["Working directory: /project"],
+      "toolArguments": [{ "name": "targetPaneId", "value": "Codex" }],
       "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
       "previewOmitted": false
     }
@@ -2753,8 +2749,6 @@
           "terminal": true
         }
       ],
-      "permission": "ask",
-      "yolo": false,
       "role": "worker",
       "queue": [
         {
@@ -3108,23 +3102,6 @@
       "applied": false,
       "effective": "example",
       "sessionPreserved": false
-    }
-  },
-  {
-    "name": "PaneYoloParams",
-    "type": "PaneYoloParams",
-    "value": {
-      "paneId": "00000000-0000-4000-8000-000000000001",
-      "on": false,
-      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
-    }
-  },
-  {
-    "name": "PaneYoloResult",
-    "type": "PaneYoloResult",
-    "value": {
-      "effectiveMode": "ask",
-      "on": false
     }
   },
   {
@@ -3970,32 +3947,6 @@
         "applied": false,
         "effective": "example",
         "sessionPreserved": false
-      }
-    }
-  },
-  {
-    "name": "request:pane.yolo",
-    "type": "RequestEnvelope",
-    "value": {
-      "jsonrpc": "2.0",
-      "id": "request-1",
-      "method": "pane.yolo",
-      "params": {
-        "paneId": "00000000-0000-4000-8000-000000000001",
-        "on": false,
-        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
-      }
-    }
-  },
-  {
-    "name": "response:pane.yolo",
-    "type": "SuccessEnvelope",
-    "value": {
-      "jsonrpc": "2.0",
-      "id": "request-1",
-      "result": {
-        "effectiveMode": "ask",
-        "on": false
       }
     }
   },

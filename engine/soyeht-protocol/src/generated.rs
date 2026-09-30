@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a159f459c07a25cc5cf5778637e1cecd726d62db11f4a4acc7601159b4fa16a1). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -546,8 +546,8 @@ pub struct PaneCreateParams {
     pub model: Option<String>,
     #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
-    pub permission: Option<PermissionMode>,
+    #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<Id>,
     #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
@@ -1189,15 +1189,6 @@ pub struct ClientFocus {
     pub pane_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum PermissionMode {
-    #[serde(rename = "ask")]
-    Ask,
-    #[serde(rename = "accept_edits")]
-    AcceptEdits,
-    #[serde(rename = "allow_all")]
-    AllowAll,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PromptOrigin {
     #[serde(rename = "human")]
     Human,
@@ -1340,13 +1331,6 @@ pub enum SessionRecovery {
     NeedsLogin,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum ConfigOperationKind {
-    #[serde(rename = "config")]
-    Config,
-    #[serde(rename = "yolo")]
-    Yolo,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum ConfigValue {
     V0(String),
@@ -1360,6 +1344,8 @@ pub struct ConfigChoice {
     pub name: String,
     #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ConfigOption {
@@ -1382,8 +1368,6 @@ pub struct ConfigOption {
 pub struct ConfigOperation {
     #[serde(rename = "operationId")]
     pub operation_id: Id,
-    #[serde(rename = "kind")]
-    pub kind: ConfigOperationKind,
     #[serde(rename = "configId")]
     pub config_id: Id,
     #[serde(rename = "value")]
@@ -1461,6 +1445,13 @@ pub struct PermissionFileChange {
     pub new_text: String,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PermissionToolArgument {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "value")]
+    pub value: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionPresentation {
     #[serde(rename = "targetPath", skip_serializing_if = "Option::is_none")]
     pub target_path: Option<String>,
@@ -1468,6 +1459,8 @@ pub struct PermissionPresentation {
     pub command: Option<String>,
     #[serde(rename = "executionDetails", skip_serializing_if = "Option::is_none")]
     pub execution_details: Option<Vec<String>>,
+    #[serde(rename = "toolArguments", skip_serializing_if = "Option::is_none")]
+    pub tool_arguments: Option<Vec<PermissionToolArgument>>,
     #[serde(rename = "fileChanges")]
     pub file_changes: Vec<PermissionFileChange>,
     #[serde(rename = "previewOmitted")]
@@ -1536,14 +1529,6 @@ pub struct AgentSession {
     pub options: Vec<ConfigOption>,
     #[serde(rename = "authMethods")]
     pub auth_methods: Vec<AuthMethod>,
-    #[serde(rename = "permission")]
-    pub permission: PermissionMode,
-    #[serde(rename = "yolo")]
-    pub yolo: bool,
-    #[serde(rename = "previousPermission", skip_serializing_if = "Option::is_none")]
-    pub previous_permission: Option<PermissionMode>,
-    #[serde(rename = "effectiveMode", skip_serializing_if = "Option::is_none")]
-    pub effective_mode: Option<String>,
     #[serde(rename = "operation", skip_serializing_if = "Option::is_none")]
     pub operation: Option<ConfigOperation>,
     #[serde(rename = "queue")]
@@ -1736,6 +1721,8 @@ pub struct TranscriptMessage {
     pub plan: Option<Vec<PlanEntry>>,
     #[serde(rename = "usage", skip_serializing_if = "Option::is_none")]
     pub usage: Option<TokenUsage>,
+    #[serde(rename = "agentMessage", skip_serializing_if = "Option::is_none")]
+    pub agent_message: Option<AgentMessageSource>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentRef {
@@ -1956,22 +1943,6 @@ pub struct PaneHarnessSwitchFailedEvent {
     pub reason: String,
     #[serde(rename = "restored")]
     pub restored: bool,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PaneYoloParams {
-    #[serde(rename = "paneId")]
-    pub pane_id: Id,
-    #[serde(rename = "on")]
-    pub on: bool,
-    #[serde(rename = "idempotencyKey")]
-    pub idempotency_key: Id,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PaneYoloResult {
-    #[serde(rename = "effectiveMode")]
-    pub effective_mode: PermissionMode,
-    #[serde(rename = "on")]
-    pub on: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneAuthStartParams {
@@ -2735,8 +2706,8 @@ pub struct TaskExecutor {
     pub model: Option<String>,
     #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
-    pub permission: Option<PermissionMode>,
+    #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TaskWorktree {
@@ -2933,8 +2904,8 @@ pub struct TaskCreateParams {
     pub priority: Option<TaskPriority>,
     #[serde(rename = "createWorktree", skip_serializing_if = "Option::is_none")]
     pub create_worktree: Option<bool>,
-    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
-    pub permission: Option<PermissionMode>,
+    #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<Id>,
     #[serde(rename = "dependencies", skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<Vec<String>>,
     #[serde(rename = "dispatch", skip_serializing_if = "Option::is_none")]
@@ -5511,8 +5482,6 @@ pub enum Request {
     PaneConfigSet(PaneConfigSetParams),
     #[serde(rename = "pane.harness.switch")]
     PaneHarnessSwitch(PaneHarnessSwitchParams),
-    #[serde(rename = "pane.yolo")]
-    PaneYolo(PaneYoloParams),
     #[serde(rename = "pane.auth.start")]
     PaneAuthStart(PaneAuthStartParams),
     #[serde(rename = "pane.transcript")]
@@ -5860,7 +5829,6 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "PaneHarnessSwitchResult",
         true,
     ),
-    ("pane.yolo", "PaneYoloParams", "PaneYoloResult", true),
     (
         "pane.auth.start",
         "PaneAuthStartParams",
@@ -6210,7 +6178,6 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.elicitation.answer", "paneId"),
     ("pane.config.set", "paneId"),
     ("pane.harness.switch", "paneId"),
-    ("pane.yolo", "paneId"),
     ("pane.auth.start", "paneId"),
     ("pane.transcript", "paneId"),
     ("pane.draft", "paneId"),

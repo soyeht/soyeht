@@ -60,27 +60,31 @@ this, so we do not depend on it.)
 ## 4. Permission
 
 The protocol has only one mechanism: the agent asks, the client responds.
-“Permission mode” is an agent configuration option when offered (the Claude Code
-adapter offers `default`, `acceptEdits`, `plan`, `bypassPermissions`, `dontAsk`).
+The permission mode is the harness's own mode selector (ADR 0070, which
+replaced the Yolo toggle on 2026-09-30). The Claude adapter announces
+`default`, `acceptEdits`, `plan`, `auto` and `bypassPermissions`; the Codex
+adapter announces `read-only`, `agent` and `agent-full-access`. The pane menu
+shows those names; the harness decides which actions it asks about.
 
-Engine rule by pane mode:
-- **ask** (default): the request becomes a `pane.permission_requested` event
-  with title, details and options. It appears on Mac and iPhone. The first
-  response wins; the engine answers the agent and notifies the other client.
-  No answer within 30 min: the engine responds `cancelled`, and the pane shows
-  “waiting for your permission” in the attention inbox.
-- **accept edits**: automatically select `allow_once` when the request is a
-  file write within the worktree; ask for everything else.
-- **allow all**: respond `allow_once` to everything without asking. Also apply
-  the agent's `bypassPermissions` option when available so it does not ask.
+- Every request the agent sends becomes a `pane.permission_requested` event
+  with title, details and options. It appears on Mac, iPhone and iPad. The
+  first response wins; the engine answers the agent and notifies the other
+  clients. No answer within 30 min: the engine responds `cancelled`, and the
+  pane shows “waiting for your permission” in the attention inbox.
+- An MCP tool request is shown as “Use <server> · <tool>” with each argument
+  in full, whichever harness sends it (codex-acp: kind `execute` with
+  `rawInput {server, tool, arguments}`; claude-acp: tool name
+  `mcp__<server>__<tool>`). Pane ids of the same workspace show as pane names.
+  codex-acp 1.11.0 sends only the tool call id, kind and status in the
+  request; the engine judges every request on the tool call as last reported
+  by `session/update` in the same prompt, overlaid with the request's own
+  fields. An `execute` request with neither a command nor this shape is refused.
 - A user's `allow_always` selection applies only to this pane (DECIDED,
-  Caio 2026-09-10).
-- **“yolo” button in the pane** (Caio's request): changes the pane to “allow all”
-  mid-conversation. Internally, the engine starts responding `allow_once` to
-  every request, and when the agent offers a mode option (e.g. `bypassPermissions`),
-  applies it through `set_config_option` (contract 02) so it does not ask.
-  It can be turned back off. The button stays visible in the pane toolbar
-  and on the iPhone.
+  Caio 2026-09-10), and only to a request that is the same and is shown the
+  same way (title, command, arguments and changes).
+- Only an agent that announces no modes gets the engine's own `ask`,
+  `accept_edits` and `allow_all` modes, enforced by answering its requests
+  (`accept_edits`: `allow_once` for a file write within the worktree).
 
 ## 5. Capabilities the engine offers the agent
 
@@ -158,7 +162,8 @@ Raw terminal (another contract); `session/fork` (unstable); HTTP transport
 
 1. DECIDED: yes, the command appears and runs inside the pane.
 2. DECIDED: queue.
-3. DECIDED: “always allow” applies only to this pane; per-pane yolo button.
+3. DECIDED: “always allow” applies only to this pane; per-pane mode menu
+   with the harness's own modes (ADR 0070).
 4. DECIDED: probe once per binary version and store; runtime failure uses
    the fallback (new session + notice).
 
@@ -181,11 +186,11 @@ Rule: the engine has ONE internal lifecycle (prompt accepted → working → end
 
 **R14 · permission requests have identity and deadline.** Engine `requestId` (not the native ID), bound to generation and turn. The first valid response wins. On expiry (30 min), cancellation or session switch: the engine closes the request, responds `cancelled` to the harness and publishes `pane.permission_answered {result: expired|cancelled}`; the attention inbox shows “permission expired” with a “resume” action, never the old question.
 
-**R15 · yolo, accept edits, elicitation.** Yolo: the engine stores the previous mode and the mode actually confirmed by the harness; the button shows “off” only after the harness confirms restoration (or the session restarts when the harness cannot change). Accept edits: the engine approves automatically only when the advertised option has `kind: allow_once` AND the request is recognizably a file write within the worktree; any doubt means asking. `allow_once` is the category (`kind`), not the literal ID. Elicitation (a question with fields) is a separate request with its own schema, never answered by yolo.
+**R15 · modes, accept edits, elicitation.** The mode menu shows a value only after the harness confirms it (ADR 0070). The engine's own accept edits, used only for agents without native modes, approves automatically only when the advertised option has `kind: allow_once` AND the request is recognizably a file write within the worktree; any doubt means asking. `allow_once` is the category (`kind`), not the literal ID. Elicitation (a question with fields) is a separate request with its own schema, never answered by any mode.
 
 **R16 · switching, configuration and cancellation are serialized per pane.** During a harness switch: the prompt queue freezes; the continuation package includes the queue; the old harness is terminated only after the new one accepts the first prompt; if acceptance is ambiguous (timeout), the engine reconciles by reading the new transcript before resending. Failure: restore the old harness if alive, otherwise `session/resume`, otherwise notice + new session (`pane.harness_switch_failed {restored}`). `pane.config_changed` reports `sessionPreserved`.
 
-**R17 · transcript = normalized messages, not raw notifications.** The engine records every accepted prompt (`user` role, `promptId`) and agent messages assembled from chunks (`assistant` role, `localId`, `generation`, `seq`, `complete`). `session/load`/`resume` replay reconciles by identity (same generation and seq) or replaces the bounded section, never duplicates. `prompts/harness-switch.en.md` is rendered only from the body after `---`; single literal substitution of each `{{field}}`; if metadata alone exceeds 16,000 characters, error (never a package without a message).
+**R17 · transcript = normalized messages, not raw notifications.** The engine records every accepted prompt (`user` role, `promptId`) and agent messages assembled from chunks (`assistant` role, `localId`, `generation`, `seq`, `complete`). A prompt queued by another agent pane through `agent.message` keeps its sender as `agentMessage {paneId, name, harness}` in the queue and the transcript; clients label the bubble with the sender's name. Only the prompt sent to the harness adds the reply route (the sender's pane identifier and the pane's own `soyeht-workspace` MCP server, a name distinct from any user-configured Soyeht server), so no bubble shows it; a native replay of that prompt is folded back into the attributed form. `session/load`/`resume` replay reconciles by identity (same generation and seq) or replaces the bounded section, never duplicates. `prompts/harness-switch.en.md` is rendered only from the body after `---`; single literal substitution of each `{{field}}`; if metadata alone exceeds 16,000 characters, error (never a package without a message).
 
 **R25 · probing in a disposable session.** The §2.3 probe runs in its own session with valid parameters, a 10 s deadline and cleanup; results are classified as `worked | unsupported | unauthenticated | inconclusive`. Only proven `unsupported` or proven session loss triggers the fallback (new session + package); timeout or a parameter error does NOT restart a conversation.
 

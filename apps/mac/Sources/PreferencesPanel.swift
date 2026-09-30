@@ -179,6 +179,7 @@ struct PreferencesPanel: View {
 
   private func refreshCatalogues() {
     client.refreshHarnesses()
+    client.refreshDefaultPermissionModes()
     for harness in client.harnesses where harness.available {
       client.refreshCatalogue(harness: harness.id)
     }
@@ -496,6 +497,9 @@ private struct PreferencesHarnesses: View {
                 == HarnessPickerModel.defaultHarness(
                   in: client.harnesses, preferredId: client.preferredHarnessId)?.id,
               customLaunch: client.customHarnesses.first { $0.id == harness.id },
+              defaultMode: Binding(
+                get: { client.defaultPermissionMode(harness: harness.id) },
+                set: { setDefaultMode($0, harness: harness.id) }),
               makeDefault: { makeDefault(harness.id) },
               edit: edit, remove: { pendingRemoval = $0 })
           }
@@ -532,6 +536,14 @@ private struct PreferencesHarnesses: View {
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     } message: {
       Text("Open panes using this harness must be closed first.")
+    }
+  }
+
+  private func setDefaultMode(_ mode: String?, harness: String) {
+    Task { @MainActor in
+      do { try await client.setDefaultPermissionMode(mode, harness: harness) } catch {
+        client.problem = error.localizedDescription
+      }
     }
   }
 
@@ -597,6 +609,8 @@ private struct HarnessPreferenceRow: View {
   let catalogue: AgentCatalogue?
   let isDefault: Bool
   let customLaunch: HarnessLaunch?
+  /// The mode new panes of this harness start in; `nil` keeps the harness's own.
+  @Binding var defaultMode: String?
   let makeDefault: () -> Void
   let edit: (HarnessLaunch) -> Void
   let remove: (HarnessLaunch) -> Void
@@ -608,7 +622,19 @@ private struct HarnessPreferenceRow: View {
       HStack(spacing: MacTheme.Space.x8) {
         PreferenceChip(icon: "cpu", text: modelLabel)
         PreferenceChip(icon: "gauge.with.dots.needle.50percent", text: effortLabel)
-        PreferenceChip(icon: "checkmark.shield", text: "Ask every time")
+        Menu {
+          PermissionModeChoices(modes: permissionModes, selection: $defaultMode)
+        } label: {
+          PreferenceChip(
+            icon: "checkmark.shield",
+            text: PermissionModeChoices.title(
+              modes: permissionModes, selection: defaultMode, preferred: nil))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Permission mode new \(harness.name) panes start in")
+        .accessibilityLabel("Default permission mode for \(harness.name)")
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       status
@@ -714,6 +740,8 @@ private struct HarnessPreferenceRow: View {
   }
 
   private var options: [ConfigOption] { catalogue?.options ?? harness.options }
+
+  private var permissionModes: AgentPermissionModes? { AgentPermissionModes(options: options) }
 
   private var statusColor: Color {
     switch HarnessPickerModel.setupState(for: harness) {

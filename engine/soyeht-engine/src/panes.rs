@@ -63,7 +63,11 @@ pub(crate) fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) 
     )
 }
 
-fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::state::State>> {
+fn new_agent(
+    directory: &Path,
+    store: &impl StorePort,
+    params: &Value,
+) -> Result<Option<crate::agents::state::State>> {
     if params["mode"] != "agent" {
         return Ok(None);
     }
@@ -71,14 +75,12 @@ fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::s
         .as_str()
         .ok_or_else(|| errors::invalid("Agent panes require a harness"))?;
     let (launch, digest) = crate::agents::registry::prepare(directory, harness)?;
-    let permission = params
-        .get("permission")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|_| errors::invalid("Invalid permission mode"))?
-        .unwrap_or(soyeht_protocol::PermissionMode::Ask);
-    let mut agent = crate::agents::state::State::new(launch, digest, permission)?;
+    let mode = match params.get("permissionMode") {
+        Some(Value::String(mode)) => Some(mode.clone()),
+        Some(_) => return Err(errors::invalid("Invalid permission mode")),
+        None => settings::default_agent_mode(store, harness)?,
+    };
+    let mut agent = crate::agents::state::State::new(launch, digest, mode)?;
     for name in ["model", "effort"] {
         if let Some(value) = params[name].as_str() {
             agent
@@ -218,7 +220,7 @@ impl Core {
             return self.writing_pane_create(connection, params);
         }
         let defaults = pane_defaults(&self.store)?;
-        let agent = new_agent(&self.directory, params)?;
+        let agent = new_agent(&self.directory, &self.store, params)?;
         let (saved, terminal_harness) =
             self.prepare_process_pane(params, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.

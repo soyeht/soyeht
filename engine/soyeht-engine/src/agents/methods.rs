@@ -23,7 +23,7 @@ pub(crate) fn handles(method: &str) -> bool {
     )
 }
 
-fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
+pub(crate) fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
     (
         "pane.queued".into(),
         json!({"paneId":pane,"n":state.queue.len(),
@@ -220,11 +220,7 @@ impl Core {
             name: sender.name,
             harness,
         };
-        let body = format!(
-            "Message from {} ({}; pane {}). Reply using soyeht-mcp message_agent with targetPaneId={}.\n\n{}",
-            source.name, source.harness, source.pane_id, source.pane_id, text,
-        );
-        let prompt = state.enqueue(body, PromptOrigin::Automatic, self.timestamp())?;
+        let prompt = state.enqueue(text.into(), PromptOrigin::Automatic, self.timestamp())?;
         let item = state
             .queue
             .iter_mut()
@@ -300,7 +296,6 @@ impl Core {
             });
         }
         state.operation = None;
-        state.pending_policy = None;
         if let Some(prompt) = state.active.take() {
             changes.events.push((
                 "pane.turn_ended".into(),
@@ -354,6 +349,11 @@ impl Core {
             "pane.prompt" => {
                 changes.clear_attention = true;
                 let origin = prompt_origin(params)?;
+                if origin == PromptOrigin::Human {
+                    // Sending the composer's text ends its draft in the same
+                    // commit, so held agent messages follow it, never precede it.
+                    state.draft_until_ms = 0;
+                }
                 let references = (!prompt_attachments.is_empty()).then(|| {
                     prompt_attachments
                         .iter()
@@ -409,26 +409,28 @@ impl Core {
             }
             "pane.config.set" => {
                 let config_id = errors::param_str(params, "configId")?;
-                let value = serde_json::from_value(params["value"].clone())
-                    .map_err(|_| errors::invalid("Configuration value is invalid"))?;
+                let value: soyeht_protocol::ConfigValue =
+                    serde_json::from_value(params["value"].clone())
+                        .map_err(|_| errors::invalid("Configuration value is invalid"))?;
                 let user = super::pending::UserOperation {
                     scope: self.clients[connection].scope.clone(),
                     key: errors::param_str(params, "idempotencyKey")?.into(),
                 };
-                let operation_id = super::configuration::begin(
+                match super::configuration::begin(
                     &mut state,
                     pane,
                     super::configuration::ChangeRequest {
                         config: config_id,
-                        value,
+                        value: value.clone(),
                         user: Some(user),
-                        kind: soyeht_protocol::ConfigOperationKind::Config,
                         started_at: timestamp,
                         now_ms,
                     },
                     &mut changes,
-                )?;
-                json!({"_nativePending":operation_id})
+                )? {
+                    Some(operation_id) => json!({"_nativePending":operation_id}),
+                    None => super::configuration::applied(&value),
+                }
             }
             _ => {
                 return Err(errors::invalid("Agent method unavailable"));

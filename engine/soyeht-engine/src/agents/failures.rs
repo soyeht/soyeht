@@ -97,7 +97,6 @@ impl Core {
                 result: Err(errors::wire(errors::harness_unavailable(reason))),
             });
         }
-        state.pending_policy = None;
         state.client = Default::default();
         state.cancel_at_ms = None;
         state.phase = Phase::Faulted;

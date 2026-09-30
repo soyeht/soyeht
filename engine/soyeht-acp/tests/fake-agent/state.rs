@@ -14,6 +14,10 @@ pub struct Settings {
     /// Replays each user prompt trimmed and split into chunks of this many
     /// bytes under one messageId, as real adapters do for long prompts.
     pub replay_user_chunk_bytes: Option<usize>,
+    /// How permission modes are announced: `config` as a configuration
+    /// option, `restricted` the same without full access, `legacy` as ACP
+    /// session modes, `none` not at all.
+    pub modes: String,
 }
 impl Settings {
     pub fn parse() -> Result<Self> {
@@ -24,6 +28,7 @@ impl Settings {
         let mut login = false;
         let mut initialize_padding_bytes = 0;
         let mut replay_user_chunk_bytes = None;
+        let mut modes = "config".to_owned();
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -32,6 +37,14 @@ impl Settings {
                 "--version-label" => version = args.next().ok_or(Error::MissingVersionLabel)?,
                 "--require-login" => require_login = true,
                 "--login" => login = true,
+                "--modes" => {
+                    modes = args
+                        .next()
+                        .filter(|value| {
+                            matches!(value.as_str(), "config" | "restricted" | "legacy" | "none")
+                        })
+                        .ok_or_else(|| Error::UnknownOption(arg.clone()))?;
+                }
                 "--initialize-padding-bytes" => {
                     let value = args
                         .next()
@@ -74,7 +87,21 @@ impl Settings {
             login,
             initialize_padding_bytes,
             replay_user_chunk_bytes,
+            modes,
         })
+    }
+    pub fn announces_mode_option(&self) -> bool {
+        matches!(self.modes.as_str(), "config" | "restricted")
+    }
+    /// Whether this agent offers `mode`; it never agrees to enter `locked`.
+    pub fn offers_mode(&self, mode: &str) -> bool {
+        self.modes != "none" && (self.modes != "restricted" || mode != "allow_all")
+    }
+    pub fn accepts_mode(&self, mode: &str) -> bool {
+        self.offers_mode(mode)
+            && MODES
+                .iter()
+                .any(|(value, _, _)| *value == mode && mode != "locked")
     }
     pub fn logged_in(&self) -> bool {
         !self.require_login || self.directory.join("login.ok").exists()
@@ -108,17 +135,53 @@ impl Session {
             ]),
         }
     }
-    pub fn options(&self) -> Value {
+    pub fn options(&self, settings: &Settings) -> Value {
         let select = |id: &str, name: &str, category: &str, values: &[&str]| json!({"id":id,"name":name,"category":category,"type":"select","currentValue":self.values[id],"options":values.iter().map(|value|json!({"value":value,"name":value})).collect::<Vec<_>>()});
-        json!([
-            select("model","Model","model",&["model-a","model-b","rejected-model","delayed-model"]),
-            select("effort","Effort","thought_level",&["low","medium","high"]),
-            select("mode","Permission","mode",&["ask","accept_edits","allow_all"]),
-            {"id":"fast","name":"Fast","type":"boolean","currentValue":self.values["fast"]}
-        ])
+        let mut options = vec![
+            select(
+                "model",
+                "Model",
+                "model",
+                &[
+                    "model-a",
+                    "model-b",
+                    "rejected-model",
+                    "delayed-model",
+                    "mode-shifting-model",
+                ],
+            ),
+            select(
+                "effort",
+                "Effort",
+                "thought_level",
+                &["low", "medium", "high"],
+            ),
+            json!({"id":"fast","name":"Fast","type":"boolean","currentValue":self.values["fast"]}),
+        ];
+        if settings.announces_mode_option() {
+            let modes: Vec<_> = MODES
+                .iter()
+                .filter(|(value, _, _)| settings.offers_mode(value))
+                .map(|(value, name, kind)| json!({"value":value,"name":name,"_meta":{"kind":kind}}))
+                .collect();
+            options.insert(2, json!({"id":"mode","name":"Permission","category":"mode","type":"select","currentValue":self.values["mode"],"options":modes}));
+        }
+        json!(options)
     }
-    pub fn response(&self) -> Value {
-        json!({"sessionId":self.id,"configOptions":self.options()})
+    /// A session/new or session/load result in the selected announcement style.
+    pub fn response(&self, settings: &Settings) -> Value {
+        let mut response = json!({"sessionId":self.id,"configOptions":self.options(settings)});
+        if settings.modes == "legacy" {
+            let modes: Vec<_> = MODES
+                .iter()
+                .map(|(id, name, kind)| json!({"id":id,"name":name,"_meta":{"kind":kind}}))
+                .collect();
+            response["modes"] = json!({"currentModeId":self.values["mode"],"availableModes":modes});
+        }
+        response
+    }
+    pub fn mode(&self) -> &str {
+        self.values["mode"].as_str().unwrap_or_default()
     }
     pub fn save(&self, settings: &Settings) -> Result<()> {
         fs::create_dir_all(&settings.directory)?;
@@ -142,3 +205,12 @@ impl Session {
     }
 }
 use crate::{error::Error, error::Result};
+
+/// Announced permission modes. The agent approves everything itself in
+/// `allow_all` and always refuses to enter `locked`.
+pub const MODES: [(&str, &str, &str); 4] = [
+    ("ask", "Ask", "standard"),
+    ("accept_edits", "Accept edits", "standard"),
+    ("allow_all", "Allow all", "full_access"),
+    ("locked", "Locked", "standard"),
+];

@@ -29,7 +29,7 @@ it has been confirmed to work”. Evidence of today's behavior is in
    2026-09-26): view workspaces, panes and state; type into raw terminals
    (software keyboard with Esc, Ctrl, Tab and arrow keys, or a hardware
    keyboard); drive agents, answer permission requests, send text; task board
-   (view, drag, dispatch); yolo button; change model/effort; create, close and
+   (view, drag, dispatch); the harness's permission-mode menu; change model/effort; create, close and
    move panes and workspaces; change settings. The engine grants the paired
    device the same role powers as the local human (contract 08 §2.4); a phone
    screen that lacks a control for one of these is a missing feature, not a

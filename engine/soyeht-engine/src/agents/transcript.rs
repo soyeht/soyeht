@@ -5,7 +5,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_protocol::{TranscriptKind, TranscriptMessage, TranscriptRole, limits};
+use soyeht_protocol::{PromptItem, TranscriptKind, TranscriptMessage, TranscriptRole, limits};
 use uuid::Uuid;
 
 pub fn message(store: &impl StorePort, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
@@ -32,6 +32,7 @@ pub fn new_message(
         terminal: None,
         plan: None,
         usage: None,
+        agent_message: None,
     })
 }
 
@@ -48,12 +49,15 @@ pub fn handover(state: &mut State, generation: u32) -> Result<TranscriptMessage>
     )
 }
 
+/// Records an accepted prompt as the pane's user side. A peer agent's message
+/// keeps its sender so clients attribute the bubble by name.
 pub fn user_prompt(
     state: &mut State,
     generation: u32,
-    mut text: &str,
+    prompt: &PromptItem,
     changes: &mut Changes,
 ) -> Result<()> {
+    let mut text = prompt.text.as_str();
     // JSON escaping can multiply the UTF-8 body size by six. Keep complete
     // records bounded even when the accepted prompt contains only controls.
     while !text.is_empty() {
@@ -61,14 +65,16 @@ pub fn user_prompt(
         while !text.is_char_boundary(end) {
             end -= 1;
         }
-        changes.messages.push(new_message(
+        let mut message = new_message(
             state,
             generation,
             TranscriptRole::User,
             TranscriptKind::Message,
             text[..end].into(),
             true,
-        )?);
+        )?;
+        message.agent_message = prompt.agent_message.clone();
+        changes.messages.push(message);
         text = &text[end..];
     }
     Ok(())
@@ -256,11 +262,11 @@ pub fn complete(
             item.complete = true;
             let kind = if key == "thought" || key.starts_with("thought:") {
                 "agent_thought_chunk"
-            } else if key == "message"
-                || key.starts_with("message:")
-                || key == "user"
-                || key.starts_with("user:")
-            {
+            } else if key == "message" || key.starts_with("message:") {
+                "agent_message_chunk"
+            } else if key == "user" || key.starts_with("user:") {
+                // Only native replay assembles user text from chunks.
+                super::peer::restore_replayed(&mut item);
                 "agent_message_chunk"
             } else if key.starts_with("tool:") {
                 "tool_call_update"
