@@ -99,4 +99,58 @@ import Testing
       .reduce(0, +)
     #expect(minimumHeight(view) >= expected - 0.5)
   }
+
+  /// Black-on-white style, so the rendered text is the only dark ink in a well.
+  @MainActor private var inkOnWhite: AgentConversationStyle {
+    AgentConversationStyle(
+      canvas: .white, face: .white, well: .white, ink: .black, secondary: .white, muted: .white,
+      accent: .white, shadowDark: .white, shadowLight: .white, wellShadow: .white,
+      wellRim: .white, wellLip: nil, success: .white, warning: .white, danger: .white,
+      bodyFont: .body, captionFont: .caption, controlFont: .caption, headingFont: .headline,
+      monoFont: .caption.monospaced(), monoSmallFont: .caption2.monospaced(),
+      canonicalLayout: false)
+  }
+
+  /// Leftmost dark pixel, in points from the view's leading edge.
+  @MainActor private func leadingInk(_ view: some View, width: CGFloat) -> CGFloat? {
+    let host = NSHostingView(rootView: view.frame(width: width).background(Color.white))
+    host.frame = CGRect(origin: .zero, size: host.fittingSize)
+    // A scroll view places its content only once it is in a window and the run loop turns.
+    let window = NSWindow(
+      contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+    window.contentView = host
+    for _ in 0..<5 {
+      host.layoutSubtreeIfNeeded()
+      RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+    guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let scale = CGFloat(bitmap.pixelsWide) / host.bounds.width
+    for x in 0..<bitmap.pixelsWide {
+      for y in 0..<bitmap.pixelsHigh {
+        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+        if color.alphaComponent > 0.5
+          && color.redComponent + color.greenComponent + color.blueComponent < 1.2
+        {
+          return CGFloat(x) / scale
+        }
+      }
+    }
+    return nil
+  }
+
+  @MainActor @Test func commandAndArgumentTextStartAtTheLeadingEdge() {
+    // A real Mac card showed short commands and arguments centered in their wells.
+    for presentation in [
+      PermissionPresentation(command: "ls", fileChanges: [], previewOmitted: false),
+      PermissionPresentation(
+        toolArguments: [PermissionToolArgument(name: "text", value: "ok\nfine")],
+        fileChanges: [], previewOmitted: false),
+    ] {
+      let view = PermissionPresentationView(presentation: presentation, style: inkOnWhite)
+      let leading = leadingInk(view, width: 420)
+      #expect(leading != nil)
+      #expect((leading ?? .infinity) < 24)
+    }
+  }
 #endif

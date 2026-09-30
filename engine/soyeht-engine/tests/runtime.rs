@@ -4751,6 +4751,91 @@ fn undisplayable_execute_permission_is_rejected_and_explained_in_the_transcript(
     );
 }
 
+fn mcp_permission(client: &mut Client, pane: &str, tool: &str, key: &str) -> Value {
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":format!("permission-tracked-mcp:{tool}"),"idempotencyKey":key}),
+    );
+    client.wait_state(pane, "waiting_for_you");
+    client.section("requests")[0]["request"].clone()
+}
+
+#[test]
+fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_tracked_call() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let first = mcp_permission(&mut client, &pane, "list_agents", "list-agents");
+    assert_eq!(first["title"], "Use soyeht-workspace · list_agents");
+    assert_eq!(first["presentation"]["command"], Value::Null);
+    assert_eq!(
+        first["presentation"]["toolArguments"],
+        json!([{"name":"text","value":"  first line\n  second line"}])
+    );
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":first["requestId"],"optionId":"always","idempotencyKey":"always-list"}));
+    client.wait_state(&pane, "idle");
+    // A grant for one tool never covers another tool whose request looks
+    // the same without its tracked call.
+    let second = mcp_permission(&mut client, &pane, "message_agent", "message-agent");
+    assert_eq!(second["title"], "Use soyeht-workspace · message_agent");
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":second["requestId"],"optionId":"deny","idempotencyKey":"deny-message"}));
+    client.wait_state(&pane, "idle");
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-tracked-mcp:list_agents","idempotencyKey":"list-again"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while rig
+        .database_probe()
+        .event_count_by_field("pane.permission_answered", "by", "rule")
+        .unwrap()
+        == 0
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the granted tool was not approved by its rule"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    client.wait_state(&pane, "idle");
+    assert_eq!(
+        rig.database_probe()
+            .event_count("pane.permission_requested")
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
+fn approval_for_an_unreported_tool_call_without_input_stays_blocked() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-untracked-mcp","idempotencyKey":"untracked"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"].as_array().unwrap().iter().any(|item| {
+            item["role"] == "system"
+                && item["text"].as_str().is_some_and(|text| {
+                    text.contains("no command to display") && text.contains("Nothing was approved")
+                })
+        }) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the approval was not blocked");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(client.section("requests").is_empty());
+    assert_eq!(
+        rig.database_probe()
+            .event_count("pane.permission_requested")
+            .unwrap(),
+        0
+    );
+}
+
 fn answer_after_engine_adoption(
     rig: &mut Rig,
     pane: &str,

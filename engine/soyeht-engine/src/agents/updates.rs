@@ -13,7 +13,7 @@ use soyeht_acp::{
     session::{self, Update},
     subagents::Lifecycle,
 };
-use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptRole};
+use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptMessage, TranscriptRole};
 
 fn append_replayed_user(
     store: &impl StorePort,
@@ -135,6 +135,22 @@ pub(super) fn finish_replayed_user(
     )
 }
 
+/// The transcript item holding the latest reported state of a tool call in
+/// the current prompt, if the agent has reported it.
+pub fn tracked_tool(
+    store: &impl StorePort,
+    pane: &str,
+    state: &State,
+    id: &str,
+) -> Result<Option<TranscriptMessage>> {
+    state
+        .open_messages
+        .get(&format!("tool:{id}"))
+        .map(|seq| transcript::message(store, pane, *seq))
+        .transpose()
+        .map(Option::flatten)
+}
+
 struct ToolUpdate<'a> {
     update: bool,
     fields: &'a Value,
@@ -167,12 +183,15 @@ fn update_tool(
         return Ok(());
     }
     let key = transcript::open_key("tool", subagent, Some(id));
-    let prior = state
-        .open_messages
-        .get(&key)
-        .map(|seq| transcript::message(store, pane, *seq))
-        .transpose()?
-        .flatten();
+    let prior = match subagent {
+        None => tracked_tool(store, pane, state, id)?,
+        Some(_) => state
+            .open_messages
+            .get(&key)
+            .map(|seq| transcript::message(store, pane, *seq))
+            .transpose()?
+            .flatten(),
+    };
     let mut item = match prior {
         Some(item) => item,
         None => transcript::new_message(

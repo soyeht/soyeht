@@ -28,6 +28,9 @@ pub struct Incoming<'a> {
     pub now_ms: i64,
     pub timestamp: &'a str,
     pub pane_names: &'a PaneNames<'a>,
+    /// The latest state of the requested tool call as reported earlier in
+    /// this prompt by session/update, when the agent reported it.
+    pub tracked_tool: Option<Value>,
 }
 
 pub struct Decision<'a> {
@@ -116,6 +119,19 @@ impl<'a> McpToolCall<'a> {
         }
         Ok(arguments)
     }
+}
+
+/// codex-acp asks to approve an MCP tool call with only its id, kind and
+/// status; the server, tool and arguments came in the earlier tool_call
+/// update. The request is judged on the tracked state overlaid with every
+/// field the request itself carries, so the request always has the last word.
+fn requested_tool_call(tracked: Option<&Value>, requested: &Value) -> Value {
+    let (Some(Value::Object(tracked)), Value::Object(fields)) = (tracked, requested) else {
+        return requested.clone();
+    };
+    let mut merged = tracked.clone();
+    merged.extend(fields.clone());
+    Value::Object(merged)
 }
 
 fn permission_presentation(
@@ -210,6 +226,7 @@ fn permission_presentation(
 fn public_question(
     method: &str,
     params: &Value,
+    tracked_tool: Option<&Value>,
     mut public: Value,
     pane_names: &PaneNames<'_>,
 ) -> Result<(Value, &'static str)> {
@@ -248,7 +265,8 @@ fn public_question(
             })
             .collect();
         let metadata = &params["_meta"]["permission"];
-        let mcp = McpToolCall::recognise(&params["toolCall"]);
+        let tool = requested_tool_call(tracked_tool, &params["toolCall"]);
+        let mcp = McpToolCall::recognise(&tool);
         let title = match &mcp {
             Some(call) => call.title(),
             None => if metadata["version"] == 1 {
@@ -256,12 +274,12 @@ fn public_question(
             } else {
                 None
             }
-            .or_else(|| params["toolCall"]["title"].as_str())
+            .or_else(|| tool["title"].as_str())
             .unwrap_or("Permission required")
             .to_owned(),
         };
-        let presentation = permission_presentation(&params["toolCall"], mcp.as_ref(), pane_names)?;
-        public["title"] = json!(if params["toolCall"]["kind"] == "execute"
+        let presentation = permission_presentation(&tool, mcp.as_ref(), pane_names)?;
+        public["title"] = json!(if tool["kind"] == "execute"
             && mcp.is_none()
             && title.chars().count() > 512
         {
@@ -317,6 +335,7 @@ pub fn receive(
         now_ms,
         timestamp,
         pane_names,
+        tracked_tool,
     } = incoming;
     if !state.owns_session(params["sessionId"].as_str()) {
         return Err(invalid("Question belongs to another session"));
@@ -332,7 +351,8 @@ pub fn receive(
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let public = json!({"paneId":saved.pane.pane_id,"requestId":request_id,
         "generation":saved.pane.generation,"promptId":prompt.prompt_id,"expiresAt":expires_at});
-    let (public, event) = public_question(method, &params, public, pane_names)?;
+    let (public, event) =
+        public_question(method, &params, tracked_tool.as_ref(), public, pane_names)?;
     changes.received.push(NativeRequest {
         request_id,
         pane_id: saved.pane.pane_id.clone(),
@@ -372,6 +392,10 @@ pub fn receive(
     Ok(())
 }
 
+/// A persistent grant covers the request as the agent sent it and exactly
+/// what the person was shown. A request that carries only a tool call id
+/// (codex-acp MCP approvals) is told apart by its presented server, tool and
+/// arguments, so one grant never extends to another tool.
 fn rule_key(state: &State, request: &NativeRequest) -> Result<String> {
     let mut tool = request.params["toolCall"].clone();
     if let Some(object) = tool.as_object_mut() {
@@ -381,7 +405,12 @@ fn rule_key(state: &State, request: &NativeRequest) -> Result<String> {
     use sha2::{Digest, Sha256};
     Ok(format!(
         "{:x}",
-        Sha256::digest(errors::json_bytes(&json!([state.launch.id, tool]))?)
+        Sha256::digest(errors::json_bytes(&json!([
+            state.launch.id,
+            tool,
+            request.public["title"],
+            request.public["presentation"],
+        ]))?)
     ))
 }
 
@@ -670,6 +699,7 @@ mod presentation_tests {
         let (public, event) = public_question(
             "session/request_permission",
             &params,
+            None,
             json!({}),
             &PaneNames::new(),
         )
@@ -720,6 +750,7 @@ mod presentation_tests {
         let (public, _) = public_question(
             "session/request_permission",
             &params,
+            None,
             json!({}),
             &PaneNames::new(),
         )
@@ -744,6 +775,7 @@ mod presentation_tests {
         let (public, _) = public_question(
             "session/request_permission",
             &params,
+            None,
             json!({}),
             &PaneNames::new(),
         )
@@ -768,6 +800,7 @@ mod presentation_tests {
         let (public, _) = public_question(
             "session/request_permission",
             &params,
+            None,
             json!({}),
             &PaneNames::new(),
         )
@@ -796,6 +829,7 @@ mod presentation_tests {
         let (public, _) = public_question(
             "session/request_permission",
             &params,
+            None,
             json!({}),
             &workspace_panes(),
         )
@@ -835,6 +869,7 @@ mod presentation_tests {
             public_question(
                 "session/request_permission",
                 params,
+                None,
                 json!({}),
                 &workspace_panes(),
             )
@@ -855,6 +890,90 @@ mod presentation_tests {
         );
     }
 
+    /// The codex-acp 1.11.0 approval for an MCP call carries only the id,
+    /// kind and status; the call itself arrived in the earlier tool_call.
+    fn bare_codex_mcp_request(id: &str) -> Value {
+        json!({
+            "toolCall": {"toolCallId": id, "kind": "execute", "status": "pending"},
+            "_meta": {"is_mcp_tool_approval": true},
+            "options": [{"optionId": "allow_once", "kind": "allow_once", "name": "Allow"}]
+        })
+    }
+
+    #[test]
+    fn codex_mcp_approval_is_presented_from_the_tracked_tool_call() {
+        let tracked = json!({"toolCallId": "exec-a8b5", "title": "mcp.soyeht-workspace.message_agent",
+            "kind": "execute", "status": "in_progress", "locations": [],
+            "rawInput": {"arguments": {"targetPaneId": "pane-claude", "text": "  indented\n  reply"},
+                "server": "soyeht-workspace", "tool": "message_agent"}});
+        let (public, _) = public_question(
+            "session/request_permission",
+            &bare_codex_mcp_request("exec-a8b5"),
+            Some(&tracked),
+            json!({}),
+            &workspace_panes(),
+        )
+        .expect("tracked MCP tool approval must be displayable");
+        assert_eq!(public["title"], "Use soyeht-workspace · message_agent");
+        assert_eq!(public["presentation"]["command"], Value::Null);
+        assert_eq!(
+            public["presentation"]["toolArguments"],
+            json!([{"name": "targetPaneId", "value": "Claude"},
+                {"name": "text", "value": "  indented\n  reply"}])
+        );
+    }
+
+    #[test]
+    fn request_fields_override_the_tracked_tool_call() {
+        // The tracked call was reported as MCP, but the request itself names
+        // a shell command: the request has the last word.
+        let tracked = json!({"toolCallId": "exec-1", "title": "Tool", "kind": "execute",
+            "status": "in_progress", "locations": [],
+            "rawInput": {"arguments": {}, "server": "soyeht-workspace", "tool": "list_agents"}});
+        let params = json!({
+            "toolCall": {"toolCallId": "exec-1", "kind": "execute", "status": "pending",
+                "title": "Run command", "rawInput": {"command": "ls", "cwd": "/project"}},
+            "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
+        });
+        let (public, _) = public_question(
+            "session/request_permission",
+            &params,
+            Some(&tracked),
+            json!({}),
+            &workspace_panes(),
+        )
+        .expect("command must be displayable");
+        assert_eq!(public["title"], "Run command");
+        assert_eq!(public["presentation"]["command"], "ls");
+        assert_eq!(public["presentation"]["toolArguments"], Value::Null);
+    }
+
+    #[test]
+    fn untracked_bare_codex_approval_fails_closed() {
+        let error = public_question(
+            "session/request_permission",
+            &bare_codex_mcp_request("exec-unknown"),
+            None,
+            json!({}),
+            &workspace_panes(),
+        )
+        .expect_err("an approval with nothing to show must not be presented");
+        assert!(error.to_string().contains("no command to display"));
+        // A tracked call that is neither a command nor an MCP call stays closed too.
+        let tracked = json!({"toolCallId": "exec-unknown", "title": "Tool", "kind": "execute",
+            "status": "in_progress", "locations": [], "rawInput": {"server": "soyeht-workspace"}});
+        assert!(
+            public_question(
+                "session/request_permission",
+                &bare_codex_mcp_request("exec-unknown"),
+                Some(&tracked),
+                json!({}),
+                &workspace_panes(),
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn mcp_arguments_over_display_limit_fail_closed() {
         let params = json!({"toolCall": {"kind": "execute", "title": "mcp.server.tool",
@@ -865,6 +984,7 @@ mod presentation_tests {
             public_question(
                 "session/request_permission",
                 &params,
+                None,
                 json!({}),
                 &PaneNames::new()
             )
@@ -880,6 +1000,7 @@ mod presentation_tests {
         let (public, _) = public_question(
             "session/request_permission",
             &params,
+            None,
             json!({}),
             &PaneNames::new(),
         )
@@ -898,6 +1019,7 @@ mod presentation_tests {
             public_question(
                 "session/request_permission",
                 &params,
+                None,
                 json!({}),
                 &PaneNames::new()
             )
@@ -911,6 +1033,7 @@ mod presentation_tests {
             public_question(
                 "session/request_permission",
                 &params,
+                None,
                 json!({}),
                 &PaneNames::new()
             )
@@ -926,6 +1049,7 @@ mod presentation_tests {
             public_question(
                 "session/request_permission",
                 &params,
+                None,
                 json!({}),
                 &PaneNames::new()
             )
@@ -944,6 +1068,7 @@ mod presentation_tests {
                 public_question(
                     "session/request_permission",
                     &params,
+                    None,
                     json!({}),
                     &PaneNames::new()
                 )
@@ -959,6 +1084,7 @@ mod presentation_tests {
             public_question(
                 "session/request_permission",
                 &params,
+                None,
                 json!({}),
                 &PaneNames::new()
             )
@@ -975,6 +1101,7 @@ mod presentation_tests {
             public_question(
                 "session/request_permission",
                 &params,
+                None,
                 json!({}),
                 &PaneNames::new()
             )
