@@ -17,6 +17,18 @@ public struct PermissionPreviewRow: Equatable, Identifiable, Sendable {
 }
 
 public enum PermissionPreviewPolicy {
+  /// Lines a permission well shows before it scrolls.
+  public static let visibleLineLimit = 12
+
+  public static func lineCount(_ text: String) -> Int {
+    text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).count
+  }
+
+  /// Blank lines that give a permission well the height of its visible text.
+  public static func visibleLineSpacer(lines: Int) -> String {
+    Array(repeating: " ", count: min(max(lines, 1), visibleLineLimit)).joined(separator: "\n")
+  }
+
   public static func preview(_ change: PermissionFileChange) -> PermissionPreview {
     let before = lines(change.oldText ?? "")
     let after = lines(change.newText)

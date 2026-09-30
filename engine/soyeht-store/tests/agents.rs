@@ -273,6 +273,8 @@ fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
              ALTER TABLE writing_documents DROP COLUMN full_width;
              DROP INDEX workspaces_created_sequence;
              ALTER TABLE workspaces DROP COLUMN created_seq;
+             DROP INDEX panes_created_sequence;
+             ALTER TABLE panes DROP COLUMN created_seq;
              PRAGMA user_version=21;",
         )
         .unwrap();

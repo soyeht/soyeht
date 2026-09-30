@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 b101472e0f1d7bc6f1e9b6147424fecfc1d032cfa5f6009f434a1899e8df3145). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -783,10 +783,16 @@ export interface PermissionFileChange {
   "newText": string;
 }
 
+export interface PermissionToolArgument {
+  "name": string;
+  "value": string;
+}
+
 export interface PermissionPresentation {
   "targetPath"?: string;
   "command"?: string;
   "executionDetails"?: Array<string>;
+  "toolArguments"?: Array<PermissionToolArgument>;
   "fileChanges": Array<PermissionFileChange>;
   "previewOmitted": boolean;
 }

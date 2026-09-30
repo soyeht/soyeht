@@ -2836,6 +2836,77 @@ fn a_lost_output_page_preserves_pending_permission_and_declares_the_gap() {
 }
 
 #[test]
+fn an_active_prompt_leaves_the_published_queue_when_it_starts() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let prompt = client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission","idempotencyKey":"leaves-queue"}),
+    );
+    client.wait_state(&pane, "waiting_for_you");
+    // The enqueue announced one queued prompt. Clients refresh their queue
+    // row only from pane.queued, so starting the prompt must announce the
+    // shrink too, not wait for the turn to end.
+    let queued = rig
+        .database_probe()
+        .latest_event("pane.queued")
+        .unwrap()
+        .expect("queue event");
+    assert_eq!(queued["paneId"], pane);
+    assert_eq!(queued["n"], 0);
+    assert_eq!(queued["promptIds"], json!([]));
+    assert_eq!(
+        client.section("requests")[0]["request"]["promptId"],
+        prompt["promptId"]
+    );
+    let listed = client.call("pane.queue.list", json!({"paneId":pane,"limit":64}));
+    assert!(listed["items"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn agent_panes_keep_creation_order_while_one_asks_and_the_other_is_messaged() {
+    let rig = Rig::new();
+    let (mut client, first) = rig.agent();
+    let workspace = client.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    client.call(
+        "pane.prompt",
+        json!({"paneId":first,"text":"permission","idempotencyKey":"order-asks"}),
+    );
+    client.wait_state(&first, "waiting_for_you");
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &first)
+        .unwrap()
+        .unwrap();
+    let (socket, _) = binding_hello(
+        &rig.path.join("engine.sock"),
+        runtime["binding"].as_str().unwrap(),
+    );
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    agent.call(
+        "agent.message",
+        json!({"targetPaneId":second,"text":"hello","idempotencyKey":"order-message"}),
+    );
+    // A reconnecting client lays out an automatic workspace in snapshot pane
+    // order, so that order must be creation order, not identifier order.
+    let order: Vec<_> = rig
+        .client()
+        .section("panes")
+        .into_iter()
+        .filter(|pane| pane["workspaceId"] == workspace)
+        .map(|pane| pane["paneId"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(order, [first, second]);
+}
+
+#[test]
 fn a_permission_created_during_engine_outage_is_recovered_once() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();

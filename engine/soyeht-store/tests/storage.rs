@@ -171,7 +171,7 @@ fn migration_backs_up_an_existing_database_before_changing_version() {
 }
 
 #[test]
-fn version_23_migration_backfills_a_durable_workspace_creation_sequence() {
+fn version_23_migration_backfills_durable_workspace_and_pane_creation_sequences() {
     let directory = Directory::new();
     let old = rusqlite::Connection::open(directory.0.join("soyeht.db")).unwrap();
     old.execute_batch(
@@ -182,6 +182,16 @@ fn version_23_migration_backfills_a_durable_workspace_creation_sequence() {
            id TEXT PRIMARY KEY,
            payload TEXT NOT NULL,
            closed INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE panes (
+           id TEXT PRIMARY KEY,
+           workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+           payload TEXT NOT NULL,
+           closed INTEGER NOT NULL DEFAULT 0,
+           instance_key TEXT NOT NULL UNIQUE,
+           instance_id TEXT,
+           supervisor_id TEXT,
+           sequence_base TEXT NOT NULL DEFAULT '0'
          );
          PRAGMA user_version=23;",
     )
@@ -197,6 +207,11 @@ fn version_23_migration_backfills_a_durable_workspace_creation_sequence() {
             rusqlite::params![workspace_id, payload],
         )
         .unwrap();
+        old.execute(
+            "INSERT INTO panes(id,workspace_id,payload,instance_key) VALUES (?1,?1,'{}',?1)",
+            [workspace_id],
+        )
+        .unwrap();
     }
     drop(old);
 
@@ -205,6 +220,24 @@ fn version_23_migration_backfills_a_durable_workspace_creation_sequence() {
         store
             .connection()
             .prepare("SELECT id,created_seq FROM workspaces ORDER BY created_seq")
+            .unwrap()
+            .query_map([], |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?
+            )))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap(),
+        [
+            ("z-last-alphabetically".into(), 1),
+            ("a-first-alphabetically".into(), 2),
+            ("m-middle".into(), 3)
+        ]
+    );
+    assert_eq!(
+        store
+            .connection()
+            .prepare("SELECT id,created_seq FROM panes ORDER BY created_seq")
             .unwrap()
             .query_map([], |row| Ok((
                 row.get::<_, String>(0)?,

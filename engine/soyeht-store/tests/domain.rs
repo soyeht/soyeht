@@ -200,6 +200,75 @@ fn workspaces_keep_creation_order_across_updates_and_reopen() {
 }
 
 #[test]
+fn panes_keep_creation_order_across_updates_rowid_changes_and_snapshot() {
+    // Clients lay out automatic workspaces in pane order, so a snapshot that
+    // sorted panes by identifier could swap two panes after a reconnect.
+    let ids = ["z-created-first", "a-created-second", "m-created-third"];
+    let pane_with_id = |id: &str| {
+        let mut record = pane();
+        record.pane.pane_id = id.into();
+        record.instance_key = format!("instance-{id}");
+        record
+    };
+    let profile = Profile::new();
+    {
+        let mut store = profile.store();
+        store
+            .mutate("test", "seed-panes", "seed-panes", |change| {
+                change.insert_workspace(&workspace("Original"))?;
+                for id in ids {
+                    change.insert_pane(&pane_with_id(id))?;
+                }
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        store
+            .mutate("test", "update-pane", "update-pane", |change| {
+                let mut updated = pane_with_id("a-created-second");
+                updated.pane.state = PaneState::WaitingForYou;
+                change.update_pane(&updated)?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        for (id, rowid) in ids.iter().zip([30, 20, 10]) {
+            store
+                .connection()
+                .execute(
+                    "UPDATE panes SET rowid=?1 WHERE id=?2",
+                    rusqlite::params![rowid, id],
+                )
+                .unwrap();
+        }
+    }
+    let mut reopened = profile.store();
+    assert_eq!(
+        reopened
+            .panes()
+            .unwrap()
+            .iter()
+            .map(|record| record.pane.pane_id.as_str())
+            .collect::<Vec<_>>(),
+        ids
+    );
+    let snapshot = reopened.snapshot().unwrap();
+    let snapshot_panes = snapshot
+        .sections
+        .iter()
+        .find(|(name, _)| name == "panes")
+        .unwrap()
+        .1
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        snapshot_panes
+            .iter()
+            .map(|pane| pane["paneId"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ids
+    );
+}
+
+#[test]
 fn workspace_pane_settings_launch_and_focus_operations_round_trip() {
     let profile = Profile::new();
     let mut store = profile.store();

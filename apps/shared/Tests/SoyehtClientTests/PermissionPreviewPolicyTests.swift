@@ -1,4 +1,5 @@
 import SoyehtProtocol
+import SwiftUI
 import Testing
 
 @testable import SoyehtClient
@@ -49,3 +50,53 @@ import Testing
   #expect(preview.unavailable)
   #expect(preview.rows.isEmpty)
 }
+
+@Test func permissionWellsSizeToTheirVisibleLines() {
+  #expect(PermissionPreviewPolicy.lineCount("curl -sI https://example.com | head -1") == 1)
+  #expect(PermissionPreviewPolicy.lineCount("HTTP/2 200 \r\n") == 2)
+  #expect(PermissionPreviewPolicy.visibleLineSpacer(lines: 0) == " ")
+  #expect(PermissionPreviewPolicy.visibleLineSpacer(lines: 2) == " \n ")
+  #expect(
+    PermissionPreviewPolicy.lineCount(PermissionPreviewPolicy.visibleLineSpacer(lines: 500))
+      == PermissionPreviewPolicy.visibleLineLimit)
+}
+
+#if os(macOS)
+  /// Height a view keeps when its container offers it nothing, as in a short stacked pane.
+  @MainActor private func minimumHeight(_ view: some View) -> CGFloat {
+    NSHostingController(rootView: view).sizeThatFits(in: CGSize(width: 320, height: 0)).height
+  }
+
+  @MainActor private func textBoxHeight(label: String, text: String) -> CGFloat {
+    let style = AgentConversationStyle.standard
+    let box = VStack(alignment: .leading, spacing: 6) {
+      Text(label).font(style.captionFont)
+      Text(text).font(style.monoSmallFont).fixedSize().padding(8)
+    }
+    return NSHostingController(rootView: box)
+      .sizeThatFits(in: CGSize(width: 320, height: 10_000)).height
+  }
+
+  @MainActor @Test func codexCommandStaysVisibleWhenThePaneIsCrowded() {
+    // Presentation stored for a real Codex exec approval whose Mac card showed an empty box:
+    // the scrolling command well had no minimum height and collapsed to its padding.
+    let command = "curl -sI https://example.com | head -1"
+    let presentation = PermissionPresentation(
+      command: command, fileChanges: [], previewOmitted: false)
+    let view = PermissionPresentationView(presentation: presentation, style: .standard)
+    #expect(minimumHeight(view) >= textBoxHeight(label: "Command", text: command) - 0.5)
+  }
+
+  @MainActor @Test func toolArgumentsStayVisibleWhenThePaneIsCrowded() {
+    let arguments = [
+      PermissionToolArgument(name: "targetPaneId", value: "Claude"),
+      PermissionToolArgument(name: "text", value: "HTTP/2 200 \r\n"),
+    ]
+    let presentation = PermissionPresentation(
+      toolArguments: arguments, fileChanges: [], previewOmitted: false)
+    let view = PermissionPresentationView(presentation: presentation, style: .standard)
+    let expected = arguments.map { textBoxHeight(label: $0.name, text: $0.value) }
+      .reduce(0, +)
+    #expect(minimumHeight(view) >= expected - 0.5)
+  }
+#endif
