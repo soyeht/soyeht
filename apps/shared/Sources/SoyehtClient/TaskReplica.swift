@@ -110,7 +110,7 @@ extension EngineClient {
   public func createTask(
     workspaceId: String, title: String, description: String, howToVerify: String?,
     mustNotChange: String, executor: TaskExecutor?, priority: TaskPriority,
-    createWorktree: Bool, permission: PermissionMode, dependencies: [String],
+    createWorktree: Bool, dependencies: [String],
     dispatch: Bool
   ) async throws -> TaskCreateResult {
     let result = try await mutation(
@@ -118,7 +118,7 @@ extension EngineClient {
       TaskCreateParams(
         workspaceId: workspaceId, title: title, description: description,
         howToVerify: howToVerify, mustNotChange: mustNotChange, executor: executor,
-        priority: priority, createWorktree: createWorktree, permission: permission,
+        priority: priority, createWorktree: createWorktree,
         dependencies: dependencies, dispatch: dispatch,
         idempotencyKey: UUID().uuidString)
     ).decoded(TaskCreateResult.self)

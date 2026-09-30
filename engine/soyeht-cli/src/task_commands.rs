@@ -185,7 +185,7 @@ fn create(workspace: &str, title: &str, args: &[&str], key: &str) -> Result<Requ
             "--effort",
             "--priority",
             "--create-worktree",
-            "--permission",
+            "--permission-mode",
             "--dependencies",
         ],
     )?;
@@ -209,17 +209,11 @@ fn create(workspace: &str, title: &str, args: &[&str], key: &str) -> Result<Requ
     if let Some(value) = flags.boolean("--create-worktree")? {
         params.insert("createWorktree".into(), json!(value));
     }
-    if let Some(permission) = flags.get("--permission") {
-        insert(
-            &mut params,
-            "permission",
-            one_of(
-                permission,
-                "permission",
-                &["ask", "accept_edits", "allow_all"],
-            )?,
-        );
-    }
+    optional(
+        &mut params,
+        "permissionMode",
+        flags.get("--permission-mode"),
+    );
     if let Some(value) = flags.get("--dependencies") {
         params.insert("dependencies".into(), json!(csv(value)));
     }
@@ -440,7 +434,7 @@ fn dispatch(workspace: &str, task: &str, args: &[&str], key: &str) -> Result<Req
             "--harness",
             "--model",
             "--effort",
-            "--permission",
+            "--permission-mode",
         ],
     )?;
     let preset = executor(&flags, true)?.ok_or_else(|| invalid("Executor preset is required"))?;
@@ -474,7 +468,7 @@ fn executor(flags: &Flags, required: bool) -> Result<Option<Value>> {
         "--harness",
         "--model",
         "--effort",
-        "--permission",
+        "--permission-mode",
     ]
     .iter()
     .any(|name| flags.get(name).is_some());
@@ -490,7 +484,7 @@ fn executor(flags: &Flags, required: bool) -> Result<Option<Value>> {
         ("--harness", "harness"),
         ("--model", "model"),
         ("--effort", "effort"),
-        ("--permission", "permission"),
+        ("--permission-mode", "permissionMode"),
     ] {
         optional(&mut value, field, flags.get(flag));
     }
@@ -645,7 +639,7 @@ mod tests {
                 "high",
                 "--create-worktree",
                 "true",
-                "--permission",
+                "--permission-mode",
                 "ask",
                 "--dependencies",
                 "WS-1, WS-2",
@@ -840,7 +834,7 @@ mod tests {
                     "WS-1",
                     "--harness",
                     "agent",
-                    "--permission",
+                    "--permission-mode",
                     "ask",
                 ],
                 "key",

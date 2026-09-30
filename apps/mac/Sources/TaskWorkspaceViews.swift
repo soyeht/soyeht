@@ -923,7 +923,7 @@ private struct NewTaskSheet: View {
   @State private var howToVerify = ""
   @State private var priority = TaskPriority.medium
   @State private var createWorktree = true
-  @State private var permission = PermissionMode.ask
+  @State private var permissionMode: String?
   @State private var workspaceDefault = true
   @State private var harness = ""
   @State private var model = ""
@@ -952,6 +952,9 @@ private struct NewTaskSheet: View {
     return "⌘↩ create · ⇧⌘↩ create & dispatch"
   }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
+  private var permissionModes: AgentPermissionModes? {
+    catalogue.flatMap { AgentPermissionModes(options: $0.options) }
+  }
   private var effortOption: ConfigOption? {
     catalogue?.options.first { $0.category == "thought_level" || $0.id == "effort" }
   }
@@ -991,6 +994,7 @@ private struct NewTaskSheet: View {
     .onChange(of: harness) { _, value in
       model = ""
       effort = ""
+      permissionMode = nil
       if !value.isEmpty { client.refreshCatalogue(harness: value) }
     }
   }
@@ -1024,12 +1028,16 @@ private struct NewTaskSheet: View {
           title: createWorktree ? "worktree" : "workspace", icon: "arrow.triangle.branch")
       }
       Menu {
-        Button("Ask every time") { permission = .ask }
-        Button("Accept edits") { permission = .accept_edits }
-        Button("Allow all actions") { permission = .allow_all }
+        PermissionModeChoices(modes: permissionModes, selection: $permissionMode)
       } label: {
-        DialogOptionLabel(title: permission.dialogTitle, icon: "checkmark.shield")
+        DialogOptionLabel(
+          title: PermissionModeChoices.title(
+            modes: permissionModes, selection: permissionMode,
+            preferred: workspaceDefault ? nil : client.defaultPermissionMode(harness: harness)
+          ).lowercased(),
+          icon: "checkmark.shield")
       }
+      .disabled(workspaceDefault)
       Menu {
         ForEach(client.tasks(in: workspaceId), id: \.taskId) { task in
           Button {
@@ -1144,14 +1152,15 @@ private struct NewTaskSheet: View {
     let executor = TaskExecutor(
       workspaceDefault: workspaceDefault,
       harness: workspaceDefault ? nil : harness,
-      model: model.nilIfEmpty, effort: effort.nilIfEmpty, permission: permission)
+      model: model.nilIfEmpty, effort: effort.nilIfEmpty,
+      permissionMode: workspaceDefault ? nil : permissionMode)
     Task { @MainActor in
       do {
         _ = try await client.createTask(
           workspaceId: workspaceId, title: title, description: description,
           howToVerify: howToVerify.nilIfEmpty, mustNotChange: mustNotChange,
           executor: executor, priority: priority, createWorktree: createWorktree,
-          permission: permission, dependencies: dependencies.sorted(), dispatch: dispatch)
+          dependencies: dependencies.sorted(), dispatch: dispatch)
         isPresented = false
       } catch {
         submitting = false
@@ -1262,16 +1271,6 @@ extension String {
   fileprivate var nilIfEmpty: String? {
     let value = trimmingCharacters(in: .whitespacesAndNewlines)
     return value.isEmpty ? nil : value
-  }
-}
-
-extension PermissionMode {
-  fileprivate var dialogTitle: String {
-    switch self {
-    case .ask: "permission"
-    case .accept_edits: "accept edits"
-    case .allow_all: "allow all"
-    }
   }
 }
 

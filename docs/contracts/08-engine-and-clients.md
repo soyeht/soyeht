@@ -108,7 +108,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 |---|---|---|---|---|
 | view everything in the workspace | yes | yes | own task/pane only | yes |
 | `pane.input` (type into raw terminal) | yes | yes | no | no |
-| `pane.prompt`, `pane.cancel`, permission, yolo, config | yes | yes | no | no |
+| `pane.prompt`, `pane.cancel`, permission, mode, config | yes | yes | no | no |
 | `task.create/comment/subitem/block/release/request_review/complete` | yes | yes | own task only | yes |
 | `task.next` | no | no | yes | no |
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
@@ -172,9 +172,8 @@ size from the last human client to resize), `pane.input {bytes}` (raw terminal),
 `pane.cancel`,
 `pane.permission.answer {requestId, optionId}`,
 `pane.elicitation.answer {requestId, fields}` (questions with fields; never
-answered by yolo),
+answered by any permission mode),
 `pane.config.set {configId, value}` → `{applied: bool, effective, sessionPreserved: bool}`,
-`pane.yolo {on}` → `{effectiveMode}` (stores the previous mode; contract 04 §4),
 `pane.switch_harness {harness, model?, effort?}` → `{switchId}`,
 `loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`,
 `pane.role.set {role: "chief"|"worker"}`,

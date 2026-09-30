@@ -205,7 +205,9 @@ private struct AgentWell: ViewModifier {
           remove: { client.discardWebAttachmentDraft(paneId) })
       }
       composer
-      if showsConfiguration, let options = pane?.agent?.options, !options.isEmpty {
+      if showsConfiguration, let options = pane?.agent?.options.filter({ !$0.isPermissionMode }),
+        !options.isEmpty
+      {
         configuration(options)
       }
     }
@@ -225,16 +227,12 @@ private struct AgentWell: ViewModifier {
   private var controls: some View {
     HStack(spacing: 10) {
       if let usage = contextUsage { ContextRing(used: usage.0, total: usage.1, style: style) }
-      if let agent = pane?.agent {
-        Button {
-          client.setYolo(paneId, on: !agent.yolo)
-        } label: {
-          Label(agent.yolo ? "Yolo on" : "Yolo off", systemImage: agent.yolo ? "bolt.fill" : "bolt")
-        }
-        .buttonStyle(.bordered).tint(agent.yolo ? style.warning : style.secondary)
-        .disabled(agent.operation != nil || !client.connected)
+      if let agent = pane?.agent, let modes = AgentPermissionModes(agent: agent) {
+        AgentPermissionModeMenu(
+          modes: modes, enabled: agent.operation == nil && client.connected, style: style,
+          select: { client.setPermissionMode(paneId, to: $0) })
       }
-      Spacer()
+      Spacer(minLength: 0)
       if isWorking {
         Button(role: .destructive) {
           client.cancelAgent(paneId)
@@ -421,6 +419,11 @@ private struct AgentWell: ViewModifier {
       TextField("Message the agent", text: $prompt, axis: .vertical)
         .lineLimit(1...6).textFieldStyle(.plain).focused($promptFocused)
         .onSubmit { submit() }
+        .onKeyPress(.tab, phases: .down) { press in
+          guard press.modifiers.contains(.shift) else { return .ignored }
+          client.cyclePermissionMode(paneId)
+          return .handled
+        }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
       Button(action: submit) {
@@ -492,7 +495,6 @@ private struct AgentWell: ViewModifier {
     switch option.category ?? option.id {
     case "model": "cpu"
     case "thought_level": "brain"
-    case "mode": "shield.checkered"
     default: "slider.horizontal.3"
     }
   }

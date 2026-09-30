@@ -256,7 +256,7 @@ class SchemaTests(unittest.TestCase):
         self.assertNotIn("idempotencyKey", command["properties"])
         self.assertFalse(self.schema["x-methods"]["web.command"]["mutation"])
 
-    def test_web_session_permission_is_explicit_and_yolo_independent(self):
+    def test_web_session_permission_is_explicit_and_independent_of_agent_modes(self):
         kinds = self.schema["$defs"]["PermissionRequestKind"]["enum"]
         self.assertEqual(kinds, ["agent", "web_session", "web_evaluate"])
         for name in ("PermissionRequest", "PanePermissionRequestedEvent"):

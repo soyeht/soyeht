@@ -82,9 +82,7 @@ fn path_text(path: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use crate::tasks::{ports::testing::MemoryTaskStore, task_fixture};
-    use soyeht_protocol::{
-        HarnessLaunch, Pane, PaneMode, PaneState, PermissionMode, StateSource, TaskState,
-    };
+    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState, StateSource, TaskState};
     use soyeht_store::domain::PaneRecord;
 
     fn fixture() -> (MemoryTaskStore, State, PaneRecord) {
@@ -98,7 +96,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap();
         let saved = PaneRecord {

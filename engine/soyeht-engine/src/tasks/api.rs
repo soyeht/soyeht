@@ -222,6 +222,16 @@ impl Core {
                 "Executor agents cannot create tasks",
             ));
         }
+        self.require_person_for_full_access(
+            &actor.role,
+            [
+                params.permission_mode.as_deref(),
+                params
+                    .executor
+                    .as_ref()
+                    .and_then(|executor| executor.permission_mode.as_deref()),
+            ],
+        )?;
         let should_dispatch = params.dispatch == Some(true);
         let create_key = params.idempotency_key.clone();
         model::workspace(&self.store, &params.workspace_id)?;
@@ -265,7 +275,7 @@ impl Core {
             harness: None,
             model: None,
             effort: None,
-            permission: None,
+            permission_mode: None,
         });
         let key = URL_SAFE_NO_PAD.encode(crate::auth::token_hash(create_key));
         let request = TaskDispatchParams {

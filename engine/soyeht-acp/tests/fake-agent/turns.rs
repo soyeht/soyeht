@@ -98,6 +98,11 @@ fn permission_turn(
                 .expect("fake overflow marker");
         });
     }
+    if runtime.session_mode(session) == "allow_all" {
+        let output = "Permission result: approved by the agent's own mode".to_owned();
+        emit(runtime, session, &output);
+        return output;
+    }
     let edit = text == "permission-edit";
     let mut tool_call = json!({"toolCallId":"permission-tool","title":"Run test operation",
         "kind":if edit{"edit"}else{"execute"},"status":"pending"});
@@ -351,6 +356,12 @@ fn execute_turn(
         return output;
     }
     if let Some(output) = crate::mcp::task_turn(runtime, session, text) {
+        emit(runtime, session, &output);
+        return output;
+    }
+    if let Some(mode) = text.strip_prefix("switch-mode:") {
+        runtime.switch_mode(session, mode);
+        let output = format!("Switched to {mode}");
         emit(runtime, session, &output);
         return output;
     }

@@ -351,7 +351,7 @@ struct PhoneWritingWorkspace: View {
           else { throw PhoneWritingSplitFailure.missingWorkspace }
           paneId = try await client.createAgentPaneNow(
             directory: URL(fileURLWithPath: workspace.path), harness: harnessId,
-            model: nil, effort: nil, permission: .ask, selectPane: false)
+            model: nil, effort: nil, selectPane: false)
           completed = try insertion.completedWritingCompanionTree(
             with: PaneLayoutLeaf(paneId: paneId, kind: .agent),
             writingPaneId: request.anchorPaneId, sizing: PhoneWritingMetrics.sizing)

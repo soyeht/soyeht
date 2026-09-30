@@ -108,7 +108,7 @@
     let task = try await client.createTask(
       workspaceId: workspaceId, title: "Native submit", description: "Reach the engine",
       howToVerify: nil, mustNotChange: "Keep the request typed", executor: nil,
-      priority: .medium, createWorktree: false, permission: .ask, dependencies: [],
+      priority: .medium, createWorktree: false, dependencies: [],
       dispatch: false)
     #expect(task.task.title == "Native submit")
     #expect(client.tasks.contains { $0.taskId == task.task.taskId })

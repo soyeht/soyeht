@@ -109,8 +109,7 @@
   @MainActor private func exerciseAgentPane(
     local: EngineClient, reader: EngineClient, data: URL
   ) async throws {
-    local.createAgentPane(
-      directory: data, harness: "swift-test", model: nil, effort: nil, permission: .ask)
+    local.createAgentPane(directory: data, harness: "swift-test", model: nil, effort: nil)
     try await phoneWait("local agent session did not open") {
       local.panes.contains { $0.mode == .agent && $0.agent?.sessionId != nil }
     }
@@ -160,18 +159,22 @@
         && reader.agentPanes[agent]?.permission == nil
         && local.panes.first(where: { $0.paneId == agent })?.state == .idle
     }
-    reader.setYolo(agent, on: true)
-    try await phoneWait("yolo enablement did not reach both Swift clients") {
-      [local, reader].allSatisfy {
-        $0.panes.first(where: { $0.paneId == agent })?.agent?.yolo == true
+    // The phone changes the harness's own mode through the same native
+    // configuration request the Mac uses, and both show only confirmed values.
+    for (change, expected) in [
+      ({ reader.setPermissionMode(agent, to: "allow_all") }, "allow_all"),
+      ({ reader.setPermissionMode(agent, to: "ask") }, "ask"),
+      ({ reader.cyclePermissionMode(agent) }, "accept_edits"),
+    ] {
+      change()
+      try await phoneWait("phone mode \(expected) did not reach both Swift clients") {
+        [local, reader].allSatisfy {
+          let modes = $0.permissionModes(paneId: agent)
+          return modes?.current == expected && modes?.pending == nil
+        }
       }
     }
-    reader.setYolo(agent, on: false)
-    try await phoneWait("yolo disablement did not reach both Swift clients") {
-      [local, reader].allSatisfy {
-        $0.panes.first(where: { $0.paneId == agent })?.agent?.yolo == false
-      }
-    }
+    #expect(selectedAgentValue(local, pane: agent, option: "mode") == "accept_edits")
   }
 
   @MainActor private func reconnectAndRevoke(

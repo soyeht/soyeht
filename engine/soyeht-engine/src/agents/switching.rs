@@ -54,6 +54,9 @@ struct Candidate {
     decoder: Decoder,
     raw_output: Vec<u8>,
     phase: CandidatePhase,
+    /// The new harness's preferred mode, used when it does not offer the
+    /// mode the pane kept from the previous harness.
+    default_mode: Option<String>,
 }
 
 enum CandidatePhase {
@@ -276,12 +279,19 @@ impl Core {
                 let value = response.map_err(candidate_rpc_error)?;
                 candidate.state.session_id =
                     Some(session::session_id(&value).map_err(native_error)?);
-                candidate.state.options = Options::from_response(&value).map_err(native_error)?;
-                let requested = requested_options(
-                    params,
-                    &candidate.state.permission,
-                    &candidate.state.options,
-                );
+                let options = Options::from_response(&value).map_err(native_error)?;
+                if let Some(mode) = candidate.default_mode.take().filter(|mode| {
+                    options.offers_mode(mode)
+                        && !candidate
+                            .state
+                            .mode
+                            .as_deref()
+                            .is_some_and(|kept| options.offers_mode(kept))
+                }) {
+                    candidate.state.mode = Some(mode);
+                }
+                super::configuration::open_session(&mut candidate.state, options)?;
+                let requested = requested_options(params, &candidate.state);
                 if requested.is_empty() {
                     return self.begin_continuation_or_commit(pane, next_name, candidate);
                 }
@@ -294,19 +304,12 @@ impl Core {
                 remaining,
             } if call.context == "switch:config" => {
                 let value = response.map_err(candidate_rpc_error)?;
-                candidate.state.options = candidate
+                let options = candidate
                     .state
                     .options
                     .confirmed(option_id, desired, &value)
                     .map_err(native_error)?;
-                if let ConfigValue::V0(mode) = desired
-                    && candidate.state.options.values.iter().any(|option| {
-                        option.id == *option_id
-                            && (option.id == "mode" || option.category.as_deref() == Some("mode"))
-                    })
-                {
-                    super::configuration::observe_mode(&mut candidate.state, mode, false)?;
-                }
+                super::configuration::confirmed(&mut candidate.state, options, option_id);
                 if remaining.is_empty() {
                     return self.begin_continuation_or_commit(pane, next_name, candidate);
                 }
@@ -350,18 +353,12 @@ impl Core {
         saved.supervisor_id = None;
         saved.pane.pid = None;
         saved.sequence_base = self.panes[pane].screen.next_offset();
-        let mut state = State::new(
-            runtime.launch.clone(),
-            runtime.binary_digest.clone(),
-            original.permission.clone(),
-        )?;
+        let mut state = State::new(runtime.launch.clone(), runtime.binary_digest.clone(), None)?;
+        state.mode = original.mode.clone();
         state.internal_continuation = Some(InternalContinuation::default());
         state.binding = original.binding.clone();
         state.mcp_role = original.mcp_role.clone();
         state.mcp_enabled = original.mcp_enabled;
-        state.yolo = original.yolo;
-        state.previous_permission = original.previous_permission.clone();
-        state.previous_effective_mode = original.previous_effective_mode.clone();
         state.permission_rules = original.permission_rules.clone();
         state.queue = original.queue.clone();
         state.queue_revision = original.queue_revision;
@@ -390,6 +387,7 @@ impl Core {
             decoder: Decoder::new(0),
             raw_output: Vec::new(),
             phase: CandidatePhase::Initializing,
+            default_mode: crate::settings::default_agent_mode(&self.store, &runtime.launch.id)?,
         })
     }
 
@@ -417,17 +415,7 @@ impl Core {
         mut requested: Vec<(String, String)>,
     ) -> Result<()> {
         let (public_name, requested_value) = requested.remove(0);
-        let category = match public_name.as_str() {
-            "effort" => "thought_level",
-            "permission" => "mode",
-            _ => public_name.as_str(),
-        };
-        let option = candidate
-            .state
-            .options
-            .values
-            .iter()
-            .find(|option| option.id == category || option.category.as_deref() == Some(category))
+        let option = super::configuration::requested_option(&candidate.state.options, &public_name)
             .cloned()
             .ok_or_else(|| {
                 errors::harness_unavailable(format!(
@@ -443,7 +431,8 @@ impl Core {
             .state
             .options
             .request(session_id, &option.id, &desired)
-            .map_err(native_error)?;
+            .map_err(native_error)?
+            .ok_or_else(|| errors::internal("A requested switch option is not native"))?;
         let request = candidate
             .state
             .client
@@ -924,35 +913,26 @@ impl Core {
     }
 }
 
-fn requested_options(
-    params: &PaneHarnessSwitchParams,
-    permission: &soyeht_protocol::PermissionMode,
-    options: &Options,
-) -> Vec<(String, String)> {
-    let mut requested = [
+/// Model and effort the switch asked for, then the mode the pane keeps when
+/// the new harness offers it.
+fn requested_options(params: &PaneHarnessSwitchParams, state: &State) -> Vec<(String, String)> {
+    [
         ("model", params.model.as_ref()),
         ("effort", params.effort.as_ref()),
+        (
+            super::configuration::MODE_KEY,
+            state
+                .requested_options
+                .get(super::configuration::MODE_KEY)
+                .and_then(|value| match value {
+                    ConfigValue::V0(mode) => Some(mode),
+                    ConfigValue::V1(_) => None,
+                }),
+        ),
     ]
     .into_iter()
     .filter_map(|(name, value)| value.map(|value| (name.into(), value.clone())))
-    .collect::<Vec<_>>();
-    if let Some(mode) = options
-        .values
-        .iter()
-        .find(|option| option.id == "mode" || option.category.as_deref() == Some("mode"))
-        .and_then(|option| {
-            option
-                .options
-                .iter()
-                .find(|choice| {
-                    super::configuration::native_policy(&choice.value).as_ref() == Some(permission)
-                })
-                .map(|choice| choice.value.clone())
-        })
-    {
-        requested.push(("permission".into(), mode));
-    }
-    requested
+    .collect()
 }
 
 #[cfg(debug_assertions)]
@@ -1017,7 +997,7 @@ mod tests {
         model::{RunningPane, StoredPane},
         screen::Screen,
     };
-    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState, PermissionMode, StateSource};
+    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState, StateSource};
     use std::fs;
 
     #[test]
@@ -1036,7 +1016,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap();
         let pane = Pane {

@@ -639,7 +639,7 @@ fn drop_current_agent_before_poll(_core: &mut Core, _pane: &str) -> Result<()> {
 mod tests {
     use super::*;
     use crate::ports::testing::{FixedClock, MemoryStore};
-    use soyeht_protocol::{HarnessLaunch, PermissionMode, PromptOrigin};
+    use soyeht_protocol::{HarnessLaunch, PromptOrigin};
 
     #[test]
     fn rejected_permission_is_visible_without_echoing_native_payload() {
@@ -653,7 +653,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap();
         let mut changes = Changes::default();
@@ -695,7 +695,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap();
         state.phase = Phase::Ready;

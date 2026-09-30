@@ -228,13 +228,19 @@ fn chunked_prompt_config_confirmation_and_refused_config_keep_the_session() {
         .collect();
     assert_eq!(chunks, ["Echo: ", "hello"]);
     let selected = serde_json::from_value(json!("model-b")).unwrap();
-    let (method, params) = options.request(&session, "model", &selected).unwrap();
+    let (method, params) = options
+        .request(&session, "model", &selected)
+        .unwrap()
+        .unwrap();
     let confirmation = peer.call(method, params).unwrap();
     let options = options
         .confirmed("model", &selected, &confirmation)
         .unwrap();
     let selected = serde_json::from_value(json!("high")).unwrap();
-    let (method, params) = options.request(&session, "effort", &selected).unwrap();
+    let (method, params) = options
+        .request(&session, "effort", &selected)
+        .unwrap()
+        .unwrap();
     assert!(
         options
             .confirmed("effort", &selected, &peer.call(method, params).unwrap())

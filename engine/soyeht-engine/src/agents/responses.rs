@@ -157,52 +157,27 @@ fn finish_configuration(
         });
     let result = match confirmation {
         Ok(options) => {
-            state.options = options;
             if let Some(key) = state.initial_option.take() {
                 state.requested_options.remove(&key);
             }
-            if let Some(option) = state
-                .options
-                .values
-                .iter()
-                .find(|option| option.id == operation.config_id)
-            {
-                let key = match option.category.as_deref().unwrap_or(&option.id) {
-                    "thought_level" => "effort",
-                    "mode" => "permission",
-                    other => other,
-                };
-                state.requested_options.remove(key);
-            }
+            super::configuration::confirmed(state, options, &operation.config_id);
             state.initial_config_failed = false;
-            if let Some(option) = state.options.values.iter().find(|option| {
-                option.id == operation.config_id
-                    && (option.category.as_deref() == Some("mode") || option.id == "mode")
-            }) && let soyeht_protocol::ConfigValue::V0(value) = &option.current_value
-            {
-                let value = value.clone();
-                super::configuration::observe_mode(state, &value, state.pending_policy.is_none())?;
-            }
-            if let Some(policy) = state.pending_policy.take() {
-                state.permission = policy.permission;
-                state.yolo = policy.yolo;
-                state.previous_permission = policy.previous_permission;
-                state.previous_effective_mode = policy.previous_mode;
-            }
             changes.events.push(("pane.config_changed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"options":state.options.values,"sessionPreserved":true})));
-            Ok(
-                if operation.kind == soyeht_protocol::ConfigOperationKind::Yolo {
-                    json!({"effectiveMode":state.permission,"on":state.yolo})
-                } else {
-                    json!({"applied":true,"effective":operation.value,"sessionPreserved":true})
-                },
-            )
+            Ok(super::configuration::applied(&operation.value))
         }
         Err(error) => {
-            if state.initial_option.take().is_some() {
-                state.initial_config_failed = true;
+            match state.initial_option.take() {
+                Some(key) if key == super::configuration::MODE_KEY => {
+                    super::configuration::refused_mode(
+                        state,
+                        saved.pane.generation,
+                        &operation.value,
+                        changes,
+                    )?;
+                }
+                Some(_) => state.initial_config_failed = true,
+                None => {}
             }
-            state.pending_policy = None;
             changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.to_string()})));
             Err(error)
         }
@@ -451,7 +426,8 @@ fn probe_configuration(
         let (method, params) = state
             .options
             .request(session_id, &option.id, &option.current_value)
-            .map_err(native_error)?;
+            .map_err(native_error)?
+            .ok_or_else(|| errors::internal("A native option has no native request"))?;
         call(state, changes, method, params, "probe:config", now_ms)
     } else {
         // No advertised option supplies valid probe parameters. This is
@@ -519,7 +495,10 @@ fn session_opened(
         state.replay_role = None;
     }
     if value.get("configOptions").is_some() || value.get("modes").is_some() || context == "open" {
-        state.options = Options::from_response(value).map_err(native_error)?;
+        super::configuration::open_session(
+            state,
+            Options::from_response(value).map_err(native_error)?,
+        )?;
     }
     state.phase = Phase::Ready;
     saved.pane.state = if state.has_finished_turn {

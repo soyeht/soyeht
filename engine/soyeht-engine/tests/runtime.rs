@@ -1078,14 +1078,14 @@ impl Rig {
             thread::sleep(Duration::from_millis(10));
         }
     }
-    fn install_fake_harness(&self) {
+    fn install_fake_harness(&self, modes: &str) {
         let binary =
             PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
         fs::write(
             self.path.join("harnesses.json"),
             serde_json::to_vec(&json!([{
                 "id":"test-agent","name":"Test agent","command":binary,
-                "args":["--state-dir",self.path.join("native")],"version":"test"
+                "args":["--state-dir",self.path.join("native"),"--modes",modes],"version":"test"
             }]))
             .unwrap(),
         )
@@ -1136,8 +1136,16 @@ impl Rig {
         )
         .unwrap();
     }
-    fn open_agent(&self, mut client: Client, workspace: &Value) -> (Client, String) {
-        self.install_fake_harness();
+    fn open_agent(&self, client: Client, workspace: &Value) -> (Client, String) {
+        self.open_agent_announcing(client, workspace, "config")
+    }
+    fn open_agent_announcing(
+        &self,
+        mut client: Client,
+        workspace: &Value,
+        modes: &str,
+    ) -> (Client, String) {
+        self.install_fake_harness(modes);
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent",
@@ -1154,6 +1162,10 @@ impl Rig {
         (client, pane)
     }
     fn agent(&self) -> (Client, String) {
+        self.agent_announcing("config")
+    }
+    /// An agent pane whose fake announces its modes as `config`, `legacy` or `none`.
+    fn agent_announcing(&self, modes: &str) -> (Client, String) {
         let mut client = self.client();
         let workspace = client.call(
             "workspace.create",
@@ -1161,7 +1173,7 @@ impl Rig {
             "idempotencyKey":"agent-workspace"}),
         )["workspace"]["workspaceId"]
             .clone();
-        self.open_agent(client, &workspace)
+        self.open_agent_announcing(client, &workspace, modes)
     }
     fn agent_in_workspace(&self, workspace: &str) -> (Client, String) {
         self.open_agent(self.client(), &json!(workspace))
@@ -2811,11 +2823,12 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
 #[test]
 fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
     let mut rig = Rig::new();
-    let (mut client, pane) = rig.agent();
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"on"}),
+    let (mut client, pane) = rig.agent_announcing("none");
+    let applied = client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"on"}),
     );
+    assert_eq!(applied["effective"], "allow_all");
     let prompt = client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"permission","idempotencyKey":"auto"}),
@@ -2857,8 +2870,8 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
         .unwrap();
     assert_eq!(by_rule, 1);
     client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"off"}),
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"off"}),
     );
     client.call(
         "pane.prompt",
@@ -3290,7 +3303,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     assert_eq!(resumed["agent"]["authMethods"], json!([]));
     let models = client.call("model.list", json!({"harness":"auth-test","paneId":pane}));
     assert_eq!(models["source"], "native_session");
-    assert_eq!(models["items"].as_array().unwrap().len(), 4);
+    assert_eq!(models["items"].as_array().unwrap().len(), 5);
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
     let repeated = client.request(
         "pane.auth.start",
@@ -4501,35 +4514,14 @@ fn restart_supervisor_and_assert_load(
     );
 }
 
-fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
-    let toggled = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-on"}),
-    );
-    assert_eq!(toggled["effectiveMode"], "allow_all");
-    assert_eq!(toggled["on"], true);
-    client.call("pane.config.set", json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"manual-mode"}));
-    let manual = client.pane(pane);
-    assert_eq!(manual["agent"]["permission"], "accept_edits");
-    assert_eq!(manual["agent"]["yolo"], false);
-    assert!(manual["agent"]["previousPermission"].is_null());
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-after-manual"}),
-    );
-    let restored = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"restore-manual"}),
-    );
-    assert_eq!(restored["effectiveMode"], "accept_edits");
-    client.call(
+/// A full-access mode is the agent's own policy: it never answers a form.
+fn exercise_full_access_mode_and_form(client: &mut Client, pane: &str) {
+    let applied = client.call(
         "pane.config.set",
-        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"restore-ask"}),
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"full-access"}),
     );
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-before-form"}),
-    );
+    assert_eq!(applied["effective"], "allow_all");
+    assert_eq!(current_mode(client, pane), "allow_all");
     client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"elicitation","idempotencyKey":"form-prompt"}),
@@ -4547,7 +4539,7 @@ fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
         }
         assert!(
             Instant::now() < deadline,
-            "form was not presented while yolo was enabled"
+            "form was not presented in a full-access mode"
         );
         thread::sleep(Duration::from_millis(20));
     };
@@ -4560,12 +4552,236 @@ fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
         assert!(Instant::now() < deadline, "form turn did not end");
         thread::sleep(Duration::from_millis(20));
     }
-    let off = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"yolo-off"}),
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"restore-ask"}),
     );
-    assert_eq!(off["effectiveMode"], "ask");
-    assert_eq!(off["on"], false);
+    assert_eq!(current_mode(client, pane), "ask");
+}
+
+fn mode_option(client: &mut Client, pane: &str) -> Value {
+    client.pane(pane)["agent"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|option| option["category"] == "mode")
+        .cloned()
+        .expect("pane announces a mode selector")
+}
+
+fn current_mode(client: &mut Client, pane: &str) -> Value {
+    mode_option(client, pane)["currentValue"].clone()
+}
+
+fn wait_for_mode(client: &mut Client, pane: &str, mode: &str) {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while current_mode(client, pane) != mode {
+        assert!(Instant::now() < deadline, "mode did not become {mode}");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn run_turn(client: &mut Client, pane: &str, text: &str) {
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":text,"idempotencyKey":Uuid::new_v4().to_string()}),
+    );
+    client.wait_state(pane, "idle");
+}
+
+#[test]
+fn native_modes_change_only_on_confirmation_and_follow_the_agent() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let modes = mode_option(&mut client, &pane);
+    let kinds: Vec<_> = modes["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| (choice["value"].clone(), choice["kind"].clone()))
+        .collect();
+    assert_eq!(kinds[2], (json!("allow_all"), json!("full_access")));
+    assert_eq!(modes["currentValue"], "ask");
+    let applied = client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"edits"}),
+    );
+    assert_eq!(applied["effective"], "accept_edits");
+    let refused = client.request(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"locked","idempotencyKey":"locked"}),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+    assert!(client.pane(&pane)["agent"]["operation"].is_null());
+    run_turn(&mut client, &pane, "switch-mode:allow_all");
+    wait_for_mode(&mut client, &pane, "allow_all");
+    run_turn(&mut client, &pane, "permission");
+    assert!(client.section("requests").is_empty());
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"ask"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission","idempotencyKey":"asks"}),
+    );
+    client.wait_state(&pane, "waiting_for_you");
+    assert_eq!(client.section("requests")[0]["kind"], "permission");
+}
+
+#[test]
+fn legacy_session_modes_use_set_mode_and_follow_the_agent() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent_announcing("legacy");
+    assert_eq!(
+        mode_option(&mut client, &pane)["options"][2]["kind"],
+        "full_access"
+    );
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"all"}),
+    );
+    let session = client.pane(&pane)["agent"]["sessionId"].clone();
+    assert_eq!(
+        rig.native_session(session.as_str().unwrap())["values"]["mode"],
+        "allow_all"
+    );
+    run_turn(&mut client, &pane, "switch-mode:accept_edits");
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let refused = client.request(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"locked","idempotencyKey":"locked"}),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+}
+
+#[test]
+fn chosen_mode_returns_after_restart_and_harness_switch() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"edits"}),
+    );
+    run_turn(&mut client, &pane, "before restart");
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    // The fake reloads sessions in its default mode, as real adapters do.
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let session = client.pane(&pane)["agent"]["sessionId"].clone();
+    assert_eq!(
+        rig.native_session(session.as_str().unwrap())["values"]["mode"],
+        "accept_edits"
+    );
+    rig.install_switch_harnesses();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.next-agent","value":"allow_all","idempotencyKey":"default"}),
+    );
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch"}),
+    );
+    wait_for_mode(&mut client, &pane, "accept_edits");
+}
+
+#[test]
+fn new_panes_start_in_the_preferred_mode_only_when_offered() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.test-agent","value":"accept_edits","idempotencyKey":"default"}),
+    );
+    let (mut client, pane) = rig.agent();
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let workspace = client.pane(&pane)["workspaceId"].clone();
+    let unoffered = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent",
+            "permissionMode":"plan","idempotencyKey":"unoffered"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    run_turn(&mut client, &unoffered, "hello");
+    assert_eq!(current_mode(&mut client, &unoffered), "ask");
+}
+
+#[test]
+fn a_mode_the_agent_changes_during_a_model_change_is_kept() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"model","value":"mode-shifting-model","idempotencyKey":"model"}),
+    );
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+    run_turn(&mut client, &pane, "before restart");
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    // The fake reloads in its default mode; the pane restores the agent's choice.
+    wait_for_mode(&mut client, &pane, "accept_edits");
+}
+
+#[test]
+fn a_refused_mode_leaves_the_queue_running_in_the_agents_mode() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.test-agent","value":"locked","idempotencyKey":"locked"}),
+    );
+    let (mut client, pane) = rig.agent();
+    run_turn(&mut client, &pane, "hello");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+    let notice = transcript_items(&mut client, &pane);
+    assert!(
+        notice.iter().any(|item| item["role"] == "system"
+            && item["text"] == "The agent did not enter Locked; it stays in Ask"),
+        "{notice:?}"
+    );
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    run_turn(&mut client, &pane, "after restart");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+}
+
+#[test]
+fn a_mode_the_next_harness_lacks_is_not_restored_on_the_way_back() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let binary =
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    fs::write(
+        rig.path.join("harnesses.json"),
+        serde_json::to_vec(&json!([
+            {"id":"test-agent","name":"Test agent","command":binary,
+                "args":["--state-dir",rig.path.join("native"),"--modes","config"],"version":"test"},
+            {"id":"restricted-agent","name":"Restricted agent","command":binary,
+                "args":["--state-dir",rig.path.join("restricted-native"),"--modes","restricted"],
+                "version":"test"}
+        ]))
+        .unwrap(),
+    )
+    .unwrap();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"all"}),
+    );
+    for (harness, key) in [("restricted-agent", "away"), ("test-agent", "back")] {
+        client.call(
+            "pane.harness.switch",
+            json!({"paneId":pane,"harness":harness,"idempotencyKey":key}),
+        );
+        run_turn(&mut client, &pane, key);
+        assert_eq!(current_mode(&mut client, &pane), "ask", "{harness}");
+    }
 }
 
 fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
@@ -4643,7 +4859,7 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         &native_pid,
         &native_session,
     );
-    exercise_yolo_and_form(&mut first, &pane);
+    exercise_full_access_mode_and_form(&mut first, &pane);
     exercise_cancel_and_tools(&rig, &mut first, &pane);
 }
 
@@ -7281,7 +7497,7 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
 #[test]
 fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     let rig = Rig::new();
-    rig.install_fake_harness();
+    rig.install_fake_harness("config");
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",
@@ -7340,7 +7556,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
 #[test]
 fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch() {
     let rig = Rig::new();
-    rig.install_fake_harness();
+    rig.install_fake_harness("config");
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",

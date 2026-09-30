@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
-    PaneState, PermissionFileChange, PermissionMode, PermissionOption, PermissionOptionKind,
+    PaneState, PermissionFileChange, PermissionOption, PermissionOptionKind,
     PermissionPresentation, Role, limits,
 };
 use soyeht_store::agents::NativeRequest;
@@ -300,13 +300,16 @@ fn rule_key(state: &State, request: &NativeRequest) -> Result<String> {
 
 /// Permission policy never handles elicitation. Native persistent grants are
 /// translated to one-time answers; their rule is owned by this pane alone.
+/// Beyond those grants the engine approves only under its own modes, which
+/// exist just for agents that announce no native permission modes.
 pub fn automatic(state: &State, request: &NativeRequest, cwd: &str) -> Result<Option<String>> {
     if request.method != "session/request_permission" {
         return Ok(None);
     }
     let rule = rule_key(state, request)?;
+    let policy = super::configuration::engine_policy(state);
     let allowed = state.permission_rules.get(&rule).copied().or_else(|| {
-        let edit = state.permission == PermissionMode::AcceptEdits
+        let edit = policy == Some(super::configuration::ACCEPT_EDITS)
             && request.params["toolCall"]["kind"] == "edit"
             && request.params["toolCall"]["locations"]
                 .as_array()
@@ -321,7 +324,7 @@ pub fn automatic(state: &State, request: &NativeRequest, cwd: &str) -> Result<Op
                             })
                         })
                 });
-        if state.permission == PermissionMode::AllowAll || edit {
+        if policy == Some(super::configuration::ALLOW_ALL) || edit {
             Some(true)
         } else {
             None
