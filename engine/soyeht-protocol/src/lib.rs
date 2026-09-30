@@ -3,6 +3,7 @@
 
 mod generated;
 pub mod limits;
+pub mod modes;
 pub use generated::*;
 pub mod attachment;
 mod error;

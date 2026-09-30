@@ -66,7 +66,7 @@ pub(super) fn engine_policy(state: &State) -> Option<&str> {
 }
 
 /// The announced option a `requested_options` key selects.
-pub(super) fn requested_option<'a>(options: &'a Options, key: &str) -> Option<&'a ConfigOption> {
+pub(crate) fn requested_option<'a>(options: &'a Options, key: &str) -> Option<&'a ConfigOption> {
     let category = if key == "effort" {
         "thought_level"
     } else {

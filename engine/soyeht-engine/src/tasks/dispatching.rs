@@ -314,15 +314,12 @@ fn required_harness(preset: &TaskExecutor) -> Result<&str> {
 }
 
 fn selected_option(state: &State, name: &str) -> Option<String> {
-    state
-        .options
-        .values
-        .iter()
-        .find(|option| option.id == name)
-        .and_then(|option| match &option.current_value {
+    crate::agents::configuration::requested_option(&state.options, name).and_then(|option| {
+        match &option.current_value {
             soyeht_protocol::ConfigValue::V0(value) => Some(value.clone()),
             _ => None,
-        })
+        }
+    })
 }
 
 impl Core {

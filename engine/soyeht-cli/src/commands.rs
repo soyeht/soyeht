@@ -241,8 +241,11 @@ fn set_config(
 
 /// Selects one of the harness's own permission modes by its native ID.
 fn set_mode(client: &mut Client, pane: &str, mode: &str, key: &str) -> Result<Value> {
-    let option = agent_option(client, pane, |option| option["category"] == "mode")?
-        .ok_or_else(|| invalid("This pane announces no permission modes"))?;
+    let option = agent_option(client, pane, |option| {
+        serde_json::from_value::<ConfigOption>(option.clone())
+            .is_ok_and(|option| option.is_permission_mode())
+    })?
+    .ok_or_else(|| invalid("This pane announces no permission modes"))?;
     let config = option["id"]
         .as_str()
         .ok_or_else(|| invalid("The permission mode selector has no ID"))?;

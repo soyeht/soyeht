@@ -12,8 +12,7 @@ pub enum Route {
     Client,
 }
 
-/// The ACP category that carries an agent's permission modes.
-pub const MODE_CATEGORY: &str = "mode";
+pub use soyeht_protocol::modes::MODE_CATEGORY;
 /// Mode kind for presets that approve everything without asking.
 pub const FULL_ACCESS_KIND: &str = "full_access";
 /// Adapters that predate `_meta.kind` still name their full-access presets.
@@ -28,10 +27,6 @@ pub struct Options {
 /// Whether an adapter that predates `_meta.kind` names this mode full access.
 pub fn is_known_full_access_id(mode: &str) -> bool {
     FULL_ACCESS_MODE_IDS.contains(&mode)
-}
-
-pub fn is_mode(option: &ConfigOption) -> bool {
-    option.category.as_deref() == Some(MODE_CATEGORY) || option.id == MODE_CATEGORY
 }
 
 fn text(value: &Value, field: &str) -> Result<String, Error> {
@@ -69,7 +64,7 @@ fn choice(value: &Value, group: Option<&str>) -> Result<ConfigChoice, Error> {
 }
 
 fn classify_full_access(option: &mut ConfigOption) {
-    if !is_mode(option) {
+    if !option.is_permission_mode() {
         return;
     }
     for choice in &mut option.options {
@@ -186,11 +181,15 @@ impl Options {
 
     /// The permission-mode selector, whichever mechanism announced it.
     pub fn mode(&self) -> Option<&ConfigOption> {
-        self.values.iter().find(|option| is_mode(option))
+        self.values
+            .iter()
+            .find(|option| option.is_permission_mode())
     }
 
     pub fn mode_mut(&mut self) -> Option<&mut ConfigOption> {
-        self.values.iter_mut().find(|option| is_mode(option))
+        self.values
+            .iter_mut()
+            .find(|option| option.is_permission_mode())
     }
 
     /// The selected permission mode's native identifier.

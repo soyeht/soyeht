@@ -91,8 +91,8 @@ Incognito panes use a non-persistent store. The engine stores durable grants
 for `web_session` by workspace and domain, but never receives cookie names or
 values. Before the first agent action that could send cookies, the host returns
 only whether the target domain has cookies. The engine then requires a grant
-or creates the existing durable permission flow. Yolo never answers this
-permission. Denial does not clear the user's session.
+or creates the existing durable permission flow. No agent permission mode
+answers this permission (ADR 0070). Denial does not clear the user's session.
 
 ### Mac WebKit boundary
 
@@ -125,7 +125,7 @@ permission before routing a command.
 Snapshot mode may use structured page data. Human mode exposes only
 screenshots and coordinate actions, but remains unavailable on the host after
 the spike. `web_evaluate` always creates its own permission request and is
-excluded from yolo. Console and network results expose metadata only.
+never answered by an agent permission mode. Console and network results expose metadata only.
 
 ### Limits and verification
 
