@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::{self, Update};
-use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptRole};
+use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptMessage, TranscriptRole};
 
 fn append_replayed_user(
     store: &impl StorePort,
@@ -126,6 +126,22 @@ pub(super) fn finish_replayed_user(
     )
 }
 
+/// The transcript item holding the latest reported state of a tool call in
+/// the current prompt, if the agent has reported it.
+pub fn tracked_tool(
+    store: &impl StorePort,
+    pane: &str,
+    state: &State,
+    id: &str,
+) -> Result<Option<TranscriptMessage>> {
+    state
+        .open_messages
+        .get(&format!("tool:{id}"))
+        .map(|seq| transcript::message(store, pane, *seq))
+        .transpose()
+        .map(Option::flatten)
+}
+
 fn update_tool(
     store: &impl StorePort,
     pane: &str,
@@ -139,14 +155,7 @@ fn update_tool(
     if id.is_empty() || id.chars().count() > 128 {
         return Err(errors::invalid("Tool ID exceeds public protocol bounds"));
     }
-    let key = format!("tool:{id}");
-    let prior = state
-        .open_messages
-        .get(&key)
-        .map(|seq| transcript::message(store, pane, *seq))
-        .transpose()?
-        .flatten();
-    let mut item = match prior {
+    let mut item = match tracked_tool(store, pane, state, id)? {
         Some(item) => item,
         None => transcript::new_message(
             state,
@@ -178,7 +187,7 @@ fn update_tool(
         Some(serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))?);
     state
         .open_messages
-        .insert(key, transcript::sequence(&item.seq)?);
+        .insert(format!("tool:{id}"), transcript::sequence(&item.seq)?);
     transcript::put(
         changes,
         pane,

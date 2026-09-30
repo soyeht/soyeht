@@ -50,9 +50,8 @@ private struct PermissionTextBox: View {
         lines: PermissionPreviewPolicy.lineCount(text), axes: [.horizontal, .vertical],
         style: style
       ) {
-        Text(text).foregroundStyle(style.ink)
+        Text(text).foregroundStyle(style.ink).multilineTextAlignment(.leading)
           .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
-          .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
   }
@@ -60,6 +59,8 @@ private struct PermissionTextBox: View {
 
 /// A scrolling well whose first visible lines size it rigidly. A scroll view alone has no
 /// minimum height, so a crowded pane collapsed it to an empty box; now the transcript yields.
+/// Content narrower than the well starts at its top-leading corner: a scroll view centers
+/// smaller content, which showed short commands and arguments in the middle of the well.
 private struct PermissionWell<Content: View>: View {
   let lines: Int
   let axes: Axis.Set
@@ -71,7 +72,15 @@ private struct PermissionWell<Content: View>: View {
       .hidden()
       .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .overlay(alignment: .topLeading) { ScrollView(axes) { content } }
+      .overlay(alignment: .topLeading) {
+        GeometryReader { viewport in
+          ScrollView(axes) {
+            content.frame(
+              minWidth: viewport.size.width, minHeight: viewport.size.height,
+              alignment: .topLeading)
+          }
+        }
+      }
       .font(style.monoSmallFont)
       .padding(8)
       .background(style.well, in: RoundedRectangle(cornerRadius: 8))
