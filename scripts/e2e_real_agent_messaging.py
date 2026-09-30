@@ -11,18 +11,17 @@ deterministically.
 import argparse
 import json
 import os
-import plistlib
-import pwd
+import tempfile
 import time
 from pathlib import Path
 
 from e2e import ROOT, Services, require
 from e2e_agents import events, question, transcript
-from e2e_real_acp import raise_file_limit
-from install_dev import service_environment
+from e2e_real_acp import (
+    HARNESSES, install_adapter, pinned_package, quiet_workspace, raise_file_limit,
+)
 
 
-HARNESSES = {"claude": "registry.claude-acp", "codex": "registry.codex-acp"}
 SERVER = "soyeht-workspace"
 SOYEHT_TOOLS = ("list_agents", "message_agent")
 TURN_SECONDS = 300
@@ -91,7 +90,7 @@ class Run:
 
     def open(self, workspace, key, model=None):
         pane = self.client.mutate("pane.create", workspaceId=workspace, mode="agent",
-                                  harness=HARNESSES[key])["paneId"]
+                                  harness=f"real-{key}")["paneId"]
         self.agents.append(Agent(key, pane, None))
         self.until(lambda: self.client.pane(pane)["agent"].get("sessionId"),
                    f"{key} session did not open", seconds=240)
@@ -185,43 +184,46 @@ def draft_hold(run, sender, recipient):
     run.until(run.settled, "panes did not settle after the draft")
 
 
-def use_installed_environment(services):
-    # Real adapters find npx through the user's login shell and their sign-in
-    # through the user identity, exactly as the installed services do.
-    for component in ("ptyd", "engine"):
-        plist = services.data / f"{component}.plist"
-        values = plistlib.loads(plist.read_bytes())
-        values["EnvironmentVariables"] = {
-            **service_environment(), "SHELL": pwd.getpwuid(os.getuid()).pw_shell,
-        }
-        plist.write_bytes(plistlib.dumps(values))
+def register_adapters(services, pair, directory):
+    # The pinned registry adapters, launched without the user's own extensions
+    # or login-shell PATH, so nothing they start reaches protected folders.
+    entries = []
+    for key in sorted(set(pair)):
+        package, version = pinned_package(HARNESSES[key])
+        adapter = install_adapter(directory / key, package, version)
+        entries.append({"id": f"real-{key}", "name": key.capitalize(),
+                        "command": str(adapter), "args": [], "version": version})
+    (services.data / "harnesses.json").write_text(json.dumps(entries))
+    return [Path(entry["command"]) for entry in entries]
 
 
 def run_real(binaries, pair, models):
-    services = Services(binaries)
-    use_installed_environment(services)
-    run = None
-    try:
-        services.start("ptyd")
-        services.start("engine")
-        client = services.client("real-messaging")
-        project = services.data / "project"
-        project.mkdir()
-        workspace = client.mutate("workspace.create", name="Real agent messaging",
-                                  path=str(project))["workspace"]["workspaceId"]
-        run = Run(services, client)
-        sender, recipient = (run.open(workspace, key, models.get(key)) for key in pair)
-        exchange(run, sender, recipient)
-        draft_hold(run, sender, recipient)
-        return run.log
-    except Exception:
-        # Diagnostic transcript for the failing run; no credentials reach it.
-        for agent in run.agents if run else []:
-            for item in transcript(run.client, agent.pane):
-                print(f"{agent.name} {item['role']}/{item['kind']}: {json.dumps(item)[:600]}")
-        raise
-    finally:
-        services.close()
+    with tempfile.TemporaryDirectory(prefix="soyeht-real-messaging-") as directory:
+        services = Services(binaries)
+        run = None
+        try:
+            adapters = register_adapters(services, pair, Path(directory))
+            services.start("ptyd")
+            services.start("engine")
+            client = services.client("real-messaging")
+            project = services.data / "project"
+            project.mkdir()
+            quiet_workspace(project, adapters)
+            workspace = client.mutate("workspace.create", name="Real agent messaging",
+                                      path=str(project))["workspace"]["workspaceId"]
+            run = Run(services, client)
+            sender, recipient = (run.open(workspace, key, models.get(key)) for key in pair)
+            exchange(run, sender, recipient)
+            draft_hold(run, sender, recipient)
+            return run.log
+        except Exception:
+            # Diagnostic transcript for the failing run; no credentials reach it.
+            for agent in run.agents if run else []:
+                for item in transcript(run.client, agent.pane):
+                    print(f"{agent.name} {item['role']}/{item['kind']}: {json.dumps(item)[:600]}")
+            raise
+        finally:
+            services.close()
 
 
 def main():
