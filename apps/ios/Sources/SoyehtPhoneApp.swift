@@ -18,5 +18,6 @@ struct SoyehtPhoneApp: App {
         }
         .onOpenURL { model.pair($0.absoluteString) }
     }
+    .commands { PhonePaneCommands() }
   }
 }
