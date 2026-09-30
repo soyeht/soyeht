@@ -1,5 +1,5 @@
 use crate::{
-    core::{Core, write_pane},
+    core::{Core, persist_pane},
     errors::{self, Result},
     model::{self, RunningPane, StoredPane},
     ports::StorePort,
@@ -63,7 +63,11 @@ pub(crate) fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) 
     )
 }
 
-fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::state::State>> {
+fn new_agent(
+    directory: &Path,
+    store: &impl StorePort,
+    params: &Value,
+) -> Result<Option<crate::agents::state::State>> {
     if params["mode"] != "agent" {
         return Ok(None);
     }
@@ -71,14 +75,12 @@ fn new_agent(directory: &Path, params: &Value) -> Result<Option<crate::agents::s
         .as_str()
         .ok_or_else(|| errors::invalid("Agent panes require a harness"))?;
     let (launch, digest) = crate::agents::registry::prepare(directory, harness)?;
-    let permission = params
-        .get("permission")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|_| errors::invalid("Invalid permission mode"))?
-        .unwrap_or(soyeht_protocol::PermissionMode::Ask);
-    let mut agent = crate::agents::state::State::new(launch, digest, permission)?;
+    let mode = match params.get("permissionMode") {
+        Some(Value::String(mode)) => Some(mode.clone()),
+        Some(_) => return Err(errors::invalid("Invalid permission mode")),
+        None => settings::default_agent_mode(store, harness)?,
+    };
+    let mut agent = crate::agents::state::State::new(launch, digest, mode)?;
     for name in ["model", "effort"] {
         if let Some(value) = params[name].as_str() {
             agent
@@ -116,6 +118,15 @@ impl Core {
         } else {
             requested_cwd
         };
+        let name = match (params["name"].as_str(), agent) {
+            (Some(name), _) => name.to_owned(),
+            (None, Some(state)) => self.default_agent_name(
+                &workspace.workspace_id,
+                crate::agents::naming::harness_label(&state.launch),
+                None,
+            ),
+            (None, None) => "Shell".into(),
+        };
         let instance_key = Uuid::new_v4().to_string();
         let mut pane = Pane {
             agent: agent.map(|state| state.public(self.now_ms())),
@@ -129,10 +140,7 @@ impl Core {
             pane_id: Uuid::new_v4().to_string(),
             workspace_id: workspace.workspace_id,
             cwd: cwd.into(),
-            name: params["name"]
-                .as_str()
-                .unwrap_or(if agent_mode { "Agent" } else { "Shell" })
-                .into(),
+            name,
             mode: if agent_mode {
                 PaneMode::Agent
             } else {
@@ -212,7 +220,7 @@ impl Core {
             return self.writing_pane_create(connection, params);
         }
         let defaults = pane_defaults(&self.store)?;
-        let agent = new_agent(&self.directory, params)?;
+        let agent = new_agent(&self.directory, &self.store, params)?;
         let (saved, terminal_harness) =
             self.prepare_process_pane(params, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.
@@ -252,6 +260,27 @@ impl Core {
         Ok(mutation.result)
     }
 
+    pub(crate) fn prepare_pane_close(
+        &self,
+        saved: &mut StoredPane,
+        events: &mut Vec<(String, Value)>,
+    ) -> Result<Option<soyeht_protocol::Workspace>> {
+        saved.closed = true;
+        let workspace =
+            self.workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
+        events.push((
+            "pane.closed".into(),
+            json!({"paneId":saved.pane.pane_id,"workspaceId":saved.pane.workspace_id}),
+        ));
+        if let Some(workspace) = &workspace {
+            events.push((
+                "workspace.layout_updated".into(),
+                json!({"workspace":workspace}),
+            ));
+        }
+        Ok(workspace)
+    }
+
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         if method == "pane.experiment.delete" {
             return self.delete_experiment_capture_data(connection, params);
@@ -267,6 +296,7 @@ impl Core {
             .ok_or_else(|| errors::not_found("Pane not found"))?
             .stored
             .clone();
+        let mut layout_workspace = None;
         let requested_capture = (method == "pane.experiment.set")
             .then(|| errors::param_bool(params, "on"))
             .transpose()?;
@@ -292,11 +322,7 @@ impl Core {
         let mut events = vec![];
         let result = match method {
             "pane.close" => {
-                saved.closed = true;
-                events.push((
-                    "pane.closed".into(),
-                    json!({"paneId":id,"workspaceId":saved.pane.workspace_id}),
-                ));
+                layout_workspace = self.prepare_pane_close(&mut saved, &mut events)?;
                 json!({"paneId":id})
             }
             "pane.rename" => {
@@ -356,9 +382,9 @@ impl Core {
             events.push(("pane.updated".into(), json!({"pane":saved.pane})));
         }
         let mutation = self.mutate(connection, method, params, |tx| {
-            write_pane(tx, &saved)?;
-            if saved.closed {
-                tx.close_pane(id)?;
+            persist_pane(tx, &saved)?;
+            if let Some(workspace) = &layout_workspace {
+                tx.update_workspace(workspace)?;
             }
             Ok((result, events))
         })?;
@@ -405,7 +431,6 @@ impl Core {
             }
         }
         if saved.closed {
-            self.editor.remove_pane(id);
             self.finish_close(id)?;
         }
         if method == "pane.resize" && saved.pane.mode == PaneMode::Terminal {
@@ -422,6 +447,7 @@ impl Core {
     }
 
     pub fn finish_close(&mut self, id: &str) -> Result<()> {
+        self.editor.remove_pane(id);
         self.terminal_captures.remove(id);
         self.agent_captures.remove(id);
         for client in self.clients.values_mut() {

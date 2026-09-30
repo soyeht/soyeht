@@ -1,4 +1,4 @@
-use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
+use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Window {
@@ -36,6 +36,7 @@ impl Window {
 pub struct Reading {
     pub provider: UsageProvider,
     pub state: UsageState,
+    pub unavailable_reason: Option<UsageUnavailableReason>,
     pub primary: Option<Window>,
     pub secondary: Option<Window>,
     pub source: UsageSource,
@@ -55,6 +56,7 @@ impl Reading {
         Self {
             provider,
             state: UsageState::Ok,
+            unavailable_reason: None,
             primary: Some(primary),
             secondary,
             source,
@@ -66,6 +68,7 @@ impl Reading {
     pub(crate) fn unavailable(
         provider: UsageProvider,
         state: UsageState,
+        unavailable_reason: Option<UsageUnavailableReason>,
         source: UsageSource,
         fetched_at: String,
         observed_at_sec: u64,
@@ -73,6 +76,7 @@ impl Reading {
         Self {
             provider,
             state,
+            unavailable_reason,
             primary: None,
             secondary: None,
             source,

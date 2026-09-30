@@ -65,6 +65,24 @@ fn pane_row(row: &Row<'_>) -> rusqlite::Result<PaneRecord> {
 }
 
 impl Store {
+    pub fn workspaces(&self) -> Result<Vec<Workspace>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT payload FROM workspaces WHERE closed=0 ORDER BY created_seq")?;
+        Ok(statement
+            .query_map([], |row| {
+                let raw: String = row.get(0)?;
+                serde_json::from_str(&raw).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })
+            })?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
     pub fn workspace(&self, id: &str) -> Result<Option<Workspace>> {
         let raw: Option<String> = self
             .connection
@@ -80,7 +98,7 @@ impl Store {
 
     pub fn panes(&self) -> Result<Vec<PaneRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT payload,closed,instance_key,instance_id,supervisor_id,sequence_base FROM panes ORDER BY rowid",
+            "SELECT payload,closed,instance_key,instance_id,supervisor_id,sequence_base FROM panes ORDER BY created_seq",
         )?;
         Ok(statement
             .query_map([], pane_row)?
@@ -268,7 +286,7 @@ impl Store {
 impl Change<'_> {
     pub fn insert_workspace(&self, workspace: &Workspace) -> Result<()> {
         self.transaction.execute(
-            "INSERT INTO workspaces(id,payload) VALUES (?1,?2)",
+            "INSERT INTO workspaces(id,payload,created_seq) VALUES (?1,?2,(SELECT COALESCE(MAX(created_seq),0)+1 FROM workspaces))",
             params![workspace.workspace_id, serde_json::to_string(workspace)?],
         )?;
         Ok(())
@@ -306,7 +324,7 @@ impl Change<'_> {
 
     pub fn insert_pane(&self, pane: &PaneRecord) -> Result<()> {
         self.transaction.execute(
-            "INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base) VALUES (?1,?2,?3,?4,?5)",
+            "INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base,created_seq) VALUES (?1,?2,?3,?4,?5,(SELECT COALESCE(MAX(created_seq),0)+1 FROM panes))",
             params![pane.pane.pane_id, pane.pane.workspace_id, serde_json::to_string(&pane.pane)?, pane.instance_key, pane.sequence_base.to_string()],
         )?;
         Ok(())

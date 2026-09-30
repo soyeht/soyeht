@@ -1,4 +1,7 @@
-use super::{Changes, responses, state::Phase};
+use super::{
+    Changes, registry, responses,
+    state::{Phase, State},
+};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -7,12 +10,73 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::AuthKind;
-use soyeht_protocol::{PaneMode, PaneState, StateSource};
+use soyeht_protocol::{HarnessLaunch, PaneMode, PaneState, StateSource};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
+use std::path::Path;
 use uuid::Uuid;
 
-fn terminal_auth_argv(command: String, args: Vec<String>) -> Vec<String> {
-    std::iter::once(command).chain(args).collect()
+fn terminal_auth_argv(
+    launch: &HarnessLaunch,
+    original_command: &str,
+    auth_args: Vec<String>,
+) -> Result<Vec<String>> {
+    let runner = Path::new(original_command)
+        .file_name()
+        .and_then(|name| name.to_str());
+    let package_prefix = match runner {
+        Some("npx" | "npx-cli.js") => match launch.args.as_slice() {
+            [yes, package, ..] if yes == "--yes" && registry::pinned_package(package) => {
+                vec![yes.clone(), package.clone()]
+            }
+            _ => {
+                return Err(errors::invalid(
+                    "Terminal sign-in requires a version-pinned harness package",
+                ));
+            }
+        },
+        Some("uvx") => match launch.args.first() {
+            Some(package) if registry::pinned_package(package) => match Path::new(&launch.command)
+                .file_name()
+                .and_then(|name| name.to_str())
+            {
+                Some("uvx") => vec![package.clone()],
+                Some("uv") => vec!["tool".into(), "run".into(), package.clone()],
+                _ => {
+                    return Err(errors::invalid(
+                        "Terminal sign-in requires a recognized uv runner",
+                    ));
+                }
+            },
+            _ => {
+                return Err(errors::invalid(
+                    "Terminal sign-in requires a version-pinned harness package",
+                ));
+            }
+        },
+        _ => vec![],
+    };
+    // npx and uvx pass arguments after the package position to that package's
+    // executable. In particular, an authMethod --package must never be a runner option.
+    Ok(std::iter::once(launch.command.clone())
+        .chain(package_prefix)
+        .chain(auth_args)
+        .collect())
+}
+
+fn verified_terminal_auth_argv(
+    directory: &Path,
+    state: &State,
+    auth_args: Vec<String>,
+) -> Result<Vec<String>> {
+    let entry = registry::catalogue_entries(directory)?
+        .into_iter()
+        .find(|entry| entry.launch.id == state.launch.id)
+        .ok_or_else(|| errors::invalid("Harness changed; restart the agent pane"))?;
+    let (current, digest) = registry::prepare_entry(entry.clone())?;
+    if current != state.launch || digest != state.binary_digest {
+        return Err(errors::invalid("Harness changed; restart the agent pane"));
+    }
+    terminal_auth_argv(&state.launch, &entry.launch.command, auth_args)
 }
 
 fn auth_pane_created(
@@ -43,7 +107,7 @@ impl Core {
     pub fn agent_auth_start(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let id = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(id)?;
-        if state.phase != Phase::NeedsLogin {
+        if !state.auth_required && state.phase != Phase::NeedsLogin {
             return Err(errors::invalid("Sign-in is not required for this pane"));
         }
         if let Some(pane) = state.login_pane_id.as_ref().filter(|pane| {
@@ -94,6 +158,10 @@ impl Core {
         if method.kind != AuthKind::Terminal {
             return Err(errors::invalid("Unsupported authentication method"));
         }
+        // The adapter supplied auth args, but only the catalogue supplies the
+        // runner and pinned package. Refuse a stale or replaced launch before
+        // creating a terminal pane or spawning any process.
+        let argv = verified_terminal_auth_argv(&self.directory, &state, method.args.clone())?;
         let child_id = Uuid::new_v4().to_string();
         let mut pane = self.panes[id].stored.pane.clone();
         pane.pane_id = child_id.clone();
@@ -116,7 +184,6 @@ impl Core {
             supervisor_id: None,
             sequence_base: 0,
         };
-        let argv = terminal_auth_argv(state.launch.command.clone(), method.args);
         let mut environment =
             super::environment::launch_environment_with(state.launch.environment.as_deref());
         environment.extend(method.env);
@@ -156,7 +223,19 @@ impl Core {
     }
 
     pub fn poll_agent_authentication(&mut self, id: &str) -> Result<()> {
-        let mut state = self.agent_state(id)?;
+        let state = self.agent_state(id)?;
+        if state.login_pane_id.is_some() {
+            self.finish_login_terminal(id, state)
+        } else if state.unconfirmed_login_pane_id.is_some() {
+            self.confirm_login_terminal(id, state)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// A zero exit status is only a claim that sign-in worked. The agent
+    /// restarts to check it, and the terminal stays open until that check ends.
+    fn finish_login_terminal(&mut self, id: &str, mut state: State) -> Result<()> {
         let Some(child_id) = state.login_pane_id.clone() else {
             return Ok(());
         };
@@ -169,23 +248,68 @@ impl Core {
         let Response::Instances(instances) = self.pty_request(Request::List)? else {
             return Err(errors::ptyd_unavailable("Invalid sign-in process registry"));
         };
-        let success = !child.closed
+        let exited_cleanly = !child.closed
             && instances
                 .iter()
                 .find(|i| i.spawn.instance_key == child.instance_key)
                 .is_some_and(|i| i.exit_code == Some(0));
         state.login_pane_id = None;
-        state.phase = if success {
-            Phase::RestartAfterProbe
+        state.last_update_ms = self.now_ms();
+        let mut changes = Changes::default();
+        if exited_cleanly {
+            state.unconfirmed_login_pane_id = Some(child_id);
+            state.auth_required = false;
+            state.phase = Phase::RestartAfterProbe;
+            changes.clear_failed_probes = true;
         } else {
-            Phase::NeedsLogin
+            state.auth_required = true;
+            state.phase = Phase::NeedsLogin;
+            changes.events.push(auth_finished(
+                id,
+                false,
+                "Sign-in failed or was interrupted. Review its terminal, then sign in again.",
+            ));
+        }
+        self.commit_agent(
+            self.panes[id].stored.clone(),
+            state,
+            changes,
+            None,
+            json!({}),
+        )?;
+        Ok(())
+    }
+
+    /// Closes the sign-in terminal only once the restarted agent has a
+    /// session. If the agent still asks for sign-in, the terminal and its
+    /// output stay available for review.
+    fn confirm_login_terminal(&mut self, id: &str, mut state: State) -> Result<()> {
+        let signed_in =
+            state.phase == Phase::Ready && !state.auth_required && state.session_id.is_some();
+        let reason = match state.phase {
+            _ if signed_in => "Sign-in completed",
+            Phase::NeedsLogin => {
+                "Sign-in did not complete. Review its terminal, then sign in again."
+            }
+            Phase::Faulted => "The agent stopped before sign-in could be confirmed.",
+            _ => return Ok(()),
+        };
+        let Some(child_id) = state.unconfirmed_login_pane_id.take() else {
+            return Ok(());
         };
         state.last_update_ms = self.now_ms();
-        let mut changes = Changes {
-            clear_failed_probes: success,
-            ..Changes::default()
-        };
-        changes.events.push(("pane.auth_finished".into(),json!({"paneId":id,"ok":success,"reason":if success {"Sign-in completed"} else {"Sign-in failed or was interrupted"}})));
+        let mut changes = Changes::default();
+        if signed_in
+            && let Some(mut child) = self
+                .panes
+                .get(&child_id)
+                .map(|p| p.stored.clone())
+                .filter(|p| !p.closed)
+        {
+            changes.workspace_layout = self.prepare_pane_close(&mut child, &mut changes.events)?;
+            changes.closed_login_pane = Some(child);
+        }
+        changes.events.push(auth_finished(id, signed_in, reason));
         self.commit_agent(
             self.panes[id].stored.clone(),
             state,
@@ -197,17 +321,113 @@ impl Core {
     }
 }
 
+fn auth_finished(id: &str, ok: bool, reason: &str) -> (String, Value) {
+    (
+        "pane.auth_finished".into(),
+        json!({"paneId":id,"ok":ok,"reason":reason}),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::terminal_auth_argv;
+    use soyeht_protocol::HarnessLaunch;
+
+    fn launch(command: &str, args: &[&str]) -> HarnessLaunch {
+        HarnessLaunch {
+            id: "agent".into(),
+            name: "Agent".into(),
+            command: command.into(),
+            args: args.iter().map(|arg| (*arg).into()).collect(),
+            version: "1".into(),
+            environment: None,
+        }
+    }
 
     #[test]
     fn terminal_authentication_replaces_the_acp_arguments() {
         let argv = terminal_auth_argv(
-            "/agent".into(),
+            &launch("/agent", &["--acp"]),
+            "agent",
             vec!["--cli".into(), "auth".into(), "login".into()],
-        );
+        )
+        .unwrap();
         assert_eq!(argv, ["/agent", "--cli", "auth", "login"]);
         assert!(!argv.contains(&"--acp".into()));
+    }
+
+    #[test]
+    fn npx_authentication_keeps_the_launch_package_before_untrusted_method_args() {
+        let package = "@agentclientprotocol/claude-agent-acp@0.77.0";
+        let argv = terminal_auth_argv(
+            &launch("/node/bin/npx-cli.js", &["--yes", package, "--acp"]),
+            "npx",
+            vec!["--package".into(), "evil".into(), "x".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "/node/bin/npx-cli.js",
+                "--yes",
+                package,
+                "--package",
+                "evil",
+                "x"
+            ]
+        );
+    }
+
+    #[test]
+    fn uvx_authentication_keeps_the_launch_package_before_method_args() {
+        let package = "fast-agent-acp==0.10.1";
+        let argv = terminal_auth_argv(
+            &launch("/usr/local/bin/uvx", &[package, "--acp"]),
+            "uvx",
+            vec!["--package".into(), "evil".into()],
+        )
+        .unwrap();
+        assert_eq!(argv, ["/usr/local/bin/uvx", package, "--package", "evil"]);
+    }
+
+    #[test]
+    fn uvx_resolved_to_uv_uses_tool_run_before_the_pinned_package() {
+        let package = "fast-agent-acp==0.10.1";
+        let argv = terminal_auth_argv(
+            &launch("/usr/local/bin/uv", &[package, "--acp"]),
+            "uvx",
+            vec!["--package".into(), "evil".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "/usr/local/bin/uv",
+                "tool",
+                "run",
+                package,
+                "--package",
+                "evil"
+            ]
+        );
+    }
+
+    #[test]
+    fn package_runners_refuse_sign_in_without_the_pinned_launch_package() {
+        for (command, original, args) in [
+            ("/node/bin/npx-cli.js", "npx", vec!["--yes", "--acp"]),
+            (
+                "/node/bin/npx-cli.js",
+                "npx",
+                vec!["--yes", "--package=evil@1"],
+            ),
+            ("/usr/local/bin/uvx", "uvx", vec!["--acp"]),
+            ("/usr/local/bin/uvx", "uvx", vec!["--from=evil==1"]),
+        ] {
+            assert!(
+                terminal_auth_argv(&launch(command, &args), original, vec!["login".into()])
+                    .is_err()
+            );
+        }
     }
 }

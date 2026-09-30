@@ -42,11 +42,209 @@ fn runtime_rig_slot() -> MutexGuard<'static, ()> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+#[test]
+fn workspace_pane_layout_is_validated_persisted_and_restored() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Layout","path":rig.path,"idempotencyKey":"layout-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let first_pane = client.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,"mode":"terminal","name":"First",
+            "idempotencyKey":"layout-pane-first"
+        }),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let second_pane = client.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,"mode":"terminal","name":"Second",
+            "idempotencyKey":"layout-pane-second"
+        }),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let layout = json!({
+        "version":2,"mode":"custom",
+        "tree":{"axis":"horizontal","children":[
+            {"weight":2.0,"node":{"paneId":first_pane,"kind":"terminal"}},
+            {"weight":1.0,"node":{"paneId":second_pane,"kind":"terminal"}}
+        ]}
+    });
+    let saved = client.call(
+        "workspace.layout.set",
+        json!({
+            "workspaceId":workspace,"layout":layout,
+            "idempotencyKey":"save-layout"
+        }),
+    );
+    assert_eq!(saved["workspace"]["layout"], layout);
+
+    let missing = client.request(
+        "workspace.layout.set",
+        json!({
+            "workspaceId":workspace,
+            "layout":{"version":2,"mode":"custom",
+                "tree":{"paneId":"missing","kind":"terminal"}},
+            "idempotencyKey":"missing-layout-pane"
+        }),
+    );
+    assert_eq!(missing["error"]["data"]["kind"], "invalid_params");
+    let unknown = client.request(
+        "workspace.layout.set",
+        json!({
+            "workspaceId":workspace,
+            "layout":{"version":99,"mode":"custom","tree":null},
+            "idempotencyKey":"unknown-layout-version"
+        }),
+    );
+    assert_eq!(unknown["error"]["data"]["kind"], "invalid_params");
+
+    client.call(
+        "pane.close",
+        json!({"paneId":first_pane,"idempotencyKey":"close-first-layout-pane"}),
+    );
+    let pruned_layout = json!({
+        "version":2,"mode":"custom",
+        "tree":{"paneId":second_pane,"kind":"terminal"}
+    });
+
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    let workspaces = restored.call("workspace.list", json!({}));
+    let restored_layout = &workspaces["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["workspaceId"] == workspace)
+        .unwrap()["layout"];
+    assert_eq!(restored_layout, &pruned_layout);
+}
+
 struct Rig {
     _runtime_slot: MutexGuard<'static, ()>,
     path: PathBuf,
     engine: Option<Child>,
     ptyd: Child,
+}
+
+#[test]
+fn writing_section_listing_ignores_protected_workspace_siblings() {
+    let rig = Rig::new();
+    fs::create_dir_all(rig.path.join("Writing/Texts/Research")).unwrap();
+    fs::write(
+        rig.path.join("Writing/Texts/Research/notes.md"),
+        "# Notes\n",
+    )
+    .unwrap();
+    let protected = rig.path.join("Pictures/Photos Library.photoslibrary");
+    fs::create_dir_all(&protected).unwrap();
+    fs::write(protected.join("private.md"), "private\n").unwrap();
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Scoped writing","path":rig.path,"idempotencyKey":"scoped-writing"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let listed = client.request(
+        "writing.section.list",
+        json!({"workspaceId":workspace,"section":"texts","limit":50}),
+    );
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o700)).unwrap();
+
+    assert!(listed.get("error").is_none(), "{listed}");
+    assert_eq!(listed["result"]["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        listed["result"]["entries"][0]["path"],
+        "Writing/Texts/Research/notes.md"
+    );
+    assert!(client.call("engine.status", json!({}))["version"].is_string());
+}
+
+#[test]
+fn pane_created_events_carry_replica_metadata_for_other_clients() {
+    let rig = Rig::new();
+    fs::create_dir_all(rig.path.join("Writing/Texts")).unwrap();
+    fs::write(rig.path.join("main.rs"), "fn main() {}\n").unwrap();
+    fs::write(
+        rig.path.join("Writing/Texts/notes.md"),
+        "# Notes\n\nShared live.\n",
+    )
+    .unwrap();
+
+    let mut writer = rig.client();
+    let workspace = writer.call(
+        "workspace.create",
+        json!({"name":"Live replica","path":rig.path,"idempotencyKey":"live-replica-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut observer = rig.client();
+    let (snapshot, _) = observer.snapshot();
+    observer.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+    observer.messages.clear();
+
+    writer.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"editor","path":"main.rs","idempotencyKey":"live-editor"}),
+    );
+    writer.call(
+        "pane.create",
+        json!({
+            "workspaceId":workspace,
+            "mode":"writing",
+            "path":"Writing/Texts/notes.md",
+            "writingKind":"text",
+            "writingSection":"texts",
+            "idempotencyKey":"live-writing"
+        }),
+    );
+    observer.call("engine.status", json!({}));
+
+    let events: Vec<Value> = observer
+        .messages
+        .iter()
+        .filter_map(|frame| {
+            let Frame::Json(bytes) = frame else {
+                return None;
+            };
+            let value: Value = serde_json::from_slice(bytes).ok()?;
+            (value["method"] == "pane.created").then_some(value["params"].clone())
+        })
+        .collect();
+    let editor = events
+        .iter()
+        .find(|event| event["pane"]["mode"] == "editor")
+        .expect("editor pane event");
+    assert_eq!(editor["file"]["paneId"], editor["pane"]["paneId"]);
+    assert_eq!(editor["file"]["path"], "main.rs");
+    assert!(editor.get("writingDocument").is_none());
+    assert!(editor.get("viewport").is_none());
+
+    let writing = events
+        .iter()
+        .find(|event| event["pane"]["mode"] == "writing")
+        .expect("writing pane event");
+    assert_eq!(writing["file"]["paneId"], writing["pane"]["paneId"]);
+    assert_eq!(writing["writingDocument"]["file"], writing["file"]);
+    assert_eq!(writing["writingDocument"]["kind"], "text");
+    assert!(writing.get("viewport").is_none());
 }
 
 #[test]
@@ -100,10 +298,11 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
 
     let preferred = client.call(
         "writing.preferences.set",
-        json!({"fileId":file_id,"baseRevision":"1","font":"sans","focusMode":true,"idempotencyKey":"writing-preferences"}),
+        json!({"fileId":file_id,"baseRevision":"1","font":"sans","focusMode":true,"fullWidth":true,"idempotencyKey":"writing-preferences"}),
     );
     assert_eq!(preferred["document"]["font"], "sans");
     assert_eq!(preferred["document"]["focusMode"], true);
+    assert_eq!(preferred["document"]["fullWidth"], true);
     let listed = client.call(
         "writing.section.list",
         json!({"workspaceId":workspace,"section":"texts","limit":50}),
@@ -116,6 +315,31 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
         json!({"workspaceId":workspace,"path":"Writing/Presentations/review.md","kind":"presentation","idempotencyKey":"open-presentation"}),
     );
     let slides_file = slides["document"]["file"]["fileId"].clone();
+    let screenplay = client.call(
+        "writing.document.create",
+        json!({
+            "workspaceId":workspace,"section":"screenplays","title":"No Full Width",
+            "idempotencyKey":"create-no-full-width-screenplay"
+        }),
+    );
+    let screenplay_file = screenplay["document"]["file"]["fileId"].clone();
+    for (file_id, key) in [
+        (slides_file.clone(), "presentation-full-width"),
+        (screenplay_file, "screenplay-full-width"),
+    ] {
+        let refused = client.request(
+            "writing.preferences.set",
+            json!({
+                "fileId":file_id,"baseRevision":"1","fullWidth":true,
+                "idempotencyKey":key
+            }),
+        );
+        assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+        assert_eq!(
+            refused["error"]["message"],
+            "Full width is available only for text documents"
+        );
+    }
     let structure = client.call(
         "writing.structure",
         json!({"fileId":slides_file,"revision":"1"}),
@@ -141,7 +365,52 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
         .unwrap();
     assert_eq!(restored_document["font"], "sans");
     assert_eq!(restored_document["focusMode"], true);
+    assert_eq!(restored_document["fullWidth"], true);
     assert_eq!(restored_document["file"]["paneId"], pane_id);
+}
+
+#[test]
+fn writing_structure_counts_the_whole_document_and_recalculates_after_an_edit() {
+    let rig = Rig::new();
+    fs::create_dir_all(rig.path.join("Writing/Texts")).unwrap();
+    let text = format!("{}{}\n", "\n".repeat(2_100), vec!["word"; 914].join(" "));
+    fs::write(rig.path.join("Writing/Texts/ensaio.md"), text).unwrap();
+    let mut client = rig.client();
+    let workspace = client.call(
+        "workspace.create",
+        json!({"name":"Whole document count","path":rig.path,"idempotencyKey":"word-count-workspace"}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let opened = client.call(
+        "writing.document.open",
+        json!({"workspaceId":workspace,"path":"Writing/Texts/ensaio.md","kind":"text","idempotencyKey":"open-word-count"}),
+    );
+    let file_id = opened["document"]["file"]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let initial = client.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"1"}),
+    );
+    assert_eq!(initial["wordCount"], 914);
+
+    let edited = client.call(
+        "file.write",
+        json!({
+            "fileId":file_id,"baseRevision":"1","author":local_file_author(),
+            "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":0}},"text":"added\n"}],
+            "idempotencyKey":"add-counted-word"
+        }),
+    );
+    assert_eq!(edited["file"]["revision"], "2");
+    let revised = client.call(
+        "writing.structure",
+        json!({"fileId":file_id,"revision":"2"}),
+    );
+    assert_eq!(revised["wordCount"], 915);
 }
 
 #[test]
@@ -809,14 +1078,14 @@ impl Rig {
             thread::sleep(Duration::from_millis(10));
         }
     }
-    fn install_fake_harness(&self) {
+    fn install_fake_harness(&self, modes: &str) {
         let binary =
             PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
         fs::write(
             self.path.join("harnesses.json"),
             serde_json::to_vec(&json!([{
                 "id":"test-agent","name":"Test agent","command":binary,
-                "args":["--state-dir",self.path.join("native")],"version":"test"
+                "args":["--state-dir",self.path.join("native"),"--modes",modes],"version":"test"
             }]))
             .unwrap(),
         )
@@ -853,6 +1122,11 @@ impl Rig {
                         "--initialize-padding-bytes","65000"],"version":"test"
                 },
                 {
+                    "id":"chunked-agent","name":"Chunked agent","command":binary,
+                    "args":["--state-dir",self.path.join("chunked-native"),
+                        "--replay-user-chunk-bytes","64"],"version":"test"
+                },
+                {
                     "id":"broken-agent","name":"Broken agent","command":binary,
                     "args":["--state-dir",self.path.join("broken-native"),"--require-login"],
                     "version":"test"
@@ -862,8 +1136,16 @@ impl Rig {
         )
         .unwrap();
     }
-    fn open_agent(&self, mut client: Client, workspace: &Value) -> (Client, String) {
-        self.install_fake_harness();
+    fn open_agent(&self, client: Client, workspace: &Value) -> (Client, String) {
+        self.open_agent_announcing(client, workspace, "config")
+    }
+    fn open_agent_announcing(
+        &self,
+        mut client: Client,
+        workspace: &Value,
+        modes: &str,
+    ) -> (Client, String) {
+        self.install_fake_harness(modes);
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent",
@@ -880,6 +1162,10 @@ impl Rig {
         (client, pane)
     }
     fn agent(&self) -> (Client, String) {
+        self.agent_announcing("config")
+    }
+    /// An agent pane whose fake announces its modes as `config`, `legacy` or `none`.
+    fn agent_announcing(&self, modes: &str) -> (Client, String) {
         let mut client = self.client();
         let workspace = client.call(
             "workspace.create",
@@ -887,7 +1173,7 @@ impl Rig {
             "idempotencyKey":"agent-workspace"}),
         )["workspace"]["workspaceId"]
             .clone();
-        self.open_agent(client, &workspace)
+        self.open_agent_announcing(client, &workspace, modes)
     }
     fn agent_in_workspace(&self, workspace: &str) -> (Client, String) {
         self.open_agent(self.client(), &json!(workspace))
@@ -1037,6 +1323,226 @@ fn binding_hello(path: &std::path::Path, binding: &str) -> (UnixStream, Value) {
         panic!("binding hello response")
     };
     (socket, serde_json::from_slice(&response).unwrap())
+}
+
+#[test]
+fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
+    let rig = Rig::new();
+    let (mut human, sender) = rig.agent();
+    let workspace = human.pane(&sender)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, target) = rig.agent_in_workspace(&workspace);
+    human.call(
+        "pane.draft",
+        json!({"paneId":target,"active":true,"idempotencyKey":"hold-agent-messages"}),
+    );
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &sender)
+        .unwrap()
+        .unwrap();
+    let binding = runtime["binding"].as_str().unwrap();
+    let (socket, hello) = binding_hello(&rig.path.join("engine.sock"), binding);
+    assert_eq!(hello["result"]["role"], "agent");
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    let listed = agent.call("agent.list", json!({}));
+    assert!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["paneId"] == target)
+    );
+    for index in 0..soyeht_protocol::limits::AGENT_MESSAGES_PER_WINDOW {
+        let result = agent.call(
+            "agent.message",
+            json!({
+                "targetPaneId":target,"text":format!("note {index}"),
+                "idempotencyKey":format!("agent-note-{index}")
+            }),
+        );
+        assert_eq!(result["queued"], true);
+    }
+    let blocked = agent.request(
+        "agent.message",
+        json!({
+            "targetPaneId":target,"text":"seventh","idempotencyKey":"agent-note-seven"
+        }),
+    );
+    assert_eq!(blocked["error"]["data"]["kind"], "rate_limited");
+    assert!(blocked["error"]["data"]["retryAfterSec"].as_u64().unwrap() > 0);
+    let queue = human.call("pane.queue.list", json!({"paneId":target,"limit":64}));
+    let items = queue["items"].as_array().unwrap();
+    assert_eq!(
+        items.len(),
+        soyeht_protocol::limits::AGENT_MESSAGES_PER_WINDOW
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| item["agentMessage"]["paneId"] == sender)
+    );
+    // The queue holds the sender's words; the reply route is added only for
+    // the harness, so no bubble or queue row shows a pane identifier.
+    assert!(
+        items
+            .iter()
+            .enumerate()
+            .all(|(index, item)| item["text"] == format!("note {index}"))
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| !item["text"].as_str().unwrap().contains("seventh"))
+    );
+    let other_workspace = human.call(
+        "workspace.create",
+        json!({
+            "name":"Other", "path":rig.path,
+            "idempotencyKey":"other-agent-workspace"
+        }),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, outsider) = rig.agent_in_workspace(&other_workspace);
+    let forbidden = agent.request(
+        "agent.message",
+        json!({
+            "targetPaneId":outsider,"text":"must stay local",
+            "idempotencyKey":"cross-workspace-agent-message"
+        }),
+    );
+    assert_eq!(forbidden["error"]["data"]["kind"], "not_found");
+    let target_runtime: Value = soyeht_store::agents::runtime(&store, &target)
+        .unwrap()
+        .unwrap();
+    let target_binding = target_runtime["binding"].as_str().unwrap();
+    let (reply_socket, reply_hello) = binding_hello(&rig.path.join("engine.sock"), target_binding);
+    assert_eq!(reply_hello["result"]["role"], "agent");
+    let mut recipient = Client {
+        socket: reply_socket,
+        next: 1,
+        messages: vec![],
+    };
+    assert_eq!(
+        recipient.call(
+            "agent.message",
+            json!({
+                "targetPaneId":sender,"text":"reply","idempotencyKey":"reverse-direction"
+            })
+        )["queued"],
+        true
+    );
+}
+
+#[test]
+fn held_agent_message_follows_the_sent_draft_as_its_own_attributed_turn() {
+    let mut rig = Rig::new();
+    let (mut human, sender) = rig.agent();
+    let workspace = human.pane(&sender)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, target) = rig.agent_in_workspace(&workspace);
+    let sender_name = human.pane(&sender)["name"].as_str().unwrap().to_owned();
+    human.call(
+        "pane.draft",
+        json!({"paneId":target,"active":true,"idempotencyKey":"typing-in-target"}),
+    );
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &sender)
+        .unwrap()
+        .unwrap();
+    let (socket, _) = binding_hello(
+        &rig.path.join("engine.sock"),
+        runtime["binding"].as_str().unwrap(),
+    );
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    agent.call(
+        "agent.message",
+        json!({"targetPaneId":target,"text":"peer note","idempotencyKey":"held-peer-note"}),
+    );
+    thread::sleep(Duration::from_millis(500));
+    assert!(
+        transcript_items(&mut human, &target)
+            .iter()
+            .all(|item| item["role"] != "user"),
+        "an agent message reached the pane while its user had a draft"
+    );
+    let queued = human.call("pane.queue.list", json!({"paneId":target,"limit":64}));
+    assert_eq!(queued["items"][0]["text"], "peer note");
+    assert_eq!(queued["items"][0]["agentMessage"]["name"], sender_name);
+
+    human.call(
+        "pane.prompt",
+        json!({"paneId":target,"text":"typed draft","idempotencyKey":"send-typed-draft"}),
+    );
+    // Sending the composer's text ends its draft in the same commit.
+    assert_eq!(
+        human.call("pane.queue.list", json!({"paneId":target,"limit":64}))["draft"],
+        false
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let users = loop {
+        let users: Vec<Value> = transcript_items(&mut human, &target)
+            .into_iter()
+            .filter(|item| item["role"] == "user")
+            .collect();
+        if users.len() == 2 {
+            break users;
+        }
+        assert!(Instant::now() < deadline, "held message was not delivered");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(users[0]["text"], "typed draft");
+    assert!(users[0].get("agentMessage").is_none());
+    assert_eq!(users[1]["text"], "peer note");
+    assert_eq!(users[1]["agentMessage"]["paneId"], sender);
+    assert_eq!(users[1]["agentMessage"]["name"], sender_name);
+
+    let session = human.pane(&target)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let prompts = loop {
+        let prompts: Vec<String> = rig.native_session(&session)["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|turn| turn[0].as_str().unwrap().to_owned())
+            .collect();
+        if prompts.len() == 2 {
+            break prompts;
+        }
+        assert!(Instant::now() < deadline, "native turns were not recorded");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(prompts[0], "typed draft");
+    assert!(prompts[1].contains(&format!("targetPaneId={sender}")));
+    assert!(prompts[1].ends_with("\n\npeer note"));
+
+    // Native replay after supervisor loss restores the same attributed bubble.
+    let live = transcript_items(&mut human, &target);
+    let restored = restart_and_wait_for_replay(&mut rig, &target, &live);
+    let users: Vec<&Value> = restored
+        .iter()
+        .filter(|item| item["role"] == "user")
+        .collect();
+    assert_eq!(users.len(), 2, "{restored:?}");
+    assert_eq!(users[0]["text"], "typed draft");
+    assert_eq!(users[1]["text"], "peer note");
+    assert_eq!(users[1]["agentMessage"]["name"], sender_name);
 }
 
 fn binding_request(socket: &mut UnixStream, id: u64, method: &str, params: Value) -> Value {
@@ -1506,6 +2012,139 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
     }
 }
 
+fn transcript_items(client: &mut Client, pane: &str) -> Vec<Value> {
+    client.call("pane.transcript", json!({"paneId":pane}))["items"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+fn wait_for_user_message(client: &mut Client, pane: &str, text: &str) -> Vec<Value> {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let items = transcript_items(client, pane);
+        if items
+            .iter()
+            .any(|message| message["role"] == "user" && message["text"] == text)
+        {
+            return items;
+        }
+        assert!(Instant::now() < deadline, "{text} was not recorded");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Restarts the engine and its agents, then waits until the native replay has
+/// replaced every message the live transcript held.
+fn restart_and_wait_for_replay(rig: &mut Rig, pane: &str, live: &[Value]) -> Vec<Value> {
+    rig.kill_engine();
+    rig.restart_ptyd();
+    rig.start();
+    let mut restored = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let items = transcript_items(&mut restored, pane);
+        if !items.is_empty()
+            && items
+                .iter()
+                .all(|item| live.iter().all(|old| old["localId"] != item["localId"]))
+        {
+            return items;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the native replay did not replace the transcript"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// The replay after the switch: one handover marker first, then later turns,
+/// and never the engine's continuation package.
+fn assert_handover_replay(messages: &[Value], name: &str, later_prompt: &str) {
+    let handovers = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message["kind"] == "handover")
+        .collect::<Vec<_>>();
+    assert_eq!(handovers.len(), 1, "{messages:?}");
+    let (marker, handover) = handovers[0];
+    assert_eq!(handover["text"], name);
+    assert_eq!(handover["role"], "system");
+    let later = messages
+        .iter()
+        .position(|message| message["role"] == "user" && message["text"] == later_prompt)
+        .expect("later prompt was not replayed");
+    assert!(marker < later, "marker left the switch point: {messages:?}");
+    assert!(
+        messages.iter().all(|message| {
+            !message["text"]
+                .as_str()
+                .unwrap_or("")
+                .contains("[last messages]")
+        }),
+        "continuation package leaked: {messages:?}"
+    );
+}
+
+fn switch_with_context_and_restart(harness: &str, name: &str) {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"before-switch","idempotencyKey":"handover-before"}),
+    );
+    client.wait_state(&pane, "idle");
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":harness,"idempotencyKey":"handover-switch"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after-switch","idempotencyKey":"handover-after"}),
+    );
+    let live = wait_for_user_message(&mut client, &pane, "after-switch");
+    assert_handover_replay(&live, name, "after-switch");
+    client.wait_state(&pane, "idle");
+    let live = transcript_items(&mut client, &pane);
+    drop(client);
+    let replayed = restart_and_wait_for_replay(&mut rig, &pane, &live);
+    assert_handover_replay(&replayed, name, "after-switch");
+}
+
+#[test]
+fn harness_switch_replay_shows_a_marker_instead_of_the_internal_prompt() {
+    switch_with_context_and_restart("next-agent", "Next agent");
+}
+
+#[test]
+fn harness_switch_replay_hides_a_continuation_prompt_replayed_in_chunks() {
+    switch_with_context_and_restart("chunked-agent", "Chunked agent");
+}
+
+#[test]
+fn harness_switch_without_prior_turn_keeps_its_marker_at_the_switch_after_recovery() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"empty-handover-switch"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after-empty-switch","idempotencyKey":"empty-handover-after"}),
+    );
+    wait_for_user_message(&mut client, &pane, "after-empty-switch");
+    client.wait_state(&pane, "idle");
+    let live = transcript_items(&mut client, &pane);
+    assert_handover_replay(&live, "Next agent", "after-empty-switch");
+    drop(client);
+    let replayed = restart_and_wait_for_replay(&mut rig, &pane, &live);
+    assert_handover_replay(&replayed, "Next agent", "after-empty-switch");
+}
+
 #[test]
 fn a_missing_current_agent_recovers_before_accepting_more_work() {
     let rig = Rig::new();
@@ -1580,6 +2219,66 @@ fn harness_switch_retry_returns_the_same_session_without_spawning_again() {
         first["newSessionId"]
     );
     assert_eq!(process_instances(&rig).len(), 1);
+}
+
+#[test]
+fn unnamed_agent_panes_take_unique_harness_names_in_their_workspace() {
+    let rig = Rig::new();
+    let (mut client, first) = rig.agent();
+    let workspace = client.pane(&first)["workspaceId"].clone();
+    let second = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent",
+            "idempotencyKey":"second-agent"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let named = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent",
+            "name":"Reviewer","idempotencyKey":"named-agent"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    assert_eq!(client.pane(&first)["name"], "Test agent");
+    assert_eq!(client.pane(&second)["name"], "Test agent 2");
+    assert_eq!(client.pane(&named)["name"], "Reviewer");
+}
+
+#[test]
+fn harness_switch_renames_a_default_named_pane_to_the_new_harness() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    assert_eq!(client.pane(&pane)["name"], "Test agent");
+
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-default-name"}),
+    );
+
+    assert_eq!(client.pane(&pane)["name"], "Next agent");
+}
+
+#[test]
+fn harness_switch_keeps_a_name_the_user_chose() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    rig.install_switch_harnesses();
+    client.call(
+        "pane.rename",
+        json!({"paneId":pane,"name":"Planner","idempotencyKey":"rename-planner"}),
+    );
+
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-user-name"}),
+    );
+
+    assert_eq!(client.pane(&pane)["name"], "Planner");
 }
 
 #[test]
@@ -2137,6 +2836,77 @@ fn a_lost_output_page_preserves_pending_permission_and_declares_the_gap() {
 }
 
 #[test]
+fn an_active_prompt_leaves_the_published_queue_when_it_starts() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let prompt = client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission","idempotencyKey":"leaves-queue"}),
+    );
+    client.wait_state(&pane, "waiting_for_you");
+    // The enqueue announced one queued prompt. Clients refresh their queue
+    // row only from pane.queued, so starting the prompt must announce the
+    // shrink too, not wait for the turn to end.
+    let queued = rig
+        .database_probe()
+        .latest_event("pane.queued")
+        .unwrap()
+        .expect("queue event");
+    assert_eq!(queued["paneId"], pane);
+    assert_eq!(queued["n"], 0);
+    assert_eq!(queued["promptIds"], json!([]));
+    assert_eq!(
+        client.section("requests")[0]["request"]["promptId"],
+        prompt["promptId"]
+    );
+    let listed = client.call("pane.queue.list", json!({"paneId":pane,"limit":64}));
+    assert!(listed["items"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn agent_panes_keep_creation_order_while_one_asks_and_the_other_is_messaged() {
+    let rig = Rig::new();
+    let (mut client, first) = rig.agent();
+    let workspace = client.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    client.call(
+        "pane.prompt",
+        json!({"paneId":first,"text":"permission","idempotencyKey":"order-asks"}),
+    );
+    client.wait_state(&first, "waiting_for_you");
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, &first)
+        .unwrap()
+        .unwrap();
+    let (socket, _) = binding_hello(
+        &rig.path.join("engine.sock"),
+        runtime["binding"].as_str().unwrap(),
+    );
+    let mut agent = Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    };
+    agent.call(
+        "agent.message",
+        json!({"targetPaneId":second,"text":"hello","idempotencyKey":"order-message"}),
+    );
+    // A reconnecting client lays out an automatic workspace in snapshot pane
+    // order, so that order must be creation order, not identifier order.
+    let order: Vec<_> = rig
+        .client()
+        .section("panes")
+        .into_iter()
+        .filter(|pane| pane["workspaceId"] == workspace)
+        .map(|pane| pane["paneId"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(order, [first, second]);
+}
+
+#[test]
 fn a_permission_created_during_engine_outage_is_recovered_once() {
     let mut rig = Rig::new();
     let (mut client, pane) = rig.agent();
@@ -2231,11 +3001,12 @@ fn a_permission_created_during_engine_outage_is_recovered_once() {
 #[test]
 fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
     let mut rig = Rig::new();
-    let (mut client, pane) = rig.agent();
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"on"}),
+    let (mut client, pane) = rig.agent_announcing("none");
+    let applied = client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"on"}),
     );
+    assert_eq!(applied["effective"], "allow_all");
     let prompt = client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"permission","idempotencyKey":"auto"}),
@@ -2277,8 +3048,8 @@ fn automatic_permission_is_never_presented_and_expiry_survives_restart() {
         .unwrap();
     assert_eq!(by_rule, 1);
     client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"off"}),
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"off"}),
     );
     client.call(
         "pane.prompt",
@@ -2645,9 +3416,19 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
     }
+    let signed_out = client.call("harness.list", json!({}));
+    assert_eq!(signed_out["items"][0]["setupState"], "sign_in");
+    assert_eq!(
+        signed_out["items"][0]["setupReason"],
+        "authentication_required"
+    );
     let reconnect = rig.client().pane(&pane);
     assert_eq!(reconnect["agent"]["authMethods"][0]["id"], "login");
     assert_eq!(reconnect["agent"]["authMethods"][0]["terminal"], true);
+    let mut observer = rig.client();
+    let (snapshot, _) = observer.snapshot();
+    observer.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+    observer.messages.clear();
     let params = json!({"paneId":pane,"authMethodId":"login","idempotencyKey":"auth-start"});
     let start = client.call("pane.auth.start", params.clone());
     assert_eq!(start, client.call("pane.auth.start", params));
@@ -2682,9 +3463,25 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         thread::sleep(Duration::from_millis(20));
     }
     assert!(rig.path.join("native/login.ok").is_file());
+    let finished = wait_for_pane_event(&mut observer, "pane.auth_finished", &pane);
+    assert_eq!(finished["ok"], true, "{finished}");
+    assert!(
+        client
+            .section("panes")
+            .iter()
+            .all(|item| item["paneId"] != terminal),
+        "confirmed sign-in must close its temporary terminal with the success event"
+    );
+    let signed_in = client.call("harness.list", json!({}));
+    assert_eq!(signed_in["items"][0]["setupState"], "ready");
+    assert!(signed_in["items"][0]["lastReadyAtMs"].is_string());
+    let resumed = client.pane(&pane);
+    assert_eq!(resumed["paneId"], pane);
+    assert_eq!(resumed["state"], "starting");
+    assert_eq!(resumed["agent"]["authMethods"], json!([]));
     let models = client.call("model.list", json!({"harness":"auth-test","paneId":pane}));
     assert_eq!(models["source"], "native_session");
-    assert_eq!(models["items"].as_array().unwrap().len(), 4);
+    assert_eq!(models["items"].as_array().unwrap().len(), 5);
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
     let repeated = client.request(
         "pane.auth.start",
@@ -2697,20 +3494,350 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     );
 }
 
+#[derive(Clone, Copy, Debug)]
+enum SignInEnding {
+    Failed,
+    Interrupted,
+    ExitedWithoutSigningIn,
+}
+
+fn wait_for_pane_event(observer: &mut Client, method: &str, pane: &str) -> Value {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        observer.call("engine.status", json!({}));
+        let found = observer.messages.iter().find_map(|frame| {
+            let Frame::Json(bytes) = frame else {
+                return None;
+            };
+            let value: Value = serde_json::from_slice(bytes).ok()?;
+            (value["method"] == method && value["params"]["paneId"] == pane)
+                .then(|| value["params"].clone())
+        });
+        if let Some(event) = found {
+            return event;
+        }
+        assert!(Instant::now() < deadline, "{method} was not published");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn sign_in_output_is_readable(client: &mut Client, terminal: &str) -> bool {
+    let (_, frames) = client.tail(terminal);
+    let marker = b"Test sign-in waiting.";
+    frames
+        .iter()
+        .filter_map(|frame| match frame {
+            Frame::Terminal { bytes, .. } => Some(bytes.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect::<Vec<u8>>()
+        .windows(marker.len())
+        .any(|window| window == marker)
+}
+
+#[test]
+fn sign_in_that_is_not_confirmed_keeps_its_terminal_and_the_agent_signed_out() {
+    for ending in [
+        SignInEnding::Failed,
+        SignInEnding::Interrupted,
+        SignInEnding::ExitedWithoutSigningIn,
+    ] {
+        let rig = Rig::new();
+        let binary =
+            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+        fs::write(
+            rig.path.join("harnesses.json"),
+            serde_json::to_vec(&json!([{
+                "id":"auth-test","name":"Auth test","command":binary,
+                "args":["--state-dir",rig.path.join("native"),"--require-login"],
+                "version":"test"
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        let (fixture, reason) = match ending {
+            SignInEnding::Failed => ("login.fail", "Sign-in failed or was interrupted"),
+            SignInEnding::Interrupted => ("login.wait", "Sign-in failed or was interrupted"),
+            SignInEnding::ExitedWithoutSigningIn => ("login.cancel", "Sign-in did not complete"),
+        };
+        fs::create_dir_all(rig.path.join("native")).unwrap();
+        fs::write(rig.path.join("native").join(fixture), b"fixture").unwrap();
+        let mut client = rig.client();
+        let workspace = client.call(
+            "workspace.create",
+            json!({"name":"Sign-in ending","path":rig.path,
+                "idempotencyKey":"unconfirmed-auth-workspace"}),
+        )["workspace"]["workspaceId"]
+            .clone();
+        let pane = client.call(
+            "pane.create",
+            json!({"workspaceId":workspace,"mode":"agent","harness":"auth-test",
+                "idempotencyKey":"unconfirmed-auth-pane"}),
+        )["paneId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+        while client.pane(&pane)["phrase"] != "Sign-in required" {
+            assert!(Instant::now() < deadline, "agent did not request sign-in");
+            thread::sleep(Duration::from_millis(20));
+        }
+        let mut observer = rig.client();
+        let (snapshot, _) = observer.snapshot();
+        observer.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+        observer.messages.clear();
+        let terminal = client.call(
+            "pane.auth.start",
+            json!({"paneId":pane,"authMethodId":"login",
+                "idempotencyKey":"unconfirmed-auth-start"}),
+        )["terminalPaneId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        while !sign_in_output_is_readable(&mut client, &terminal) {
+            assert!(
+                Instant::now() < deadline,
+                "{ending:?}: login fixture did not start"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        if matches!(ending, SignInEnding::Interrupted) {
+            client.call(
+                "pane.input",
+                json!({"paneId":terminal,"bytes":STANDARD.encode([0x03]),
+                    "idempotencyKey":"interrupt-auth"}),
+            );
+        } else {
+            fs::write(rig.path.join("native/login.release"), b"release").unwrap();
+        }
+
+        let finished = wait_for_pane_event(&mut observer, "pane.auth_finished", &pane);
+        assert_eq!(finished["ok"], false, "{ending:?}: {finished}");
+        assert!(
+            finished["reason"].as_str().unwrap().starts_with(reason),
+            "{ending:?}: {finished}"
+        );
+        let kept = client.pane(&terminal);
+        assert_eq!(kept["mode"], "terminal", "{ending:?}");
+        assert_eq!(kept["state"], "dead", "{ending:?}");
+        assert!(
+            sign_in_output_is_readable(&mut client, &terminal),
+            "{ending:?}: sign-in output is not readable"
+        );
+        assert!(!rig.path.join("native/login.ok").exists());
+        let signed_out = client.pane(&pane);
+        assert!(signed_out["agent"]["sessionId"].is_null(), "{ending:?}");
+        assert_eq!(signed_out["agent"]["authMethods"][0]["id"], "login");
+        assert_eq!(
+            client.call("harness.list", json!({}))["items"][0]["setupState"],
+            "sign_in",
+            "{ending:?}"
+        );
+        // A second attempt opens a fresh terminal beside the kept one.
+        let retry = client.call(
+            "pane.auth.start",
+            json!({"paneId":pane,"authMethodId":"login",
+                "idempotencyKey":"unconfirmed-auth-retry"}),
+        );
+        assert_ne!(retry["terminalPaneId"], terminal.as_str(), "{ending:?}");
+        assert_eq!(client.pane(&terminal)["state"], "dead", "{ending:?}");
+    }
+}
+
+#[test]
+fn prompt_auth_required_downgrades_a_previously_ready_harness_without_guessing_from_text() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let ready = client.call("harness.list", json!({}));
+    assert_eq!(ready["items"][0]["setupState"], "ready");
+    let last_ready = ready["items"][0]["lastReadyAtMs"].clone();
+
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"auth-expired","idempotencyKey":"expired-auth"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Sign-in required" {
+        assert!(
+            Instant::now() < deadline,
+            "auth_required did not change the pane phase"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let signed_out = client.call("harness.list", json!({}));
+    assert_eq!(signed_out["items"][0]["setupState"], "sign_in");
+    assert_eq!(
+        signed_out["items"][0]["setupReason"],
+        "authentication_required"
+    );
+    assert_eq!(signed_out["items"][0]["lastReadyAtMs"], last_ready);
+    assert!(
+        !client.pane(&pane)["agent"]["authMethods"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    assert_eq!(
+        restored.call("harness.list", json!({}))["items"][0]["setupState"],
+        "sign_in"
+    );
+    assert!(
+        !restored.pane(&pane)["agent"]["authMethods"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn acp_message_ids_keep_distinct_assistant_blocks_separate() {
+    fn assistant_texts(client: &mut Client, pane: &str) -> Vec<String> {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        transcript["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["role"] == "assistant" && item["kind"] == "message")
+            .map(|item| item["text"].as_str().unwrap().to_owned())
+            .collect()
+    }
+    let expected = [
+        "Failed to authenticate: OAuth session expired",
+        "No response requested.",
+    ];
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"separate-message-ids","idempotencyKey":"distinct-message-ids"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Agent turn ended" {
+        assert!(Instant::now() < deadline, "agent turn did not finish");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(assistant_texts(&mut client, &pane), expected);
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    assert_eq!(assistant_texts(&mut restored, &pane), expected);
+}
+
+#[test]
+fn typed_auth_error_already_streamed_by_adapter_appears_once() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"auth-expired-with-chunk","idempotencyKey":"auth-streamed-once"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Sign-in required" {
+        assert!(
+            Instant::now() < deadline,
+            "auth error did not reach the pane"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+    let errors = transcript["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| {
+            item["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("Failed to authenticate"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["role"], "assistant");
+    assert_eq!(
+        client.call("harness.list", json!({}))["items"][0]["setupState"],
+        "sign_in"
+    );
+}
+
+#[test]
+fn untyped_internal_error_with_auth_words_does_not_downgrade_ready() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    assert_eq!(
+        client.call("harness.list", json!({}))["items"][0]["setupState"],
+        "ready"
+    );
+
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"auth-expired-untagged","idempotencyKey":"untyped-auth"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Agent turn ended" {
+        assert!(
+            Instant::now() < deadline,
+            "untagged error did not end the turn"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        client.call("harness.list", json!({}))["items"][0]["setupState"],
+        "ready"
+    );
+}
+
+#[test]
+fn preferred_harness_setting_is_durable_and_rejects_non_string_values() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    let key = soyeht_engine::settings::PREFERRED_HARNESS_KEY;
+    assert_eq!(client.call("settings.get", json!({"key":key}))["value"], "");
+    let set = client.call(
+        "settings.set",
+        json!({"key":key,"value":"test-agent","idempotencyKey":"preferred-test-agent"}),
+    );
+    assert_eq!(set["value"], "test-agent");
+    assert_eq!(
+        client.request(
+            "settings.set",
+            json!({"key":key,"value":7,"idempotencyKey":"invalid-preference"})
+        )["error"]["data"]["kind"],
+        "invalid_params"
+    );
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    assert_eq!(
+        rig.client().call("settings.get", json!({"key":key}))["value"],
+        "test-agent"
+    );
+}
+
 #[test]
 fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
     let rig = Rig::new();
     assert!(!rig.path.join("harnesses.json").exists());
     let mut client = rig.client();
     let initial = client.call("harness.list", json!({"limit":64}));
+    let unverified = initial["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == "registry.amp-acp")
+        .unwrap();
     assert_eq!(
-        initial["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|item| item["id"] == "registry.amp-acp")
-            .unwrap()["setupState"],
-        "not_installed"
+        unverified["setupState"],
+        if unverified["available"] == true {
+            "not_checked"
+        } else {
+            "not_installed"
+        }
     );
     assert_eq!(
         initial["items"]
@@ -2740,7 +3867,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
         assert_eq!(item["source"], "built_in");
         assert!(matches!(
             item["setupState"].as_str(),
-            Some("ready" | "not_installed" | "check_setup")
+            Some("ready" | "not_checked" | "not_installed" | "check_setup")
         ));
     }
     let installed = items
@@ -2749,7 +3876,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
         .unwrap();
     assert_eq!(installed["available"], true);
     assert_eq!(installed["installed"], true);
-    assert_eq!(installed["setupState"], "check_setup");
+    assert_eq!(installed["setupState"], "not_checked");
     assert!(registry["nextCursor"].is_null());
 }
 
@@ -2947,6 +4074,30 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
         serde_json::from_slice::<Value>(&response).unwrap()["error"]["data"]["kind"],
         "forbidden_role"
     );
+    // Device parity must not widen agent powers.
+    for (id, method, params) in [
+        (
+            3,
+            "pane.input",
+            json!({"paneId":"any","bytes":STANDARD.encode(b"x"),"idempotencyKey":"agent-input"}),
+        ),
+        (
+            4,
+            "settings.set",
+            json!({"key":soyeht_engine::settings::PREFERRED_HARNESS_KEY,"value":"agent","idempotencyKey":"agent-setting"}),
+        ),
+        (
+            5,
+            "device.pair.start",
+            json!({"idempotencyKey":"agent-pair"}),
+        ),
+    ] {
+        assert_eq!(
+            binding_request(&mut bound_socket, id, method, params)["error"]["data"]["kind"],
+            "forbidden_role",
+            "agent {method}"
+        );
+    }
     let (_, unknown) = binding_hello(&rig.path.join("engine.sock"), "unknown-binding");
     assert_eq!(unknown["error"]["data"]["kind"], "unauthorized");
 
@@ -2987,6 +4138,163 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
             .windows(2)
             .any(|pair| pair == ["--session-generation", restored_generation.as_str()])
     );
+}
+
+#[test]
+fn mcp_connections_outside_the_pane_process_tree_keep_each_pane_identity() {
+    let rig = Rig::new();
+    let (mut human, first) = rig.agent();
+    let workspace = human.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+
+    // Both connections originate in this test process, outside either pane's
+    // process tree, so no process ancestry or TTY lookup can identify them.
+    let first_binding = binding_env(&mcp_server_for(&rig, &mut human, &first));
+    let second_binding = binding_env(&mcp_server_for(&rig, &mut human, &second));
+    assert_ne!(first_binding, second_binding);
+
+    let (mut first_socket, first_hello) =
+        binding_hello(&rig.path.join("engine.sock"), &first_binding);
+    let (mut second_socket, second_hello) =
+        binding_hello(&rig.path.join("engine.sock"), &second_binding);
+    assert_eq!(first_hello["result"]["role"], "agent");
+    assert_eq!(second_hello["result"]["role"], "agent");
+
+    let first_peers = binding_request(&mut first_socket, 2, "agent.list", json!({}));
+    let second_peers = binding_request(&mut second_socket, 2, "agent.list", json!({}));
+    assert_eq!(first_peers["result"]["items"][0]["paneId"], second);
+    assert_eq!(second_peers["result"]["items"][0]["paneId"], first);
+
+    // A binding stops authenticating once its pane is closed.
+    human.call(
+        "pane.close",
+        json!({"paneId":first,"idempotencyKey":"close-first-bound-pane"}),
+    );
+    let (_, closed) = binding_hello(&rig.path.join("engine.sock"), &first_binding);
+    assert_eq!(closed["error"]["data"]["kind"], "unauthorized");
+    let (_, still_open) = binding_hello(&rig.path.join("engine.sock"), &second_binding);
+    assert_eq!(still_open["result"]["role"], "agent");
+}
+
+#[test]
+fn mcp_process_launched_outside_the_pane_resolves_identity_from_its_binding() {
+    let rig = Rig::new();
+    let (mut human, first) = rig.agent();
+    let workspace = human.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    let server = mcp_server_for(&rig, &mut human, &first);
+
+    // The test runner launches MCP directly, outside either pane's TTY
+    // process tree, with the declared args and env.
+    let replies = run_mcp(
+        &server,
+        &first,
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n"
+        ),
+    );
+    assert_eq!(replies[0]["result"]["serverInfo"]["name"], "Soyeht");
+    assert_eq!(replies[1]["result"]["isError"], false);
+    assert_eq!(
+        replies[1]["result"]["structuredContent"]["items"][0]["paneId"],
+        second
+    );
+
+    // Pane A's binding launched with pane B's --pane-id still acts as A: it
+    // sees B as its peer and cannot configure B's loop.
+    let crossed = run_mcp(
+        &server,
+        &second,
+        concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"loop_set\",\"arguments\":{\"prompt\":\"impersonate\",\"interval\":60,\"maxRounds\":1,\"stopWhen\":\"round_limit\",\"enabled\":false}}}\n"
+        ),
+    );
+    assert_eq!(crossed[1]["result"]["isError"], false);
+    assert_eq!(
+        crossed[1]["result"]["structuredContent"]["items"][0]["paneId"],
+        second
+    );
+    assert_eq!(crossed[2]["result"]["isError"], true);
+    assert_eq!(
+        crossed[2]["result"]["structuredContent"]["kind"],
+        "forbidden_role"
+    );
+}
+
+fn mcp_server_for(rig: &Rig, human: &mut Client, pane: &str) -> Value {
+    let session_id = human.pane(pane)["agent"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    rig.native_session(&session_id)["mcp_servers"][0].clone()
+}
+
+fn binding_env(server: &Value) -> String {
+    server["env"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "SOYEHT_MCP_BINDING")
+        .unwrap()["value"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Runs the declared MCP server with its env, overriding `--pane-id`, and
+/// returns one parsed reply per request line.
+fn run_mcp(server: &Value, pane_id: &str, requests: &str) -> Vec<Value> {
+    let mut args: Vec<String> = server["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect();
+    let pane_arg = args.iter().position(|value| value == "--pane-id").unwrap() + 1;
+    args[pane_arg] = pane_id.to_owned();
+    let mut command = Command::new(server["command"].as_str().unwrap());
+    command.args(&args);
+    for entry in server["env"].as_array().unwrap() {
+        command.env(
+            entry["name"].as_str().unwrap(),
+            entry["value"].as_str().unwrap(),
+        );
+    }
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(requests.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "soyeht-mcp failed: {stderr}");
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(
+        replies.len(),
+        requests.lines().count(),
+        "missing replies; stderr: {stderr}"
+    );
+    replies
 }
 
 #[test]
@@ -3244,6 +4552,132 @@ fn request_permission(client: &mut Client, pane: &str) -> Value {
     }
 }
 
+#[test]
+fn undisplayable_execute_permission_is_rejected_and_explained_in_the_transcript() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-missing-command","idempotencyKey":"missing-command"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if let Some(message) = transcript["items"].as_array().unwrap().iter().find(|item| {
+            item["role"] == "system"
+                && item["kind"] == "system"
+                && item["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("no command to display"))
+        }) {
+            assert!(
+                message["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Nothing was approved")
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "permission rejection was not visible"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(client.section("requests").is_empty());
+    assert_eq!(
+        rig.database_probe()
+            .event_count_by_field("pane.update", "kind", "system_message")
+            .unwrap(),
+        1
+    );
+}
+
+fn mcp_permission(client: &mut Client, pane: &str, tool: &str, key: &str) -> Value {
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":format!("permission-tracked-mcp:{tool}"),"idempotencyKey":key}),
+    );
+    client.wait_state(pane, "waiting_for_you");
+    client.section("requests")[0]["request"].clone()
+}
+
+#[test]
+fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_tracked_call() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let first = mcp_permission(&mut client, &pane, "list_agents", "list-agents");
+    assert_eq!(first["title"], "Use soyeht-workspace · list_agents");
+    assert_eq!(first["presentation"]["command"], Value::Null);
+    assert_eq!(
+        first["presentation"]["toolArguments"],
+        json!([{"name":"text","value":"  first line\n  second line"}])
+    );
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":first["requestId"],"optionId":"always","idempotencyKey":"always-list"}));
+    client.wait_state(&pane, "idle");
+    // A grant for one tool never covers another tool whose request looks
+    // the same without its tracked call.
+    let second = mcp_permission(&mut client, &pane, "message_agent", "message-agent");
+    assert_eq!(second["title"], "Use soyeht-workspace · message_agent");
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":second["requestId"],"optionId":"deny","idempotencyKey":"deny-message"}));
+    client.wait_state(&pane, "idle");
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-tracked-mcp:list_agents","idempotencyKey":"list-again"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while rig
+        .database_probe()
+        .event_count_by_field("pane.permission_answered", "by", "rule")
+        .unwrap()
+        == 0
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the granted tool was not approved by its rule"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    client.wait_state(&pane, "idle");
+    assert_eq!(
+        rig.database_probe()
+            .event_count("pane.permission_requested")
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
+fn approval_for_an_unreported_tool_call_without_input_stays_blocked() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission-untracked-mcp","idempotencyKey":"untracked"}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"].as_array().unwrap().iter().any(|item| {
+            item["role"] == "system"
+                && item["text"].as_str().is_some_and(|text| {
+                    text.contains("no command to display") && text.contains("Nothing was approved")
+                })
+        }) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the approval was not blocked");
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(client.section("requests").is_empty());
+    assert_eq!(
+        rig.database_probe()
+            .event_count("pane.permission_requested")
+            .unwrap(),
+        0
+    );
+}
+
 fn answer_after_engine_adoption(
     rig: &mut Rig,
     pane: &str,
@@ -3343,35 +4777,14 @@ fn restart_supervisor_and_assert_load(
     );
 }
 
-fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
-    let toggled = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-on"}),
-    );
-    assert_eq!(toggled["effectiveMode"], "allow_all");
-    assert_eq!(toggled["on"], true);
-    client.call("pane.config.set", json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"manual-mode"}));
-    let manual = client.pane(pane);
-    assert_eq!(manual["agent"]["permission"], "accept_edits");
-    assert_eq!(manual["agent"]["yolo"], false);
-    assert!(manual["agent"]["previousPermission"].is_null());
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-after-manual"}),
-    );
-    let restored = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"restore-manual"}),
-    );
-    assert_eq!(restored["effectiveMode"], "accept_edits");
-    client.call(
+/// A full-access mode is the agent's own policy: it never answers a form.
+fn exercise_full_access_mode_and_form(client: &mut Client, pane: &str) {
+    let applied = client.call(
         "pane.config.set",
-        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"restore-ask"}),
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"full-access"}),
     );
-    client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":true,"idempotencyKey":"yolo-before-form"}),
-    );
+    assert_eq!(applied["effective"], "allow_all");
+    assert_eq!(current_mode(client, pane), "allow_all");
     client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"elicitation","idempotencyKey":"form-prompt"}),
@@ -3389,7 +4802,7 @@ fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
         }
         assert!(
             Instant::now() < deadline,
-            "form was not presented while yolo was enabled"
+            "form was not presented in a full-access mode"
         );
         thread::sleep(Duration::from_millis(20));
     };
@@ -3402,12 +4815,236 @@ fn exercise_yolo_and_form(client: &mut Client, pane: &str) {
         assert!(Instant::now() < deadline, "form turn did not end");
         thread::sleep(Duration::from_millis(20));
     }
-    let off = client.call(
-        "pane.yolo",
-        json!({"paneId":pane,"on":false,"idempotencyKey":"yolo-off"}),
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"restore-ask"}),
     );
-    assert_eq!(off["effectiveMode"], "ask");
-    assert_eq!(off["on"], false);
+    assert_eq!(current_mode(client, pane), "ask");
+}
+
+fn mode_option(client: &mut Client, pane: &str) -> Value {
+    client.pane(pane)["agent"]["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|option| option["category"] == "mode")
+        .cloned()
+        .expect("pane announces a mode selector")
+}
+
+fn current_mode(client: &mut Client, pane: &str) -> Value {
+    mode_option(client, pane)["currentValue"].clone()
+}
+
+fn wait_for_mode(client: &mut Client, pane: &str, mode: &str) {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while current_mode(client, pane) != mode {
+        assert!(Instant::now() < deadline, "mode did not become {mode}");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn run_turn(client: &mut Client, pane: &str, text: &str) {
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":text,"idempotencyKey":Uuid::new_v4().to_string()}),
+    );
+    client.wait_state(pane, "idle");
+}
+
+#[test]
+fn native_modes_change_only_on_confirmation_and_follow_the_agent() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let modes = mode_option(&mut client, &pane);
+    let kinds: Vec<_> = modes["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| (choice["value"].clone(), choice["kind"].clone()))
+        .collect();
+    assert_eq!(kinds[2], (json!("allow_all"), json!("full_access")));
+    assert_eq!(modes["currentValue"], "ask");
+    let applied = client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"edits"}),
+    );
+    assert_eq!(applied["effective"], "accept_edits");
+    let refused = client.request(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"locked","idempotencyKey":"locked"}),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+    assert!(client.pane(&pane)["agent"]["operation"].is_null());
+    run_turn(&mut client, &pane, "switch-mode:allow_all");
+    wait_for_mode(&mut client, &pane, "allow_all");
+    run_turn(&mut client, &pane, "permission");
+    assert!(client.section("requests").is_empty());
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"ask","idempotencyKey":"ask"}),
+    );
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"permission","idempotencyKey":"asks"}),
+    );
+    client.wait_state(&pane, "waiting_for_you");
+    assert_eq!(client.section("requests")[0]["kind"], "permission");
+}
+
+#[test]
+fn legacy_session_modes_use_set_mode_and_follow_the_agent() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent_announcing("legacy");
+    assert_eq!(
+        mode_option(&mut client, &pane)["options"][2]["kind"],
+        "full_access"
+    );
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"all"}),
+    );
+    let session = client.pane(&pane)["agent"]["sessionId"].clone();
+    assert_eq!(
+        rig.native_session(session.as_str().unwrap())["values"]["mode"],
+        "allow_all"
+    );
+    run_turn(&mut client, &pane, "switch-mode:accept_edits");
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let refused = client.request(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"locked","idempotencyKey":"locked"}),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_params");
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+}
+
+#[test]
+fn chosen_mode_returns_after_restart_and_harness_switch() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"accept_edits","idempotencyKey":"edits"}),
+    );
+    run_turn(&mut client, &pane, "before restart");
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    // The fake reloads sessions in its default mode, as real adapters do.
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let session = client.pane(&pane)["agent"]["sessionId"].clone();
+    assert_eq!(
+        rig.native_session(session.as_str().unwrap())["values"]["mode"],
+        "accept_edits"
+    );
+    rig.install_switch_harnesses();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.next-agent","value":"allow_all","idempotencyKey":"default"}),
+    );
+    client.call(
+        "pane.harness.switch",
+        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch"}),
+    );
+    wait_for_mode(&mut client, &pane, "accept_edits");
+}
+
+#[test]
+fn new_panes_start_in_the_preferred_mode_only_when_offered() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.test-agent","value":"accept_edits","idempotencyKey":"default"}),
+    );
+    let (mut client, pane) = rig.agent();
+    wait_for_mode(&mut client, &pane, "accept_edits");
+    let workspace = client.pane(&pane)["workspaceId"].clone();
+    let unoffered = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent",
+            "permissionMode":"plan","idempotencyKey":"unoffered"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    run_turn(&mut client, &unoffered, "hello");
+    assert_eq!(current_mode(&mut client, &unoffered), "ask");
+}
+
+#[test]
+fn a_mode_the_agent_changes_during_a_model_change_is_kept() {
+    let mut rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"model","value":"mode-shifting-model","idempotencyKey":"model"}),
+    );
+    assert_eq!(current_mode(&mut client, &pane), "accept_edits");
+    run_turn(&mut client, &pane, "before restart");
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    // The fake reloads in its default mode; the pane restores the agent's choice.
+    wait_for_mode(&mut client, &pane, "accept_edits");
+}
+
+#[test]
+fn a_refused_mode_leaves_the_queue_running_in_the_agents_mode() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.test-agent","value":"locked","idempotencyKey":"locked"}),
+    );
+    let (mut client, pane) = rig.agent();
+    run_turn(&mut client, &pane, "hello");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+    let notice = transcript_items(&mut client, &pane);
+    assert!(
+        notice.iter().any(|item| item["role"] == "system"
+            && item["text"] == "The agent did not enter Locked; it stays in Ask"),
+        "{notice:?}"
+    );
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    run_turn(&mut client, &pane, "after restart");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+}
+
+#[test]
+fn a_mode_the_next_harness_lacks_is_not_restored_on_the_way_back() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let binary =
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    fs::write(
+        rig.path.join("harnesses.json"),
+        serde_json::to_vec(&json!([
+            {"id":"test-agent","name":"Test agent","command":binary,
+                "args":["--state-dir",rig.path.join("native"),"--modes","config"],"version":"test"},
+            {"id":"restricted-agent","name":"Restricted agent","command":binary,
+                "args":["--state-dir",rig.path.join("restricted-native"),"--modes","restricted"],
+                "version":"test"}
+        ]))
+        .unwrap(),
+    )
+    .unwrap();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"all"}),
+    );
+    for (harness, key) in [("restricted-agent", "away"), ("test-agent", "back")] {
+        client.call(
+            "pane.harness.switch",
+            json!({"paneId":pane,"harness":harness,"idempotencyKey":key}),
+        );
+        run_turn(&mut client, &pane, key);
+        assert_eq!(current_mode(&mut client, &pane), "ask", "{harness}");
+    }
 }
 
 fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
@@ -3485,7 +5122,7 @@ fn agent_turns_and_permission_survive_engine_adoption() {
         &native_pid,
         &native_session,
     );
-    exercise_yolo_and_form(&mut first, &pane);
+    exercise_full_access_mode_and_form(&mut first, &pane);
     exercise_cancel_and_tools(&rig, &mut first, &pane);
 }
 
@@ -5831,6 +7468,26 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
         phone.request("workspace.list", json!({}))["error"]["data"]["kind"],
         "unauthorized"
     );
+    for (method, params) in [
+        (
+            "pane.input",
+            json!({"paneId":pane,"bytes":STANDARD.encode(b"echo no\n"),"idempotencyKey":"unpaired-input"}),
+        ),
+        (
+            "settings.set",
+            json!({"key":soyeht_engine::settings::PREFERRED_HARNESS_KEY,"value":"unpaired","idempotencyKey":"unpaired-setting"}),
+        ),
+        (
+            "device.pair.start",
+            json!({"idempotencyKey":"unpaired-pair-window"}),
+        ),
+    ] {
+        assert_eq!(
+            phone.request(method, params)["error"]["data"]["kind"],
+            "unauthorized",
+            "{method} before pairing"
+        );
+    }
     let key = ed25519_dalek::SigningKey::from_bytes(&[17; 32]);
     let begin=phone.request("pair.begin",json!({"code":window["code"],"deviceName":"Test phone","devicePublicKey":STANDARD.encode(key.verifying_key().to_bytes()),"idempotencyKey":"begin"}));
     assert!(begin.get("error").is_none(), "{begin}");
@@ -5906,7 +7563,30 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     drop(phone);
     let mut phone = Phone::connect(address);
     assert_eq!(phone.hello(&key, token)["result"]["role"], "human_device");
-    assert_eq!(phone.request("pane.input",json!({"paneId":pane,"bytes":STANDARD.encode(b"echo no\n"),"idempotencyKey":"forbidden"}))["error"]["data"]["kind"],"forbidden_role");
+    // A paired device is a full remote control: it types into terminals and
+    // changes settings exactly like the local human.
+    let typed = phone.request("pane.input",json!({"paneId":pane,"bytes":STANDARD.encode(b"echo from-phone\n"),"idempotencyKey":"phone-input"}));
+    assert!(typed.get("error").is_none(), "{typed}");
+    assert!(
+        typed["result"]["acceptedBytes"].as_u64().unwrap() > 0,
+        "{typed}"
+    );
+    let key_name = soyeht_engine::settings::PREFERRED_HARNESS_KEY;
+    let set = phone.request(
+        "settings.set",
+        json!({"key":key_name,"value":"phone-choice","idempotencyKey":"phone-setting"}),
+    );
+    assert_eq!(set["result"]["value"], "phone-choice", "{set}");
+    assert_eq!(
+        local.call("settings.get", json!({"key":key_name}))["value"],
+        "phone-choice"
+    );
+    let listed = phone.request("device.list", json!({}));
+    assert_eq!(
+        listed["result"]["items"].as_array().unwrap().len(),
+        1,
+        "{listed}"
+    );
     assert_eq!(
         phone.request("workspace.list", json!({}))["result"]["items"]
             .as_array()
@@ -5926,6 +7606,13 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     assert_eq!(
         phone.hello(&key, token)["error"]["data"]["kind"],
         "unauthorized"
+    );
+    assert!(
+        matches!(
+            phone.socket.read(),
+            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) | Err(_)
+        ),
+        "a revoked device keeps no connection to type through"
     );
 }
 
@@ -6073,7 +7760,7 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
 #[test]
 fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     let rig = Rig::new();
-    rig.install_fake_harness();
+    rig.install_fake_harness("config");
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",
@@ -6132,7 +7819,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
 #[test]
 fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch() {
     let rig = Rig::new();
-    rig.install_fake_harness();
+    rig.install_fake_harness("config");
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",

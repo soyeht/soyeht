@@ -5,7 +5,7 @@ use soyeht_acp::{
     Message, RpcError,
     client::{self, EnvVariable, StdioMcpServer},
     config::Options,
-    session,
+    rpc, session,
 };
 use soyeht_protocol::ProbeResult;
 use std::{
@@ -22,6 +22,38 @@ use uuid::Uuid;
 // Positive asynchronous assertions may use the full failure budget; passing
 // runs stop as soon as the expected signal arrives.
 const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[test]
+fn claude_adapter_auth_failure_uses_typed_error_data_not_message_text() {
+    let actual_payload = json!({
+        "code": -32603,
+        "message": "Failed to authenticate: OAuth session expired",
+        "data": {"errorKind": "authentication_failed"}
+    });
+    let error: RpcError = serde_json::from_value(actual_payload).unwrap();
+    assert!(rpc::is_auth_required(&error));
+    assert_eq!(
+        session::probe_result(Err(&error)),
+        ProbeResult::Unauthenticated
+    );
+
+    let untyped = RpcError {
+        data: None,
+        ..error.clone()
+    };
+    assert!(!rpc::is_auth_required(&untyped));
+    assert_eq!(
+        session::probe_result(Err(&untyped)),
+        ProbeResult::Inconclusive
+    );
+
+    let spec = RpcError {
+        code: rpc::AUTH_REQUIRED_CODE,
+        message: "Sign in required".into(),
+        data: None,
+    };
+    assert!(rpc::is_auth_required(&spec));
+}
 
 struct Directory(PathBuf);
 impl Directory {
@@ -196,13 +228,19 @@ fn chunked_prompt_config_confirmation_and_refused_config_keep_the_session() {
         .collect();
     assert_eq!(chunks, ["Echo: ", "hello"]);
     let selected = serde_json::from_value(json!("model-b")).unwrap();
-    let (method, params) = options.request(&session, "model", &selected).unwrap();
+    let (method, params) = options
+        .request(&session, "model", &selected)
+        .unwrap()
+        .unwrap();
     let confirmation = peer.call(method, params).unwrap();
     let options = options
         .confirmed("model", &selected, &confirmation)
         .unwrap();
     let selected = serde_json::from_value(json!("high")).unwrap();
-    let (method, params) = options.request(&session, "effort", &selected).unwrap();
+    let (method, params) = options
+        .request(&session, "effort", &selected)
+        .unwrap()
+        .unwrap();
     assert!(
         options
             .confirmed("effort", &selected, &peer.call(method, params).unwrap())
@@ -371,7 +409,7 @@ fn injected_stdio_mcp_drives_the_deterministic_task_workflow() {
     let directory = Directory::new();
     let log = directory.0.join("task-tools.ndjson");
     let server = StdioMcpServer {
-        name: "Soyeht".into(),
+        name: "soyeht-workspace".into(),
         command: env!("CARGO_BIN_EXE_soyeht-fake-mcp").into(),
         args: vec!["--log".into(), log.to_string_lossy().into_owned()],
         env: vec![EnvVariable {

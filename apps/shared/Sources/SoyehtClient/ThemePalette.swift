@@ -63,6 +63,7 @@ public struct SoyehtThemePalette: Equatable, Sendable {
   public let ansi: [String]
   public let syntaxType: String
   public let diffAdded: String
+  public let presentationLetterbox: String
 
   public var danger: String { ansi[1] }
   public var success: String { ansi[2] }
@@ -73,6 +74,7 @@ public struct SoyehtThemePalette: Equatable, Sendable {
     [
       screen, canvas, face, hover, well, ink, secondary, muted, accent, onAccent,
       shadowDark, shadowLight, wellShadow, wellRim, selection, syntaxType, diffAdded,
+      presentationLetterbox,
     ] + [wellLip].compactMap { $0 } + agentPlates + ansi
   }
 
@@ -88,7 +90,7 @@ extension SoyehtThemePalette {
     well: "#D8DEE8", ink: "#3E4A66", secondary: "#6E7A96", muted: "#8E9AB3",
     accent: "#5B7CFA", onAccent: "#FFFFFF", shadowDark: "#A6B4C8",
     shadowLight: "#FFFFFF", wellShadow: "#A6B4C8", wellRim: "#FFFFFF", wellLip: nil,
-    selection: "#C9D6EE",
+    selection: "#C9D6EE", presentationLetterbox: "#151A24",
     agents: ["#D8E0FE", "#CDE7DD", "#F6D6DB", "#EEE3CD"],
     ansi: [
       "#1F2633", "#D9556A", "#2E9A73", "#B98A2E", "#3D7DD9", "#9A6BD0",
@@ -101,7 +103,7 @@ extension SoyehtThemePalette {
     well: "#AFB7B9", ink: "#25363B", secondary: "#4B6268", muted: "#5E8089",
     accent: "#0F64D1", onAccent: "#FFFFFF", shadowDark: "#8C9395",
     shadowLight: "#D1D9DB", wellShadow: "#8C9395", wellRim: "#D1D9DB", wellLip: nil,
-    selection: "#99B2CC",
+    selection: "#99B2CC", presentationLetterbox: "#172226",
     agents: ["#C3A2D1", "#E19BA9", "#94B88A", "#68BCB3", "#91AAC4"],
     ansi: [
       "#1F2F33", "#CE2E48", "#257C5C", "#8B6823", "#286CCD", "#8952C8",
@@ -114,7 +116,7 @@ extension SoyehtThemePalette {
     well: "#7296A2", ink: "#0C1012", secondary: "#37464C", muted: "#4A626B",
     accent: "#004497", onAccent: "#FFFFFF", shadowDark: "#517480",
     shadowLight: "#93B7C5", wellShadow: "#517480", wellRim: "#93B7C5", wellLip: nil,
-    selection: "#6691AE",
+    selection: "#6691AE", presentationLetterbox: "#0B151A",
     agents: ["#9E7FAB", "#B97785", "#719368", "#41978F", "#5E89A6"],
     ansi: [
       "#1F2E33", "#9C2336", "#1C5D46", "#694E1A", "#1E519B", "#6B35A8",
@@ -127,7 +129,7 @@ extension SoyehtThemePalette {
     well: "#C6C35C", ink: "#3E3D28", secondary: "#6A684C", muted: "#88865E",
     accent: "#B55C03", onAccent: "#FFFFFF", shadowDark: "#A2A13C",
     shadowLight: "#ECE77F", wellShadow: "#A2A13C", wellRim: "#ECE77F", wellLip: nil,
-    selection: "#D3BD58",
+    selection: "#D3BD58", presentationLetterbox: "#242315",
     agents: ["#D1AFDE", "#EEA8B5", "#A1C497", "#75C9C0", "#CAB550"],
     ansi: [
       "#33321F", "#D44158", "#288664", "#977026", "#3275D7", "#915ECC",
@@ -140,7 +142,7 @@ extension SoyehtThemePalette {
     well: "#D8A652", ink: "#362E22", secondary: "#645948", muted: "#84755B",
     accent: "#A84500", onAccent: "#FFFFFF", shadowDark: "#B38531",
     shadowLight: "#FFCA73", wellShadow: "#B38531", wellRim: "#FFCA73", wellLip: nil,
-    selection: "#DE9F4E",
+    selection: "#DE9F4E", presentationLetterbox: "#241D14",
     agents: ["#BE9ECC", "#DB96A4", "#90B386", "#63B7AE", "#D59746"],
     ansi: [
       "#332B1F", "#C72D45", "#247859", "#876422", "#2768C7", "#864DC7",
@@ -153,7 +155,7 @@ extension SoyehtThemePalette {
     well: "#242711", ink: "#F1F2E9", secondary: "#BFC0AE", muted: "#A1A38C",
     accent: "#F5C64C", onAccent: "#2C2511", shadowDark: "#22240F",
     shadowLight: "#4A4C35", wellShadow: "#131400", wellRim: "#3F412A",
-    wellLip: "#060700", selection: "#736631",
+    wellLip: "#060700", selection: "#736631", presentationLetterbox: "#11120B",
     agents: ["#392840", "#47232C", "#1A3915", "#003531", "#6B5F2A"],
     ansi: [
       "#1D1E12", "#EF4747", "#00D9A3", "#F59E0B", "#7573FF", "#EA00E9",
@@ -166,7 +168,7 @@ extension SoyehtThemePalette {
     well: "#0D270E", ink: "#E9F2E9", secondary: "#AEC0AE", muted: "#8CA38C",
     accent: "#B2D353", onAccent: "#252C11", shadowDark: "#0B240B",
     shadowLight: "#324C32", wellShadow: "#001200", wellRim: "#264126",
-    wellLip: "#000100", selection: "#4D6A31",
+    wellLip: "#000100", selection: "#4D6A31", presentationLetterbox: "#071008",
     agents: ["#392840", "#47232C", "#3A5A33", "#003531", "#46632A"],
     ansi: [
       "#101C10", "#EF4444", "#00D9A3", "#F59E0B", "#6F6DFF", "#E100E0",
@@ -179,7 +181,7 @@ extension SoyehtThemePalette {
     well: "#001019", ink: "#E9EFF2", secondary: "#AEBAC0", muted: "#8C9CA3",
     accent: "#7FA7FF", onAccent: "#001F45", shadowDark: "#000F18",
     shadowLight: "#1A3746", wellShadow: "#000104", wellRim: "#0B2A39",
-    wellLip: "#000104", selection: "#2A4D72",
+    wellLip: "#000104", selection: "#2A4D72", presentationLetterbox: "#000B10",
     agents: ["#402D48", "#4F2831", "#253920", "#003C37", "#22466A"],
     ansi: [
       "#010507", "#EF4444", "#00D9A3", "#F59E0B", "#5452FF", "#C100C0",
@@ -192,7 +194,7 @@ extension SoyehtThemePalette {
     well: "#13313A", ink: "#E9F0F2", secondary: "#AEBCC0", muted: "#8C9DA3",
     accent: "#19B2FF", onAccent: "#002237", shadowDark: "#112F37",
     shadowLight: "#3B5861", wellShadow: "#001E26", wellRim: "#304D56",
-    wellLip: "#00151B", selection: "#266885",
+    wellLip: "#00151B", selection: "#266885", presentationLetterbox: "#0B161A",
     agents: ["#3B2942", "#49252D", "#21351D", "#003733", "#1C617D"],
     ansi: [
       "#192A30", "#F15D5D", "#00D9A3", "#F59E0B", "#8280FF", "#FB00FA",
@@ -204,7 +206,8 @@ extension SoyehtThemePalette {
     screen: String, canvas: String, face: String, hover: String, well: String,
     ink: String, secondary: String, muted: String, accent: String, onAccent: String,
     shadowDark: String, shadowLight: String, wellShadow: String, wellRim: String,
-    wellLip: String?, selection: String, agents: [String], ansi: [String],
+    wellLip: String?, selection: String, presentationLetterbox: String,
+    agents: [String], ansi: [String],
     syntaxType: String? = nil, diffAdded: String? = nil
   ) -> SoyehtThemePalette {
     SoyehtThemePalette(
@@ -212,7 +215,8 @@ extension SoyehtThemePalette {
       secondary: secondary, muted: muted, accent: accent, onAccent: onAccent,
       shadowDark: shadowDark, shadowLight: shadowLight, wellShadow: wellShadow,
       wellRim: wellRim, wellLip: wellLip, selection: selection, agentPlates: agents, ansi: ansi,
-      syntaxType: syntaxType ?? ansi[13], diffAdded: diffAdded ?? ansi[10])
+      syntaxType: syntaxType ?? ansi[13], diffAdded: diffAdded ?? ansi[10],
+      presentationLetterbox: presentationLetterbox)
   }
 }
 

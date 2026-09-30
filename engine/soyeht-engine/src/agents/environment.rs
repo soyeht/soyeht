@@ -225,25 +225,10 @@ pub fn launch_environment_with(
 pub fn candidate_directories(recipe_directories: &[PathBuf]) -> Vec<PathBuf> {
     let mut directories = Vec::new();
     let mut seen = BTreeSet::new();
-    for paths in [Some(launch_path().into()), std::env::var_os("PATH")] {
-        let split = paths
-            .map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
-            .unwrap_or_default();
-        for directory in split {
-            if seen.insert(directory.clone()) {
-                directories.push(directory);
-            }
-        }
-    }
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        let directory = home.join(".local/bin");
+    for directory in std::env::split_paths(&launch_path()) {
         if seen.insert(directory.clone()) {
             directories.push(directory);
         }
-    }
-    let homebrew = PathBuf::from("/opt/homebrew/bin");
-    if seen.insert(homebrew.clone()) {
-        directories.push(homebrew);
     }
     for directory in recipe_directories {
         if seen.insert(directory.clone()) {

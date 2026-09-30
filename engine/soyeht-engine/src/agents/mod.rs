@@ -14,6 +14,8 @@ pub mod hooks;
 pub mod lifecycle;
 pub mod mcp;
 pub mod methods;
+pub mod naming;
+pub mod peer;
 pub mod pending;
 pub mod questions;
 pub mod recovery;
@@ -26,14 +28,17 @@ pub mod transcript;
 pub mod updates;
 
 use crate::{
-    core::{Core, write_pane},
+    core::{Core, persist_pane},
     errors::{self, Result},
     model::StoredPane,
     ports::StorePort,
 };
 use serde_json::{Value, json};
 use soyeht_acp::Message;
-use soyeht_protocol::{ProbeCapability, PromptItem, TranscriptMessage, ndjson::Decoder};
+use soyeht_protocol::{
+    HarnessSetupReason, HarnessSetupState, ProbeCapability, PromptItem, TranscriptMessage,
+    Workspace, ndjson::Decoder,
+};
 use soyeht_store::{
     agents::{self, AgentModelRefusal, NativeRequest, Outgoing, PromptAttachment},
     database::{Change, Mutation},
@@ -73,7 +78,11 @@ pub struct Changes {
     pub probes: Vec<ProbeCapability>,
     pub events: Vec<(String, Value)>,
     pub model_refusal: Option<AgentModelRefusal>,
+    pub workspace_layout: Option<Workspace>,
+    /// A sign-in terminal closed with this commit once the agent confirmed sign-in.
+    pub closed_login_pane: Option<StoredPane>,
     pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
+    pub(crate) message_rate: Option<(String, String, i64, i64)>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
     pub(crate) task_blocking: Option<crate::tasks::blocking::TaskBlockingChange>,
@@ -130,12 +139,97 @@ struct AgentPersistence<'a> {
     outgoing: &'a [Outgoing],
 }
 
-fn persist_model_refusal(
+fn persist_agent_metadata(
     tx: &Change<'_>,
-    refusal: Option<&AgentModelRefusal>,
+    changes: &Changes,
 ) -> soyeht_store::database::Result<()> {
-    if let Some(refusal) = refusal {
+    if let Some(refusal) = &changes.model_refusal {
         agents::save_model_refusal(tx, refusal)?;
+    }
+    if let Some((sender, target, at_ms, since_ms)) = &changes.message_rate {
+        agents::record_message(tx, sender, target, *at_ms, *since_ms)?;
+    }
+    Ok(())
+}
+
+fn persist_harness_readiness(
+    tx: &Change<'_>,
+    state: &State,
+    changes: &Changes,
+) -> soyeht_store::database::Result<()> {
+    if let Some((status, reason)) = readiness_after_changes(state, changes) {
+        agents::save_harness_readiness(tx, &state.launch.id, status, reason, state.last_update_ms)?;
+    }
+    Ok(())
+}
+
+fn readiness_after_changes(
+    state: &State,
+    changes: &Changes,
+) -> Option<(HarnessSetupState, Option<HarnessSetupReason>)> {
+    let has_event = |name: &str| changes.events.iter().any(|(event, _)| event == name);
+    if state.phase == state::Phase::Faulted {
+        Some((
+            HarnessSetupState::CheckSetup,
+            Some(if state.initialized.is_some() {
+                HarnessSetupReason::SessionFailed
+            } else {
+                HarnessSetupReason::LaunchFailed
+            }),
+        ))
+    } else if state.auth_required
+        && (has_event("pane.session_started")
+            || has_event("pane.needs_login")
+            || has_event("pane.auth_finished"))
+    {
+        Some((
+            HarnessSetupState::SignIn,
+            Some(HarnessSetupReason::AuthenticationRequired),
+        ))
+    } else if has_event("pane.session_started")
+        || has_event("pane.auth_finished")
+        || has_event("pane.turn_ended")
+    {
+        Some((HarnessSetupState::Ready, None))
+    } else {
+        None
+    }
+}
+
+fn persist_agent_checkpoint(
+    tx: &Change<'_>,
+    id: &str,
+    generation: u32,
+    state: &State,
+    changes: &Changes,
+) -> soyeht_store::database::Result<()> {
+    agents::save_runtime(tx, id, generation, state)?;
+    persist_harness_readiness(tx, state, changes)
+}
+
+fn persist_completion(
+    tx: &Change<'_>,
+    completion: Option<&pending::Completion>,
+) -> soyeht_store::database::Result<()> {
+    if let Some(completion) = completion {
+        let changed = tx.update_idempotency_result(
+            &completion.user.scope,
+            &completion.user.key,
+            &completion.stored(),
+        )?;
+        if !changed {
+            return Err(soyeht_store::database::Error::NativeEffectNotFound);
+        }
+    }
+    Ok(())
+}
+
+fn persist_workspace_layout(
+    tx: &Change<'_>,
+    workspace: Option<&Workspace>,
+) -> soyeht_store::database::Result<()> {
+    if let Some(workspace) = workspace {
+        tx.update_workspace(workspace)?;
     }
     Ok(())
 }
@@ -147,16 +241,7 @@ impl AgentPersistence<'_> {
         mut events: Vec<(String, Value)>,
         result: Value,
     ) -> soyeht_store::database::Result<(Value, Vec<(String, Value)>)> {
-        if let Some(completion) = &self.changes.completed_user {
-            let changed = tx.update_idempotency_result(
-                &completion.user.scope,
-                &completion.user.key,
-                &completion.stored(),
-            )?;
-            if !changed {
-                return Err(soyeht_store::database::Error::NativeEffectNotFound);
-            }
-        }
+        persist_completion(tx, self.changes.completed_user.as_ref())?;
         if let Some((instance, supervisor)) = &self.changes.retire_instance {
             tx.retire_agent_outbox_process(self.id, instance, supervisor)?;
         }
@@ -186,9 +271,19 @@ impl AgentPersistence<'_> {
         if let Some(write) = &self.changes.editor_agent_write {
             write.persist(tx)?;
         }
-        persist_model_refusal(tx, self.changes.model_refusal.as_ref())?;
-        write_pane(tx, self.saved)?;
-        agents::save_runtime(tx, self.id, self.saved.pane.generation, self.state)?;
+        persist_agent_metadata(tx, self.changes)?;
+        persist_pane(tx, self.saved)?;
+        if let Some(login) = &self.changes.closed_login_pane {
+            persist_pane(tx, login)?;
+        }
+        persist_workspace_layout(tx, self.changes.workspace_layout.as_ref())?;
+        persist_agent_checkpoint(
+            tx,
+            self.id,
+            self.saved.pane.generation,
+            self.state,
+            self.changes,
+        )?;
         let attention_changed = self.changes.clear_attention
             || !self.changes.attention.is_empty()
             || !self.changes.remove_attention.is_empty();
@@ -371,6 +466,14 @@ impl Core {
                 self.publish_native_completion(completion)?;
             }
             self.install_committed_agent(&id, saved, state)?;
+            if let Some(login) = &changes.closed_login_pane {
+                errors::invariant(
+                    self.panes.get_mut(&login.pane.pane_id),
+                    "Completed sign-in pane disappeared before commit publication",
+                )?
+                .stored = login.clone();
+                self.finish_close(&login.pane.pane_id)?;
+            }
             if protocol_label_changed && self.agent_captures.contains_key(&id) {
                 self.record_agent_label(&id)?;
             }
@@ -379,5 +482,54 @@ impl Core {
             }
         }
         Ok(mutation)
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::{
+        Changes, readiness_after_changes,
+        state::{Phase, State},
+    };
+    use serde_json::json;
+    use soyeht_protocol::{HarnessLaunch, HarnessSetupReason, HarnessSetupState};
+
+    #[test]
+    fn session_started_does_not_clear_a_prior_authentication_failure() {
+        let mut state = State::new(
+            HarnessLaunch {
+                id: "fake".into(),
+                name: "Fake".into(),
+                command: "/fake".into(),
+                args: vec![],
+                version: "1".into(),
+                environment: None,
+            },
+            "digest".into(),
+            None,
+        )
+        .unwrap();
+        state.phase = Phase::Ready;
+        state.auth_required = true;
+        let started = Changes {
+            events: vec![("pane.session_started".into(), json!({}))],
+            ..Changes::default()
+        };
+        assert_eq!(
+            readiness_after_changes(&state, &started),
+            Some((
+                HarnessSetupState::SignIn,
+                Some(HarnessSetupReason::AuthenticationRequired)
+            ))
+        );
+        state.auth_required = false;
+        let authenticated = Changes {
+            events: vec![("pane.auth_finished".into(), json!({"ok":true}))],
+            ..Changes::default()
+        };
+        assert_eq!(
+            readiness_after_changes(&state, &authenticated),
+            Some((HarnessSetupState::Ready, None))
+        );
     }
 }

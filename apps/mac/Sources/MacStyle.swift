@@ -36,6 +36,7 @@ extension LocalizedStringKey.StringInterpolation {
   static var danger: Color { SoyehtThemeColors.danger }
   static var syntaxType: Color { SoyehtThemeColors.syntaxType }
   static var diffAdded: Color { SoyehtThemeColors.diffAdded }
+  static var presentationLetterbox: Color { SoyehtThemeColors.presentationLetterbox }
   static var urgent: Color { danger }
   static var agentRose: Color { SoyehtThemeColors.agentRose }
   static var agentBlue: Color { SoyehtThemeColors.agentBlue }
@@ -188,6 +189,59 @@ private struct NeoRaised: ViewModifier {
   }
 }
 
+/// Configures the SwiftUI `ScrollView` that owns the marked content. AppKit otherwise
+/// follows the machine-wide scrollbar preference, which can reintroduce the legacy
+/// permanent scroller inside writing panes.
+private struct EnclosingOverlayScrollerStyle: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView {
+    let marker = NSView(frame: .zero)
+    configure(marker)
+    return marker
+  }
+
+  func updateNSView(_ marker: NSView, context: Context) { configure(marker) }
+
+  private func configure(_ marker: NSView) {
+    DispatchQueue.main.async { [weak marker] in
+      var current: NSView? = marker
+      var configured = Set<ObjectIdentifier>()
+      while let view = current {
+        if let scrollView = view as? NSScrollView ?? view.enclosingScrollView {
+          let identity = ObjectIdentifier(scrollView)
+          if configured.insert(identity).inserted {
+            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+          }
+          // Writing panes can place an AppKit text scroll view inside the SwiftUI
+          // overflow scroll view. Continue above the nearest owner so both adopt
+          // the same non-persistent overlay policy.
+          current = scrollView.superview
+        } else {
+          current = view.superview
+        }
+      }
+    }
+  }
+}
+
+/// Removes the horizontal indicator from the nearest owner while preserving gesture
+/// scrolling. Attach this to content inside a compact horizontal `ScrollView`.
+private struct EnclosingHorizontalScrollerHider: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView {
+    let marker = NSView(frame: .zero)
+    configure(marker)
+    return marker
+  }
+
+  func updateNSView(_ marker: NSView, context: Context) { configure(marker) }
+
+  private func configure(_ marker: NSView) {
+    DispatchQueue.main.async { [weak marker] in
+      marker?.enclosingScrollView?.hasHorizontalScroller = false
+    }
+  }
+}
+
 private struct NeoWell: ViewModifier {
   let radius: CGFloat
   let depth: CGFloat
@@ -223,7 +277,78 @@ private struct NeoAccentGlow: ViewModifier {
   }
 }
 
+private struct MacSheetAvailableSizeKey: EnvironmentKey {
+  static let defaultValue: PaneLayoutSize? = nil
+}
+
+extension EnvironmentValues {
+  var macSheetAvailableSize: PaneLayoutSize? {
+    get { self[MacSheetAvailableSizeKey.self] }
+    set { self[MacSheetAvailableSizeKey.self] = newValue }
+  }
+}
+
+struct MacSheetSurface<SheetContent: View>: View {
+  @Environment(\.macSheetAvailableSize) private var availableSize
+  @State private var windowAvailableSize: PaneLayoutSize?
+  let kind: MacSheetKind
+  @ViewBuilder let content: (MacSheetLayoutPlan) -> SheetContent
+
+  var body: some View {
+    let plan = MacSheetLayoutPolicy().plan(
+      for: kind, available: windowAvailableSize ?? availableSize)
+    content(plan).frame(
+      width: CGFloat(plan.width),
+      height: plan.height.map { CGFloat($0) }
+    )
+    .background {
+      MacSheetWindowSizeReader { size in
+        let measured = PaneLayoutSize(width: size.width, height: size.height)
+        if measured != windowAvailableSize { windowAvailableSize = measured }
+      }
+      .frame(width: 0, height: 0)
+    }
+  }
+}
+
+private struct MacSheetSurfaceModifier: ViewModifier {
+  let kind: MacSheetKind
+
+  func body(content: Content) -> some View {
+    MacSheetSurface(kind: kind) { _ in content }
+  }
+}
+
+private struct MacSheetWindowSizeReader: NSViewRepresentable {
+  let update: (CGSize) -> Void
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    measure(view)
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) {
+    measure(view)
+  }
+
+  private func measure(_ view: NSView) {
+    DispatchQueue.main.async { [weak view] in
+      guard let window = view?.window else { return }
+      update((window.sheetParent ?? window).contentLayoutRect.size)
+    }
+  }
+}
+
 extension View {
+  func forceEnclosingOverlayScrollers() -> some View {
+    background { EnclosingOverlayScrollerStyle().frame(width: 0, height: 0) }
+  }
+
+  func hideEnclosingHorizontalScroller() -> some View {
+    background { EnclosingHorizontalScrollerHider().frame(width: 0, height: 0) }
+  }
+
   func neoRaised(
     radius: CGFloat = MacTheme.Radius.card,
     elevation: MacTheme.Elevation = .card
@@ -242,6 +367,10 @@ extension View {
   func pickerHeading() -> some View {
     font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
       .tracking(1).foregroundStyle(MacTheme.muted)
+  }
+
+  func macSheetSurface(_ kind: MacSheetKind) -> some View {
+    modifier(MacSheetSurfaceModifier(kind: kind))
   }
 }
 

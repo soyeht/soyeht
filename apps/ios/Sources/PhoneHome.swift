@@ -9,7 +9,10 @@ import VisionKit
   static var face: Color { SoyehtThemeColors.face }
   static var ink: Color { SoyehtThemeColors.ink }
   static var secondary: Color { SoyehtThemeColors.secondary }
+  static var muted: Color { SoyehtThemeColors.muted }
   static var accent: Color { SoyehtThemeColors.accent }
+  static var onAccent: Color { SoyehtThemeColors.onAccent }
+  static var presentationLetterbox: Color { SoyehtThemeColors.presentationLetterbox }
   static var success: Color { SoyehtThemeColors.success }
   static var warning: Color { SoyehtThemeColors.warning }
   static var danger: Color { SoyehtThemeColors.danger }
@@ -135,8 +138,10 @@ struct PhoneHome: View {
             .disabled(uri.isEmpty)
           }.padding(.top, 10)
         }
-        Text("Terminal screens are read-only. You can message agents and answer permissions.")
-          .font(.footnote).foregroundStyle(PhonePalette.secondary).multilineTextAlignment(.center)
+        Text(
+          "This device controls your Mac: type in terminals, drive agents and answer permissions."
+        )
+        .font(.footnote).foregroundStyle(PhonePalette.secondary).multilineTextAlignment(.center)
       }.padding(28)
     }
   }
@@ -154,7 +159,12 @@ struct PhoneHome: View {
           ForEach(client.panes.filter { $0.workspaceId == workspace.workspaceId }, id: \.paneId) {
             pane in
             NavigationLink {
-              PhonePane(client: client, paneId: pane.paneId)
+              if pane.mode == .writing {
+                PhoneWritingWorkspace(
+                  client: client, workspaceId: pane.workspaceId, initialPaneId: pane.paneId)
+              } else {
+                PhonePane(client: client, paneId: pane.paneId)
+              }
             } label: {
               Label {
                 VStack(alignment: .leading, spacing: 5) {
@@ -223,7 +233,6 @@ private struct PhonePane: View {
             Text(pane.phrase)
             if pane.generation > 1 { Text("· new shell") }
             Spacer()
-            Image(systemName: "eye").accessibilityLabel("Read-only")
           }.font(.caption).padding(12).foregroundStyle(PhonePalette.secondary)
           PhoneTerminal(client: client)
           if let gap = client.gapText {

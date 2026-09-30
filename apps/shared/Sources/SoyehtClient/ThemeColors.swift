@@ -21,6 +21,7 @@ public struct SoyehtThemeColorSet {
   public let danger: Color
   public let syntaxType: Color
   public let diffAdded: Color
+  public let presentationLetterbox: Color
   public let agentRose: Color
   public let agentBlue: Color
   public let agentGreen: Color
@@ -47,6 +48,7 @@ public struct SoyehtThemeColorSet {
     danger = Self.color(palette.danger)
     syntaxType = Self.color(palette.syntaxType)
     diffAdded = Self.color(palette.diffAdded)
+    presentationLetterbox = Self.color(palette.presentationLetterbox)
     agentBlue = Self.agentColor(palette, index: 0)
     agentGreen = Self.agentColor(palette, index: 1)
     agentRose = Self.agentColor(palette, index: 2)
@@ -91,6 +93,7 @@ public struct SoyehtThemeColorSet {
   public static var danger: Color { active.danger }
   public static var syntaxType: Color { active.syntaxType }
   public static var diffAdded: Color { active.diffAdded }
+  public static var presentationLetterbox: Color { active.presentationLetterbox }
   public static var agentRose: Color { active.agentRose }
   public static var agentBlue: Color { active.agentBlue }
   public static var agentGreen: Color { active.agentGreen }

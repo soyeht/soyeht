@@ -1,6 +1,26 @@
 import Foundation
 import Observation
 import SoyehtProtocol
+import os
+
+private let engineTimeoutLogger = Logger(
+  subsystem: "com.soyeht.next", category: "engine-client-timeout")
+
+struct EngineTimeoutDiagnostic: Equatable {
+  let method: String
+  let durationMs: UInt64
+  let paneId: String?
+
+  init(method: String, params: JsonValue, durationMs: UInt64) {
+    self.method = method
+    self.durationMs = durationMs
+    self.paneId = params["paneId"].string.flatMap(UUID.init(uuidString:))?.uuidString.lowercased()
+  }
+
+  var logLine: String {
+    "method=\(method) durationMs=\(durationMs) paneId=\(paneId ?? "none")"
+  }
+}
 
 @MainActor @Observable
 public final class EngineClient {
@@ -14,6 +34,9 @@ public final class EngineClient {
   public internal(set) var harnessLoadCount = 0
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
+  public private(set) var preferredHarnessId: String?
+  /// Preferred permission mode for new panes, per harness, as the harness names it.
+  public internal(set) var harnessDefaultModes: [String: String] = [:]
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public internal(set) var agentCatalogueLoadCounts: [String: Int] = [:]
   public internal(set) var tasks: [TaskRecord] = []
@@ -32,11 +55,25 @@ public final class EngineClient {
   public private(set) var connectionText = "Connecting to the Dev profile…"
   public var problem: String?
   public private(set) var selectedPaneId: String?
-  public private(set) var gapText: String?
+  @ObservationIgnored public lazy var paneLayouts = PaneLayoutController {
+    [weak self] workspaceId, state in
+    guard let self else { throw ClientFailure.disconnected }
+    let workspace = try await self.setWorkspacePaneLayout(workspaceId: workspaceId, state: state)
+    return PaneLayoutState(
+      workspaceLayout: workspace.layout,
+      livePanes: self.panes.filter { $0.workspaceId == workspaceId })
+  }
+  public var gapText: String? {
+    selectedPaneId.flatMap { terminalStreams.gapText(for: $0) }
+  }
   public private(set) var pairCode: DevicePairStartResult?
   public private(set) var connectionActor: Actor?
   @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
   @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
+  @ObservationIgnored private var terminalOutputSinks: [String: TerminalOutputTarget] = [:]
+  #if os(macOS)
+    @ObservationIgnored let terminalViewRegistry = MacTerminalViewRegistry()
+  #endif
   public internal(set) var terminalOutput: ((Data, Bool) -> Void)? {
     get { terminalOutputSink }
     set {
@@ -48,15 +85,21 @@ public final class EngineClient {
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
   @ObservationIgnored private var snapshot = SnapshotAssembly()
-  @ObservationIgnored private var position: StreamPosition?
+  private var terminalStreams = TerminalStreamReplica()
+  @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
   @ObservationIgnored private var inputTask: Task<Void, Never>?
   @ObservationIgnored private var inputQueue: [(String, Data)] = []
   @ObservationIgnored private var queuedInputBytes = 0
-  @ObservationIgnored private var resizeTask: Task<Void, Never>?
+  @ObservationIgnored private var resizeTasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var resizeGenerations: [String: UInt64] = [:]
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var responseAttachments = ResponseAttachmentAssembly()
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
+  @ObservationIgnored var agentTranscriptRevisions: [String: UInt64] = [:]
+  @ObservationIgnored var agentTranscriptLoadsInFlight: [String: UInt64] = [:]
+  @ObservationIgnored var harnessRefreshGeneration: UInt64 = 0
+  @ObservationIgnored var modelRefreshGenerations: [String: UInt64] = [:]
   @ObservationIgnored var editorWriteQueues: [String: [[TextEdit]]] = [:]
   @ObservationIgnored var editorWriteTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var editorRefreshTasks: [String: Task<Void, Never>] = [:]
@@ -67,7 +110,11 @@ public final class EngineClient {
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
-  public var readOnly: Bool { credential != nil }
+  /// True for a paired iPhone or iPad. A paired device is a full remote control of the Mac;
+  /// this only selects its transport, handshake and background behavior, never fewer powers.
+  public var pairedDevice: Bool { credential != nil }
+  /// Stable namespace for device-local presentation state. It is not a credential or token.
+  public var engineId: String? { credential?.engineId }
   public var harnessesLoading: Bool { harnessLoadCount > 0 }
   public func agentCatalogueLoading(_ harness: String) -> Bool {
     agentCatalogueLoadCounts[harness, default: 0] > 0
@@ -76,8 +123,14 @@ public final class EngineClient {
   private struct Pending {
     var method: String
     var params: JsonValue
+    var startedAtNs: UInt64
     var continuation: CheckedContinuation<EngineResponse, Error>
     var timeout: Task<Void, Never>
+  }
+
+  private struct TerminalOutputTarget {
+    var owner: ObjectIdentifier
+    var sink: (Data, Bool) -> Void
   }
 
   struct EngineResponse: Sendable {
@@ -120,8 +173,8 @@ public final class EngineClient {
         guard let self else { return }
         do { try await self.session() } catch {
           self.connectionText = error.localizedDescription
-          if case ClientFailure.remote(let kind, _) = error,
-            self.readOnly
+          if case ClientFailure.remote(let kind, _, _) = error,
+            self.pairedDevice
               && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
                 .contains(kind)
           {
@@ -143,6 +196,8 @@ public final class EngineClient {
   }
   private func disconnect() {
     connected = false
+    agentTranscriptRevisions.removeAll()
+    agentTranscriptLoadsInFlight.removeAll()
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
     editorWriteQueues.removeAll()
@@ -156,9 +211,14 @@ public final class EngineClient {
     usageRefreshTasks.removeAll()
     for task in webHostTasks.values { task.cancel() }
     webHostTasks.removeAll()
-    if readOnly {
+    for task in resizeTasks.values { task.cancel() }
+    resizeTasks.removeAll()
+    resizeGenerations.removeAll()
+    terminalSubscriptionsInFlight.removeAll()
+    if pairedDevice {
       panes = []
       workspaces = []
+      paneLayouts.removeAll()
       agentPanes = [:]
       agentWebDrafts = [:]
       tasks = []
@@ -173,7 +233,7 @@ public final class EngineClient {
       terminalOutput?(Data(), true)
     }
     connectionActor = nil
-    position = nil
+    terminalStreams.removeAll()
     responseAttachments.reset()
     wire?.close()
     wire = nil
@@ -220,24 +280,35 @@ public final class EngineClient {
         capabilities: webHost == nil ? nil : [.web_host])
     }
     let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
-    guard welcome.role == (readOnly ? .human_device : .human_local), welcome.protocolVersion == 1
+    guard welcome.role == (pairedDevice ? .human_device : .human_local),
+      welcome.protocolVersion == 1
     else {
       throw ClientFailure.invalidFrame
     }
     connectionActor = Actor(
       role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
     _ = try await request("state.snapshot", .object([:]))
+    try await loadPreferredHarness()
     _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
     try await loadUsage()
-    if !readOnly { try await loadLocalServers() }
+    if !pairedDevice { try await loadLocalServers() }
     connectionRevision &+= 1
     connected = true
     connectionText = "Dev profile · connected"
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
+    #if os(macOS)
+      // The tmux-style Mac surface keeps every terminal current, including hidden workspaces.
+      for pane in panes where pane.mode == .terminal { try await subscribe(pane.paneId) }
+    #endif
     if let pane = selectedPane {
       switch pane.mode {
-      case .terminal: try await subscribe(pane.paneId)
-      case .agent: try await loadAgentPane(pane.paneId, replacing: true)
+      case .terminal:
+        #if !os(macOS)
+          // Phone still has one selected terminal surface; Block D will define its final policy.
+          try await subscribe(pane.paneId)
+        #endif
+      case .agent:
+        await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
       case .editor: try await loadEditorPane(pane.paneId)
       case .web: break
       case .writing: try await loadWritingPane(pane.paneId)
@@ -280,11 +351,16 @@ public final class EngineClient {
         method: method, timeoutSeconds: timeoutSeconds, waitForTimeout: waitForTimeout
       ) { [weak self] failure in
         guard let request = self?.pending.removeValue(forKey: id) else { return }
+        let elapsedNs = DispatchTime.now().uptimeNanoseconds - request.startedAtNs
+        let diagnostic = EngineTimeoutDiagnostic(
+          method: request.method, params: request.params, durationMs: elapsedNs / 1_000_000)
+        engineTimeoutLogger.error("Engine RPC timeout: \(diagnostic.logLine, privacy: .public)")
         request.continuation.resume(throwing: failure)
         self?.wire?.close()
       }
       pending[id] = Pending(
-        method: method, params: params, continuation: continuation, timeout: timeout)
+        method: method, params: params, startedAtNs: DispatchTime.now().uptimeNanoseconds,
+        continuation: continuation, timeout: timeout)
       Task {
         do {
           try await send(id)
@@ -384,8 +460,9 @@ public final class EngineClient {
       return
     }
     if frame.kind == 2 {
-      guard position != nil else { return }
-      if let bytes = try position?.accept(frame) { terminalOutput?(bytes, false) }
+      if let delivery = try terminalStreams.accept(frame) {
+        deliverTerminalOutput(to: delivery.paneId, bytes: delivery.bytes, reset: false)
+      }
       return
     }
     guard frame.kind == 1 else { return }
@@ -402,7 +479,8 @@ public final class EngineClient {
         request.continuation.resume(
           throwing: ClientFailure.remote(
             message["error"]["data"]["kind"].string ?? "internal_error",
-            message["error"]["message"].string ?? "Request refused"))
+            message["error"]["message"].string ?? "Request refused",
+            retryAfterSec: message["error"]["data"]["retryAfterSec"].int.flatMap(UInt32.init)))
         return
       }
       let result = message["result"]
@@ -414,12 +492,14 @@ public final class EngineClient {
         if reference == nil, responseAttachments.isPending { throw ClientFailure.invalidFrame }
         if request.method == "state.snapshot" { try applySnapshot(result) }
         if request.method == "pane.stream.subscribe",
-          request.params["paneId"].string == selectedPaneId
+          let paneId = request.params["paneId"].string
         {
           let info = try result.decoded(StreamInfo.self)
-          position = StreamPosition(
-            streamId: info.streamId, reference: info.binaryPaneRef,
-            generation: info.generation, next: nil)
+          // A close event can overtake an in-flight subscribe response. Do not resurrect stream
+          // state after the pane (or its terminal role) has already disappeared.
+          if panes.contains(where: { $0.paneId == paneId && $0.mode == .terminal }) {
+            try terminalStreams.install(paneId: paneId, info: info)
+          }
         }
         request.continuation.resume(
           returning: EngineResponse(value: result, attachment: attachment)
@@ -434,7 +514,8 @@ public final class EngineClient {
     if message["id"] == .null, message["error"] != .null {
       throw ClientFailure.remote(
         message["error"]["data"]["kind"].string ?? ErrorKind.internal_error.rawValue,
-        message["error"]["message"].string ?? "Connection closed")
+        message["error"]["message"].string ?? "Connection closed",
+        retryAfterSec: message["error"]["data"]["retryAfterSec"].int.flatMap(UInt32.init))
     }
     guard let method = message["method"].string else { return }
     let params = message["params"]
@@ -448,26 +529,22 @@ public final class EngineClient {
     case .stateSnapshotPart: try snapshot.append(params.decoded(StateSnapshotPartEvent.self))
     case .paneCreated, .paneUpdated, .paneRenamed, .paneClosed, .paneStateChanged:
       try applyPaneEvent(eventName, params)
-    case .workspaceCreated, .workspaceRenamed:
+    case .workspaceCreated, .workspaceRenamed, .workspaceLayoutUpdated:
       let workspace = try params["workspace"].decoded(Workspace.self)
-      workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
-      workspaces.append(workspace)
-    case .workspaceClosed: workspaces.removeAll { $0.workspaceId == params["workspaceId"].string }
+      upsertWorkspace(workspace)
+      synchronizePaneLayout(workspace)
+    case .workspaceClosed:
+      applyWorkspaceClosed(params)
     case .streamReplayStart:
-      guard params["streamId"].string == position?.streamId else { return }
-      if try position?.start(params.decoded(StreamReplayStartEvent.self)) == true {
-        gapText = nil
-        terminalOutput?(Data(), true)
+      if let replay = try terminalStreams.start(params.decoded(StreamReplayStartEvent.self)),
+        replay.reset
+      {
+        deliverTerminalOutput(to: replay.paneId, bytes: Data(), reset: true)
       }
     case .streamGap:
-      guard params["streamId"].string == position?.streamId else { return }
-      try position?.gap(params.decoded(StreamGapEvent.self))
-      gapText = "Some output was not recorded. The screen contains a gap."
+      _ = try terminalStreams.gap(params.decoded(StreamGapEvent.self))
     case .streamReplayDone:
-      guard params["streamId"].string == position?.streamId else { return }
-      guard params["nextOffset"].string == position?.next.map(String.init) else {
-        throw ClientFailure.invalidStream
-      }
+      _ = try terminalStreams.finish(params.decoded(StreamReplayDoneEvent.self))
     case .devicePairRequested, .devicePaired, .deviceRevoked:
       try applyDeviceEvent(eventName, params)
     case .paneUpdate, .panePermissionRequested, .panePermissionAnswered,
@@ -488,27 +565,53 @@ public final class EngineClient {
       try applyEditorEvent(eventName, params)
     case .serversLocalChanged, .webNavigated, .webConsoleCounts, .webAgentDriving:
       try applyWebEvent(eventName, params)
+    case .settingsChanged:
+      try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
-      .ptydReconnected, .ptydLost, .settingsChanged, .paneConfigChanging,
+      .ptydReconnected, .ptydLost, .paneConfigChanging,
       .paneConfigChanged:
       break
     case .writingChanged: try applyWritingEvent(params)
     }
   }
+  private func applyWorkspaceClosed(_ params: JsonValue) {
+    let workspaceId = params["workspaceId"].string
+    workspaces.removeAll { $0.workspaceId == workspaceId }
+    if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
+  }
+  private func loadPreferredHarness() async throws {
+    let result = try await request(
+      "settings.get", .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
+    ).decoded(SettingsGetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  public func setPreferredHarness(_ harnessId: String) async throws {
+    let result = try await mutation(
+      "settings.set",
+      SettingsSetParams(
+        key: HarnessPickerModel.preferredHarnessKey, value: .string(harnessId),
+        idempotencyKey: UUID().uuidString)
+    ).decoded(SettingsSetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  func applySettingsChanged(_ event: SettingsChangedEvent) {
+    if applyDefaultPermissionModeChanged(event) { return }
+    guard event.key == HarnessPickerModel.preferredHarnessKey else { return }
+    preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
   private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
     switch eventName {
-    case .paneCreated, .paneUpdated, .paneRenamed:
+    case .paneCreated:
+      try applyPaneCreated(params.decoded(PaneCreatedEvent.self))
+    case .paneUpdated, .paneRenamed:
       let pane = try params["pane"].decoded(Pane.self)
-      upsertPane(pane)
-      if pane.mode == .agent {
-        var view = agentPanes[pane.paneId] ?? AgentPaneView()
-        view.queuePaused = pane.agent?.queuePaused ?? false
-        agentPanes[pane.paneId] = view
-      }
-      upsertWebPane(pane)
+      acceptPane(pane)
     case .paneClosed:
       let id = params["paneId"].string
       panes.removeAll { $0.paneId == id }
+      if let id { discardTerminalPane(id) }
       if let id { agentPanes.removeValue(forKey: id) }
       if let id { agentWebDrafts.removeValue(forKey: id) }
       if let id { discardEditorPane(id) }
@@ -522,8 +625,59 @@ public final class EngineClient {
         panes[index].source = event.source
         panes[index].confidence = event.confidence
         panes[index].phrase = event.phrase
+        if panes[index].mode == .agent && event.state == .dead { refreshHarnesses() }
       }
     default: break
+    }
+  }
+
+  func applyPaneCreated(_ event: PaneCreatedEvent) throws {
+    let pane = event.pane
+    switch pane.mode {
+    case .editor:
+      if event.file == nil, event.writingDocument == nil { break }
+      guard let file = event.file, event.writingDocument == nil,
+        file.paneId == pane.paneId, file.workspaceId == pane.workspaceId
+      else { throw ClientFailure.invalidFrame }
+      upsertEditor(file)
+    case .writing:
+      if event.file == nil, event.writingDocument == nil { break }
+      guard let file = event.file, let document = event.writingDocument,
+        file.paneId == pane.paneId, file.workspaceId == pane.workspaceId,
+        try JsonValue.encoded(file) == JsonValue.encoded(document.file),
+        pane.writingKind == document.kind, pane.writingSection == document.section
+      else { throw ClientFailure.invalidFrame }
+      upsertEditor(file)
+      writingDocuments[file.fileId] = WritingDocumentView(document: document)
+    case .terminal, .agent, .web:
+      guard event.file == nil, event.writingDocument == nil else {
+        throw ClientFailure.invalidFrame
+      }
+    }
+    acceptPane(pane)
+  }
+
+  private func acceptPane(_ pane: Pane) {
+    upsertPane(pane)
+    #if os(macOS)
+      if pane.mode == .terminal, connected, !terminalStreams.contains(pane.paneId) {
+        perform { try await self.subscribe(pane.paneId) }
+      }
+    #endif
+    if pane.mode == .agent {
+      var view = agentPanes[pane.paneId] ?? AgentPaneView()
+      view.queuePaused = pane.agent?.queuePaused ?? false
+      view.authMethods = pane.agent?.authMethods ?? []
+      agentPanes[pane.paneId] = view
+    }
+    upsertWebPane(pane)
+  }
+
+  func upsertWorkspace(_ workspace: Workspace) {
+    if let index = workspaces.firstIndex(where: { $0.workspaceId == workspace.workspaceId }) {
+      workspaces[index] = workspace
+    } else {
+      workspaces.append(workspace)
     }
   }
   private func applyDeviceEvent(_ eventName: EventName, _ params: JsonValue) throws {
@@ -552,7 +706,19 @@ public final class EngineClient {
       !$0.revoked
     }
     self.panes = panes
+    let terminalPaneIds = Set(panes.lazy.filter { $0.mode == .terminal }.map(\.paneId))
+    terminalStreams.retainOnly(terminalPaneIds)
+    terminalOutputSinks = terminalOutputSinks.filter { terminalPaneIds.contains($0.key) }
+    for paneId in resizeTasks.keys.filter({ !terminalPaneIds.contains($0) }) {
+      resizeTasks.removeValue(forKey: paneId)?.cancel()
+      resizeGenerations.removeValue(forKey: paneId)
+    }
+    #if os(macOS)
+      terminalViewRegistry.retainOnly(terminalPaneIds)
+    #endif
     self.workspaces = workspaces
+    paneLayouts.retainOnly(workspaceIds: Set(workspaces.map(\.workspaceId)))
+    for workspace in workspaces { synchronizePaneLayout(workspace) }
     try applyAgentSnapshot(sections, panes: panes)
     try applyTaskSnapshot(sections, panes: panes)
     try applyEditorSnapshot(sections, panes: panes)
@@ -566,19 +732,24 @@ public final class EngineClient {
     snapshot = SnapshotAssembly()
   }
   public func select(_ paneId: String?) {
+    guard selectedPaneId != paneId else { return }
     let old = selectedPaneId
     selectedPaneId = paneId
     if let pane = panes.first(where: { $0.paneId == paneId }), pane.mode == .agent {
       lastAgentPaneByWorkspace[pane.workspaceId] = pane.paneId
     }
-    position = nil
-    gapText = nil
-    terminalOutput?(Data(), true)
+    #if !os(macOS)
+      terminalOutput?(Data(), true)
+    #endif
     guard connected else { return }
     perform {
-      if let old, self.panes.first(where: { $0.paneId == old })?.mode == .terminal {
-        _ = try await self.request("pane.stream.unsubscribe", .object(["paneId": .string(old)]))
-      }
+      #if !os(macOS)
+        if let old, self.panes.first(where: { $0.paneId == old })?.mode == .terminal {
+          _ = try await self.request(
+            "pane.stream.unsubscribe", .object(["paneId": .string(old)]))
+          self.terminalStreams.remove(old)
+        }
+      #endif
       if let paneId, self.selectedPaneId == paneId {
         _ = try await self.mutation(
           "pane.focus", PaneFocusParams(paneId: paneId, idempotencyKey: UUID().uuidString))
@@ -586,8 +757,16 @@ public final class EngineClient {
           let pane = self.panes.first(where: { $0.paneId == paneId })
         {
           switch pane.mode {
-          case .terminal: try await self.subscribe(paneId)
-          case .agent: try await self.loadAgentPane(paneId, replacing: true)
+          case .terminal:
+            #if os(macOS)
+              if !self.terminalStreams.contains(paneId) { try await self.subscribe(paneId) }
+            #else
+              try await self.subscribe(paneId)
+            #endif
+          case .agent:
+            await self.hydratePresentedAgentPanes([
+              PresentedPane(paneId: paneId, isVisible: true)
+            ])
           case .editor: try await self.loadEditorPane(paneId)
           case .web: break
           case .writing: try await self.loadWritingPane(paneId)
@@ -595,6 +774,11 @@ public final class EngineClient {
         }
       }
     }
+  }
+
+  /// Lets a platform surface drain the shared editor writer before it unmounts.
+  public func flushEditorEdits(fileId: String) async {
+    await settleEditorWrites(fileId)
   }
 
   public func preferredAgentPane(in workspaceId: String) -> Pane? {
@@ -613,6 +797,9 @@ public final class EngineClient {
     }
   }
   private func subscribe(_ pane: String) async throws {
+    guard !terminalSubscriptionsInFlight.contains(pane) else { return }
+    terminalSubscriptionsInFlight.insert(pane)
+    defer { terminalSubscriptionsInFlight.remove(pane) }
     _ = try await request(
       "pane.stream.subscribe", .object(["paneId": .string(pane), "from": .string("tail")]))
   }
@@ -620,6 +807,15 @@ public final class EngineClient {
     guard let pane = selectedPaneId, selectedPane?.mode == .terminal, connected else { return }
     perform { try await self.subscribe(pane) }
   }
+  public func refreshTerminal(_ paneId: String) {
+    guard connected, panes.contains(where: { $0.paneId == paneId && $0.mode == .terminal })
+    else { return }
+    // macOS subscribes every terminal after the snapshot. A surface mounted after that must
+    // consume the existing stream instead of replacing it and replaying the tail a second time.
+    guard !terminalStreams.contains(paneId) else { return }
+    perform { try await self.subscribe(paneId) }
+  }
+  public func gapText(for paneId: String) -> String? { terminalStreams.gapText(for: paneId) }
   func claimTerminalOutput(
     owner: AnyObject, sink: @escaping (Data, Bool) -> Void
   ) {
@@ -632,6 +828,33 @@ public final class EngineClient {
     guard terminalOutputOwner == ObjectIdentifier(owner) else { return }
     terminalOutputOwner = nil
     terminalOutputSink = nil
+  }
+  func claimTerminalOutput(
+    paneId: String, owner: AnyObject, sink: @escaping (Data, Bool) -> Void
+  ) {
+    terminalOutputSinks[paneId] = TerminalOutputTarget(
+      owner: ObjectIdentifier(owner), sink: sink)
+  }
+  func releaseTerminalOutput(paneId: String, owner: AnyObject) {
+    guard terminalOutputSinks[paneId]?.owner == ObjectIdentifier(owner) else { return }
+    terminalOutputSinks.removeValue(forKey: paneId)
+  }
+  func deliverTerminalOutput(to paneId: String, bytes: Data, reset: Bool) {
+    terminalOutputSinks[paneId]?.sink(bytes, reset)
+    if paneId == selectedPaneId { terminalOutputSink?(bytes, reset) }
+  }
+  var terminalSubscriptionCount: Int { terminalStreams.count }
+  var terminalOutputSinkCount: Int { terminalOutputSinks.count }
+
+  private func discardTerminalPane(_ paneId: String) {
+    terminalStreams.remove(paneId)
+    terminalSubscriptionsInFlight.remove(paneId)
+    terminalOutputSinks.removeValue(forKey: paneId)
+    resizeTasks.removeValue(forKey: paneId)?.cancel()
+    resizeGenerations.removeValue(forKey: paneId)
+    #if os(macOS)
+      terminalViewRegistry.remove(paneId)
+    #endif
   }
   public func createPane(directory: URL) {
     perform { _ = try await self.createTerminalPane(directory: directory) }
@@ -657,6 +880,31 @@ public final class EngineClient {
       WorkspaceCreateParams(
         name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
     return try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
+  }
+  public func setWorkspacePaneLayout(
+    workspaceId: String, state: PaneLayoutState
+  ) async throws -> Workspace {
+    let result = try await mutation(
+      "workspace.layout.set",
+      WorkspaceLayoutSetParams(
+        workspaceId: workspaceId, layout: try state.envelope(),
+        idempotencyKey: UUID().uuidString))
+    return try result.decoded(WorkspaceLayoutSetResult.self).workspace
+  }
+  public func closeWorkspace(_ workspaceId: String) async throws {
+    _ = try await mutation(
+      "workspace.close",
+      WorkspaceCloseParams(
+        workspaceId: workspaceId, idempotencyKey: UUID().uuidString))
+  }
+  public func paneLayoutState(for workspace: Workspace) -> PaneLayoutState {
+    PaneLayoutState(
+      workspaceLayout: workspace.layout,
+      livePanes: panes.filter { $0.workspaceId == workspace.workspaceId })
+  }
+  private func synchronizePaneLayout(_ workspace: Workspace) {
+    paneLayouts.synchronize(
+      workspaceId: workspace.workspaceId, confirmed: paneLayoutState(for: workspace))
   }
   public func closePane(_ id: String) {
     perform {
@@ -692,8 +940,12 @@ public final class EngineClient {
     ).decoded(PaneExperimentExportResult.self)
   }
   public func input(_ data: Data) {
-    guard !readOnly, connected, selectedPane?.mode == .terminal,
-      let pane = selectedPaneId, !data.isEmpty
+    guard let pane = selectedPaneId else { return }
+    input(data, paneId: pane)
+  }
+  func input(_ data: Data, paneId pane: String) {
+    guard connected, selectedPaneId == pane,
+      panes.contains(where: { $0.paneId == pane && $0.mode == .terminal }), !data.isEmpty
     else { return }
     guard queuedInputBytes + data.count <= 1_048_576 else {
       problem = "Input is too large. Wait for the keyboard queue to empty."
@@ -732,11 +984,17 @@ public final class EngineClient {
     }
   }
   public func resize(cols: Int, rows: Int) {
-    guard connected, selectedPane?.mode == .terminal,
-      let pane = selectedPaneId, cols > 0, rows > 0
+    guard let pane = selectedPaneId else { return }
+    resize(paneId: pane, cols: cols, rows: rows)
+  }
+  func resize(paneId pane: String, cols: Int, rows: Int) {
+    guard connected, panes.contains(where: { $0.paneId == pane && $0.mode == .terminal }),
+      cols > 0, rows > 0
     else { return }
-    resizeTask?.cancel()
-    resizeTask = Task {
+    resizeTasks[pane]?.cancel()
+    let generation = resizeGenerations[pane, default: 0] &+ 1
+    resizeGenerations[pane] = generation
+    resizeTasks[pane] = Task {
       do {
         try await Task.sleep(for: .milliseconds(100))
         _ = try await mutation(
@@ -746,6 +1004,10 @@ public final class EngineClient {
             cols: UInt32(min(cols, 1000)), rows: UInt32(min(rows, 1000)),
             idempotencyKey: UUID().uuidString))
       } catch is CancellationError {} catch { problem = error.localizedDescription }
+      if resizeGenerations[pane] == generation {
+        resizeTasks.removeValue(forKey: pane)
+        resizeGenerations.removeValue(forKey: pane)
+      }
     }
   }
   public func beginPairing() {

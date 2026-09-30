@@ -17,6 +17,11 @@ use uuid::Uuid;
 
 pub enum Outcome {
     Reply(Value),
+    Catalog {
+        method: String,
+        params: Value,
+    },
+    WritingSectionList(crate::writing::PreparedWritingSectionList),
     Attachment {
         result: Value,
         reference: AttachmentRef,
@@ -43,10 +48,7 @@ fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
 }
 
 fn uses_native_rpc_result(method: &str) -> bool {
-    matches!(
-        method,
-        "pane.config.set" | "pane.yolo" | "pane.harness.switch"
-    )
+    matches!(method, "pane.config.set" | "pane.harness.switch")
 }
 
 impl Core {
@@ -254,6 +256,7 @@ impl Core {
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method.starts_with("task.")
             && !method.starts_with("web.")
+            && !matches!(method, "agent.list" | "agent.message")
             && !matches!(method, "writing.structure" | "writing.variant.add")
             && method != "loop.set"
         {
@@ -261,16 +264,9 @@ impl Core {
                 "Agent binding method is not allowed",
             ));
         }
-        if actor.role == Role::HumanDevice
-            && (method == "pane.input"
-                || method == "settings.set"
-                || method.starts_with("harness.custom.")
-                || method.starts_with("device.") && method != "device.list")
-        {
-            return Err(errors::forbidden_role(
-                "Operation requires the local human client",
-            ));
-        }
+        // A paired device is a full remote control of this Mac (owner
+        // decision 2026-09-26): once its hello is signed by an approved,
+        // unrevoked key, it has the same powers as the local human.
         Ok(client.scope.clone())
     }
 
@@ -303,10 +299,7 @@ impl Core {
                     ));
                 }
                 let value = previous.result;
-                if matches!(
-                    method,
-                    "pane.config.set" | "pane.yolo" | "pane.harness.switch"
-                ) {
+                if uses_native_rpc_result(method) {
                     return self
                         .native_rpc_result(connection, request_id.clone(), key, value)
                         .map(Some);
@@ -330,9 +323,8 @@ impl Core {
             "state.snapshot" => return self.snapshot_parts(connection),
             "events.subscribe" => self.subscribe_events(connection, params)?,
             "workspace.list" => json!({"items":self.snapshot_section("workspaces")?}),
-            "workspace.create" => self.workspace_create(connection, params)?,
-            "workspace.rename" | "workspace.close" | "workspace.focus" => {
-                self.workspace_edit(connection, method, params)?
+            method if crate::workspaces::handles(method) => {
+                self.workspace_request(connection, method, params)?
             }
             "pane.create" => self.pane_create(connection, params)?,
             "pane.close"
@@ -345,18 +337,16 @@ impl Core {
             "pane.experiment.export" => self.export_experiment(connection, params)?,
             "pane.experiment.hook" => self.record_hook_event(connection, params)?,
             "pane.input" => self.pane_input(connection, params)?,
-            "pane.yolo" => self.agent_yolo(connection, params)?,
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
             "pane.role.set" => self.pane_role_set(connection, params)?,
             "pane.auth.start" => self.agent_auth_start(connection, params)?,
-            "harness.list" | "model.list" => self.agent_catalog(method, params)?,
             method if method.starts_with("harness.custom.") => {
                 self.agent_custom_harness(connection, method, params)?
             }
-            "pane.prompt" | "pane.queue.list" | "pane.queue.remove" | "pane.queue.resume"
-            | "pane.cancel" | "pane.config.set" | "pane.transcript" | "pane.draft" => {
+            method if crate::agents::methods::handles(method) => {
                 self.agent_method(connection, method, params, prompt_attachments)?
             }
+            "agent.list" | "agent.message" => self.agent_peer_method(connection, method, params)?,
             "pane.permission.answer" => self.permission_answer(connection, method, params)?,
             "pane.elicitation.answer" => self.agent_answer(connection, method, params)?,
             "task.show" | "task.list" | "task.comments" => {
@@ -381,6 +371,11 @@ impl Core {
             "file.format" => return self.language_format(connection, request_id, params),
             "file.diagnostics" | "file.diff" => self.file_inspection(method, params)?,
             "writing.asset.read" => return self.writing_asset_read(params),
+            "writing.section.list" => {
+                return self
+                    .prepare_writing_section_list(params)
+                    .map(Outcome::WritingSectionList);
+            }
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
                 self.document_request(connection, method, params, writing_image)?
             }
@@ -510,6 +505,12 @@ impl Core {
             self.repeated_result(connection, &request["id"], method, &params, &scope)?
         {
             return Ok(outcome);
+        }
+        if matches!(method, "harness.list" | "model.list") {
+            return Ok(Outcome::Catalog {
+                method: method.to_owned(),
+                params,
+            });
         }
         self.route(
             connection,

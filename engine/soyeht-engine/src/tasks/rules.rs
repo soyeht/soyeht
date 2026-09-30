@@ -27,16 +27,16 @@ pub fn new_task(
     required_text(&params.title, "title")?;
     required_text(&params.must_not_change, "mustNotChange")?;
     let mut executor = params.executor.clone();
-    if let Some(permission) = &params.permission {
+    if let Some(mode) = &params.permission_mode {
         executor
             .get_or_insert(soyeht_protocol::TaskExecutor {
                 workspace_default: true,
                 harness: None,
                 model: None,
                 effort: None,
-                permission: None,
+                permission_mode: None,
             })
-            .permission = Some(permission.clone());
+            .permission_mode = Some(mode.clone());
     }
     Ok(Task {
         workspace_id: params.workspace_id.clone(),
@@ -370,7 +370,7 @@ fn next_version(task: &Task) -> Result<u32> {
 pub(crate) mod tests {
     use super::*;
     use crate::{errors, tasks::ports::testing::MemoryTaskStore};
-    use soyeht_protocol::{PermissionMode, TaskCreateParams, TaskPriority, TaskUpdateParams};
+    use soyeht_protocol::{TaskCreateParams, TaskPriority, TaskUpdateParams};
 
     pub(crate) fn task_fixture(state: TaskState) -> Task {
         Task {
@@ -412,7 +412,7 @@ pub(crate) mod tests {
             executor: None,
             priority: None,
             create_worktree: None,
-            permission: Some(PermissionMode::Ask),
+            permission_mode: Some("ask".into()),
             dependencies: None,
             dispatch: None,
             idempotency_key: "key-1".into(),
@@ -425,7 +425,10 @@ pub(crate) mod tests {
         assert_eq!(task.state, TaskState::Todo);
         assert_eq!(task.priority, TaskPriority::Medium);
         assert_eq!(task.phrase, "available to claim");
-        assert_eq!(task.executor.unwrap().permission, Some(PermissionMode::Ask));
+        assert_eq!(
+            task.executor.unwrap().permission_mode.as_deref(),
+            Some("ask")
+        );
 
         let mut invalid = create_params();
         invalid.must_not_change = "  ".into();

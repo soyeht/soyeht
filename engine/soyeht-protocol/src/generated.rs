@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -196,6 +196,84 @@ pub struct Actor {
     pub device_id: Option<Id>,
     #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
     pub pane_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WorkspacePaneLayoutMode {
+    #[serde(rename = "automatic")]
+    Automatic,
+    #[serde(rename = "custom")]
+    Custom,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WorkspacePaneLayoutKind {
+    #[serde(rename = "terminal")]
+    Terminal,
+    #[serde(rename = "agent")]
+    Agent,
+    #[serde(rename = "editor")]
+    Editor,
+    #[serde(rename = "web")]
+    Web,
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "presentation")]
+    Presentation,
+    #[serde(rename = "screenplay")]
+    Screenplay,
+    #[serde(rename = "unknown_writing")]
+    UnknownWriting,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum WorkspacePaneLayoutAxis {
+    #[serde(rename = "horizontal")]
+    Horizontal,
+    #[serde(rename = "vertical")]
+    Vertical,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutLeaf {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "kind")]
+    pub kind: WorkspacePaneLayoutKind,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutBranch {
+    #[serde(rename = "weight")]
+    pub weight: f64,
+    #[serde(rename = "node")]
+    pub node: WorkspacePaneLayoutNode,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutCompanion {
+    #[serde(rename = "writingPaneId")]
+    pub writing_pane_id: Id,
+    #[serde(rename = "agentPaneId")]
+    pub agent_pane_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutSplit {
+    #[serde(rename = "axis")]
+    pub axis: WorkspacePaneLayoutAxis,
+    #[serde(rename = "children")]
+    pub children: Vec<WorkspacePaneLayoutBranch>,
+    #[serde(rename = "companion", skip_serializing_if = "Option::is_none")]
+    pub companion: Option<WorkspacePaneLayoutCompanion>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum WorkspacePaneLayoutNode {
+    V0(WorkspacePaneLayoutLeaf),
+    V1(WorkspacePaneLayoutSplit),
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspacePaneLayoutEnvelope {
+    #[serde(rename = "version")]
+    pub version: u32,
+    #[serde(rename = "mode")]
+    pub mode: WorkspacePaneLayoutMode,
+    #[serde(rename = "tree", skip_serializing_if = "Option::is_none")]
+    pub tree: Option<WorkspacePaneLayoutNode>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Workspace {
@@ -409,6 +487,20 @@ pub struct WorkspaceRenameResult {
     pub workspace: Workspace,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceLayoutSetParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "layout")]
+    pub layout: WorkspacePaneLayoutEnvelope,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceLayoutSetResult {
+    #[serde(rename = "workspace")]
+    pub workspace: Workspace,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceCloseParams {
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
@@ -454,8 +546,8 @@ pub struct PaneCreateParams {
     pub model: Option<String>,
     #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
-    pub permission: Option<PermissionMode>,
+    #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<Id>,
     #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
@@ -820,6 +912,17 @@ pub struct WorkspaceRenamedEvent {
     pub workspace: Workspace,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorkspaceLayoutUpdatedEvent {
+    #[serde(rename = "workspace")]
+    pub workspace: Workspace,
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WorkspaceClosedEvent {
     #[serde(rename = "eventId")]
     pub event_id: Decimal,
@@ -836,6 +939,10 @@ pub struct PaneCreatedEvent {
     pub at: String,
     #[serde(rename = "pane")]
     pub pane: Pane,
+    #[serde(rename = "file", skip_serializing_if = "Option::is_none")]
+    pub file: Option<FileDocument>,
+    #[serde(rename = "writingDocument", skip_serializing_if = "Option::is_none")]
+    pub writing_document: Option<WritingDocument>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneRenamedEvent {
@@ -1082,15 +1189,6 @@ pub struct ClientFocus {
     pub pane_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum PermissionMode {
-    #[serde(rename = "ask")]
-    Ask,
-    #[serde(rename = "accept_edits")]
-    AcceptEdits,
-    #[serde(rename = "allow_all")]
-    AllowAll,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PromptOrigin {
     #[serde(rename = "human")]
     Human,
@@ -1133,6 +1231,8 @@ pub enum TranscriptKind {
     Usage,
     #[serde(rename = "system")]
     System,
+    #[serde(rename = "handover")]
+    Handover,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PermissionOptionKind {
@@ -1231,13 +1331,6 @@ pub enum SessionRecovery {
     NeedsLogin,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum ConfigOperationKind {
-    #[serde(rename = "config")]
-    Config,
-    #[serde(rename = "yolo")]
-    Yolo,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum ConfigValue {
     V0(String),
@@ -1251,6 +1344,8 @@ pub struct ConfigChoice {
     pub name: String,
     #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ConfigOption {
@@ -1273,8 +1368,6 @@ pub struct ConfigOption {
 pub struct ConfigOperation {
     #[serde(rename = "operationId")]
     pub operation_id: Id,
-    #[serde(rename = "kind")]
-    pub kind: ConfigOperationKind,
     #[serde(rename = "configId")]
     pub config_id: Id,
     #[serde(rename = "value")]
@@ -1298,6 +1391,40 @@ pub struct PromptItem {
     pub generation: Option<u32>,
     #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<AttachmentRef>>,
+    #[serde(rename = "agentMessage", skip_serializing_if = "Option::is_none")]
+    pub agent_message: Option<AgentMessageSource>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentMessageSource {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "harness")]
+    pub harness: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<AgentMessageSource>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentMessageParams {
+    #[serde(rename = "targetPaneId")]
+    pub target_pane_id: Id,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentMessageResult {
+    #[serde(rename = "promptId")]
+    pub prompt_id: Id,
+    #[serde(rename = "queued")]
+    pub queued: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionOption {
@@ -1307,6 +1434,37 @@ pub struct PermissionOption {
     pub kind: PermissionOptionKind,
     #[serde(rename = "name")]
     pub name: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PermissionFileChange {
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "oldText", skip_serializing_if = "Option::is_none")]
+    pub old_text: Option<String>,
+    #[serde(rename = "newText")]
+    pub new_text: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PermissionToolArgument {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "value")]
+    pub value: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PermissionPresentation {
+    #[serde(rename = "targetPath", skip_serializing_if = "Option::is_none")]
+    pub target_path: Option<String>,
+    #[serde(rename = "command", skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(rename = "executionDetails", skip_serializing_if = "Option::is_none")]
+    pub execution_details: Option<Vec<String>>,
+    #[serde(rename = "toolArguments", skip_serializing_if = "Option::is_none")]
+    pub tool_arguments: Option<Vec<PermissionToolArgument>>,
+    #[serde(rename = "fileChanges")]
+    pub file_changes: Vec<PermissionFileChange>,
+    #[serde(rename = "previewOmitted")]
+    pub preview_omitted: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionRequest {
@@ -1322,6 +1480,8 @@ pub struct PermissionRequest {
     pub title: String,
     #[serde(rename = "detail")]
     pub detail: String,
+    #[serde(rename = "presentation", skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<PermissionPresentation>,
     #[serde(rename = "options")]
     pub options: Vec<PermissionOption>,
     #[serde(rename = "expiresAt")]
@@ -1369,14 +1529,6 @@ pub struct AgentSession {
     pub options: Vec<ConfigOption>,
     #[serde(rename = "authMethods")]
     pub auth_methods: Vec<AuthMethod>,
-    #[serde(rename = "permission")]
-    pub permission: PermissionMode,
-    #[serde(rename = "yolo")]
-    pub yolo: bool,
-    #[serde(rename = "previousPermission", skip_serializing_if = "Option::is_none")]
-    pub previous_permission: Option<PermissionMode>,
-    #[serde(rename = "effectiveMode", skip_serializing_if = "Option::is_none")]
-    pub effective_mode: Option<String>,
     #[serde(rename = "operation", skip_serializing_if = "Option::is_none")]
     pub operation: Option<ConfigOperation>,
     #[serde(rename = "queue")]
@@ -1438,6 +1590,10 @@ pub struct HarnessInfo {
     pub source: Option<HarnessSource>,
     #[serde(rename = "setupState", skip_serializing_if = "Option::is_none")]
     pub setup_state: Option<HarnessSetupState>,
+    #[serde(rename = "setupReason", skip_serializing_if = "Option::is_none")]
+    pub setup_reason: Option<HarnessSetupReason>,
+    #[serde(rename = "lastReadyAtMs", skip_serializing_if = "Option::is_none")]
+    pub last_ready_at_ms: Option<Decimal>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelRefusal {
@@ -1565,6 +1721,8 @@ pub struct TranscriptMessage {
     pub plan: Option<Vec<PlanEntry>>,
     #[serde(rename = "usage", skip_serializing_if = "Option::is_none")]
     pub usage: Option<TokenUsage>,
+    #[serde(rename = "agentMessage", skip_serializing_if = "Option::is_none")]
+    pub agent_message: Option<AgentMessageSource>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentRef {
@@ -1787,22 +1945,6 @@ pub struct PaneHarnessSwitchFailedEvent {
     pub restored: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PaneYoloParams {
-    #[serde(rename = "paneId")]
-    pub pane_id: Id,
-    #[serde(rename = "on")]
-    pub on: bool,
-    #[serde(rename = "idempotencyKey")]
-    pub idempotency_key: Id,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PaneYoloResult {
-    #[serde(rename = "effectiveMode")]
-    pub effective_mode: PermissionMode,
-    #[serde(rename = "on")]
-    pub on: bool,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneAuthStartParams {
     #[serde(rename = "paneId")]
     pub pane_id: Id,
@@ -1993,6 +2135,8 @@ pub struct PanePermissionRequestedEvent {
     pub title: String,
     #[serde(rename = "detail")]
     pub detail: String,
+    #[serde(rename = "presentation", skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<PermissionPresentation>,
     #[serde(rename = "options")]
     pub options: Vec<PermissionOption>,
     #[serde(rename = "expiresAt")]
@@ -2145,6 +2289,8 @@ pub struct PaneAuthFinishedEvent {
 pub enum AgentMessageUpdateKind {
     #[serde(rename = "agent_message_chunk")]
     AgentMessageChunk,
+    #[serde(rename = "system_message")]
+    SystemMessage,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentMessageUpdate {
@@ -2560,8 +2706,8 @@ pub struct TaskExecutor {
     pub model: Option<String>,
     #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
-    pub permission: Option<PermissionMode>,
+    #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TaskWorktree {
@@ -2758,8 +2904,8 @@ pub struct TaskCreateParams {
     pub priority: Option<TaskPriority>,
     #[serde(rename = "createWorktree", skip_serializing_if = "Option::is_none")]
     pub create_worktree: Option<bool>,
-    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
-    pub permission: Option<PermissionMode>,
+    #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<Id>,
     #[serde(rename = "dependencies", skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<Vec<String>>,
     #[serde(rename = "dispatch", skip_serializing_if = "Option::is_none")]
@@ -3354,6 +3500,17 @@ pub enum UsageState {
     Unavailable,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum UsageUnavailableReason {
+    #[serde(rename = "not_checked")]
+    NotChecked,
+    #[serde(rename = "tool_not_found")]
+    ToolNotFound,
+    #[serde(rename = "app_server_failed")]
+    AppServerFailed,
+    #[serde(rename = "invalid_response")]
+    InvalidResponse,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageSource {
     #[serde(rename = "claude_cli_usage")]
     ClaudeCliUsage,
@@ -3383,6 +3540,8 @@ pub struct UsageReading {
     pub provider: UsageProvider,
     #[serde(rename = "state")]
     pub state: UsageState,
+    #[serde(rename = "unavailableReason", skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UsageUnavailableReason>,
     #[serde(rename = "primary", skip_serializing_if = "Option::is_none")]
     pub primary: Option<UsageWindow>,
     #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
@@ -3421,6 +3580,8 @@ pub struct UsageChangedEvent {
     pub provider: UsageProvider,
     #[serde(rename = "state")]
     pub state: UsageState,
+    #[serde(rename = "unavailableReason", skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UsageUnavailableReason>,
     #[serde(rename = "primary", skip_serializing_if = "Option::is_none")]
     pub primary: Option<UsageWindow>,
     #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
@@ -4764,6 +4925,8 @@ pub struct WritingDocument {
     pub font: WritingFont,
     #[serde(rename = "focusMode")]
     pub focus_mode: bool,
+    #[serde(rename = "fullWidth")]
+    pub full_width: bool,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WritingSectionEntry {
@@ -4947,6 +5110,8 @@ pub struct WritingStructureResult {
     pub variants: Vec<WritingLineVariants>,
     #[serde(rename = "beats")]
     pub beats: Vec<BeatCard>,
+    #[serde(rename = "wordCount")]
+    pub word_count: u32,
     #[serde(rename = "truncated")]
     pub truncated: bool,
 }
@@ -5000,6 +5165,8 @@ pub struct WritingPreferencesParams {
     pub font: Option<WritingFont>,
     #[serde(rename = "focusMode", skip_serializing_if = "Option::is_none")]
     pub focus_mode: Option<bool>,
+    #[serde(rename = "fullWidth", skip_serializing_if = "Option::is_none")]
+    pub full_width: Option<bool>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -5153,12 +5320,31 @@ pub enum HarnessSource {
 pub enum HarnessSetupState {
     #[serde(rename = "ready")]
     Ready,
+    #[serde(rename = "not_checked")]
+    NotChecked,
     #[serde(rename = "not_installed")]
     NotInstalled,
     #[serde(rename = "sign_in")]
     SignIn,
     #[serde(rename = "check_setup")]
     CheckSetup,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum HarnessSetupReason {
+    #[serde(rename = "never_started")]
+    NeverStarted,
+    #[serde(rename = "executable_missing")]
+    ExecutableMissing,
+    #[serde(rename = "registry_package_unverified")]
+    RegistryPackageUnverified,
+    #[serde(rename = "authentication_required")]
+    AuthenticationRequired,
+    #[serde(rename = "session_failed")]
+    SessionFailed,
+    #[serde(rename = "launch_failed")]
+    LaunchFailed,
+    #[serde(rename = "environment_unavailable")]
+    EnvironmentUnavailable,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HarnessEnvironmentIssue {
@@ -5226,6 +5412,8 @@ pub enum Request {
     WorkspaceCreate(WorkspaceCreateParams),
     #[serde(rename = "workspace.rename")]
     WorkspaceRename(WorkspaceRenameParams),
+    #[serde(rename = "workspace.layout.set")]
+    WorkspaceLayoutSet(WorkspaceLayoutSetParams),
     #[serde(rename = "workspace.close")]
     WorkspaceClose(WorkspaceCloseParams),
     #[serde(rename = "workspace.focus")]
@@ -5276,6 +5464,10 @@ pub enum Request {
     SettingsSet(SettingsSetParams),
     #[serde(rename = "pane.prompt")]
     PanePrompt(PanePromptParams),
+    #[serde(rename = "agent.list")]
+    AgentList(AgentListParams),
+    #[serde(rename = "agent.message")]
+    AgentMessage(AgentMessageParams),
     #[serde(rename = "pane.queue.list")]
     PaneQueueList(PaneQueueListParams),
     #[serde(rename = "pane.queue.remove")]
@@ -5290,8 +5482,6 @@ pub enum Request {
     PaneConfigSet(PaneConfigSetParams),
     #[serde(rename = "pane.harness.switch")]
     PaneHarnessSwitch(PaneHarnessSwitchParams),
-    #[serde(rename = "pane.yolo")]
-    PaneYolo(PaneYoloParams),
     #[serde(rename = "pane.auth.start")]
     PaneAuthStart(PaneAuthStartParams),
     #[serde(rename = "pane.transcript")]
@@ -5490,6 +5680,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     (
+        "workspace.layout.set",
+        "WorkspaceLayoutSetParams",
+        "WorkspaceLayoutSetResult",
+        true,
+    ),
+    (
         "workspace.close",
         "WorkspaceCloseParams",
         "WorkspaceCloseResult",
@@ -5589,6 +5785,13 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         true,
     ),
     ("pane.prompt", "PanePromptParams", "PanePromptResult", true),
+    ("agent.list", "AgentListParams", "AgentListResult", false),
+    (
+        "agent.message",
+        "AgentMessageParams",
+        "AgentMessageResult",
+        true,
+    ),
     (
         "pane.queue.list",
         "PaneQueueListParams",
@@ -5626,7 +5829,6 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "PaneHarnessSwitchResult",
         true,
     ),
-    ("pane.yolo", "PaneYoloParams", "PaneYoloResult", true),
     (
         "pane.auth.start",
         "PaneAuthStartParams",
@@ -5968,6 +6170,7 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.experiment.set", "paneId"),
     ("pane.experiment.delete", "paneId"),
     ("pane.prompt", "paneId"),
+    ("agent.message", "targetPaneId"),
     ("pane.queue.list", "paneId"),
     ("pane.queue.remove", "paneId"),
     ("pane.cancel", "paneId"),
@@ -5975,7 +6178,6 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.elicitation.answer", "paneId"),
     ("pane.config.set", "paneId"),
     ("pane.harness.switch", "paneId"),
-    ("pane.yolo", "paneId"),
     ("pane.auth.start", "paneId"),
     ("pane.transcript", "paneId"),
     ("pane.draft", "paneId"),
@@ -6020,6 +6222,8 @@ pub enum EventName {
     WorkspaceCreated,
     #[serde(rename = "workspace.renamed")]
     WorkspaceRenamed,
+    #[serde(rename = "workspace.layout_updated")]
+    WorkspaceLayoutUpdated,
     #[serde(rename = "workspace.closed")]
     WorkspaceClosed,
     #[serde(rename = "pane.created")]
@@ -6154,6 +6358,7 @@ impl EventName {
             Self::StateSnapshotPart => "state.snapshot_part",
             Self::WorkspaceCreated => "workspace.created",
             Self::WorkspaceRenamed => "workspace.renamed",
+            Self::WorkspaceLayoutUpdated => "workspace.layout_updated",
             Self::WorkspaceClosed => "workspace.closed",
             Self::PaneCreated => "pane.created",
             Self::PaneRenamed => "pane.renamed",
@@ -6245,6 +6450,11 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::WorkspaceRenamed,
         params_type: "WorkspaceRenamedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::WorkspaceLayoutUpdated,
+        params_type: "WorkspaceLayoutUpdatedEvent",
         durable: true,
     },
     EventDescriptor {

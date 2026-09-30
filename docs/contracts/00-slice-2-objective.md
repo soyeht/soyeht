@@ -7,10 +7,14 @@ names, no assistant attribution, Apache-2.0). Same autonomy rule: ambiguity
 becomes an ADR and work continues; self-merge with green CI; victoria reviews
 afterward. Date: 2026-09-11.
 
+> Since 2026-09-30 the Yolo toggle below is replaced by each harness's own
+> permission modes (ADR 0070): `pane.config.set` on the mode option, the pane
+> mode menu and `pane mode <id> <mode>` in the CLI.
+
 ## 0. Governing contracts for this slice
 `04-acp-session.md` (entire document, including “Review applied”: v1/v2 table,
 engine↔ptyd pipes channel, states, permission identity and deadline,
-yolo/accept edits/elicitation, normalized transcript, disposable-session
+permission modes/accept edits/elicitation, normalized transcript, disposable-session
 probing), `02-model-effort-permission-switch.md`, `05-pane-state.md`
 §§1–2 (ACP part only), `07-persistence.md` (harness under ptyd through pipes),
 `08-engine-and-clients.md` (agent pane methods and events). Design:
@@ -21,7 +25,7 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
 1. **Protocol**: add to `contracts/protocol.json` (with vectors and generated
    types) methods `pane.prompt`, `pane.queue.list`, `pane.queue.remove`,
    `pane.cancel`, `pane.permission.answer`, `pane.elicitation.answer`,
-   `pane.config.set`, `pane.yolo`, `pane.auth.start`, `pane.transcript`,
+   `pane.config.set` (including the permission mode), `pane.auth.start`, `pane.transcript`,
    `pane.draft`, `harness.list`, `model.list`, and `pane.create` with
    `mode: "agent"`; events `pane.session_started`, `pane.update` (closed union
    from 08 §5), `pane.turn_ended`, `pane.queued`,
@@ -49,7 +53,7 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
    its own `requestId`, 30-minute deadline, first response wins, and pane-mode
    rules (ask / accept edits / allow all); separate elicitation; `session/cancel`
    awaiting the prompt response; durable prompt queue with origin and `promptId`,
-   `pane.draft` signal; yolo with previous mode and confirmation; `session/load`
+   `pane.draft` signal; permission modes shown after harness confirmation; `session/load`
    (v1) on recovery after ptyd death, otherwise a new session + `pane.session_lost`
    notice (continuation package is slice 4); `pane.needs_login` + `pane.auth.start`
    opening login in a raw ptyd terminal pane; pane state only from the protocol
@@ -63,15 +67,15 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
    already authenticated on Caio's Mac.
 5. **CLI**: `pane create --agent <harness> [--model] [--effort]`, `pane prompt
    <id> "text"`, `pane cancel`, `pane permission <id> allow|deny`, `pane
-   config <id> <key> <value>`, `pane yolo <id> on|off`, `harness list`,
+   config <id> <key> <value>`, `pane mode <id> <mode>`, `harness list`,
    `model list <harness>`, `pane transcript <id>`.
 6. **Mac app**: Screen 2 (new pane: terminal or agent mode; unified harness ·
    model · effort selector as in the `.pen`; permission; directory/worktree)
    and Screen 5 (agent pane chat: messages, collapsed thoughts, tool calls,
    inline agent terminal output, permission request with buttons, queue count,
-   yolo button, cancel, footer selectors). Neomorphic style from the `.pen`.
+   permission-mode menu, cancel, footer selectors). Neomorphic style from the `.pen`.
 7. **iPhone app**: read the agent pane (same view, read-only), answer permission
-   requests, send text, yolo button; reconnection through snapshot.
+   requests, send text, permission-mode menu; reconnection through snapshot.
 8. **CI**: everything from slice 1 plus this slice's tests; e2e with the fake
    agent under launchd.
 
@@ -88,9 +92,9 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
    during the outage is recovered and answered exactly once.
 5. [CI] Change model and effort mid-conversation: `config_changing` →
    `config_changed {sessionPreserved: true}`; a parameter error does NOT restart the session.
-6. [CI] Yolo turns on and off with harness confirmation; permission requested
-   while yolo is on is approved without appearing to the user; elicitation is
-   NEVER answered by yolo.
+6. [CI] Permission modes change only with harness confirmation; a request the
+   agent does not send in a full-access mode never appears to the user;
+   elicitation is NEVER answered by any mode.
 7. [CI] A prompt sent during a turn stays in the queue (`pane.queued`) and is sent
    after `idle`; with `pane.draft` active, an automatic prompt does not enter.
 8. [CI] Force-restart ptyd: harness dies; engine attempts `session/load`; fake
@@ -103,7 +107,7 @@ selector, permission) and Screen 5 (agent pane with chat and permission request)
     and the session opens.
 11. [local, procedure] Same flows with the official Claude Code ACP adapter on
     Caio's Mac: real prompt, real permission answered from iPhone with Wi-Fi
-    disabled, model change, yolo, `kill -9` the engine mid-turn.
+    disabled, model change, permission mode, `kill -9` the engine mid-turn.
 
 ## 3. Outside this slice
 Tasks, loop, lead agent, Soyeht MCP within the session (slice 3); continuation

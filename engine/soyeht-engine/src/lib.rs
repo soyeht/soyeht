@@ -30,5 +30,6 @@ pub mod ui_attestation;
 pub mod usage;
 pub mod vcs;
 pub mod web;
+mod workspace_layout;
 pub mod workspaces;
 pub mod writing;

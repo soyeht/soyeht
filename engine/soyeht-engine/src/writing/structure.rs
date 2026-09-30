@@ -6,25 +6,59 @@ use soyeht_protocol::{
     WritingStructureParams, WritingStructureResult, limits,
 };
 use soyeht_writing::SectionEntryInput;
-use std::path::Path;
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
-impl Core {
-    pub(super) fn writing_section_list(&self, params: &Value) -> Result<Value> {
-        let request: WritingSectionListParams = serde_json::from_value(params.clone())
-            .map_err(|_| errors::invalid("Invalid writing section list parameters"))?;
-        if request.limit == 0 || request.limit as usize > limits::WRITING_SECTION_ENTRIES {
-            return Err(errors::invalid("Invalid writing section page limit"));
-        }
-        let workspace = crate::model::workspace(&self.store, &request.workspace_id)?;
-        let folder = soyeht_writing::folder_for(&request.section);
-        let mut inputs = Vec::new();
-        for file in self.editor.project_files(Path::new(&workspace.path))? {
-            if !Path::new(&file.relative).starts_with(folder) {
-                continue;
+pub struct PreparedWritingSectionList {
+    request: WritingSectionListParams,
+    workspace_root: PathBuf,
+}
+
+pub struct ScannedWritingSectionList {
+    request: WritingSectionListParams,
+    files: Vec<crate::editor::ProjectFile>,
+}
+
+impl PreparedWritingSectionList {
+    pub(crate) fn scan(self) -> Result<ScannedWritingSectionList> {
+        let workspace_root = fs::canonicalize(&self.workspace_root).map_err(errors::io)?;
+        let folder = soyeht_writing::folder_for(&self.request.section);
+        let section_root = match fs::canonicalize(workspace_root.join(folder)) {
+            Ok(path) => path,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Ok(ScannedWritingSectionList {
+                    request: self.request,
+                    files: Vec::new(),
+                });
             }
-            let opened = self
+            Err(error) => return Err(errors::io(error)),
+        };
+        if !section_root.starts_with(&workspace_root) {
+            return Err(errors::invalid(
+                "Writing section folder must stay within the workspace",
+            ));
+        }
+        let mut files =
+            crate::editor::enumerate_project_files(&section_root).map_err(errors::io)?;
+        for file in &mut files {
+            file.relative = format!("{folder}/{}", file.relative);
+        }
+        Ok(ScannedWritingSectionList {
+            request: self.request,
+            files,
+        })
+    }
+}
+
+impl ScannedWritingSectionList {
+    pub(crate) fn finish(self, core: &Core) -> Result<Value> {
+        let mut inputs = Vec::new();
+        for file in self.files {
+            let opened = core
                 .store
-                .editor_file_for_path(&request.workspace_id, &file.relative)
+                .editor_file_for_path(&self.request.workspace_id, &file.relative)
                 .map_err(errors::storage)?;
             inputs.push(SectionEntryInput {
                 path: file.relative.clone(),
@@ -37,9 +71,9 @@ impl Core {
                 return Err(errors::Error::Writing(soyeht_writing::Error::SectionLimit));
             }
         }
-        let entries = soyeht_writing::section_entries(request.section, inputs)?;
-        let start = cursor_start(&entries, request.cursor.as_deref())?;
-        let limit = request.limit as usize;
+        let entries = soyeht_writing::section_entries(self.request.section, inputs)?;
+        let start = cursor_start(&entries, self.request.cursor.as_deref())?;
+        let limit = self.request.limit as usize;
         let end = start.saturating_add(limit).min(entries.len());
         let page = entries[start..end].to_vec();
         let next_cursor = (end < entries.len())
@@ -50,6 +84,24 @@ impl Core {
             next_cursor,
         })
         .map_err(|_| errors::internal("Writing section list cannot be encoded"))
+    }
+}
+
+impl Core {
+    pub(crate) fn prepare_writing_section_list(
+        &self,
+        params: &Value,
+    ) -> Result<PreparedWritingSectionList> {
+        let request: WritingSectionListParams = serde_json::from_value(params.clone())
+            .map_err(|_| errors::invalid("Invalid writing section list parameters"))?;
+        if request.limit == 0 || request.limit as usize > limits::WRITING_SECTION_ENTRIES {
+            return Err(errors::invalid("Invalid writing section page limit"));
+        }
+        let workspace = crate::model::workspace(&self.store, &request.workspace_id)?;
+        Ok(PreparedWritingSectionList {
+            request,
+            workspace_root: workspace.path.into(),
+        })
     }
 
     pub(super) fn writing_structure(&self, connection: &str, params: &Value) -> Result<Value> {
@@ -70,11 +122,16 @@ impl Core {
             elements,
             variants: record.sidecar.line_variants,
             beats: record.sidecar.beat_cards,
+            word_count: word_count(text),
             truncated: false,
         };
         serde_json::to_value(result)
             .map_err(|_| errors::internal("Writing structure cannot be encoded"))
     }
+}
+
+fn word_count(text: &str) -> u32 {
+    u32::try_from(text.split_whitespace().count()).unwrap_or(u32::MAX)
 }
 
 fn structure(
@@ -150,4 +207,69 @@ fn timestamp(value: i64) -> String {
     chrono::DateTime::from_timestamp_millis(value)
         .map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
         .unwrap_or_else(|| "1970-01-01T00:00:00.000Z".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soyeht_protocol::WritingSection;
+    use std::os::unix::fs::PermissionsExt;
+
+    struct Fixture {
+        root: PathBuf,
+        protected: PathBuf,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "soyeht-writing-section-scope-{}",
+                uuid::Uuid::new_v4()
+            ));
+            let protected = root.join("Pictures/Photos Library.photoslibrary");
+            fs::create_dir_all(root.join("Writing/Texts/Research")).unwrap();
+            fs::create_dir_all(&protected).unwrap();
+            fs::write(root.join("Writing/Texts/Research/notes.md"), "# Notes\n").unwrap();
+            fs::write(protected.join("private.md"), "private\n").unwrap();
+            fs::set_permissions(&protected, fs::Permissions::from_mode(0o000)).unwrap();
+            Self { root, protected }
+        }
+
+        fn prepared(&self, section: WritingSection) -> PreparedWritingSectionList {
+            PreparedWritingSectionList {
+                request: WritingSectionListParams {
+                    workspace_id: "workspace".into(),
+                    section,
+                    cursor: None,
+                    limit: 50,
+                },
+                workspace_root: self.root.clone(),
+            }
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.protected, fs::Permissions::from_mode(0o700));
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn section_scan_never_visits_a_protected_workspace_sibling() {
+        let fixture = Fixture::new();
+        let scanned = fixture.prepared(WritingSection::Texts).scan().unwrap();
+        assert_eq!(scanned.files.len(), 1);
+        assert_eq!(scanned.files[0].relative, "Writing/Texts/Research/notes.md");
+    }
+
+    #[test]
+    fn missing_section_folder_is_an_empty_page() {
+        let fixture = Fixture::new();
+        let scanned = fixture
+            .prepared(WritingSection::Screenplays)
+            .scan()
+            .unwrap();
+        assert!(scanned.files.is_empty());
+    }
 }

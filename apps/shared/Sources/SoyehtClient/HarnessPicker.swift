@@ -3,15 +3,17 @@ import SoyehtProtocol
 
 public enum HarnessPickerGroup: Int, CaseIterable, Sendable {
   case ready
-  case needsSetup
-  case catalogue
+  case notChecked
+  case signIn
+  case checkSetup
   case unavailable
 
   public var title: String {
     switch self {
     case .ready: "Ready"
-    case .needsSetup: "Needs setup"
-    case .catalogue: "Available from catalogue"
+    case .notChecked: "Not checked"
+    case .signIn: "Sign in"
+    case .checkSetup: "Check setup"
     case .unavailable: "Not installed"
     }
   }
@@ -42,6 +44,8 @@ public enum ModelPickerContentState: Sendable, Equatable {
 }
 
 public enum HarnessPickerModel {
+  public static let preferredHarnessKey = "harness.preferredId"
+
   public static func contentState(
     harnesses: [HarnessInfo], query: String, loading: Bool
   ) -> HarnessPickerContentState {
@@ -83,12 +87,18 @@ public enum HarnessPickerModel {
   }
 
   public static func defaultHarness(
-    in harnesses: [HarnessInfo], excluding excludedId: String? = nil
+    in harnesses: [HarnessInfo], excluding excludedId: String? = nil,
+    preferredId: String? = nil
   ) -> HarnessInfo? {
-    sections(harnesses)
-      .filter { $0.group == .ready || $0.group == .needsSetup }
-      .flatMap(\.items)
-      .first { $0.id != excludedId }
+    let candidates = harnesses.filter { $0.available && $0.id != excludedId }
+    if let preferredId, let preferred = candidates.first(where: { $0.id == preferredId }) {
+      return preferred
+    }
+    return candidates.filter { setupState(for: $0) == .ready }.sorted {
+      let left = Int64($0.lastReadyAtMs ?? "") ?? 0
+      let right = Int64($1.lastReadyAtMs ?? "") ?? 0
+      return left == right ? ordered($0, $1) : left > right
+    }.first
   }
 
   public static func setupState(for harness: HarnessInfo) -> HarnessSetupState {
@@ -97,20 +107,15 @@ public enum HarnessPickerModel {
     if harness.capabilities.contains(where: { $0.result == .unauthenticated }) {
       return .sign_in
     }
-    if harness.capabilities.contains(where: { $0.result == .inconclusive }) {
-      return .check_setup
-    }
-    return .ready
+    return .not_checked
   }
 
   public static func pickerGroup(for harness: HarnessInfo) -> HarnessPickerGroup {
-    let installed = harness.installed ?? harness.available
-    if !installed {
-      return harness.available ? .catalogue : .unavailable
-    }
     switch setupState(for: harness) {
     case .ready: return .ready
-    case .sign_in, .check_setup: return .needsSetup
+    case .not_checked: return .notChecked
+    case .sign_in: return .signIn
+    case .check_setup: return .checkSetup
     case .not_installed: return .unavailable
     }
   }
@@ -118,9 +123,35 @@ public enum HarnessPickerModel {
   public static func statusLabel(for harness: HarnessInfo) -> String {
     switch setupState(for: harness) {
     case .ready: "Ready"
+    case .not_checked: "Not checked"
     case .sign_in: "Sign in"
     case .check_setup: "Check setup"
     case .not_installed: "Not installed"
+    }
+  }
+
+  public static func statusReason(for harness: HarnessInfo) -> String {
+    let reason = harness.setupReason ?? fallbackReason(for: setupState(for: harness))
+    return switch reason {
+    case .never_started: "Installed; this agent has not been started yet. You can start it now."
+    case .executable_missing: "Executable not found on the engine's launch PATH."
+    case .registry_package_unverified:
+      "The adapter runner is available; its package has not been verified locally. Starting it will check the package."
+    case .authentication_required: "This agent requires sign-in before it can start."
+    case .session_failed: "The agent started, but its session failed. Try starting it again."
+    case .launch_failed: "The agent could not start. Check its installation and try again."
+    case .environment_unavailable: "The engine could not read the launch environment."
+    case nil: "An agent session opened successfully."
+    }
+  }
+
+  private static func fallbackReason(for state: HarnessSetupState) -> HarnessSetupReason? {
+    switch state {
+    case .ready: nil
+    case .not_checked: .never_started
+    case .sign_in: .authentication_required
+    case .check_setup: .launch_failed
+    case .not_installed: .executable_missing
     }
   }
 

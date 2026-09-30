@@ -2,6 +2,6 @@
 
 | Provider | State | Source |
 | --- | --- | --- |
-| Claude | `ok` | Claude Code CLI |
+| Claude | `ok` | Claude Code cache (`cachedUsageUtilization`) |
 | Codex | `ok` | Codex app-server |
 | Cursor | `ok` | Cursor current period |

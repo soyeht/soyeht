@@ -97,7 +97,6 @@ impl Core {
         state.initialized = None;
         state.phase = Phase::Initializing;
         state.cancel_at_ms = None;
-        state.pending_policy = None;
         state.initial_option = None;
         state.initial_config_failed = false;
         state.acknowledged_offset = 0;

@@ -2,56 +2,219 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-private enum PreferencesSection {
+private enum PreferencesNavigationItem: CaseIterable, Identifiable {
+  case general
   case appearance
   case harnesses
   case usage
-  case editor
+  case engine
+  case phone
+  case tasks
   case links
+  case editor
+
+  var id: Self { self }
+
+  var title: String {
+    switch self {
+    case .general: "General"
+    case .appearance: "Appearance"
+    case .harnesses: "Harnesses"
+    case .usage: "Usage"
+    case .engine: "Engine"
+    case .phone: "Phone"
+    case .tasks: "Tasks & loops"
+    case .editor: "Shortcuts"
+    case .links: "Links"
+    }
+  }
+
+  var icon: String {
+    switch self {
+    case .general: "gearshape"
+    case .appearance: "paintpalette"
+    case .harnesses: "cpu"
+    case .usage: "gauge.with.dots.needle.50percent"
+    case .engine: "memorychip"
+    case .phone: "iphone"
+    case .tasks: "list.bullet.clipboard"
+    case .editor: "keyboard"
+    case .links: "link"
+    }
+  }
+
+  var hasDetail: Bool {
+    switch self {
+    case .general, .appearance, .harnesses, .usage, .editor, .links: true
+    case .engine, .phone, .tasks: false
+    }
+  }
 }
 
 struct PreferencesPanel: View {
   @Bindable var client: EngineClient
-  @State private var section: PreferencesSection
+  @State private var section: PreferencesNavigationItem
+  @State private var compactSection: PreferencesNavigationItem?
   @State private var selectedUsageProvider: UsageProvider?
 
   init(client: EngineClient, initialUsageProvider: UsageProvider? = nil) {
     self.client = client
     _section = State(initialValue: initialUsageProvider == nil ? .harnesses : .usage)
+    _compactSection = State(initialValue: initialUsageProvider == nil ? nil : .usage)
     _selectedUsageProvider = State(initialValue: initialUsageProvider)
   }
 
   var body: some View {
-    HStack(spacing: MacTheme.Space.x10) {
-      PreferencesSidebar(client: client, selection: $section)
-      switch section {
-      case .appearance: ThemePreferencesPanel()
-      case .harnesses: PreferencesHarnesses(client: client)
-      case .usage:
-        UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
-      case .editor: EditorInputPreferencesPanel()
-      case .links: WebLinkPreferencesPanel()
+    MacSheetSurface(kind: .preferences) { layoutPlan in
+      Group {
+        if layoutPlan.navigation == .stack {
+          compactPreferences
+        } else {
+          HStack(spacing: MacTheme.Space.x10) {
+            PreferencesSidebar(client: client, selection: $section)
+            preferenceDetail(section)
+          }
+        }
       }
+      .padding(MacTheme.Space.x10)
+      .foregroundStyle(MacTheme.ink)
+      .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+      .onAppear { refreshCatalogues() }
+      .onChange(of: client.harnesses.map(\.id)) { _, _ in refreshCatalogues() }
     }
-    .padding(MacTheme.Space.x10)
-    .frame(width: 1080, height: 700)
-    .foregroundStyle(MacTheme.ink)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
-    .onAppear { refreshCatalogues() }
-    .onChange(of: client.harnesses.map(\.id)) { _, _ in refreshCatalogues() }
+  }
+
+  @ViewBuilder private var compactPreferences: some View {
+    if let compactSection {
+      VStack(spacing: MacTheme.Space.x10) {
+        HStack(spacing: MacTheme.Space.x10) {
+          Button {
+            self.compactSection = nil
+          } label: {
+            HStack(spacing: MacTheme.Space.x10) {
+              Image(systemName: "chevron.left")
+                .frame(width: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationIconWidth))
+              Text("Preferences")
+            }
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            .frame(minHeight: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationRowHeight))
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("preferences-back")
+          Spacer()
+          Text(compactSection.title)
+            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        }
+        .padding(.horizontal, MacTheme.Space.x8)
+        preferenceDetail(compactSection)
+      }
+    } else {
+      ScrollView(.vertical) {
+        VStack(alignment: .leading, spacing: MacTheme.Space.x6) {
+          Text("Preferences")
+            .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+            .padding(.horizontal, MacTheme.Space.x8)
+          ForEach(PreferencesNavigationItem.allCases) { item in
+            if item.hasDetail { compactButton(item) } else { compactPlaceholder(item) }
+          }
+        }
+        .padding(MacTheme.Space.x8)
+      }
+      .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    }
+  }
+
+  private func compactButton(_ candidate: PreferencesNavigationItem) -> some View {
+    Button {
+      section = candidate
+      compactSection = candidate
+    } label: {
+      HStack(spacing: MacTheme.Space.x10) {
+        Image(systemName: candidate.icon)
+          .frame(width: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationIconWidth))
+        Text(candidate.title)
+        Spacer()
+        Image(systemName: "chevron.right")
+      }
+      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+      .foregroundStyle(MacTheme.ink)
+      .padding(.horizontal, MacTheme.Space.x12)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationRowHeight)
+      )
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func compactPlaceholder(_ item: PreferencesNavigationItem) -> some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      Image(systemName: item.icon)
+        .frame(width: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationIconWidth))
+      Text(item.title)
+      Spacer()
+    }
+    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+    .foregroundStyle(MacTheme.muted)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(
+      maxWidth: .infinity,
+      minHeight: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationRowHeight))
+  }
+
+  @ViewBuilder private func preferenceDetail(_ selected: PreferencesNavigationItem) -> some View {
+    switch selected {
+    case .general: GeneralPreferencesPanel()
+    case .appearance: ThemePreferencesPanel()
+    case .harnesses: PreferencesHarnesses(client: client)
+    case .usage:
+      UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
+    case .editor: EditorInputPreferencesPanel()
+    case .links: WebLinkPreferencesPanel()
+    case .engine, .phone, .tasks: EmptyView()
+    }
   }
 
   private func refreshCatalogues() {
     client.refreshHarnesses()
+    client.refreshDefaultPermissionModes()
     for harness in client.harnesses where harness.available {
       client.refreshCatalogue(harness: harness.id)
     }
   }
 }
 
+private struct GeneralPreferencesPanel: View {
+  @Environment(AgentAttentionNotifications.self) private var notifications
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
+      Text("Agent attention")
+        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+      Toggle(
+        "System alerts and Dock badges when agents need input",
+        isOn: Binding(
+          get: { notifications.enabled },
+          set: { enabled in Task { await notifications.setEnabled(enabled) } })
+      )
+      .tint(MacTheme.accent)
+      .accessibilityIdentifier("agent-attention-notifications")
+      Text(
+        "Off by default. Tabs and the app bar still show requests; Dock badges depend on macOS notification settings."
+      )
+      .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+      .foregroundStyle(MacTheme.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .padding(MacTheme.Space.x14)
+  }
+}
+
 private struct PreferencesSidebar: View {
   @Bindable var client: EngineClient
-  @Binding var selection: PreferencesSection
+  @Binding var selection: PreferencesNavigationItem
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
@@ -59,15 +222,9 @@ private struct PreferencesSidebar: View {
         .font(MacTheme.chrome(16, weight: .bold))
         .padding(.horizontal, MacTheme.Space.x4)
       Color.clear.frame(height: MacTheme.Space.x8)
-      sidebarRow("General", icon: "gearshape")
-      sidebarButton("Appearance", icon: "paintpalette", section: .appearance)
-      sidebarButton("Harnesses", icon: "cpu", section: .harnesses)
-      sidebarButton("Usage", icon: "gauge.with.dots.needle.50percent", section: .usage)
-      sidebarRow("Engine", icon: "memorychip")
-      sidebarRow("Phone", icon: "iphone")
-      sidebarRow("Tasks & loops", icon: "list.bullet.clipboard")
-      sidebarButton("Links", icon: "link", section: .links)
-      sidebarButton("Shortcuts", icon: "keyboard", section: .editor)
+      ForEach(PreferencesNavigationItem.allCases) { item in
+        if item.hasDetail { sidebarButton(item) } else { sidebarRow(item) }
+      }
       Spacer()
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
         Text("Soyeht \(appVersion) · Dev profile")
@@ -85,13 +242,15 @@ private struct PreferencesSidebar: View {
     .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 
-  private func sidebarRow(_ title: String, icon: String, selected: Bool = false) -> some View {
+  private func sidebarRow(
+    _ item: PreferencesNavigationItem, selected: Bool = false
+  ) -> some View {
     HStack(spacing: MacTheme.Space.x10) {
-      Image(systemName: icon)
+      Image(systemName: item.icon)
         .font(.system(size: 13, weight: .semibold))
         .frame(width: 15, height: 15)
         .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
-      Text(title)
+      Text(item.title)
         .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: selected ? .bold : .semibold))
         .foregroundStyle(selected ? MacTheme.ink : MacTheme.secondary)
       Spacer()
@@ -106,13 +265,11 @@ private struct PreferencesSidebar: View {
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 
-  private func sidebarButton(
-    _ title: String, icon: String, section: PreferencesSection
-  ) -> some View {
+  private func sidebarButton(_ section: PreferencesNavigationItem) -> some View {
     Button {
       selection = section
     } label: {
-      sidebarRow(title, icon: icon, selected: selection == section)
+      sidebarRow(section, selected: selection == section)
     }
     .buttonStyle(.plain)
   }
@@ -336,8 +493,14 @@ private struct PreferencesHarnesses: View {
           ForEach(client.harnesses, id: \.id) { harness in
             HarnessPreferenceRow(
               harness: harness, catalogue: client.agentCatalogues[harness.id],
-              isDefault: harness.id == client.harnesses.first(where: \.available)?.id,
+              isDefault: harness.id
+                == HarnessPickerModel.defaultHarness(
+                  in: client.harnesses, preferredId: client.preferredHarnessId)?.id,
               customLaunch: client.customHarnesses.first { $0.id == harness.id },
+              defaultMode: Binding(
+                get: { client.defaultPermissionMode(harness: harness.id) },
+                set: { setDefaultMode($0, harness: harness.id) }),
+              makeDefault: { makeDefault(harness.id) },
               edit: edit, remove: { pendingRemoval = $0 })
           }
           if client.harnesses.isEmpty {
@@ -373,6 +536,22 @@ private struct PreferencesHarnesses: View {
       Button("Cancel", role: .cancel) { pendingRemoval = nil }
     } message: {
       Text("Open panes using this harness must be closed first.")
+    }
+  }
+
+  private func setDefaultMode(_ mode: String?, harness: String) {
+    Task { @MainActor in
+      do { try await client.setDefaultPermissionMode(mode, harness: harness) } catch {
+        client.problem = error.localizedDescription
+      }
+    }
+  }
+
+  private func makeDefault(_ harnessId: String) {
+    Task { @MainActor in
+      do { try await client.setPreferredHarness(harnessId) } catch {
+        client.problem = error.localizedDescription
+      }
     }
   }
 
@@ -430,8 +609,12 @@ private struct HarnessPreferenceRow: View {
   let catalogue: AgentCatalogue?
   let isDefault: Bool
   let customLaunch: HarnessLaunch?
+  /// The mode new panes of this harness start in; `nil` keeps the harness's own.
+  @Binding var defaultMode: String?
+  let makeDefault: () -> Void
   let edit: (HarnessLaunch) -> Void
   let remove: (HarnessLaunch) -> Void
+  @State private var showingStatus = false
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -439,7 +622,19 @@ private struct HarnessPreferenceRow: View {
       HStack(spacing: MacTheme.Space.x8) {
         PreferenceChip(icon: "cpu", text: modelLabel)
         PreferenceChip(icon: "gauge.with.dots.needle.50percent", text: effortLabel)
-        PreferenceChip(icon: "checkmark.shield", text: "Ask every time")
+        Menu {
+          PermissionModeChoices(modes: permissionModes, selection: $defaultMode)
+        } label: {
+          PreferenceChip(
+            icon: "checkmark.shield",
+            text: PermissionModeChoices.title(
+              modes: permissionModes, selection: defaultMode, preferred: nil))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Permission mode new \(harness.name) panes start in")
+        .accessibilityLabel("Default permission mode for \(harness.name)")
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       status
@@ -485,13 +680,38 @@ private struct HarnessPreferenceRow: View {
   }
 
   private var status: some View {
-    HStack(spacing: MacTheme.Space.x6) {
-      Circle().fill(statusColor).frame(width: 7, height: 7)
-      Text(statusLabel)
-        .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-        .foregroundStyle(MacTheme.secondary)
+    Button {
+      showingStatus = true
+    } label: {
+      HStack(spacing: MacTheme.Space.x6) {
+        Circle().fill(statusColor).frame(width: 7, height: 7)
+        Text(HarnessPickerModel.statusLabel(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+          .foregroundStyle(MacTheme.secondary)
+      }
+      .frame(width: 118, alignment: .leading)
+      .contentShape(Rectangle())
     }
-    .frame(width: 118, alignment: .leading)
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(harness.name): \(HarnessPickerModel.statusLabel(for: harness))")
+    .popover(isPresented: $showingStatus) {
+      VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
+        Text(HarnessPickerModel.statusLabel(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        Text(HarnessPickerModel.statusReason(for: harness))
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .fixedSize(horizontal: false, vertical: true)
+        if harness.available && !isDefault {
+          Button("Make default") {
+            makeDefault()
+            showingStatus = false
+          }
+          .buttonStyle(NeoPillButtonStyle())
+        }
+      }
+      .padding(MacTheme.Space.x16)
+      .frame(width: 260, alignment: .leading)
+    }
   }
 
   private var versionLabel: String {
@@ -521,27 +741,14 @@ private struct HarnessPreferenceRow: View {
 
   private var options: [ConfigOption] { catalogue?.options ?? harness.options }
 
-  private var statusLabel: String {
-    switch harness.setupState {
-    case .ready: return "ready"
-    case .not_installed: return "not installed"
-    case .sign_in: return "sign in"
-    case .check_setup: return "check setup"
-    case nil:
-      if !harness.available { return "not installed" }
-      if harness.capabilities.contains(where: { $0.result == .unauthenticated }) {
-        return "sign in"
-      }
-      if harness.capabilities.contains(where: { $0.result == .inconclusive }) {
-        return "check setup"
-      }
-      return "ready"
-    }
-  }
+  private var permissionModes: AgentPermissionModes? { AgentPermissionModes(options: options) }
 
   private var statusColor: Color {
-    if !harness.available { return MacTheme.muted }
-    return statusLabel == "ready" ? MacTheme.success : MacTheme.warning
+    switch HarnessPickerModel.setupState(for: harness) {
+    case .ready: MacTheme.success
+    case .sign_in, .check_setup: MacTheme.warning
+    case .not_checked, .not_installed: MacTheme.muted
+    }
   }
 }
 
@@ -610,7 +817,7 @@ private struct CustomHarnessEditor: View {
       }
     }
     .padding(22)
-    .frame(width: 560)
+    .macSheetSurface(.harnessEditor)
     .foregroundStyle(MacTheme.ink)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
     .onExitCommand { isPresented = false }

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 import Foundation
 
 
@@ -134,6 +134,94 @@ public struct Actor: Codable, Sendable {
         self.`client` = `client`
         self.`deviceId` = `deviceId`
         self.`paneId` = `paneId`
+    }
+}
+
+public enum WorkspacePaneLayoutMode: String, Codable, Sendable {
+    case `automatic` = "automatic"
+    case `custom` = "custom"
+}
+
+public enum WorkspacePaneLayoutKind: String, Codable, Sendable {
+    case `terminal` = "terminal"
+    case `agent` = "agent"
+    case `editor` = "editor"
+    case `web` = "web"
+    case `text` = "text"
+    case `presentation` = "presentation"
+    case `screenplay` = "screenplay"
+    case `unknown_writing` = "unknown_writing"
+}
+
+public enum WorkspacePaneLayoutAxis: String, Codable, Sendable {
+    case `horizontal` = "horizontal"
+    case `vertical` = "vertical"
+}
+
+public struct WorkspacePaneLayoutLeaf: Codable, Sendable {
+    public var `paneId`: Id
+    public var `kind`: WorkspacePaneLayoutKind
+    public init(`paneId`: Id, `kind`: WorkspacePaneLayoutKind) {
+        self.`paneId` = `paneId`
+        self.`kind` = `kind`
+    }
+}
+
+public struct WorkspacePaneLayoutBranch: Codable, Sendable {
+    public var `weight`: Double
+    public var `node`: WorkspacePaneLayoutNode
+    public init(`weight`: Double, `node`: WorkspacePaneLayoutNode) {
+        self.`weight` = `weight`
+        self.`node` = `node`
+    }
+}
+
+public struct WorkspacePaneLayoutCompanion: Codable, Sendable {
+    public var `writingPaneId`: Id
+    public var `agentPaneId`: Id
+    public init(`writingPaneId`: Id, `agentPaneId`: Id) {
+        self.`writingPaneId` = `writingPaneId`
+        self.`agentPaneId` = `agentPaneId`
+    }
+}
+
+public struct WorkspacePaneLayoutSplit: Codable, Sendable {
+    public var `axis`: WorkspacePaneLayoutAxis
+    public var `children`: [WorkspacePaneLayoutBranch]
+    public var `companion`: WorkspacePaneLayoutCompanion?
+    public init(`axis`: WorkspacePaneLayoutAxis, `children`: [WorkspacePaneLayoutBranch], `companion`: WorkspacePaneLayoutCompanion? = nil) {
+        self.`axis` = `axis`
+        self.`children` = `children`
+        self.`companion` = `companion`
+    }
+}
+
+public enum WorkspacePaneLayoutNode: Codable, Sendable {
+    case v0(WorkspacePaneLayoutLeaf)
+    case v1(WorkspacePaneLayoutSplit)
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(WorkspacePaneLayoutLeaf.self) { self = .v0(value); return }
+        if let value = try? container.decode(WorkspacePaneLayoutSplit.self) { self = .v1(value); return }
+        throw DecodingError.dataCorruptedError(in: container, debugDescription: "No matching WorkspacePaneLayoutNode variant")
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .v0(let value): try container.encode(value)
+        case .v1(let value): try container.encode(value)
+        }
+    }
+}
+
+public struct WorkspacePaneLayoutEnvelope: Codable, Sendable {
+    public var `version`: UInt32
+    public var `mode`: WorkspacePaneLayoutMode
+    public var `tree`: WorkspacePaneLayoutNode?
+    public init(`version`: UInt32, `mode`: WorkspacePaneLayoutMode, `tree`: WorkspacePaneLayoutNode? = nil) {
+        self.`version` = `version`
+        self.`mode` = `mode`
+        self.`tree` = `tree`
     }
 }
 
@@ -409,6 +497,24 @@ public struct WorkspaceRenameResult: Codable, Sendable {
     }
 }
 
+public struct WorkspaceLayoutSetParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `layout`: WorkspacePaneLayoutEnvelope
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `layout`: WorkspacePaneLayoutEnvelope, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`layout` = `layout`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct WorkspaceLayoutSetResult: Codable, Sendable {
+    public var `workspace`: Workspace
+    public init(`workspace`: Workspace) {
+        self.`workspace` = `workspace`
+    }
+}
+
 public struct WorkspaceCloseParams: Codable, Sendable {
     public var `workspaceId`: Id
     public var `idempotencyKey`: Id
@@ -452,13 +558,13 @@ public struct PaneCreateParams: Codable, Sendable {
     public var `harness`: Id?
     public var `model`: String?
     public var `effort`: String?
-    public var `permission`: PermissionMode?
+    public var `permissionMode`: Id?
     public var `url`: String?
     public var `incognito`: Bool?
     public var `path`: String?
     public var `writingKind`: WritingKind?
     public var `writingSection`: WritingSection?
-    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil, `url`: String? = nil, `incognito`: Bool? = nil, `path`: String? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
+    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permissionMode`: Id? = nil, `url`: String? = nil, `incognito`: Bool? = nil, `path`: String? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
         self.`workspaceId` = `workspaceId`
         self.`mode` = `mode`
         self.`cwd` = `cwd`
@@ -469,7 +575,7 @@ public struct PaneCreateParams: Codable, Sendable {
         self.`harness` = `harness`
         self.`model` = `model`
         self.`effort` = `effort`
-        self.`permission` = `permission`
+        self.`permissionMode` = `permissionMode`
         self.`url` = `url`
         self.`incognito` = `incognito`
         self.`path` = `path`
@@ -917,6 +1023,19 @@ public struct WorkspaceRenamedEvent: Codable, Sendable {
     }
 }
 
+public struct WorkspaceLayoutUpdatedEvent: Codable, Sendable {
+    public var `workspace`: Workspace
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `actor`: Actor?
+    public init(`workspace`: Workspace, `eventId`: Decimal, `at`: String, `actor`: Actor? = nil) {
+        self.`workspace` = `workspace`
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`actor` = `actor`
+    }
+}
+
 public struct WorkspaceClosedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
@@ -932,10 +1051,14 @@ public struct PaneCreatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
     public var `pane`: Pane
-    public init(`eventId`: Decimal, `at`: String, `pane`: Pane) {
+    public var `file`: FileDocument?
+    public var `writingDocument`: WritingDocument?
+    public init(`eventId`: Decimal, `at`: String, `pane`: Pane, `file`: FileDocument? = nil, `writingDocument`: WritingDocument? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`pane` = `pane`
+        self.`file` = `file`
+        self.`writingDocument` = `writingDocument`
     }
 }
 
@@ -1242,12 +1365,6 @@ public struct ClientFocus: Codable, Sendable {
     }
 }
 
-public enum PermissionMode: String, Codable, Sendable {
-    case `ask` = "ask"
-    case `accept_edits` = "accept_edits"
-    case `allow_all` = "allow_all"
-}
-
 public enum PromptOrigin: String, Codable, Sendable {
     case `human` = "human"
     case `automatic` = "automatic"
@@ -1274,6 +1391,7 @@ public enum TranscriptKind: String, Codable, Sendable {
     case `plan` = "plan"
     case `usage` = "usage"
     case `system` = "system"
+    case `handover` = "handover"
 }
 
 public enum PermissionOptionKind: String, Codable, Sendable {
@@ -1339,11 +1457,6 @@ public enum SessionRecovery: String, Codable, Sendable {
     case `needs_login` = "needs_login"
 }
 
-public enum ConfigOperationKind: String, Codable, Sendable {
-    case `config` = "config"
-    case `yolo` = "yolo"
-}
-
 public enum ConfigValue: Codable, Sendable {
     case v0(String)
     case v1(Bool)
@@ -1366,10 +1479,12 @@ public struct ConfigChoice: Codable, Sendable {
     public var `value`: Id
     public var `name`: String
     public var `description`: String?
-    public init(`value`: Id, `name`: String, `description`: String? = nil) {
+    public var `kind`: String?
+    public init(`value`: Id, `name`: String, `description`: String? = nil, `kind`: String? = nil) {
         self.`value` = `value`
         self.`name` = `name`
         self.`description` = `description`
+        self.`kind` = `kind`
     }
 }
 
@@ -1394,13 +1509,11 @@ public struct ConfigOption: Codable, Sendable {
 
 public struct ConfigOperation: Codable, Sendable {
     public var `operationId`: Id
-    public var `kind`: ConfigOperationKind
     public var `configId`: Id
     public var `value`: ConfigValue
     public var `startedAt`: String
-    public init(`operationId`: Id, `kind`: ConfigOperationKind, `configId`: Id, `value`: ConfigValue, `startedAt`: String) {
+    public init(`operationId`: Id, `configId`: Id, `value`: ConfigValue, `startedAt`: String) {
         self.`operationId` = `operationId`
-        self.`kind` = `kind`
         self.`configId` = `configId`
         self.`value` = `value`
         self.`startedAt` = `startedAt`
@@ -1415,7 +1528,8 @@ public struct PromptItem: Codable, Sendable {
     public var `queuedAt`: String
     public var `generation`: UInt32?
     public var `attachments`: [AttachmentRef]?
-    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil) {
+    public var `agentMessage`: AgentMessageSource?
+    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil, `agentMessage`: AgentMessageSource? = nil) {
         self.`promptId` = `promptId`
         self.`text` = `text`
         self.`origin` = `origin`
@@ -1423,6 +1537,52 @@ public struct PromptItem: Codable, Sendable {
         self.`queuedAt` = `queuedAt`
         self.`generation` = `generation`
         self.`attachments` = `attachments`
+        self.`agentMessage` = `agentMessage`
+    }
+}
+
+public struct AgentMessageSource: Codable, Sendable {
+    public var `paneId`: Id
+    public var `name`: String
+    public var `harness`: String
+    public init(`paneId`: Id, `name`: String, `harness`: String) {
+        self.`paneId` = `paneId`
+        self.`name` = `name`
+        self.`harness` = `harness`
+    }
+}
+
+public struct AgentListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct AgentListResult: Codable, Sendable {
+    public var `items`: [AgentMessageSource]
+    public init(`items`: [AgentMessageSource]) {
+        self.`items` = `items`
+    }
+}
+
+public struct AgentMessageParams: Codable, Sendable {
+    public var `targetPaneId`: Id
+    public var `text`: String
+    public var `idempotencyKey`: Id
+    public init(`targetPaneId`: Id, `text`: String, `idempotencyKey`: Id) {
+        self.`targetPaneId` = `targetPaneId`
+        self.`text` = `text`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AgentMessageResult: Codable, Sendable {
+    public var `promptId`: Id
+    public var `queued`: Bool
+    public init(`promptId`: Id, `queued`: Bool) {
+        self.`promptId` = `promptId`
+        self.`queued` = `queued`
     }
 }
 
@@ -1437,6 +1597,43 @@ public struct PermissionOption: Codable, Sendable {
     }
 }
 
+public struct PermissionFileChange: Codable, Sendable {
+    public var `path`: String
+    public var `oldText`: String?
+    public var `newText`: String
+    public init(`path`: String, `oldText`: String? = nil, `newText`: String) {
+        self.`path` = `path`
+        self.`oldText` = `oldText`
+        self.`newText` = `newText`
+    }
+}
+
+public struct PermissionToolArgument: Codable, Sendable {
+    public var `name`: String
+    public var `value`: String
+    public init(`name`: String, `value`: String) {
+        self.`name` = `name`
+        self.`value` = `value`
+    }
+}
+
+public struct PermissionPresentation: Codable, Sendable {
+    public var `targetPath`: String?
+    public var `command`: String?
+    public var `executionDetails`: [String]?
+    public var `toolArguments`: [PermissionToolArgument]?
+    public var `fileChanges`: [PermissionFileChange]
+    public var `previewOmitted`: Bool
+    public init(`targetPath`: String? = nil, `command`: String? = nil, `executionDetails`: [String]? = nil, `toolArguments`: [PermissionToolArgument]? = nil, `fileChanges`: [PermissionFileChange], `previewOmitted`: Bool) {
+        self.`targetPath` = `targetPath`
+        self.`command` = `command`
+        self.`executionDetails` = `executionDetails`
+        self.`toolArguments` = `toolArguments`
+        self.`fileChanges` = `fileChanges`
+        self.`previewOmitted` = `previewOmitted`
+    }
+}
+
 public struct PermissionRequest: Codable, Sendable {
     public var `requestId`: Id
     public var `paneId`: Id
@@ -1444,17 +1641,19 @@ public struct PermissionRequest: Codable, Sendable {
     public var `promptId`: Id
     public var `title`: String
     public var `detail`: String
+    public var `presentation`: PermissionPresentation?
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
     public var `kind`: PermissionRequestKind?
     public var `domain`: String?
-    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
+    public init(`requestId`: Id, `paneId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`requestId` = `requestId`
         self.`paneId` = `paneId`
         self.`generation` = `generation`
         self.`promptId` = `promptId`
         self.`title` = `title`
         self.`detail` = `detail`
+        self.`presentation` = `presentation`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
         self.`kind` = `kind`
@@ -1497,10 +1696,6 @@ public struct AgentSession: Codable, Sendable {
     public var `sessionId`: Id?
     public var `options`: [ConfigOption]
     public var `authMethods`: [AuthMethod]
-    public var `permission`: PermissionMode
-    public var `yolo`: Bool
-    public var `previousPermission`: PermissionMode?
-    public var `effectiveMode`: String?
     public var `operation`: ConfigOperation?
     public var `queue`: [QueuedPromptSummary]
     public var `draft`: Bool
@@ -1509,17 +1704,13 @@ public struct AgentSession: Codable, Sendable {
     public var `queuePaused`: Bool?
     public var `role`: AgentPaneRole
     public var `harnessSwitch`: AgentHarnessSwitch?
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `permission`: PermissionMode, `yolo`: Bool, `previousPermission`: PermissionMode? = nil, `effectiveMode`: String? = nil, `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `silentSince`: String? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `silentSince`: String? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
         self.`sessionId` = `sessionId`
         self.`options` = `options`
         self.`authMethods` = `authMethods`
-        self.`permission` = `permission`
-        self.`yolo` = `yolo`
-        self.`previousPermission` = `previousPermission`
-        self.`effectiveMode` = `effectiveMode`
         self.`operation` = `operation`
         self.`queue` = `queue`
         self.`draft` = `draft`
@@ -1567,7 +1758,9 @@ public struct HarnessInfo: Codable, Sendable {
     public var `authMethods`: [AuthMethod]
     public var `source`: HarnessSource?
     public var `setupState`: HarnessSetupState?
-    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil) {
+    public var `setupReason`: HarnessSetupReason?
+    public var `lastReadyAtMs`: Decimal?
+    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil, `setupReason`: HarnessSetupReason? = nil, `lastReadyAtMs`: Decimal? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`available` = `available`
@@ -1579,6 +1772,8 @@ public struct HarnessInfo: Codable, Sendable {
         self.`authMethods` = `authMethods`
         self.`source` = `source`
         self.`setupState` = `setupState`
+        self.`setupReason` = `setupReason`
+        self.`lastReadyAtMs` = `lastReadyAtMs`
     }
 }
 
@@ -1710,7 +1905,8 @@ public struct TranscriptMessage: Codable, Sendable {
     public var `terminal`: TerminalOutput?
     public var `plan`: [PlanEntry]?
     public var `usage`: TokenUsage?
-    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil) {
+    public var `agentMessage`: AgentMessageSource?
+    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil) {
         self.`localId` = `localId`
         self.`generation` = `generation`
         self.`seq` = `seq`
@@ -1723,6 +1919,7 @@ public struct TranscriptMessage: Codable, Sendable {
         self.`terminal` = `terminal`
         self.`plan` = `plan`
         self.`usage` = `usage`
+        self.`agentMessage` = `agentMessage`
     }
 }
 
@@ -1986,26 +2183,6 @@ public struct PaneHarnessSwitchFailedEvent: Codable, Sendable {
     }
 }
 
-public struct PaneYoloParams: Codable, Sendable {
-    public var `paneId`: Id
-    public var `on`: Bool
-    public var `idempotencyKey`: Id
-    public init(`paneId`: Id, `on`: Bool, `idempotencyKey`: Id) {
-        self.`paneId` = `paneId`
-        self.`on` = `on`
-        self.`idempotencyKey` = `idempotencyKey`
-    }
-}
-
-public struct PaneYoloResult: Codable, Sendable {
-    public var `effectiveMode`: PermissionMode
-    public var `on`: Bool
-    public init(`effectiveMode`: PermissionMode, `on`: Bool) {
-        self.`effectiveMode` = `effectiveMode`
-        self.`on` = `on`
-    }
-}
-
 public struct PaneAuthStartParams: Codable, Sendable {
     public var `paneId`: Id
     public var `authMethodId`: Id?
@@ -2231,11 +2408,12 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
     public var `promptId`: Id
     public var `title`: String
     public var `detail`: String
+    public var `presentation`: PermissionPresentation?
     public var `options`: [PermissionOption]
     public var `expiresAt`: String
     public var `kind`: PermissionRequestKind?
     public var `domain`: String?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2244,6 +2422,7 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
         self.`promptId` = `promptId`
         self.`title` = `title`
         self.`detail` = `detail`
+        self.`presentation` = `presentation`
         self.`options` = `options`
         self.`expiresAt` = `expiresAt`
         self.`kind` = `kind`
@@ -2410,6 +2589,7 @@ public struct PaneAuthFinishedEvent: Codable, Sendable {
 
 public enum AgentMessageUpdateKind: String, Codable, Sendable {
     case `agent_message_chunk` = "agent_message_chunk"
+    case `system_message` = "system_message"
 }
 
 public struct AgentMessageUpdate: Codable, Sendable {
@@ -2818,13 +2998,13 @@ public struct TaskExecutor: Codable, Sendable {
     public var `harness`: Id?
     public var `model`: String?
     public var `effort`: String?
-    public var `permission`: PermissionMode?
-    public init(`workspaceDefault`: Bool, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permission`: PermissionMode? = nil) {
+    public var `permissionMode`: Id?
+    public init(`workspaceDefault`: Bool, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permissionMode`: Id? = nil) {
         self.`workspaceDefault` = `workspaceDefault`
         self.`harness` = `harness`
         self.`model` = `model`
         self.`effort` = `effort`
-        self.`permission` = `permission`
+        self.`permissionMode` = `permissionMode`
     }
 }
 
@@ -3036,11 +3216,11 @@ public struct TaskCreateParams: Codable, Sendable {
     public var `executor`: TaskExecutor?
     public var `priority`: TaskPriority?
     public var `createWorktree`: Bool?
-    public var `permission`: PermissionMode?
+    public var `permissionMode`: Id?
     public var `dependencies`: [String]?
     public var `dispatch`: Bool?
     public var `idempotencyKey`: Id
-    public init(`workspaceId`: Id, `title`: String, `description`: String? = nil, `howToVerify`: String? = nil, `mustNotChange`: String, `executor`: TaskExecutor? = nil, `priority`: TaskPriority? = nil, `createWorktree`: Bool? = nil, `permission`: PermissionMode? = nil, `dependencies`: [String]? = nil, `dispatch`: Bool? = nil, `idempotencyKey`: Id) {
+    public init(`workspaceId`: Id, `title`: String, `description`: String? = nil, `howToVerify`: String? = nil, `mustNotChange`: String, `executor`: TaskExecutor? = nil, `priority`: TaskPriority? = nil, `createWorktree`: Bool? = nil, `permissionMode`: Id? = nil, `dependencies`: [String]? = nil, `dispatch`: Bool? = nil, `idempotencyKey`: Id) {
         self.`workspaceId` = `workspaceId`
         self.`title` = `title`
         self.`description` = `description`
@@ -3049,7 +3229,7 @@ public struct TaskCreateParams: Codable, Sendable {
         self.`executor` = `executor`
         self.`priority` = `priority`
         self.`createWorktree` = `createWorktree`
-        self.`permission` = `permission`
+        self.`permissionMode` = `permissionMode`
         self.`dependencies` = `dependencies`
         self.`dispatch` = `dispatch`
         self.`idempotencyKey` = `idempotencyKey`
@@ -3734,6 +3914,13 @@ public enum UsageState: String, Codable, Sendable {
     case `unavailable` = "unavailable"
 }
 
+public enum UsageUnavailableReason: String, Codable, Sendable {
+    case `not_checked` = "not_checked"
+    case `tool_not_found` = "tool_not_found"
+    case `app_server_failed` = "app_server_failed"
+    case `invalid_response` = "invalid_response"
+}
+
 public enum UsageSource: String, Codable, Sendable {
     case `claude_cli_usage` = "claude_cli_usage"
     case `claude_oauth_endpoint` = "claude_oauth_endpoint"
@@ -3757,13 +3944,15 @@ public struct UsageWindow: Codable, Sendable {
 public struct UsageReading: Codable, Sendable {
     public var `provider`: UsageProvider
     public var `state`: UsageState
+    public var `unavailableReason`: UsageUnavailableReason?
     public var `primary`: UsageWindow?
     public var `secondary`: UsageWindow?
     public var `source`: UsageSource
     public var `fetchedAt`: String
-    public init(`provider`: UsageProvider, `state`: UsageState, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+    public init(`provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
         self.`provider` = `provider`
         self.`state` = `state`
+        self.`unavailableReason` = `unavailableReason`
         self.`primary` = `primary`
         self.`secondary` = `secondary`
         self.`source` = `source`
@@ -3806,15 +3995,17 @@ public struct UsageChangedEvent: Codable, Sendable {
     public var `at`: String
     public var `provider`: UsageProvider
     public var `state`: UsageState
+    public var `unavailableReason`: UsageUnavailableReason?
     public var `primary`: UsageWindow?
     public var `secondary`: UsageWindow?
     public var `source`: UsageSource
     public var `fetchedAt`: String
-    public init(`eventId`: Decimal, `at`: String, `provider`: UsageProvider, `state`: UsageState, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+    public init(`eventId`: Decimal, `at`: String, `provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`provider` = `provider`
         self.`state` = `state`
+        self.`unavailableReason` = `unavailableReason`
         self.`primary` = `primary`
         self.`secondary` = `secondary`
         self.`source` = `source`
@@ -5249,13 +5440,15 @@ public struct WritingDocument: Codable, Sendable {
     public var `sidecarRevision`: Decimal
     public var `font`: WritingFont
     public var `focusMode`: Bool
-    public init(`file`: FileDocument, `kind`: WritingKind, `section`: WritingSection, `sidecarRevision`: Decimal, `font`: WritingFont, `focusMode`: Bool) {
+    public var `fullWidth`: Bool
+    public init(`file`: FileDocument, `kind`: WritingKind, `section`: WritingSection, `sidecarRevision`: Decimal, `font`: WritingFont, `focusMode`: Bool, `fullWidth`: Bool) {
         self.`file` = `file`
         self.`kind` = `kind`
         self.`section` = `section`
         self.`sidecarRevision` = `sidecarRevision`
         self.`font` = `font`
         self.`focusMode` = `focusMode`
+        self.`fullWidth` = `fullWidth`
     }
 }
 
@@ -5462,14 +5655,16 @@ public struct WritingStructureResult: Codable, Sendable {
     public var `elements`: [ScreenplayElement]
     public var `variants`: [WritingLineVariants]
     public var `beats`: [BeatCard]
+    public var `wordCount`: UInt32
     public var `truncated`: Bool
-    public init(`document`: WritingDocument, `slides`: [WritingSlide], `scenes`: [ScreenplayScene], `elements`: [ScreenplayElement], `variants`: [WritingLineVariants], `beats`: [BeatCard], `truncated`: Bool) {
+    public init(`document`: WritingDocument, `slides`: [WritingSlide], `scenes`: [ScreenplayScene], `elements`: [ScreenplayElement], `variants`: [WritingLineVariants], `beats`: [BeatCard], `wordCount`: UInt32, `truncated`: Bool) {
         self.`document` = `document`
         self.`slides` = `slides`
         self.`scenes` = `scenes`
         self.`elements` = `elements`
         self.`variants` = `variants`
         self.`beats` = `beats`
+        self.`wordCount` = `wordCount`
         self.`truncated` = `truncated`
     }
 }
@@ -5527,12 +5722,14 @@ public struct WritingPreferencesParams: Codable, Sendable {
     public var `baseRevision`: Decimal
     public var `font`: WritingFont?
     public var `focusMode`: Bool?
+    public var `fullWidth`: Bool?
     public var `idempotencyKey`: Id
-    public init(`fileId`: Id, `baseRevision`: Decimal, `font`: WritingFont? = nil, `focusMode`: Bool? = nil, `idempotencyKey`: Id) {
+    public init(`fileId`: Id, `baseRevision`: Decimal, `font`: WritingFont? = nil, `focusMode`: Bool? = nil, `fullWidth`: Bool? = nil, `idempotencyKey`: Id) {
         self.`fileId` = `fileId`
         self.`baseRevision` = `baseRevision`
         self.`font` = `font`
         self.`focusMode` = `focusMode`
+        self.`fullWidth` = `fullWidth`
         self.`idempotencyKey` = `idempotencyKey`
     }
 }
@@ -5709,9 +5906,20 @@ public enum HarnessSource: String, Codable, Sendable {
 
 public enum HarnessSetupState: String, Codable, Sendable {
     case `ready` = "ready"
+    case `not_checked` = "not_checked"
     case `not_installed` = "not_installed"
     case `sign_in` = "sign_in"
     case `check_setup` = "check_setup"
+}
+
+public enum HarnessSetupReason: String, Codable, Sendable {
+    case `never_started` = "never_started"
+    case `executable_missing` = "executable_missing"
+    case `registry_package_unverified` = "registry_package_unverified"
+    case `authentication_required` = "authentication_required"
+    case `session_failed` = "session_failed"
+    case `launch_failed` = "launch_failed"
+    case `environment_unavailable` = "environment_unavailable"
 }
 
 public enum HarnessEnvironmentIssue: String, Codable, Sendable {
@@ -5764,6 +5972,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case stateSnapshotPart = "state.snapshot_part"
     case workspaceCreated = "workspace.created"
     case workspaceRenamed = "workspace.renamed"
+    case workspaceLayoutUpdated = "workspace.layout_updated"
     case workspaceClosed = "workspace.closed"
     case paneCreated = "pane.created"
     case paneRenamed = "pane.renamed"
@@ -5843,6 +6052,7 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .stateSnapshotPart: EventDescriptor(paramsType: "StateSnapshotPartEvent", durable: false),
     .workspaceCreated: EventDescriptor(paramsType: "WorkspaceCreatedEvent", durable: true),
     .workspaceRenamed: EventDescriptor(paramsType: "WorkspaceRenamedEvent", durable: true),
+    .workspaceLayoutUpdated: EventDescriptor(paramsType: "WorkspaceLayoutUpdatedEvent", durable: true),
     .workspaceClosed: EventDescriptor(paramsType: "WorkspaceClosedEvent", durable: true),
     .paneCreated: EventDescriptor(paramsType: "PaneCreatedEvent", durable: true),
     .paneRenamed: EventDescriptor(paramsType: "PaneRenamedEvent", durable: true),

@@ -16,6 +16,13 @@ public enum UsageTimestamp {
   }
 }
 
+enum UsageDetailsRefreshPolicy {
+  static func shouldRefresh(_ reading: UsageReading) -> Bool {
+    reading.state == .stale
+      || (reading.state == .unavailable && reading.unavailableReason == .not_checked)
+  }
+}
+
 public struct UsagePresentation: Sendable {
   public let reading: UsageReading
 
@@ -39,8 +46,22 @@ public struct UsagePresentation: Sendable {
   }
 
   public var fraction: Double? {
-    guard reading.state == .ok, let used = displayedWindow?.used else { return nil }
+    guard reading.state == .ok || reading.state == .stale,
+      let used = displayedWindow?.used
+    else { return nil }
     return min(max(used, 0), 1)
+  }
+
+  public var isStale: Bool { reading.state == .stale }
+
+  public var unavailableMessage: String {
+    switch reading.unavailableReason {
+    case .not_checked: "Usage has not been checked yet."
+    case .tool_not_found: "\(reading.provider.displayName) not found on this Mac."
+    case .app_server_failed: "\(reading.provider.displayName) app server could not provide usage."
+    case .invalid_response: "Usage reader returned invalid data."
+    case nil: "Usage is unavailable."
+    }
   }
 
   public var percentage: String {
@@ -49,18 +70,12 @@ public struct UsagePresentation: Sendable {
   }
 
   public var band: UsageBand? {
-    guard let fraction else { return nil }
+    guard reading.state == .ok, let fraction else { return nil }
     if fraction < 0.5 { return .success }
     if fraction <= 0.8 { return .warning }
     return .danger
   }
 
-  public func needsHoverRefresh(now: Date = Date()) -> Bool {
-    guard reading.state == .ok,
-      let fetched = UsageTimestamp.date(from: reading.fetchedAt)
-    else { return true }
-    return now.timeIntervalSince(fetched) > 60
-  }
 }
 
 public struct ProviderGlyph: View {
@@ -89,6 +104,13 @@ extension UsageProvider {
 }
 
 extension EngineClient {
+  public func refreshUsageOnDetailsClick(_ provider: UsageProvider) {
+    guard let reading = usageReadings.first(where: { $0.provider == provider }),
+      UsageDetailsRefreshPolicy.shouldRefresh(reading)
+    else { return }
+    perform { try await self.refreshUsageAfterRateLimitOnce(provider) }
+  }
+
   func loadUsage() async throws {
     let result = try await request("usage.list", .encoded(UsageListParams()))
       .decoded(UsageListResult.self)
@@ -96,8 +118,29 @@ extension EngineClient {
   }
 
   public func refreshUsage(_ provider: UsageProvider? = nil) async throws {
+    guard connected else { throw ClientFailure.disconnected }
     try await refreshUsage(provider, now: Date()) { [self] provider in
       try await requestUsageRefresh(provider)
+    }
+  }
+
+  public func refreshUsageAfterRateLimitOnce(_ provider: UsageProvider? = nil) async throws {
+    try await refreshUsageAfterRateLimitOnce(
+      wait: { seconds in try await Task.sleep(for: .seconds(seconds)) },
+      operation: { [self] in try await refreshUsage(provider) })
+  }
+
+  func refreshUsageAfterRateLimitOnce(
+    wait: @escaping @MainActor @Sendable (UInt32) async throws -> Void,
+    operation: @escaping @MainActor @Sendable () async throws -> Void
+  ) async throws {
+    do {
+      try await operation()
+    } catch ClientFailure.remote(let kind, _, let retryAfterSec)
+      where kind == ErrorKind.rate_limited.rawValue && retryAfterSec != nil
+    {
+      try await wait(retryAfterSec!)
+      try await operation()
     }
   }
 
@@ -162,7 +205,8 @@ extension EngineClient {
     let event = try params.decoded(UsageChangedEvent.self)
     replaceUsage(
       UsageReading(
-        provider: event.provider, state: event.state, primary: event.primary,
+        provider: event.provider, state: event.state,
+        unavailableReason: event.unavailableReason, primary: event.primary,
         secondary: event.secondary, source: event.source, fetchedAt: event.fetchedAt))
   }
 
@@ -198,7 +242,7 @@ extension UsageSource {
     switch self {
     case .claude_cli_usage: "Claude Code CLI"
     case .claude_oauth_endpoint: "Claude account endpoint"
-    case .claude_desktop_cache: "Claude desktop cache"
+    case .claude_desktop_cache: "Claude Code cache"
     case .codex_app_server: "Codex app server"
     case .codex_account_endpoint: "Codex account endpoint"
     case .cursor_current_period: "Cursor current period"

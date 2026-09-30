@@ -231,7 +231,7 @@ private struct WritingDocumentCreateSheet: View {
       }
     }
     .padding(MacTheme.Space.x18)
-    .frame(width: 430)
+    .macSheetSurface(.writingCreate)
     .background(MacTheme.canvas)
   }
 

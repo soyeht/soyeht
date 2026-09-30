@@ -10,7 +10,8 @@ remain valid without that field.
 Each accepted prompt receives a `promptId`; its origin is `human` or `automatic`.
 The limit is 64 KiB of text and 64 waiting prompts. `pane.draft` indicates human
 text that has not been sent, without transmitting that text. Aggregate state
-lives in the snapshot; `pane.queued` also reports the draft.
+lives in the snapshot; `pane.queued` also reports the draft. It is published
+whenever the waiting list changes, including when a prompt leaves it to run.
 
 `pane.update` is a closed union of contract 08's eight types, with message identity,
 generation and sequence. Thought, tool, plan, usage and terminal are distinct.
@@ -21,8 +22,8 @@ of up to 256 KiB.
 Permission and elicitation requests have their own identities, generation, turn
 and deadline. A late response returns the result that already won; it never
 produces another native response. `by` distinguishes Mac, iPhone, rule and system.
-Yolo does not answer elicitations. The engine mode uses `ask`, `accept_edits` and
-`allow_all`; the natively confirmed effective mode is stored separately.
+No permission mode answers elicitations. Permission modes are the harness's own
+(ADR 0070 replaced the engine's `ask`/`accept_edits`/`allow_all` policy and Yolo).
 Configuration options accept selection or boolean values.
 
 A v1 session ends with the `session/prompt` response. The implementation follows

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 2f06d2bb673862159362b44e75285d04be2081076f871af27726d5b101bf6797). Do not edit.
+// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
 public enum ProtocolLimits {
     public static let jsonBytes = 1048576
     public static let terminalPayloadBytes = 65536
@@ -15,11 +15,19 @@ public enum ProtocolLimits {
     public static let deviceConnections = 8
     public static let promptBytes = 65536
     public static let promptQueueCount = 64
+    public static let agentMessagesPerWindow = 6
+    public static let agentMessageWindowSec = 60
+    public static let agentMessageBytes = 60000
     public static let transcriptPageMessages = 200
     public static let transcriptPageBytes = 524288
     public static let transcriptMessageBytes = 262144
     public static let acpMessageBytes = 1048576
     public static let permissionTimeoutSec = 1800
+    public static let permissionPreviewPathChars = 4096
+    public static let permissionPreviewChanges = 8
+    public static let permissionPreviewBytes = 65536
+    public static let permissionPreviewLines = 400
+    public static let permissionCommandBytes = 65536
     public static let cancelTimeoutSec = 10
     public static let probeTimeoutSec = 10
     public static let noSignalSec = 90

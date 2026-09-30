@@ -1,6 +1,6 @@
 use super::{
     Changes, native_error,
-    state::{Phase, State},
+    state::{InternalContinuation, Phase, ReplayedUserMessage, State},
     transcript,
 };
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::{self, Update};
-use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptRole};
+use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptMessage, TranscriptRole};
 
 fn append_replayed_user(
     store: &impl StorePort,
@@ -17,9 +17,18 @@ fn append_replayed_user(
     state: &mut State,
     generation: u32,
     text: &str,
+    message_id: Option<&str>,
     changes: &mut Changes,
 ) -> Result<()> {
-    transcript::append_text_role(store, pane, state, generation, "user", text, changes)
+    transcript::append_text_role(
+        store,
+        pane,
+        state,
+        generation,
+        "user",
+        transcript::TextChunk { text, message_id },
+        changes,
+    )
 }
 
 fn update_user(
@@ -28,6 +37,7 @@ fn update_user(
     generation: u32,
     state: &mut State,
     content: Value,
+    message_id: Option<&str>,
     changes: &mut Changes,
 ) -> Result<()> {
     // Ordinary turns already have the accepted user prompt in the journal.
@@ -41,25 +51,95 @@ fn update_user(
     let text = content["text"]
         .as_str()
         .ok_or_else(|| errors::invalid("Replay has no text"))?;
-    append_replayed_user(store, pane, state, generation, text, changes)
+    let Some(continuation) = state
+        .internal_continuation
+        .clone()
+        .filter(InternalContinuation::has_prompt)
+    else {
+        return append_replayed_user(store, pane, state, generation, text, message_id, changes);
+    };
+    // Adapters replay a long prompt in several chunks under one messageId.
+    // Hold each user message until it is complete so the continuation prompt
+    // is recognized as a whole and none of it reaches the transcript.
+    if state
+        .replay_user
+        .as_ref()
+        .is_some_and(|pending| pending.message_id.as_deref() != message_id)
+    {
+        finish_replayed_user(store, pane, generation, state, changes)?;
+        // This new user message starts the next turn, which is visible.
+        state.replay_continuation_turn = false;
+    }
+    let pending = state
+        .replay_user
+        .get_or_insert_with(|| ReplayedUserMessage {
+            message_id: message_id.map(Into::into),
+            text: String::new(),
+            streaming: false,
+        });
+    let text = if pending.streaming {
+        text.to_owned()
+    } else {
+        pending.text.push_str(text);
+        if continuation.could_match(pending.text.len()) {
+            return Ok(());
+        }
+        // Too long to be the continuation prompt: stream it as a user turn.
+        pending.streaming = true;
+        std::mem::take(&mut pending.text)
+    };
+    append_replayed_user(store, pane, state, generation, &text, message_id, changes)
 }
 
-fn update_message(
+/// Emits the held replayed user message unless it is the engine's own
+/// continuation prompt, which the leading handover marker already represents.
+/// The agent's reply to that prompt is hidden too, as it is during the switch.
+pub(super) fn finish_replayed_user(
     store: &impl StorePort,
     pane: &str,
     generation: u32,
     state: &mut State,
-    thought: bool,
-    content: &Value,
     changes: &mut Changes,
 ) -> Result<()> {
-    if content["type"] != "text" {
-        return Err(errors::invalid("This pane accepts text response blocks"));
+    let Some(pending) = state.replay_user.take() else {
+        return Ok(());
+    };
+    if pending.streaming {
+        return Ok(());
     }
-    let text = content["text"]
-        .as_str()
-        .ok_or_else(|| errors::invalid("Text response has no text"))?;
-    transcript::append_text(store, pane, state, generation, thought, text, changes)
+    if state
+        .internal_continuation
+        .as_ref()
+        .is_some_and(|continuation| continuation.matches_replayed_prompt(&pending.text))
+    {
+        state.replay_continuation_turn = true;
+        return Ok(());
+    }
+    append_replayed_user(
+        store,
+        pane,
+        state,
+        generation,
+        &pending.text,
+        pending.message_id.as_deref(),
+        changes,
+    )
+}
+
+/// The transcript item holding the latest reported state of a tool call in
+/// the current prompt, if the agent has reported it.
+pub fn tracked_tool(
+    store: &impl StorePort,
+    pane: &str,
+    state: &State,
+    id: &str,
+) -> Result<Option<TranscriptMessage>> {
+    state
+        .open_messages
+        .get(&format!("tool:{id}"))
+        .map(|seq| transcript::message(store, pane, *seq))
+        .transpose()
+        .map(Option::flatten)
 }
 
 fn update_tool(
@@ -75,14 +155,7 @@ fn update_tool(
     if id.is_empty() || id.chars().count() > 128 {
         return Err(errors::invalid("Tool ID exceeds public protocol bounds"));
     }
-    let key = format!("tool:{id}");
-    let prior = state
-        .open_messages
-        .get(&key)
-        .map(|seq| transcript::message(store, pane, *seq))
-        .transpose()?
-        .flatten();
-    let mut item = match prior {
+    let mut item = match tracked_tool(store, pane, state, id)? {
         Some(item) => item,
         None => transcript::new_message(
             state,
@@ -114,7 +187,7 @@ fn update_tool(
         Some(serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))?);
     state
         .open_messages
-        .insert(key, transcript::sequence(&item.seq)?);
+        .insert(format!("tool:{id}"), transcript::sequence(&item.seq)?);
     transcript::put(
         changes,
         pane,
@@ -177,16 +250,6 @@ fn update_usage(
     transcript::put(changes, pane, item, "usage")
 }
 
-fn apply_mode(state: &mut State, mode: &str) -> Result<()> {
-    super::configuration::require_native_policy(mode)?;
-    if state.pending_policy.is_none() && state.requested_options.is_empty() {
-        super::configuration::observe_mode(state, mode, false)
-    } else {
-        state.effective_mode = Some(mode.into());
-        Ok(())
-    }
-}
-
 fn configuration_event(
     pane: &str,
     generation: u32,
@@ -216,19 +279,7 @@ fn update_configuration(
     options: soyeht_acp::config::Options,
     changes: &mut Changes,
 ) -> Result<()> {
-    state.options = options;
-    let mode = state
-        .options
-        .values
-        .iter()
-        .find(|option| option.category.as_deref() == Some("mode") || option.id == "mode")
-        .and_then(|option| match &option.current_value {
-            ConfigValue::V0(value) => Some(value.clone()),
-            _ => None,
-        });
-    if let Some(mode) = mode {
-        apply_mode(state, &mode)?;
-    }
+    super::configuration::agent_changed(state, options)?;
     configuration_event(
         pane,
         generation,
@@ -245,16 +296,13 @@ fn update_mode(
     mode: String,
     changes: &mut Changes,
 ) -> Result<()> {
-    super::configuration::require_native_policy(&mode)?;
-    if let Some(option) = state
-        .options
-        .values
-        .iter_mut()
-        .find(|option| option.category.as_deref() == Some("mode") || option.id == "mode")
+    let mut options = state.options.clone();
+    if super::configuration::engine_policy(state).is_none()
+        && let Some(option) = options.mode_mut()
     {
-        option.current_value = ConfigValue::V0(mode.clone());
+        option.current_value = ConfigValue::V0(mode);
     }
-    apply_mode(state, &mode)?;
+    super::configuration::agent_changed(state, options)?;
     configuration_event(pane, generation, state, "Agent updated its mode", changes)
 }
 
@@ -292,21 +340,64 @@ pub fn update(
         let role = match &update {
             Update::Message { thought: true, .. } => "thought",
             Update::Message { .. } => "message",
-            Update::UserMessage(_) => "user",
+            Update::UserMessage { .. } => "user",
             _ => "other",
         };
         if state.replay_role.as_deref() != Some(role) {
+            finish_replayed_user(store, pane, generation, state, changes)?;
             transcript::complete(store, pane, state, changes)?;
             state.replay_role = Some(role.into());
         }
+        if role == "user" {
+            state.replay_continuation_turn = false;
+        } else if state.replay_continuation_turn
+            && matches!(
+                update,
+                Update::Message { .. } | Update::Tool { .. } | Update::Plan(_)
+            )
+        {
+            return Ok(false);
+        }
     }
     let observed_turn_output = match update {
-        Update::UserMessage(content) => {
-            update_user(store, pane, generation, state, content, changes)?;
+        Update::UserMessage {
+            content,
+            message_id,
+        } => {
+            update_user(
+                store,
+                pane,
+                generation,
+                state,
+                content,
+                message_id.as_deref(),
+                changes,
+            )?;
             false
         }
-        Update::Message { thought, content } => {
-            update_message(store, pane, generation, state, thought, &content, changes)?;
+        Update::Message {
+            thought,
+            content,
+            message_id,
+        } => {
+            if content["type"] != "text" {
+                return Err(errors::invalid("This pane accepts text response blocks"));
+            }
+            let text = content["text"]
+                .as_str()
+                .ok_or_else(|| errors::invalid("Text response has no text"))?;
+            transcript::append_text(
+                store,
+                pane,
+                state,
+                generation,
+                thought,
+                transcript::TextChunk {
+                    text,
+                    message_id: message_id.as_deref(),
+                },
+                changes,
+            )?;
             true
         }
         Update::Tool { update, fields } => {

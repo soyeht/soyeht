@@ -51,7 +51,12 @@ fn parse_app_server(payload: &[u8], source: UsageSource) -> Result<ParsedReading
             )
         })
         .transpose()?;
-    Ok(ParsedReading { primary, secondary })
+    Ok(ParsedReading {
+        primary,
+        secondary,
+        fetched_at: None,
+        observed_at_sec: None,
+    })
 }
 
 fn window_label(value: &Value, fallback: &'static str) -> &'static str {

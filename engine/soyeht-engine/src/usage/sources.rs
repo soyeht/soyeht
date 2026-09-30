@@ -1,8 +1,9 @@
 //! Bounded adapters for the verified local usage sources.
 
-use soyeht_protocol::{UsageProvider, UsageSource, limits};
+use soyeht_protocol::{UsageProvider, UsageSource, UsageUnavailableReason, limits};
 use soyeht_usage::{SourceRead, UsageSourcePort};
 use std::{
+    fs,
     io::{BufRead, BufReader, Read, Write},
     path::PathBuf,
     process::{Child, ChildStdin, Command, Stdio},
@@ -18,7 +19,7 @@ const CURSOR_ENDPOINT: &str =
 
 #[derive(Clone)]
 struct Commands {
-    first_cli: PathBuf,
+    claude_cache: PathBuf,
     second_cli: PathBuf,
     keychain: PathBuf,
     http: PathBuf,
@@ -51,14 +52,17 @@ fn default_commands() -> Commands {
     #[cfg(debug_assertions)]
     if let Some(directory) = std::env::var_os("SOYEHT_TEST_USAGE_READER_DIR").map(PathBuf::from) {
         return Commands {
-            first_cli: directory.join("first-source"),
+            claude_cache: directory.join("claude-cache.json"),
             second_cli: directory.join("second-source"),
             keychain: directory.join("keychain-source"),
             http: directory.join("http-source"),
         };
     }
     Commands {
-        first_cli: "claude".into(),
+        claude_cache: std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|home| home.join(".claude.json"))
+            .unwrap_or_else(|| PathBuf::from("/nonexistent/soyeht-claude-cache.json")),
         second_cli: "codex".into(),
         keychain: "/usr/bin/security".into(),
         http: "/usr/bin/curl".into(),
@@ -68,38 +72,35 @@ fn default_commands() -> Commands {
 impl UsageSourcePort for SystemSources {
     fn read(&mut self, provider: UsageProvider, source: UsageSource) -> SourceRead {
         match (provider, source) {
-            (UsageProvider::Claude, UsageSource::ClaudeCliUsage) => self.read_first_cli(),
+            (UsageProvider::Claude, UsageSource::ClaudeDesktopCache) => self.read_claude_cache(),
             (UsageProvider::Codex, UsageSource::CodexAppServer) => self.read_second_cli(),
             (UsageProvider::Cursor, UsageSource::CursorCurrentPeriod) => self.read_current_period(),
-            _ => SourceRead::Unavailable,
+            _ => SourceRead::Unavailable(None),
         }
     }
 }
 
 impl SystemSources {
-    fn read_first_cli(&self) -> SourceRead {
-        let args = [
-            "-p",
-            "/usage",
-            "--no-session-persistence",
-            "--strict-mcp-config",
-            "--mcp-config",
-            "{\"mcpServers\":{}}",
-            "--permission-mode",
-            "dontAsk",
-            "--output-format",
-            "json",
-        ];
-        match run_bounded(&self.commands.first_cli, &args, None) {
-            Some(output) if output.success => SourceRead::Payload(output.bytes),
-            _ => SourceRead::Unavailable,
+    fn read_claude_cache(&self) -> SourceRead {
+        let Ok(metadata) = fs::metadata(&self.commands.claude_cache) else {
+            return SourceRead::Unavailable(None);
+        };
+        let Ok(max_bytes) = u64::try_from(limits::JSON_BYTES) else {
+            return SourceRead::Unavailable(None);
+        };
+        if metadata.len() > max_bytes {
+            return SourceRead::Unavailable(None);
         }
+        fs::read(&self.commands.claude_cache)
+            .ok()
+            .filter(|bytes| bytes.len() <= limits::JSON_BYTES)
+            .map_or(SourceRead::Unavailable(None), SourceRead::Payload)
     }
 
     fn read_second_cli(&self) -> SourceRead {
         match app_server_read(&self.commands.second_cli) {
-            Some(bytes) => SourceRead::Payload(bytes),
-            None => SourceRead::Unavailable,
+            Ok(bytes) => SourceRead::Payload(bytes),
+            Err(reason) => SourceRead::Unavailable(Some(reason)),
         }
     }
 
@@ -130,7 +131,7 @@ impl SystemSources {
         };
         let token = trim_ascii(&secret);
         if !valid_token(token) {
-            return SourceRead::Unavailable;
+            return SourceRead::Unavailable(None);
         }
         current_period_request(&self.commands.http, token)
     }
@@ -179,7 +180,7 @@ fn current_period_request(program: &PathBuf, token: &[u8]) -> SourceRead {
 
 fn parse_http_output(mut output: Vec<u8>) -> SourceRead {
     let Some(status_at) = find_last(&output, b"\nSOYEHT_STATUS:") else {
-        return SourceRead::Unavailable;
+        return SourceRead::Unavailable(None);
     };
     let metadata = output.split_off(status_at + 1);
     output.truncate(status_at);
@@ -196,7 +197,7 @@ fn parse_http_output(mut output: Vec<u8>) -> SourceRead {
                 .min(soyeht_protocol::limits::USAGE_MAX_BACKOFF_SEC as u32),
         },
         Some(500..=599) | Some(0) => SourceRead::NetworkError,
-        Some(_) | None => SourceRead::Unavailable,
+        Some(_) | None => SourceRead::Unavailable(None),
     }
 }
 
@@ -296,14 +297,20 @@ fn wait_child(child: &mut Child, deadline: Instant) -> Option<bool> {
     }
 }
 
-fn app_server_read(program: &PathBuf) -> Option<Vec<u8>> {
+fn app_server_read(program: &PathBuf) -> Result<Vec<u8>, UsageUnavailableReason> {
     let mut child = Command::new(program)
         .args(["app-server", "--stdio"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .ok()?;
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                UsageUnavailableReason::ToolNotFound
+            } else {
+                UsageUnavailableReason::AppServerFailed
+            }
+        })?;
     let result = (|| {
         let mut stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
@@ -325,7 +332,7 @@ fn app_server_read(program: &PathBuf) -> Option<Vec<u8>> {
         response_with_id(&receiver, 2, deadline)
     })();
     stop_child(&mut child);
-    result
+    result.ok_or(UsageUnavailableReason::AppServerFailed)
 }
 
 fn write_json_line(stdin: &mut ChildStdin, value: &serde_json::Value) -> Option<()> {
@@ -412,19 +419,44 @@ mod tests {
     }
 
     #[test]
-    fn verified_process_sources_return_only_bounded_response_payloads() {
+    fn codex_reader_distinguishes_missing_tool_from_failed_app_server() {
         let fixture = Fixture::new();
-        let first_log = fixture.0.join("first.args");
+        let missing = fixture.0.join("not-installed");
+        let broken = fixture.script("broken", "exit 1");
+        assert!(matches!(
+            SystemSources::with_commands(Commands {
+                claude_cache: missing.clone(),
+                second_cli: missing.clone(),
+                keychain: missing.clone(),
+                http: missing.clone(),
+            })
+            .read(UsageProvider::Codex, UsageSource::CodexAppServer),
+            SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound))
+        ));
+        assert!(matches!(
+            SystemSources::with_commands(Commands {
+                claude_cache: missing.clone(),
+                second_cli: broken,
+                keychain: missing.clone(),
+                http: missing,
+            })
+            .read(UsageProvider::Codex, UsageSource::CodexAppServer),
+            SourceRead::Unavailable(Some(UsageUnavailableReason::AppServerFailed))
+        ));
+    }
+
+    #[test]
+    fn passive_cache_and_explicit_process_sources_return_bounded_payloads() {
+        let fixture = Fixture::new();
+        let claude_cache = fixture.0.join("claude-cache.json");
         let second_log = fixture.0.join("second.input");
         let http_args = fixture.0.join("http.args");
         let http_input = fixture.0.join("http.input");
-        let first = fixture.script(
-            "first",
-            &format!(
-                "printf '%s' \"$*\" > '{}'; printf '%s' '{{\"result\":\"ok\"}}'",
-                first_log.display()
-            ),
-        );
+        fs::write(
+            &claude_cache,
+            br#"{"cachedUsageUtilization":{"fetchedAtMs":1000,"utilization":{}}}"#,
+        )
+        .unwrap();
         let second = fixture.script(
             "second",
             &format!(
@@ -445,14 +477,14 @@ mod tests {
             ),
         );
         let mut sources = SystemSources::with_commands(Commands {
-            first_cli: first,
+            claude_cache,
             second_cli: second,
             keychain,
             http,
         });
         assert!(matches!(
-            sources.read(UsageProvider::Claude, UsageSource::ClaudeCliUsage),
-            SourceRead::Payload(bytes) if bytes == br#"{"result":"ok"}"#
+            sources.read(UsageProvider::Claude, UsageSource::ClaudeDesktopCache),
+            SourceRead::Payload(bytes) if bytes == br#"{"cachedUsageUtilization":{"fetchedAtMs":1000,"utilization":{}}}"#
         ));
         assert!(matches!(
             sources.read(UsageProvider::Codex, UsageSource::CodexAppServer),
@@ -462,9 +494,6 @@ mod tests {
             sources.read(UsageProvider::Cursor, UsageSource::CursorCurrentPeriod),
             SourceRead::Payload(bytes) if serde_json::from_slice::<serde_json::Value>(&bytes).is_ok()
         ));
-        let first_args = fs::read_to_string(first_log).unwrap();
-        assert!(first_args.contains("--no-session-persistence"));
-        assert!(first_args.contains("--strict-mcp-config"));
         let calls = fs::read_to_string(second_log)
             .unwrap()
             .lines()
@@ -493,7 +522,7 @@ mod tests {
             (denied, SourceRead::NoAccess),
         ] {
             let mut sources = SystemSources::with_commands(Commands {
-                first_cli: unused.clone(),
+                claude_cache: unused.clone(),
                 second_cli: unused.clone(),
                 keychain,
                 http: unused.clone(),
@@ -502,6 +531,27 @@ mod tests {
                 sources.read(UsageProvider::Cursor, UsageSource::CursorCurrentPeriod) == expected
             );
         }
+    }
+
+    #[test]
+    fn absent_claude_cache_is_unavailable_without_starting_a_process() {
+        let fixture = Fixture::new();
+        let spawn_marker = fixture.0.join("spawned");
+        let unused = fixture.script(
+            "must-not-run",
+            &format!("touch '{}'; exit 1", spawn_marker.display()),
+        );
+        let mut sources = SystemSources::with_commands(Commands {
+            claude_cache: fixture.0.join("absent.json"),
+            second_cli: unused.clone(),
+            keychain: unused.clone(),
+            http: unused,
+        });
+        assert!(
+            sources.read(UsageProvider::Claude, UsageSource::ClaudeDesktopCache)
+                == SourceRead::Unavailable(None)
+        );
+        assert!(!spawn_marker.exists());
     }
 
     #[test]

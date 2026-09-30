@@ -144,7 +144,7 @@ pub fn probe_result(response: Result<&Value, &RpcError>) -> ProbeResult {
     match response {
         Ok(_) => ProbeResult::Worked,
         Err(error) if error.code == -32601 => ProbeResult::Unsupported,
-        Err(error) if error.code == -32000 => ProbeResult::Unauthenticated,
+        Err(error) if crate::rpc::is_auth_required(error) => ProbeResult::Unauthenticated,
         Err(_) => ProbeResult::Inconclusive,
     }
 }
@@ -168,9 +168,19 @@ pub fn stop_reason(response: &Value) -> Result<&str, Error> {
 
 #[derive(Debug, Clone)]
 pub enum Update {
-    Message { thought: bool, content: Value },
-    UserMessage(Value),
-    Tool { update: bool, fields: Value },
+    Message {
+        thought: bool,
+        content: Value,
+        message_id: Option<String>,
+    },
+    UserMessage {
+        content: Value,
+        message_id: Option<String>,
+    },
+    Tool {
+        update: bool,
+        fields: Value,
+    },
     Plan(Value),
     Usage(Value),
     Configuration(Options),
@@ -187,13 +197,14 @@ pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, 
         .as_str()
         .ok_or(Error::MissingUpdateKind)?;
     Ok(Some(match kind {
-        "user_message_chunk" => Update::UserMessage(
-            value
+        "user_message_chunk" => Update::UserMessage {
+            content: value
                 .get("content")
                 .filter(|v| v.is_object())
                 .ok_or(Error::MissingUserContent)?
                 .clone(),
-        ),
+            message_id: value["messageId"].as_str().map(str::to_owned),
+        },
         "agent_message_chunk" | "agent_thought_chunk" => {
             let content = value
                 .get("content")
@@ -202,6 +213,7 @@ pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, 
             Update::Message {
                 thought: kind == "agent_thought_chunk",
                 content: content.clone(),
+                message_id: value["messageId"].as_str().map(str::to_owned),
             }
         }
         "tool_call" | "tool_call_update" => {
@@ -340,5 +352,14 @@ mod tests {
             .unwrap()
             .is_none()
         );
+    }
+
+    #[test]
+    fn message_identity_survives_acp_update_parsing() {
+        let params = json!({"sessionId":"one","update":{"sessionUpdate":"agent_message_chunk","messageId":"first","content":{"type":"text","text":"One"}}});
+        assert!(matches!(
+            update("one", &params).unwrap(),
+            Some(Update::Message { message_id: Some(id), .. }) if id == "first"
+        ));
     }
 }

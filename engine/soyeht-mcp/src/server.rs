@@ -3,6 +3,12 @@ use serde_json::{Value, json};
 use soyeht_protocol::ndjson::Decoder;
 use std::io::{BufRead, Write};
 
+/// Harnesses may also load the user's own Soyeht servers with the same tool
+/// names; only this server speaks for the pane that started it.
+const INSTRUCTIONS: &str = "These tools act for this agent pane inside its Soyeht workspace. \
+To find or message another agent pane of this workspace, use list_agents and message_agent \
+from this server, not from another Soyeht server.";
+
 pub fn serve<P: EnginePort>(
     mut input: impl BufRead,
     mut output: impl Write,
@@ -54,7 +60,8 @@ fn dispatch<P: EnginePort>(
             Ok(json!({
                 "protocolVersion":"2025-11-25",
                 "capabilities":{"tools":{"listChanged":false}},
-                "serverInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")}
+                "serverInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")},
+                "instructions":INSTRUCTIONS
             }))
         }
         Some("ping") => Ok(json!({})),
@@ -80,7 +87,8 @@ fn dispatch<P: EnginePort>(
         Err(Error::Remote(remote)) => json!({
             "jsonrpc":"2.0","id":id,"result":{
                 "content":[{"type":"text","text":remote.message}],
-                "structuredContent":{"kind":remote.data.kind,"detail":remote.data.detail},
+                "structuredContent":{"kind":remote.data.kind,"detail":remote.data.detail,
+                    "retryAfterSec":remote.data.retry_after_sec},
                 "isError":true
             }
         }),

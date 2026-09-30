@@ -242,5 +242,5 @@ private func agentPane(_ paneId: String, name: String) -> Pane {
     generation: 1, cols: 80, rows: 24, record: true,
     agent: AgentSession(
       harness: "agent", version: "1", fingerprint: "fingerprint", options: [], authMethods: [],
-      permission: .ask, yolo: false, queue: [], draft: false, role: .worker))
+      queue: [], draft: false, role: .worker))
 }

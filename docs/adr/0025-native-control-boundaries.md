@@ -13,11 +13,9 @@ are bounded at 256 characters. The supervisor still applies its environment
 filter; native metadata does not grant extra inherited credentials.
 
 A successful configuration probe must contain the requested confirmed option.
-A success-shaped but incomplete response is inconclusive. Explicit mode changes
-replace the effective permission selection and end any previous yolo override.
-The next yolo toggle remembers that new selection. Unrecognized native modes
-fall back to asking for permissions rather than preserving an old automatic
-approval policy. Private history replay does not publish configuration-history
+A success-shaped but incomplete response is inconclusive. Permission modes are
+the harness's own and are never mapped to a Soyeht policy (ADR 0070, which
+replaced the Yolo override described here before). Private history replay does not publish configuration-history
 notifications before the replay is committed.
 
 The local supervisor protocol is version 4. `Kill` terminates a process group

@@ -83,6 +83,84 @@
     }
   },
   {
+    "name": "WorkspacePaneLayoutMode",
+    "type": "WorkspacePaneLayoutMode",
+    "value": "custom"
+  },
+  {
+    "name": "WorkspacePaneLayoutKind",
+    "type": "WorkspacePaneLayoutKind",
+    "value": "terminal"
+  },
+  {
+    "name": "WorkspacePaneLayoutAxis",
+    "type": "WorkspacePaneLayoutAxis",
+    "value": "horizontal"
+  },
+  {
+    "name": "WorkspacePaneLayoutLeaf",
+    "type": "WorkspacePaneLayoutLeaf",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "kind": "terminal"
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutBranch",
+    "type": "WorkspacePaneLayoutBranch",
+    "value": {
+      "weight": 1.0,
+      "node": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "kind": "terminal"
+      }
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutCompanion",
+    "type": "WorkspacePaneLayoutCompanion",
+    "value": {
+      "writingPaneId": "00000000-0000-4000-8000-000000000001",
+      "agentPaneId": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutSplit",
+    "type": "WorkspacePaneLayoutSplit",
+    "value": {
+      "axis": "horizontal",
+      "children": [
+        {
+          "weight": 1.0,
+          "node": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutNode",
+    "type": "WorkspacePaneLayoutNode",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "kind": "terminal"
+    }
+  },
+  {
+    "name": "WorkspacePaneLayoutEnvelope",
+    "type": "WorkspacePaneLayoutEnvelope",
+    "value": {
+      "version": 2,
+      "mode": "custom",
+      "tree": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "kind": "terminal"
+      }
+    }
+  },
+  {
     "name": "Workspace",
     "type": "Workspace",
     "value": {
@@ -285,6 +363,41 @@
         "path": "/tmp/soyeht-test",
         "layout": {
           "example": true
+        }
+      }
+    }
+  },
+  {
+    "name": "WorkspaceLayoutSetParams",
+    "type": "WorkspaceLayoutSetParams",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "layout": {
+        "version": 1,
+        "mode": "custom",
+        "tree": {
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "kind": "terminal"
+        }
+      },
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "WorkspaceLayoutSetResult",
+    "type": "WorkspaceLayoutSetResult",
+    "value": {
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "version": 1,
+          "mode": "custom",
+          "tree": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
         }
       }
     }
@@ -735,6 +848,27 @@
     }
   },
   {
+    "name": "WorkspaceLayoutUpdatedEvent",
+    "type": "WorkspaceLayoutUpdatedEvent",
+    "value": {
+      "eventId": "18446744073709551615",
+      "at": "2026-09-10T23:00:00Z",
+      "workspace": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "name": "example",
+        "path": "/tmp/soyeht-test",
+        "layout": {
+          "version": 1,
+          "mode": "custom",
+          "tree": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "WorkspaceClosedEvent",
     "type": "WorkspaceClosedEvent",
     "value": {
@@ -754,7 +888,7 @@
         "workspaceId": "00000000-0000-4000-8000-000000000001",
         "name": "example",
         "cwd": "/tmp/soyeht-test",
-        "mode": "terminal",
+        "mode": "writing",
         "state": "starting",
         "source": "protocol",
         "confidence": 0.5,
@@ -762,7 +896,45 @@
         "generation": 1,
         "cols": 1,
         "rows": 1,
-        "record": true
+        "record": true,
+        "writingKind": "text",
+        "writingSection": "texts"
+      },
+      "file": {
+        "fileId": "writing-file-1",
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "path": "Writing/Texts/Chapter One.md",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 3,
+        "byteCount": "32",
+        "dirty": false,
+        "conflicted": false,
+        "watching": true
+      },
+      "writingDocument": {
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": true
+        },
+        "kind": "text",
+        "section": "texts",
+        "sidecarRevision": "1",
+        "font": "reading_serif",
+        "focusMode": false,
+        "fullWidth": false
       }
     }
   },
@@ -1197,6 +1369,50 @@
           "path": "/tmp/soyeht-test",
           "layout": {
             "example": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "request:workspace.layout.set",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "workspace.layout.set",
+      "params": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "layout": {
+          "version": 1,
+          "mode": "custom",
+          "tree": {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "kind": "terminal"
+          }
+        },
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:workspace.layout.set",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "version": 1,
+            "mode": "custom",
+            "tree": {
+              "paneId": "00000000-0000-4000-8000-000000000001",
+              "kind": "terminal"
+            }
           }
         }
       }
@@ -1881,6 +2097,31 @@
     }
   },
   {
+    "name": "event:workspace.layout_updated",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "workspace.layout_updated",
+      "params": {
+        "eventId": "18446744073709551615",
+        "at": "2026-09-10T23:00:00Z",
+        "workspace": {
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "path": "/tmp/soyeht-test",
+          "layout": {
+            "version": 1,
+            "mode": "custom",
+            "tree": {
+              "paneId": "00000000-0000-4000-8000-000000000001",
+              "kind": "terminal"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "event:workspace.closed",
     "type": "NotificationEnvelope",
     "value": {
@@ -1907,7 +2148,7 @@
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "name": "example",
           "cwd": "/tmp/soyeht-test",
-          "mode": "terminal",
+          "mode": "writing",
           "state": "starting",
           "source": "protocol",
           "confidence": 0.5,
@@ -1915,7 +2156,45 @@
           "generation": 1,
           "cols": 1,
           "rows": 1,
-          "record": true
+          "record": true,
+          "writingKind": "text",
+          "writingSection": "texts"
+        },
+        "file": {
+          "fileId": "writing-file-1",
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "Writing/Texts/Chapter One.md",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 3,
+          "byteCount": "32",
+          "dirty": false,
+          "conflicted": false,
+          "watching": true
+        },
+        "writingDocument": {
+          "file": {
+            "fileId": "writing-file-1",
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "path": "Writing/Texts/Chapter One.md",
+            "language": "plain_text",
+            "revision": "1",
+            "diskRevision": "1",
+            "lineCount": 3,
+            "byteCount": "32",
+            "dirty": false,
+            "conflicted": false,
+            "watching": true
+          },
+          "kind": "text",
+          "section": "texts",
+          "sidecarRevision": "1",
+          "font": "reading_serif",
+          "focusMode": false,
+          "fullWidth": false
         }
       }
     }
@@ -2222,11 +2501,6 @@
     }
   },
   {
-    "name": "PermissionMode",
-    "type": "PermissionMode",
-    "value": "ask"
-  },
-  {
     "name": "PromptOrigin",
     "type": "PromptOrigin",
     "value": "human"
@@ -2245,6 +2519,11 @@
     "name": "TranscriptKind",
     "type": "TranscriptKind",
     "value": "message"
+  },
+  {
+    "name": "TranscriptKindHandover",
+    "type": "TranscriptKind",
+    "value": "handover"
   },
   {
     "name": "PermissionOptionKind",
@@ -2297,11 +2576,6 @@
     "value": "resumed"
   },
   {
-    "name": "ConfigOperationKind",
-    "type": "ConfigOperationKind",
-    "value": "config"
-  },
-  {
     "name": "ConfigValue",
     "type": "ConfigValue",
     "value": "example"
@@ -2311,7 +2585,8 @@
     "type": "ConfigChoice",
     "value": {
       "value": "00000000-0000-4000-8000-000000000001",
-      "name": "example"
+      "name": "example",
+      "kind": "full_access"
     }
   },
   {
@@ -2335,7 +2610,6 @@
     "type": "ConfigOperation",
     "value": {
       "operationId": "00000000-0000-4000-8000-000000000001",
-      "kind": "config",
       "configId": "00000000-0000-4000-8000-000000000001",
       "value": "example",
       "startedAt": "example"
@@ -2349,7 +2623,12 @@
       "text": "example",
       "origin": "human",
       "status": "queued",
-      "queuedAt": "example"
+      "queuedAt": "example",
+      "agentMessage": {
+        "paneId": "00000000-0000-4000-8000-000000000002",
+        "name": "Research",
+        "harness": "Codex"
+      }
     }
   },
   {
@@ -2362,6 +2641,32 @@
     }
   },
   {
+    "name": "PermissionFileChange",
+    "type": "PermissionFileChange",
+    "value": {
+      "path": "/project/note.txt",
+      "oldText": "before\n",
+      "newText": "after\n"
+    }
+  },
+  {
+    "name": "PermissionToolArgument",
+    "type": "PermissionToolArgument",
+    "value": { "name": "text", "value": "HTTP/2 200" }
+  },
+  {
+    "name": "PermissionPresentation",
+    "type": "PermissionPresentation",
+    "value": {
+      "targetPath": "/project/note.txt",
+      "command": "ls -la\n",
+      "executionDetails": ["Working directory: /project"],
+      "toolArguments": [{ "name": "targetPaneId", "value": "Codex" }],
+      "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
+      "previewOmitted": false
+    }
+  },
+  {
     "name": "PermissionRequest",
     "type": "PermissionRequest",
     "value": {
@@ -2371,6 +2676,11 @@
       "promptId": "00000000-0000-4000-8000-000000000001",
       "title": "example",
       "detail": "example",
+      "presentation": {
+        "targetPath": "/project/note.txt",
+        "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
+        "previewOmitted": false
+      },
       "options": [
         {
           "optionId": "00000000-0000-4000-8000-000000000001",
@@ -2439,8 +2749,6 @@
           "terminal": true
         }
       ],
-      "permission": "ask",
-      "yolo": false,
       "role": "worker",
       "queue": [
         {
@@ -2480,6 +2788,11 @@
     "name": "HarnessSetupState",
     "type": "HarnessSetupState",
     "value": "check_setup"
+  },
+  {
+    "name": "HarnessSetupReason",
+    "type": "HarnessSetupReason",
+    "value": "never_started"
   },
   {
     "name": "HarnessEnvironmentIssue",
@@ -2792,23 +3105,6 @@
     }
   },
   {
-    "name": "PaneYoloParams",
-    "type": "PaneYoloParams",
-    "value": {
-      "paneId": "00000000-0000-4000-8000-000000000001",
-      "on": false,
-      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
-    }
-  },
-  {
-    "name": "PaneYoloResult",
-    "type": "PaneYoloResult",
-    "value": {
-      "effectiveMode": "ask",
-      "on": false
-    }
-  },
-  {
     "name": "PaneAuthStartParams",
     "type": "PaneAuthStartParams",
     "value": {
@@ -3007,6 +3303,11 @@
       "promptId": "00000000-0000-4000-8000-000000000001",
       "title": "example",
       "detail": "example",
+      "presentation": {
+        "targetPath": "/project/note.txt",
+        "fileChanges": [{ "path": "/project/note.txt", "newText": "hello\n" }],
+        "previewOmitted": false
+      },
       "options": [
         {
           "optionId": "00000000-0000-4000-8000-000000000001",
@@ -3391,6 +3692,99 @@
     }
   },
   {
+    "name": "AgentMessageSource",
+    "type": "AgentMessageSource",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "name": "Research",
+      "harness": "Codex"
+    }
+  },
+  {
+    "name": "AgentListParams",
+    "type": "AgentListParams",
+    "value": {}
+  },
+  {
+    "name": "AgentListResult",
+    "type": "AgentListResult",
+    "value": {
+      "items": [{
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "name": "Research",
+        "harness": "Codex"
+      }]
+    }
+  },
+  {
+    "name": "AgentMessageParams",
+    "type": "AgentMessageParams",
+    "value": {
+      "targetPaneId": "00000000-0000-4000-8000-000000000001",
+      "text": "Please review this change.",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "AgentMessageResult",
+    "type": "AgentMessageResult",
+    "value": {
+      "promptId": "00000000-0000-4000-8000-000000000003",
+      "queued": true
+    }
+  },
+  {
+    "name": "request:agent.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "agent.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:agent.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [{
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "name": "Research",
+          "harness": "Codex"
+        }]
+      }
+    }
+  },
+  {
+    "name": "request:agent.message",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "agent.message",
+      "params": {
+        "targetPaneId": "00000000-0000-4000-8000-000000000001",
+        "text": "Please review this change.",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:agent.message",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "promptId": "00000000-0000-4000-8000-000000000003",
+        "queued": true
+      }
+    }
+  },
+  {
     "name": "request:pane.queue.list",
     "type": "RequestEnvelope",
     "value": {
@@ -3553,32 +3947,6 @@
         "applied": false,
         "effective": "example",
         "sessionPreserved": false
-      }
-    }
-  },
-  {
-    "name": "request:pane.yolo",
-    "type": "RequestEnvelope",
-    "value": {
-      "jsonrpc": "2.0",
-      "id": "request-1",
-      "method": "pane.yolo",
-      "params": {
-        "paneId": "00000000-0000-4000-8000-000000000001",
-        "on": false,
-        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
-      }
-    }
-  },
-  {
-    "name": "response:pane.yolo",
-    "type": "SuccessEnvelope",
-    "value": {
-      "jsonrpc": "2.0",
-      "id": "request-1",
-      "result": {
-        "effectiveMode": "ask",
-        "on": false
       }
     }
   },
@@ -6320,6 +6688,11 @@
     "name": "UsageState",
     "type": "UsageState",
     "value": "ok"
+  },
+  {
+    "name": "UsageUnavailableReason",
+    "type": "UsageUnavailableReason",
+    "value": "tool_not_found"
   },
   {
     "name": "UsageSource",
@@ -9362,7 +9735,8 @@
       "section": "texts",
       "sidecarRevision": "1",
       "font": "reading_serif",
-      "focusMode": false
+      "focusMode": false,
+      "fullWidth": false
     }
   },
   {
@@ -9541,7 +9915,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "pane": {
         "paneId": "writing-pane-1",
@@ -9631,7 +10006,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "pane": {
         "paneId": "writing-pane-1",
@@ -9719,7 +10095,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "slides": [
         {
@@ -9798,6 +10175,7 @@
           "sceneId": "scene-1"
         }
       ],
+      "wordCount": 6,
       "truncated": false
     }
   },
@@ -9873,6 +10251,7 @@
       "baseRevision": "1",
       "font": "classic_serif",
       "focusMode": true,
+      "fullWidth": false,
       "idempotencyKey": "writing-prefs-1"
     }
   },
@@ -9899,7 +10278,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "classic_serif",
-        "focusMode": true
+        "focusMode": true,
+        "fullWidth": false
       }
     }
   },
@@ -9979,7 +10359,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "variants": {
         "lineId": "line-1",
@@ -10084,7 +10465,8 @@
         "section": "texts",
         "sidecarRevision": "1",
         "font": "reading_serif",
-        "focusMode": false
+        "focusMode": false,
+        "fullWidth": false
       },
       "beat": {
         "beatId": "beat-1",
@@ -10186,7 +10568,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "pane": {
           "paneId": "writing-pane-1",
@@ -10285,7 +10668,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "pane": {
           "paneId": "writing-pane-1",
@@ -10382,7 +10766,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "slides": [
           {
@@ -10564,6 +10949,7 @@
         "baseRevision": "1",
         "font": "classic_serif",
         "focusMode": true,
+        "fullWidth": false,
         "idempotencyKey": "writing-prefs-1"
       }
     }
@@ -10594,7 +10980,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "classic_serif",
-          "focusMode": true
+          "focusMode": true,
+          "fullWidth": false
         }
       }
     }
@@ -10670,7 +11057,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "variants": {
           "lineId": "line-1",
@@ -10746,7 +11134,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "variants": {
           "lineId": "line-1",
@@ -10822,7 +11211,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "variants": {
           "lineId": "line-1",
@@ -10935,7 +11325,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "beat": {
           "beatId": "beat-1",
@@ -10989,7 +11380,8 @@
           "section": "texts",
           "sidecarRevision": "1",
           "font": "reading_serif",
-          "focusMode": false
+          "focusMode": false,
+          "fullWidth": false
         },
         "beat": {
           "beatId": "beat-1",

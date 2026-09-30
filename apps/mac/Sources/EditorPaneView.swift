@@ -6,6 +6,7 @@ struct EditorPaneView: View {
   @Bindable var client: EngineClient
   @Environment(EditorInputPreferences.self) private var inputPreferences
   let pane: Pane
+  let headerDrag: PaneHeaderDragConfiguration?
   @State private var selectedPosition: TextPosition?
   @State private var showHistory = false
   @State private var showConflict = false
@@ -30,11 +31,11 @@ struct EditorPaneView: View {
   }
 
   var body: some View {
-    VStack(spacing: MacTheme.Space.x8) {
+    VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
       EditorPaneHeader(
         file: view?.file, branch: branch, showHistory: { showHistory = true },
         showConflict: { showConflict = true }, showDiff: { showDiff = true },
-        diffReady: currentDiff != nil, diffProblem: diffProblem)
+        diffReady: currentDiff != nil, diffProblem: diffProblem, headerDrag: headerDrag)
       if let view {
         if view.file.conflicted {
           EditorConflictBanner(showConflict: { showConflict = true })
@@ -51,9 +52,9 @@ struct EditorPaneView: View {
         editorLoading
       }
     }
-    .padding(MacTheme.Space.x10)
+    .padding(PaneLayoutContentMetrics.paneCardInset)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
-    .frame(minWidth: 620, maxWidth: .infinity, maxHeight: .infinity)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .accessibilityIdentifier("editor-pane")
     .sheet(isPresented: $showHistory) {
       if let file = view?.file { EditorHistorySheet(client: client, file: file) }
@@ -190,6 +191,7 @@ private struct EditorPaneHeader: View {
   let showDiff: () -> Void
   let diffReady: Bool
   let diffProblem: String?
+  let headerDrag: PaneHeaderDragConfiguration?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x7) {
@@ -228,8 +230,10 @@ private struct EditorPaneHeader: View {
           .foregroundStyle(statusColor)
       }
     }
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 27)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.editorHeaderHeight)
     .background(MacTheme.well, in: Capsule())
+    .paneHeaderDrag(headerDrag)
   }
 
   private var pathLabel: String {
@@ -403,7 +407,8 @@ private struct EditorTabs: View {
             }
           }
           .foregroundStyle(file.fileId == selected.fileId ? MacTheme.accent : MacTheme.secondary)
-          .padding(.horizontal, MacTheme.Space.x12).frame(height: 26)
+          .padding(.horizontal, MacTheme.Space.x12)
+          .frame(height: PaneLayoutContentMetrics.editorTabHeight)
           .background(
             file.fileId == selected.fileId ? MacTheme.well : Color.clear,
             in: Capsule())
@@ -596,7 +601,8 @@ private struct EditorAgentReviewHunkCard: View {
         .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
         .buttonStyle(NeoPillButtonStyle()).disabled(busy)
     }
-    .padding(.horizontal, MacTheme.Space.x10).frame(height: 42)
+    .padding(.horizontal, MacTheme.Space.x10)
+    .frame(height: PaneLayoutContentMetrics.editorReviewHeight)
     .background(MacTheme.agentBlue, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 }
@@ -628,7 +634,7 @@ private struct EditorReviewCommentSheet: View {
           .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!contentReady)
       }
     }
-    .padding(MacTheme.Space.x16).frame(width: 480)
+    .padding(MacTheme.Space.x16).macSheetSurface(.reviewComment)
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
   }
 }
@@ -674,7 +680,8 @@ private struct EditorStatusBar: View {
       }
     }
     .foregroundStyle(MacTheme.secondary)
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 24).background(MacTheme.canvas)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.editorStatusHeight).background(MacTheme.canvas)
   }
 
   private var language: String {
@@ -710,7 +717,7 @@ private struct EditorDiffSheet: View {
         diffRows
       }
     }
-    .padding(MacTheme.Space.x14).frame(width: 980, height: 620)
+    .padding(MacTheme.Space.x14).macSheetSurface(.editorDiff)
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
   }
 
@@ -880,7 +887,7 @@ private struct EditorReferencesSheet: View {
         }
       }
     }
-    .padding(MacTheme.Space.x16).frame(width: 560, height: 420)
+    .padding(MacTheme.Space.x16).macSheetSurface(.editorReferences)
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink)
   }
 

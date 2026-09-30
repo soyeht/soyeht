@@ -10,7 +10,10 @@ use soyeht_acp::{
     Message, RpcError, client,
     rpc::{Record as NativeRecord, decode},
 };
-use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, PromptItem, ndjson::Decoder};
+use soyeht_protocol::{
+    PaneState, ProbeCapability, ProbeResult, PromptItem, TranscriptKind, TranscriptRole,
+    ndjson::Decoder,
+};
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::segments::Record;
 use uuid::Uuid;
@@ -37,9 +40,14 @@ fn prompt_payload(store: &impl StorePort, session: &str, prompt: &PromptItem) ->
             bytes: &attachment.bytes,
         })
         .collect();
-    Ok(client::prompt_with_images(session, &prompt.text, &images))
+    Ok(client::prompt_with_images(
+        session,
+        &super::peer::native_text(prompt),
+        &images,
+    ))
 }
 
+#[derive(Clone, Copy)]
 struct NativeContext<'a> {
     pane: &'a str,
     source_seq: u64,
@@ -56,6 +64,38 @@ fn native_error_response(id: serde_json::Value, code: i32, message: String) -> M
             data: None,
         }),
     }
+}
+
+fn reject_question(
+    pane: &str,
+    state: &mut super::state::State,
+    generation: u32,
+    id: Value,
+    method: &str,
+    error: crate::errors::Error,
+    changes: &mut Changes,
+) -> Result<()> {
+    let reason = match &error {
+        errors::Error::InvalidParams(reason) => reason.as_str(),
+        _ => "The request could not be displayed safely",
+    };
+    if method == "session/request_permission" {
+        let notice =
+            format!("Soyeht blocked this permission request: {reason}. Nothing was approved.");
+        let message = transcript::new_message(
+            state,
+            generation,
+            TranscriptRole::System,
+            TranscriptKind::System,
+            notice,
+            true,
+        )?;
+        transcript::put(changes, pane, message, "system_message")?;
+    }
+    changes
+        .outgoing
+        .push(native_error_response(id, -32602, error.to_string()));
+    Ok(())
 }
 
 impl Core {
@@ -120,26 +160,7 @@ impl Core {
                     method.as_str(),
                     "session/request_permission" | "elicitation/create"
                 ) {
-                    let mut question = Changes::default();
-                    if let Err(error) = questions::receive(
-                        state,
-                        saved,
-                        questions::Incoming {
-                            source_seq,
-                            native_id: id.clone(),
-                            method: &method,
-                            params,
-                            now_ms,
-                            timestamp,
-                        },
-                        &mut question,
-                    ) {
-                        changes
-                            .outgoing
-                            .push(native_error_response(id, -32602, error.to_string()));
-                    } else {
-                        changes = question;
-                    }
+                    changes = self.receive_question(context, id, &method, params, state, saved)?;
                 } else if matches!(
                     method.as_str(),
                     "fs/read_text_file"
@@ -176,6 +197,58 @@ impl Core {
             }
         };
         Ok((changes, observed_turn_activity))
+    }
+
+    /// Stages a permission or form question, or refuses one that cannot be shown safely.
+    fn receive_question(
+        &self,
+        context: NativeContext<'_>,
+        id: Value,
+        method: &str,
+        params: Value,
+        state: &mut super::state::State,
+        saved: &mut crate::model::StoredPane,
+    ) -> Result<Changes> {
+        let pane_names: questions::PaneNames<'_> = self
+            .panes
+            .values()
+            .map(|running| &running.stored.pane)
+            .filter(|other| other.workspace_id == saved.pane.workspace_id)
+            .map(|other| (other.pane_id.as_str(), other.name.as_str()))
+            .collect();
+        let tracked_tool = params["toolCall"]["toolCallId"]
+            .as_str()
+            .map(|id| updates::tracked_tool(&self.store, context.pane, state, id))
+            .transpose()?
+            .flatten()
+            .and_then(|message| message.tool)
+            .map(|tool| json!(tool));
+        let mut question = Changes::default();
+        let incoming = questions::Incoming {
+            source_seq: context.source_seq,
+            native_id: id.clone(),
+            method,
+            params,
+            now_ms: context.now_ms,
+            timestamp: context.timestamp,
+            pane_names: &pane_names,
+            tracked_tool,
+        };
+        if let Err(error) = questions::receive(state, saved, incoming, &mut question) {
+            let mut refusal = Changes::default();
+            let generation = saved.pane.generation;
+            reject_question(
+                context.pane,
+                state,
+                generation,
+                id,
+                method,
+                error,
+                &mut refusal,
+            )?;
+            return Ok(refusal);
+        }
+        Ok(question)
     }
 
     pub(crate) fn native_record(
@@ -535,12 +608,11 @@ impl Core {
             .clone()
             .ok_or_else(|| errors::internal("Ready agent has no session"))?;
         let mut changes = Changes::default();
-        transcript::user_prompt(
-            &mut state,
-            saved.pane.generation,
-            &prompt.text,
-            &mut changes,
-        )?;
+        // The prompt left the queue when it became active; clients drop its queued row now.
+        changes
+            .events
+            .push(super::methods::queued(pane, &state, self.now_ms()));
+        transcript::user_prompt(&mut state, saved.pane.generation, &prompt, &mut changes)?;
         responses::call(
             &mut state,
             &mut changes,
@@ -598,7 +670,48 @@ fn drop_current_agent_before_poll(_core: &mut Core, _pane: &str) -> Result<()> {
 mod tests {
     use super::*;
     use crate::ports::testing::{FixedClock, MemoryStore};
-    use soyeht_protocol::{HarnessLaunch, PermissionMode, PromptOrigin};
+    use soyeht_protocol::{HarnessLaunch, PromptOrigin};
+
+    #[test]
+    fn rejected_permission_is_visible_without_echoing_native_payload() {
+        let mut state = super::super::state::State::new(
+            HarnessLaunch {
+                id: "test".into(),
+                name: "Test".into(),
+                command: "/test".into(),
+                args: Vec::new(),
+                version: "1".into(),
+                environment: None,
+            },
+            "digest".into(),
+            None,
+        )
+        .unwrap();
+        let mut changes = Changes::default();
+        reject_question(
+            "pane",
+            &mut state,
+            1,
+            json!("native-id"),
+            "session/request_permission",
+            errors::invalid("Executable permission has no command to display"),
+            &mut changes,
+        )
+        .unwrap();
+        assert_eq!(changes.messages.len(), 1);
+        assert_eq!(changes.messages[0].role, TranscriptRole::System);
+        assert_eq!(changes.messages[0].kind, TranscriptKind::System);
+        assert!(changes.messages[0].text.contains("no command to display"));
+        assert!(changes.messages[0].text.contains("Nothing was approved"));
+        assert_eq!(changes.events.len(), 1);
+        assert_eq!(changes.events[0].0, "pane.update");
+        assert_eq!(changes.events[0].1["kind"], "system_message");
+        assert_eq!(changes.outgoing.len(), 1);
+        assert!(matches!(
+            &changes.outgoing[0],
+            Message::Response { result: Err(error), .. } if error.code == -32602
+        ));
+    }
 
     #[test]
     fn agent_session_rule_reads_requests_and_time_through_ports() {
@@ -613,7 +726,7 @@ mod tests {
                 environment: None,
             },
             "digest".into(),
-            PermissionMode::Ask,
+            None,
         )
         .unwrap();
         state.phase = Phase::Ready;

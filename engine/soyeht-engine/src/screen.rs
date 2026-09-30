@@ -171,6 +171,11 @@ impl Screen {
             return Ok(result);
         }
         if position < live_first {
+            // The disk reader returns a bounded batch. More persisted records
+            // must be read on the next pump, not reported as missing output.
+            if position < self.disk.next_offset() {
+                return Ok(result);
+            }
             let end = to.min(live_first);
             result.push(Record::Gap {
                 from: position,
@@ -288,6 +293,51 @@ mod tests {
                 .collect::<Vec<_>>(),
             bytes
         );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn replay_continues_after_a_bounded_disk_batch_without_inventing_a_gap() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, true).unwrap();
+        for offset in 0..300 {
+            screen
+                .append(Record::Data {
+                    offset,
+                    bytes: vec![b'x'],
+                })
+                .unwrap();
+        }
+        drop(screen);
+
+        let mut screen = Screen::open(&path, true).unwrap();
+        screen
+            .append(Record::Data {
+                offset: 300,
+                bytes: vec![b'y'],
+            })
+            .unwrap();
+
+        let mut next = 0;
+        let mut batches = 0;
+        let mut replayed = Vec::new();
+        while next < 301 {
+            let batch = screen
+                .read(next, 301, limits::TERMINAL_PAYLOAD_BYTES)
+                .unwrap();
+            assert!(!batch.is_empty());
+            batches += 1;
+            for record in batch {
+                let Record::Data { offset, bytes } = record else {
+                    panic!("persisted data must not replay as a gap");
+                };
+                assert_eq!(offset, next);
+                next += bytes.len() as u64;
+                replayed.extend(bytes);
+            }
+        }
+        assert!(batches > 1);
+        assert_eq!(replayed, [vec![b'x'; 300], vec![b'y']].concat());
         fs::remove_dir_all(path).unwrap();
     }
 }

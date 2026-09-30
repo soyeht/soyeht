@@ -91,11 +91,11 @@ private func writingDocument() -> WritingDocument {
       path: "Texts/Opening.md", language: .markdown, revision: "1", diskRevision: "1",
       lineCount: 12, byteCount: "240", dirty: false, conflicted: false, watching: true),
     kind: .text, section: .texts, sidecarRevision: "0", font: .reading_serif,
-    focusMode: false)
+    focusMode: false, fullWidth: false)
 }
 
 private func writingStructure(_ document: WritingDocument) -> WritingStructureResult {
   WritingStructureResult(
     document: document, slides: [], scenes: [], elements: [], variants: [], beats: [],
-    truncated: false)
+    wordCount: 0, truncated: false)
 }

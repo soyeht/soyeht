@@ -4,6 +4,10 @@ import Testing
 
 @testable import SoyehtClient
 
+#if os(macOS)
+  import Darwin
+#endif
+
 private func reading(
   _ provider: UsageProvider = .claude, state: UsageState = .ok, used: Double? = 0.4,
   secondaryUsed: Double? = nil, fetchedAt: String = "2026-09-12T12:00:00Z"
@@ -33,13 +37,74 @@ private final class UsageRefreshProbe {
   }
 }
 
+@MainActor
+private final class RateLimitRetryProbe {
+  private(set) var calls = 0
+  private(set) var waits: [UInt32] = []
+
+  func fail(_ retryAfterSec: UInt32) async throws {
+    calls += 1
+    throw ClientFailure.remote(
+      ErrorKind.rate_limited.rawValue, "wait", retryAfterSec: retryAfterSec)
+  }
+
+  func wait(_ seconds: UInt32) async throws {
+    waits.append(seconds)
+  }
+}
+
 @Test func usagePresentationClosesThresholdsAndStaleDisplay() {
   #expect(UsagePresentation(reading(used: 0.49)).band == .success)
   #expect(UsagePresentation(reading(used: 0.50)).band == .warning)
   #expect(UsagePresentation(reading(used: 0.80)).band == .warning)
   #expect(UsagePresentation(reading(used: 0.81)).band == .danger)
-  #expect(UsagePresentation(reading(state: .stale)).percentage == "—")
+  #expect(UsagePresentation(reading(state: .stale)).percentage == "40%")
+  #expect(UsagePresentation(reading(state: .stale)).band == nil)
+  #expect(UsagePresentation(reading(state: .stale)).isStale)
   #expect(UsagePresentation(reading(state: .unavailable, used: nil)).fraction == nil)
+}
+
+@Test func usageUnavailableReasonIsTypedAndSafeForDisplay() {
+  let unchecked = UsageReading(
+    provider: .codex, state: .unavailable, unavailableReason: .not_checked,
+    source: .codex_app_server, fetchedAt: "")
+  #expect(UsagePresentation(unchecked).unavailableMessage == "Usage has not been checked yet.")
+  let missing = UsageReading(
+    provider: .codex, state: .unavailable, unavailableReason: .tool_not_found,
+    source: .codex_app_server, fetchedAt: "2026-09-23T12:00:00Z")
+  #expect(UsagePresentation(missing).unavailableMessage == "Codex not found on this Mac.")
+  let failed = UsageReading(
+    provider: .codex, state: .unavailable, unavailableReason: .app_server_failed,
+    source: .codex_app_server, fetchedAt: "2026-09-23T12:00:00Z")
+  #expect(
+    UsagePresentation(failed).unavailableMessage == "Codex app server could not provide usage.")
+}
+
+@Test func usageDetailsClickRefreshesOnlyUncheckedOrStaleForEveryProvider() {
+  for provider in [UsageProvider.claude, .codex, .cursor] {
+    let source: UsageSource =
+      switch provider {
+      case .claude: .claude_desktop_cache
+      case .codex: .codex_app_server
+      case .cursor: .cursor_current_period
+      }
+    let unchecked = UsageReading(
+      provider: provider, state: .unavailable, unavailableReason: .not_checked,
+      source: source, fetchedAt: "")
+    let stale = UsageReading(
+      provider: provider, state: .stale, source: source,
+      fetchedAt: "2026-09-23T12:00:00Z")
+    let current = UsageReading(
+      provider: provider, state: .ok, source: source,
+      fetchedAt: "2026-09-23T12:00:00Z")
+    let failed = UsageReading(
+      provider: provider, state: .unavailable, unavailableReason: .tool_not_found,
+      source: source, fetchedAt: "2026-09-23T12:00:00Z")
+    #expect(UsageDetailsRefreshPolicy.shouldRefresh(unchecked))
+    #expect(UsageDetailsRefreshPolicy.shouldRefresh(stale))
+    #expect(!UsageDetailsRefreshPolicy.shouldRefresh(current))
+    #expect(!UsageDetailsRefreshPolicy.shouldRefresh(failed))
+  }
 }
 
 @Test func usageRingsPreferWeeklyForClaudeAndCodex() {
@@ -57,15 +122,6 @@ private final class UsageRefreshProbe {
     source: .codex_app_server, fetchedAt: "2026-09-15T12:00:00Z")
   #expect(UsagePresentation(reading).fraction == 0.8)
   #expect(UsagePresentation(reading).displayedWindow?.label == "Weekly")
-}
-
-@Test func hoverRefreshUsesTheContractedSixtySecondAge() throws {
-  let now = try #require(ISO8601DateFormatter().date(from: "2026-09-12T12:01:00Z"))
-  #expect(!UsagePresentation(reading()).needsHoverRefresh(now: now))
-  #expect(
-    UsagePresentation(reading(fetchedAt: "2026-09-12T11:58:59Z"))
-      .needsHoverRefresh(now: now))
-  #expect(UsagePresentation(reading(fetchedAt: "invalid")).needsHoverRefresh(now: now))
 }
 
 @Test func usageTimestampsAcceptProviderFractionalSeconds() {
@@ -86,6 +142,19 @@ private final class UsageRefreshProbe {
 
   #expect(client.usageReadings.map(\.provider) == [.claude, .codex, .cursor])
   #expect(client.usageReadings[1].primary?.used == 0.7)
+}
+
+@MainActor @Test func usageEventPreservesUnavailableReasonWithoutFreeFormDetails() throws {
+  let client = EngineClient(socket: "/tmp/sn-usage-reason/engine.sock")
+  try client.applyUsageEvent(
+    .encoded(
+      UsageChangedEvent(
+        eventId: "2", at: "2026-09-23T12:00:01Z", provider: .codex,
+        state: .unavailable, unavailableReason: .tool_not_found,
+        source: .codex_app_server, fetchedAt: "2026-09-23T12:00:01Z")))
+  let reading = try #require(client.usageReadings.first)
+  #expect(reading.unavailableReason == .tool_not_found)
+  #expect(UsagePresentation(reading).unavailableMessage == "Codex not found on this Mac.")
 }
 
 @MainActor @Test func usageRefreshCoalescesConcurrentCallsAndHonorsTheWireInterval() async throws {
@@ -116,3 +185,62 @@ private final class UsageRefreshProbe {
   }
   #expect(probe.calls == 2)
 }
+
+@MainActor @Test func usageRefreshWaitsForAnAuthorizedConnection() async {
+  let client = EngineClient(socket: "/tmp/sn-usage-before-hello/engine.sock")
+  do {
+    try await client.refreshUsage(.claude)
+    Issue.record("Usage refresh reached the wire before hello completed")
+  } catch is ClientFailure {
+    #expect(!client.connected)
+  } catch {
+    Issue.record("Unexpected error: \(error)")
+  }
+}
+
+@MainActor @Test func usageRefreshRetriesRateLimitOnlyOnceAfterServerDelay() async {
+  let probe = RateLimitRetryProbe()
+  let client = EngineClient(socket: "/tmp/sn-usage-retry/engine.sock")
+
+  do {
+    try await client.refreshUsageAfterRateLimitOnce(
+      wait: probe.wait,
+      operation: { try await probe.fail(17) })
+    Issue.record("The second rate limit should escape instead of looping")
+  } catch ClientFailure.remote(let kind, _, let retryAfterSec) {
+    #expect(kind == ErrorKind.rate_limited.rawValue)
+    #expect(retryAfterSec == 17)
+  } catch {
+    Issue.record("Unexpected error: \(error)")
+  }
+
+  #expect(probe.calls == 2)
+  #expect(probe.waits == [17])
+}
+
+#if os(macOS)
+  @MainActor @Test func claudeCacheObserverHandlesAtomicRenameInARealDirectory() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("soyeht-usage-observer-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let cache = directory.appendingPathComponent(".claude.json")
+    let replacement = directory.appendingPathComponent("replacement.json")
+    try Data("{}".utf8).write(to: cache)
+    let observer = ClaudeUsageCacheObserver(cacheURL: cache)
+    var changes = 0
+    observer.start { changes += 1 }
+
+    try Data("{\"cachedUsageUtilization\":{}}".utf8).write(to: replacement)
+    let renamed = replacement.path.withCString { source in
+      cache.path.withCString { destination in Darwin.rename(source, destination) }
+    }
+    #expect(renamed == 0)
+    for _ in 0..<100 where changes == 0 {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(changes == 1)
+    observer.stop()
+  }
+#endif

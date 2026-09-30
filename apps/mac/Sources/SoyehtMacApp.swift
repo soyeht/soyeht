@@ -1,10 +1,16 @@
+import AppKit
+import Observation
 import SoyehtClient
+import SoyehtProtocol
 import SwiftUI
+import UserNotifications
+import os
 
 @main @MainActor
 struct SoyehtMacApp: App {
   @State private var client: EngineClient
   @State private var themeStore = SoyehtThemeStore.shared
+  @State private var attentionNotifications = AgentAttentionNotifications()
   private let webHost: MacWebHost
 
   init() {
@@ -14,20 +20,22 @@ struct SoyehtMacApp: App {
     webHost = host
     _client = State(initialValue: client)
     MacTheme.registerFonts()
-    #if DEBUG
-      if let report = EditorPerformanceProbe.requestedReportURL() {
-        EditorPerformanceProbe.runAndExit(report: report)
-      }
-    #endif
   }
 
   var body: some Scene {
     Window("Soyeht · Dev", id: "main") {
-      WorkspaceWindow(client: client, webHost: webHost)
-        .frame(minWidth: 1024, minHeight: 640)
-        .environment(themeStore)
-        .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
-        .task { client.start() }
+      #if SOYEHT_PERFORMANCE_METER
+        if let options = EditorPerformanceFixture.requestedOptions() {
+          Color.clear.onAppear {
+            NSApp.mainWindow?.orderOut(nil)
+            EditorPerformanceFixture.launch(options)
+          }
+        } else {
+          workspaceContent
+        }
+      #else
+        workspaceContent
+      #endif
     }
     .defaultSize(width: 1440, height: 900)
     .windowStyle(.hiddenTitleBar)
@@ -79,6 +87,19 @@ struct SoyehtMacApp: App {
     }
   }
 
+  private var workspaceContent: some View {
+    WorkspaceWindow(client: client, webHost: webHost)
+      .ignoresSafeArea(.container, edges: .top)
+      .frame(
+        minWidth: MacPaneLayoutMetrics.minimumExercisedViewport.width,
+        minHeight: MacPaneLayoutMetrics.minimumExercisedViewport.height
+      )
+      .environment(themeStore)
+      .environment(attentionNotifications)
+      .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
+      .task { client.start() }
+  }
+
   private func workspaceViewCommand(
     _ title: String, destination: WorkspaceDestination, key: KeyEquivalent
   ) -> some View {
@@ -86,6 +107,99 @@ struct SoyehtMacApp: App {
       NotificationCenter.default.post(name: .selectSoyehtWorkspaceView, object: destination)
     }
     .keyboardShortcut(key, modifiers: .command)
+  }
+}
+
+struct AgentAttentionRoute: Equatable, Sendable {
+  let workspaceId: String
+  let paneId: String
+  let requestIdentity: String
+}
+
+private final class AgentAttentionNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+  var onOpen: (@MainActor @Sendable (AgentAttentionRoute) -> Void)?
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let info = response.notification.request.content.userInfo
+    let route: AgentAttentionRoute? = {
+      guard let workspaceId = info["workspaceId"] as? String,
+        let paneId = info["paneId"] as? String,
+        let requestIdentity = info["requestIdentity"] as? String
+      else { return nil }
+      return AgentAttentionRoute(
+        workspaceId: workspaceId, paneId: paneId, requestIdentity: requestIdentity)
+    }()
+    if let route {
+      let onOpen = onOpen
+      Task { @MainActor in
+        onOpen?(route)
+      }
+    }
+    completionHandler()
+  }
+}
+
+@MainActor @Observable
+final class AgentAttentionNotifications {
+  private static let logger = Logger(
+    subsystem: "com.soyeht.next", category: "agent-attention-notifications")
+  private let center = UNUserNotificationCenter.current()
+  private let delegate = AgentAttentionNotificationDelegate()
+  private let settings = AgentAttentionNotificationSettings()
+  private var cursor = AgentAttentionNotificationCursor()
+  var enabled: Bool { settings.enabled }
+  private(set) var pendingRoute: AgentAttentionRoute?
+
+  init() {
+    delegate.onOpen = { [weak self] route in self?.pendingRoute = route }
+    center.delegate = delegate
+  }
+
+  func clearPendingRoute() { pendingRoute = nil }
+
+  func setEnabled(_ requested: Bool) async {
+    if requested {
+      do {
+        settings.setEnabled(try await center.requestAuthorization(options: [.alert, .badge]))
+      } catch {
+        settings.setEnabled(false)
+        Self.logger.error("Notification authorization failed")
+      }
+    } else {
+      settings.setEnabled(false)
+    }
+  }
+
+  func observe(_ summary: AgentAttentionSummary, workspaces: [Workspace], connected: Bool) {
+    NSApp.dockTile.badgeLabel =
+      summary.totalWaitingCount == 0
+      ? nil : String(summary.totalWaitingCount)
+    NSApp.dockTile.display()
+    let newRequests = cursor.newRequests(in: summary, connected: connected)
+    guard settings.shouldPost(appIsActive: NSApp.isActive) else { return }
+    for request in newRequests {
+      let workspaceName =
+        workspaces.first { $0.workspaceId == request.workspaceId }?.name
+        ?? "Workspace"
+      let content = UNMutableNotificationContent()
+      content.title = "Agent needs your input"
+      content.body = "\(request.paneName) · \(workspaceName)"
+      content.userInfo = [
+        "workspaceId": request.workspaceId,
+        "paneId": request.paneId,
+        "requestIdentity": request.identity,
+      ]
+      let notification = UNNotificationRequest(
+        identifier: request.identity, content: content, trigger: nil)
+      Task {
+        do { try await center.add(notification) } catch {
+          Self.logger.error("Could not post agent-attention notification")
+        }
+      }
+    }
   }
 }
 

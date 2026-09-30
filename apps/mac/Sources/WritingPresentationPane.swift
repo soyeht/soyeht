@@ -1,15 +1,434 @@
 import AppKit
+import Observation
 import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
+struct WritingSlideShowRequest: Sendable {
+  let paneId: String
+  let fileId: String
+  let initialIndex: Int
+  let slideCount: Int
+  let viewportOffset: PaneLayoutPoint?
+}
+
+struct WritingSlideShowAction: Sendable {
+  private let handler: (@MainActor @Sendable (WritingSlideShowRequest) -> Void)?
+
+  init(_ handler: @escaping @MainActor @Sendable (WritingSlideShowRequest) -> Void) {
+    self.handler = handler
+  }
+
+  fileprivate init() { handler = nil }
+
+  @MainActor func callAsFunction(_ request: WritingSlideShowRequest) {
+    handler?(request)
+  }
+}
+
+private struct WritingSlideShowActionKey: EnvironmentKey {
+  static let defaultValue = WritingSlideShowAction()
+}
+
+extension EnvironmentValues {
+  var writingSlideShowAction: WritingSlideShowAction {
+    get { self[WritingSlideShowActionKey.self] }
+    set { self[WritingSlideShowActionKey.self] = newValue }
+  }
+
+  var writingSlideShowViewportRegistry: WritingPresentationViewportRegistry? {
+    get { self[WritingSlideShowViewportRegistryKey.self] }
+    set { self[WritingSlideShowViewportRegistryKey.self] = newValue }
+  }
+}
+
+@MainActor final class WritingPresentationViewportRegistry: @unchecked Sendable {
+  private final class WeakScrollView {
+    weak var value: NSScrollView?
+
+    init(_ value: NSScrollView) { self.value = value }
+  }
+
+  private var scrollViews: [String: WeakScrollView] = [:]
+  private var pendingRestorations: [String: PaneLayoutPoint] = [:]
+  private var restorationTasks: [String: Task<Void, Never>] = [:]
+
+  func attach(_ scrollView: NSScrollView, paneId: String) {
+    scrollViews[paneId] = WeakScrollView(scrollView)
+    if applyPendingRestoration(for: paneId) {
+      pendingRestorations[paneId] = nil
+    }
+  }
+
+  func detach(_ scrollView: NSScrollView, paneId: String) {
+    guard scrollViews[paneId]?.value === scrollView else { return }
+    scrollViews[paneId] = nil
+  }
+
+  func capture(paneId: String) -> PaneLayoutPoint? {
+    guard let origin = scrollViews[paneId]?.value?.contentView.bounds.origin else { return nil }
+    return PaneLayoutPoint(x: origin.x, y: origin.y)
+  }
+
+  func restore(_ offset: PaneLayoutPoint, paneId: String) {
+    pendingRestorations[paneId] = offset
+    restorationTasks[paneId]?.cancel()
+    restorationTasks[paneId] = Task { @MainActor [weak self] in
+      await Task.yield()
+      guard !Task.isCancelled, let self else { return }
+      var restored = applyPendingRestoration(for: paneId)
+      await Task.yield()
+      guard !Task.isCancelled else { return }
+      restored = applyPendingRestoration(for: paneId) || restored
+      if restored { pendingRestorations[paneId] = nil }
+      restorationTasks[paneId] = nil
+    }
+  }
+
+  @discardableResult private func applyPendingRestoration(for paneId: String) -> Bool {
+    guard let scrollView = scrollViews[paneId]?.value,
+      let offset = pendingRestorations[paneId]
+    else { return false }
+    scrollView.layoutSubtreeIfNeeded()
+    scrollView.contentView.scroll(to: NSPoint(x: offset.x, y: offset.y))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+    return true
+  }
+}
+
+private struct WritingSlideShowViewportRegistryKey: EnvironmentKey {
+  static let defaultValue: WritingPresentationViewportRegistry? = nil
+}
+
+struct WritingSlideShowSession: Equatable, Sendable {
+  let paneId: String
+  let fileId: String
+}
+
+@MainActor @Observable final class MacWritingSlideShowCoordinator {
+  private final class WindowReference {
+    weak var value: NSWindow?
+  }
+
+  private struct WindowSnapshot {
+    let frame: NSRect
+    let firstResponder: NSResponder?
+    let acceptsMouseMovedEvents: Bool
+  }
+
+  private(set) var session: WritingSlideShowSession?
+  private(set) var navigation = WritingSlideShowState(index: 0, slideCount: 0)
+  @ObservationIgnored private let policy = WritingSlideShowPolicy.standard
+  @ObservationIgnored private let windowReference = WindowReference()
+  @ObservationIgnored private var windowState = WritingSlideShowWindowState()
+  @ObservationIgnored private var cursorState = WritingSlideShowCursorState()
+  @ObservationIgnored private var snapshot: WindowSnapshot?
+  @ObservationIgnored private var inputMonitor: Any?
+  @ObservationIgnored private var cursorTask: Task<Void, Never>?
+  @ObservationIgnored private var fullScreenEntryTask: Task<Void, Never>?
+  @ObservationIgnored private var cursorRectsDisabled = false
+  @ObservationIgnored private var viewportOffsetState = WritingSlideShowScrollOffsetState()
+  @ObservationIgnored let viewportRegistry = WritingPresentationViewportRegistry()
+
+  var isPresenting: Bool { session != nil }
+
+  func attach(window: NSWindow?) {
+    guard windowReference.value !== window else { return }
+    if isPresenting { forceFinish() }
+    windowReference.value = window
+  }
+
+  func present(_ request: WritingSlideShowRequest) {
+    guard session == nil, request.slideCount > 0, let window = windowReference.value else {
+      return
+    }
+    session = WritingSlideShowSession(paneId: request.paneId, fileId: request.fileId)
+    navigation = WritingSlideShowState(
+      index: request.initialIndex, slideCount: request.slideCount)
+    if let viewportOffset = request.viewportOffset {
+      viewportOffsetState.capture(viewportOffset)
+    }
+    snapshot = WindowSnapshot(
+      frame: window.frame, firstResponder: window.firstResponder,
+      acceptsMouseMovedEvents: window.acceptsMouseMovedEvents)
+    window.makeFirstResponder(nil)
+    window.acceptsMouseMovedEvents = true
+    disableCursorRects(in: window)
+    installInputMonitor()
+    perform(
+      windowState.begin(
+        isFullScreen: window.styleMask.contains(.fullScreen),
+        canEnterFullScreen: !window.collectionBehavior.contains(.fullScreenNone)))
+  }
+
+  func reconcile(paneExists: Bool, connected: Bool, slideCount: Int) {
+    guard isPresenting else { return }
+    guard paneExists, connected else {
+      requestExit()
+      return
+    }
+    if navigation.reconcile(slideCount: slideCount) { requestExit() }
+  }
+
+  func requestExit() {
+    guard isPresenting else { return }
+    perform(windowState.requestExit())
+  }
+
+  func windowDidEnterFullScreen(_ window: NSWindow?) {
+    guard owns(window) else { return }
+    cancelFullScreenEntryTimeout()
+    perform(windowState.didEnterFullScreen())
+  }
+
+  func windowDidExitFullScreen(_ window: NSWindow?) {
+    guard owns(window) else { return }
+    perform(windowState.didExitFullScreen())
+  }
+
+  func windowDidBecomeKey(_ window: NSWindow?) {
+    guard let window, owns(window), isPresenting else { return }
+    disableCursorRects(in: window)
+    noteActivity()
+  }
+
+  func windowDidResignKey(_ window: NSWindow?) {
+    guard owns(window), isPresenting else { return }
+    enableCursorRects(in: window)
+    cursorTask?.cancel()
+    cursorTask = nil
+    applyCursor(cursorState.reduce(.activity))
+  }
+
+  func windowWillClose(_ window: NSWindow?) {
+    guard owns(window) else { return }
+    forceFinish()
+  }
+
+  private func owns(_ window: NSWindow?) -> Bool {
+    guard let window, let owned = windowReference.value else { return false }
+    return window === owned
+  }
+
+  private func perform(_ effect: WritingSlideShowWindowEffect) {
+    guard let window = windowReference.value else {
+      forceFinish()
+      return
+    }
+    switch effect {
+    case .none:
+      break
+    case .enterFullScreen:
+      scheduleFullScreenEntryTimeout()
+      window.toggleFullScreen(nil)
+    case .exitFullScreen:
+      window.toggleFullScreen(nil)
+    case .activate:
+      noteActivity()
+    case .finish:
+      finish(window: window)
+    }
+  }
+
+  private func scheduleFullScreenEntryTimeout() {
+    cancelFullScreenEntryTimeout()
+    let delay = policy.fullScreenEntryTimeout
+    fullScreenEntryTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .seconds(delay))
+      guard !Task.isCancelled, let self else { return }
+      self.fullScreenEntryTask = nil
+      self.perform(self.windowState.didFailToEnterFullScreen())
+    }
+  }
+
+  private func cancelFullScreenEntryTimeout() {
+    fullScreenEntryTask?.cancel()
+    fullScreenEntryTask = nil
+  }
+
+  private func installInputMonitor() {
+    guard inputMonitor == nil else { return }
+    inputMonitor = NSEvent.addLocalMonitorForEvents(
+      matching: [
+        .keyDown, .leftMouseDown, .mouseMoved, .leftMouseDragged, .rightMouseDragged,
+        .otherMouseDragged,
+      ]
+    ) { [weak self] event in
+      guard let self, self.isPresenting, self.windowReference.value?.isKeyWindow == true else {
+        return event
+      }
+      switch event.type {
+      case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
+        guard event.window === self.windowReference.value else { return event }
+        self.noteActivity()
+        NSCursor.arrow.set()
+        return nil
+      case .leftMouseDown:
+        guard event.window === self.windowReference.value else { return event }
+        self.noteActivity()
+        self.handle(.click)
+        return nil
+      case .keyDown:
+        guard let input = Self.input(for: event) else { return event }
+        let commandModified = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+          .contains(.command)
+        guard self.handle(input, commandModified: commandModified) else { return event }
+        self.noteActivity()
+        return nil
+      default:
+        return event
+      }
+    }
+  }
+
+  private static func input(for event: NSEvent) -> WritingSlideShowInput? {
+    switch event.keyCode {
+    case 124: .rightArrow
+    case 123: .leftArrow
+    case 121: .pageDown
+    case 116: .pageUp
+    case 49: .space
+    case 53: .escape
+    default: nil
+    }
+  }
+
+  @discardableResult
+  private func handle(
+    _ input: WritingSlideShowInput, commandModified: Bool = false
+  ) -> Bool {
+    guard let command = policy.command(for: input, commandModified: commandModified) else {
+      return false
+    }
+    if navigation.apply(command) { requestExit() }
+    return true
+  }
+
+  private func noteActivity() {
+    guard let window = windowReference.value, window.isKeyWindow else { return }
+    applyCursor(cursorState.reduce(.activity))
+    cursorTask?.cancel()
+    let delay = policy.cursorIdleDelay
+    cursorTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .seconds(delay))
+      guard !Task.isCancelled, let self, self.isPresenting,
+        self.windowReference.value?.isKeyWindow == true
+      else { return }
+      self.applyCursor(self.cursorState.reduce(.idleExpired))
+    }
+  }
+
+  private func applyCursor(_ effect: WritingSlideShowCursorEffect) {
+    switch effect {
+    case .none: break
+    case .hide: NSCursor.hide()
+    case .show: NSCursor.unhide()
+    }
+  }
+
+  private func disableCursorRects(in window: NSWindow) {
+    guard !cursorRectsDisabled else {
+      NSCursor.arrow.set()
+      return
+    }
+    window.disableCursorRects()
+    cursorRectsDisabled = true
+    NSCursor.arrow.set()
+  }
+
+  private func enableCursorRects(in window: NSWindow?) {
+    guard cursorRectsDisabled else { return }
+    window?.enableCursorRects()
+    cursorRectsDisabled = false
+  }
+
+  private func finish(window: NSWindow) {
+    let saved = snapshot
+    let paneId = session?.paneId
+    let viewportOffset = viewportOffsetState.takeRestoration()
+    cleanUpSession()
+    if !windowState.startedFullScreen, let saved {
+      window.setFrame(saved.frame, display: true)
+    }
+    DispatchQueue.main.async { [weak window, weak responder = saved?.firstResponder] in
+      if let window, let responder { window.makeFirstResponder(responder) }
+      DispatchQueue.main.async {
+        if let paneId, let viewportOffset {
+          self.viewportRegistry.restore(viewportOffset, paneId: paneId)
+        }
+      }
+    }
+    snapshot = nil
+    windowState = WritingSlideShowWindowState()
+  }
+
+  private func forceFinish() {
+    let window = windowReference.value
+    let paneId = session?.paneId
+    let viewportOffset = viewportOffsetState.takeRestoration()
+    cleanUpSession()
+    windowState = WritingSlideShowWindowState()
+    if let window, let saved = snapshot {
+      window.acceptsMouseMovedEvents = saved.acceptsMouseMovedEvents
+    }
+    snapshot = nil
+    DispatchQueue.main.async {
+      if let paneId, let viewportOffset {
+        self.viewportRegistry.restore(viewportOffset, paneId: paneId)
+      }
+    }
+  }
+
+  private func cleanUpSession() {
+    cancelFullScreenEntryTimeout()
+    cursorTask?.cancel()
+    cursorTask = nil
+    applyCursor(cursorState.reduce(.sessionEnded))
+    if let inputMonitor {
+      NSEvent.removeMonitor(inputMonitor)
+      self.inputMonitor = nil
+    }
+    enableCursorRects(in: windowReference.value)
+    if let window = windowReference.value, let snapshot {
+      window.acceptsMouseMovedEvents = snapshot.acceptsMouseMovedEvents
+    }
+    session = nil
+    navigation = WritingSlideShowState(index: 0, slideCount: 0)
+  }
+}
+
+struct MacWindowReader: NSViewRepresentable {
+  let onResolve: @MainActor (NSWindow?) -> Void
+
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    resolve(view)
+    return view
+  }
+
+  func updateNSView(_ view: NSView, context: Context) { resolve(view) }
+
+  private func resolve(_ view: NSView) {
+    DispatchQueue.main.async { onResolve(view.window) }
+  }
+}
+
 struct WritingPresentationPane: View {
   @Bindable var client: EngineClient
+  @Environment(\.writingSlideShowAction) private var slideShow
+  @Environment(\.writingSlideShowViewportRegistry) private var viewportRegistry
   let pane: Pane
+  let headerDrag: PaneHeaderDragConfiguration?
+  let companionLinked: Bool
+  let onClose: (String) -> Void
+  let onSplit: (String, PaneSplitAxis) -> Void
+  let layoutActionsDisabled: Bool
   @State private var selectedSlide: UInt32 = 0
   @State private var activeLine: UInt32 = 0
   @State private var targetLine: UInt32?
-  @State private var presenting = false
+  @State private var showingOptions = false
+  @State private var showingCloseConfirmation = false
+  @State private var chromeActivity = WritingChromeActivityState()
 
   private var writing: WritingDocumentView? {
     client.writingDocuments.values.first { $0.document.file.paneId == pane.paneId }
@@ -24,47 +443,229 @@ struct WritingPresentationPane: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      header
-      if let file, file.viewport != nil {
-        HStack(spacing: 0) {
-          slideRail
-          Divider().overlay(MacTheme.well)
-          sourceEditor(file)
+    GeometryReader { proxy in
+      if let document = writing?.document, let file, file.viewport != nil,
+        let plan = layoutPlan(size: proxy.size, document: document),
+        case .presentation(let presentationPlan) = plan.surface
+      {
+        ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
+          plannedSurface(plan: plan, presentationPlan: presentationPlan, file: file)
+            .forceEnclosingOverlayScrollers()
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollDisabled(plan.overflowAxes.isEmpty)
+        .frame(width: proxy.size.width, height: proxy.size.height)
+        .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       } else {
-        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
+          presentationHeader(document: writing?.document)
+          ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(PaneLayoutContentMetrics.paneCardInset)
+        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
       }
     }
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
-    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
     .task(id: writingLoadKey) { await loadIfNeeded() }
-    .sheet(isPresented: $presenting) {
-      if let fileId = writing?.document.file.fileId {
-        WritingSlideShow(
-          client: client, fileId: fileId, slides: slides, initialIndex: selectedSlide)
-      }
+    .onChange(of: showingOptions) { _, value in
+      updateChrome(.menuChanged(value))
+    }
+    .alert("Close \(documentFileName)?", isPresented: $showingCloseConfirmation) {
+      Button("Cancel", role: .cancel) {}
+      Button("Close", role: .destructive) { client.closePane(pane.paneId) }
+    } message: {
+      Text("Unsaved changes will be lost.")
     }
   }
 
-  private var header: some View {
-    HStack(spacing: MacTheme.Space.x8) {
-      Image(systemName: "rectangle.on.rectangle.angled")
-        .foregroundStyle(MacTheme.secondary)
-      Text(pane.name)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
-      Spacer()
-      Text("\(slides.count) slides")
-        .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.muted)
-      Button {
-        presenting = !slides.isEmpty
-      } label: {
-        Label("Present", systemImage: "play.fill")
-          .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+  private func layoutPlan(
+    size: CGSize, document: WritingDocument
+  ) -> WritingLayoutPlan? {
+    let policy = WritingLayoutPolicy(
+      floors: MacPaneLayoutMetrics.surfaceFloors,
+      gaps: MacPaneLayoutMetrics.sizing.gaps)
+    return try? policy.layout(
+      WritingLayoutRequest(
+        kind: .presentation,
+        viewport: PaneLayoutSize(width: size.width, height: size.height),
+        font: MacPaneLayoutMetrics.proseMetric(for: document.font)))
+  }
+
+  private func plannedSurface(
+    plan: WritingLayoutPlan, presentationPlan: WritingPresentationLayoutPlan,
+    file: EditorFileView
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      Color.clear
+        .frame(width: plan.contentSize.width, height: plan.contentSize.height)
+        .allowsHitTesting(false)
+      MacTheme.face
+        .writingFrame(plan.contentRect)
+      presentationHeader(document: writing?.document)
+        .writingFrame(plan.headerRect)
+      if presentationPlan.navigation == .thumbnails {
+        slideRail
+          .writingFrame(presentationPlan.navigationRect)
+          .accessibilityIdentifier("writing-presentation-slide-rail-\(pane.paneId)")
+        MacTheme.well
+          .writingFrame(
+            PaneLayoutRect(
+              origin: PaneLayoutPoint(
+                x: presentationPlan.navigationRect.origin.x
+                  + presentationPlan.navigationRect.size.width,
+                y: presentationPlan.navigationRect.origin.y),
+              size: PaneLayoutSize(
+                width: WritingLayoutMetrics.standard.railDividerWidth,
+                height: presentationPlan.navigationRect.size.height)))
+      } else {
+        slideNumberStrip
+          .writingFrame(presentationPlan.navigationRect)
+          .accessibilityIdentifier("writing-presentation-slide-numbers-\(pane.paneId)")
       }
-      .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(slides.isEmpty)
+      presentationStage(file)
+        .writingFrame(presentationPlan.stageRect)
+      footer
+        .writingFrame(presentationPlan.footerRect)
     }
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 42).background(MacTheme.face)
+    .frame(
+      width: plan.contentSize.width, height: plan.contentSize.height,
+      alignment: .topLeading
+    )
+    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
+    .onContinuousHover { phase in
+      if case .active = phase { updateChrome(.pointerMoved) }
+    }
+  }
+
+  private func presentationHeader(document: WritingDocument?) -> some View {
+    WritingChromeHeader(
+      paneId: pane.paneId, title: documentFileName,
+      metadata: writing?.structure.map {
+        WritingDisplayText.count($0.slides.count, kind: .slide)
+      },
+      companionLinked: companionLinked, opacity: chromeOpacity,
+      headerDrag: headerDrag,
+      onHover: { updateChrome(.headerHoverChanged($0)) },
+      trailing: {
+        Button {
+          showingOptions.toggle()
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.system(size: WritingChromeMetrics.standard.headerMenuIconSize))
+            .foregroundStyle(MacTheme.secondary)
+            .frame(
+              width: WritingChromeMetrics.standard.headerMenuTargetSize,
+              height: WritingChromeMetrics.standard.headerMenuTargetSize
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("Presentation options")
+        .accessibilityLabel("Presentation options menu")
+        .accessibilityIdentifier("writing-options-\(pane.paneId)")
+        .popover(isPresented: $showingOptions, arrowEdge: .bottom) {
+          presentationOptions
+        }
+      })
+  }
+
+  private var presentationOptions: some View {
+    let groups = MacPaneLayoutMetrics.chromePolicy.plan(kind: .presentation).menuGroups
+    return VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
+      ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+        if index > 0 { Divider().padding(.vertical, MacTheme.Space.x3) }
+        ForEach(group, id: \.rawValue) { action in
+          presentationOption(action)
+        }
+      }
+    }
+    .padding(MacTheme.Space.x8)
+    .frame(width: PaneLayoutContentMetrics.writingOptionsMenuWidth)
+    .background(MacTheme.face)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Presentation options menu")
+  }
+
+  @ViewBuilder private func presentationOption(_ action: WritingChromeAction) -> some View {
+    switch action {
+    case .present:
+      optionButton(
+        "Present", icon: "play.fill", disabled: slides.isEmpty,
+        identifier: "writing-present-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        guard let fileId = writing?.document.file.fileId else { return }
+        let viewportOffset = viewportRegistry?.capture(paneId: pane.paneId)
+        let request = WritingSlideShowRequest(
+          paneId: pane.paneId, fileId: fileId, initialIndex: Int(selectedSlide),
+          slideCount: slides.count, viewportOffset: viewportOffset)
+        Task { @MainActor in
+          await Task.yield()
+          slideShow(request)
+        }
+      }
+    case .splitColumns:
+      optionButton(
+        "Split into columns", icon: "rectangle.split.2x1",
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "split-pane-columns-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        onSplit(pane.paneId, .columns)
+      }
+    case .splitRows:
+      optionButton(
+        "Split into rows", icon: "rectangle.split.1x2",
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "split-pane-rows-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        onSplit(pane.paneId, .rows)
+      }
+    case .closePane:
+      optionButton(
+        "Close pane", icon: "xmark", role: .destructive,
+        disabled: !client.connected || layoutActionsDisabled,
+        identifier: "close-pane-\(pane.paneId)"
+      ) {
+        showingOptions = false
+        requestClose()
+      }
+    case .font, .useFullWidth, .useReadingWidth, .focusMode, .ideaBoard, .scenes,
+      .bold, .italic, .heading, .list, .quote, .link, .image:
+      EmptyView()
+    }
+  }
+
+  private func optionLabel(_ title: String, icon: String) -> some View {
+    Label(title, systemImage: icon)
+      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+      .foregroundStyle(MacTheme.ink)
+      .frame(
+        maxWidth: .infinity,
+        minHeight: PaneLayoutContentMetrics.writingOptionsRowHeight,
+        alignment: .leading
+      )
+      .contentShape(Rectangle())
+  }
+
+  private func optionButton(
+    _ title: String, icon: String, role: ButtonRole? = nil,
+    disabled: Bool = false, identifier: String, action: @escaping () -> Void
+  ) -> some View {
+    Button(role: role, action: action) { optionLabel(title, icon: icon) }
+      .buttonStyle(.plain)
+      .focusable(false)
+      .disabled(disabled)
+      .accessibilityIdentifier(identifier)
+  }
+
+  private func scrollAxes(_ plan: WritingLayoutPlan) -> Axis.Set {
+    var axes: Axis.Set = []
+    if plan.overflowAxes.contains(.horizontal) { axes.insert(.horizontal) }
+    if plan.overflowAxes.contains(.vertical) { axes.insert(.vertical) }
+    return axes
   }
 
   private var slideRail: some View {
@@ -89,19 +690,55 @@ struct WritingPresentationPane: View {
           }
         }
         .padding(MacTheme.Space.x4)
+        .forceEnclosingOverlayScrollers()
       }
     }
-    .padding(MacTheme.Space.x12).frame(width: 236).background(MacTheme.canvas)
+    .padding(MacTheme.Space.x12).background(MacTheme.face)
   }
 
-  private func sourceEditor(_ file: EditorFileView) -> some View {
-    VStack(spacing: 0) {
-      WritingPresentationViewport(
-        client: client, view: file, activeLine: $activeLine, targetLine: $targetLine
-      )
-      footer
+  private var slideNumberStrip: some View {
+    ScrollView(.horizontal) {
+      HStack(spacing: MacTheme.Space.x6) {
+        ForEach(slides, id: \.index) { slide in
+          Button {
+            select(slide)
+          } label: {
+            Text("\(identifier: slide.index + 1)")
+              .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .bold))
+              .foregroundStyle(
+                slide.index == selectedSlide ? MacTheme.onAccent : MacTheme.secondary
+              )
+              .frame(width: 22, height: 22)
+              .background(
+                slide.index == selectedSlide ? MacTheme.accent : MacTheme.well, in: Circle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Slide \(identifier: slide.index + 1)")
+          .accessibilityIdentifier(
+            "writing-presentation-slide-number-\(pane.paneId)-\(slide.index)")
+        }
+      }
+      .fixedSize(horizontal: true, vertical: false)
+      .padding(.horizontal, MacTheme.Space.x10)
+      .forceEnclosingOverlayScrollers()
     }
+    .scrollIndicators(.hidden)
     .background(MacTheme.face)
+  }
+
+  private func presentationStage(_ file: EditorFileView) -> some View {
+    WritingPresentationViewport(
+      client: client, view: file, activeLine: $activeLine, targetLine: $targetLine,
+      paneId: pane.paneId, viewportRegistry: viewportRegistry,
+      onEditingActivity: { updateChrome(.edited) }
+    )
+    .background(MacTheme.face)
+    .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+    .overlay {
+      RoundedRectangle(cornerRadius: MacTheme.Radius.control)
+        .stroke(MacTheme.well, lineWidth: 1)
+    }
+    .accessibilityIdentifier("writing-presentation-stage-\(pane.paneId)")
     .onChange(of: activeLine) { _, line in
       if let slide = slides.first(where: { line >= $0.startLine && line <= $0.endLine }) {
         selectedSlide = slide.index
@@ -118,7 +755,39 @@ struct WritingPresentationPane: View {
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.micro))
     .foregroundStyle(MacTheme.muted)
-    .padding(.horizontal, MacTheme.Space.x12).frame(height: 28).background(MacTheme.canvas)
+    .padding(.horizontal, MacTheme.Space.x12)
+    .frame(height: PaneLayoutContentMetrics.presentationFooterHeight).background(MacTheme.face)
+  }
+
+  private var documentFileName: String {
+    guard let path = writing?.document.file.path else { return pane.name }
+    return URL(fileURLWithPath: path).lastPathComponent
+  }
+
+  private var chromeOpacity: Double {
+    chromeActivity.visibility == .dimmed
+      ? WritingChromeMetrics.standard.dimmedOpacity : 1
+  }
+
+  private func updateChrome(_ event: WritingChromeActivityEvent) {
+    var next = chromeActivity
+    next.reduce(event)
+    let duration =
+      next.visibility == .dimmed
+      ? WritingChromeMetrics.standard.dimDuration
+      : WritingChromeMetrics.standard.revealDuration
+    withAnimation(.easeOut(duration: duration)) { chromeActivity = next }
+  }
+
+  private func requestClose() {
+    switch MacPaneLayoutMetrics.chromePolicy.closeDisposition(
+      fileName: documentFileName, dirty: file?.file.dirty == true)
+    {
+    case .closeImmediately:
+      client.closePane(pane.paneId)
+    case .confirm:
+      showingCloseConfirmation = true
+    }
   }
 
   private func select(_ slide: WritingSlide) {
@@ -164,7 +833,7 @@ private struct WritingSlideThumbnail: View {
             Image(systemName: "photo").foregroundStyle(MacTheme.secondary)
           }
         }
-        Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
+        Text(WritingDisplayText.slideTitle(slide.heading))
           .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
           .foregroundStyle(MacTheme.ink).lineLimit(2)
         if let asset = slide.imagePaths.first, let fileId {
@@ -188,49 +857,80 @@ private struct WritingSlideThumbnail: View {
   }
 }
 
-private struct WritingSlideShow: View {
+struct WritingSlideShowSurface: View {
   @Bindable var client: EngineClient
-  let fileId: String
-  let slides: [WritingSlide]
-  @State private var index: Int
-  @Environment(\.dismiss) private var dismiss
+  let coordinator: MacWritingSlideShowCoordinator
+  let session: WritingSlideShowSession
 
-  init(client: EngineClient, fileId: String, slides: [WritingSlide], initialIndex: UInt32) {
-    self.client = client
-    self.fileId = fileId
-    self.slides = slides
-    _index = State(initialValue: min(Int(initialIndex), max(slides.count - 1, 0)))
+  private var writing: WritingDocumentView? {
+    client.writingDocuments.values.first {
+      $0.document.file.paneId == session.paneId && $0.document.file.fileId == session.fileId
+    }
+  }
+  private var slides: [WritingSlide] { writing?.structure?.slides ?? [] }
+  private var paneExists: Bool { client.panes.contains { $0.paneId == session.paneId } }
+  private var reconcileKey: String {
+    "\(client.connected):\(paneExists):\(slides.count)"
   }
 
   var body: some View {
-    VStack(spacing: MacTheme.Space.x18) {
-      HStack {
-        Text("\(identifier: index + 1) / \(slides.count)")
-          .font(MacTheme.mono(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.muted)
-        Spacer()
-        Button("Done") { dismiss() }.buttonStyle(NeoPillButtonStyle(accent: true))
-      }
-      if let slide = slides[safe: index] {
-        VStack(spacing: 28) {
-          Text(slide.heading.isEmpty ? "Untitled slide" : slide.heading)
-            .font(MacTheme.prose(.sans, 46, weight: .bold)).multilineTextAlignment(.center)
-          ForEach(slide.imagePaths, id: \.self) { asset in
-            WritingAssetImage(client: client, fileId: fileId, asset: asset)
-              .frame(maxWidth: 720, maxHeight: 380)
-          }
+    GeometryReader { proxy in
+      let stage = WritingSlideShowPolicy.standard.fittedStage(
+        in: PaneLayoutSize(width: proxy.size.width, height: proxy.size.height))
+      ZStack(alignment: .topLeading) {
+        MacTheme.presentationLetterbox
+        if let slide = slides[safe: coordinator.navigation.index] {
+          WritingPresentedSlide(client: client, fileId: session.fileId, slide: slide)
+            .writingFrame(stage)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
       }
-      HStack {
-        Button("Previous") { index = max(index - 1, 0) }.disabled(index == 0)
-        Spacer()
-        Button("Next") { index = min(index + 1, slides.count - 1) }
-          .disabled(index + 1 >= slides.count)
-      }
-      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
+      .frame(width: proxy.size.width, height: proxy.size.height)
+      .contentShape(Rectangle())
     }
-    .padding(32).frame(minWidth: 900, minHeight: 620).background(MacTheme.canvas)
+    .ignoresSafeArea()
+    .accessibilityIdentifier("writing-presentation-full-screen")
+    .onAppear { reconcile() }
+    .onChange(of: reconcileKey) { _, _ in reconcile() }
+  }
+
+  private func reconcile() {
+    coordinator.reconcile(
+      paneExists: paneExists, connected: client.connected, slideCount: slides.count)
+  }
+}
+
+private struct WritingPresentedSlide: View {
+  @Bindable var client: EngineClient
+  let fileId: String
+  let slide: WritingSlide
+
+  var body: some View {
+    GeometryReader { proxy in
+      let metrics = WritingSlideShowPolicy.standard.slideSizing.metrics(
+        in: PaneLayoutSize(width: proxy.size.width, height: proxy.size.height))
+      VStack(spacing: metrics.contentSpacing) {
+        Text(WritingDisplayText.slideTitle(slide.heading))
+          .font(MacTheme.prose(.sans, metrics.titleSize, weight: .bold))
+          .foregroundStyle(MacTheme.ink)
+          .multilineTextAlignment(.center)
+          .lineLimit(3)
+          .minimumScaleFactor(0.55)
+        if !slide.imagePaths.isEmpty {
+          VStack(spacing: metrics.contentSpacing) {
+            ForEach(slide.imagePaths, id: \.self) { asset in
+              WritingAssetImage(client: client, fileId: fileId, asset: asset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      }
+      .padding(metrics.padding)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(MacTheme.face)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("writing-presentation-presented-slide")
   }
 }
 
@@ -239,12 +939,24 @@ private struct WritingPresentationViewport: NSViewRepresentable {
   let view: EditorFileView
   @Binding var activeLine: UInt32
   @Binding var targetLine: UInt32?
+  let paneId: String
+  let viewportRegistry: WritingPresentationViewportRegistry?
+  let onEditingActivity: () -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
-  func makeNSView(context: Context) -> NSScrollView { context.coordinator.makeScrollView() }
+  func makeNSView(context: Context) -> NSScrollView {
+    let scrollView = context.coordinator.makeScrollView()
+    viewportRegistry?.attach(scrollView, paneId: paneId)
+    return scrollView
+  }
   func updateNSView(_ scrollView: NSScrollView, context: Context) {
     context.coordinator.parent = self
+    viewportRegistry?.attach(scrollView, paneId: paneId)
     context.coordinator.update()
+  }
+
+  static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+    coordinator.parent.viewportRegistry?.detach(scrollView, paneId: coordinator.parent.paneId)
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -264,6 +976,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
       scroll.backgroundColor = NSColor(MacTheme.face)
       scroll.hasVerticalScroller = true
       scroll.autohidesScrollers = true
+      scroll.scrollerStyle = .overlay
       scroll.documentView = textView
       configure()
       return scroll
@@ -307,6 +1020,7 @@ private struct WritingPresentationViewport: NSViewRepresentable {
       guard NSMaxRange(range) <= raw.length,
         let start = position(range.location), let end = position(NSMaxRange(range))
       else { return false }
+      parent.onEditingActivity()
       source = raw.replacingCharacters(in: range, with: replacement)
       let cursor = range.location + replacement.utf16.count
       parent.client.enqueueEditorEdits(
@@ -455,6 +1169,19 @@ private struct WritingAssetImage: View {
 
 @MainActor final class WritingImagePasteTextView: NSTextView {
   var imageHandler: ((NSPasteboard) -> Bool)?
+  var writingFormatShortcutHandler: ((WritingFormatKind) -> Void)?
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    let conflictingModifiers: NSEvent.ModifierFlags = [.control, .option, .shift]
+    guard flags.contains(.command), flags.intersection(conflictingModifiers).isEmpty,
+      let kind = WritingChromePolicy.formatShortcut(
+        key: event.charactersIgnoringModifiers ?? "", command: true),
+      let writingFormatShortcutHandler
+    else { return super.performKeyEquivalent(with: event) }
+    writingFormatShortcutHandler(kind)
+    return true
+  }
 
   override func paste(_ sender: Any?) {
     if imageHandler?(NSPasteboard.general) == true { return }

@@ -68,7 +68,7 @@ and named elements only); `web_click {paneId, ref}`; `web_type {paneId, ref,
 text, submit?}`; `web_press {paneId, key}`; `web_hover`; `web_select {ref,
 value}`; `web_scroll {ref? | dx, dy}`; `web_wait {text? | selector? |
 networkIdle? , timeoutMs}`; `web_evaluate {paneId, js}` (behind a permission
-request; never granted by yolo); `web_screenshot {paneId, fullPage?}`;
+request; never granted by an agent permission mode); `web_screenshot {paneId, fullPage?}`;
 `web_console {paneId, since?}` (level, text, source and time; never request
 or response bodies); `web_network {paneId, since?}` (method, URL, status,
 duration and size; never headers or bodies); `web_resize {paneId, preset |
@@ -89,7 +89,7 @@ address bar) pauses agent driving and the next tool call returns
 - The agent may not use a signed-in session silently. The first `web_*` call
   that would send cookies for a domain raises `pane.permission_requested
   {kind: "web_session", domain}` with the options "this task only", "always
-  in this workspace", "deny". Yolo mode does **not** answer this request.
+  in this workspace", "deny". No agent permission mode answers this request.
 - No cookie import from other browsers in v1. Only `http` and `https`
   navigations; everything else is refused with an explicit message.
 - Console and network readings are kept in memory only (rings of 500 and
@@ -130,7 +130,7 @@ a certificate-trust UI for local HTTPS (the system trust store is used).
   `open_web` becomes `web_open`.
 - 05: agent web actions feed the state phrase ("testing localhost:5173").
 - 07: web pane record persisted; console and network never persisted.
-- 04 and 02: new permission kind `web_session`, excluded from yolo.
+- 04 and 02: new permission kind `web_session`, never answered by an agent permission mode.
 
 ## 11. Human mode (computer use)
 The tool mode of §5 is for the user's own pages: fast, structured, and

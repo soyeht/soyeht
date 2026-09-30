@@ -1,6 +1,6 @@
 use crate::providers::{ProviderReader, readers};
 use crate::{Reading, SourceRead, UsageSourcePort};
-use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
+use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransientFailure {
@@ -12,6 +12,13 @@ pub enum TransientFailure {
 pub struct RefreshOutcome {
     pub reading: Reading,
     pub transient: Option<TransientFailure>,
+}
+
+struct ReadFailure {
+    source: UsageSource,
+    state: UsageState,
+    transient: Option<TransientFailure>,
+    reason: Option<UsageUnavailableReason>,
 }
 
 pub struct ReaderRegistry {
@@ -83,6 +90,8 @@ fn refresh_reader(
         match port.read(reader.provider(), source.clone()) {
             SourceRead::Payload(payload) => match reader.parse(source.clone(), &payload) {
                 Ok(parsed) => {
+                    let fetched_at = parsed.fetched_at.unwrap_or(fetched_at);
+                    let observed_at_sec = parsed.observed_at_sec.unwrap_or(observed_at_sec);
                     return Ok(RefreshOutcome {
                         reading: Reading::available(
                             reader.provider(),
@@ -95,28 +104,38 @@ fn refresh_reader(
                         transient: None,
                     });
                 }
-                Err(_) => choose_failure(&mut failure, source.clone(), SourceRead::Unavailable),
+                Err(crate::Error::CacheNotPopulated { .. }) => {
+                    choose_failure(&mut failure, source.clone(), SourceRead::Unavailable(None))
+                }
+                Err(_) => choose_failure(
+                    &mut failure,
+                    source.clone(),
+                    SourceRead::Unavailable(Some(UsageUnavailableReason::InvalidResponse)),
+                ),
             },
             outcome => choose_failure(&mut failure, source.clone(), outcome),
         }
     }
-    let (source, state, transient) =
-        failure.unwrap_or((first_source, UsageState::Unavailable, None));
-    Ok(unavailable(
-        reader.provider(),
-        source,
-        state,
-        fetched_at,
-        observed_at_sec,
-        transient,
-    ))
+    let failure = failure.unwrap_or(ReadFailure {
+        source: first_source,
+        state: UsageState::Unavailable,
+        transient: None,
+        reason: None,
+    });
+    Ok(RefreshOutcome {
+        reading: Reading::unavailable(
+            reader.provider(),
+            failure.state,
+            failure.reason,
+            failure.source,
+            fetched_at,
+            observed_at_sec,
+        ),
+        transient: failure.transient,
+    })
 }
 
-fn choose_failure(
-    selected: &mut Option<(UsageSource, UsageState, Option<TransientFailure>)>,
-    source: UsageSource,
-    outcome: SourceRead,
-) {
+fn choose_failure(selected: &mut Option<ReadFailure>, source: UsageSource, outcome: SourceRead) {
     let candidate = failure_candidate(source, outcome);
     let replace = selected
         .as_ref()
@@ -126,51 +145,41 @@ fn choose_failure(
     }
 }
 
-fn failure_candidate(
-    source: UsageSource,
-    outcome: SourceRead,
-) -> (UsageSource, UsageState, Option<TransientFailure>) {
-    match outcome {
-        SourceRead::NoAccess => (source, UsageState::NoAccess, None),
-        SourceRead::LoginNeeded => (source, UsageState::LoginNeeded, None),
+fn failure_candidate(source: UsageSource, outcome: SourceRead) -> ReadFailure {
+    let (state, transient, reason) = match outcome {
+        SourceRead::NoAccess => (UsageState::NoAccess, None, None),
+        SourceRead::LoginNeeded => (UsageState::LoginNeeded, None, None),
         SourceRead::RateLimited { retry_after_sec } => (
-            source,
             UsageState::Unavailable,
             Some(TransientFailure::RateLimited { retry_after_sec }),
+            None,
         ),
         SourceRead::NetworkError => (
-            source,
             UsageState::Unavailable,
             Some(TransientFailure::Network),
+            None,
         ),
-        SourceRead::Payload(_) | SourceRead::Unavailable => (source, UsageState::Unavailable, None),
+        SourceRead::Unavailable(reason) => (UsageState::Unavailable, None, reason),
+        SourceRead::Payload(_) => (UsageState::Unavailable, None, None),
+    };
+    ReadFailure {
+        source,
+        state,
+        transient,
+        reason,
     }
 }
 
-fn failure_rank(failure: &(UsageSource, UsageState, Option<TransientFailure>)) -> (u8, u8) {
-    let state = match &failure.1 {
+fn failure_rank(failure: &ReadFailure) -> (u8, u8, u8) {
+    let state = match &failure.state {
         UsageState::NoAccess => 3,
         UsageState::LoginNeeded => 2,
         UsageState::Unavailable | UsageState::Stale | UsageState::Ok => 1,
     };
-    let transient = match &failure.2 {
+    let transient = match &failure.transient {
         Some(TransientFailure::RateLimited { .. }) => 2,
         Some(TransientFailure::Network) => 1,
         None => 0,
     };
-    (state, transient)
-}
-
-fn unavailable(
-    provider: UsageProvider,
-    source: UsageSource,
-    state: UsageState,
-    fetched_at: String,
-    observed_at_sec: u64,
-    transient: Option<TransientFailure>,
-) -> RefreshOutcome {
-    RefreshOutcome {
-        reading: Reading::unavailable(provider, state, source, fetched_at, observed_at_sec),
-        transient,
-    }
+    (state, transient, u8::from(failure.reason.is_some()))
 }

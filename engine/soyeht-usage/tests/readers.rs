@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
+use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 use soyeht_usage::{ReaderRegistry, SourceRead, UsageSourcePort};
 use std::collections::VecDeque;
 
@@ -54,11 +54,7 @@ fn registry_and_source_orders_are_closed() {
     );
     assert_eq!(
         registry.sources(UsageProvider::Claude),
-        vec![
-            UsageSource::ClaudeCliUsage,
-            UsageSource::ClaudeOauthEndpoint,
-            UsageSource::ClaudeDesktopCache,
-        ]
+        vec![UsageSource::ClaudeDesktopCache]
     );
     assert_eq!(
         registry.sources(UsageProvider::Codex),
@@ -74,15 +70,13 @@ fn registry_and_source_orders_are_closed() {
 }
 
 #[test]
-fn first_reader_normalizes_two_verified_windows() {
-    let payload = r#"{"result":"Current session: 25% used · resets Sep 12 at 2:00pm\nCurrent week (all models): 75% used · resets Sep 16 at 1:00am"}"#
-        .as_bytes()
-        .to_vec();
+fn first_reader_normalizes_only_the_cached_usage_key() {
+    let payload = br#"{"accountUuid":"must-not-escape","unrelated":{"private":true},"cachedUsageUtilization":{"accountUuid":"must-not-escape","fetchedAtMs":1789729200000,"utilization":{"five_hour":{"utilization":25,"resets_at":"2026-09-18T14:40:00Z"},"seven_day":{"utilization":75,"resets_at":"2026-09-23T16:00:00Z"}}}}"#.to_vec();
     let (outcome, source) = refresh(
         UsageProvider::Claude,
         vec![(
             UsageProvider::Claude,
-            UsageSource::ClaudeCliUsage,
+            UsageSource::ClaudeDesktopCache,
             SourceRead::Payload(payload),
         )],
     );
@@ -92,6 +86,8 @@ fn first_reader_normalizes_two_verified_windows() {
     let weekly = outcome.reading.secondary.unwrap();
     assert_eq!(weekly.used, 0.75);
     assert_eq!(weekly.label, "Weekly");
+    assert_eq!(outcome.reading.observed_at_sec, 1_789_729_200);
+    assert_eq!(outcome.reading.fetched_at, "2026-09-18T11:00:00.000Z");
 }
 
 #[test]
@@ -148,28 +144,99 @@ fn third_reader_normalizes_the_verified_current_period_shape() {
 }
 
 #[test]
-fn fallbacks_are_tried_in_order_and_unverified_payloads_fail_closed() {
-    let script = vec![
+fn missing_or_invalid_cached_usage_is_unavailable() {
+    let cases = [
         (
-            UsageProvider::Claude,
-            UsageSource::ClaudeCliUsage,
-            SourceRead::Unavailable,
+            include_bytes!("fixtures/claude-cache-absent.json").as_slice(),
+            None,
         ),
         (
-            UsageProvider::Claude,
-            UsageSource::ClaudeOauthEndpoint,
-            SourceRead::Payload(br#"{"usage":25}"#.to_vec()),
+            include_bytes!("fixtures/claude-cache-partial.json").as_slice(),
+            Some(UsageUnavailableReason::InvalidResponse),
         ),
         (
-            UsageProvider::Claude,
-            UsageSource::ClaudeDesktopCache,
-            SourceRead::LoginNeeded,
+            br#"{"cachedUsageUtilization":{"fetchedAtMs":1789729200000,"utilization":{"five_hour":{"utilization":"wrong","resets_at":"later"},"seven_day":{"utilization":20,"resets_at":"later"}}}}"#.as_slice(),
+            Some(UsageUnavailableReason::InvalidResponse),
         ),
     ];
-    let (outcome, source) = refresh(UsageProvider::Claude, script);
-    assert_eq!(source.calls.len(), 3);
-    assert_eq!(outcome.reading.state, UsageState::LoginNeeded);
+    for (payload, expected_reason) in cases {
+        assert_eq!(claude_unavailable_reason(payload), expected_reason);
+    }
+}
+
+#[test]
+fn malformed_claude_cache_is_invalid_data_not_unpopulated() {
+    let cases = [
+        br#"{"cachedUsageUtilization":{"fetchedAtMs":"wrong","utilization":{}}}"#.as_slice(),
+        b"null".as_slice(),
+        b"[]".as_slice(),
+        b"42".as_slice(),
+    ];
+    for payload in cases {
+        assert_eq!(
+            claude_unavailable_reason(payload),
+            Some(UsageUnavailableReason::InvalidResponse),
+            "{}",
+            String::from_utf8_lossy(payload)
+        );
+    }
+}
+
+fn claude_unavailable_reason(payload: &[u8]) -> Option<UsageUnavailableReason> {
+    let (outcome, source) = refresh(
+        UsageProvider::Claude,
+        vec![(
+            UsageProvider::Claude,
+            UsageSource::ClaudeDesktopCache,
+            SourceRead::Payload(payload.to_vec()),
+        )],
+    );
+    assert_eq!(source.calls.len(), 1);
+    assert_eq!(outcome.reading.state, UsageState::Unavailable);
     assert_eq!(outcome.reading.source, UsageSource::ClaudeDesktopCache);
+    outcome.reading.unavailable_reason
+}
+
+#[test]
+fn sanitized_valid_claude_cache_fixture_still_reads_both_windows() {
+    let (outcome, _) = refresh(
+        UsageProvider::Claude,
+        vec![(
+            UsageProvider::Claude,
+            UsageSource::ClaudeDesktopCache,
+            SourceRead::Payload(include_bytes!("fixtures/claude-cache-valid.json").to_vec()),
+        )],
+    );
+    assert_eq!(outcome.reading.state, UsageState::Ok);
+    assert_eq!(outcome.reading.primary.unwrap().used, 0.25);
+    assert_eq!(outcome.reading.secondary.unwrap().used, 0.75);
+}
+
+#[test]
+fn cached_timestamp_drives_fresh_and_stale_presentation_without_losing_values() {
+    let payload = |fetched_at_ms| {
+        format!(
+            "{{\"cachedUsageUtilization\":{{\"fetchedAtMs\":{fetched_at_ms},\"utilization\":{{\"five_hour\":{{\"utilization\":10,\"resets_at\":\"later\"}},\"seven_day\":{{\"utilization\":20,\"resets_at\":\"later\"}}}}}}}}"
+        )
+        .into_bytes()
+    };
+    for (fetched_at_ms, now_sec, expected) in [
+        (1_900_000, 2_000, UsageState::Ok),
+        (1_000_000, 2_000, UsageState::Stale),
+    ] {
+        let (outcome, _) = refresh(
+            UsageProvider::Claude,
+            vec![(
+                UsageProvider::Claude,
+                UsageSource::ClaudeDesktopCache,
+                SourceRead::Payload(payload(fetched_at_ms)),
+            )],
+        );
+        let displayed = outcome.reading.for_display(now_sec);
+        assert_eq!(displayed.state, expected);
+        assert_eq!(displayed.primary.unwrap().used, 0.1);
+        assert_eq!(displayed.secondary.unwrap().used, 0.2);
+    }
 }
 
 #[test]
@@ -179,7 +246,7 @@ fn scripted_sources_cover_all_five_public_states() {
         (SourceRead::Payload(ok_payload), UsageState::Ok),
         (SourceRead::LoginNeeded, UsageState::LoginNeeded),
         (SourceRead::NoAccess, UsageState::NoAccess),
-        (SourceRead::Unavailable, UsageState::Unavailable),
+        (SourceRead::Unavailable(None), UsageState::Unavailable),
     ];
     for (response, state) in cases {
         let (outcome, _) = refresh(
@@ -225,12 +292,37 @@ fn no_access_has_precedence_over_other_failed_fallbacks() {
 }
 
 #[test]
+fn codex_missing_tool_reason_survives_an_unimplemented_fallback() {
+    let (outcome, _) = refresh(
+        UsageProvider::Codex,
+        vec![
+            (
+                UsageProvider::Codex,
+                UsageSource::CodexAppServer,
+                SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound)),
+            ),
+            (
+                UsageProvider::Codex,
+                UsageSource::CodexAccountEndpoint,
+                SourceRead::Unavailable(None),
+            ),
+        ],
+    );
+    assert_eq!(outcome.reading.state, UsageState::Unavailable);
+    assert_eq!(outcome.reading.source, UsageSource::CodexAppServer);
+    assert_eq!(
+        outcome.reading.unavailable_reason,
+        Some(UsageUnavailableReason::ToolNotFound)
+    );
+}
+
+#[test]
 fn a_transient_fallback_failure_drives_retry_even_after_plain_unavailability() {
     let script = vec![
         (
             UsageProvider::Codex,
             UsageSource::CodexAppServer,
-            SourceRead::Unavailable,
+            SourceRead::Unavailable(None),
         ),
         (
             UsageProvider::Codex,

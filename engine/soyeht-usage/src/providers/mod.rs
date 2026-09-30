@@ -8,6 +8,8 @@ use soyeht_protocol::{UsageProvider, UsageSource};
 pub(crate) struct ParsedReading {
     pub primary: Window,
     pub secondary: Option<Window>,
+    pub fetched_at: Option<String>,
+    pub observed_at_sec: Option<u64>,
 }
 
 pub(crate) trait ProviderReader: Send + Sync {

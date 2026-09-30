@@ -41,6 +41,15 @@ fn workspace(name: &str) -> Workspace {
     }
 }
 
+fn workspace_with_id(id: &str) -> Workspace {
+    Workspace {
+        workspace_id: id.into(),
+        name: id.into(),
+        path: format!("/tmp/{id}"),
+        layout: json!({"direction":"row"}),
+    }
+}
+
 fn pane() -> PaneRecord {
     PaneRecord {
         pane: Pane {
@@ -85,6 +94,178 @@ fn seed_workspace_and_pane(store: &mut Store) {
             Ok((json!({}), vec![]))
         })
         .unwrap();
+}
+
+#[test]
+fn workspaces_keep_creation_order_across_updates_and_reopen() {
+    let profile = Profile::new();
+    {
+        let mut store = profile.store();
+        store
+            .mutate("test", "seed-order", "seed-order", |change| {
+                change.insert_workspace(&workspace_with_id("z-last-alphabetically"))?;
+                change.insert_workspace(&workspace_with_id("a-first-alphabetically"))?;
+                change.insert_workspace(&workspace_with_id("m-middle"))?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        store
+            .mutate("test", "update-order", "update-order", |change| {
+                let mut updated = workspace_with_id("a-first-alphabetically");
+                updated.name = "Renamed without moving".into();
+                change.update_workspace(&updated)?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        let sequences = store
+            .connection()
+            .prepare("SELECT id,created_seq FROM workspaces ORDER BY created_seq")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            sequences,
+            [
+                ("z-last-alphabetically".into(), 1),
+                ("a-first-alphabetically".into(), 2),
+                ("m-middle".into(), 3)
+            ]
+        );
+        for (workspace_id, rowid) in [
+            ("z-last-alphabetically", -30),
+            ("a-first-alphabetically", -20),
+            ("m-middle", -10),
+        ] {
+            store
+                .connection()
+                .execute(
+                    "UPDATE workspaces SET rowid=?1 WHERE id=?2",
+                    rusqlite::params![rowid, workspace_id],
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            store
+                .workspaces()
+                .unwrap()
+                .iter()
+                .map(|workspace| workspace.workspace_id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "z-last-alphabetically",
+                "a-first-alphabetically",
+                "m-middle"
+            ]
+        );
+    }
+
+    let mut reopened = profile.store();
+    assert_eq!(
+        reopened
+            .workspaces()
+            .unwrap()
+            .iter()
+            .map(|workspace| workspace.workspace_id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "z-last-alphabetically",
+            "a-first-alphabetically",
+            "m-middle"
+        ]
+    );
+    let snapshot = reopened.snapshot().unwrap();
+    let snapshot_workspaces = snapshot
+        .sections
+        .iter()
+        .find(|(name, _)| name == "workspaces")
+        .unwrap()
+        .1
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        snapshot_workspaces
+            .iter()
+            .map(|workspace| workspace["workspaceId"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "z-last-alphabetically",
+            "a-first-alphabetically",
+            "m-middle"
+        ]
+    );
+}
+
+#[test]
+fn panes_keep_creation_order_across_updates_rowid_changes_and_snapshot() {
+    // Clients lay out automatic workspaces in pane order, so a snapshot that
+    // sorted panes by identifier could swap two panes after a reconnect.
+    let ids = ["z-created-first", "a-created-second", "m-created-third"];
+    let pane_with_id = |id: &str| {
+        let mut record = pane();
+        record.pane.pane_id = id.into();
+        record.instance_key = format!("instance-{id}");
+        record
+    };
+    let profile = Profile::new();
+    {
+        let mut store = profile.store();
+        store
+            .mutate("test", "seed-panes", "seed-panes", |change| {
+                change.insert_workspace(&workspace("Original"))?;
+                for id in ids {
+                    change.insert_pane(&pane_with_id(id))?;
+                }
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        store
+            .mutate("test", "update-pane", "update-pane", |change| {
+                let mut updated = pane_with_id("a-created-second");
+                updated.pane.state = PaneState::WaitingForYou;
+                change.update_pane(&updated)?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        for (id, rowid) in ids.iter().zip([30, 20, 10]) {
+            store
+                .connection()
+                .execute(
+                    "UPDATE panes SET rowid=?1 WHERE id=?2",
+                    rusqlite::params![rowid, id],
+                )
+                .unwrap();
+        }
+    }
+    let mut reopened = profile.store();
+    assert_eq!(
+        reopened
+            .panes()
+            .unwrap()
+            .iter()
+            .map(|record| record.pane.pane_id.as_str())
+            .collect::<Vec<_>>(),
+        ids
+    );
+    let snapshot = reopened.snapshot().unwrap();
+    let snapshot_panes = snapshot
+        .sections
+        .iter()
+        .find(|(name, _)| name == "panes")
+        .unwrap()
+        .1
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        snapshot_panes
+            .iter()
+            .map(|pane| pane["paneId"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ids
+    );
 }
 
 #[test]

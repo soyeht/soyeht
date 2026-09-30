@@ -30,6 +30,7 @@ fn reading(provider: UsageProvider, source: UsageSource, used: f64) -> UsageRead
     UsageReading {
         provider,
         state: UsageState::Ok,
+        unavailable_reason: None,
         primary: Some(UsageWindow {
             used,
             resets_at: "2026-09-13T00:00:00Z".into(),

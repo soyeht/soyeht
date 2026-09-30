@@ -1,4 +1,5 @@
 use crate::{
+    agents::catalog::prepare_catalog,
     core::Core,
     dispatch::Outcome,
     errors::{self, Error},
@@ -11,6 +12,7 @@ use soyeht_protocol::{
     AttachmentRef, attachment::attachment_frames, frame::Frame, profile::DEV_ENGINE_SOCKET,
 };
 use std::{
+    collections::{BTreeSet, VecDeque},
     fs::{self, File, OpenOptions},
     io,
     net::{IpAddr, SocketAddr},
@@ -24,10 +26,38 @@ use std::{
 };
 use tokio::{
     net::{TcpListener, UnixListener, UnixStream},
-    sync::Semaphore,
+    sync::{Semaphore, mpsc},
 };
 
 type Shared = Arc<Mutex<Core>>;
+
+struct CatalogJob {
+    method: String,
+    params: Value,
+    request_id: Value,
+    outbox: Outbox,
+    operation: OperationTimer,
+}
+
+fn coalesce_catalog_jobs(
+    active: CatalogJob,
+    pending: &mut VecDeque<CatalogJob>,
+) -> Vec<CatalogJob> {
+    let mut recipients = vec![active];
+    let mut remaining = VecDeque::new();
+    while let Some(waiting) = pending.pop_front() {
+        if waiting.method == recipients[0].method && waiting.params == recipients[0].params {
+            recipients.push(waiting);
+        } else {
+            remaining.push_back(waiting);
+        }
+    }
+    *pending = remaining;
+    recipients
+}
+
+const WRITING_SECTION_LIST_TIMEOUT: Duration = Duration::from_secs(5);
+const CATALOG_QUEUE_CAPACITY: usize = 128;
 
 fn lock_core(shared: &Shared) -> crate::errors::Result<std::sync::MutexGuard<'_, Core>> {
     shared.lock().map_err(|_| Error::EngineStatePoisoned)
@@ -88,6 +118,8 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     let _lock = singleton(&config.directory)?;
     let core = Arc::new(Mutex::new(Core::open(&config.directory)?));
+    let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
+    tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
     let socket = config.directory.join(DEV_ENGINE_SOCKET);
     match fs::symlink_metadata(&socket) {
         Ok(m) if m.file_type().is_socket() => fs::remove_file(&socket)?,
@@ -105,6 +137,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         update_pair_address(&core, address)?;
         let core = Arc::clone(&core);
         let permits = Arc::clone(&permits);
+        let catalog_tx = catalog_tx.clone();
         tasks.spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await?;
@@ -112,13 +145,14 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
                     continue;
                 };
                 let core = Arc::clone(&core);
+                let catalog_tx = catalog_tx.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     if let Ok(Ok((reader, writer))) =
                         tokio::time::timeout(Duration::from_secs(5), transport::websocket(stream))
                             .await
                     {
-                        connection(core, false, false, reader, writer).await;
+                        connection(core, catalog_tx, false, false, reader, writer).await;
                     }
                 });
             }
@@ -129,6 +163,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     {
         let core = Arc::clone(&core);
         let permits = Arc::clone(&permits);
+        let catalog_tx = catalog_tx.clone();
         tasks.spawn(async move {
             loop {
                 let (stream, _) = unix.accept().await?;
@@ -139,6 +174,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
                     continue;
                 };
                 let core = Arc::clone(&core);
+                let catalog_tx = catalog_tx.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let signed_ui = tokio::task::spawn_blocking(move || {
@@ -147,7 +183,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
                     .await
                     .unwrap_or(false);
                     let (reader, writer) = transport::unix(stream);
-                    connection(core, true, signed_ui, reader, writer).await;
+                    connection(core, catalog_tx, true, signed_ui, reader, writer).await;
                 });
             }
             #[allow(unreachable_code)]
@@ -199,6 +235,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
 
 async fn connection(
     core: Shared,
+    catalog_tx: mpsc::Sender<CatalogJob>,
     local: bool,
     signed_ui: bool,
     mut reader: transport::Reader,
@@ -215,7 +252,7 @@ async fn connection(
     };
     let mut write_task = tokio::spawn(write_frames(receiver, writer));
     let reason = tokio::select! {
-        reason=read_requests(Arc::clone(&core),&id,&outbox,&mut reader)=>reason,
+        reason=read_requests(Arc::clone(&core),&catalog_tx,&id,&outbox,&mut reader)=>reason,
         result=&mut write_task=>result.unwrap_or(CloseReason::WorkerFailed),
     };
     outbox.close(reason);
@@ -318,6 +355,7 @@ async fn next_frame(
 
 async fn read_requests(
     core: Shared,
+    catalog_tx: &mpsc::Sender<CatalogJob>,
     id: &str,
     outbox: &Outbox,
     reader: &mut transport::Reader,
@@ -373,60 +411,228 @@ async fn read_requests(
                 .dispatch(&connection, request)
         })
         .await;
-        operation.finish(&outcome);
-        match outcome {
-            Ok(Ok(Outcome::Reply(result))) => {
-                let Ok(frame) = model::response(request_id, result) else {
-                    return CloseReason::WorkerFailed;
+        let outcome = resolve_deferred_outcome(Arc::clone(&core), outcome).await;
+        let outcome = match outcome {
+            Ok(Ok(Outcome::Catalog { method, params })) => {
+                let job = CatalogJob {
+                    method,
+                    params,
+                    request_id,
+                    outbox: outbox.clone(),
+                    operation,
                 };
-                if !outbox.send(frame) {
-                    return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
-                }
-            }
-            Ok(Ok(Outcome::Attachment {
-                result,
-                reference,
-                bytes,
-            })) => {
-                if let Err(reason) =
-                    send_attachment_response(outbox, request_id, result, &reference, &bytes)
-                {
-                    return reason;
-                }
-            }
-            Ok(Ok(Outcome::Queued)) => (),
-            Ok(Ok(Outcome::Snapshot { parts, result })) => {
-                for part in parts {
-                    if outbox.write_page(part).await.is_err() {
-                        return outbox
-                            .close_reason()
-                            .unwrap_or(CloseReason::SnapshotWriteFailed);
+                if let Err(error) = catalog_tx.try_send(job) {
+                    match error {
+                        mpsc::error::TrySendError::Full(job) => {
+                            let failure = errors::slow_consumer("Catalogue queue is full; retry");
+                            job.operation
+                                .finish_status("error", Some(&errors::kind(&failure)));
+                            let Ok(frame) = model::failure(job.request_id, errors::wire(failure))
+                            else {
+                                return CloseReason::WorkerFailed;
+                            };
+                            if !outbox.send(frame) {
+                                return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
+                            }
+                        }
+                        mpsc::error::TrySendError::Closed(job) => {
+                            job.operation.finish_status("worker_failed", None);
+                            return CloseReason::WorkerFailed;
+                        }
                     }
                 }
-                let Ok(frame) = model::response(request_id, result) else {
-                    return CloseReason::WorkerFailed;
-                };
-                if !outbox.send(frame) {
-                    return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
-                }
+                continue;
             }
-            Ok(Err(error)) if failed_handshake => {
-                let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
-                    return CloseReason::WorkerFailed;
-                };
-                let _ = outbox.write_page(frame).await;
-                return CloseReason::HandshakeRejected;
-            }
-            Ok(Err(error)) => {
-                let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
-                    return CloseReason::WorkerFailed;
-                };
-                if !outbox.send(frame) {
-                    return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
-                }
-            }
-            Err(_) => return CloseReason::WorkerFailed,
+            other => other,
+        };
+        operation.finish(&outcome);
+        if let Err(reason) = send_outcome(outbox, request_id, failed_handshake, outcome).await {
+            return reason;
         }
+    }
+}
+
+async fn send_outcome(
+    outbox: &Outbox,
+    request_id: Value,
+    failed_handshake: bool,
+    outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+) -> Result<(), CloseReason> {
+    match outcome {
+        Ok(Ok(Outcome::Reply(result))) => {
+            let Ok(frame) = model::response(request_id, result) else {
+                return Err(CloseReason::WorkerFailed);
+            };
+            if !outbox.send(frame) {
+                return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
+            }
+        }
+        Ok(Ok(Outcome::Attachment {
+            result,
+            reference,
+            bytes,
+        })) => {
+            send_attachment_response(outbox, request_id, result, &reference, &bytes)?;
+        }
+        Ok(Ok(Outcome::Queued)) => (),
+        Ok(Ok(Outcome::Snapshot { parts, result })) => {
+            for part in parts {
+                if outbox.write_page(part).await.is_err() {
+                    return Err(outbox
+                        .close_reason()
+                        .unwrap_or(CloseReason::SnapshotWriteFailed));
+                }
+            }
+            let Ok(frame) = model::response(request_id, result) else {
+                return Err(CloseReason::WorkerFailed);
+            };
+            if !outbox.send(frame) {
+                return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
+            }
+        }
+        Ok(Ok(Outcome::WritingSectionList(_))) | Ok(Ok(Outcome::Catalog { .. })) => {
+            return Err(CloseReason::WorkerFailed);
+        }
+        Ok(Err(error)) if failed_handshake => {
+            let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
+                return Err(CloseReason::WorkerFailed);
+            };
+            let _ = outbox.write_page(frame).await;
+            return Err(CloseReason::HandshakeRejected);
+        }
+        Ok(Err(error)) => {
+            let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
+                return Err(CloseReason::WorkerFailed);
+            };
+            if !outbox.send(frame) {
+                return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
+            }
+        }
+        Err(_) => return Err(CloseReason::WorkerFailed),
+    }
+    Ok(())
+}
+
+/// Catalog requests share one worker across all connections. Identical requests
+/// waiting behind the active scan receive its result instead of starting more scans.
+async fn catalog_worker(core: Shared, mut rx: mpsc::Receiver<CatalogJob>) {
+    let mut pending = VecDeque::new();
+    loop {
+        let job = match pending.pop_front() {
+            Some(job) => job,
+            None => match rx.recv().await {
+                Some(job) => job,
+                None => break,
+            },
+        };
+        let result = catalog_result(Arc::clone(&core), &job.method, &job.params).await;
+        while let Ok(waiting) = rx.try_recv() {
+            pending.push_back(waiting);
+        }
+        let recipients = coalesce_catalog_jobs(job, &mut pending);
+        let (status, kind) = match &result {
+            Ok(_) => ("reply", None),
+            Err(error) => ("error", Some(errors::kind(error))),
+        };
+        let (value, wire_error) = match result {
+            Ok(value) => (Some(value), None),
+            Err(error) => (None, Some(errors::wire(error))),
+        };
+        for recipient in recipients {
+            recipient.operation.finish_status(status, kind.as_ref());
+            if recipient.outbox.is_closed() {
+                continue;
+            }
+            let frame = match (&value, &wire_error) {
+                (Some(value), _) => model::response(recipient.request_id, value.clone()),
+                (_, Some(error)) => model::failure(recipient.request_id, error.clone()),
+                _ => continue,
+            };
+            if let Ok(frame) = frame {
+                let _ = recipient.outbox.send(frame);
+            }
+        }
+    }
+}
+
+async fn catalog_result(
+    core: Shared,
+    method: &str,
+    params: &Value,
+) -> crate::errors::Result<Value> {
+    // A custom-harness mutation may land while the filesystem scan runs. Retry
+    // against the newer catalogue rather than publishing that stale snapshot.
+    for _ in 0..3 {
+        let (directory, session_harnesses, epoch) = {
+            let state = lock_core(&core)?;
+            let ids: BTreeSet<_> = state
+                .agents
+                .values()
+                .map(|agent| agent.state.launch.id.clone())
+                .collect();
+            (state.directory.clone(), ids, state.catalog_epoch)
+        };
+        let worker_method = method.to_owned();
+        let worker_params = params.clone();
+        let prepared = tokio::task::spawn_blocking(move || {
+            prepare_catalog(directory, &worker_method, &worker_params, session_harnesses)
+        })
+        .await
+        .map_err(Error::Join)?;
+        let state = lock_core(&core)?;
+        if state.catalog_epoch == epoch {
+            let finalize_started = Instant::now();
+            let result = state.agent_catalog_prepared(prepared?, params);
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "event":"engine.catalog_finalized",
+                    "method":method,
+                    "durationMs":finalize_started.elapsed().as_millis()
+                })
+            );
+            return result;
+        }
+    }
+    Err(errors::resync_required("Catalogue changed during refresh"))
+}
+
+async fn resolve_deferred_outcome(
+    core: Shared,
+    outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+) -> std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError> {
+    let Ok(Ok(Outcome::WritingSectionList(prepared))) = outcome else {
+        return outcome;
+    };
+    let scanned = match spawn_blocking_with_timeout(
+        WRITING_SECTION_LIST_TIMEOUT,
+        move || prepared.scan(),
+        "Writing section listing timed out",
+    )
+    .await?
+    {
+        Ok(scanned) => scanned,
+        Err(error) => return Ok(Err(error)),
+    };
+    tokio::task::spawn_blocking(move || {
+        let core = core.lock().map_err(|_| Error::EngineStatePoisoned)?;
+        scanned.finish(&core).map(Outcome::Reply)
+    })
+    .await
+}
+
+async fn spawn_blocking_with_timeout<T, F>(
+    timeout: Duration,
+    operation: F,
+    timeout_message: &'static str,
+) -> std::result::Result<crate::errors::Result<T>, tokio::task::JoinError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> crate::errors::Result<T> + Send + 'static,
+{
+    match tokio::time::timeout(timeout, tokio::task::spawn_blocking(operation)).await {
+        Ok(result) => result,
+        Err(_) => Ok(Err(errors::internal(timeout_message))),
     }
 }
 
@@ -511,59 +717,59 @@ impl OperationTimer {
         self,
         outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
     ) {
+        let (status, kind) = operation_status(outcome);
+        self.finish_status(status, kind.as_ref());
+    }
+
+    fn finish_status(self, status: &str, kind: Option<&soyeht_protocol::ErrorKind>) {
         let finished_at = chrono::Utc::now();
         let duration_ms = self.started.elapsed().as_millis();
-        self.finish_with(outcome, finished_at, duration_ms, emit_operation_record);
+        self.finish_with(
+            status,
+            kind,
+            finished_at,
+            duration_ms,
+            emit_operation_record,
+        );
     }
 
     fn finish_with(
         self,
-        outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+        status: &str,
+        kind: Option<&soyeht_protocol::ErrorKind>,
         finished_at: chrono::DateTime<chrono::Utc>,
         duration_ms: u128,
         emit: impl FnOnce(Value),
     ) {
-        let record = operation_finished_record(
+        emit(operation_record(
             &self.operation_id,
             &self.connection_id,
             self.method,
             self.pane_id.as_deref(),
-            outcome,
+            status,
+            kind,
             &OperationTiming {
                 started_at: self.started_at,
                 finished_at,
                 duration_ms,
             },
-        );
-        emit(record);
+        ));
     }
 }
 
-fn operation_finished_record(
-    operation: &str,
-    connection: &str,
-    method: &str,
-    pane_id: Option<&str>,
+fn operation_status(
     outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
-    timing: &OperationTiming,
-) -> Value {
-    let (status, kind) = match outcome {
+) -> (&'static str, Option<soyeht_protocol::ErrorKind>) {
+    match outcome {
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
+        Ok(Ok(Outcome::WritingSectionList(_))) => ("worker_failed", None),
+        Ok(Ok(Outcome::Catalog { .. })) => ("worker_failed", None),
         Ok(Ok(Outcome::Attachment { .. })) => ("attachment", None),
         Ok(Ok(Outcome::Queued)) => ("queued", None),
         Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
         Ok(Err(error)) => ("error", Some(errors::kind(error))),
         Err(_) => ("worker_failed", None),
-    };
-    operation_record(
-        operation,
-        connection,
-        method,
-        pane_id,
-        status,
-        kind.as_ref(),
-        timing,
-    )
+    }
 }
 
 fn emit_operation_record(record: Value) {
@@ -641,6 +847,125 @@ fn operation_pane_id<'a>(method: &str, request: &'a Value) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn repeated_catalog_requests_share_the_active_scan_but_distinct_requests_wait() {
+        fn job(method: &str, params: Value, request_id: u64) -> CatalogJob {
+            CatalogJob {
+                method: method.into(),
+                params,
+                request_id: serde_json::json!(request_id),
+                outbox: outbox::channel().0,
+                operation: OperationTimer::start_with(
+                    "test",
+                    logged_method(method),
+                    None,
+                    chrono::Utc::now(),
+                    Instant::now(),
+                    |_| {},
+                ),
+            }
+        }
+        let scan = serde_json::json!({"rescan":true,"limit":64});
+        let active = job("harness.list", scan.clone(), 1);
+        let mut pending = VecDeque::from([
+            job("harness.list", scan.clone(), 2),
+            job("model.list", serde_json::json!({"harness":"other"}), 3),
+            job("harness.list", scan, 4),
+        ]);
+        let joined = coalesce_catalog_jobs(active, &mut pending);
+        assert_eq!(
+            joined.iter().map(|job| &job.request_id).collect::<Vec<_>>(),
+            [
+                &serde_json::json!(1),
+                &serde_json::json!(2),
+                &serde_json::json!(4),
+            ]
+        );
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].request_id, 3);
+    }
+
+    #[tokio::test]
+    async fn a_blocked_catalog_worker_does_not_hold_the_next_rpc_on_the_same_socket() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-catalog-{}", uuid::Uuid::new_v4()));
+        let mut state = Core::open(&directory).unwrap();
+        let (outbox, mut replies) = outbox::channel();
+        let connection = state.connect(true, false, outbox.clone()).unwrap();
+        state
+            .dispatch(
+                &connection,
+                serde_json::json!({
+                    "jsonrpc":"2.0", "id":0, "method":"hello",
+                    "params":{"client":"catalog-test","clientVersion":"1","protocolVersion":1}
+                }),
+            )
+            .unwrap();
+        let core = Arc::new(Mutex::new(state));
+        let (catalog_tx, mut catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
+        // Keep the receiver alive without running the catalogue worker.
+        let (server, mut client) = UnixStream::pair().unwrap();
+        let (mut reader, _) = transport::unix(server);
+        let task = tokio::spawn({
+            let core = Arc::clone(&core);
+            let connection = connection.clone();
+            async move { read_requests(core, &catalog_tx, &connection, &outbox, &mut reader).await }
+        });
+        for (id, method) in [(1, "harness.list"), (2, "engine.status")] {
+            let mut bytes = Vec::new();
+            Frame::Json(
+                serde_json::to_vec(&serde_json::json!({
+                    "jsonrpc":"2.0", "id":id, "method":method, "params":{}
+                }))
+                .unwrap(),
+            )
+            .write_to(&mut bytes)
+            .unwrap();
+            client.write_all(&bytes).await.unwrap();
+        }
+        let queued = tokio::time::timeout(Duration::from_secs(1), catalog_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(queued.method, "harness.list");
+        let response = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let packet = replies.next().await.unwrap().unwrap();
+                if let Frame::Json(bytes) = packet.frame {
+                    let value: Value = serde_json::from_slice(&bytes).unwrap();
+                    if value["id"] == 2 {
+                        break value;
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(response["result"]["generation"].is_number());
+        task.abort();
+        drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn blocking_request_timeout_returns_an_error_instead_of_waiting_forever() {
+        let result = spawn_blocking_with_timeout(
+            Duration::from_millis(5),
+            || {
+                std::thread::sleep(Duration::from_millis(50));
+                Ok(())
+            },
+            "bounded work timed out",
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            result,
+            Err(Error::Internal(message)) if message == "bounded work timed out"
+        ));
+    }
 
     fn timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
         chrono::DateTime::parse_from_rfc3339(value)
@@ -734,8 +1059,10 @@ mod tests {
         let completed_id = completed.operation_id.clone();
         let outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError> =
             Ok(Ok(Outcome::Reply(serde_json::json!({}))));
+        let (status, kind) = operation_status(&outcome);
         completed.finish_with(
-            &outcome,
+            status,
+            kind.as_ref(),
             timestamp("2026-09-17T10:00:00.135Z"),
             12,
             |record| completed_records.push(record),
@@ -790,7 +1117,7 @@ mod tests {
         assert!(operation_pane_id("unknown", &request).is_none());
 
         let all_routes = serde_json::json!({
-            "params": {"paneId":pane_id,"agentPaneId":pane_id},
+            "params": {"paneId":pane_id,"agentPaneId":pane_id,"targetPaneId":pane_id},
         });
         let expected_methods = soyeht_protocol::PANE_ROUTE_METHODS
             .iter()

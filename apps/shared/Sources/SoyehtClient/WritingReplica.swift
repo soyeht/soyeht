@@ -95,7 +95,8 @@ extension EngineClient {
 
   @discardableResult
   public func createWritingDocument(
-    workspaceId: String, section: WritingSection, title: String, relativeFolder: String? = nil
+    workspaceId: String, section: WritingSection, title: String, relativeFolder: String? = nil,
+    selectPane: Bool = true
   ) async throws -> WritingDocumentCreateResult {
     let result = try await mutation(
       "writing.document.create",
@@ -104,13 +105,15 @@ extension EngineClient {
         relativeFolder: relativeFolder, idempotencyKey: UUID().uuidString)
     )
     .decoded(WritingDocumentCreateResult.self)
-    acceptWritingOpen(document: result.document, pane: result.pane, viewport: result.viewport)
+    acceptWritingOpen(
+      document: result.document, pane: result.pane, viewport: result.viewport,
+      selectPane: selectPane)
     return result
   }
 
   @discardableResult
   public func openWritingDocument(
-    workspaceId: String, path: String, kind: WritingKind
+    workspaceId: String, path: String, kind: WritingKind, selectPane: Bool = true
   ) async throws -> WritingDocumentOpenResult {
     let result = try await mutation(
       "writing.document.open",
@@ -119,7 +122,9 @@ extension EngineClient {
         idempotencyKey: UUID().uuidString)
     )
     .decoded(WritingDocumentOpenResult.self)
-    acceptWritingOpen(document: result.document, pane: result.pane, viewport: result.viewport)
+    acceptWritingOpen(
+      document: result.document, pane: result.pane, viewport: result.viewport,
+      selectPane: selectPane)
     return result
   }
 
@@ -178,7 +183,8 @@ extension EngineClient {
 
   @discardableResult
   public func setWritingPreferences(
-    fileId: String, font: WritingFont? = nil, focusMode: Bool? = nil
+    fileId: String, font: WritingFont? = nil, focusMode: Bool? = nil,
+    fullWidth: Bool? = nil
   ) async throws -> WritingPreferencesResult {
     let key = UUID().uuidString
     let result: WritingPreferencesResult = try await withWritingRevision(fileId) { revision in
@@ -186,7 +192,7 @@ extension EngineClient {
         "writing.preferences.set",
         WritingPreferencesParams(
           fileId: fileId, baseRevision: revision, font: font, focusMode: focusMode,
-          idempotencyKey: key)
+          fullWidth: fullWidth, idempotencyKey: key)
       ).decoded(WritingPreferencesResult.self)
     }
     writingDocuments[fileId] = WritingDocumentView(document: result.document)
@@ -309,7 +315,7 @@ extension EngineClient {
   ) async throws -> Value {
     await settleEditorWrites(fileId)
     do { return try await operation(try writingRevision(fileId)) } catch {
-      guard case ClientFailure.remote("stale_version", _) = error else { throw error }
+      guard case ClientFailure.remote("stale_version", _, _) = error else { throw error }
       return try await operation(try await refreshWritingRevision(fileId))
     }
   }
@@ -330,12 +336,12 @@ extension EngineClient {
   }
 
   private func acceptWritingOpen(
-    document: WritingDocument, pane: Pane, viewport: FileReadResult
+    document: WritingDocument, pane: Pane, viewport: FileReadResult, selectPane: Bool
   ) {
     upsertPane(pane)
     acceptEditorRead(viewport)
     writingDocuments[document.file.fileId] = WritingDocumentView(document: document)
-    select(pane.paneId)
+    if selectPane { select(pane.paneId) }
   }
 
   private func acceptWritingFile(_ file: FileDocument) {

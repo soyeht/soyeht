@@ -14,10 +14,34 @@
     }
   }
 
+  public enum MacTerminalFont {
+    public static let familyName = "JetBrains Mono"
+    public static let pointSize = CGFloat(PaneLayoutContentMetrics.terminalFontPointSize)
+
+    public static func active() -> NSFont {
+      guard let font = NSFont(name: familyName, size: pointSize) else {
+        assertionFailure("Missing bundled terminal font: \(familyName)")
+        return NSFont.monospacedSystemFont(ofSize: pointSize, weight: .regular)
+      }
+      return font
+    }
+  }
+
   @MainActor
-  private final class TerminalSurface: TerminalView {
+  final class TerminalSurface: TerminalView {
     private var keyboardInputEnabled = true
     private var claimedInitialFocus = false
+    private var onActivate: (() -> Void)?
+    private(set) var isReceivingOutput = false
+
+    func updateActivation(_ action: @escaping () -> Void) { onActivate = action }
+
+    func receive(_ bytes: Data, reset: Bool) {
+      isReceivingOutput = true
+      defer { isReceivingOutput = false }
+      if reset { getTerminal().resetToInitialState() }
+      feed(byteArray: Array(bytes)[...])
+    }
 
     func updateKeyboardInputEnabled(_ enabled: Bool) {
       guard keyboardInputEnabled != enabled else { return }
@@ -40,21 +64,56 @@
       claimedInitialFocus = window.makeFirstResponder(self)
     }
     override func mouseDown(with event: NSEvent) {
-      if keyboardInputEnabled { window?.makeFirstResponder(self) }
+      onActivate?()
+      window?.makeFirstResponder(self)
       super.mouseDown(with: event)
+    }
+  }
+
+  /// Keeps a terminal surface alive for exactly as long as its pane exists.
+  ///
+  /// SwiftUI may rebuild the representable when a pane tree is reparented (for example, when an
+  /// earlier sibling closes). Reusing the AppKit surface preserves SwiftTerm's scrollback and
+  /// viewport across that structural change.
+  @MainActor
+  final class MacTerminalViewRegistry {
+    private var surfaces: [String: TerminalSurface] = [:]
+
+    func surface(
+      for paneId: String, make: () -> TerminalSurface
+    ) -> (view: TerminalSurface, isNew: Bool) {
+      if let surface = surfaces[paneId] { return (surface, false) }
+      let surface = make()
+      surfaces[paneId] = surface
+      return (surface, true)
+    }
+
+    func remove(_ paneId: String) { surfaces.removeValue(forKey: paneId) }
+
+    func retainOnly(_ paneIds: Set<String>) {
+      surfaces = surfaces.filter { paneIds.contains($0.key) }
+    }
+
+    func identity(for paneId: String) -> ObjectIdentifier? {
+      surfaces[paneId].map(ObjectIdentifier.init)
     }
   }
 
   @MainActor
   public struct MacTerminal: NSViewRepresentable {
     private let client: EngineClient
+    private let paneId: String
     @Environment(\.terminalKeyboardInputEnabled) private var keyboardInputEnabled
     @Environment(\.filePathOpenAction) private var openFile
     @Environment(\.webLinkOpenAction) private var openWeb
-    public init(client: EngineClient) { self.client = client }
+    public init(client: EngineClient, paneId: String) {
+      self.client = client
+      self.paneId = paneId
+    }
     public func makeCoordinator() -> TerminalHost {
       TerminalHost(
-        client: client, acceptsInput: keyboardInputEnabled, ringBell: { NSSound.beep() },
+        client: client, paneId: paneId, acceptsInput: keyboardInputEnabled,
+        ringBell: { NSSound.beep() },
         openFile: { workspaceId, reference in
           openFile(workspaceId: workspaceId, reference: reference)
         },
@@ -63,20 +122,31 @@
         })
     }
     public func makeNSView(context: Context) -> TerminalView {
-      let view = TerminalSurface(
-        frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+      let registered = client.terminalViewRegistry.surface(for: paneId) {
+        TerminalSurface(
+          frame: .zero,
+          font: MacTerminalFont.active())
+      }
+      let view = registered.view
       applyTheme(to: view)
       view.linkReporting = .implicit
       view.linkHighlightMode = .hover
-      view.setAccessibilityLabel("Selected pane terminal")
+      view.setAccessibilityLabel("Terminal pane")
+      view.updateActivation { [weak client] in client?.select(paneId) }
       view.updateKeyboardInputEnabled(keyboardInputEnabled)
-      context.coordinator.attach(view)
+      client.claimTerminalOutput(paneId: paneId, owner: view) { [weak view] bytes, reset in
+        view?.receive(bytes, reset: reset)
+      }
+      context.coordinator.attach(view, refresh: registered.isNew)
       return view
     }
     public func updateNSView(_ view: TerminalView, context: Context) {
       applyTheme(to: view)
       context.coordinator.updateAcceptsInput(keyboardInputEnabled)
-      (view as? TerminalSurface)?.updateKeyboardInputEnabled(keyboardInputEnabled)
+      if let surface = view as? TerminalSurface {
+        surface.updateActivation { [weak client] in client?.select(paneId) }
+        surface.updateKeyboardInputEnabled(keyboardInputEnabled)
+      }
       context.coordinator.updateOpenFile { workspaceId, reference in
         openFile(workspaceId: workspaceId, reference: reference)
       }

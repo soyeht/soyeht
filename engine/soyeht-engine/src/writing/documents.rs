@@ -159,8 +159,10 @@ impl Core {
             intent.section.clone(),
         )?;
         let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
+        let document = public_document(&file, &record)?;
+        let created_event = pane_created_event(&saved_pane.pane, &opened.file, &document);
         let result = serde_json::to_value(WritingDocumentCreateResult {
-            document: public_document(&file, &record)?,
+            document,
             pane: opened.pane,
             viewport: opened.viewport,
         })
@@ -177,7 +179,7 @@ impl Core {
             Ok((
                 result,
                 vec![
-                    ("pane.created".into(), json!({"pane":saved_pane.pane})),
+                    ("pane.created".into(), created_event),
                     ("writing.changed".into(), event),
                 ],
             ))
@@ -267,11 +269,19 @@ impl Core {
         let file = self.editor.stored(&request.file_id)?.clone();
         require_revision(&request.base_revision, file.revision)?;
         let mut record = self.writing_record(&file.file_id)?;
+        if request.full_width == Some(true) && record.kind != WritingKind::Text {
+            return Err(errors::invalid(
+                "Full width is available only for text documents",
+            ));
+        }
         if let Some(font) = request.font {
             record.font = font;
         }
         if let Some(focus_mode) = request.focus_mode {
             record.focus_mode = focus_mode;
+        }
+        if let Some(full_width) = request.full_width {
+            record.full_width = full_width;
         }
         record.updated_ms = self.now_ms();
         let result = serde_json::to_value(WritingPreferencesResult {
@@ -354,6 +364,11 @@ impl Core {
         let saved_pane = stored_pane(pane.clone());
         let record = self.record_or_default(file.file_id.clone(), context.kind, context.section)?;
         let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
+        let created_event = pane_created_event(
+            &saved_pane.pane,
+            &opened.file,
+            &public_document(&file, &record)?,
+        );
         let result = open_result(&file, &record, opened, context.pane_only)?;
         let screen = self.open_pane_screen(&pane.pane_id)?;
         let saved_file = file.clone();
@@ -369,10 +384,7 @@ impl Core {
                 if let Some(version) = &version {
                     change.record_file_version(version)?;
                 }
-                Ok((
-                    result,
-                    vec![("pane.created".into(), json!({"pane":saved_pane.pane}))],
-                ))
+                Ok((result, vec![("pane.created".into(), created_event)]))
             },
         )?;
         if !mutation.repeated {
@@ -400,6 +412,11 @@ impl Core {
         );
         let record = self.record_or_default(file.file_id.clone(), context.kind, context.section)?;
         let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
+        let created_event = pane_created_event(
+            &saved_pane.pane,
+            &opened.file,
+            &public_document(&file, &record)?,
+        );
         let result = open_result(&file, &record, opened, context.pane_only)?;
         let screen = self.open_pane_screen(&pane.pane_id)?;
         let saved_file = file.clone();
@@ -412,10 +429,7 @@ impl Core {
                 persist_new_pane(change, &saved_pane, None)?;
                 change.save_editor_file(&saved_file)?;
                 change.save_writing_document(&saved_record)?;
-                Ok((
-                    result,
-                    vec![("pane.created".into(), json!({"pane":saved_pane.pane}))],
-                ))
+                Ok((result, vec![("pane.created".into(), created_event)]))
             },
         )?;
         if !mutation.repeated {
@@ -445,6 +459,7 @@ impl Core {
             sidecar_revision: 0,
             font: WritingFont::ReadingSerif,
             focus_mode: false,
+            full_width: false,
             sidecar: WritingSidecar::default(),
             updated_ms: self.now_ms(),
         })
@@ -483,6 +498,7 @@ pub(super) fn public_document(
         sidecar_revision: record.sidecar_revision.to_string(),
         font: record.font.clone(),
         focus_mode: record.focus_mode,
+        full_width: record.full_width,
     })
 }
 
@@ -686,6 +702,14 @@ fn open_result(
         viewport: opened.viewport,
     })
     .map_err(|_| errors::internal("Writing open result cannot be encoded"))
+}
+
+fn pane_created_event(
+    pane: &Pane,
+    file: &soyeht_protocol::FileDocument,
+    writing_document: &WritingDocument,
+) -> Value {
+    json!({"pane": pane, "file": file, "writingDocument": writing_document})
 }
 
 pub(super) fn changed_event(file: &EditorFile, record: &WritingDocumentRecord) -> Result<Value> {

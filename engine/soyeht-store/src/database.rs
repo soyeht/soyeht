@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 22;
+pub const SCHEMA_VERSION: u32 = 27;
 
 #[derive(Debug)]
 pub enum Error {
@@ -262,6 +262,36 @@ impl Change<'_> {
     }
 }
 
+fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
+    if version < 24 {
+        tx.execute_batch(include_str!(
+            "../migrations/024-workspace-created-sequence.sql"
+        ))?;
+    }
+    if version < 25 {
+        tx.execute_batch(include_str!("../migrations/025-agent-message-rate.sql"))?;
+    }
+    if version < 26 {
+        tx.execute_batch(include_str!("../migrations/026-harness-readiness.sql"))?;
+    }
+    if version < 27 {
+        tx.execute_batch(include_str!("../migrations/027-pane-created-sequence.sql"))?;
+    }
+    Ok(())
+}
+
+fn backup_before_migration(connection: &Connection, directory: &Path) -> Result<()> {
+    let backups = directory.join("backups");
+    fs::create_dir_all(&backups)?;
+    fs::set_permissions(&backups, fs::Permissions::from_mode(0o700))?;
+    let backup = backups.join(format!("before-v{SCHEMA_VERSION}-{}.db", Uuid::new_v4()));
+    connection.backup("main", &backup, None)?;
+    fs::set_permissions(&backup, fs::Permissions::from_mode(0o600))?;
+    fs::File::open(backup)?.sync_all()?;
+    fs::File::open(backups)?.sync_all()?;
+    Ok(())
+}
+
 impl Store {
     pub fn open(directory: &Path) -> Result<Self> {
         fs::create_dir_all(directory)?;
@@ -281,15 +311,7 @@ impl Store {
         connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA wal_autocheckpoint=1000;")?;
         if version < SCHEMA_VERSION {
             if existed {
-                let backups = directory.join("backups");
-                fs::create_dir_all(&backups)?;
-                fs::set_permissions(&backups, fs::Permissions::from_mode(0o700))?;
-                let backup =
-                    backups.join(format!("before-v{SCHEMA_VERSION}-{}.db", Uuid::new_v4()));
-                connection.backup("main", &backup, None)?;
-                fs::set_permissions(&backup, fs::Permissions::from_mode(0o600))?;
-                fs::File::open(backup)?.sync_all()?;
-                fs::File::open(backups)?.sync_all()?;
+                backup_before_migration(&connection, directory)?;
             }
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             if version < 1 {
@@ -368,6 +390,10 @@ impl Store {
             if version < 22 {
                 tx.execute_batch(include_str!("../migrations/022-agent-model-refusals.sql"))?;
             }
+            if version < 23 {
+                tx.execute_batch(include_str!("../migrations/023-writing-full-width.sql"))?;
+            }
+            apply_recent_migrations(&tx, version)?;
             tx.commit()?;
         }
         let db_id =
@@ -495,9 +521,12 @@ impl Store {
         let cursor = cursor(&tx)?;
         let workspaces = rows_json(
             &tx,
-            "SELECT payload FROM workspaces WHERE closed=0 ORDER BY id",
+            "SELECT payload FROM workspaces WHERE closed=0 ORDER BY created_seq",
         )?;
-        let panes = rows_json(&tx, "SELECT payload FROM panes WHERE closed=0 ORDER BY id")?;
+        let panes = rows_json(
+            &tx,
+            "SELECT payload FROM panes WHERE closed=0 ORDER BY created_seq",
+        )?;
         let devices = rows_json(
             &tx,
             "SELECT payload FROM devices WHERE revoked=0 ORDER BY id",

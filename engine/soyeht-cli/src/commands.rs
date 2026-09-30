@@ -12,10 +12,10 @@ use crate::{editor_commands, task_commands};
 
 pub const USAGE: &str = "soyeht --profile dev [--data-dir PATH] [--bound] COMMAND\n\
 status\n\
-pane create --shell|--agent HARNESS|--editor FILE [--cwd PATH] [--model MODEL] [--effort EFFORT] [--permission ask|accept_edits|allow_all]\n\
+pane create --shell|--agent HARNESS|--editor FILE [--cwd PATH] [--model MODEL] [--effort EFFORT] [--permission-mode MODE]\n\
 pane list | pane close ID | pane prompt ID TEXT | pane cancel ID\n\
 pane permission ID allow|deny [--request REQUEST_ID]\n\
-pane config ID KEY VALUE | pane yolo ID on|off | pane auth ID METHOD\n\
+pane config ID KEY VALUE | pane mode ID MODE | pane auth ID METHOD\n\
 pane transcript ID [--before CURSOR] [--limit COUNT]\n\
 pane queue ID [--cursor CURSOR] | pane queue-resume ID | pane queue-remove ID PROMPT_ID\n\
 harness list [--cursor CURSOR] | model list HARNESS [--pane ID] [--cursor CURSOR]\n\
@@ -33,7 +33,7 @@ file open WORKSPACE PATH [OPTIONS] | file read FILE [OPTIONS] | file write FILE 
 file history FILE [OPTIONS] | file revert FILE VERSION REVISION | file search WORKSPACE QUERY [OPTIONS]\n\
 file symbols FILE REVISION | file diff FILE REVISION | usage list | usage refresh [PROVIDER]\n\
 Task create options: --description, --how-to-verify, --harness, --model, --effort,\n\
-  --priority, --create-worktree true|false, --permission, --dependencies WS-1,WS-2.\n\
+  --priority, --create-worktree true|false, --permission-mode, --dependencies WS-1,WS-2.\n\
 Task update uses the same editable text, priority and dependency options.\n\
 Task complete accepts --contract-changes JSON and --out-of-scope-edits JSON arrays.\n\
 Executor commands accept --pane ID --generation N --attempt N together.\n\
@@ -113,37 +113,8 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
         ["pane", "permission", id, choice, rest @ ..] if matches!(*choice, "allow" | "deny") => {
             permission(client, id, choice, rest, &key)
         }
-        ["pane", "config", id, config, value] => {
-            let snapshot = client.snapshot()?;
-            let boolean = snapshot
-                .sections
-                .get("panes")
-                .into_iter()
-                .flatten()
-                .find(|pane| pane["paneId"] == *id)
-                .and_then(|pane| pane["agent"]["options"].as_array())
-                .and_then(|options| options.iter().find(|option| option["id"] == *config))
-                .is_some_and(|option| option["type"] == "boolean");
-            let value = if boolean {
-                json!(
-                    value
-                        .parse::<bool>()
-                        .map_err(|_| invalid("This option requires true or false"))?
-                )
-            } else {
-                json!(value)
-            };
-            rpc::<PaneConfigSetResult>(
-                client,
-                "pane.config.set",
-                json!({"paneId":id,"configId":config,"value":value,"idempotencyKey":key}),
-            )
-        }
-        ["pane", "yolo", id, on] if matches!(*on, "on" | "off") => rpc::<PaneYoloResult>(
-            client,
-            "pane.yolo",
-            json!({"paneId":id,"on":*on=="on","idempotencyKey":key}),
-        ),
+        ["pane", "config", id, config, value] => set_config(client, id, config, value, &key),
+        ["pane", "mode", id, mode] => set_mode(client, id, mode, &key),
         ["pane", "auth", id, method] => rpc::<PaneAuthStartResult>(
             client,
             "pane.auth.start",
@@ -226,6 +197,65 @@ fn experiment_hook(client: &mut Client, capability: &str) -> Result<Value> {
     Ok(json!({}))
 }
 
+/// One of the options a pane's agent announced, from a fresh snapshot.
+fn agent_option(
+    client: &mut Client,
+    pane: &str,
+    matches: impl Fn(&Value) -> bool,
+) -> Result<Option<Value>> {
+    let snapshot = client.snapshot()?;
+    Ok(snapshot
+        .sections
+        .get("panes")
+        .into_iter()
+        .flatten()
+        .find(|item| item["paneId"] == pane)
+        .and_then(|item| item["agent"]["options"].as_array())
+        .and_then(|options| options.iter().find(|option| matches(option)).cloned()))
+}
+
+fn set_config(
+    client: &mut Client,
+    pane: &str,
+    config: &str,
+    value: &str,
+    key: &str,
+) -> Result<Value> {
+    let boolean = agent_option(client, pane, |option| option["id"] == config)?
+        .is_some_and(|option| option["type"] == "boolean");
+    let value = if boolean {
+        json!(
+            value
+                .parse::<bool>()
+                .map_err(|_| invalid("This option requires true or false"))?
+        )
+    } else {
+        json!(value)
+    };
+    rpc::<PaneConfigSetResult>(
+        client,
+        "pane.config.set",
+        json!({"paneId":pane,"configId":config,"value":value,"idempotencyKey":key}),
+    )
+}
+
+/// Selects one of the harness's own permission modes by its native ID.
+fn set_mode(client: &mut Client, pane: &str, mode: &str, key: &str) -> Result<Value> {
+    let option = agent_option(client, pane, |option| {
+        serde_json::from_value::<ConfigOption>(option.clone())
+            .is_ok_and(|option| option.is_permission_mode())
+    })?
+    .ok_or_else(|| invalid("This pane announces no permission modes"))?;
+    let config = option["id"]
+        .as_str()
+        .ok_or_else(|| invalid("The permission mode selector has no ID"))?;
+    rpc::<PaneConfigSetResult>(
+        client,
+        "pane.config.set",
+        json!({"paneId":pane,"configId":config,"value":mode,"idempotencyKey":key}),
+    )
+}
+
 fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
     let (mode, harness, editor, rest) = match args {
         ["--shell", rest @ ..] => ("terminal", None, None, rest),
@@ -238,18 +268,12 @@ fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
             ("--cwd", "cwd"),
             ("--model", "model"),
             ("--effort", "effort"),
-            ("--permission", "permission"),
+            ("--permission-mode", "permissionMode"),
         ][..]
     } else {
         &[("--cwd", "cwd")][..]
     };
     let mut params = options(rest, allowed)?;
-    if params
-        .get("permission")
-        .is_some_and(|value| !matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all")))
-    {
-        return Err(invalid("Permission must be ask, accept_edits or allow_all"));
-    }
     let cwd = params["cwd"]
         .as_str()
         .map(PathBuf::from)

@@ -111,6 +111,7 @@ fn permission(request_id: &str) -> WebPermissionRequest {
             prompt_id: "web-operation-1".into(),
             title: "Use signed-in session?".into(),
             detail: "The page has a signed-in session for example.test.".into(),
+            presentation: None,
             options: vec![PermissionOption {
                 option_id: "task".into(),
                 kind: PermissionOptionKind::AllowOnce,

@@ -35,6 +35,18 @@ import Testing
   #expect(palette.agentPlates == ["#D8E0FE", "#CDE7DD", "#F6D6DB", "#EEE3CD"])
 }
 
+@Test func everyThemeOwnsAPresentationLetterboxColor() {
+  let palettes = TerminalColorTheme.allCases.map(\.palette)
+
+  #expect(palettes.allSatisfy { $0.presentationLetterbox != $0.ansi[0] })
+  #expect(Set(palettes.map(\.presentationLetterbox)).count == palettes.count)
+}
+
+@Test func neoMilkInkKeepsReadableContrastOnThePresentationFace() {
+  let palette = TerminalColorTheme.neoMilk.palette
+  #expect(ThemeLabColorMath.contrastRatio(palette.ink, palette.face) >= 4.5)
+}
+
 @Test func raisedAndWellPairsMatchTheProductionThemes() {
   let expected: [TerminalColorTheme: [String?]] = [
     .neoMilk: ["#A6B4C8", "#FFFFFF", "#A6B4C8", "#FFFFFF", nil],

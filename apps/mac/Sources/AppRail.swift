@@ -8,41 +8,68 @@ struct AppRail: View {
   let onSelect: (WorkspaceDestination) -> Void
   let onSettings: () -> Void
   let onUsageDetails: (UsageProvider) -> Void
+  @State private var claudeUsageObserver: ClaudeUsageCacheObserver?
+  @State private var claudeUsageRefreshTask: Task<Void, Never>?
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x6) {
-      ForEach(items, id: \.destination) { item in
-        AppRailButton(
-          glyph: item.glyph,
-          label: item.label,
-          selected: destination == item.destination,
-          action: { onSelect(item.destination) })
+      ScrollView(.vertical) {
+        VStack(spacing: MacTheme.Space.x6) {
+          ForEach(items, id: \.destination) { item in
+            AppRailButton(
+              glyph: item.glyph,
+              label: item.label,
+              selected: destination == item.destination,
+              badgeCount: item.destination == .agents ? client.agentAttention.totalWaitingCount : 0,
+              isWorking: item.destination == .agents && client.agentAttention.hasWorkingAgent,
+              action: { onSelect(item.destination) })
+          }
+          Rectangle()
+            .fill(MacTheme.shadowDark)
+            .frame(width: 24, height: 1)
+            .padding(.vertical, MacTheme.Space.x2)
+          ForEach(client.usageReadings, id: \.provider) { reading in
+            UsageRing(reading: reading, onDetails: onUsageDetails)
+          }
+        }
       }
-      Rectangle()
-        .fill(MacTheme.shadowDark)
-        .frame(width: 24, height: 1)
-        .padding(.vertical, MacTheme.Space.x2)
-      ForEach(client.usageReadings, id: \.provider) { reading in
-        UsageRing(client: client, reading: reading, onDetails: onUsageDetails)
-      }
-      Spacer(minLength: 0)
+      .scrollIndicators(.visible)
       AppRailButton(
         glyph: .system("gearshape"), label: "Settings", selected: false, action: onSettings)
     }
     .padding(.vertical, MacTheme.Space.x12)
     .padding(.horizontal, MacTheme.Space.x8)
-    .frame(width: 56)
+    .frame(width: MacPaneLayoutMetrics.railWidth)
     .frame(maxHeight: .infinity)
     .background(MacTheme.canvas)
     .accessibilityIdentifier("app-bar")
-    .task { await refreshWhileOpen() }
+    .onAppear(perform: startClaudeUsageCache)
+    .onDisappear(perform: stopClaudeUsageCache)
+    .onChange(of: client.connected) { _, connected in
+      if connected { refreshClaudeUsage() }
+    }
   }
 
-  private func refreshWhileOpen() async {
-    try? await client.refreshUsage()
-    while !Task.isCancelled {
-      do { try await Task.sleep(for: .seconds(300)) } catch { return }
-      try? await client.refreshUsage()
+  private func startClaudeUsageCache() {
+    guard claudeUsageObserver == nil else { return }
+    let observer = ClaudeUsageCacheObserver()
+    observer.start(onChange: refreshClaudeUsage)
+    claudeUsageObserver = observer
+    refreshClaudeUsage()
+  }
+
+  private func stopClaudeUsageCache() {
+    claudeUsageRefreshTask?.cancel()
+    claudeUsageRefreshTask = nil
+    claudeUsageObserver?.stop()
+    claudeUsageObserver = nil
+  }
+
+  private func refreshClaudeUsage() {
+    guard client.connected else { return }
+    claudeUsageRefreshTask?.cancel()
+    claudeUsageRefreshTask = Task {
+      try? await client.refreshUsageAfterRateLimitOnce(.claude)
     }
   }
 
@@ -79,22 +106,38 @@ private struct AppRailButton: View {
   let glyph: AppRailGlyph
   let label: String
   let selected: Bool
+  var badgeCount = 0
+  var isWorking = false
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
       railGlyph
         .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
-        .frame(width: 36, height: 36)
+        .frame(
+          width: MacPaneLayoutMetrics.railButtonSize, height: MacPaneLayoutMetrics.railButtonSize
+        )
+        .overlay(alignment: .topTrailing) {
+          if badgeCount > 0 {
+            AgentAttentionBadge(count: badgeCount)
+          } else if isWorking {
+            AgentWorkingDot().padding(MacTheme.Space.x2)
+          }
+        }
         .background {
           if selected {
             RoundedRectangle(cornerRadius: MacTheme.Radius.compact, style: .continuous)
               .fill(MacTheme.well)
           }
         }
+        .contentShape(Rectangle())
     }
     .help(label)
-    .accessibilityLabel(label)
+    .accessibilityLabel(
+      badgeCount > 0
+        ? "\(label), \(AgentAttentionPolicy.waitingLabel(count: badgeCount))"
+        : isWorking ? "\(label), agents working" : label
+    )
     .accessibilityIdentifier("app-bar-\(label.lowercased())")
   }
 

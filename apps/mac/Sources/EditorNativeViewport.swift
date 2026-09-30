@@ -4,15 +4,17 @@ import SoyehtProtocol
 import SwiftUI
 
 @MainActor enum EditorTextMetrics {
-  static let lineHeight: CGFloat = 19
+  static let lineHeight: CGFloat = PaneLayoutContentMetrics.editorLineHeight
 
   static func attributes() -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
     paragraph.minimumLineHeight = lineHeight
     paragraph.maximumLineHeight = lineHeight
     return [
-      .font: NSFont(name: "JetBrains Mono", size: 11.5)
-        ?? NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular),
+      .font: NSFont(
+        name: "JetBrains Mono", size: PaneLayoutContentMetrics.editorFontPointSize)
+        ?? NSFont.monospacedSystemFont(
+          ofSize: PaneLayoutContentMetrics.editorFontPointSize, weight: .regular),
       .foregroundColor: NSColor(MacTheme.ink),
       .paragraphStyle: paragraph,
     ]
@@ -21,7 +23,7 @@ import SwiftUI
 
 struct EditorNativeViewport: NSViewRepresentable {
   @Bindable var client: EngineClient
-  let view: EditorFileView
+  var view: EditorFileView
   @Binding var selectedPosition: TextPosition?
   let navigationTarget: EditorNavigationTarget?
   let diffMarkers: [UInt32: Set<EditorDiffMarker>]
@@ -62,6 +64,12 @@ struct EditorNativeViewport: NSViewRepresentable {
     init(_ parent: EditorNativeViewport) {
       self.parent = parent
     }
+
+    #if SOYEHT_PERFORMANCE_METER
+      var performanceTextView: EditorTextView { textView }
+      var onPerformanceViewportRequested: ((UInt32) -> Void)?
+      var isPerformanceLoadingViewport = false
+    #endif
 
     func makeHostView() -> EditorViewportHostView {
       let scroll = NSScrollView()
@@ -136,9 +144,13 @@ struct EditorNativeViewport: NSViewRepresentable {
 
     private func updateVirtualGeometry(_ viewport: FileReadResult) {
       guard let scrollView else { return }
-      let top = 10 + CGFloat(viewport.fromLine) * Self.lineHeight
-      textView.textContainerInset = NSSize(width: 10, height: top)
-      let documentHeight = 20 + CGFloat(viewport.file.lineCount) * Self.lineHeight
+      let top =
+        PaneLayoutContentMetrics.editorTextInset + CGFloat(viewport.fromLine) * Self.lineHeight
+      textView.textContainerInset = NSSize(
+        width: PaneLayoutContentMetrics.editorTextInset, height: top)
+      let documentHeight =
+        2 * PaneLayoutContentMetrics.editorTextInset
+        + CGFloat(viewport.file.lineCount) * Self.lineHeight
       let height = max(scrollView.contentSize.height, documentHeight)
       textView.minSize = NSSize(width: 0, height: height)
       if abs(textView.frame.height - height) > 0.5 {
@@ -149,10 +161,14 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
 
     private func requestViewportIfNeeded() {
+      #if SOYEHT_PERFORMANCE_METER
+        if isPerformanceLoadingViewport { return }
+      #endif
       guard let scrollView, let viewport = parent.view.viewport,
         requestedViewportStart == nil
       else { return }
-      let visibleTop = max(0, scrollView.contentView.bounds.minY - 10)
+      let visibleTop = max(
+        0, scrollView.contentView.bounds.minY - PaneLayoutContentMetrics.editorTextInset)
       let visibleFrom = UInt32(clamping: Int(visibleTop / Self.lineHeight))
       let visibleLines = UInt32(
         clamping: Int(ceil(scrollView.contentSize.height / Self.lineHeight)) + 2)
@@ -164,6 +180,12 @@ struct EditorNativeViewport: NSViewRepresentable {
       else { return }
       requestedViewportStart = start
       let fileId = viewport.file.fileId
+      #if SOYEHT_PERFORMANCE_METER
+        if let onPerformanceViewportRequested {
+          onPerformanceViewportRequested(start)
+          return
+        }
+      #endif
       Task { @MainActor in
         do {
           try await parent.client.loadEditorViewport(fileId: fileId, fromLine: start)
@@ -479,12 +501,28 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 }
 
-@MainActor private final class EditorTextView: NSTextView {
+@MainActor final class EditorTextView: NSTextView {
   weak var inputDelegate: EditorNativeViewport.Coordinator?
   var vimEnabled = false
   private var contextOffset = 0
 
+  #if SOYEHT_PERFORMANCE_METER
+    var onPerformanceKeyDownStart: (() -> Void)?
+    var onPerformanceKeyDownEnd: (() -> Void)?
+    var onPerformanceInsertText: (() -> Void)?
+    var onPerformanceDrawStart: ((NSRect) -> Void)?
+    var onPerformanceDraw: ((NSRect) -> Void)?
+    override func draw(_ dirtyRect: NSRect) {
+      onPerformanceDrawStart?(dirtyRect)
+      super.draw(dirtyRect)
+      onPerformanceDraw?(dirtyRect)
+    }
+  #endif
+
   override func insertText(_ insertString: Any, replacementRange: NSRange) {
+    #if SOYEHT_PERFORMANCE_METER
+      onPerformanceInsertText?()
+    #endif
     guard let inserted = insertString as? String,
       inputDelegate?.insert(inserted, ranges: ranges(replacementRange)) == true
     else {
@@ -523,6 +561,10 @@ struct EditorNativeViewport: NSViewRepresentable {
   }
 
   override func keyDown(with event: NSEvent) {
+    #if SOYEHT_PERFORMANCE_METER
+      onPerformanceKeyDownStart?()
+      defer { onPerformanceKeyDownEnd?() }
+    #endif
     let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     guard vimEnabled, !flags.contains(.command), !flags.contains(.control),
       !flags.contains(.option), let key = vimKey(event),
@@ -600,7 +642,7 @@ struct EditorNativeViewport: NSViewRepresentable {
 }
 
 @MainActor final class EditorLineGutter: NSView {
-  static let width: CGFloat = 44
+  static let width: CGFloat = PaneLayoutContentMetrics.editorGutterWidth
   override var isFlipped: Bool { true }
   private weak var textView: NSTextView?
   private weak var scrollView: NSScrollView?
@@ -700,197 +742,3 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
   }
 }
-
-#if DEBUG
-  @MainActor enum EditorPerformanceProbe {
-    private static let viewportSize = NSSize(width: 1000, height: 720)
-    private static let samples = 80
-
-    static func requestedReportURL() -> URL? {
-      let arguments = CommandLine.arguments
-      guard let flag = arguments.firstIndex(of: "--editor-performance-report"),
-        arguments.indices.contains(flag + 1)
-      else { return nil }
-      return URL(fileURLWithPath: arguments[flag + 1])
-    }
-
-    static func runAndExit(report: URL) -> Never {
-      do {
-        try measure().write(to: report, options: .atomic)
-        Foundation.exit(EXIT_SUCCESS)
-      } catch {
-        FileHandle.standardError.write(Data("editor performance: \(error)\n".utf8))
-        Foundation.exit(EXIT_FAILURE)
-      }
-    }
-
-    private static func measure() throws -> Data {
-      let (scroll, textView) = makeSurface()
-      let bitmap = try bitmap(for: scroll)
-      warm(scroll: scroll, textView: textView, bitmap: bitmap)
-      let keystroke = stableP95 {
-        keystrokeSamples(scroll: scroll, textView: textView, bitmap: bitmap)
-      }
-      let scrolling = stableP95 {
-        scrollSamples(scroll: scroll, textView: textView, bitmap: bitmap)
-      }
-      let renderInk = try renderSurfaceInkPixels()
-      let report: [String: Any] = [
-        "editor_render_ink_pixels": renderInk,
-        "keystroke_to_pixel_p95_ms": keystroke,
-        "scroll_frame_p95_ms": scrolling,
-        "scroll_frames": samples * 3,
-      ]
-      return try JSONSerialization.data(
-        withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
-    }
-
-    private static func renderSurfaceInkPixels() throws -> Int {
-      let file = FileDocument(
-        fileId: "render-file", paneId: "render-pane", workspaceId: "render-workspace",
-        path: "Sources/render.swift", language: .swift, revision: "1", diskRevision: "1",
-        lineCount: 3, byteCount: "48", dirty: false, conflicted: false, watching: true)
-      let viewport = FileReadResult(
-        file: file, source: .buffer, fromLine: 0, toLine: 3,
-        lines: [
-          EditorLine(line: 0, text: "struct RenderProbe {", highlights: []),
-          EditorLine(line: 1, text: "  let visible = true", highlights: []),
-          EditorLine(line: 2, text: "}", highlights: []),
-        ])
-      let editor = EditorNativeViewport(
-        client: EngineClient(), view: EditorFileView(file: file, viewport: viewport),
-        selectedPosition: .constant(nil), navigationTarget: nil, diffMarkers: [:],
-        agentReviewLines: [], agentCursors: [], vimEnabled: false,
-        vimMode: .constant(.normal), vimCommandLine: .constant(nil),
-        onDefinition: { _ in }, onReferences: { _ in })
-      let root = HStack(spacing: 0) {
-        Text("FILES\nrender.swift")
-          .font(MacTheme.mono(11))
-          .frame(width: 212)
-          .frame(maxHeight: .infinity, alignment: .topLeading)
-        editor
-      }
-      .frame(width: viewportSize.width, height: viewportSize.height)
-      .background(MacTheme.face)
-      let hosting = NSHostingView(rootView: root)
-      hosting.frame = NSRect(origin: .zero, size: viewportSize)
-      let window = NSWindow(
-        contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-      window.contentView = hosting
-      window.layoutIfNeeded()
-      RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-      hosting.layoutSubtreeIfNeeded()
-      let bitmap = try bitmap(for: hosting)
-      hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-      return inkPixels(
-        bitmap, xRange: Int(212 + EditorLineGutter.width + 8)..<Int(viewportSize.width - 8))
-    }
-
-    private static func inkPixels(_ bitmap: NSBitmapImageRep, xRange: Range<Int>) -> Int {
-      guard let face = NSColor(MacTheme.face).usingColorSpace(.deviceRGB) else { return 0 }
-      let upperX = min(bitmap.pixelsWide, xRange.upperBound)
-      let upperY = min(bitmap.pixelsHigh, Int(viewportSize.height))
-      return (0..<upperY).reduce(into: 0) { count, y in
-        for x in max(0, xRange.lowerBound)..<upperX {
-          guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
-            continue
-          }
-          let distance =
-            abs(color.redComponent - face.redComponent)
-            + abs(color.greenComponent - face.greenComponent)
-            + abs(color.blueComponent - face.blueComponent)
-          if color.alphaComponent > 0.5, distance > 0.22 { count += 1 }
-        }
-      }
-    }
-
-    private static func makeSurface() -> (NSScrollView, NSTextView) {
-      let textView = NSTextView(frame: NSRect(origin: .zero, size: viewportSize))
-      textView.isRichText = false
-      textView.drawsBackground = true
-      textView.backgroundColor = NSColor(MacTheme.face)
-      textView.textContainerInset = NSSize(width: 10, height: 10)
-      textView.textContainer?.widthTracksTextView = true
-      textView.textStorage?.setAttributedString(
-        NSAttributedString(string: source(), attributes: EditorTextMetrics.attributes()))
-      let height = CGFloat(ProtocolLimits.editorViewportLines) * EditorTextMetrics.lineHeight + 20
-      textView.setFrameSize(NSSize(width: viewportSize.width, height: height))
-      let scroll = NSScrollView(frame: NSRect(origin: .zero, size: viewportSize))
-      scroll.documentView = textView
-      scroll.hasVerticalScroller = true
-      scroll.layoutSubtreeIfNeeded()
-      return (scroll, textView)
-    }
-
-    private static func source() -> String {
-      (0..<ProtocolLimits.editorViewportLines)
-        .map { "let line_\($0) = \($0) // viewport" }
-        .joined(separator: "\n")
-    }
-
-    private static func bitmap(for view: NSView) throws -> NSBitmapImageRep {
-      guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
-        throw CocoaError(.coderInvalidValue)
-      }
-      return bitmap
-    }
-
-    private static func warm(
-      scroll: NSScrollView, textView: NSTextView, bitmap: NSBitmapImageRep
-    ) {
-      if let container = textView.textContainer {
-        textView.layoutManager?.ensureLayout(for: container)
-      }
-      scroll.cacheDisplay(in: scroll.bounds, to: bitmap)
-    }
-
-    private static func keystrokeSamples(
-      scroll: NSScrollView, textView: NSTextView, bitmap: NSBitmapImageRep
-    ) -> [Double] {
-      (0..<samples).map { sample in
-        let range = NSRange(location: 4, length: 1)
-        let value = sample.isMultiple(of: 2) ? "x" : "y"
-        let start = ContinuousClock.now
-        textView.textStorage?.replaceCharacters(in: range, with: value)
-        textView.layoutManager?.ensureLayout(forCharacterRange: range)
-        scroll.cacheDisplay(in: scroll.bounds, to: bitmap)
-        return milliseconds(since: start)
-      }
-    }
-
-    private static func scrollSamples(
-      scroll: NSScrollView, textView: NSTextView, bitmap: NSBitmapImageRep
-    ) -> [Double] {
-      let maximum = max(0, textView.frame.height - scroll.contentSize.height)
-      return (0..<samples).map { sample in
-        let fraction = CGFloat(sample + 1) / CGFloat(samples)
-        let start = ContinuousClock.now
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: maximum * fraction))
-        scroll.reflectScrolledClipView(scroll.contentView)
-        if let container = textView.textContainer {
-          textView.layoutManager?.ensureLayout(
-            forBoundingRect: scroll.documentVisibleRect, in: container)
-        }
-        scroll.cacheDisplay(in: scroll.bounds, to: bitmap)
-        return milliseconds(since: start)
-      }
-    }
-
-    private static func milliseconds(since start: ContinuousClock.Instant) -> Double {
-      let duration = start.duration(to: .now)
-      return Double(duration.components.seconds) * 1000
-        + Double(duration.components.attoseconds) / 1_000_000_000_000_000
-    }
-
-    private static func percentile95(_ values: [Double]) -> Double {
-      let ordered = values.sorted()
-      let rank = Int((Double(ordered.count) * 0.95).rounded(.up))
-      return ordered[min(ordered.count - 1, max(0, rank - 1))]
-    }
-
-    private static func stableP95(_ sample: () -> [Double]) -> Double {
-      let batches = (0..<3).map { _ in percentile95(sample()) }.sorted()
-      return batches[1]
-    }
-  }
-#endif

@@ -19,7 +19,10 @@ dispatch, the engine writes `engine.operation_started` with that identifier,
 connection, schema-known method, validated pane route and UTC start time. A
 completed request writes `engine.operation` with the same identity plus its
 result, error kind, finish time and duration. An unmatched start therefore remains
-visible if dispatch never returns. Neither record contains parameters,
+visible if dispatch never returns. A catalogue request handed to the shared
+catalogue worker keeps its operation identity: its `engine.operation` record is
+written when the worker answers it, including a request that shares another
+request's scan, or at once when the catalogue queue rejects it. Neither record contains parameters,
 client-supplied IDs, free-form error text, keystrokes, challenges, codes, tokens
 or keys. A method outside the schema appears as `unknown`, without copying the
 received text.
