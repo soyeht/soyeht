@@ -75,9 +75,13 @@ shows those names; the harness decides which actions it asks about.
   in full, whichever harness sends it (codex-acp: kind `execute` with
   `rawInput {server, tool, arguments}`; claude-acp: tool name
   `mcp__<server>__<tool>`). Pane ids of the same workspace show as pane names.
-  An `execute` request with neither a command nor this shape is refused.
+  codex-acp 1.11.0 sends only the tool call id, kind and status in the
+  request; the engine judges every request on the tool call as last reported
+  by `session/update` in the same prompt, overlaid with the request's own
+  fields. An `execute` request with neither a command nor this shape is refused.
 - A user's `allow_always` selection applies only to this pane (DECIDED,
-  Caio 2026-09-10).
+  Caio 2026-09-10), and only to a request that is the same and is shown the
+  same way (title, command, arguments and changes).
 - Only an agent that announces no modes gets the engine's own `ask`,
   `accept_edits` and `allow_all` modes, enforced by answering its requests
   (`accept_edits`: `allow_once` for a file write within the worktree).

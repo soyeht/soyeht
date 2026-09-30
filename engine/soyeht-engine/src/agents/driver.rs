@@ -216,6 +216,13 @@ impl Core {
             .filter(|other| other.workspace_id == saved.pane.workspace_id)
             .map(|other| (other.pane_id.as_str(), other.name.as_str()))
             .collect();
+        let tracked_tool = params["toolCall"]["toolCallId"]
+            .as_str()
+            .map(|id| updates::tracked_tool(&self.store, context.pane, state, id))
+            .transpose()?
+            .flatten()
+            .and_then(|message| message.tool)
+            .map(|tool| json!(tool));
         let mut question = Changes::default();
         let incoming = questions::Incoming {
             source_seq: context.source_seq,
@@ -225,6 +232,7 @@ impl Core {
             now_ms: context.now_ms,
             timestamp: context.timestamp,
             pane_names: &pane_names,
+            tracked_tool,
         };
         if let Err(error) = questions::receive(state, saved, incoming, &mut question) {
             let mut refusal = Changes::default();
