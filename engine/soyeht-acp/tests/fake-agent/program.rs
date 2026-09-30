@@ -212,8 +212,10 @@ impl Runtime {
             ),
             "effort" => matches!(value.as_str(), Some("low" | "medium" | "high")),
             "mode" => {
-                self.settings.modes == "config"
-                    && matches!(value.as_str(), Some("ask" | "accept_edits" | "allow_all"))
+                self.settings.announces_mode_option()
+                    && value
+                        .as_str()
+                        .is_some_and(|mode| self.settings.accepts_mode(mode))
             }
             "fast" => value.is_boolean() && params["type"] == "boolean",
             _ => false,
@@ -258,8 +260,7 @@ impl Runtime {
             return;
         };
         let mode = params["modeId"].as_str().unwrap_or("");
-        if self.settings.modes != "legacy" || !matches!(mode, "ask" | "accept_edits" | "allow_all")
-        {
+        if self.settings.modes != "legacy" || !self.settings.accepts_mode(mode) {
             self.error(id, -32602, "Mode refused");
             return;
         }

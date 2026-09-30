@@ -15,7 +15,8 @@ pub struct Settings {
     /// bytes under one messageId, as real adapters do for long prompts.
     pub replay_user_chunk_bytes: Option<usize>,
     /// How permission modes are announced: `config` as a configuration
-    /// option, `legacy` as ACP session modes, `none` not at all.
+    /// option, `restricted` the same without full access, `legacy` as ACP
+    /// session modes, `none` not at all.
     pub modes: String,
 }
 impl Settings {
@@ -39,7 +40,9 @@ impl Settings {
                 "--modes" => {
                     modes = args
                         .next()
-                        .filter(|value| matches!(value.as_str(), "config" | "legacy" | "none"))
+                        .filter(|value| {
+                            matches!(value.as_str(), "config" | "restricted" | "legacy" | "none")
+                        })
                         .ok_or_else(|| Error::UnknownOption(arg.clone()))?;
                 }
                 "--initialize-padding-bytes" => {
@@ -86,6 +89,19 @@ impl Settings {
             replay_user_chunk_bytes,
             modes,
         })
+    }
+    pub fn announces_mode_option(&self) -> bool {
+        matches!(self.modes.as_str(), "config" | "restricted")
+    }
+    /// Whether this agent offers `mode`; it never agrees to enter `locked`.
+    pub fn offers_mode(&self, mode: &str) -> bool {
+        self.modes != "none" && (self.modes != "restricted" || mode != "allow_all")
+    }
+    pub fn accepts_mode(&self, mode: &str) -> bool {
+        self.offers_mode(mode)
+            && MODES
+                .iter()
+                .any(|(value, _, _)| *value == mode && mode != "locked")
     }
     pub fn logged_in(&self) -> bool {
         !self.require_login || self.directory.join("login.ok").exists()
@@ -136,9 +152,10 @@ impl Session {
             ),
             json!({"id":"fast","name":"Fast","type":"boolean","currentValue":self.values["fast"]}),
         ];
-        if settings.modes == "config" {
+        if settings.announces_mode_option() {
             let modes: Vec<_> = MODES
                 .iter()
+                .filter(|(value, _, _)| settings.offers_mode(value))
                 .map(|(value, name, kind)| json!({"value":value,"name":name,"_meta":{"kind":kind}}))
                 .collect();
             options.insert(2, json!({"id":"mode","name":"Permission","category":"mode","type":"select","currentValue":self.values["mode"],"options":modes}));

@@ -4711,6 +4711,62 @@ fn new_panes_start_in_the_preferred_mode_only_when_offered() {
     assert_eq!(current_mode(&mut client, &unoffered), "ask");
 }
 
+#[test]
+fn a_refused_mode_leaves_the_queue_running_in_the_agents_mode() {
+    let mut rig = Rig::new();
+    let mut client = rig.client();
+    client.call(
+        "settings.set",
+        json!({"key":"harness.defaultMode.test-agent","value":"locked","idempotencyKey":"locked"}),
+    );
+    let (mut client, pane) = rig.agent();
+    run_turn(&mut client, &pane, "hello");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+    let notice = transcript_items(&mut client, &pane);
+    assert!(
+        notice.iter().any(|item| item["role"] == "system"
+            && item["text"] == "The agent did not enter Locked; it stays in Ask"),
+        "{notice:?}"
+    );
+    let live = transcript_items(&mut client, &pane);
+    restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let mut client = rig.client();
+    run_turn(&mut client, &pane, "after restart");
+    assert_eq!(current_mode(&mut client, &pane), "ask");
+}
+
+#[test]
+fn a_mode_the_next_harness_lacks_is_not_restored_on_the_way_back() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let binary =
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    fs::write(
+        rig.path.join("harnesses.json"),
+        serde_json::to_vec(&json!([
+            {"id":"test-agent","name":"Test agent","command":binary,
+                "args":["--state-dir",rig.path.join("native"),"--modes","config"],"version":"test"},
+            {"id":"restricted-agent","name":"Restricted agent","command":binary,
+                "args":["--state-dir",rig.path.join("restricted-native"),"--modes","restricted"],
+                "version":"test"}
+        ]))
+        .unwrap(),
+    )
+    .unwrap();
+    client.call(
+        "pane.config.set",
+        json!({"paneId":pane,"configId":"mode","value":"allow_all","idempotencyKey":"all"}),
+    );
+    for (harness, key) in [("restricted-agent", "away"), ("test-agent", "back")] {
+        client.call(
+            "pane.harness.switch",
+            json!({"paneId":pane,"harness":harness,"idempotencyKey":key}),
+        );
+        run_turn(&mut client, &pane, key);
+        assert_eq!(current_mode(&mut client, &pane), "ask", "{harness}");
+    }
+}
+
 fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
     let pid = client.pane(pane)["pid"].clone();
     client.call(

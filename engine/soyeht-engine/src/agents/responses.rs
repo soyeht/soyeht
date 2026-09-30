@@ -166,8 +166,17 @@ fn finish_configuration(
             Ok(super::configuration::applied(&operation.value))
         }
         Err(error) => {
-            if state.initial_option.take().is_some() {
-                state.initial_config_failed = true;
+            match state.initial_option.take() {
+                Some(key) if key == super::configuration::MODE_KEY => {
+                    super::configuration::refused_mode(
+                        state,
+                        saved.pane.generation,
+                        &operation.value,
+                        changes,
+                    )?;
+                }
+                Some(_) => state.initial_config_failed = true,
+                None => {}
             }
             changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.to_string()})));
             Err(error)

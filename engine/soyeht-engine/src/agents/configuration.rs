@@ -1,11 +1,14 @@
-use super::{Changes, native_error, pending::UserOperation, responses, state::State};
+use super::{Changes, native_error, pending::UserOperation, responses, state::State, transcript};
 use crate::{
     core::Core,
     errors::{self, Result},
 };
 use serde_json::json;
 use soyeht_acp::config::{FULL_ACCESS_KIND, MODE_CATEGORY, Options, Route};
-use soyeht_protocol::{ConfigChoice, ConfigOperation, ConfigOption, ConfigType, ConfigValue};
+use soyeht_protocol::{
+    ConfigChoice, ConfigOperation, ConfigOption, ConfigType, ConfigValue, TranscriptKind,
+    TranscriptRole,
+};
 use uuid::Uuid;
 
 /// `State::requested_options` key of the permission mode.
@@ -98,16 +101,64 @@ fn ensure_engine_modes(state: &mut State) -> Result<()> {
 /// re-application when the agent offers it but reports another one.
 pub(super) fn open_session(state: &mut State, options: Options) -> Result<()> {
     state.options = options;
+    // A failure belongs to the session that refused; a new one tries again.
+    state.initial_config_failed = false;
     ensure_engine_modes(state)?;
-    if let Some(mode) = state.mode.clone()
-        && engine_policy(state).is_none()
-        && state.options.offers_mode(&mode)
-        && state.options.current_mode() != Some(mode.as_str())
-    {
-        state
-            .requested_options
-            .insert(MODE_KEY.into(), ConfigValue::V0(mode));
+    match state.mode.clone() {
+        Some(mode)
+            if engine_policy(state).is_none()
+                && state.options.offers_mode(&mode)
+                && state.options.current_mode() != Some(mode.as_str()) =>
+        {
+            state
+                .requested_options
+                .insert(MODE_KEY.into(), ConfigValue::V0(mode));
+        }
+        _ => keep_harness_mode(state),
     }
+    Ok(())
+}
+
+/// Stops applying the pane's mode: the mode the harness reports becomes the
+/// pane's mode, so a mode the harness does not offer is never restored later.
+fn keep_harness_mode(state: &mut State) {
+    state.requested_options.remove(MODE_KEY);
+    state.mode = state.options.current_mode().map(str::to_owned);
+}
+
+/// The harness refused to enter the pane's mode. The queue continues in the
+/// mode it reports, and the transcript says so.
+pub(super) fn refused_mode(
+    state: &mut State,
+    generation: u32,
+    refused: &ConfigValue,
+    changes: &mut Changes,
+) -> Result<()> {
+    keep_harness_mode(state);
+    let name = |value: &str| {
+        state
+            .options
+            .mode()
+            .and_then(|option| option.options.iter().find(|choice| choice.value == value))
+            .map_or_else(|| value.to_owned(), |choice| choice.name.clone())
+    };
+    let refused = match refused {
+        ConfigValue::V0(value) => name(value),
+        ConfigValue::V1(value) => value.to_string(),
+    };
+    let kept = state
+        .mode
+        .as_deref()
+        .map_or_else(|| "its own mode".into(), name);
+    let notice = transcript::new_message(
+        state,
+        generation,
+        TranscriptRole::System,
+        TranscriptKind::System,
+        format!("The agent did not enter {refused}; it stays in {kept}"),
+        true,
+    )?;
+    changes.messages.push(notice);
     Ok(())
 }
 
@@ -227,7 +278,7 @@ impl Core {
             });
             let Some(option) = offered.cloned() else {
                 if key == MODE_KEY {
-                    state.requested_options.remove(&key);
+                    keep_harness_mode(&mut state);
                     continue;
                 }
                 state.initial_config_failed = true;
@@ -257,8 +308,13 @@ impl Core {
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    state.initial_config_failed = true;
                     changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":option.id,"value":desired,"reason":error.to_string()})));
+                    if key == MODE_KEY {
+                        let generation = self.panes[pane].stored.pane.generation;
+                        refused_mode(&mut state, generation, &desired, &mut changes)?;
+                        continue;
+                    }
+                    state.initial_config_failed = true;
                     break;
                 }
             }
