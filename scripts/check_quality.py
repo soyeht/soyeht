@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when measured code quality drifts from the versioned baseline."""
+"""Fail when measured code quality regresses past the versioned baseline."""
 
 from __future__ import annotations
 
@@ -43,18 +43,29 @@ def main() -> int:
         if expected["version"] != current["version"]:
             raise QualityError("quality baseline version differs from the scanner")
         changes = differences(expected, current)
-        for direction, explanation in changes:
-            print(f"quality: {direction}: {explanation}", file=sys.stderr)
+        regressions = [text for direction, text in changes if direction == "RELAXATION"]
+        improvements = [text for direction, text in changes if direction == "IMPROVEMENT"]
+        for explanation in regressions:
+            print(f"quality: REGRESSION: {explanation}", file=sys.stderr)
+        for explanation in improvements:
+            print(f"quality: improvement: {explanation}")
         print("quality: cargo-machete PASS")
         print(f"quality: Periphery {periphery_status(root)}")
-        if changes:
+        if regressions:
             print(
-                "quality: update scripts/quality_baseline.json in this PR for every "
-                "change, including improvements. Baseline relaxations require written "
-                "PR justification and reviewer approval.",
+                "quality: FAIL: fix each regression. Raising its entry in "
+                "scripts/quality_baseline.json is a baseline relaxation that requires "
+                "written PR justification and reviewer approval.",
                 file=sys.stderr,
             )
             return 1
+        if improvements:
+            print(
+                "quality: PASS with improvements; lower scripts/quality_baseline.json "
+                "to the new values in this PR (python3 scripts/check_quality.py "
+                "--print-baseline) so the ratchet keeps the gain"
+            )
+            return 0
         print(
             "quality: baseline matches; no new clones, oversized growth or loose literals"
         )

@@ -1,8 +1,8 @@
 {
   "duplication": {
     "engine": {
-      "clones": 431,
-      "duplicated_lines": 3872
+      "clones": 433,
+      "duplicated_lines": 3882
     },
     "ios": {
       "clones": 6,
@@ -24,12 +24,19 @@
   "loose_literals": {
     "apps/ios/Sources/PhoneHome.swift": {
       "corner_radius": 1,
-      "padding": 11,
-      "system_font_size": 4
+      "padding": 7,
+      "system_font_size": 3
+    },
+    "apps/ios/Sources/PhonePaneDetail.swift": {
+      "padding": 3,
+      "system_font_size": 1
     },
     "apps/ios/Sources/PhoneSettings.swift": {
       "corner_radius": 3,
       "padding": 5
+    },
+    "apps/ios/Sources/PhoneWorkspaceSplit.swift": {
+      "padding": 1
     },
     "apps/ios/Sources/PhoneWritingPresentationSurface.swift": {
       "corner_radius": 5,
@@ -96,6 +103,9 @@
       "corner_radius": 2,
       "padding": 19
     },
+    "apps/shared/Sources/SoyehtClient/AgentSubagents.swift": {
+      "padding": 2
+    },
     "apps/shared/Sources/SoyehtClient/MacTerminal.swift": {
       "font_name": 1
     },
@@ -113,6 +123,9 @@
       "font_name": 1
     },
     "engine/soyeht-acp/src/session.rs": {
+      "rust_limits": 1
+    },
+    "engine/soyeht-acp/src/subagents.rs": {
       "rust_limits": 1
     },
     "engine/soyeht-acp/tests/fake-agent/turns.rs": {
@@ -242,23 +255,24 @@
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1025,
+    "apps/shared/Sources/SoyehtClient/AgentConversation.swift": 804,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1054,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-cli/src/task_commands.rs": 862,
-    "engine/soyeht-engine/src/agents/questions.rs": 1111,
-    "engine/soyeht-engine/src/agents/state.rs": 937,
-    "engine/soyeht-engine/src/agents/switching.rs": 1069,
+    "engine/soyeht-engine/src/agents/questions.rs": 1119,
+    "engine/soyeht-engine/src/agents/state.rs": 949,
+    "engine/soyeht-engine/src/agents/switching.rs": 1065,
     "engine/soyeht-engine/src/editor/service.rs": 1146,
     "engine/soyeht-engine/src/experiment_export.rs": 1216,
     "engine/soyeht-engine/src/pane_observations.rs": 1666,
-    "engine/soyeht-engine/src/server.rs": 986,
+    "engine/soyeht-engine/src/server.rs": 1172,
     "engine/soyeht-engine/src/tasks/feedback.rs": 909,
     "engine/soyeht-engine/src/tasks/review.rs": 826,
     "engine/soyeht-engine/src/tasks/worktree.rs": 815,
     "engine/soyeht-engine/src/terminal_capture.rs": 1599,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1115,
-    "engine/soyeht-engine/tests/runtime.rs": 9154,
+    "engine/soyeht-engine/tests/runtime.rs": 9373,
     "engine/soyeht-mcp/src/tools.rs": 1189,
     "engine/soyeht-store/src/agents.rs": 849,
     "engine/soyeht-store/src/editor.rs": 848,

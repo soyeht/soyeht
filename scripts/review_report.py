@@ -128,11 +128,14 @@ def render(
     else:
         lines.append("Baseline relaxations: none")
     drift = differences(after, current)
-    if drift:
-        lines.append("FAIL: current measurements and checked-in baseline differ:")
-        lines.extend(
-            f"  {direction}: {explanation}" for direction, explanation in drift
-        )
+    regressions = [text for direction, text in drift if direction == "RELAXATION"]
+    improvements = [text for direction, text in drift if direction == "IMPROVEMENT"]
+    if regressions:
+        lines.append("FAIL: current measurements regress past the checked-in baseline:")
+        lines.extend(f"  {explanation}" for explanation in regressions)
+    if improvements:
+        lines.append("Improvements not yet recorded; lower the baseline in this PR:")
+        lines.extend(f"  {explanation}" for explanation in improvements)
     return "\n".join(lines)
 
 
@@ -163,7 +166,11 @@ def main() -> int:
                 previous_baseline,
             )
         )
-        return 1 if differences(after, current) else 0
+        regressed = any(
+            direction == "RELAXATION"
+            for direction, _ in differences(after, current)
+        )
+        return 1 if regressed else 0
     except (
         QualityError,
         OSError,

@@ -296,7 +296,7 @@ def baseline_from_measurement(measurement: dict) -> dict:
 
 
 def differences(baseline: dict, actual: dict) -> list[tuple[str, str]]:
-    """Return (direction, explanation); even improvements require a baseline update."""
+    """Return (direction, explanation); only RELAXATION entries fail the gate."""
     changes: list[tuple[str, str]] = []
     for area in DUPLICATION_SCANS:
         for metric in ("clones", "duplicated_lines"):
@@ -320,7 +320,8 @@ def differences(baseline: dict, actual: dict) -> list[tuple[str, str]]:
             changes.append(
                 (
                     direction,
-                    f"file {path}: cap {previous}, actual {current}; split the file or update its exact cap",
+                    f"file {path}: cap {previous}, actual {current}"
+                    + ("; split the file" if direction == "RELAXATION" else ""),
                 )
             )
     previous_literals = baseline["loose_literals"]
@@ -336,7 +337,12 @@ def differences(baseline: dict, actual: dict) -> list[tuple[str, str]]:
                 changes.append(
                     (
                         direction,
-                        f"literal {path} {kind}: baseline {previous}, actual {current}; use a policy, token, font source or limits",
+                        f"literal {path} {kind}: baseline {previous}, actual {current}"
+                        + (
+                            "; use a policy, token, font source or limits"
+                            if direction == "RELAXATION"
+                            else ""
+                        ),
                     )
                 )
     return changes

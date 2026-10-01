@@ -190,7 +190,7 @@ class QualityRatchetTests(unittest.TestCase):
         )
         self.assertEqual(literals["engine/crate/src/mod.rs"]["rust_limits"], 1)
 
-    def test_full_gate_is_red_for_real_clone_and_inflated_file(self):
+    def test_full_gate_fails_regressions_and_passes_improvements(self):
         jscpd, machete = tool_paths(ROOT)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -307,6 +307,40 @@ class QualityRatchetTests(unittest.TestCase):
                 "}\n"
             )
             self.assertEqual(gate().returncode, 0)
+
+            # Improvements pass and ask for a lower baseline; regressions still fail.
+            big = root / "apps/mac/Sources/Big.swift"
+            big.write_text("".join(f"let distinct{i} = {i}\n" for i in range(900)))
+            (root / "scripts/quality_baseline.json").write_text(
+                json.dumps(baseline_from_measurement(measure(root, jscpd, machete)))
+            )
+            big.write_text("".join(f"let distinct{i} = {i}\n" for i in range(850)))
+            mac_item.write_text(mac_original.replace(".padding(12)\n", ""))
+            improved = gate()
+            self.assertEqual(improved.returncode, 0, improved.stderr)
+            self.assertIn(
+                "improvement: file apps/mac/Sources/Big.swift: cap 900, actual 850",
+                improved.stdout,
+            )
+            self.assertIn(
+                "improvement: literal apps/mac/Sources/Item.swift padding",
+                improved.stdout,
+            )
+            self.assertIn("lower scripts/quality_baseline.json", improved.stdout)
+            print(
+                next(
+                    line
+                    for line in improved.stdout.splitlines()
+                    if "Big.swift" in line
+                )
+            )
+            big.write_text("".join(f"let distinct{i} = {i}\n" for i in range(901)))
+            regressed = gate()
+            self.assertEqual(regressed.returncode, 1)
+            self.assertIn(
+                "REGRESSION: file apps/mac/Sources/Big.swift: cap 900, actual 901",
+                regressed.stderr,
+            )
 
 
 if __name__ == "__main__":

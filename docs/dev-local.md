@@ -116,9 +116,10 @@ Enable the versioned fast pre-push hook with
 `python3 scripts/check_quality.py`, not the full merge gate. The full
 `bash scripts/check_all.sh` remains a manual pre-merge requirement.
 
-The checked-in `scripts/quality_baseline.json` must exactly match current
-measurements. When a metric improves or an oversized file shrinks, lower its
-baseline in the same PR. Existing files above 800 lines have individual caps
+The gate fails only on regressions: more clones or duplicated lines, a file
+growing past its cap, or more loose literals in a file. When a metric improves
+or an oversized file shrinks, the gate passes and prints an `improvement` line;
+lower the baseline in the same PR so the ratchet keeps the gain. Existing files above 800 lines have individual caps
 equal to their measured lines; new files above 800 lines fail. Any increase or
 new exception is a baseline relaxation requiring written justification in the
 PR. Run `python3 scripts/check_quality.py --print-baseline` to inspect current
