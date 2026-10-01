@@ -60,6 +60,10 @@ struct EditorNativeViewport: NSViewRepresentable {
     private var vim = EditorVimMachine()
     private var wasVimEnabled = false
     private var requestedViewportStart: UInt32?
+    /// True from an undo or redo request until its text is on screen; edits
+    /// wait so they are never computed against text the engine replaced.
+    private var replayingHistory = false
+    private var replayRendersAfterRevision: String?
 
     init(_ parent: EditorNativeViewport) {
       self.parent = parent
@@ -128,6 +132,10 @@ struct EditorNativeViewport: NSViewRepresentable {
         gutter?.needsDisplay = true
       }
       applyNavigation(viewport)
+      if let before = replayRendersAfterRevision, viewport.file.revision != before {
+        replayRendersAfterRevision = nil
+        replayingHistory = false
+      }
       requestViewportIfNeeded()
     }
 
@@ -197,6 +205,7 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
 
     func insert(_ inserted: String, ranges: [NSRange]) -> Bool {
+      if replayingHistory { return true }
       guard
         let plan = EditorEditing.insertionPlan(
           text: textView.string, viewportStartLine: viewportStart, ranges: ranges,
@@ -207,6 +216,7 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
 
     func delete(_ ranges: [NSRange], backward: Bool) -> Bool {
+      if replayingHistory { return true }
       guard
         let plan = EditorEditing.deletionPlan(
           text: textView.string, viewportStartLine: viewportStart, ranges: ranges,
@@ -216,7 +226,37 @@ struct EditorNativeViewport: NSViewRepresentable {
       return true
     }
 
+    func replaceVerbatim(_ ranges: [NSRange], with strings: [String]) -> Bool {
+      guard !replayingHistory,
+        let plan = EditorEditing.verbatimPlan(
+          text: textView.string, viewportStartLine: viewportStart, ranges: ranges,
+          strings: strings)
+      else { return false }
+      apply(plan)
+      return true
+    }
+
+    func replayHistory(_ direction: EditorHistoryDirection) {
+      guard !replayingHistory else { return }
+      replayingHistory = true
+      let fileId = parent.view.file.fileId
+      let before = parent.view.file.revision
+      Task { @MainActor in
+        var applied = false
+        await report {
+          applied = try await self.parent.client.replayEditorHistory(fileId, direction: direction)
+            .applied
+        }
+        if applied, parent.view.viewport?.file.revision == before {
+          replayRendersAfterRevision = before
+        } else {
+          replayingHistory = false
+        }
+      }
+    }
+
     func toggleComment(_ ranges: [NSRange]) {
+      if replayingHistory { return }
       guard
         let plan = EditorEditing.toggleCommentPlan(
           text: textView.string, viewportStartLine: viewportStart, ranges: ranges,
@@ -282,7 +322,9 @@ struct EditorNativeViewport: NSViewRepresentable {
       textView.inputDelegate = self
       textView.isRichText = false
       textView.importsGraphics = false
-      textView.allowsUndo = true
+      // Undo belongs to the engine-owned history; AppKit's local stack would
+      // rewind text the engine never sees.
+      textView.allowsUndo = false
       textView.usesFindPanel = true
       textView.isAutomaticQuoteSubstitutionEnabled = false
       textView.isAutomaticDashSubstitutionEnabled = false
@@ -444,6 +486,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       case .reload:
         Task { @MainActor in await report { try await self.parent.client.reloadEditorFile(fileId) }
         }
+      case .undo:
+        replayHistory(.undo)
       case .substitute(let pattern, let replacement, let everyMatch):
         Task { @MainActor in
           await report {
@@ -498,146 +542,6 @@ struct EditorNativeViewport: NSViewRepresentable {
 
   required init?(coder: NSCoder) {
     nil
-  }
-}
-
-@MainActor final class EditorTextView: NSTextView {
-  weak var inputDelegate: EditorNativeViewport.Coordinator?
-  var vimEnabled = false
-  private var contextOffset = 0
-
-  #if SOYEHT_PERFORMANCE_METER
-    var onPerformanceKeyDownStart: (() -> Void)?
-    var onPerformanceKeyDownEnd: (() -> Void)?
-    var onPerformanceInsertText: (() -> Void)?
-    var onPerformanceDrawStart: ((NSRect) -> Void)?
-    var onPerformanceDraw: ((NSRect) -> Void)?
-    override func draw(_ dirtyRect: NSRect) {
-      onPerformanceDrawStart?(dirtyRect)
-      super.draw(dirtyRect)
-      onPerformanceDraw?(dirtyRect)
-    }
-  #endif
-
-  override func insertText(_ insertString: Any, replacementRange: NSRange) {
-    #if SOYEHT_PERFORMANCE_METER
-      onPerformanceInsertText?()
-    #endif
-    guard let inserted = insertString as? String,
-      inputDelegate?.insert(inserted, ranges: ranges(replacementRange)) == true
-    else {
-      super.insertText(insertString, replacementRange: replacementRange)
-      return
-    }
-  }
-
-  override func deleteBackward(_ sender: Any?) {
-    guard inputDelegate?.delete(selectedRanges.map(\.rangeValue), backward: true) == true else {
-      super.deleteBackward(sender)
-      return
-    }
-  }
-
-  override func deleteForward(_ sender: Any?) {
-    guard inputDelegate?.delete(selectedRanges.map(\.rangeValue), backward: false) == true else {
-      super.deleteForward(sender)
-      return
-    }
-  }
-
-  override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    let key = event.charactersIgnoringModifiers?.lowercased()
-    if flags.contains(.command), key == "d" {
-      inputDelegate?.selectNextOccurrence(selectedRanges.map(\.rangeValue))
-      return true
-    }
-    if flags.contains(.command), key == "/" {
-      inputDelegate?.toggleComment(selectedRanges.map(\.rangeValue))
-      return true
-    }
-    if flags.contains(.command), key == "s" { return true }
-    return super.performKeyEquivalent(with: event)
-  }
-
-  override func keyDown(with event: NSEvent) {
-    #if SOYEHT_PERFORMANCE_METER
-      onPerformanceKeyDownStart?()
-      defer { onPerformanceKeyDownEnd?() }
-    #endif
-    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    guard vimEnabled, !flags.contains(.command), !flags.contains(.control),
-      !flags.contains(.option), let key = vimKey(event),
-      inputDelegate?.handleVim(key, ranges: selectedRanges.map(\.rangeValue)) == true
-    else {
-      super.keyDown(with: event)
-      return
-    }
-  }
-
-  override func mouseDown(with event: NSEvent) {
-    if event.modifierFlags.contains(.command) {
-      inputDelegate?.goToDefinition(at: characterOffset(for: event))
-      return
-    }
-    guard event.modifierFlags.contains(.option), let layoutManager, let textContainer else {
-      super.mouseDown(with: event)
-      return
-    }
-    var point = convert(event.locationInWindow, from: nil)
-    point.x -= textContainerOrigin.x
-    point.y -= textContainerOrigin.y
-    let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
-    let offset = min(layoutManager.characterIndexForGlyph(at: glyph), string.utf16.count)
-    inputDelegate?.addCursor(at: offset)
-  }
-
-  override func menu(for event: NSEvent) -> NSMenu? {
-    contextOffset = characterOffset(for: event)
-    let menu = (super.menu(for: event)?.copy() as? NSMenu) ?? NSMenu()
-    if !menu.items.isEmpty { menu.addItem(.separator()) }
-    let definition = NSMenuItem(
-      title: "Go to Definition", action: #selector(openDefinitionFromMenu), keyEquivalent: "")
-    definition.target = self
-    menu.addItem(definition)
-    let references = NSMenuItem(
-      title: "Find References", action: #selector(findReferencesFromMenu), keyEquivalent: "")
-    references.target = self
-    menu.addItem(references)
-    return menu
-  }
-
-  @objc private func openDefinitionFromMenu() {
-    inputDelegate?.goToDefinition(at: contextOffset)
-  }
-
-  @objc private func findReferencesFromMenu() {
-    inputDelegate?.findReferences(at: contextOffset)
-  }
-
-  private func characterOffset(for event: NSEvent) -> Int {
-    guard let layoutManager, let textContainer else { return selectedRange().location }
-    var point = convert(event.locationInWindow, from: nil)
-    point.x -= textContainerOrigin.x
-    point.y -= textContainerOrigin.y
-    let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
-    return min(layoutManager.characterIndexForGlyph(at: glyph), string.utf16.count)
-  }
-
-  private func ranges(_ replacement: NSRange) -> [NSRange] {
-    if replacement.location != NSNotFound { return [replacement] }
-    return selectedRanges.map(\.rangeValue)
-  }
-
-  private func vimKey(_ event: NSEvent) -> EditorVimKey? {
-    switch event.keyCode {
-    case 36, 76: return .enter
-    case 51: return .backspace
-    case 53: return .escape
-    default:
-      guard let characters = event.characters, !characters.isEmpty else { return nil }
-      return .character(characters)
-    }
   }
 }
 

@@ -11,25 +11,40 @@ use std::collections::BTreeSet;
 
 /// Name used before agent panes were named after their harness.
 const LEGACY_DEFAULT_NAME: &str = "Agent";
+/// Registry names describe the ACP adapter ("Claude Agent"). In a pane that is
+/// already an agent the word adds nothing, so the pane is named "Claude".
+const ADAPTER_SUFFIX: &str = " Agent";
 
+/// The harness name an agent pane is named after.
 pub(crate) fn harness_label(launch: &HarnessLaunch) -> &str {
-    if launch.name.trim().is_empty() {
-        &launch.id
-    } else {
-        &launch.name
+    let name = launch.name.trim();
+    if name.is_empty() {
+        return &launch.id;
     }
+    name.strip_suffix(ADAPTER_SUFFIX)
+        .map(str::trim_end)
+        .filter(|label| !label.is_empty())
+        .unwrap_or(name)
 }
 
-/// Whether `name` is a default the engine assigned for `harness`.
-pub(crate) fn is_default_name(name: &str, harness: &str) -> bool {
-    if name == LEGACY_DEFAULT_NAME || name == harness {
+/// Whether `name` is `base` or `base N` with N >= 2.
+fn numbered(name: &str, base: &str) -> bool {
+    if name == base {
         return true;
     }
-    name.strip_prefix(harness)
+    name.strip_prefix(base)
         .and_then(|rest| rest.strip_prefix(' '))
         .filter(|number| number.bytes().all(|byte| byte.is_ascii_digit()))
         .and_then(|number| number.parse::<u32>().ok())
         .is_some_and(|number| number >= 2)
+}
+
+/// Whether `name` is a default the engine assigned for `launch`, including
+/// the full registry name earlier engines used ("Claude Agent 2").
+pub(crate) fn is_default_name(name: &str, launch: &HarnessLaunch) -> bool {
+    name == LEGACY_DEFAULT_NAME
+        || numbered(name, harness_label(launch))
+        || numbered(name, launch.name.trim())
 }
 
 impl Core {
@@ -63,16 +78,53 @@ impl Core {
 
 #[cfg(test)]
 mod tests {
-    use super::is_default_name;
+    use super::{harness_label, is_default_name};
+    use soyeht_protocol::HarnessLaunch;
+
+    fn launch(id: &str, name: &str) -> HarnessLaunch {
+        HarnessLaunch {
+            id: id.into(),
+            name: name.into(),
+            command: "agent".into(),
+            args: vec![],
+            version: "1".into(),
+            environment: None,
+        }
+    }
+
+    fn builtin(id: &str) -> HarnessLaunch {
+        crate::agents::registry::builtin_entries()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.launch.id == id)
+            .unwrap()
+            .launch
+    }
+
+    #[test]
+    fn panes_are_named_after_the_harness_not_its_adapter() {
+        // The pinned registry names Claude's ACP adapter "Claude Agent".
+        let claude = builtin("registry.claude-acp");
+        assert_eq!(claude.name, "Claude Agent");
+        assert_eq!(harness_label(&claude), "Claude");
+        assert_eq!(harness_label(&builtin("registry.codex-acp")), "Codex");
+        assert_eq!(harness_label(&launch("mine", "Agent")), "Agent");
+        assert_eq!(harness_label(&launch("mine", "Test agent")), "Test agent");
+        assert_eq!(harness_label(&launch("mine", "  ")), "mine");
+    }
 
     #[test]
     fn default_names_are_the_harness_name_with_an_optional_ordinal() {
-        assert!(is_default_name("Claude", "Claude"));
-        assert!(is_default_name("Claude 2", "Claude"));
-        assert!(is_default_name("Agent", "Claude"));
-        assert!(!is_default_name("Claude 1", "Claude"));
-        assert!(!is_default_name("Claude 2b", "Claude"));
-        assert!(!is_default_name("Claudette", "Claude"));
-        assert!(!is_default_name("Reviewer", "Claude"));
+        let claude = launch("registry.claude-acp", "Claude Agent");
+        assert!(is_default_name("Claude", &claude));
+        assert!(is_default_name("Claude 2", &claude));
+        assert!(is_default_name("Agent", &claude));
+        // Names earlier engines derived from the full registry name.
+        assert!(is_default_name("Claude Agent", &claude));
+        assert!(is_default_name("Claude Agent 3", &claude));
+        assert!(!is_default_name("Claude 1", &claude));
+        assert!(!is_default_name("Claude 2b", &claude));
+        assert!(!is_default_name("Claudette", &claude));
+        assert!(!is_default_name("Reviewer", &claude));
     }
 }

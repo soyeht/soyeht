@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 554cf743f5afd9d048d07399763a415920a6a7b437bf70df0df956cedf9ae58e). Do not edit.
+// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -4019,6 +4019,26 @@ pub struct FileRevertResult {
     pub file: FileDocument,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileUndoParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileUndoResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "applied")]
+    pub applied: bool,
+    #[serde(rename = "changedLines")]
+    pub changed_lines: Vec<u32>,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<TextPosition>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileSearchMatch {
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
@@ -5671,6 +5691,10 @@ pub enum Request {
     FileHistory(FileHistoryParams),
     #[serde(rename = "file.revert")]
     FileRevert(FileRevertParams),
+    #[serde(rename = "file.undo")]
+    FileUndo(FileUndoParams),
+    #[serde(rename = "file.redo")]
+    FileRedo(FileUndoParams),
     #[serde(rename = "file.search")]
     FileSearch(FileSearchParams),
     #[serde(rename = "file.symbols")]
@@ -6094,6 +6118,8 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         false,
     ),
     ("file.revert", "FileRevertParams", "FileRevertResult", true),
+    ("file.undo", "FileUndoParams", "FileUndoResult", true),
+    ("file.redo", "FileUndoParams", "FileUndoResult", true),
     ("file.search", "FileSearchParams", "FileSearchResult", true),
     (
         "file.symbols",

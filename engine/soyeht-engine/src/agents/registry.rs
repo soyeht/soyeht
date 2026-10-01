@@ -139,7 +139,7 @@ fn valid_builtin_runner(entry: &HarnessLaunch) -> bool {
     }
 }
 
-fn builtin_entries() -> Result<Vec<RegistryEntry>> {
+pub(crate) fn builtin_entries() -> Result<Vec<RegistryEntry>> {
     if format!("{:x}", Sha256::digest(BUILTIN_SNAPSHOT.as_bytes())) != SNAPSHOT_DIGEST {
         return Err(errors::internal("Embedded ACP registry bytes changed"));
     }

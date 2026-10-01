@@ -1,3 +1,4 @@
+use super::service::PreparedEdit;
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -34,8 +35,21 @@ impl Core {
             changed_lines: prepared.changed_lines.clone(),
         })
         .map_err(|_| errors::internal("File write result serialization failed"))?;
+        self.commit_prepared_edit(connection, "file.write", params, prepared, result)
+    }
+
+    /// Persists a prepared buffer change, then applies it to the open document
+    /// unless the request is an idempotent repeat.
+    pub(super) fn commit_prepared_edit(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+        prepared: PreparedEdit,
+        result: Value,
+    ) -> Result<Value> {
         let file = prepared.file.clone();
-        let mutation = self.mutate(connection, "file.write", params, |change| {
+        let mutation = self.mutate(connection, method, params, |change| {
             change.save_editor_file(&file)?;
             Ok((result, Vec::new()))
         })?;
@@ -313,12 +327,12 @@ fn pause_editor_autosave(_: &std::path::Path) -> bool {
     false
 }
 
-fn parameters<T: serde::de::DeserializeOwned>(params: &Value, name: &str) -> Result<T> {
+pub(super) fn parameters<T: serde::de::DeserializeOwned>(params: &Value, name: &str) -> Result<T> {
     serde_json::from_value(params.clone())
         .map_err(|_| errors::invalid(format!("Invalid file {name} parameters")))
 }
 
-fn revision(value: &str) -> Result<u64> {
+pub(super) fn revision(value: &str) -> Result<u64> {
     value
         .parse()
         .map_err(|_| errors::invalid("Invalid file revision"))

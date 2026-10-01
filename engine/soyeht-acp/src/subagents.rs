@@ -103,6 +103,22 @@ pub fn report(tool: &Value) -> Option<Report> {
     })
 }
 
+/// Codex's collaboration `wait`: a session waiting on its subagents. codex-acp
+/// reports it as a tool call titled after the tool, with
+/// `_meta.codex.collaboration.tool` set to `wait`. Returns the awaited
+/// subagent sessions, which codex-acp leaves empty when the call awaits any.
+pub fn collaboration_wait(tool: &Value) -> Option<Vec<String>> {
+    let collaboration = &tool["_meta"]["codex"]["collaboration"];
+    if collaboration["tool"] != "wait" {
+        return None;
+    }
+    collaboration["receiverThreadIds"]
+        .as_array()?
+        .iter()
+        .map(|id| id.as_str().map(str::to_owned))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,5 +150,29 @@ mod tests {
             })
         );
         assert_eq!(report(&json!({"toolCallId":"toolu_2"})), None);
+    }
+
+    #[test]
+    fn codex_collaboration_waits_are_recognized_by_their_meta() {
+        // Shape captured from codex-acp 1.11.0.
+        let wait = json!({"sessionUpdate":"tool_call","toolCallId":"call_1","kind":"other",
+            "title":"wait","status":"in_progress","rawInput":{"receiverThreadIds":[]},
+            "_meta":{"codex":{"collaboration":{"tool":"wait","senderThreadId":"parent",
+                "receiverThreadIds":[]}}}});
+        assert_eq!(collaboration_wait(&wait), Some(vec![]));
+        let mut named = wait.clone();
+        named["_meta"]["codex"]["collaboration"]["receiverThreadIds"] = json!(["child"]);
+        assert_eq!(collaboration_wait(&named), Some(vec!["child".to_owned()]));
+        let mut spawn = wait.clone();
+        spawn["_meta"]["codex"]["collaboration"]["tool"] = json!("spawnAgent");
+        assert_eq!(collaboration_wait(&spawn), None);
+        // A tool merely titled "wait" is not a collaboration wait.
+        assert_eq!(
+            collaboration_wait(&json!({"toolCallId":"t","title":"wait"})),
+            None
+        );
+        let mut malformed = wait;
+        malformed["_meta"]["codex"]["collaboration"]["receiverThreadIds"] = json!([1]);
+        assert_eq!(collaboration_wait(&malformed), None);
     }
 }

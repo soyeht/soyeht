@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 554cf743f5afd9d048d07399763a415920a6a7b437bf70df0df956cedf9ae58e). Do not edit.
+// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
 import Foundation
 
 
@@ -4439,6 +4439,30 @@ public struct FileRevertResult: Codable, Sendable {
     public var `file`: FileDocument
     public init(`file`: FileDocument) {
         self.`file` = `file`
+    }
+}
+
+public struct FileUndoParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileUndoResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public var `applied`: Bool
+    public var `changedLines`: [UInt32]
+    public var `cursor`: TextPosition?
+    public init(`file`: FileDocument, `applied`: Bool, `changedLines`: [UInt32], `cursor`: TextPosition? = nil) {
+        self.`file` = `file`
+        self.`applied` = `applied`
+        self.`changedLines` = `changedLines`
+        self.`cursor` = `cursor`
     }
 }
 

@@ -3,11 +3,14 @@
 pub(crate) mod agent_review;
 pub(crate) mod api;
 mod persistence;
+mod project_files;
 mod search;
 mod service;
+mod undo;
 
+pub(crate) use project_files::{ProjectFile, enumerate_project_files};
+pub(crate) use service::language;
 pub use service::{FileSystemPort, Service, SystemFiles};
-pub(crate) use service::{ProjectFile, enumerate_project_files, language};
 
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
@@ -21,6 +24,8 @@ pub fn handles(method: &str) -> bool {
             | "file.watch"
             | "file.history"
             | "file.revert"
+            | "file.undo"
+            | "file.redo"
             | "file.search"
             | "editor.review.accept"
             | "editor.review.reject"
@@ -42,6 +47,7 @@ impl Core {
             "file.watch" => self.file_watch(connection, params),
             "file.history" => self.file_history(params),
             "file.revert" => self.file_revert(connection, params),
+            "file.undo" | "file.redo" => self.file_undo(connection, method, params),
             "file.search" => self.file_search(connection, params),
             "editor.review.accept" | "editor.review.reject" => {
                 self.editor_review(connection, method, params)

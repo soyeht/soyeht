@@ -29,6 +29,16 @@ fn tool_done(id: &str, status: &str, meta: Value) -> Value {
     json!({"sessionUpdate":"tool_call_update","toolCallId":id,"status":status,"_meta":meta})
 }
 
+/// codex-acp's collaboration `wait` call, as captured from codex-acp 1.11.0:
+/// the parent waits with an empty `receiverThreadIds`.
+fn wait(session: &str, id: &str, update: &str, status: &str) -> Value {
+    let collaboration = json!({"tool":"wait","senderThreadId":session,"receiverThreadIds":[]});
+    json!({"sessionUpdate":update,"toolCallId":id,"kind":"other","title":"wait","status":status,
+        "rawInput":{"prompt":null,"senderThreadId":session,"receiverThreadIds":[],
+            "agentsStates":{},"model":null,"reasoningEffort":null,"status":status},
+        "_meta":{"codex":{"collaboration":collaboration}}})
+}
+
 /// Claude Code: children are tagged with the spawning Agent call, whose
 /// completion reports the subagent ID and the model it resolved.
 fn claude(session: &str, turn: usize) -> Script {
@@ -94,11 +104,23 @@ fn codex(session: &str, turn: usize) -> Script {
             json!({"sessionUpdate":"usage_update","used":7,"size":99}),
         ),
         (child.clone(), message("Two files.")),
-        (session.into(), tool("call-wait", "wait", "in_progress")),
+        (
+            session.into(),
+            wait(session, "call-wait", "tool_call", "in_progress"),
+        ),
         (session.into(), state(&child, "completed")),
         (
             session.into(),
-            tool_done("call-wait", "completed", json!({})),
+            wait(session, "call-wait", "tool_call_update", "completed"),
+        ),
+        // Codex waits once more after its last subagent finished.
+        (
+            session.into(),
+            wait(session, "call-wait-2", "tool_call", "in_progress"),
+        ),
+        (
+            session.into(),
+            wait(session, "call-wait-2", "tool_call_update", "completed"),
         ),
         (session.into(), message("Subagent found two files.")),
     ]

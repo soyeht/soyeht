@@ -34,6 +34,9 @@ watches the disk, keeps history); the app renders and edits.
    JSON, Markdown and shell; plain text for everything else.
 8. Multi-cursor: `Cmd+D` selects the next occurrence, `Opt+click` adds a cursor.
 9. Auto-close brackets and quotes, auto-indent, toggle line comment (`Cmd+/`).
+9a. Undo and redo (`Cmd+Z`, `Cmd+Shift+Z`, Vim `u`) over an engine-owned,
+    per-file history shared by every paired client; paste, cut, drag and drop
+    and input-method composition reach the engine like typing (ADR 0071).
 10. VS Code keybindings by default.
 11. Vim mode (optional, off by default): normal/insert/visual, common motions
     and operators; ex commands limited to `:w`, `:q`, `:e`, `:%s`.
@@ -79,7 +82,7 @@ collaboration, extensions.
 
 ## 5. Changes to other contracts
 - 08 (engine and clients): methods `file.open|read|write|watch|history|
-  revert|search|symbols|definition|references|diagnostics|diff|format`,
+  revert|undo|redo|search|symbols|definition|references|diagnostics|diff|format`,
   `editor.review.accept|reject|comment`, `lsp.status`; events
   `file.changed_on_disk`, `file.saved {by}`, `file.conflict`,
   `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`.

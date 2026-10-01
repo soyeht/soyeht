@@ -7975,6 +7975,54 @@
       ],
       "additionalProperties": true
     },
+    "FileUndoParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileUndoResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "applied": {
+          "type": "boolean"
+        },
+        "changedLines": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        "cursor": {
+          "$ref": "#/$defs/TextPosition"
+        }
+      },
+      "required": [
+        "file",
+        "applied",
+        "changedLines"
+      ],
+      "additionalProperties": true
+    },
     "FileSearchMatch": {
       "type": "object",
       "properties": {
@@ -11880,6 +11928,24 @@
       },
       "result": {
         "$ref": "#/$defs/FileRevertResult"
+      },
+      "mutation": true
+    },
+    "file.undo": {
+      "params": {
+        "$ref": "#/$defs/FileUndoParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileUndoResult"
+      },
+      "mutation": true
+    },
+    "file.redo": {
+      "params": {
+        "$ref": "#/$defs/FileUndoParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileUndoResult"
       },
       "mutation": true
     },

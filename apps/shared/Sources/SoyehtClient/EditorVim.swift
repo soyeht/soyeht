@@ -18,6 +18,7 @@ public enum EditorVimEffect: Equatable, Sendable {
   case save
   case close
   case reload
+  case undo
   case substitute(pattern: String, replacement: String, everyMatch: Bool)
 }
 
@@ -144,6 +145,8 @@ public struct EditorVimMachine {
         range: NSRange(location: target, length: 0), with: register,
         cursor: target + register.utf16.count - 1, text: text,
         viewportStartLine: viewportStartLine)
+    case "u":
+      return EditorVimResult(effect: .undo)
     case ":":
       commandLine = ":"
       return EditorVimResult()

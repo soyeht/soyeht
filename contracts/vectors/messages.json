@@ -7430,6 +7430,41 @@
     }
   },
   {
+    "name": "FileUndoParams",
+    "type": "FileUndoParams",
+    "value": {
+      "fileId": "x",
+      "baseRevision": "1",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileUndoResult",
+    "type": "FileUndoResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "applied": true,
+      "changedLines": [0],
+      "cursor": {
+        "line": 0,
+        "column": 1
+      }
+    }
+  },
+  {
     "name": "FileSearchMatch",
     "type": "FileSearchMatch",
     "value": {
@@ -8082,6 +8117,90 @@
           "conflicted": false,
           "watching": false
         }
+      }
+    }
+  },
+  {
+    "name": "request:file.undo",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-1",
+      "method": "file.undo",
+      "params": {
+        "fileId": "x",
+        "baseRevision": "1",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.undo",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-1",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "2",
+          "diskRevision": "1",
+          "lineCount": 1,
+          "byteCount": "1",
+          "dirty": true,
+          "conflicted": false,
+          "watching": true
+        },
+        "applied": true,
+        "changedLines": [0],
+        "cursor": {
+          "line": 0,
+          "column": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "request:file.redo",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-2",
+      "method": "file.redo",
+      "params": {
+        "fileId": "x",
+        "baseRevision": "2",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.redo",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-2",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "2",
+          "diskRevision": "1",
+          "lineCount": 1,
+          "byteCount": "1",
+          "dirty": true,
+          "conflicted": false,
+          "watching": true
+        },
+        "applied": false,
+        "changedLines": []
       }
     }
   },

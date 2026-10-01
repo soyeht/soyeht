@@ -1,6 +1,7 @@
+use super::project_files::ProjectFile;
 use crate::{errors, errors::Result};
-use soyeht_editor::{SyntaxDocument, TextBuffer};
-use soyeht_protocol::{EditorLanguage, EditorLine, FileAuthor, TextEdit};
+use soyeht_editor::{EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer};
+use soyeht_protocol::{EditorLanguage, EditorLine, FileAuthor, TextEdit, TextPosition};
 use soyeht_store::editor::EditorFile;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -35,7 +36,7 @@ impl FileSystemPort for SystemFiles {
     }
 
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>> {
-        enumerate_project_files(root)
+        super::project_files::enumerate_project_files(root)
     }
 
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String> {
@@ -290,6 +291,7 @@ fn create_contained_directories(root: &Path, relative: &Path) -> io::Result<Path
 struct OpenDocument {
     file: EditorFile,
     syntax: Option<SyntaxDocument>,
+    history: EditHistory,
     save_due_ms: Option<i64>,
     watch_due_ms: i64,
 }
@@ -304,18 +306,18 @@ pub struct ResolvedPath {
     pub relative: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProjectFile {
-    pub canonical: PathBuf,
-    pub relative: String,
-    pub byte_count: u64,
-    pub modified_ms: i64,
-}
-
 pub struct PreparedEdit {
     pub file: EditorFile,
     pub changed_lines: Vec<u32>,
-    pub edits: Vec<TextEdit>,
+    /// Edit sets applied one after another; a plain write has exactly one.
+    steps: Vec<Vec<TextEdit>>,
+    history: HistoryChange,
+    pub cursor: Option<TextPosition>,
+}
+
+enum HistoryChange {
+    Record { base: u64, step: EditStep },
+    Replay(HistoryDirection),
 }
 
 const WATCH_INTERVAL_MS: i64 = 250;
@@ -336,6 +338,7 @@ impl Service {
             OpenDocument {
                 file,
                 syntax: None,
+                history: EditHistory::default(),
                 save_due_ms,
                 watch_due_ms: 0,
             },
@@ -554,6 +557,7 @@ impl Service {
             OpenDocument {
                 file,
                 syntax,
+                history: EditHistory::default(),
                 save_due_ms: None,
                 watch_due_ms: 0,
             },
@@ -586,47 +590,81 @@ impl Service {
         author: FileAuthor,
         now_ms: i64,
     ) -> Result<PreparedEdit> {
-        let current = self.stored(file_id)?;
-        if current.revision != base_revision {
-            return Err(errors::stale_version("File revision changed"));
-        }
-        let mut file = current.clone();
+        let (item, mut buffer) = self.revision_buffer(file_id, base_revision)?;
+        let recorded = EditStep::record(&mut buffer, edits)?;
+        let history = HistoryChange::Record {
+            base: base_revision,
+            step: recorded.step,
+        };
         if edits.is_empty() {
             return Ok(PreparedEdit {
-                file,
+                file: item.file.clone(),
                 changed_lines: Vec::new(),
-                edits: Vec::new(),
+                steps: Vec::new(),
+                history,
+                cursor: None,
             });
         }
-        let text = current.draft_text.as_deref().unwrap_or(&current.disk_text);
-        let mut buffer = TextBuffer::new(text);
-        let applied = buffer.apply_all(edits)?;
-        let next_text = buffer.text();
-        if next_text.len() > soyeht_protocol::limits::EDITOR_HISTORY_BYTES {
-            return Err(errors::invalid("Edited file exceeds the editor size limit"));
+        let replay = Replay {
+            edits: vec![edits.to_vec()],
+            applied: recorded.applied,
+            cursor: recorded.cursor,
+        };
+        prepared_text(&item.file, &buffer, replay, history, author, now_ms)
+    }
+
+    /// Replays the newest undo or redo transaction, or returns `None` when the
+    /// history is empty or no longer matches `base_revision`.
+    pub fn prepare_replay(
+        &self,
+        file_id: &str,
+        base_revision: u64,
+        direction: HistoryDirection,
+        author: FileAuthor,
+        now_ms: i64,
+    ) -> Result<Option<PreparedEdit>> {
+        let (item, mut buffer) = self.revision_buffer(file_id, base_revision)?;
+        let Some(replay) = item.history.replay(direction, base_revision, &mut buffer)? else {
+            return Ok(None);
+        };
+        let history = HistoryChange::Replay(direction);
+        prepared_text(&item.file, &buffer, replay, history, author, now_ms).map(Some)
+    }
+
+    fn revision_buffer(
+        &self,
+        file_id: &str,
+        base_revision: u64,
+    ) -> Result<(&OpenDocument, TextBuffer)> {
+        let item = self
+            .open
+            .get(file_id)
+            .ok_or_else(|| errors::not_found("Open file not found"))?;
+        if item.file.revision != base_revision {
+            return Err(errors::stale_version("File revision changed"));
         }
-        if let Some(disk) = file.conflict_text.take() {
-            file.disk_text = disk;
-        }
-        file.revision = file
-            .revision
-            .checked_add(1)
-            .ok_or_else(|| errors::internal("File revision exhausted"))?;
-        file.draft_text = Some(next_text);
-        file.draft_author = Some(author);
-        file.updated_ms = now_ms;
-        Ok(PreparedEdit {
-            file,
-            changed_lines: changed_lines(&applied),
-            edits: edits.to_vec(),
-        })
+        let text = item
+            .file
+            .draft_text
+            .as_deref()
+            .unwrap_or(&item.file.disk_text);
+        Ok((item, TextBuffer::new(text)))
     }
 
     pub fn commit_edit(&mut self, prepared: PreparedEdit) {
         let Some(item) = self.open.get_mut(&prepared.file.file_id) else {
             return;
         };
-        if !prepared.edits.is_empty() {
+        match prepared.history {
+            HistoryChange::Record { base, step } => {
+                item.history
+                    .record(base, prepared.file.revision, step, prepared.file.updated_ms)
+            }
+            HistoryChange::Replay(direction) => {
+                item.history.commit(direction, prepared.file.revision)
+            }
+        }
+        if !prepared.steps.is_empty() {
             let old_text = item
                 .file
                 .draft_text
@@ -638,7 +676,14 @@ impl Service {
                 .take()
                 .and_then(|mut document| {
                     (document.buffer().text() == old_text)
-                        .then(|| document.apply_all(&prepared.edits).ok().map(|_| document))
+                        .then(|| {
+                            prepared
+                                .steps
+                                .iter()
+                                .try_for_each(|edits| document.apply_all(edits).map(|_| ()))
+                                .ok()
+                                .map(|()| document)
+                        })
                         .flatten()
                 })
                 .or_else(|| SyntaxDocument::new(&prepared.file.draft_text.clone()?, language).ok());
@@ -748,65 +793,36 @@ fn contained_path(root: &Path, target: PathBuf) -> Result<ResolvedPath> {
     })
 }
 
-pub(crate) fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile>> {
-    let root = fs::canonicalize(root)?;
-    let mut builder = ignore::WalkBuilder::new(&root);
-    builder
-        .standard_filters(true)
-        .hidden(false)
-        .follow_links(false)
-        .filter_entry(|entry| !is_source_metadata(entry.path()));
-    let mut files = Vec::new();
-    for entry in builder.build() {
-        let entry = entry.map_err(walk_error)?;
-        let Some(kind) = entry.file_type() else {
-            continue;
-        };
-        if !kind.is_file() || kind.is_symlink() {
-            continue;
-        }
-        let canonical = fs::canonicalize(entry.path())?;
-        if !canonical.starts_with(&root) {
-            continue;
-        }
-        let relative = canonical
-            .strip_prefix(&root)
-            .ok()
-            .and_then(Path::to_str)
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned);
-        if let Some(relative) = relative {
-            let metadata = fs::metadata(&canonical)?;
-            let modified_ms = metadata
-                .modified()
-                .ok()
-                .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
-                .and_then(|value| i64::try_from(value.as_millis()).ok())
-                .unwrap_or(0);
-            files.push(ProjectFile {
-                canonical,
-                relative,
-                byte_count: metadata.len(),
-                modified_ms,
-            });
-        }
+fn prepared_text(
+    current: &EditorFile,
+    buffer: &TextBuffer,
+    replay: Replay,
+    history: HistoryChange,
+    author: FileAuthor,
+    now_ms: i64,
+) -> Result<PreparedEdit> {
+    let next_text = buffer.text();
+    if next_text.len() > soyeht_protocol::limits::EDITOR_HISTORY_BYTES {
+        return Err(errors::invalid("Edited file exceeds the editor size limit"));
     }
-    files.sort_by(|left, right| left.relative.cmp(&right.relative));
-    Ok(files)
-}
-
-fn is_source_metadata(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| matches!(name, ".git" | ".hg" | ".svn"))
-}
-
-fn walk_error(error: ignore::Error) -> io::Error {
-    let kind = error
-        .io_error()
-        .map(io::Error::kind)
-        .unwrap_or(io::ErrorKind::InvalidData);
-    io::Error::new(kind, error.to_string())
+    let mut file = current.clone();
+    if let Some(disk) = file.conflict_text.take() {
+        file.disk_text = disk;
+    }
+    file.revision = file
+        .revision
+        .checked_add(1)
+        .ok_or_else(|| errors::internal("File revision exhausted"))?;
+    file.draft_text = Some(next_text);
+    file.draft_author = Some(author);
+    file.updated_ms = now_ms;
+    Ok(PreparedEdit {
+        file,
+        changed_lines: changed_lines(&replay.applied),
+        steps: replay.edits,
+        history,
+        cursor: replay.cursor,
+    })
 }
 
 fn changed_lines(applied: &[soyeht_editor::AppliedEdit]) -> Vec<u32> {
@@ -1114,33 +1130,5 @@ mod tests {
         );
         assert_eq!(fs::read(&canonical).unwrap(), bytes);
         fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn project_enumeration_honors_ignores_and_never_follows_metadata_or_symlinks() {
-        let root = std::env::temp_dir().join(format!("sn-files-{}", Uuid::new_v4()));
-        let outside = std::env::temp_dir().join(format!("sn-outside-{}", Uuid::new_v4()));
-        fs::create_dir_all(root.join("src")).unwrap();
-        fs::create_dir_all(root.join("ignored-dir")).unwrap();
-        fs::create_dir_all(root.join(".git")).unwrap();
-        fs::create_dir_all(root.join(".svn")).unwrap();
-        fs::write(root.join(".gitignore"), "ignored.txt\nignored-dir/\n").unwrap();
-        fs::write(root.join("src/main.rs"), "visible").unwrap();
-        fs::write(root.join("ignored.txt"), "hidden").unwrap();
-        fs::write(root.join("ignored-dir/data.txt"), "hidden").unwrap();
-        fs::write(root.join(".git/secret"), "hidden").unwrap();
-        fs::write(root.join(".svn/secret"), "hidden").unwrap();
-        fs::write(&outside, "outside").unwrap();
-        std::os::unix::fs::symlink(&outside, root.join("src/link.txt")).unwrap();
-
-        let files = SystemFiles.project_files(&root).unwrap();
-        let paths = files
-            .into_iter()
-            .map(|file| file.relative)
-            .collect::<Vec<_>>();
-        assert_eq!(paths, vec![".gitignore", "src/main.rs"]);
-
-        fs::remove_dir_all(root).unwrap();
-        fs::remove_file(outside).unwrap();
     }
 }
