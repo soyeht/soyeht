@@ -1122,7 +1122,7 @@ impl Rig {
                         "--initialize-padding-bytes","65000"],"version":"test"
                 },
                 {
-                    "id":"chunked-agent","name":"Chunked agent","command":binary,
+                    "id":"chunked-agent","name":"Chunked Agent","command":binary,
                     "args":["--state-dir",self.path.join("chunked-native"),
                         "--replay-user-chunk-bytes","64"],"version":"test"
                 },
@@ -2120,7 +2120,7 @@ fn harness_switch_replay_shows_a_marker_instead_of_the_internal_prompt() {
 
 #[test]
 fn harness_switch_replay_hides_a_continuation_prompt_replayed_in_chunks() {
-    switch_with_context_and_restart("chunked-agent", "Chunked agent");
+    switch_with_context_and_restart("chunked-agent", "Chunked Agent");
 }
 
 #[test]
@@ -2235,11 +2235,12 @@ fn codex_subagent_activity_and_usage_stay_out_of_the_parent() {
     assert_eq!(owned.len(), 2);
     assert_eq!(owned[0]["tool"]["title"], "List files");
     assert_eq!(owned[1]["text"], "Two files.");
-    let wait = items
-        .iter()
-        .find(|item| item["tool"]["title"] == "wait")
-        .expect("the parent's own wait call");
-    assert!(wait["subagentId"].is_null());
+    // The parent's waits on the subagent fold into its row.
+    assert!(
+        !items
+            .iter()
+            .any(|item| item["kind"] == "tool" && item["subagentId"].is_null())
+    );
     // The subagent's accounting is not the pane's context use.
     assert!(
         items
@@ -2415,10 +2416,9 @@ fn harness_switch_renames_a_default_named_pane_to_the_new_harness() {
 
     client.call(
         "pane.harness.switch",
-        json!({"paneId":pane,"harness":"next-agent","idempotencyKey":"switch-default-name"}),
+        json!({"paneId":pane,"harness":"chunked-agent","idempotencyKey":"switch-default-name"}),
     );
-
-    assert_eq!(client.pane(&pane)["name"], "Next agent");
+    assert_eq!(client.pane(&pane)["name"], "Chunked");
 }
 
 #[test]
