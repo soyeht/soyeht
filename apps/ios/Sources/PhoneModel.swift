@@ -7,6 +7,9 @@ final class PhoneModel {
   var client: EngineClient?
   var pairing: PairingSession?
   var problem: String?
+  /// A pane a tapped notification asked to show; cleared once it is on screen.
+  var requestedPaneId: String?
+  @ObservationIgnored let push = PhonePush()
   @ObservationIgnored private var pairTask: Task<Void, Never>?
   @ObservationIgnored private var loaded = false
 
@@ -49,10 +52,29 @@ final class PhoneModel {
     pairing?.cancel()
     pairing = nil
   }
+  /// Answers from a notification action through the same request the pane uses. When the
+  /// Mac cannot be reached, the alert comes back so the person can try again.
+  func answerFromNotification(
+    paneId: String, requestId: String, optionId: String, retry: PhoneNotice
+  ) async {
+    guard let client else { return await retry.postUndelivered() }
+    do {
+      try await client.answerPermission(paneId: paneId, requestId: requestId, optionId: optionId)
+    } catch {
+      await retry.postUndelivered()
+    }
+    if UIApplication.shared.applicationState == .background { client.stop() }
+  }
   func forgetMac() {
     do {
       try CredentialVault.forget()
-      client?.stop()
+      // Best effort: a Mac this device no longer knows should stop sending alerts.
+      if let forgotten = client {
+        Task {
+          if forgotten.connected { try? await forgotten.unregisterPush() }
+          forgotten.stop()
+        }
+      }
       client = nil
     } catch { problem = error.localizedDescription }
   }

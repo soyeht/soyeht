@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 d3003b6d66822c60581497110b4d938eb862ca5d4387cc1562c3e16b2113cb08). Do not edit.
+// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -86,6 +86,12 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "DeviceListResult": return try codec(SoyehtProtocol.DeviceListResult.self, data)
         case "DeviceRevokeParams": return try codec(SoyehtProtocol.DeviceRevokeParams.self, data)
         case "DeviceRevokeResult": return try codec(SoyehtProtocol.DeviceRevokeResult.self, data)
+        case "PushPlatform": return try codec(SoyehtProtocol.PushPlatform.self, data)
+        case "PushEnvironment": return try codec(SoyehtProtocol.PushEnvironment.self, data)
+        case "PushRegisterParams": return try codec(SoyehtProtocol.PushRegisterParams.self, data)
+        case "PushRegisterResult": return try codec(SoyehtProtocol.PushRegisterResult.self, data)
+        case "PushUnregisterParams": return try codec(SoyehtProtocol.PushUnregisterParams.self, data)
+        case "PushUnregisterResult": return try codec(SoyehtProtocol.PushUnregisterResult.self, data)
         case "PairBeginParams": return try codec(SoyehtProtocol.PairBeginParams.self, data)
         case "PairBeginResult": return try codec(SoyehtProtocol.PairBeginResult.self, data)
         case "PairProveParams": return try codec(SoyehtProtocol.PairProveParams.self, data)

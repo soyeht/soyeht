@@ -88,11 +88,27 @@ while the Mac's “Add iPhone” window is open:
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
 
-**2.3 Push.** `push.register {platform: "apns", token, kind: "alert" |
-"live_activity", activityId?}` and `push.unregister`. The engine stores them
-per device; renewal = register again. Push-triggering events:
-`pane.permission_requested`, `task.moved` to “your turn”,
-`pane.state_changed` to `no_signal`, `pane.session_lost`.
+**2.3 Push.** A paired device calls `push.register {platform: "apns",
+token, environment: "sandbox" | "production"}` and `push.unregister {}`; any
+other role gets `forbidden_role`. `token` is the lowercase hex of the APNs
+device token. The engine stores one registration per device; renewal =
+register again, and a token moves to the newest device that registers it.
+Revocation deletes the registration in the same transaction.
+
+Implemented triggers: `pane.permission_requested` and
+`pane.elicitation_requested` on agent panes, sent to every registered device.
+The alert payload carries `soyeht {engineId, workspaceId, paneId, requestId,
+kind}` and, for a permission with one-time allow and reject options,
+`allowOptionId` and `denyOptionId` under category `soyeht.permission`;
+otherwise category `soyeht.attention` (tap opens the pane). The notification
+action answers through `pane.permission.answer`, with the same rules as the
+Mac. `apns-collapse-id` is the request id, `apns-expiration` its deadline; a
+request is pushed once per device, and pending retries stop when
+`pane.permission_answered` or `pane.elicitation_answered` is published.
+Credentials stay outside the repository (`docs/push-notifications.md`);
+without them push is off. Still to come: `task.moved` to “your turn”,
+`pane.state_changed` to `no_signal`, `pane.session_lost`, and Live Activity
+(`kind: "live_activity"`).
 
 **2.4 Role matrix** (who may do what):
 

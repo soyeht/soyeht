@@ -63,7 +63,7 @@ struct PhoneHome: View {
   /// pending pairing does.
   @ViewBuilder private var root: some View {
     if model.pairing == nil, let client = model.client {
-      PhoneWorkspaceSplit(client: client) {
+      PhoneWorkspaceSplit(client: client, requestedPaneId: $model.requestedPaneId) {
         connectionStatus(client)
       } options: {
         macOptions

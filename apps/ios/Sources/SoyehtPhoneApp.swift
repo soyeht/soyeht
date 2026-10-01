@@ -3,9 +3,10 @@ import SwiftUI
 
 @main @MainActor
 struct SoyehtPhoneApp: App {
-  @State private var model = PhoneModel()
+  @UIApplicationDelegateAdaptor(PhoneAppDelegate.self) private var delegate
   @State private var themeStore = SoyehtThemeStore.shared
   @Environment(\.scenePhase) private var phase
+  private var model: PhoneModel { delegate.model }
   var body: some Scene {
     WindowGroup {
       PhoneHome(model: model)
@@ -15,6 +16,15 @@ struct SoyehtPhoneApp: App {
         .onChange(of: phase) { _, phase in
           if phase == .active { model.resume() }
           if phase == .background { model.client?.stop() }
+        }
+        .onChange(of: model.client?.connectionRevision) {
+          // Asked once the paired Mac is reachable, never at launch.
+          guard let client = model.client, client.connected else { return }
+          Task { await model.push.connected(client) }
+        }
+        .onChange(of: model.client?.openRequestIds) { _, open in
+          guard let open, model.client?.connected == true else { return }
+          Task { await PhonePush.removeSettled(open: open) }
         }
         .onOpenURL { model.pair($0.absoluteString) }
     }

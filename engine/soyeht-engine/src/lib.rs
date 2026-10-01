@@ -17,6 +17,7 @@ pub mod pairing;
 pub mod pane_observations;
 pub mod panes;
 pub mod ports;
+pub mod push;
 pub mod screen;
 pub mod server;
 pub mod settings;
