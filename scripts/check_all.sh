@@ -46,6 +46,8 @@ python3 -m unittest discover -s scripts -p 'test_install_dev.py'
         terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
         -- --ignored --exact --nocapture --test-threads=1
 )
+python3 -m unittest discover -s scripts -p 'test_tcc_guard.py'
+python3 scripts/tcc_guard.py snapshot .cache/tcc-guard.json
 python3 scripts/e2e.py --report .cache/e2e.json
 python3 scripts/e2e_agents.py --report .cache/e2e-agents.json
 python3 scripts/e2e_tasks.py --report .cache/e2e-tasks.json
@@ -56,6 +58,7 @@ if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
     python3 scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
     python3 scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
 fi
+python3 scripts/tcc_guard.py check .cache/tcc-guard.json
 
 bash scripts/check_swift.sh
 python3 -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'

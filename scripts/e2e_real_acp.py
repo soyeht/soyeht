@@ -4,10 +4,12 @@
 import argparse
 import json
 import os
+import platform
 import resource
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -20,6 +22,12 @@ from e2e_agents import ended, events, question, until
 REGISTRY = ROOT / "engine/soyeht-engine/src/agents/acp_registry_snapshot.json"
 HARNESSES = {"claude": "registry.claude-acp", "codex": "registry.codex-acp"}
 FULL_ACCESS = "full_access"
+# A person's own agent extensions (MCP servers, hooks, plugins) often run from
+# other apps' bundles or from privacy-protected folders. Started under the
+# disposable supervisor, they make macOS privacy prompts name that supervisor.
+# The real harnesses therefore run with only the MCP server the engine declares.
+CODEX_FEATURES_OFF = ("apps", "browser_use", "computer_use", "hooks", "plugins")
+CODEX_PROJECT = "codex-project.toml"
 
 
 class NotSignedIn(Exception):
@@ -49,18 +57,84 @@ def install_adapter(directory, package, version):
     node_version = subprocess.check_output([node, "--version"], text=True).strip().lstrip("v")
     major = node_version.split(".", 1)[0]
     require(major.isdigit() and int(major) >= 22, "the real ACP adapters require Node.js 22 or later")
+    directory.mkdir(mode=0o700, exist_ok=True)
     subprocess.run([
         npm, "install", "--ignore-scripts", "--no-audit", "--no-fund",
         "--prefix", str(directory), f"{package}@{version}",
     ], check=True)
     adapter = directory / f"node_modules/{package}/dist/index.js"
     require(adapter.is_file(), f"npm did not install the pinned {package}")
-    wrapper = directory / "run-real-acp"
-    wrapper.write_text(
-        "#!/bin/sh\nexec " + shlex.quote(node) + " " + shlex.quote(str(adapter)) + "\n"
+    environment = quiet_launcher(directory, package, node)
+    return write_script(directory / "run-real-acp", [
+        *(f"export {key}={shlex.quote(value)}" for key, value in environment.items()),
+        f"exec {shlex.quote(node)} {shlex.quote(str(adapter))}",
+    ])
+
+
+def write_script(path, lines):
+    path.write_text("#!/bin/sh\n" + "\n".join(lines) + "\n")
+    path.chmod(0o700)
+    return path
+
+
+def installed_file(directory, package, relative):
+    # npm hoists a dependency unless another version already holds its place.
+    candidates = (directory / "node_modules" / relative,
+                  directory / "node_modules" / package / "node_modules" / relative)
+    found = next((path for path in candidates if path.is_file()), None)
+    require(found is not None, f"npm did not install {relative} for {package}")
+    return found
+
+
+def quiet_launcher(directory, package, node):
+    """Environment that makes the adapter start its CLI without user extensions."""
+    if package.endswith("/claude-agent-acp"):
+        arch = {"x86_64": "x64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
+        claude = installed_file(
+            directory, package, f"@anthropic-ai/claude-agent-sdk-{sys.platform}-{arch}/claude")
+        shim = write_script(directory / "claude-quiet", [
+            f'exec {shlex.quote(str(claude))} --strict-mcp-config "$@"'])
+        return {"CLAUDE_CODE_EXECUTABLE": str(shim)}
+    codex = installed_file(directory, package, "@openai/codex/bin/codex.js")
+    features = [item for name in CODEX_FEATURES_OFF for item in ("-c", f"features.{name}=false")]
+    listing = subprocess.run(
+        [node, str(codex), *features, "mcp", "list", "--json"],
+        cwd=directory, check=True, capture_output=True, text=True, timeout=60,
     )
-    wrapper.chmod(0o700)
-    return wrapper
+    names = [server["name"] for server in json.loads(listing.stdout)]
+    require(all(name.replace("-", "").replace("_", "").isalnum() for name in names),
+            "a configured Codex MCP server name cannot be disabled by override")
+    # A session that declares MCP servers replaces the command-line MCP
+    # overrides but still merges its trusted project configuration; sessions
+    # that declare none (titles, file-change reports) keep the command-line overrides.
+    (directory / CODEX_PROJECT).write_text("".join(
+        f"[mcp_servers.{name}]\nenabled = false\n\n" for name in names))
+    disabled = [item for name in names for item in ("-c", f"mcp_servers.{name}.enabled=false")]
+    shim = write_script(directory / "codex-quiet", [
+        "exec " + shlex.join([node, str(codex), *features, *disabled]) + ' "$@"'])
+    return {"CODEX_PATH": str(shim)}
+
+
+def quiet_workspace(workspace, adapters, claude_settings=None):
+    """Project configuration that outranks the person's own for both harnesses."""
+    user = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    try:
+        plugins = json.loads((user / "settings.json").read_text()).get("enabledPlugins") or {}
+    except (OSError, ValueError, AttributeError):
+        plugins = {}
+    claude = workspace / ".claude"
+    claude.mkdir(mode=0o700, exist_ok=True)
+    (claude / "settings.local.json").write_text(json.dumps({
+        **(claude_settings or {}),
+        "disableAllHooks": True,
+        "enabledPlugins": {name: False for name in plugins},
+    }))
+    for adapter in adapters:
+        project = adapter.parent / CODEX_PROJECT
+        if project.is_file():
+            codex = workspace / ".codex"
+            codex.mkdir(mode=0o700, exist_ok=True)
+            shutil.copyfile(project, codex / "config.toml")
 
 
 def agent_option(client, pane_id, predicate):
@@ -82,14 +156,9 @@ def set_mode(client, pane_id, mode):
 
 
 def open_real_agent(services, name, adapter, version):
-    if name == "claude":
-        # A person's own Claude settings may allow every shell command in any
-        # mode. This disposable project rule restores asking outside full access.
-        settings = services.data / ".claude"
-        settings.mkdir(mode=0o700)
-        (settings / "settings.local.json").write_text(json.dumps({
-            "permissions": {"ask": ["Bash(*)"]},
-        }))
+    # A person's own Claude settings may allow every shell command in any
+    # mode. This disposable project rule restores asking outside full access.
+    quiet_workspace(services.data, [adapter], {"permissions": {"ask": ["Bash(*)"]}})
     (services.data / "harnesses.json").write_text(json.dumps([{
         "id": f"real-{name}",
         "name": f"Real {name}",
