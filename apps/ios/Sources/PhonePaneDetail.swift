@@ -36,7 +36,9 @@ private struct PhonePane: View {
         if pane.mode == .web {
           PhoneWebPane(client: client, pane: pane)
         } else if pane.mode == .agent {
-          AgentConversationView(client: client, paneId: paneId)
+          AgentConversationView(client: client, paneId: paneId) {
+            PhoneHarnessMenu(client: client, paneId: paneId)
+          }
         } else {
           HStack {
             Text(pane.phrase)

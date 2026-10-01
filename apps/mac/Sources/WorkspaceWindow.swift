@@ -2885,7 +2885,7 @@ private struct PaneCard: View {
       .help("Switch agent")
       .accessibilityLabel("Switch agent")
       .accessibilityIdentifier("switch-agent-\(pane.paneId)")
-      .disabled(!client.connected || pane.agent?.operation != nil || harnessSwitching)
+      .disabled(!client.canSwitchAgentHarness(pane.paneId))
       PaneAutomationButton(showing: $showingAutomation)
     }
     Button(action: onTasks) { Image(systemName: "line.3.horizontal.decrease") }
@@ -2906,7 +2906,7 @@ private struct PaneCard: View {
         } label: {
           Label("Switch agent", systemImage: "arrow.triangle.2.circlepath")
         }
-        .disabled(!client.connected || pane.agent?.operation != nil || harnessSwitching)
+        .disabled(!client.canSwitchAgentHarness(pane.paneId))
         Button {
           showingAutomation.toggle()
         } label: {
@@ -3149,10 +3149,6 @@ private struct PaneCard: View {
       return nil
     }
     return ([agent.harness] + values).joined(separator: " · ")
-  }
-
-  private var harnessSwitching: Bool {
-    client.agentPanes[pane.paneId]?.harnessSwitch?.phase == .switching
   }
 
   private func setExperimentCapture(on: Bool) {
@@ -3767,15 +3763,12 @@ private struct AgentHarnessSwitchPicker: View {
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
-        Text("Switch agent")
+        Text(HarnessSwitchModel.title)
           .font(MacTheme.chrome(MacTheme.TypeScale.body, weight: .bold))
-        Text(
-          "This starts a new agent session. Recent messages and pending prompts are handed "
-            + "over as historical data."
-        )
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
-        .foregroundStyle(MacTheme.muted)
-        .fixedSize(horizontal: false, vertical: true)
+        Text(HarnessSwitchModel.handoverExplanation)
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.muted)
+          .fixedSize(horizontal: false, vertical: true)
       }
       .padding(.horizontal, MacTheme.Space.x14)
       .padding(.top, MacTheme.Space.x14)
@@ -3810,33 +3803,29 @@ private struct AgentHarnessSwitchPicker: View {
     }
   }
 
-  private var actionLabel: String {
-    guard let selectedHarness else { return "Choose another agent" }
-    return "Restart conversation with \(selectedHarness.name)"
-  }
+  private var actionLabel: String { HarnessSwitchModel.actionLabel(for: selectedHarness) }
 
   private func selectFirstHarness() {
     guard selectedHarness?.available != true,
-      let first = HarnessPickerModel.defaultHarness(
-        in: client.harnesses, excluding: currentHarness,
+      let first = HarnessSwitchModel.defaultTarget(
+        in: client.harnesses, current: currentHarness,
         preferredId: client.preferredHarnessId)
     else { return }
     harness = first.id
   }
 
   private func switchHarness() {
-    guard selectedHarness?.available == true, !submitting else { return }
+    guard let target = selectedHarness, target.available, !submitting else { return }
     submitting = true
     Task { @MainActor in
-      do {
-        _ = try await client.switchAgentHarness(
-          pane.paneId, harness: harness, model: model.isEmpty ? nil : model,
-          effort: effort.isEmpty ? nil : effort)
-        submitting = false
-        isPresented = false
-      } catch {
-        submitting = false
-        client.problem = error.localizedDescription
+      let outcome = await client.requestAgentHarnessSwitch(
+        pane.paneId, to: target, model: model.isEmpty ? nil : model,
+        effort: effort.isEmpty ? nil : effort)
+      submitting = false
+      switch outcome {
+      case .switched: isPresented = false
+      case .failed(let message): client.problem = message
+      case .unavailable: break
       }
     }
   }
