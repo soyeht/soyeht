@@ -337,7 +337,7 @@ pub fn receive(
         pane_names,
         tracked_tool,
     } = incoming;
-    if params["sessionId"].as_str() != state.session_id.as_deref() {
+    if !state.owns_session(params["sessionId"].as_str()) {
         return Err(invalid("Question belongs to another session"));
     }
     let prompt = state
@@ -395,22 +395,30 @@ pub fn receive(
 /// A persistent grant covers the request as the agent sent it and exactly
 /// what the person was shown. A request that carries only a tool call id
 /// (codex-acp MCP approvals) is told apart by its presented server, tool and
-/// arguments, so one grant never extends to another tool.
+/// arguments, so one grant never extends to another tool. A subagent's grant
+/// is its own: it never covers the parent's requests, nor the parent's its.
 fn rule_key(state: &State, request: &NativeRequest) -> Result<String> {
     let mut tool = request.params["toolCall"].clone();
     if let Some(object) = tool.as_object_mut() {
         object.remove("toolCallId");
         object.remove("status");
     }
+    let mut granted = json!([
+        state.launch.id,
+        tool,
+        request.public["title"],
+        request.public["presentation"],
+    ]);
+    let session = request.params["sessionId"].as_str();
+    if session != state.session_id.as_deref()
+        && let Some(parts) = granted.as_array_mut()
+    {
+        parts.push(json!({"subagentSession": session}));
+    }
     use sha2::{Digest, Sha256};
     Ok(format!(
         "{:x}",
-        Sha256::digest(errors::json_bytes(&json!([
-            state.launch.id,
-            tool,
-            request.public["title"],
-            request.public["presentation"],
-        ]))?)
+        Sha256::digest(errors::json_bytes(&granted)?)
     ))
 }
 

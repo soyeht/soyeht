@@ -80,11 +80,19 @@ impl Client {
     }
 
     pub fn initialize(&mut self, now_ms: u64) -> Result<Message, Error> {
-        self.request("initialize", json!({"protocolVersion":1,
-            "clientInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")},
-            "clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true},"terminal":true,
-                "auth":{"terminal":true},"elicitation":{"form":{}},"session":{"configOptions":{"boolean":{}}}}}), "initialize", now_ms)
+        self.request("initialize", initialize_params(), "initialize", now_ms)
     }
+}
+
+/// The one `initialize` request every harness process receives. Subagents are
+/// advertised twice; see `subagents` for why.
+pub fn initialize_params() -> Value {
+    json!({"protocolVersion":1,
+        "clientInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")},
+        "clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true},"terminal":true,
+            "auth":{"terminal":true},"elicitation":{"form":{}},
+            "session":{"configOptions":{"boolean":{}}},"subagents":{},
+            "_meta":{"jetbrains":{"air":{"version":1,"capabilities":["nativeSubagentSessions"]}}}}})
 }
 
 pub struct PromptImage<'a> {
