@@ -447,15 +447,26 @@ private struct AgentWell: ViewModifier {
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
-      Button(action: submit) {
-        Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
-          .frame(
-            width: style.canonicalLayout ? 30 : 36,
-            height: style.canonicalLayout ? 30 : 36
-          ).background(style.accent, in: Circle())
-      }.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .accessibilityLabel("Send message")
+      sendButton
     }.padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.vertical, 12)
+  }
+
+  /// On a paired device Return adds a line to the multi-line prompt, so Command-Return
+  /// sends from a hardware keyboard. The Mac keeps Return to send.
+  @ViewBuilder private var sendButton: some View {
+    let button = Button(action: submit) {
+      Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
+        .frame(
+          width: style.canonicalLayout ? 30 : 36,
+          height: style.canonicalLayout ? 30 : 36
+        ).background(style.accent, in: Circle())
+    }.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      .accessibilityLabel("Send message")
+    #if os(iOS)
+      button.keyboardShortcut(.return, modifiers: .command)
+    #else
+      button
+    #endif
   }
 
   private func configuration(_ options: [ConfigOption]) -> some View {

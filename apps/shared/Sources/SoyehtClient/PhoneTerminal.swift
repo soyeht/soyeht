@@ -9,19 +9,28 @@
   /// with the same `pane.input` path as the Mac terminal.
   @MainActor public struct PhoneTerminal: UIViewRepresentable {
     let client: EngineClient
-    public init(client: EngineClient) { self.client = client }
+    let claimsKeyboardFocus: Bool
+
+    /// With `claimsKeyboardFocus` the terminal becomes first responder as soon as it is on
+    /// screen, so a hardware keyboard types into it without a tap first.
+    public init(client: EngineClient, claimsKeyboardFocus: Bool = false) {
+      self.client = client
+      self.claimsKeyboardFocus = claimsKeyboardFocus
+    }
     public func makeCoordinator() -> TerminalHost {
       TerminalHost(client: client, acceptsInput: true)
     }
-    public func makeUIView(context: Context) -> TerminalView {
-      let view = TerminalView(
+    public func makeUIView(context: Context) -> PhoneTerminalSurface {
+      let view = PhoneTerminalSurface(
         frame: .zero, font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+      view.claimsKeyboardFocus = claimsKeyboardFocus
       applyTheme(to: view)
       view.accessibilityLabel = "Terminal"
       context.coordinator.attach(view)
       return view
     }
-    public func updateUIView(_ view: TerminalView, context: Context) {
+    public func updateUIView(_ view: PhoneTerminalSurface, context: Context) {
+      view.claimsKeyboardFocus = claimsKeyboardFocus
       applyTheme(to: view)
       context.coordinator.update(view)
     }
@@ -32,8 +41,22 @@
       view.nativeForegroundColor = UIColor(colors.ink)
       view.setNeedsDisplay()
     }
-    public static func dismantleUIView(_ view: TerminalView, coordinator: TerminalHost) {
+    public static func dismantleUIView(_ view: PhoneTerminalSurface, coordinator: TerminalHost) {
       coordinator.detach(view)
+    }
+  }
+
+  public final class PhoneTerminalSurface: TerminalView {
+    var claimsKeyboardFocus = false
+
+    public override func didMoveToWindow() {
+      super.didMoveToWindow()
+      guard claimsKeyboardFocus, window != nil else { return }
+      // SwiftUI inserts the view before its transition settles; claim focus on the next turn.
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.window != nil, !self.isFirstResponder else { return }
+        _ = self.becomeFirstResponder()
+      }
     }
   }
 #endif

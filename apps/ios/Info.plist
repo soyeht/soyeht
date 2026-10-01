@@ -25,7 +25,7 @@
 	<key>SoyehtLicense</key>
 	<string>Apache-2.0</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan the QR shown by Soyeht Dev on the Mac to pair this iPhone.</string>
+	<string>Scan the QR shown by Soyeht Dev on the Mac to pair this iPhone or iPad.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to your Mac over the tailnet to read pane screens.</string>
 	<!-- HTTP and WebSocket use tailnet encryption. The parser only accepts tailnet and loopback addresses. Contract 06. -->
@@ -54,6 +54,14 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<!-- iPad keeps every orientation and no UIRequiresFullScreen, so Split View and Stage Manager work. -->
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

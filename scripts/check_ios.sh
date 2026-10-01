@@ -20,3 +20,17 @@ xcodebuild -project apps/ios/SoyehtPhone.xcodeproj -scheme SoyehtPhone \
     -derivedDataPath .cache/ios-derived -clonedSourcePackagesDirPath .cache/apple-packages \
     -skipPackagePluginValidation SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG \
     "SOYEHT_PACKAGES=$ROOT/.cache/apple-packages" "${SIGNING[@]}" build
+
+# The generic destination builds the one binary iPhone and iPad share. Fail if the built
+# app stops declaring the iPad family or the iPad orientations that multitasking needs.
+PLATFORM=iphonesimulator
+[[ "$DESTINATION" == 'generic/platform=iOS' ]] && PLATFORM=iphoneos
+INFO=".cache/ios-derived/Build/Products/Debug-$PLATFORM/Soyeht Dev.app/Info.plist"
+[[ "$(plutil -extract UIDeviceFamily json -o - "$INFO")" == '[1,2]' ]] || {
+    echo 'check_ios: the app must target iPhone and iPad' >&2
+    exit 1
+}
+[[ "$(plutil -extract 'UISupportedInterfaceOrientations~ipad' raw -o - "$INFO")" == 4 ]] || {
+    echo 'check_ios: iPad must support all four orientations' >&2
+    exit 1
+}
