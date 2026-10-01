@@ -114,8 +114,10 @@ final class PhonePush {
       let simulator = false
     #endif
     let environment = PushToken.environment(
-      provisioningProfile: Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision")
-        .flatMap { try? Data(contentsOf: $0) },
+      provisioningProfile: Bundle.main.url(
+        forResource: "embedded", withExtension: "mobileprovision"
+      )
+      .flatMap { try? Data(contentsOf: $0) },
       simulator: simulator)
     do {
       try await client.registerPush(token: token, environment: environment)

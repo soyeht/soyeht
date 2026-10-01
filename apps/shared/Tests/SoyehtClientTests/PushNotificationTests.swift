@@ -60,7 +60,8 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
       userInfo: ["soyeht": question], actionIdentifier: PushCategory.allowAction, engineId: engine)
       == .ignore)
   #expect(
-    PushNotificationRoute(userInfo: [:], actionIdentifier: PushCategory.allowAction, engineId: engine)
+    PushNotificationRoute(
+      userInfo: [:], actionIdentifier: PushCategory.allowAction, engineId: engine)
       == .ignore)
 }
 
@@ -69,7 +70,8 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
   let aps = try #require(payload["aps"] as? [String: Any])
   let categories = PushCategory.categories()
   let permission = try #require(categories.first { $0.identifier == aps["category"] as? String })
-  #expect(permission.actions.map(\.identifier) == [PushCategory.allowAction, PushCategory.denyAction])
+  #expect(
+    permission.actions.map(\.identifier) == [PushCategory.allowAction, PushCategory.denyAction])
   #expect(permission.actions.map(\.title) == ["Allow", "Deny"])
   for action in permission.actions {
     #expect(action.options.contains(.authenticationRequired))
@@ -95,8 +97,12 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
         </dict></dict></plist>
         """.utf8) + Data("signed-suffix".utf8)
   }
-  #expect(PushToken.environment(provisioningProfile: profile("development"), simulator: false) == .sandbox)
-  #expect(PushToken.environment(provisioningProfile: profile("production"), simulator: false) == .production)
+  #expect(
+    PushToken.environment(provisioningProfile: profile("development"), simulator: false) == .sandbox
+  )
+  #expect(
+    PushToken.environment(provisioningProfile: profile("production"), simulator: false)
+      == .production)
   #expect(PushToken.environment(provisioningProfile: nil, simulator: false) == .production)
   #expect(PushToken.environment(provisioningProfile: nil, simulator: true) == .sandbox)
 }
