@@ -614,18 +614,16 @@ impl Core {
         candidate.saved.pane.phrase = format!("Restarted with {next_name}");
         // Keep a name the user chose, including one set while the switch ran;
         // a default name follows the harness.
-        candidate.saved.pane.name = if naming::is_default_name(
-            &old_saved.pane.name,
-            naming::harness_label(&original.launch),
-        ) {
-            self.default_agent_name(
-                &old_saved.pane.workspace_id,
-                naming::harness_label(&candidate.state.launch),
-                Some(pane),
-            )
-        } else {
-            old_saved.pane.name.clone()
-        };
+        candidate.saved.pane.name =
+            if naming::is_default_name(&old_saved.pane.name, &original.launch) {
+                self.default_agent_name(
+                    &old_saved.pane.workspace_id,
+                    naming::harness_label(&candidate.state.launch),
+                    Some(pane),
+                )
+            } else {
+                old_saved.pane.name.clone()
+            };
         if let Some(retired) = old_saved
             .instance_id
             .clone()

@@ -60,7 +60,12 @@ Raw terminal panes continue to exist and do not use this path.
    `model` is set only when the harness reports it: Claude Code reports it as
    `_meta.claudeCode.toolResponse.resolvedModel` on the spawning Agent call,
    whose `agentId` names the subagent session; that call updates the row and
-   never becomes a tool row. Codex reports no model. Times are wall-clock
+   never becomes a tool row. Codex reports no model. Codex's collaboration
+   `wait` calls (`_meta.codex.collaboration.tool: "wait"`) on subagents the
+   pane tracks never become tool rows either: an empty `receiverThreadIds`
+   counts as tied only while the pane tracks a subagent, and a wait naming a
+   session it does not track stays a tool row. Clients show a waiting status
+   while the transcript ends in running subagent rows. Times are wall-clock
    times the engine observed live; a replay leaves them absent. Permission,
    file and terminal requests from a reported subagent session are accepted
    like the parent's; a subagent's permission request is presented from the
