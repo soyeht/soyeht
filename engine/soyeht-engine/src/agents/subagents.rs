@@ -41,6 +41,22 @@ pub(crate) fn scope<'a>(state: &State, session: &'a str) -> Scope<'a> {
     }
 }
 
+/// Whether a tool call is a collaboration wait on this pane's subagents. Their
+/// rows already show that they run, so the wait folds into them instead of
+/// reading as a tool of its own. A wait naming any session the pane does not
+/// track, or made while it tracks none, stays an ordinary tool row.
+pub(crate) fn awaits_subagents(state: &State, tool: &serde_json::Value) -> bool {
+    soyeht_acp::subagents::collaboration_wait(tool).is_some_and(|receivers| {
+        if receivers.is_empty() {
+            !state.subagents.is_empty()
+        } else {
+            receivers
+                .iter()
+                .all(|session| state.subagents.contains_key(session))
+        }
+    })
+}
+
 /// The reported subagent session a native request comes from, if it is not
 /// the pane's own session.
 pub(crate) fn owner<'a>(state: &State, session: Option<&'a str>) -> Option<&'a str> {
@@ -253,4 +269,46 @@ pub(crate) fn disconnect_all(
     }
     state.subagents.clear();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use soyeht_protocol::HarnessLaunch;
+
+    fn wait(receivers: &[&str]) -> serde_json::Value {
+        json!({"toolCallId":"call_1","title":"wait","_meta":{"codex":{"collaboration":
+            {"tool":"wait","senderThreadId":"parent","receiverThreadIds":receivers}}}})
+    }
+
+    #[test]
+    fn only_waits_on_tracked_subagents_fold_into_their_rows() {
+        let launch = HarnessLaunch {
+            id: "registry.codex-acp".into(),
+            name: "Codex".into(),
+            command: "codex".into(),
+            args: vec![],
+            version: "1".into(),
+            environment: None,
+        };
+        let mut state = State::new(launch, "digest".into(), None).unwrap();
+        // Before any subagent runs, a wait is the agent's own tool call.
+        assert!(!awaits_subagents(&state, &wait(&[])));
+        state.subagents.insert(
+            "child".into(),
+            Tracked {
+                row: Some(3),
+                last_message: None,
+                finished: true,
+            },
+        );
+        assert!(awaits_subagents(&state, &wait(&[])));
+        assert!(awaits_subagents(&state, &wait(&["child"])));
+        assert!(!awaits_subagents(&state, &wait(&["child", "stranger"])));
+        assert!(!awaits_subagents(
+            &state,
+            &json!({"toolCallId":"call_2","title":"wait"})
+        ));
+    }
 }
