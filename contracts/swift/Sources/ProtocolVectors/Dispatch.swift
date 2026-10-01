@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
+// Generated from contracts/protocol.json (sha256 aaafc5f521f9268613b64d8b29fb4de2476a93927623711d46145a30c08a5fbc). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -375,6 +375,26 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "FileRevertResult": return try codec(SoyehtProtocol.FileRevertResult.self, data)
         case "FileUndoParams": return try codec(SoyehtProtocol.FileUndoParams.self, data)
         case "FileUndoResult": return try codec(SoyehtProtocol.FileUndoResult.self, data)
+        case "ProjectEntryKind": return try codec(SoyehtProtocol.ProjectEntryKind.self, data)
+        case "ProjectEntry": return try codec(SoyehtProtocol.ProjectEntry.self, data)
+        case "ProjectTreeListParams": return try codec(SoyehtProtocol.ProjectTreeListParams.self, data)
+        case "ProjectTreeListResult": return try codec(SoyehtProtocol.ProjectTreeListResult.self, data)
+        case "ProjectTreeWatchParams": return try codec(SoyehtProtocol.ProjectTreeWatchParams.self, data)
+        case "ProjectTreeWatchResult": return try codec(SoyehtProtocol.ProjectTreeWatchResult.self, data)
+        case "ProjectTreeChangedEvent": return try codec(SoyehtProtocol.ProjectTreeChangedEvent.self, data)
+        case "ProjectEntryCreateParams": return try codec(SoyehtProtocol.ProjectEntryCreateParams.self, data)
+        case "ProjectEntryCreateResult": return try codec(SoyehtProtocol.ProjectEntryCreateResult.self, data)
+        case "ProjectEntryRenameParams": return try codec(SoyehtProtocol.ProjectEntryRenameParams.self, data)
+        case "ProjectEntryRenameResult": return try codec(SoyehtProtocol.ProjectEntryRenameResult.self, data)
+        case "ProjectEntryRenamedEvent": return try codec(SoyehtProtocol.ProjectEntryRenamedEvent.self, data)
+        case "ProjectDeleteOutcome": return try codec(SoyehtProtocol.ProjectDeleteOutcome.self, data)
+        case "ProjectEntryDeleteParams": return try codec(SoyehtProtocol.ProjectEntryDeleteParams.self, data)
+        case "ProjectEntryDeleteResult": return try codec(SoyehtProtocol.ProjectEntryDeleteResult.self, data)
+        case "EditorTab": return try codec(SoyehtProtocol.EditorTab.self, data)
+        case "EditorTabsListParams": return try codec(SoyehtProtocol.EditorTabsListParams.self, data)
+        case "EditorTabsListResult": return try codec(SoyehtProtocol.EditorTabsListResult.self, data)
+        case "EditorTabsMoveParams": return try codec(SoyehtProtocol.EditorTabsMoveParams.self, data)
+        case "EditorTabsUpdatedEvent": return try codec(SoyehtProtocol.EditorTabsUpdatedEvent.self, data)
         case "FileSearchMatch": return try codec(SoyehtProtocol.FileSearchMatch.self, data)
         case "FileSearchParams": return try codec(SoyehtProtocol.FileSearchParams.self, data)
         case "FileSearchResult": return try codec(SoyehtProtocol.FileSearchResult.self, data)

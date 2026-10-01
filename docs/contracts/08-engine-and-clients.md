@@ -219,7 +219,8 @@ Task IDs are always `{workspaceId, taskId}` together.
 **Files and editor**: `file.open`, `file.read`, `file.write`, `file.watch`,
 `file.history`, `file.revert`, `file.undo`, `file.redo`, `file.search`, `file.symbols`,
 `file.definition`, `file.references`, `file.diagnostics`, `file.diff`, and
-`file.format`; `editor.review.accept|reject|comment`; `lsp.status`. Content is
+`file.format`; `project.tree.list|watch`, `project.entry.create|rename|delete`;
+`editor.tabs.list|move`; `editor.review.accept|reject|comment`; `lsp.status`. Content is
 read through bounded line viewports. Positions are zero-based line and UTF-16
 column pairs. Mutations name a base revision when they change existing text;
 the complete shapes and limits are generated from `contracts/protocol.json`.

@@ -7680,6 +7680,9 @@
           "minimum": 0,
           "maximum": 4294967295
         },
+        "preview": {
+          "type": "boolean"
+        },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
         }
@@ -8020,6 +8023,462 @@
         "file",
         "applied",
         "changedLines"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectEntryKind": {
+      "type": "string",
+      "enum": [
+        "file",
+        "directory"
+      ]
+    },
+    "ProjectEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectEntryKind"
+        },
+        "ignored": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "kind",
+        "ignored"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTreeListParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096
+        },
+        "showIgnored": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTreeListResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectEntry"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "entries",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTreeWatchParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "paths"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTreeWatchResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "paths"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTreeChangedEvent": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "paths"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectEntryCreateParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectEntryKind"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "kind",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectEntryCreateResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "entry": {
+          "$ref": "#/$defs/ProjectEntry"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "entry"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectEntryRenameParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "from",
+        "to",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectEntryRenameResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileDocument"
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "from",
+        "to",
+        "files"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectEntryRenamedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileDocument"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "from",
+        "to",
+        "files"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectDeleteOutcome": {
+      "type": "string",
+      "enum": [
+        "trashed",
+        "deleted",
+        "needs_confirmation"
+      ]
+    },
+    "ProjectEntryDeleteParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "permanent": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectEntryDeleteResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "outcome": {
+          "$ref": "#/$defs/ProjectDeleteOutcome"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "path",
+        "outcome"
+      ],
+      "additionalProperties": true
+    },
+    "EditorTab": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "preview": {
+          "type": "boolean"
+        },
+        "previewRevision": {
+          "$ref": "#/$defs/Decimal"
+        }
+      },
+      "required": [
+        "paneId",
+        "fileId",
+        "path",
+        "preview"
+      ],
+      "additionalProperties": true
+    },
+    "EditorTabsListParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId"
+      ],
+      "additionalProperties": true
+    },
+    "EditorTabsListResult": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tabs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EditorTab"
+          }
+        }
+      },
+      "required": [
+        "workspaceId",
+        "tabs"
+      ],
+      "additionalProperties": true
+    },
+    "EditorTabsMoveParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "paneId",
+        "index",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "EditorTabsUpdatedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "tabs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EditorTab"
+          }
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceId",
+        "tabs"
       ],
       "additionalProperties": true
     },
@@ -12012,6 +12471,69 @@
       },
       "mutation": true
     },
+    "project.tree.list": {
+      "params": {
+        "$ref": "#/$defs/ProjectTreeListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectTreeListResult"
+      },
+      "mutation": false
+    },
+    "project.tree.watch": {
+      "params": {
+        "$ref": "#/$defs/ProjectTreeWatchParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectTreeWatchResult"
+      },
+      "mutation": false
+    },
+    "project.entry.create": {
+      "params": {
+        "$ref": "#/$defs/ProjectEntryCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectEntryCreateResult"
+      },
+      "mutation": true
+    },
+    "project.entry.rename": {
+      "params": {
+        "$ref": "#/$defs/ProjectEntryRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectEntryRenameResult"
+      },
+      "mutation": true
+    },
+    "project.entry.delete": {
+      "params": {
+        "$ref": "#/$defs/ProjectEntryDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectEntryDeleteResult"
+      },
+      "mutation": true
+    },
+    "editor.tabs.list": {
+      "params": {
+        "$ref": "#/$defs/EditorTabsListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EditorTabsListResult"
+      },
+      "mutation": false
+    },
+    "editor.tabs.move": {
+      "params": {
+        "$ref": "#/$defs/EditorTabsMoveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EditorTabsListResult"
+      },
+      "mutation": true
+    },
     "editor.review.accept": {
       "params": {
         "$ref": "#/$defs/EditorReviewParams"
@@ -12744,6 +13266,24 @@
       },
       "durable": true
     },
+    "project.tree_changed": {
+      "params": {
+        "$ref": "#/$defs/ProjectTreeChangedEvent"
+      },
+      "durable": false
+    },
+    "project.entry_renamed": {
+      "params": {
+        "$ref": "#/$defs/ProjectEntryRenamedEvent"
+      },
+      "durable": true
+    },
+    "editor.tabs_updated": {
+      "params": {
+        "$ref": "#/$defs/EditorTabsUpdatedEvent"
+      },
+      "durable": true
+    },
     "servers.local.changed": {
       "params": {
         "$ref": "#/$defs/ServersLocalChangedEvent"
@@ -12856,6 +13396,8 @@
     "editorHistoryVersions": 200,
     "editorHistoryBytes": 52428800,
     "editorAutosaveMs": 500,
+    "projectTreeEntries": 5000,
+    "projectTreeWatches": 256,
     "webPanesPerWorkspace": 10,
     "webSnapshotBytes": 204800,
     "webScreenshotBytes": 2097152,

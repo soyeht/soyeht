@@ -112,6 +112,8 @@ extension EngineClient {
         guard $0.file.revision == event.revision else { return }
         $0.review = event.hunks.isEmpty ? nil : event
       }
+    case .editorTabsUpdated, .projectEntryRenamed, .projectTreeChanged:
+      try applyEditorWorkspaceEvent(eventName, params)
     default: break
     }
   }
@@ -141,13 +143,14 @@ extension EngineClient {
 
   @discardableResult
   public func openEditorFile(
-    workspaceId: String, path: String, line: UInt32? = nil, column: UInt32? = nil
+    workspaceId: String, path: String, line: UInt32? = nil, column: UInt32? = nil,
+    preview: Bool = false
   ) async throws -> FileOpenResult {
     let result = try await mutation(
       "file.open",
       FileOpenParams(
         workspaceId: workspaceId, path: path, line: line, column: column,
-        idempotencyKey: UUID().uuidString)
+        preview: preview ? true : nil, idempotencyKey: UUID().uuidString)
     ).decoded(FileOpenResult.self)
     upsertPane(result.pane)
     acceptEditorRead(result.viewport)
@@ -158,7 +161,7 @@ extension EngineClient {
     } else {
       editorNavigationTarget = nil
     }
-    select(result.pane.paneId)
+    activateEditorTab(result.pane.paneId)
     return result
   }
 

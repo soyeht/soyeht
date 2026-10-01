@@ -1,8 +1,8 @@
 {
   "duplication": {
     "engine": {
-      "clones": 433,
-      "duplicated_lines": 3882
+      "clones": 432,
+      "duplicated_lines": 3867
     },
     "ios": {
       "clones": 6,
@@ -62,8 +62,8 @@
       "system_font_size": 4
     },
     "apps/mac/Sources/EditorPaneView.swift": {
-      "corner_radius": 3,
-      "system_font_size": 11
+      "corner_radius": 2,
+      "system_font_size": 7
     },
     "apps/mac/Sources/MacStyle.swift": {
       "font_name": 7
@@ -248,15 +248,14 @@
   },
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
-    "apps/mac/Sources/EditorPaneView.swift": 902,
     "apps/mac/Sources/PreferencesPanel.swift": 995,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3832,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3829,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
     "apps/shared/Sources/SoyehtClient/AgentConversation.swift": 800,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1054,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1050,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-cli/src/task_commands.rs": 862,
     "engine/soyeht-engine/src/agents/questions.rs": 1119,
