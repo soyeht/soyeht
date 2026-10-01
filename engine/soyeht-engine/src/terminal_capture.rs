@@ -709,6 +709,13 @@ fn deletion_receipt_commit_error(
 
 #[cfg(test)]
 mod tests {
+    mod cadence_stats;
+
+    use cadence_stats::{
+        CADENCE_MEDIAN_PERCENT_LIMIT, CADENCE_TAIL_MICROSECOND_LIMIT, CadencePool, CadenceVerdict,
+        cadence_verdict, median_confidence_bounds, percentile,
+    };
+
     use super::*;
     use crate::{
         dispatch::Outcome,
@@ -732,8 +739,6 @@ mod tests {
     const CADENCE_POLLS_PER_SAMPLE: usize = 30;
     const CADENCE_MAX_ATTEMPTS: usize = 10;
     const CADENCE_WARMUP_PAIRS: usize = 3;
-    const CADENCE_MEDIAN_PERCENT_LIMIT: u128 = 5;
-    const CADENCE_TAIL_MICROSECOND_LIMIT: u128 = 5_000;
     const CADENCE_FIXTURE_BYTES: usize = 13_367_794;
     const CADENCE_STEADY_BYTES: usize = 9_406_002;
     const CADENCE_WARMUP_DRAIN: Duration = Duration::from_millis(60);
@@ -760,41 +765,27 @@ mod tests {
         );
     }
 
-    fn cadence_samples_pass(
-        attempt: usize,
-        load_average_before: Option<[f64; 3]>,
+    /// Pools one window's steady samples and returns the median verdict so far.
+    fn pool_cadence_window(
+        pool: &mut CadencePool,
+        window: usize,
         off_micros: &[u128],
         on_micros: &[u128],
-    ) -> bool {
+    ) -> CadenceVerdict {
         let steady_off = &off_micros[CADENCE_WARMUP_PAIRS..];
         let steady_on = &on_micros[CADENCE_WARMUP_PAIRS..];
-        log_cadence_attempt(
-            attempt,
-            load_average_before,
-            load_average(),
-            off_micros,
-            on_micros,
-        );
-        if !capture_difference_is_plausible(steady_off, steady_on) {
-            eprintln!(
-                "capture cadence attempt={attempt} invalid: capture-on was faster than capture-off beyond the predeclared noise bounds after the declared warm-up"
-            );
-            return false;
-        }
-        let off_median = percentile(steady_off, 1, 2);
-        let on_median = percentile(steady_on, 1, 2);
-        let off_p95 = percentile(steady_off, 95, 100);
-        let on_p95 = percentile(steady_on, 95, 100);
-        assert!(
-            on_median.saturating_mul(100)
-                <= off_median.saturating_mul(100 + CADENCE_MEDIAN_PERCENT_LIMIT)
-        );
-        assert!(on_p95 <= off_p95.saturating_add(CADENCE_TAIL_MICROSECOND_LIMIT));
+        pool.add_window(steady_off, steady_on);
+        let ratios = pool.paired_ratios_per_mille();
+        let verdict = cadence_verdict(&ratios, window == CADENCE_MAX_ATTEMPTS);
         eprintln!(
-            "capture cadence accepted attempt={attempt} invalid_attempts={} steady_off_median_us={off_median} steady_on_median_us={on_median} steady_off_p95_us={off_p95} steady_on_p95_us={on_p95}",
-            attempt - 1
+            "capture cadence pooled attempt={window} pairs={} median_ratio_per_mille={} confidence_bounds={:?} verdict={verdict:?} tail_windows={} tail_violations={}",
+            ratios.len(),
+            percentile(&ratios, 1, 2),
+            median_confidence_bounds(&ratios),
+            pool.tail_windows,
+            pool.tail_violations
         );
-        true
+        verdict
     }
 
     fn time_coverage_basis_points(
@@ -1339,51 +1330,6 @@ mod tests {
         core
     }
 
-    fn percentile(values: &[u128], numerator: usize, denominator: usize) -> u128 {
-        let mut sorted = values.to_vec();
-        sorted.sort_unstable();
-        let index = (sorted.len() * numerator).div_ceil(denominator) - 1;
-        sorted[index]
-    }
-
-    fn capture_difference_is_plausible(off_micros: &[u128], on_micros: &[u128]) -> bool {
-        let off_median = percentile(off_micros, 1, 2);
-        let on_median = percentile(on_micros, 1, 2);
-        let off_p95 = percentile(off_micros, 95, 100);
-        let on_p95 = percentile(on_micros, 95, 100);
-        on_median.saturating_mul(100)
-            >= off_median.saturating_mul(100 - CADENCE_MEDIAN_PERCENT_LIMIT)
-            && on_p95.saturating_add(CADENCE_TAIL_MICROSECOND_LIMIT) >= off_p95
-    }
-
-    #[test]
-    fn cadence_sanity_keeps_noise_and_rejects_only_implausible_speedups() {
-        assert!(capture_difference_is_plausible(
-            &[331, 333, 345, 352],
-            &[329, 330, 341, 350]
-        ));
-        assert!(capture_difference_is_plausible(
-            &[321, 323, 327, 331],
-            &[326, 329, 333, 353]
-        ));
-        assert!(capture_difference_is_plausible(
-            &[10_000, 10_000, 10_000, 10_000],
-            &[20_000, 20_000, 20_000, 20_000]
-        ));
-        assert!(capture_difference_is_plausible(
-            &[10_000, 10_000, 10_000, 20_000],
-            &[9_500, 9_500, 9_500, 15_000]
-        ));
-        assert!(!capture_difference_is_plausible(
-            &[10_000, 10_000, 10_000, 10_000],
-            &[9_000, 9_000, 9_000, 9_000]
-        ));
-        assert!(!capture_difference_is_plausible(
-            &[10_000, 10_000, 10_000, 20_000],
-            &[10_000, 10_000, 10_000, 10_000]
-        ));
-    }
-
     #[test]
     #[ignore = "measured separately by scripts/check_all.sh without competing tests"]
     fn frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage() {
@@ -1468,7 +1414,15 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    fn run_cadence_attempt(directory: &Path, chunks: &[Vec<u8>], attempt: usize) -> bool {
+    /// Times one measurement window of interleaved capture-off and capture-on
+    /// polls and returns both arms' samples. The recording's correctness
+    /// (lossless observations, full time coverage, every steady byte) is
+    /// asserted for every window, whatever its timing turns out to be.
+    fn run_cadence_attempt(
+        directory: &Path,
+        chunks: &[Vec<u8>],
+        attempt: usize,
+    ) -> (Vec<u128>, Vec<u128>) {
         fs::create_dir(directory).unwrap();
         let load_average_before = load_average();
         let fixture_bytes = chunks.iter().skip(2).map(Vec::len).sum::<usize>();
@@ -1522,12 +1476,13 @@ mod tests {
         }
         set_cadence_projection_paused(&on, false);
         wait_for_projection_worker(&metrics);
-        if !cadence_samples_pass(attempt, load_average_before, &off_micros, &on_micros) {
-            drop(on);
-            drop(off);
-            fs::remove_dir_all(directory).unwrap();
-            return false;
-        }
+        log_cadence_attempt(
+            attempt,
+            load_average_before,
+            load_average(),
+            &off_micros,
+            &on_micros,
+        );
         let build = on.experiment_capture_build.clone().unwrap();
         drop(on);
         let fixture_wall_micros = fixture_started.elapsed().as_micros();
@@ -1574,26 +1529,59 @@ mod tests {
             CADENCE_STEADY_BYTES
         );
         fs::remove_dir_all(directory).unwrap();
-        true
+        (off_micros, on_micros)
     }
 
+    /// Capture-on must keep the median paired poll cadence within 5 percent of
+    /// capture-off and the p95 within 5 ms. Windows of ten paired samples are
+    /// pooled until the median's confidence interval clears the limit on one
+    /// side and at least three windows have judged the p95 rule, so host load
+    /// costs extra windows instead of a wrong verdict. The recording itself is
+    /// checked for completeness in every window.
     #[test]
     #[ignore = "measured separately by scripts/check_all.sh without competing tests"]
     fn capture_cadence_measurement_uses_ten_paired_noisy_samples() {
         let directory = std::env::temp_dir().join(format!("sn-cadence-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
         let chunks = noisy_chunks();
-        for attempt in 1..=CADENCE_MAX_ATTEMPTS {
-            if run_cadence_attempt(
+        let mut pool = CadencePool::default();
+        let mut verdict = CadenceVerdict::Undecided;
+        let mut attempt = 0;
+        while (verdict == CadenceVerdict::Undecided || !pool.tail_resolved())
+            && attempt < CADENCE_MAX_ATTEMPTS
+        {
+            attempt += 1;
+            let (off_micros, on_micros) = run_cadence_attempt(
                 &directory.join(format!("attempt-{attempt}")),
                 &chunks,
                 attempt,
-            ) {
-                fs::remove_dir_all(directory).unwrap();
-                return;
-            }
+            );
+            verdict = pool_cadence_window(&mut pool, attempt, &off_micros, &on_micros);
         }
         fs::remove_dir_all(directory).unwrap();
-        panic!("cadence did not produce a steady sample in {CADENCE_MAX_ATTEMPTS} attempts");
+        assert_ne!(
+            verdict,
+            CadenceVerdict::Implausible,
+            "capture-on measured faster than capture-off beyond the noise; the measurement is contaminated"
+        );
+        assert_eq!(
+            verdict,
+            CadenceVerdict::WithinLimit,
+            "capture-on median paired cadence exceeds capture-off by more than {CADENCE_MEDIAN_PERCENT_LIMIT} percent"
+        );
+        assert!(
+            pool.tail_within_limit(),
+            "capture-on p95 exceeded capture-off p95 by more than max({CADENCE_TAIL_MICROSECOND_LIMIT} us, host noise floor) in {} of {} windows",
+            pool.tail_violations,
+            pool.tail_windows
+        );
+        eprintln!(
+            "capture cadence accepted attempt={attempt} pairs={} steady_off_median_us={} steady_on_median_us={} tail_windows={} tail_violations={}",
+            pool.off.len(),
+            percentile(&pool.off, 1, 2),
+            percentile(&pool.on, 1, 2),
+            pool.tail_windows,
+            pool.tail_violations
+        );
     }
 }

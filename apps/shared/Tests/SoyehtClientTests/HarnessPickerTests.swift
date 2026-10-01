@@ -19,6 +19,30 @@ import Testing
   #expect(HarnessPickerModel.defaultHarness(in: unavailable + [owned])?.id == owned.id)
 }
 
+@Test func layoutLeadsWithInstalledHarnessesAndCollapsesTheRestInStableOrder() {
+  let ready = harness(id: "registry.codex-acp", name: "Codex", state: .ready, installed: true)
+  let notChecked = harness(id: "local.tool", name: "Tool", state: .not_checked, installed: true)
+  let legacyInstalled = harness(id: "legacy", name: "Legacy", state: .sign_in)
+  let runner = harness(
+    id: "registry.runner", name: "Runner", state: .not_checked, installed: false)
+  let missingB = harness(id: "registry.b", name: "Beta", state: .not_installed)
+  let missingA = harness(id: "registry.a", name: "alpha", state: .not_installed)
+  let catalogue = [missingB, runner, missingA, legacyInstalled, notChecked, ready]
+
+  let layout = HarnessPickerModel.layout(catalogue)
+
+  #expect(layout.sections.map(\.group) == [.ready, .notChecked, .signIn])
+  #expect(
+    layout.sections.flatMap(\.items).map(\.id) == [ready.id, notChecked.id, legacyInstalled.id])
+  // Not-installed entries follow the readiness groups, then case-insensitive name.
+  #expect(layout.more.map(\.id) == [runner.id, missingA.id, missingB.id])
+  #expect(HarnessPickerModel.layout(catalogue.reversed()).more.map(\.id) == layout.more.map(\.id))
+  #expect(HarnessPickerModel.layout(catalogue, query: "beta").sections.isEmpty)
+  #expect(HarnessPickerModel.layout(catalogue, query: "beta").more.map(\.id) == [missingB.id])
+  #expect(
+    HarnessPickerModel.contentState(harnesses: [missingA], query: "", loading: false) == .results)
+}
+
 @Test func searchNarrowsFortyTwoHarnessesByNameSubstringWithoutHidingTheCatalogue() throws {
   let catalogue =
     (0..<41).map { index in

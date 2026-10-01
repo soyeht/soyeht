@@ -256,18 +256,27 @@ thirty capture-off and capture-on polls, and each poll hands off one distinct VT
 keeps scheduler drift from landing on one complete series. The first three raw samples are
 declared warm-up and discarded; the seven steady samples used for the acceptance bounds total
 9,406,002 bytes and 210 projections. The complete raw fixture totals 13,367,794 bytes and 300
-projections. The sanity guard used to invalidate an attempt whenever capture-on was faster than
-capture-off at either the steady median or p95. That sign-only rule selected the positive half of
-near-zero noise and biased accepted overhead upward. From the next run forward, the guard uses
-magnitude: capture-on invalidates an attempt only when it beats capture-off by more than the
-already declared 5 percent median allowance or 5 millisecond p95 allowance in the opposite
-direction. A smaller apparent speedup remains a valid measured sample. These symmetric bounds
-were fixed before exercising the replacement guard; an effect smaller than the experiment's
-existing allowances cannot establish that setup failed. Every accepted result records its attempt
-and the number of earlier invalid attempts beside its median and p95. The test permits at most ten
-complete attempts; a valid attempt outside either performance bound fails immediately and is
-never retried. A fixed clock and an empty in-memory local-server scan keep unrelated discovery
-out of every retry. This isolates the per-byte shared handoff and bounded-channel cost that
+projections. Each such run of ten pairs is one measurement window, and every window also asserts
+that the recording is complete (every observation, no gap, full time coverage, every steady
+byte), whatever its timing.
+
+On a loaded host the seven steady pairs of one window cannot resolve 5 percent: a paired ratio
+spreads by about 9 percent there, so comparing the two arms' medians failed about one run in five
+with no capture regression. The median bound is therefore judged on the paired ratio
+capture-on / capture-off of each interleaved pair, which cancels load common to the pair, and
+windows are pooled until a distribution-free 95 percent confidence interval for the median ratio
+(order statistics of the binomial sign test) lies wholly within 5 percent, which passes, or wholly
+above it, which fails. Noise widens the interval and costs another window instead of deciding.
+After ten windows the pooled median of up to seventy pairs decides. Capture cannot make polls
+cheaper, so an interval wholly below a 5 percent speedup marks the measurement as contaminated
+and fails; a noisy speedup in one window is kept, because discarding only fast windows biased the
+pool upward. The p95 bound keeps its per-window form, capture-on p95 at most 5 milliseconds above
+capture-off p95, but its tolerance never drops below the host noise floor of that window, the
+distance from capture-off's own median to its p95, since capture-off does no capture work. On a
+quiet host that floor is under 5 milliseconds and the rule is unchanged. A capture stall recurs
+while a host spike lands on one arm, so the p95 rule is judged over at least three windows and
+fails when most of them break it. A fixed clock and an empty in-memory local-server scan keep unrelated discovery
+out of every window. This isolates the per-byte shared handoff and bounded-channel cost that
 remains on `Core::poll_output`. Test-only queue counters are disabled during the timed samples,
 so the benchmark does not charge instrumentation that is absent from the shipping path. The
 gate runs this measurement separately from concurrent engine tests, so unrelated scheduler and
