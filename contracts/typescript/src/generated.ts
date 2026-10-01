@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 554cf743f5afd9d048d07399763a415920a6a7b437bf70df0df956cedf9ae58e). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -422,6 +422,29 @@ export interface DeviceRevokeParams {
 }
 
 export interface DeviceRevokeResult {
+  "deviceId": Id;
+}
+
+export type PushPlatform = "apns";
+
+export type PushEnvironment = "sandbox" | "production";
+
+export interface PushRegisterParams {
+  "platform": PushPlatform;
+  "token": string;
+  "environment": PushEnvironment;
+  "idempotencyKey": Id;
+}
+
+export interface PushRegisterResult {
+  "deviceId": Id;
+}
+
+export interface PushUnregisterParams {
+  "idempotencyKey": Id;
+}
+
+export interface PushUnregisterResult {
   "deviceId": Id;
 }
 
@@ -3074,6 +3097,8 @@ export interface Methods {
   "device.pair.decide": { params: DevicePairDecideParams; result: DevicePairDecideResult };
   "device.list": { params: DeviceListParams; result: DeviceListResult };
   "device.revoke": { params: DeviceRevokeParams; result: DeviceRevokeResult };
+  "push.register": { params: PushRegisterParams; result: PushRegisterResult };
+  "push.unregister": { params: PushUnregisterParams; result: PushUnregisterResult };
   "pair.begin": { params: PairBeginParams; result: PairBeginResult };
   "pair.prove": { params: PairProveParams; result: PairProveResult };
   "engine.status": { params: EngineStatusParams; result: EngineStatusResult };

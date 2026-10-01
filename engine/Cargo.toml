@@ -29,6 +29,13 @@ core-foundation = "0.9"
 security-framework = "2.11"
 vt100 = "0.16.2"
 crossbeam-channel = "0.5"
+bytes = "1"
+h2 = "0.4"
+http = "1"
+ring = "0.17"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

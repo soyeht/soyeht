@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 554cf743f5afd9d048d07399763a415920a6a7b437bf70df0df956cedf9ae58e). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -797,6 +797,44 @@ pub struct DeviceRevokeParams {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceRevokeResult {
+    #[serde(rename = "deviceId")]
+    pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PushPlatform {
+    #[serde(rename = "apns")]
+    Apns,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PushEnvironment {
+    #[serde(rename = "sandbox")]
+    Sandbox,
+    #[serde(rename = "production")]
+    Production,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushRegisterParams {
+    #[serde(rename = "platform")]
+    pub platform: PushPlatform,
+    #[serde(rename = "token")]
+    pub token: String,
+    #[serde(rename = "environment")]
+    pub environment: PushEnvironment,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushRegisterResult {
+    #[serde(rename = "deviceId")]
+    pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushUnregisterParams {
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushUnregisterResult {
     #[serde(rename = "deviceId")]
     pub device_id: Id,
 }
@@ -5527,6 +5565,10 @@ pub enum Request {
     DeviceList(DeviceListParams),
     #[serde(rename = "device.revoke")]
     DeviceRevoke(DeviceRevokeParams),
+    #[serde(rename = "push.register")]
+    PushRegister(PushRegisterParams),
+    #[serde(rename = "push.unregister")]
+    PushUnregister(PushUnregisterParams),
     #[serde(rename = "pair.begin")]
     PairBegin(PairBeginParams),
     #[serde(rename = "pair.prove")]
@@ -5837,6 +5879,18 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "device.revoke",
         "DeviceRevokeParams",
         "DeviceRevokeResult",
+        true,
+    ),
+    (
+        "push.register",
+        "PushRegisterParams",
+        "PushRegisterResult",
+        true,
+    ),
+    (
+        "push.unregister",
+        "PushUnregisterParams",
+        "PushUnregisterResult",
         true,
     ),
     ("pair.begin", "PairBeginParams", "PairBeginResult", true),

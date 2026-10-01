@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 554cf743f5afd9d048d07399763a415920a6a7b437bf70df0df956cedf9ae58e). Do not edit.
 import Foundation
 
 
@@ -875,6 +875,49 @@ public struct DeviceRevokeParams: Codable, Sendable {
 }
 
 public struct DeviceRevokeResult: Codable, Sendable {
+    public var `deviceId`: Id
+    public init(`deviceId`: Id) {
+        self.`deviceId` = `deviceId`
+    }
+}
+
+public enum PushPlatform: String, Codable, Sendable {
+    case `apns` = "apns"
+}
+
+public enum PushEnvironment: String, Codable, Sendable {
+    case `sandbox` = "sandbox"
+    case `production` = "production"
+}
+
+public struct PushRegisterParams: Codable, Sendable {
+    public var `platform`: PushPlatform
+    public var `token`: String
+    public var `environment`: PushEnvironment
+    public var `idempotencyKey`: Id
+    public init(`platform`: PushPlatform, `token`: String, `environment`: PushEnvironment, `idempotencyKey`: Id) {
+        self.`platform` = `platform`
+        self.`token` = `token`
+        self.`environment` = `environment`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PushRegisterResult: Codable, Sendable {
+    public var `deviceId`: Id
+    public init(`deviceId`: Id) {
+        self.`deviceId` = `deviceId`
+    }
+}
+
+public struct PushUnregisterParams: Codable, Sendable {
+    public var `idempotencyKey`: Id
+    public init(`idempotencyKey`: Id) {
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PushUnregisterResult: Codable, Sendable {
     public var `deviceId`: Id
     public init(`deviceId`: Id) {
         self.`deviceId` = `deviceId`

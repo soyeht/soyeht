@@ -474,7 +474,7 @@ impl Change<'_> {
             "UPDATE devices SET payload=?1,revoked=1 WHERE id=?2",
             params![serde_json::to_string(device)?, id],
         )?;
-        Ok(())
+        self.unregister_push(id)
     }
 
     pub fn consume_pair_window_and_insert_device<T: Serialize>(
