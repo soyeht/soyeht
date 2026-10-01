@@ -93,3 +93,36 @@ Tests may use `--data-dir PATH` to connect to a temporary installation.
 On a runner without a graphical domain, the installer accepts `--domain user`;
 inspection and stop commands use that same domain.
 None of these options accepts another profile or service name.
+
+## Local quality ratchet
+
+Once per machine, with network access, install the pinned copy/paste detector
+with `npm ci --prefix scripts/quality --ignore-scripts` and the Rust unused-
+dependency scanner with
+`cargo install cargo-machete --version 0.9.2 --locked`. In a fresh worktree the
+gate restores jscpd 4.3.0 from `scripts/quality/package-lock.json` with
+`npm ci --offline`, using only the local npm cache. It finds `cargo-machete` on
+`PATH` or in `$CARGO_HOME/bin` (default `~/.cargo/bin`). When a tool is absent or
+has another version, the gate fails and prints the install command; it never
+downloads a package. Periphery is optional and is reported as `SKIPPED` when
+unavailable, not as a passing check.
+
+The engine and shared Swift scans include tests. The Mac and iOS apps currently
+have no Swift test directories, so their scans cover `Sources`; add any future
+test targets to the scanner when they are created.
+
+Enable the versioned fast pre-push hook with
+`git config core.hooksPath .githooks`. It runs only
+`python3 scripts/check_quality.py`, not the full merge gate. The full
+`bash scripts/check_all.sh` remains a manual pre-merge requirement.
+
+The gate fails only on regressions: more clones or duplicated lines, a file
+growing past its cap, or more loose literals in a file. When a metric improves
+or an oversized file shrinks, the gate passes and prints an `improvement` line;
+lower the baseline in the same PR so the ratchet keeps the gain. Existing files above 800 lines have individual caps
+equal to their measured lines; new files above 800 lines fail. Any increase or
+new exception is a baseline relaxation requiring written justification in the
+PR. Run `python3 scripts/check_quality.py --print-baseline` to inspect current
+measurements, then update the baseline deliberately. Give reviewers the output
+of `python3 scripts/review_report.py BASE_COMMIT`; it marks every relaxation
+with a red indicator.
