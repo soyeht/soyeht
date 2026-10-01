@@ -117,7 +117,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         return Err(Error::ListenerAddressNotPermitted);
     }
     let _lock = singleton(&config.directory)?;
-    let core = Arc::new(Mutex::new(Core::open(&config.directory)?));
+    let core = crate::push::share(Core::open(&config.directory)?, &config.directory);
     let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
     tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
     let socket = config.directory.join(DEV_ENGINE_SOCKET);

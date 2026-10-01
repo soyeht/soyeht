@@ -9,16 +9,16 @@
       "duplicated_lines": 54
     },
     "mac": {
-      "clones": 80,
-      "duplicated_lines": 786
+      "clones": 79,
+      "duplicated_lines": 781
     },
     "shared": {
       "clones": 66,
       "duplicated_lines": 514
     },
     "swift_all": {
-      "clones": 164,
-      "duplicated_lines": 1490
+      "clones": 163,
+      "duplicated_lines": 1485
     }
   },
   "loose_literals": {
@@ -261,8 +261,8 @@
     "engine/soyeht-cli/src/task_commands.rs": 862,
     "engine/soyeht-engine/src/agents/questions.rs": 1119,
     "engine/soyeht-engine/src/agents/state.rs": 949,
-    "engine/soyeht-engine/src/agents/switching.rs": 1065,
-    "engine/soyeht-engine/src/editor/service.rs": 1146,
+    "engine/soyeht-engine/src/agents/switching.rs": 1063,
+    "engine/soyeht-engine/src/editor/service.rs": 1134,
     "engine/soyeht-engine/src/experiment_export.rs": 1216,
     "engine/soyeht-engine/src/pane_observations.rs": 1666,
     "engine/soyeht-engine/src/server.rs": 1172,

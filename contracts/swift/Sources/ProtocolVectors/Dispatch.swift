@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -86,6 +86,12 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "DeviceListResult": return try codec(SoyehtProtocol.DeviceListResult.self, data)
         case "DeviceRevokeParams": return try codec(SoyehtProtocol.DeviceRevokeParams.self, data)
         case "DeviceRevokeResult": return try codec(SoyehtProtocol.DeviceRevokeResult.self, data)
+        case "PushPlatform": return try codec(SoyehtProtocol.PushPlatform.self, data)
+        case "PushEnvironment": return try codec(SoyehtProtocol.PushEnvironment.self, data)
+        case "PushRegisterParams": return try codec(SoyehtProtocol.PushRegisterParams.self, data)
+        case "PushRegisterResult": return try codec(SoyehtProtocol.PushRegisterResult.self, data)
+        case "PushUnregisterParams": return try codec(SoyehtProtocol.PushUnregisterParams.self, data)
+        case "PushUnregisterResult": return try codec(SoyehtProtocol.PushUnregisterResult.self, data)
         case "PairBeginParams": return try codec(SoyehtProtocol.PairBeginParams.self, data)
         case "PairBeginResult": return try codec(SoyehtProtocol.PairBeginResult.self, data)
         case "PairProveParams": return try codec(SoyehtProtocol.PairProveParams.self, data)
@@ -367,6 +373,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "FileHistoryResult": return try codec(SoyehtProtocol.FileHistoryResult.self, data)
         case "FileRevertParams": return try codec(SoyehtProtocol.FileRevertParams.self, data)
         case "FileRevertResult": return try codec(SoyehtProtocol.FileRevertResult.self, data)
+        case "FileUndoParams": return try codec(SoyehtProtocol.FileUndoParams.self, data)
+        case "FileUndoResult": return try codec(SoyehtProtocol.FileUndoResult.self, data)
         case "FileSearchMatch": return try codec(SoyehtProtocol.FileSearchMatch.self, data)
         case "FileSearchParams": return try codec(SoyehtProtocol.FileSearchParams.self, data)
         case "FileSearchResult": return try codec(SoyehtProtocol.FileSearchResult.self, data)

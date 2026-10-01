@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -797,6 +797,44 @@ pub struct DeviceRevokeParams {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceRevokeResult {
+    #[serde(rename = "deviceId")]
+    pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PushPlatform {
+    #[serde(rename = "apns")]
+    Apns,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PushEnvironment {
+    #[serde(rename = "sandbox")]
+    Sandbox,
+    #[serde(rename = "production")]
+    Production,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushRegisterParams {
+    #[serde(rename = "platform")]
+    pub platform: PushPlatform,
+    #[serde(rename = "token")]
+    pub token: String,
+    #[serde(rename = "environment")]
+    pub environment: PushEnvironment,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushRegisterResult {
+    #[serde(rename = "deviceId")]
+    pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushUnregisterParams {
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PushUnregisterResult {
     #[serde(rename = "deviceId")]
     pub device_id: Id,
 }
@@ -3981,6 +4019,26 @@ pub struct FileRevertResult {
     pub file: FileDocument,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileUndoParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileUndoResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "applied")]
+    pub applied: bool,
+    #[serde(rename = "changedLines")]
+    pub changed_lines: Vec<u32>,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<TextPosition>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileSearchMatch {
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
@@ -5527,6 +5585,10 @@ pub enum Request {
     DeviceList(DeviceListParams),
     #[serde(rename = "device.revoke")]
     DeviceRevoke(DeviceRevokeParams),
+    #[serde(rename = "push.register")]
+    PushRegister(PushRegisterParams),
+    #[serde(rename = "push.unregister")]
+    PushUnregister(PushUnregisterParams),
     #[serde(rename = "pair.begin")]
     PairBegin(PairBeginParams),
     #[serde(rename = "pair.prove")]
@@ -5629,6 +5691,10 @@ pub enum Request {
     FileHistory(FileHistoryParams),
     #[serde(rename = "file.revert")]
     FileRevert(FileRevertParams),
+    #[serde(rename = "file.undo")]
+    FileUndo(FileUndoParams),
+    #[serde(rename = "file.redo")]
+    FileRedo(FileUndoParams),
     #[serde(rename = "file.search")]
     FileSearch(FileSearchParams),
     #[serde(rename = "file.symbols")]
@@ -5839,6 +5905,18 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "DeviceRevokeResult",
         true,
     ),
+    (
+        "push.register",
+        "PushRegisterParams",
+        "PushRegisterResult",
+        true,
+    ),
+    (
+        "push.unregister",
+        "PushUnregisterParams",
+        "PushUnregisterResult",
+        true,
+    ),
     ("pair.begin", "PairBeginParams", "PairBeginResult", true),
     ("pair.prove", "PairProveParams", "PairProveResult", true),
     (
@@ -6040,6 +6118,8 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         false,
     ),
     ("file.revert", "FileRevertParams", "FileRevertResult", true),
+    ("file.undo", "FileUndoParams", "FileUndoResult", true),
+    ("file.redo", "FileUndoParams", "FileUndoResult", true),
     ("file.search", "FileSearchParams", "FileSearchResult", true),
     (
         "file.symbols",

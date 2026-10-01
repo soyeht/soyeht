@@ -217,9 +217,9 @@ private struct AgentWell: ViewModifier {
             Label(notice, systemImage: "exclamationmark.triangle")
               .font(style.captionFont).foregroundStyle(style.warning).padding(10)
           }
-          ForEach(AgentTranscriptGrouping.entries(view.messages)) { entry in
-            transcriptEntry(entry).id(entry.id)
-          }
+          let entries = AgentTranscriptGrouping.entries(view.messages)
+          ForEach(entries) { entry in transcriptEntry(entry).id(entry.id) }
+          AgentSubagentWaitingStatus(entries: entries, style: style)
           Color.clear.frame(height: 1).id(AgentConversationFollow.bottomAnchor)
         }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
           .padding(.vertical, style.canonicalLayout ? 12 : 16)

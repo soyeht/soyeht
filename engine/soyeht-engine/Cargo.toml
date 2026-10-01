@@ -34,8 +34,16 @@ ignore = "0.4"
 vt100.workspace = true
 crossbeam-channel.workspace = true
 ed25519-dalek.workspace = true
+bytes.workspace = true
+h2.workspace = true
+http.workspace = true
+ring.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+webpki-roots.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 soyeht-store = { path = "../soyeht-store", features = ["test-support"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

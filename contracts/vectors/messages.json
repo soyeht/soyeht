@@ -701,6 +701,47 @@
     }
   },
   {
+    "name": "PushPlatform",
+    "type": "PushPlatform",
+    "value": "apns"
+  },
+  {
+    "name": "PushEnvironment",
+    "type": "PushEnvironment",
+    "value": "sandbox"
+  },
+  {
+    "name": "PushRegisterParams",
+    "type": "PushRegisterParams",
+    "value": {
+      "platform": "apns",
+      "token": "00fc13adff785122b4ad28809a3420982341241421348097878e577c991de8f0",
+      "environment": "sandbox",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PushRegisterResult",
+    "type": "PushRegisterResult",
+    "value": {
+      "deviceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PushUnregisterParams",
+    "type": "PushUnregisterParams",
+    "value": {
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PushUnregisterResult",
+    "type": "PushUnregisterResult",
+    "value": {
+      "deviceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
     "name": "PairBeginParams",
     "type": "PairBeginParams",
     "value": {
@@ -1879,6 +1920,55 @@
   },
   {
     "name": "response:device.revoke",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "deviceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:push.register",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "push.register",
+      "params": {
+        "platform": "apns",
+        "token": "00fc13adff785122b4ad28809a3420982341241421348097878e577c991de8f0",
+        "environment": "sandbox",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:push.register",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "deviceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:push.unregister",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "push.unregister",
+      "params": {
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:push.unregister",
     "type": "SuccessEnvelope",
     "value": {
       "jsonrpc": "2.0",
@@ -7340,6 +7430,41 @@
     }
   },
   {
+    "name": "FileUndoParams",
+    "type": "FileUndoParams",
+    "value": {
+      "fileId": "x",
+      "baseRevision": "1",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileUndoResult",
+    "type": "FileUndoResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": false,
+        "conflicted": false,
+        "watching": false
+      },
+      "applied": true,
+      "changedLines": [0],
+      "cursor": {
+        "line": 0,
+        "column": 1
+      }
+    }
+  },
+  {
     "name": "FileSearchMatch",
     "type": "FileSearchMatch",
     "value": {
@@ -7992,6 +8117,90 @@
           "conflicted": false,
           "watching": false
         }
+      }
+    }
+  },
+  {
+    "name": "request:file.undo",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-1",
+      "method": "file.undo",
+      "params": {
+        "fileId": "x",
+        "baseRevision": "1",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.undo",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-1",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "2",
+          "diskRevision": "1",
+          "lineCount": 1,
+          "byteCount": "1",
+          "dirty": true,
+          "conflicted": false,
+          "watching": true
+        },
+        "applied": true,
+        "changedLines": [0],
+        "cursor": {
+          "line": 0,
+          "column": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "request:file.redo",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-2",
+      "method": "file.redo",
+      "params": {
+        "fileId": "x",
+        "baseRevision": "2",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.redo",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-undo-2",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "2",
+          "diskRevision": "1",
+          "lineCount": 1,
+          "byteCount": "1",
+          "dirty": true,
+          "conflicted": false,
+          "watching": true
+        },
+        "applied": false,
+        "changedLines": []
       }
     }
   },

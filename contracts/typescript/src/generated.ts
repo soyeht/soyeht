@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -422,6 +422,29 @@ export interface DeviceRevokeParams {
 }
 
 export interface DeviceRevokeResult {
+  "deviceId": Id;
+}
+
+export type PushPlatform = "apns";
+
+export type PushEnvironment = "sandbox" | "production";
+
+export interface PushRegisterParams {
+  "platform": PushPlatform;
+  "token": string;
+  "environment": PushEnvironment;
+  "idempotencyKey": Id;
+}
+
+export interface PushRegisterResult {
+  "deviceId": Id;
+}
+
+export interface PushUnregisterParams {
+  "idempotencyKey": Id;
+}
+
+export interface PushUnregisterResult {
   "deviceId": Id;
 }
 
@@ -2203,6 +2226,19 @@ export interface FileRevertResult {
   "file": FileDocument;
 }
 
+export interface FileUndoParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface FileUndoResult {
+  "file": FileDocument;
+  "applied": boolean;
+  "changedLines": Array<number>;
+  "cursor"?: TextPosition;
+}
+
 export interface FileSearchMatch {
   "workspaceId": Id;
   "path": string;
@@ -3074,6 +3110,8 @@ export interface Methods {
   "device.pair.decide": { params: DevicePairDecideParams; result: DevicePairDecideResult };
   "device.list": { params: DeviceListParams; result: DeviceListResult };
   "device.revoke": { params: DeviceRevokeParams; result: DeviceRevokeResult };
+  "push.register": { params: PushRegisterParams; result: PushRegisterResult };
+  "push.unregister": { params: PushUnregisterParams; result: PushUnregisterResult };
   "pair.begin": { params: PairBeginParams; result: PairBeginResult };
   "pair.prove": { params: PairProveParams; result: PairProveResult };
   "engine.status": { params: EngineStatusParams; result: EngineStatusResult };
@@ -3125,6 +3163,8 @@ export interface Methods {
   "file.watch": { params: FileWatchParams; result: FileWatchResult };
   "file.history": { params: FileHistoryParams; result: FileHistoryResult };
   "file.revert": { params: FileRevertParams; result: FileRevertResult };
+  "file.undo": { params: FileUndoParams; result: FileUndoResult };
+  "file.redo": { params: FileUndoParams; result: FileUndoResult };
   "file.search": { params: FileSearchParams; result: FileSearchResult };
   "file.symbols": { params: FileSymbolsParams; result: FileSymbolsResult };
   "file.definition": { params: FilePositionParams; result: FileDefinitionResult };

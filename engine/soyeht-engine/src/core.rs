@@ -53,6 +53,7 @@ pub struct Core {
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
+    pub push: crate::push::Notifier,
 }
 
 impl Core {
@@ -129,6 +130,7 @@ impl Core {
             web_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
             pair_address: format!("127.0.0.1:{DEV_TCP_PORT}"),
+            push: crate::push::Notifier::disabled(),
         };
         for stored in model::panes(&core.store)? {
             if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
@@ -239,6 +241,7 @@ impl Core {
     }
 
     pub fn publish(&self, events: &[Event]) -> Result<()> {
+        self.notify_push(events);
         for client in self
             .clients
             .values()

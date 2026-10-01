@@ -7,6 +7,8 @@ import SwiftUI
 /// the pane on top of it.
 struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
   let client: EngineClient
+  /// A pane a tapped notification asked for; shown once the Mac state has it.
+  @Binding var requestedPaneId: String?
   /// Shown in the sidebar while the Mac state is not synchronized.
   @ViewBuilder let status: () -> Status
   @ViewBuilder let options: () -> Options
@@ -43,7 +45,9 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
     .navigationSplitViewStyle(.balanced)
     .onChange(of: order, initial: true) { previous, current in
       reconcile(current, previous: previous)
+      showRequestedPane()
     }
+    .onChange(of: requestedPaneId) { showRequestedPane() }
     .onChange(of: fillsDetail) { reconcile(order, previous: order) }
     .focusedSceneValue(\.phonePaneNavigation, navigation(order, sections: sections))
   }
@@ -74,6 +78,14 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
   /// wherever the list and the pane are on screen together.
   private func rowBackground(_ paneId: String) -> Color {
     fillsDetail && selection == paneId ? PhonePalette.accent.opacity(0.18) : PhonePalette.face
+  }
+
+  private func showRequestedPane() {
+    guard let pane = requestedPaneId, client.panes.contains(where: { $0.paneId == pane }) else {
+      return
+    }
+    selection = pane
+    requestedPaneId = nil
   }
 
   private func reconcile(_ order: PaneSidebarOrder, previous: PaneSidebarOrder) {

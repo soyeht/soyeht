@@ -420,6 +420,7 @@ impl Core {
             "device.pair.start" | "device.pair.decide" | "device.revoke" => {
                 self.device_request(connection, method, params)?
             }
+            "push.register" | "push.unregister" => self.push_request(connection, method, params)?,
             _ => return Err(errors::invalid("Method unavailable")),
         };
         if uses_native_rpc_result(method) {

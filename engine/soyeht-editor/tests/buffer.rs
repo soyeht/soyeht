@@ -1,20 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use soyeht_editor::{Error, TextBuffer};
-use soyeht_protocol::{TextEdit, TextPosition, TextRange};
+mod support;
 
-fn position(line: u32, column: u32) -> TextPosition {
-    TextPosition { line, column }
-}
-fn edit(start: (u32, u32), end: (u32, u32), text: &str) -> TextEdit {
-    TextEdit {
-        range: TextRange {
-            start: position(start.0, start.1),
-            end: position(end.0, end.1),
-        },
-        text: text.to_owned(),
-    }
-}
+use support::{edit, position};
 
 #[test]
 fn piece_table_edits_unicode_and_updates_only_line_boundaries() {

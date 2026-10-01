@@ -1507,6 +1507,81 @@
       ],
       "additionalProperties": true
     },
+    "PushPlatform": {
+      "type": "string",
+      "enum": [
+        "apns"
+      ]
+    },
+    "PushEnvironment": {
+      "type": "string",
+      "enum": [
+        "sandbox",
+        "production"
+      ]
+    },
+    "PushRegisterParams": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "$ref": "#/$defs/PushPlatform"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 400
+        },
+        "environment": {
+          "$ref": "#/$defs/PushEnvironment"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "platform",
+        "token",
+        "environment",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PushRegisterResult": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "deviceId"
+      ],
+      "additionalProperties": true
+    },
+    "PushUnregisterParams": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PushUnregisterResult": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "deviceId"
+      ],
+      "additionalProperties": true
+    },
     "PairBeginParams": {
       "type": "object",
       "properties": {
@@ -7900,6 +7975,54 @@
       ],
       "additionalProperties": true
     },
+    "FileUndoParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileUndoResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "applied": {
+          "type": "boolean"
+        },
+        "changedLines": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        "cursor": {
+          "$ref": "#/$defs/TextPosition"
+        }
+      },
+      "required": [
+        "file",
+        "applied",
+        "changedLines"
+      ],
+      "additionalProperties": true
+    },
     "FileSearchMatch": {
       "type": "object",
       "properties": {
@@ -11330,6 +11453,24 @@
       },
       "mutation": true
     },
+    "push.register": {
+      "params": {
+        "$ref": "#/$defs/PushRegisterParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PushRegisterResult"
+      },
+      "mutation": true
+    },
+    "push.unregister": {
+      "params": {
+        "$ref": "#/$defs/PushUnregisterParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PushUnregisterResult"
+      },
+      "mutation": true
+    },
     "pair.begin": {
       "params": {
         "$ref": "#/$defs/PairBeginParams"
@@ -11787,6 +11928,24 @@
       },
       "result": {
         "$ref": "#/$defs/FileRevertResult"
+      },
+      "mutation": true
+    },
+    "file.undo": {
+      "params": {
+        "$ref": "#/$defs/FileUndoParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileUndoResult"
+      },
+      "mutation": true
+    },
+    "file.redo": {
+      "params": {
+        "$ref": "#/$defs/FileUndoParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileUndoResult"
       },
       "mutation": true
     },

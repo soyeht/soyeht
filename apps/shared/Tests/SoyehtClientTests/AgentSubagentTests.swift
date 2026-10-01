@@ -143,3 +143,55 @@ private func shape(_ entries: [AgentTranscriptEntry]) -> [String] {
   }
   #expect(group.entries.map(\.id) == ["child-tool"])
 }
+
+@Test func collapsedPreviewSkipsLeadInsAndFencesForTheMeaningfulContent() {
+  #expect(
+    AgentSubagentPreview.text("The file exists. Contents verbatim:\n```\nhello\nworld\n```\n")
+      == "hello · world")
+  #expect(
+    AgentSubagentPreview.text("Top-level contents of /srv/app:\n\n- src/\n- README.md\n")
+      == "src/ · README.md")
+  #expect(
+    AgentSubagentPreview.text("## Result\n  The config   is\tin config/app.toml.  ")
+      == "Result · The config is in config/app.toml.")
+  // Only lead-ins: keep them rather than show nothing.
+  #expect(AgentSubagentPreview.text("Found these files:") == "Found these files:")
+  #expect(AgentSubagentPreview.text("```\n```\n  \n") == nil)
+}
+
+@Test func collapsedPreviewIsCutAtAWordWithAnEllipsis() {
+  let long = Array(repeating: "alpha", count: 50).joined(separator: " ")
+  let preview = AgentSubagentPreview.text(long, limit: 40)
+  #expect(preview == "alpha alpha alpha alpha alpha alpha…")
+  #expect((preview?.count ?? 0) <= 40)
+  // One unbroken word is cut mid-word.
+  #expect(
+    AgentSubagentPreview.text(String(repeating: "x", count: 50), limit: 10)
+      == String(repeating: "x", count: 9) + "…")
+  #expect(AgentSubagentPreview.text("short", limit: 10) == "short")
+}
+
+@Test func rowPresentationPreviewsTheSummary() {
+  let run = SubagentRun(
+    subagentId: "alpha", name: "Explore", task: "Look", status: .completed,
+    summary: "Contents verbatim:\n```\nhello\n```")
+  let presentation = AgentSubagentPresentation(
+    AgentSubagentGroup(subagentId: "alpha", run: run, entries: []))
+  #expect(presentation.summary == "hello")
+}
+
+@Test func parentWaitsOnlyOnRunningRowsThatEndTheTranscript() {
+  func awaited(_ messages: [TranscriptMessage]) -> Int {
+    AgentTranscriptGrouping.awaited(AgentTranscriptGrouping.entries(messages))
+  }
+  #expect(awaited([message(1, "delegating"), row(2, "alpha"), row(3, "beta")]) == 2)
+  #expect(
+    awaited([
+      row(2, "alpha"), row(3, "beta", status: .completed), message(4, "x", owner: "beta"),
+    ]) == 1)
+  #expect(awaited([row(2, "alpha", status: .completed)]) == 0)
+  // Once the parent speaks again it is no longer waiting.
+  #expect(awaited([row(2, "alpha"), message(3, "carrying on")]) == 0)
+  #expect(AgentSubagentPresentation.waiting(1) == "Waiting for 1 subagent")
+  #expect(AgentSubagentPresentation.waiting(2) == "Waiting for 2 subagents")
+}

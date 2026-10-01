@@ -48,6 +48,18 @@ public enum AgentTranscriptGrouping {
     return result
   }
 
+  /// How many subagents the parent is waiting on: the running rows that end
+  /// the transcript, before the parent says anything else. Harness "wait"
+  /// calls on subagents fold into this instead of showing as tool rows.
+  public static func awaited(_ entries: [AgentTranscriptEntry]) -> Int {
+    var running = 0
+    for entry in entries.reversed() {
+      guard case .subagent(let group) = entry else { break }
+      if group.run?.status == .running { running += 1 }
+    }
+    return running
+  }
+
   private static func group(
     _ id: String, run: SubagentRun?, owned: [String: [TranscriptMessage]]
   ) -> AgentSubagentGroup {
@@ -90,7 +102,7 @@ public struct AgentSubagentPresentation: Sendable {
     let run = group.run
     name = run?.name ?? "Subagent"
     model = run?.model
-    summary = run?.summary
+    summary = run?.summary.flatMap { AgentSubagentPreview.text($0) }
     switch run?.status {
     case .running:
       status = .running
@@ -113,6 +125,65 @@ public struct AgentSubagentPresentation: Sendable {
     case nil:
       status = .stopped
       trailing = ""
+    }
+  }
+
+  /// The subtle status shown while the parent waits on its subagents.
+  public static func waiting(_ count: Int) -> String {
+    "Waiting for \(count) \(count == 1 ? "subagent" : "subagents")"
+  }
+}
+
+/// The collapsed row's preview of a subagent's last message: its meaningful
+/// content on one line. Lead-in lines ending in ":" ("Contents verbatim:"),
+/// code fences, list markers, and runs of whitespace are dropped; lines are
+/// joined with " · " and the result is cut at a word with an ellipsis.
+public enum AgentSubagentPreview {
+  public static let limit = 160
+
+  public static func text(_ summary: String, limit: Int = limit) -> String? {
+    let lines = summary.split(whereSeparator: \.isNewline).compactMap(line)
+    let content = lines.filter { !$0.hasSuffix(":") }
+    let joined = (content.isEmpty ? lines : content).joined(separator: " · ")
+    return joined.isEmpty ? nil : truncated(joined, limit: limit)
+  }
+
+  private static func line(_ raw: Substring) -> String? {
+    var text = raw.trimmingCharacters(in: .whitespaces)
+    if text.hasPrefix("```") || text.hasPrefix("~~~") { return nil }
+    for marker in ["- ", "* ", "+ ", "• "] where text.hasPrefix(marker) {
+      text.removeFirst(marker.count)
+    }
+    if text.hasPrefix("#") { text = String(text.drop { $0 == "#" }) }
+    let words = text.split(whereSeparator: \.isWhitespace)
+    return words.isEmpty ? nil : words.joined(separator: " ")
+  }
+
+  private static func truncated(_ text: String, limit: Int) -> String {
+    guard text.count > limit else { return text }
+    var cut = String(text.prefix(limit - 1))
+    // Prefer ending at a word unless that drops most of the line.
+    if let space = cut.lastIndex(of: " "), cut.distance(from: cut.startIndex, to: space) > limit / 2
+    {
+      cut = String(cut[..<space])
+    }
+    let trimmed = cut.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
+    return (trimmed.isEmpty ? cut : trimmed) + "…"
+  }
+}
+
+/// The parent's wait on its subagents, folded into one subtle line under them.
+struct AgentSubagentWaitingStatus: View {
+  let entries: [AgentTranscriptEntry]
+  let style: AgentConversationStyle
+
+  var body: some View {
+    let awaited = AgentTranscriptGrouping.awaited(entries)
+    if awaited > 0 {
+      Text(AgentSubagentPresentation.waiting(awaited))
+        .font(style.captionFont).foregroundStyle(style.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("agent-subagent-waiting")
     }
   }
 }

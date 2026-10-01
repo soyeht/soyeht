@@ -244,6 +244,14 @@
     let queued = try await client.readEditorFile(
       fileId: opened.file.fileId, fromLine: 0, lineCount: 1)
     #expect(queued.lines.first?.text == "let value = 4")
+    let undone = try await client.replayEditorHistory(opened.file.fileId, direction: .undo)
+    #expect(undone.applied)
+    #expect(client.editorFiles[opened.file.fileId]?.viewport?.lines.first?.text != "let value = 4")
+    #expect(client.editorNavigationTarget?.position.line == 0)
+    let redone = try await client.replayEditorHistory(opened.file.fileId, direction: .redo)
+    #expect(redone.applied)
+    #expect(redone.cursor?.column == 13)
+    #expect(client.editorFiles[opened.file.fileId]?.viewport?.lines.first?.text == "let value = 4")
     try await until { client.editorFiles[opened.file.fileId]?.file.dirty == false }
     let firstHistory = try await client.editorHistory(opened.file.fileId)
     let savedFour = try #require(firstHistory.items.first)

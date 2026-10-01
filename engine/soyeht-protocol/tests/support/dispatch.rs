@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -83,6 +83,12 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "DeviceListResult" => roundtrip::<DeviceListResult>(value),
         "DeviceRevokeParams" => roundtrip::<DeviceRevokeParams>(value),
         "DeviceRevokeResult" => roundtrip::<DeviceRevokeResult>(value),
+        "PushPlatform" => roundtrip::<PushPlatform>(value),
+        "PushEnvironment" => roundtrip::<PushEnvironment>(value),
+        "PushRegisterParams" => roundtrip::<PushRegisterParams>(value),
+        "PushRegisterResult" => roundtrip::<PushRegisterResult>(value),
+        "PushUnregisterParams" => roundtrip::<PushUnregisterParams>(value),
+        "PushUnregisterResult" => roundtrip::<PushUnregisterResult>(value),
         "PairBeginParams" => roundtrip::<PairBeginParams>(value),
         "PairBeginResult" => roundtrip::<PairBeginResult>(value),
         "PairProveParams" => roundtrip::<PairProveParams>(value),
@@ -364,6 +370,8 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "FileHistoryResult" => roundtrip::<FileHistoryResult>(value),
         "FileRevertParams" => roundtrip::<FileRevertParams>(value),
         "FileRevertResult" => roundtrip::<FileRevertResult>(value),
+        "FileUndoParams" => roundtrip::<FileUndoParams>(value),
+        "FileUndoResult" => roundtrip::<FileUndoResult>(value),
         "FileSearchMatch" => roundtrip::<FileSearchMatch>(value),
         "FileSearchParams" => roundtrip::<FileSearchParams>(value),
         "FileSearchResult" => roundtrip::<FileSearchResult>(value),

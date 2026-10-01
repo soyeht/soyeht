@@ -711,11 +711,8 @@ extension EngineClient {
 
   public func answerPermission(_ request: PermissionRequest, optionId: String) {
     perform {
-      _ = try await self.mutation(
-        "pane.permission.answer",
-        PanePermissionAnswerParams(
-          paneId: request.paneId, requestId: request.requestId, optionId: optionId,
-          idempotencyKey: UUID().uuidString))
+      try await self.answerPermission(
+        paneId: request.paneId, requestId: request.requestId, optionId: optionId)
     }
   }
 
