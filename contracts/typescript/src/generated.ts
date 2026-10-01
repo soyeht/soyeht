@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
+// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -687,7 +687,7 @@ export type PromptStatus = "queued" | "active" | "completed" | "cancelled";
 
 export type TranscriptRole = "user" | "assistant" | "system";
 
-export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system" | "handover";
+export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system" | "handover" | "subagent";
 
 export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always";
 
@@ -934,6 +934,19 @@ export interface TerminalOutput {
   "exitCode"?: number;
 }
 
+export type SubagentStatus = "running" | "completed" | "failed" | "cancelled" | "disconnected";
+
+export interface SubagentRun {
+  "subagentId": Id;
+  "name": string;
+  "task": string;
+  "status": SubagentStatus;
+  "model"?: string;
+  "startedAt"?: string;
+  "finishedAt"?: string;
+  "summary"?: string;
+}
+
 export interface TranscriptMessage {
   "localId": Id;
   "generation": number;
@@ -948,6 +961,8 @@ export interface TranscriptMessage {
   "plan"?: Array<PlanEntry>;
   "usage"?: TokenUsage;
   "agentMessage"?: AgentMessageSource;
+  "subagent"?: SubagentRun;
+  "subagentId"?: Id;
 }
 
 export interface AttachmentRef {
@@ -1319,6 +1334,7 @@ export interface AgentMessageUpdate {
   "localId": Id;
   "text": string;
   "complete": boolean;
+  "subagentId"?: Id;
 }
 
 export type AgentThoughtUpdateKind = "agent_thought_chunk";
@@ -1333,6 +1349,7 @@ export interface AgentThoughtUpdate {
   "localId": Id;
   "text": string;
   "complete": boolean;
+  "subagentId"?: Id;
 }
 
 export type ToolCallUpdateKind = "tool_call";
@@ -1346,6 +1363,7 @@ export interface ToolCallUpdate {
   "seq": Decimal;
   "localId": Id;
   "tool": ToolCall;
+  "subagentId"?: Id;
 }
 
 export type ToolProgressUpdateKind = "tool_call_update";
@@ -1359,6 +1377,7 @@ export interface ToolProgressUpdate {
   "seq": Decimal;
   "localId": Id;
   "tool": ToolCall;
+  "subagentId"?: Id;
 }
 
 export type PlanUpdateKind = "plan";
@@ -1372,6 +1391,21 @@ export interface PlanUpdate {
   "seq": Decimal;
   "localId": Id;
   "entries": Array<PlanEntry>;
+  "subagentId"?: Id;
+}
+
+export type SubagentUpdateKind = "subagent";
+
+export interface SubagentUpdate {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+  "kind": SubagentUpdateKind;
+  "generation": number;
+  "seq": Decimal;
+  "localId": Id;
+  "subagent": SubagentRun;
+  "subagentId"?: Id;
 }
 
 export type UsageUpdateKind = "usage";
@@ -1416,7 +1450,7 @@ export interface ConfigOptionUpdate {
   "options": Array<ConfigOption>;
 }
 
-export type PaneUpdateEvent = AgentMessageUpdate | AgentThoughtUpdate | ToolCallUpdate | ToolProgressUpdate | PlanUpdate | UsageUpdate | TerminalOutputUpdate | ConfigOptionUpdate;
+export type PaneUpdateEvent = AgentMessageUpdate | AgentThoughtUpdate | ToolCallUpdate | ToolProgressUpdate | PlanUpdate | UsageUpdate | TerminalOutputUpdate | ConfigOptionUpdate | SubagentUpdate;
 
 export interface AttentionItem {
   "attentionId": Id;

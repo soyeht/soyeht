@@ -5,11 +5,21 @@ Build the Rust workspace, then run `python3 scripts/e2e_agents.py --report
 shell acceptances. The retained workflow has the same step; hosted Actions
 remains disabled by project decision.
 
-The suite copies the four built executables into a disposable directory and
-loads uniquely named engine and supervisor jobs into launchd. It never uses an
-installed profile or an authenticated provider. Its only peer is the deterministic
-native test process. Cleanup closes the supervised processes and removes the jobs
-and directory, including after a failed assertion.
+The suite copies the four built executables into one directory per checkout
+under `~/Library/Caches/soyeht-e2e/`, replacing a file only when the build
+changed it, and loads uniquely named engine and supervisor jobs into launchd
+with a disposable data directory. It never uses an installed profile or an
+authenticated provider. Its only peer is the deterministic native test process.
+Cleanup closes the supervised processes and removes the jobs and data
+directory, including after a failed assertion.
+
+macOS privacy (TCC) remembers every executable path that asks for a protected
+resource, so a fresh copy per run, or a copy inside a checkout under Documents,
+would add a record each run. The local gate therefore runs
+`scripts/tcc_guard.py` around the acceptances: it fails if the user's TCC
+database gains or changes a record for those executables, or if the log shows
+a privacy prompt or record for them. It only reads, and skips a source it
+cannot read (for example without Full Disk Access) with a message.
 
 The ten results cover streamed updates to two protocol clients and paginated
 history; first-response permission handling and expiry; healthy cancellation;
@@ -43,7 +53,13 @@ not failed; `--harness claude` or `--harness codex` selects one, and
 `--model codex=MODEL` starts a harness on another announced model when the
 account cannot use the configured one. The shell command writes outside the
 workspace and temporary directories, because Codex's "Ask for approval" preset
-writes inside them without asking. It removes its
+writes inside them without asking. The adapters start their CLIs without the
+person's own extensions: Claude Code with `--strict-mcp-config` and project
+settings that disable hooks and user plugins, Codex with every configured MCP
+server and the apps, browser, computer-use, hooks and plugins features turned
+off. Those extensions often run from other apps' bundles or protected folders,
+and under the disposable supervisor they would trigger privacy prompts that
+name it. Only the engine's own MCP server remains. It removes its
 services, files and adapter installations afterward. The command never runs in the
 normal merge gate unless `SOYEHT_REAL_ACP=1` is explicitly present. It does not
 replace the physical iPhone procedure.
@@ -56,7 +72,8 @@ SOYEHT_REAL_ACP=1 python3 scripts/e2e_real_agent_messaging.py \
 ```
 
 It opens a Claude Code pane and a Codex pane from the pinned registry adapters,
-with the same service environment as the installed profile. Claude finds Codex
+installed and started the same way as above, in the disposable service
+environment (not the login shell's `PATH`, which may list protected folders). Claude finds Codex
 with `list_agents` and pings it with `message_agent`; Codex replies the same way.
 Each side must receive the other's message as a separate turn attributed by name.
 It then holds a draft in the Codex pane, has Claude send again, proves the message

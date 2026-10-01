@@ -185,11 +185,13 @@ pub enum Update {
     Usage(Value),
     Configuration(Options),
     Mode(String),
+    Subagent(crate::subagents::Lifecycle),
 }
 
 /// Session identity is checked before any update can change the owning pane.
-pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, Error> {
-    if params["sessionId"].as_str() != Some(expected_session) {
+/// `owns` accepts the pane's session and the subagent sessions it reported.
+pub fn update(owns: impl Fn(&str) -> bool, params: &Value) -> Result<Option<Update>, Error> {
+    if !params["sessionId"].as_str().is_some_and(owns) {
         return Err(Error::WrongSession);
     }
     let value = &params["update"];
@@ -239,6 +241,8 @@ pub fn update(expected_session: &str, params: &Value) -> Result<Option<Update>, 
                 .ok_or(Error::MissingModeId)?
                 .into(),
         ),
+        "subagent_spawned" => Update::Subagent(crate::subagents::spawned(value)?),
+        "subagent_state_update" => Update::Subagent(crate::subagents::finished(value)?),
         _ => return Ok(None),
     }))
 }
@@ -339,14 +343,14 @@ mod tests {
     #[test]
     fn updates_cannot_cross_session_boundaries() {
         let params = json!({"sessionId":"one","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hello"}}});
-        assert!(update("two", &params).is_err());
+        assert!(update(|id| id == "two", &params).is_err());
         assert!(matches!(
-            update("one", &params).unwrap(),
+            update(|id| id == "one", &params).unwrap(),
             Some(Update::Message { thought: false, .. })
         ));
         assert!(
             update(
-                "one",
+                |id| id == "one",
                 &json!({"sessionId":"one","update":{"sessionUpdate":"_future"}})
             )
             .unwrap()
@@ -358,7 +362,7 @@ mod tests {
     fn message_identity_survives_acp_update_parsing() {
         let params = json!({"sessionId":"one","update":{"sessionUpdate":"agent_message_chunk","messageId":"first","content":{"type":"text","text":"One"}}});
         assert!(matches!(
-            update("one", &params).unwrap(),
+            update(|id| id == "one", &params).unwrap(),
             Some(Update::Message { message_id: Some(id), .. }) if id == "first"
         ));
     }

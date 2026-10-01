@@ -2,6 +2,7 @@
 """Run the six slice-one acceptances with isolated services under launchd."""
 import argparse
 import base64
+import hashlib
 import json
 import os
 import plistlib
@@ -9,6 +10,7 @@ import shutil
 import socket
 import struct
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -20,6 +22,7 @@ from generated_profile import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+PRODUCT_EXECUTABLES = ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")
 
 
 def require(condition, message):
@@ -143,6 +146,35 @@ class Client:
                 return info, bytes(tail), gaps
 
 
+def programs_directory():
+    """One executable directory per checkout, outside every privacy-protected folder.
+
+    macOS privacy (TCC) records each executable path that asks for a protected
+    resource. A fresh copy per run would add a new record every run, and a copy
+    inside the checkout would itself sit in Documents when the checkout does.
+    Runs stay isolated: each has its own data directory, sockets and launchd
+    labels, and only these read-only executables are shared.
+    """
+    checkout = hashlib.sha256(str(ROOT).encode()).hexdigest()[:16]
+    return Path.home() / "Library/Caches/soyeht-e2e" / checkout / "bin"
+
+
+def stage_programs(binaries):
+    directory = programs_directory()
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for name in PRODUCT_EXECUTABLES:
+        source, target = binaries / name, directory / name
+        content = source.read_bytes()
+        if target.is_file() and target.read_bytes() == content:
+            continue
+        # Replace by rename: a concurrent run keeps executing the old file.
+        with tempfile.NamedTemporaryFile(dir=directory, prefix=f".{name}.", delete=False) as staged:
+            staged.write(content)
+        os.chmod(staged.name, 0o700)
+        os.replace(staged.name, target)
+    return directory
+
+
 class Services:
     def __init__(self, binaries):
         identity = str(uuid.uuid4())
@@ -153,13 +185,13 @@ class Services:
         shell_config=self.data/"shell-config"
         shell_config.mkdir(mode=0o700)
         (shell_config/".zshrc").write_text("PROMPT='E2E_READY> '\nRPROMPT=''\nHISTFILE=''\nSAVEHIST=0\n")
+        # Per-run fakes and PATH entries; the product executables live in
+        # `self.programs`, which is stable for this checkout.
         self.binaries=self.data / "bin"
         self.binaries.mkdir(mode=0o700)
-        for name in ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd"):
-            shutil.copy2(binaries/name,self.binaries/name)
-            (self.binaries/name).chmod(0o700)
+        self.programs = stage_programs(binaries)
         self.ptyd_version = int(subprocess.check_output(
-            [str(self.binaries / "soyeht-ptyd"), "--protocol-version"], text=True))
+            [str(self.programs / "soyeht-ptyd"), "--protocol-version"], text=True))
         self.prefix = f"{DEV_LAUNCHD_PREFIX}.e2e.{identity}"
         self.attempted = set()
         self.clients = []
@@ -172,7 +204,7 @@ class Services:
             source = ROOT / f"engine/soyeht-{component}/launchd/dev.plist"
             values = plistlib.loads(source.read_bytes())
             values["Label"] = f"{self.prefix}.{component}"
-            values["ProgramArguments"] = [str(self.binaries / f"soyeht-{component}"), "--data-dir", str(self.data)]
+            values["ProgramArguments"] = [str(self.programs / f"soyeht-{component}"), "--data-dir", str(self.data)]
             if component == "engine":
                 values["ProgramArguments"].extend(["--listen", "127.0.0.1:0"])
             values["EnvironmentVariables"] = {"HOME": str(Path.home()), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin","ZDOTDIR":str(shell_config)}
@@ -223,7 +255,7 @@ class Services:
             time.sleep(0.05)
 
     def cli(self, *args):
-        output = subprocess.run([str(self.binaries / "soyeht"), "--profile", "dev", "--data-dir",
+        output = subprocess.run([str(self.programs / "soyeht"), "--profile", "dev", "--data-dir",
                                  str(self.data), *args], cwd=self.data, capture_output=True, check=True)
         return json.loads(output.stdout)
 
@@ -361,7 +393,7 @@ def main():
     args = parser.parse_args()
     binaries = args.bin_dir.resolve()
     require(all((binaries / name).is_file() for name in
-                ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")),
+                PRODUCT_EXECUTABLES),
             "build workspace binaries before running acceptances")
     services = Services(binaries)
     started = time.monotonic()

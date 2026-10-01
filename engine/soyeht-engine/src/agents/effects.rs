@@ -57,7 +57,7 @@ impl Core {
             let root = Path::new(&saved.pane.cwd);
             let mut editor_write = None;
             let result = if request.generation != saved.pane.generation
-                || request.params["sessionId"].as_str() != state.session_id.as_deref()
+                || !state.owns_session(request.params["sessionId"].as_str())
             {
                 Err(failure("Native effect belongs to another session"))
             } else if let Some(path) = request.params["path"].as_str() {
@@ -217,7 +217,7 @@ pub fn receive(
 }
 
 pub fn require_session(state: &super::state::State, params: &Value) -> Result<()> {
-    if state.session_id.is_none() || params["sessionId"].as_str() != state.session_id.as_deref() {
+    if !state.owns_session(params["sessionId"].as_str()) {
         return Err(errors::invalid("Native effect belongs to another session"));
     }
     Ok(())

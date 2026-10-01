@@ -22,6 +22,7 @@ pub mod recovery;
 pub mod registry;
 pub mod responses;
 pub mod state;
+pub mod subagents;
 pub mod switching;
 pub mod terminals;
 pub mod transcript;

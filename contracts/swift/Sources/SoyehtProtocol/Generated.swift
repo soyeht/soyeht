@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
+// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
 import Foundation
 
 
@@ -1392,6 +1392,7 @@ public enum TranscriptKind: String, Codable, Sendable {
     case `usage` = "usage"
     case `system` = "system"
     case `handover` = "handover"
+    case `subagent` = "subagent"
 }
 
 public enum PermissionOptionKind: String, Codable, Sendable {
@@ -1892,6 +1893,35 @@ public struct TerminalOutput: Codable, Sendable {
     }
 }
 
+public enum SubagentStatus: String, Codable, Sendable {
+    case `running` = "running"
+    case `completed` = "completed"
+    case `failed` = "failed"
+    case `cancelled` = "cancelled"
+    case `disconnected` = "disconnected"
+}
+
+public struct SubagentRun: Codable, Sendable {
+    public var `subagentId`: Id
+    public var `name`: String
+    public var `task`: String
+    public var `status`: SubagentStatus
+    public var `model`: String?
+    public var `startedAt`: String?
+    public var `finishedAt`: String?
+    public var `summary`: String?
+    public init(`subagentId`: Id, `name`: String, `task`: String, `status`: SubagentStatus, `model`: String? = nil, `startedAt`: String? = nil, `finishedAt`: String? = nil, `summary`: String? = nil) {
+        self.`subagentId` = `subagentId`
+        self.`name` = `name`
+        self.`task` = `task`
+        self.`status` = `status`
+        self.`model` = `model`
+        self.`startedAt` = `startedAt`
+        self.`finishedAt` = `finishedAt`
+        self.`summary` = `summary`
+    }
+}
+
 public struct TranscriptMessage: Codable, Sendable {
     public var `localId`: Id
     public var `generation`: UInt32
@@ -1906,7 +1936,9 @@ public struct TranscriptMessage: Codable, Sendable {
     public var `plan`: [PlanEntry]?
     public var `usage`: TokenUsage?
     public var `agentMessage`: AgentMessageSource?
-    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil) {
+    public var `subagent`: SubagentRun?
+    public var `subagentId`: Id?
+    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil, `subagent`: SubagentRun? = nil, `subagentId`: Id? = nil) {
         self.`localId` = `localId`
         self.`generation` = `generation`
         self.`seq` = `seq`
@@ -1920,6 +1952,8 @@ public struct TranscriptMessage: Codable, Sendable {
         self.`plan` = `plan`
         self.`usage` = `usage`
         self.`agentMessage` = `agentMessage`
+        self.`subagent` = `subagent`
+        self.`subagentId` = `subagentId`
     }
 }
 
@@ -2602,7 +2636,8 @@ public struct AgentMessageUpdate: Codable, Sendable {
     public var `localId`: Id
     public var `text`: String
     public var `complete`: Bool
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: AgentMessageUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool) {
+    public var `subagentId`: Id?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: AgentMessageUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2612,6 +2647,7 @@ public struct AgentMessageUpdate: Codable, Sendable {
         self.`localId` = `localId`
         self.`text` = `text`
         self.`complete` = `complete`
+        self.`subagentId` = `subagentId`
     }
 }
 
@@ -2629,7 +2665,8 @@ public struct AgentThoughtUpdate: Codable, Sendable {
     public var `localId`: Id
     public var `text`: String
     public var `complete`: Bool
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: AgentThoughtUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool) {
+    public var `subagentId`: Id?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: AgentThoughtUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2639,6 +2676,7 @@ public struct AgentThoughtUpdate: Codable, Sendable {
         self.`localId` = `localId`
         self.`text` = `text`
         self.`complete` = `complete`
+        self.`subagentId` = `subagentId`
     }
 }
 
@@ -2655,7 +2693,8 @@ public struct ToolCallUpdate: Codable, Sendable {
     public var `seq`: Decimal
     public var `localId`: Id
     public var `tool`: ToolCall
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: ToolCallUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall) {
+    public var `subagentId`: Id?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: ToolCallUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2664,6 +2703,7 @@ public struct ToolCallUpdate: Codable, Sendable {
         self.`seq` = `seq`
         self.`localId` = `localId`
         self.`tool` = `tool`
+        self.`subagentId` = `subagentId`
     }
 }
 
@@ -2680,7 +2720,8 @@ public struct ToolProgressUpdate: Codable, Sendable {
     public var `seq`: Decimal
     public var `localId`: Id
     public var `tool`: ToolCall
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: ToolProgressUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall) {
+    public var `subagentId`: Id?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: ToolProgressUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2689,6 +2730,7 @@ public struct ToolProgressUpdate: Codable, Sendable {
         self.`seq` = `seq`
         self.`localId` = `localId`
         self.`tool` = `tool`
+        self.`subagentId` = `subagentId`
     }
 }
 
@@ -2705,7 +2747,8 @@ public struct PlanUpdate: Codable, Sendable {
     public var `seq`: Decimal
     public var `localId`: Id
     public var `entries`: [PlanEntry]
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: PlanUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `entries`: [PlanEntry]) {
+    public var `subagentId`: Id?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: PlanUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `entries`: [PlanEntry], `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -2714,6 +2757,34 @@ public struct PlanUpdate: Codable, Sendable {
         self.`seq` = `seq`
         self.`localId` = `localId`
         self.`entries` = `entries`
+        self.`subagentId` = `subagentId`
+    }
+}
+
+public enum SubagentUpdateKind: String, Codable, Sendable {
+    case `subagent` = "subagent"
+}
+
+public struct SubagentUpdate: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public var `kind`: SubagentUpdateKind
+    public var `generation`: UInt32
+    public var `seq`: Decimal
+    public var `localId`: Id
+    public var `subagent`: SubagentRun
+    public var `subagentId`: Id?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: SubagentUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `subagent`: SubagentRun, `subagentId`: Id? = nil) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+        self.`kind` = `kind`
+        self.`generation` = `generation`
+        self.`seq` = `seq`
+        self.`localId` = `localId`
+        self.`subagent` = `subagent`
+        self.`subagentId` = `subagentId`
     }
 }
 
@@ -2807,6 +2878,7 @@ public enum PaneUpdateEvent: Codable, Sendable {
     case v5(UsageUpdate)
     case v6(TerminalOutputUpdate)
     case v7(ConfigOptionUpdate)
+    case v8(SubagentUpdate)
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         if let value = try? container.decode(AgentMessageUpdate.self) { self = .v0(value); return }
@@ -2817,6 +2889,7 @@ public enum PaneUpdateEvent: Codable, Sendable {
         if let value = try? container.decode(UsageUpdate.self) { self = .v5(value); return }
         if let value = try? container.decode(TerminalOutputUpdate.self) { self = .v6(value); return }
         if let value = try? container.decode(ConfigOptionUpdate.self) { self = .v7(value); return }
+        if let value = try? container.decode(SubagentUpdate.self) { self = .v8(value); return }
         throw DecodingError.dataCorruptedError(in: container, debugDescription: "No matching PaneUpdateEvent variant")
     }
     public func encode(to encoder: any Encoder) throws {
@@ -2830,6 +2903,7 @@ public enum PaneUpdateEvent: Codable, Sendable {
         case .v5(let value): try container.encode(value)
         case .v6(let value): try container.encode(value)
         case .v7(let value): try container.encode(value)
+        case .v8(let value): try container.encode(value)
         }
     }
 }

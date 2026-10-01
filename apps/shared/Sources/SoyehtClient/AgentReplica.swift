@@ -386,14 +386,15 @@ extension EngineClient {
           localId: value.localId, generation: value.generation, seq: value.seq,
           role: value.kind == .system_message ? .system : .assistant,
           kind: value.kind == .system_message ? .system : .message,
-          text: value.text, complete: value.complete)
+          text: value.text, complete: value.complete, subagentId: value.subagentId)
       )
     case .v1(let value):
       return (
         value.paneId,
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .thought, text: value.text, complete: value.complete)
+          role: .assistant, kind: .thought, text: value.text, complete: value.complete,
+          subagentId: value.subagentId)
       )
     case .v2(let value):
       return (
@@ -401,7 +402,7 @@ extension EngineClient {
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
           role: .assistant, kind: .tool, text: "", complete: value.tool.status == .completed,
-          tool: value.tool)
+          tool: value.tool, subagentId: value.subagentId)
       )
     case .v3(let value):
       return (
@@ -409,14 +410,16 @@ extension EngineClient {
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
           role: .assistant, kind: .tool, text: "",
-          complete: [.completed, .failed].contains(value.tool.status), tool: value.tool)
+          complete: [.completed, .failed].contains(value.tool.status), tool: value.tool,
+          subagentId: value.subagentId)
       )
     case .v4(let value):
       return (
         value.paneId,
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .plan, text: "", complete: true, plan: value.entries)
+          role: .assistant, kind: .plan, text: "", complete: true, plan: value.entries,
+          subagentId: value.subagentId)
       )
     case .v5(let value):
       return (
@@ -441,6 +444,15 @@ extension EngineClient {
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
           role: .system, kind: .system, text: "Agent configuration changed", complete: true)
+      )
+    case .v8(let value):
+      return (
+        value.paneId,
+        TranscriptMessage(
+          localId: value.localId, generation: value.generation, seq: value.seq,
+          role: .assistant, kind: .subagent, text: "",
+          complete: value.subagent.status != .running, subagent: value.subagent,
+          subagentId: value.subagentId)
       )
     }
   }
