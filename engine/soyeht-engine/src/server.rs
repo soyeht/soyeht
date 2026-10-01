@@ -36,10 +36,7 @@ struct CatalogJob {
     params: Value,
     request_id: Value,
     outbox: Outbox,
-    connection: String,
-    operation_id: String,
-    pane_id: Option<String>,
-    started: Instant,
+    operation: OperationTimer,
 }
 
 fn coalesce_catalog_jobs(
@@ -392,8 +389,6 @@ async fn read_requests(
             }
             continue;
         }
-        let started = Instant::now();
-        let operation_id = uuid::Uuid::new_v4().to_string();
         let method = request["method"]
             .as_str()
             .and_then(|name| {
@@ -404,6 +399,7 @@ async fn read_requests(
             })
             .unwrap_or("unknown");
         let pane_id = operation_pane_id(method, &request).map(str::to_owned);
+        let operation = OperationTimer::start(id, method, pane_id);
         let request_id = request["id"].clone();
         let failed_handshake = request["method"] == "hello";
         let shared = Arc::clone(&core);
@@ -423,15 +419,14 @@ async fn read_requests(
                     params,
                     request_id,
                     outbox: outbox.clone(),
-                    connection: id.to_owned(),
-                    operation_id,
-                    pane_id,
-                    started,
+                    operation,
                 };
                 if let Err(error) = catalog_tx.try_send(job) {
                     match error {
                         mpsc::error::TrySendError::Full(job) => {
                             let failure = errors::slow_consumer("Catalogue queue is full; retry");
+                            job.operation
+                                .finish_status("error", Some(&errors::kind(&failure)));
                             let Ok(frame) = model::failure(job.request_id, errors::wire(failure))
                             else {
                                 return CloseReason::WorkerFailed;
@@ -440,21 +435,17 @@ async fn read_requests(
                                 return outbox.close_reason().unwrap_or(CloseReason::WriterStopped);
                             }
                         }
-                        mpsc::error::TrySendError::Closed(_) => return CloseReason::WorkerFailed,
+                        mpsc::error::TrySendError::Closed(job) => {
+                            job.operation.finish_status("worker_failed", None);
+                            return CloseReason::WorkerFailed;
+                        }
                     }
                 }
                 continue;
             }
             other => other,
         };
-        log_operation(
-            &operation_id,
-            id,
-            method,
-            pane_id.as_deref(),
-            &outcome,
-            started.elapsed().as_millis(),
-        );
+        operation.finish(&outcome);
         if let Err(reason) = send_outcome(outbox, request_id, failed_handshake, outcome).await {
             return reason;
         }
@@ -548,18 +539,7 @@ async fn catalog_worker(core: Shared, mut rx: mpsc::Receiver<CatalogJob>) {
             Err(error) => (None, Some(errors::wire(error))),
         };
         for recipient in recipients {
-            eprintln!(
-                "{}",
-                operation_record(
-                    &recipient.operation_id,
-                    &recipient.connection,
-                    &recipient.method,
-                    recipient.pane_id.as_deref(),
-                    status,
-                    kind.as_ref(),
-                    recipient.started.elapsed().as_millis(),
-                )
-            );
+            recipient.operation.finish_status(status, kind.as_ref());
             if recipient.outbox.is_closed() {
                 continue;
             }
@@ -676,15 +656,111 @@ fn send_attachment_response(
     Ok(())
 }
 
-fn log_operation(
-    operation: &str,
-    connection: &str,
-    method: &str,
-    pane_id: Option<&str>,
-    outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+struct OperationTiming {
+    started_at: chrono::DateTime<chrono::Utc>,
+    finished_at: chrono::DateTime<chrono::Utc>,
     duration_ms: u128,
-) {
-    let (status, kind) = match outcome {
+}
+
+struct OperationTimer {
+    operation_id: String,
+    connection_id: String,
+    method: &'static str,
+    pane_id: Option<String>,
+    started_at: chrono::DateTime<chrono::Utc>,
+    started: Instant,
+}
+
+impl OperationTimer {
+    fn start(connection: &str, method: &'static str, pane_id: Option<String>) -> Self {
+        Self::start_with(
+            connection,
+            method,
+            pane_id,
+            chrono::Utc::now(),
+            Instant::now(),
+            emit_operation_record,
+        )
+    }
+
+    fn start_with(
+        connection: &str,
+        method: &'static str,
+        pane_id: Option<String>,
+        started_at: chrono::DateTime<chrono::Utc>,
+        started: Instant,
+        emit: impl FnOnce(Value),
+    ) -> Self {
+        let timer = Self {
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            connection_id: connection.to_owned(),
+            method,
+            pane_id,
+            started_at,
+            started,
+        };
+        emit(timer.started_record());
+        timer
+    }
+
+    fn started_record(&self) -> Value {
+        operation_started_record(
+            &self.operation_id,
+            &self.connection_id,
+            self.method,
+            self.pane_id.as_deref(),
+            self.started_at,
+        )
+    }
+
+    fn finish(
+        self,
+        outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+    ) {
+        let (status, kind) = operation_status(outcome);
+        self.finish_status(status, kind.as_ref());
+    }
+
+    fn finish_status(self, status: &str, kind: Option<&soyeht_protocol::ErrorKind>) {
+        let finished_at = chrono::Utc::now();
+        let duration_ms = self.started.elapsed().as_millis();
+        self.finish_with(
+            status,
+            kind,
+            finished_at,
+            duration_ms,
+            emit_operation_record,
+        );
+    }
+
+    fn finish_with(
+        self,
+        status: &str,
+        kind: Option<&soyeht_protocol::ErrorKind>,
+        finished_at: chrono::DateTime<chrono::Utc>,
+        duration_ms: u128,
+        emit: impl FnOnce(Value),
+    ) {
+        emit(operation_record(
+            &self.operation_id,
+            &self.connection_id,
+            self.method,
+            self.pane_id.as_deref(),
+            status,
+            kind,
+            &OperationTiming {
+                started_at: self.started_at,
+                finished_at,
+                duration_ms,
+            },
+        ));
+    }
+}
+
+fn operation_status(
+    outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+) -> (&'static str, Option<soyeht_protocol::ErrorKind>) {
+    match outcome {
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
         Ok(Ok(Outcome::WritingSectionList(_))) => ("worker_failed", None),
         Ok(Ok(Outcome::Catalog { .. })) => ("worker_failed", None),
@@ -693,19 +769,36 @@ fn log_operation(
         Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
         Ok(Err(error)) => ("error", Some(errors::kind(error))),
         Err(_) => ("worker_failed", None),
-    };
-    eprintln!(
-        "{}",
-        operation_record(
-            operation,
-            connection,
-            method,
-            pane_id,
-            status,
-            kind.as_ref(),
-            duration_ms,
-        )
-    );
+    }
+}
+
+fn emit_operation_record(record: Value) {
+    eprintln!("{record}");
+}
+
+fn logged_method(method: &str) -> &'static str {
+    soyeht_protocol::METHODS
+        .iter()
+        .find(|entry| entry.0 == method)
+        .map(|entry| entry.0)
+        .unwrap_or("unknown")
+}
+
+fn operation_started_record(
+    operation: &str,
+    connection: &str,
+    method: &str,
+    pane_id: Option<&str>,
+    started_at: chrono::DateTime<chrono::Utc>,
+) -> Value {
+    serde_json::json!({
+        "event": "engine.operation_started",
+        "operationId": operation,
+        "connectionId": connection,
+        "method": logged_method(method),
+        "paneId": pane_id,
+        "startedAt": started_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    })
 }
 
 fn connection_close_record(connection: &str, local: bool, reason: CloseReason) -> Value {
@@ -724,24 +817,21 @@ fn operation_record(
     pane_id: Option<&str>,
     outcome: &str,
     kind: Option<&soyeht_protocol::ErrorKind>,
-    duration_ms: u128,
+    timing: &OperationTiming,
 ) -> Value {
     // Only an allowlisted method name is retained. Request IDs and parameters
     // may contain credentials or terminal bytes and never enter this record.
-    let method = soyeht_protocol::METHODS
-        .iter()
-        .find(|entry| entry.0 == method)
-        .map(|entry| entry.0)
-        .unwrap_or("unknown");
     serde_json::json!({
         "event": "engine.operation",
         "operationId": operation,
         "connectionId": connection,
-        "method": method,
+        "method": logged_method(method),
         "paneId": pane_id,
         "outcome": outcome,
         "kind": kind,
-        "durationMs": duration_ms,
+        "startedAt": timing.started_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "finishedAt": timing.finished_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "durationMs": timing.duration_ms,
     })
 }
 
@@ -767,10 +857,14 @@ mod tests {
                 params,
                 request_id: serde_json::json!(request_id),
                 outbox: outbox::channel().0,
-                connection: "test".into(),
-                operation_id: "test".into(),
-                pane_id: None,
-                started: Instant::now(),
+                operation: OperationTimer::start_with(
+                    "test",
+                    logged_method(method),
+                    None,
+                    chrono::Utc::now(),
+                    Instant::now(),
+                    |_| {},
+                ),
             }
         }
         let scan = serde_json::json!({"rescan":true,"limit":64});
@@ -873,10 +967,21 @@ mod tests {
         ));
     }
 
+    fn timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(value)
+            .expect("valid test timestamp")
+            .with_timezone(&chrono::Utc)
+    }
+
     #[test]
     fn operation_log_keeps_identity_but_never_unknown_method_text() {
         let operation = uuid::Uuid::new_v4().to_string();
         let connection = uuid::Uuid::new_v4().to_string();
+        let timing = OperationTiming {
+            started_at: timestamp("2026-09-17T10:00:00.123Z"),
+            finished_at: timestamp("2026-09-17T10:00:00.135Z"),
+            duration_ms: 12,
+        };
         let record = operation_record(
             &operation,
             &connection,
@@ -884,13 +989,26 @@ mod tests {
             None,
             "error",
             Some(&soyeht_protocol::ErrorKind::InvalidParams),
-            12,
+            &timing,
         );
         assert_eq!(record["operationId"], operation);
         assert_eq!(record["connectionId"], connection);
         assert_eq!(record["method"], "unknown");
         assert_eq!(record["kind"], "invalid_params");
+        assert_eq!(record["startedAt"], "2026-09-17T10:00:00.123Z");
+        assert_eq!(record["finishedAt"], "2026-09-17T10:00:00.135Z");
+        assert_eq!(record["durationMs"], 12);
         assert!(!record.to_string().contains("untrusted-private-text"));
+        let started = operation_started_record(
+            &operation,
+            &connection,
+            "untrusted-private-text",
+            None,
+            timing.started_at,
+        );
+        assert_eq!(started["event"], "engine.operation_started");
+        assert_eq!(started["method"], "unknown");
+        assert!(!started.to_string().contains("untrusted-private-text"));
         let success = operation_record(
             &operation,
             &connection,
@@ -898,10 +1016,73 @@ mod tests {
             None,
             "reply",
             None,
-            1,
+            &timing,
         );
         assert_eq!(success["method"], "pane.create");
         assert!(success["kind"].is_null());
+    }
+
+    #[test]
+    fn operation_start_is_durable_without_a_finish_and_correlates_when_finished() {
+        let started_at = timestamp("2026-09-17T10:00:00.123Z");
+        let mut open_records = Vec::new();
+        let open = OperationTimer::start_with(
+            "connection-open",
+            "model.list",
+            None,
+            started_at,
+            Instant::now(),
+            |record| open_records.push(record),
+        );
+        let open_id = open.operation_id.clone();
+        drop(open);
+
+        assert_eq!(open_records.len(), 1);
+        assert_eq!(open_records[0]["event"], "engine.operation_started");
+        assert_eq!(open_records[0]["operationId"], open_id);
+        assert_eq!(open_records[0]["connectionId"], "connection-open");
+        assert_eq!(open_records[0]["method"], "model.list");
+        assert_eq!(open_records[0]["startedAt"], "2026-09-17T10:00:00.123Z");
+        assert!(open_records[0].get("finishedAt").is_none());
+        assert!(open_records[0].get("durationMs").is_none());
+        assert!(open_records[0].get("outcome").is_none());
+
+        let mut completed_records = Vec::new();
+        let completed = OperationTimer::start_with(
+            "connection-finished",
+            "harness.list",
+            None,
+            started_at,
+            Instant::now(),
+            |record| completed_records.push(record),
+        );
+        let completed_id = completed.operation_id.clone();
+        let outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError> =
+            Ok(Ok(Outcome::Reply(serde_json::json!({}))));
+        let (status, kind) = operation_status(&outcome);
+        completed.finish_with(
+            status,
+            kind.as_ref(),
+            timestamp("2026-09-17T10:00:00.135Z"),
+            12,
+            |record| completed_records.push(record),
+        );
+
+        assert_eq!(completed_records.len(), 2);
+        assert_eq!(completed_records[0]["event"], "engine.operation_started");
+        assert_eq!(completed_records[1]["event"], "engine.operation");
+        assert_eq!(completed_records[0]["operationId"], completed_id);
+        assert_eq!(completed_records[1]["operationId"], completed_id);
+        assert_eq!(completed_records[0]["connectionId"], "connection-finished");
+        assert_eq!(completed_records[1]["connectionId"], "connection-finished");
+        assert_eq!(completed_records[0]["method"], "harness.list");
+        assert_eq!(completed_records[1]["method"], "harness.list");
+        assert_eq!(
+            completed_records[1]["finishedAt"],
+            "2026-09-17T10:00:00.135Z"
+        );
+        assert_eq!(completed_records[1]["durationMs"], 12);
+        assert_eq!(completed_records[1]["outcome"], "reply");
     }
     #[test]
     fn operation_log_adds_only_a_validated_pane_route() {
@@ -912,6 +1093,11 @@ mod tests {
             "params": {"paneId":pane_id,"capability":secret},
         });
         let routed = operation_pane_id("pane.stream.subscribe", &request);
+        let timing = OperationTiming {
+            started_at: timestamp("2026-09-17T10:00:01.000Z"),
+            finished_at: timestamp("2026-09-17T10:00:01.002Z"),
+            duration_ms: 2,
+        };
         let record = operation_record(
             "operation",
             "connection",
@@ -919,7 +1105,7 @@ mod tests {
             routed,
             "queued",
             None,
-            2,
+            &timing,
         );
         assert_eq!(record["paneId"], pane_id);
         assert!(!record.to_string().contains(secret));
