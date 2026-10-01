@@ -660,7 +660,7 @@ struct WorkspaceWindow: View {
   private func layoutSnapshot(_ workspaceId: String) throws -> PaneLayoutReconciliation {
     try client.paneLayouts.reconciledPresentation(
       for: workspaceId,
-      livePanes: client.panes.filter { $0.workspaceId == workspaceId },
+      livePanes: client.layoutPanes(client.panes.filter { $0.workspaceId == workspaceId }),
       sizing: MacPaneLayoutMetrics.sizing)
   }
   private func newPanePlaceholderId() -> String {
@@ -1635,7 +1635,7 @@ struct PaneGrid: View {
     else { return nil }
     do {
       let reconciliation = try client.paneLayouts.reconciledPresentation(
-        for: workspace.workspaceId, livePanes: workspacePanes,
+        for: workspace.workspaceId, livePanes: client.layoutPanes(workspacePanes),
         sizing: MacPaneLayoutMetrics.sizing)
       let state = reconciliation.state
       guard let completeTree = state.tree else { return nil }

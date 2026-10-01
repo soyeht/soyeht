@@ -16,7 +16,8 @@ private let acceptedFontMetrics = PaneLayoutFontMetrics(
     fonts: acceptedFontMetrics, halo: 15)
 
   #expect(surfaces[.terminal] == PaneLayoutSize(width: 340, height: 301))
-  #expect(surfaces[.editor] == PaneLayoutSize(width: 333, height: 395))
+  // 333 for the code column plus the 212-point project panel beside it.
+  #expect(surfaces[.editor] == PaneLayoutSize(width: 545, height: 395))
   #expect(surfaces[.agent] == PaneLayoutSize(width: 340, height: 355))
   #expect(surfaces[.web] == PaneLayoutSize(width: 340, height: 361))
   #expect(surfaces[.text] == PaneLayoutSize(width: 317, height: 332))

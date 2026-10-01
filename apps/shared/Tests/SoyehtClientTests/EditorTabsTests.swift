@@ -60,7 +60,9 @@ import Testing
   let shown = client.paneGridPanes(client.panes, mode: .editor)
   #expect(shown.map(\.paneId) == ["pane-a"])
   #expect(client.paneGridPanes(client.panes, mode: .terminal).map(\.paneId) == ["pane-shell"])
-  #expect(client.paneGridPanes(client.panes, mode: nil).count == 4)
+  // The agents grid shows the editor panes as one area too.
+  #expect(
+    client.paneGridPanes(client.panes, mode: nil).map(\.paneId) == ["pane-a", "pane-shell"])
 
   client.select("pane-shell")
   #expect(client.activeEditorPaneId(in: "workspace-1") == "pane-a")

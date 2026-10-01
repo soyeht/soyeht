@@ -284,7 +284,7 @@ enum EditorProjectEdit: Equatable {
 }
 
 enum EditorProjectMetrics {
-  static let width: CGFloat = 212
+  static let width = CGFloat(PaneLayoutContentMetrics.editorProjectPanelWidth)
   static let rowHeight: CGFloat = 22
   static let indent: CGFloat = 12
   static let nameFont: CGFloat = 11.5

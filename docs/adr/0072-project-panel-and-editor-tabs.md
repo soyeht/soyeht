@@ -24,8 +24,14 @@ keeps each workspace's tab order and its single preview tab in `editor_tabs`
 (schema 29) and publishes `editor.tabs_updated` whenever `file.open`,
 `pane.close`, `editor.tabs.move`, `project.entry.rename` or
 `project.entry.delete` changes them. `editor.tabs.list` returns the current
-order. The editor destination shows one tabbed surface: the active tab's pane.
-The agents grid still shows every pane.
+order. Every grid, the agents grid and the editor destination alike, shows the
+editor panes as one tabbed area: layout code receives only the active tab's
+pane (`EngineClient.layoutPanes`), and a stored layout that names another
+editor pane, including a layout saved with one split per file before tabs,
+gives that editor slot to the active pane (`PaneLayoutTree.adoptingLiveEditor`).
+Switching tabs therefore never moves agent or terminal panes, and nothing is
+persisted. The editor's minimum width includes the 212-point project panel, so
+the pane frame is never narrower than its content.
 
 `file.open` accepts `preview`. A preview takes the slot of the workspace's
 previous preview when that file is unedited and has no draft; the replaced pane

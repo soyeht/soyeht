@@ -43,7 +43,7 @@ public struct PaneLayoutState: Equatable, Sendable {
     for pane in livePanes {
       liveKinds[pane.paneId] = PaneLayoutKind(mode: pane.mode, writingKind: pane.writingKind)
     }
-    guard var reconciled = tree else {
+    guard var reconciled = tree?.adoptingLiveEditor(livePanes) else {
       if !liveKinds.isEmpty { self.init() }
       return
     }
@@ -69,6 +69,7 @@ public struct PaneLayoutState: Equatable, Sendable {
   public mutating func reconcile(
     livePanes: [Pane], sizing: PaneLayoutSizingPolicy
   ) throws -> [String] {
+    tree = tree?.adoptingLiveEditor(livePanes)
     var present = Set(tree?.paneIdsInCanonicalOrder ?? [])
     var inserted: [String] = []
     for pane in livePanes where !present.contains(pane.paneId) {

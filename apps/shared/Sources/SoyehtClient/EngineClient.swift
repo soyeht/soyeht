@@ -62,7 +62,7 @@ public final class EngineClient {
     let workspace = try await self.setWorkspacePaneLayout(workspaceId: workspaceId, state: state)
     return PaneLayoutState(
       workspaceLayout: workspace.layout,
-      livePanes: self.panes.filter { $0.workspaceId == workspaceId })
+      livePanes: self.layoutPanes(self.panes.filter { $0.workspaceId == workspaceId }))
   }
   public var gapText: String? {
     selectedPaneId.flatMap { terminalStreams.gapText(for: $0) }
@@ -896,7 +896,7 @@ public final class EngineClient {
   public func paneLayoutState(for workspace: Workspace) -> PaneLayoutState {
     PaneLayoutState(
       workspaceLayout: workspace.layout,
-      livePanes: panes.filter { $0.workspaceId == workspace.workspaceId })
+      livePanes: layoutPanes(panes.filter { $0.workspaceId == workspace.workspaceId }))
   }
   private func synchronizePaneLayout(_ workspace: Workspace) {
     paneLayouts.synchronize(

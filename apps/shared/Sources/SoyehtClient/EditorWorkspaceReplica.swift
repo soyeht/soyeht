@@ -44,15 +44,10 @@ extension EngineClient {
       history: editorWorkspace.history[workspaceId] ?? [])
   }
 
-  /// The panes a grid shows for a destination. The editor destination is one
-  /// tabbed surface, so it shows only the active tab's pane.
+  /// The panes a grid shows for a destination. Every grid shows the editor
+  /// panes as one tabbed area: only the active tab's pane is laid out.
   public func paneGridPanes(_ workspacePanes: [Pane], mode: PaneMode?) -> [Pane] {
-    guard let mode else { return workspacePanes }
-    let matching = workspacePanes.filter { $0.mode == mode }
-    guard mode == .editor, let workspaceId = matching.first?.workspaceId,
-      let active = activeEditorPaneId(in: workspaceId)
-    else { return matching }
-    return matching.filter { $0.paneId == active }
+    layoutPanes(workspacePanes).filter { mode == nil || $0.mode == mode }
   }
 
   public func activateEditorTab(_ paneId: String) {
