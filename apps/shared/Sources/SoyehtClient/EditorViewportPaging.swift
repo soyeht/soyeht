@@ -23,6 +23,13 @@ public enum EditorViewportPaging {
     if start == loadedFrom, loadedCount >= pageLines { return nil }
     return start
   }
+
+  /// The first line to load so `line` is visible: the loaded page when it
+  /// already holds the line, otherwise a page with the line a quarter down.
+  public static func landingStart(line: UInt32, loadedFrom: UInt32, loadedTo: UInt32) -> UInt32 {
+    if line >= loadedFrom, line < loadedTo { return loadedFrom }
+    return line.saturatingSubtract(pageLines / 4)
+  }
 }
 
 extension UInt32 {

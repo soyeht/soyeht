@@ -145,7 +145,7 @@ impl Core {
         request: &FileSearchParams,
         matcher: &soyeht_editor::ContentMatcher,
         replacement: &str,
-        project: &super::service::ProjectFile,
+        project: &super::ProjectFile,
         remaining: usize,
         outputs: (
             &mut Vec<EditorFile>,
@@ -398,7 +398,7 @@ impl Core {
     fn search_project_content(
         &self,
         request: &FileSearchParams,
-        files: &[super::service::ProjectFile],
+        files: &[super::ProjectFile],
     ) -> Result<Vec<FileSearchMatch>> {
         let mut items = Vec::new();
         let matcher = soyeht_editor::ContentMatcher::new(&request.query, request.case_sensitive)?;
@@ -423,7 +423,7 @@ impl Core {
 
 fn detached_file(
     request: &FileSearchParams,
-    project: &super::service::ProjectFile,
+    project: &super::ProjectFile,
     disk: String,
     now_ms: i64,
 ) -> EditorFile {
@@ -461,7 +461,7 @@ fn content_hash(content: &str) -> String {
 
 fn search_project_paths(
     request: &FileSearchParams,
-    files: &[super::service::ProjectFile],
+    files: &[super::ProjectFile],
 ) -> Result<Vec<FileSearchMatch>> {
     let paths = files
         .iter()

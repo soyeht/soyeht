@@ -113,16 +113,41 @@ impl TextBuffer {
     }
 
     pub fn apply(&mut self, edit: &TextEdit) -> Result<AppliedEdit> {
-        let applied = self.apply_one(edit)?;
-        self.revision = self.revision.saturating_add(1);
-        Ok(applied)
+        let mut applied = self.apply_all(std::slice::from_ref(edit))?;
+        applied.pop().ok_or(Error::InvalidRange)
     }
 
     pub fn apply_all(&mut self, edits: &[TextEdit]) -> Result<Vec<AppliedEdit>> {
+        self.apply_within(edits, soyeht_protocol::limits::EDITOR_EDIT_BYTES)
+    }
+
+    /// Applies edits the engine produced itself, such as an undo step, whose
+    /// restored text is bounded by the document size rather than one wire edit.
+    pub(crate) fn apply_restoring(&mut self, edits: &[TextEdit]) -> Result<Vec<AppliedEdit>> {
+        self.apply_within(edits, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)
+    }
+
+    /// The UTF-16 position of a byte offset that lies on a scalar boundary.
+    pub fn position_at_byte(&self, byte: usize) -> Result<TextPosition> {
+        let (line, column) = self.point_at_byte(byte)?;
+        let text = self.line(line)?;
+        let prefix = text.get(..column).ok_or(Error::InvalidPosition)?;
+        Ok(TextPosition {
+            line: u32::try_from(line).map_err(|_| Error::InvalidPosition)?,
+            column: u32::try_from(prefix.encode_utf16().count())
+                .map_err(|_| Error::InvalidPosition)?,
+        })
+    }
+
+    pub(crate) fn slice(&self, start: usize, end: usize) -> String {
+        self.bytes(start, end)
+    }
+
+    fn apply_within(&mut self, edits: &[TextEdit], limit: usize) -> Result<Vec<AppliedEdit>> {
         let mut ranges = edits
             .iter()
             .map(|edit| {
-                if edit.text.len() > soyeht_protocol::limits::EDITOR_EDIT_BYTES {
+                if edit.text.len() > limit {
                     return Err(Error::EditTooLarge);
                 }
                 let (start, end) = self.byte_range(&edit.range)?;
@@ -158,9 +183,6 @@ impl TextBuffer {
     }
 
     fn apply_one(&mut self, edit: &TextEdit) -> Result<AppliedEdit> {
-        if edit.text.len() > soyeht_protocol::limits::EDITOR_EDIT_BYTES {
-            return Err(Error::EditTooLarge);
-        }
         let (start, end) = self.byte_range(&edit.range)?;
         let (start_line, start_column) = self.point_at_byte(start)?;
         let (old_end_line, old_end_column_bytes) = self.point_at_byte(end)?;
@@ -192,7 +214,7 @@ impl TextBuffer {
         })
     }
 
-    fn byte_range(&self, range: &TextRange) -> Result<(usize, usize)> {
+    pub(crate) fn byte_range(&self, range: &TextRange) -> Result<(usize, usize)> {
         let start = self.byte_at(&range.start)?;
         let end = self.byte_at(&range.end)?;
         (start <= end)

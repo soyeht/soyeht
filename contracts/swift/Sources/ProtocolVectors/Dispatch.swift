@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 d3003b6d66822c60581497110b4d938eb862ca5d4387cc1562c3e16b2113cb08). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -367,6 +367,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "FileHistoryResult": return try codec(SoyehtProtocol.FileHistoryResult.self, data)
         case "FileRevertParams": return try codec(SoyehtProtocol.FileRevertParams.self, data)
         case "FileRevertResult": return try codec(SoyehtProtocol.FileRevertResult.self, data)
+        case "FileUndoParams": return try codec(SoyehtProtocol.FileUndoParams.self, data)
+        case "FileUndoResult": return try codec(SoyehtProtocol.FileUndoResult.self, data)
         case "FileSearchMatch": return try codec(SoyehtProtocol.FileSearchMatch.self, data)
         case "FileSearchParams": return try codec(SoyehtProtocol.FileSearchParams.self, data)
         case "FileSearchResult": return try codec(SoyehtProtocol.FileSearchResult.self, data)
