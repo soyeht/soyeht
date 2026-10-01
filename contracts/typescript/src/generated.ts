@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 d3003b6d66822c60581497110b4d938eb862ca5d4387cc1562c3e16b2113cb08). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -2203,6 +2203,19 @@ export interface FileRevertResult {
   "file": FileDocument;
 }
 
+export interface FileUndoParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface FileUndoResult {
+  "file": FileDocument;
+  "applied": boolean;
+  "changedLines": Array<number>;
+  "cursor"?: TextPosition;
+}
+
 export interface FileSearchMatch {
   "workspaceId": Id;
   "path": string;
@@ -3125,6 +3138,8 @@ export interface Methods {
   "file.watch": { params: FileWatchParams; result: FileWatchResult };
   "file.history": { params: FileHistoryParams; result: FileHistoryResult };
   "file.revert": { params: FileRevertParams; result: FileRevertResult };
+  "file.undo": { params: FileUndoParams; result: FileUndoResult };
+  "file.redo": { params: FileUndoParams; result: FileUndoResult };
   "file.search": { params: FileSearchParams; result: FileSearchResult };
   "file.symbols": { params: FileSymbolsParams; result: FileSymbolsResult };
   "file.definition": { params: FilePositionParams; result: FileDefinitionResult };

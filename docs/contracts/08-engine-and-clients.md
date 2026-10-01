@@ -201,7 +201,7 @@ and `loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`.
 Task IDs are always `{workspaceId, taskId}` together.
 
 **Files and editor**: `file.open`, `file.read`, `file.write`, `file.watch`,
-`file.history`, `file.revert`, `file.search`, `file.symbols`,
+`file.history`, `file.revert`, `file.undo`, `file.redo`, `file.search`, `file.symbols`,
 `file.definition`, `file.references`, `file.diagnostics`, `file.diff`, and
 `file.format`; `editor.review.accept|reject|comment`; `lsp.status`. Content is
 read through bounded line viewports. Positions are zero-based line and UTF-16

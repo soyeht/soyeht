@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
+// Generated from contracts/protocol.json (sha256 d3003b6d66822c60581497110b4d938eb862ca5d4387cc1562c3e16b2113cb08). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -364,6 +364,8 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "FileHistoryResult" => roundtrip::<FileHistoryResult>(value),
         "FileRevertParams" => roundtrip::<FileRevertParams>(value),
         "FileRevertResult" => roundtrip::<FileRevertResult>(value),
+        "FileUndoParams" => roundtrip::<FileUndoParams>(value),
+        "FileUndoResult" => roundtrip::<FileUndoResult>(value),
         "FileSearchMatch" => roundtrip::<FileSearchMatch>(value),
         "FileSearchParams" => roundtrip::<FileSearchParams>(value),
         "FileSearchResult" => roundtrip::<FileSearchResult>(value),

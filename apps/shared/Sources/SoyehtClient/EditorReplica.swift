@@ -37,6 +37,19 @@ public struct EditorNavigationTarget: Sendable {
   }
 }
 
+/// Which end of the engine-owned edit history a replay walks.
+public enum EditorHistoryDirection: Sendable {
+  case undo
+  case redo
+
+  var method: String {
+    switch self {
+    case .undo: "file.undo"
+    case .redo: "file.redo"
+    }
+  }
+}
+
 extension EngineClient {
   public var selectedEditorFile: EditorFileView? {
     guard let paneId = selectedPaneId else { return nil }
@@ -298,6 +311,36 @@ extension EngineClient {
     let result = try await writeEditorFile(
       fileId: fileId, baseRevision: baseRevision, edits: edits)
     try await refreshEditorFile(fileId)
+    return result
+  }
+
+  /// Undoes or redoes the newest edit transaction the engine recorded for this
+  /// file, then reloads the page holding the restored text and places the cursor
+  /// there. The history is engine-owned, so every paired client shares it.
+  @discardableResult
+  public func replayEditorHistory(
+    _ fileId: String, direction: EditorHistoryDirection
+  ) async throws -> FileUndoResult {
+    await settleEditorWrites(fileId)
+    invalidateEditorRefresh(fileId)
+    guard let revision = editorFiles[fileId]?.file.revision else {
+      throw ClientFailure.invalidSnapshot
+    }
+    let result = try await mutation(
+      direction.method,
+      FileUndoParams(fileId: fileId, baseRevision: revision, idempotencyKey: UUID().uuidString)
+    ).decoded(FileUndoResult.self)
+    upsertEditor(result.file) { $0.changedLines = result.changedLines }
+    guard result.applied, let loaded = editorFiles[fileId]?.viewport else { return result }
+    let fromLine = EditorViewportPaging.landingStart(
+      line: result.cursor?.line ?? loaded.fromLine, loadedFrom: loaded.fromLine,
+      loadedTo: loaded.toLine)
+    _ = try await readEditorFile(
+      fileId: fileId, fromLine: fromLine, lineCount: EditorViewportPaging.pageLines)
+    if let cursor = result.cursor {
+      editorNavigationTarget = EditorNavigationTarget(
+        id: UUID().uuidString, fileId: fileId, position: cursor)
+    }
     return result
   }
 

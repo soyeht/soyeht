@@ -144,8 +144,9 @@ class SchemaTests(unittest.TestCase):
     def test_editor_surface_is_complete_bounded_and_cursor_safe(self):
         expected_methods = {
             "file.open", "file.read", "file.write", "file.watch", "file.history",
-            "file.revert", "file.search", "file.symbols", "file.definition",
-            "file.references", "file.diagnostics", "file.diff", "file.format",
+            "file.revert", "file.undo", "file.redo", "file.search", "file.symbols",
+            "file.definition", "file.references", "file.diagnostics", "file.diff",
+            "file.format",
             "editor.review.accept", "editor.review.reject", "editor.review.comment",
             "lsp.status",
         }

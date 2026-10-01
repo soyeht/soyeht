@@ -66,6 +66,22 @@ public enum EditorEditing {
       source: source, viewportStartLine: viewportStartLine, changes: changes)
   }
 
+  /// Replaces each range with its string verbatim (paste, cut, drop, find and
+  /// replace) and leaves a caret after each replacement. Returns nil when the
+  /// ranges and strings do not pair up or the ranges overlap.
+  public static func verbatimPlan(
+    text: String, viewportStartLine: UInt32, ranges: [NSRange], strings: [String]
+  ) -> EditorInputPlan? {
+    let source = text as NSString
+    guard ranges.count == strings.count,
+      validRanges(ranges, length: source.length) != nil
+    else { return nil }
+    let changes = zip(ranges, strings)
+      .sorted { $0.0.location < $1.0.location }
+      .map { (EditorLocalReplacement(range: $0.0, text: $0.1), $0.1.utf16.count) }
+    return makePlan(source: source, viewportStartLine: viewportStartLine, changes: changes)
+  }
+
   public static func deletionPlan(
     text: String, viewportStartLine: UInt32, ranges: [NSRange], backward: Bool,
     language: EditorLanguage
