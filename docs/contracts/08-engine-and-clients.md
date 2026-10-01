@@ -231,7 +231,9 @@ executable schema carry no state cursor and never enter replay.
 - `pane.state_changed {state, confidence, phrase, source}` (single enum from 05)
 - `pane.update {kind, ...}` (closed union: `agent_message_chunk`,
   `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`,
-  `usage`, `terminal_output {terminalId, bytes}`, `config_option_update`)
+  `usage`, `terminal_output {terminalId, bytes}`, `config_option_update`,
+  `subagent {subagent}`); message, thought, tool, plan and subagent updates
+  carry `subagentId` when a harness subagent owns them (contract 04 §2.7)
 - `pane.turn_ended {promptId, stopReason}`, `pane.queued {n, promptIds}`
 - `pane.queue.paused {paneId, paused, reason}`,
   `pane.queue.resumed {paneId, paused}`. `pane.queue.steered` is introduced

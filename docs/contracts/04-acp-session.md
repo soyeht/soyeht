@@ -42,6 +42,36 @@ Raw terminal panes continue to exist and do not use this path.
    plan, options changed by the agent, token usage and `state_update`. The turn
    ends when `idle` arrives with a `stopReason` (`end_turn`, `cancelled`,
    `max_tokens`, `refusal`…).
+
+   **Subagents.** A harness can run subagents inside the turn. The engine
+   follows the ACP subagent draft (agentclientprotocol/agent-client-protocol#1992),
+   which the pinned Claude and Codex adapters implement: the parent session
+   reports `subagent_spawned {subagentSessionId, name, task}` and
+   `subagent_state_update {subagentSessionId, state}`, and each subagent's
+   own updates arrive under its `subagentSessionId`. Each subagent becomes one
+   transcript item, `kind: subagent`, whose `subagent` holds
+   `{subagentId, name, task, status, model?, startedAt?, finishedAt?, summary?}`;
+   `status` is `running` until the state update (`completed`, `failed`,
+   `cancelled`, `disconnected`). The subagent's messages, thoughts, tool calls
+   and plans are stored with `subagentId` and are never presented as the parent
+   agent's own; a subagent that spawns another nests the same way. A subagent's
+   usage, mode, configuration and prompt echo are not the pane's and are
+   dropped. `summary` previews the subagent's last message when it finishes.
+   `model` is set only when the harness reports it: Claude Code reports it as
+   `_meta.claudeCode.toolResponse.resolvedModel` on the spawning Agent call,
+   whose `agentId` names the subagent session; that call updates the row and
+   never becomes a tool row. Codex reports no model. Times are wall-clock
+   times the engine observed live; a replay leaves them absent. Permission,
+   file and terminal requests from a reported subagent session are accepted
+   like the parent's; a subagent's permission request is presented from the
+   tool call that subagent reported, and a persistent grant made for a
+   subagent's request never covers the parent's requests, nor the reverse.
+   When the harness process ends, subagents still running
+   are marked `disconnected`. An engine restart keeps the stored rows; a native
+   `session/load` replaces them with what the adapter replays. Codex replays
+   its subagents; Claude Code (pinned 0.77) replays neither the subagents nor
+   their Agent calls, so after its process restarts only the parent's
+   messages return.
 8. **`session/request_permission`.** The agent asks with a title, what it wants
    to do, and options (`allow_once`, `allow_always`, `reject_once`, `reject_always`).
    The engine responds according to §4.
@@ -95,6 +125,12 @@ shows those names; the harness decides which actions it asks about.
   attached to the pane, and output appears as a terminal line within the conversation.
   This is what a terminal multiplexer does best; chat-only apps declare `terminal: false`.
 - Elicitation (structured user questions): yes, becomes the same question event as permission.
+- Subagents: yes, as `subagents: {}` (the ACP draft) and as the JetBrains AIR
+  `_meta.jetbrains.air` capability `nativeSubagentSessions`. The published ACP
+  TypeScript SDK drops the draft field while parsing `initialize`, so the
+  pinned adapters only see the `_meta` form; without it they flatten subagent
+  tool calls into the parent session (Claude) or omit subagent activity
+  (Codex).
 
 ## 6. Resume after restart
 

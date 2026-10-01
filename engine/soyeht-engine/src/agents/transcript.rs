@@ -6,6 +6,7 @@ use crate::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{PromptItem, TranscriptKind, TranscriptMessage, TranscriptRole, limits};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 pub fn message(store: &impl StorePort, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
@@ -33,7 +34,26 @@ pub fn new_message(
         plan: None,
         usage: None,
         agent_message: None,
+        subagent: None,
+        subagent_id: None,
     })
+}
+
+/// Keys open transcript items: `kind[@subagent][:id]`. A subagent's items
+/// never share a key with the parent's, so their text is never merged.
+pub fn open_key(kind: &str, subagent: Option<&str>, id: Option<&str>) -> String {
+    let mut key = kind.to_owned();
+    if let Some(subagent) = subagent {
+        key = format!("{key}@{:x}", Sha256::digest(subagent.as_bytes()));
+    }
+    if let Some(id) = id {
+        key = format!("{key}:{id}");
+    }
+    key
+}
+
+fn open_key_kind(key: &str) -> &str {
+    key.split(['@', ':']).next().unwrap_or(key)
 }
 
 /// The typed marker for a harness switch; it names the agent that continues.
@@ -81,6 +101,9 @@ pub fn user_prompt(
 }
 pub fn event(pane: &str, message: &TranscriptMessage, kind: &str) -> Value {
     let mut result = json!({"paneId":pane,"kind":kind,"generation":message.generation,"seq":message.seq,"localId":message.local_id});
+    if let Some(subagent) = &message.subagent_id {
+        result["subagentId"] = json!(subagent);
+    }
     match kind {
         "agent_message_chunk" | "agent_thought_chunk" => {
             result["text"] = json!(message.text);
@@ -88,6 +111,7 @@ pub fn event(pane: &str, message: &TranscriptMessage, kind: &str) -> Value {
         }
         "tool_call" | "tool_call_update" => result["tool"] = json!(message.tool),
         "plan" => result["entries"] = json!(message.plan),
+        "subagent" => result["subagent"] = json!(message.subagent),
         "usage" => result["usage"] = json!(message.usage),
         "terminal_output" => {
             if let Some(terminal) = &message.terminal {
@@ -138,7 +162,7 @@ pub fn append_text(
     thought: bool,
     chunk: TextChunk<'_>,
     changes: &mut Changes,
-) -> Result<()> {
+) -> Result<Option<u64>> {
     append_text_role(
         store,
         pane,
@@ -153,8 +177,11 @@ pub fn append_text(
 pub struct TextChunk<'a> {
     pub text: &'a str,
     pub message_id: Option<&'a str>,
+    /// The subagent session that wrote the text, if not the parent agent.
+    pub subagent: Option<&'a str>,
 }
 
+/// Appends streamed text and returns the sequence of the message it ends in.
 pub fn append_text_role(
     store: &impl StorePort,
     pane: &str,
@@ -163,20 +190,20 @@ pub fn append_text_role(
     key: &str,
     chunk: TextChunk<'_>,
     changes: &mut Changes,
-) -> Result<()> {
+) -> Result<Option<u64>> {
     let mut text = chunk.text;
     // Native replay may include an empty response for a cancelled turn.
     // It is a role boundary, not an additional visible conversation message.
     if text.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let thought = key == "thought";
     // ACP messageId identifies a message, not a text fragment. Hash the opaque ID
     // to keep the checkpoint key bounded without exposing adapter identifiers.
-    let key = chunk.message_id.map_or_else(
-        || key.to_owned(),
-        |id| format!("{key}:{:x}", Sha256::digest(id.as_bytes())),
-    );
+    let message_id = chunk
+        .message_id
+        .map(|id| format!("{:x}", Sha256::digest(id.as_bytes())));
+    let key = open_key(key, chunk.subagent, message_id.as_deref());
     let event_kind = if thought {
         "agent_thought_chunk"
     } else {
@@ -198,7 +225,7 @@ pub fn append_text_role(
             None => new_message(
                 state,
                 generation,
-                if key == "user" || key.starts_with("user:") {
+                if open_key_kind(&key) == "user" {
                     TranscriptRole::User
                 } else {
                     TranscriptRole::Assistant
@@ -208,14 +235,14 @@ pub fn append_text_role(
                 false,
             )?,
         };
+        item.subagent_id = chunk.subagent.map(Into::into);
         let original = item.text.len();
         item.text.push_str(text);
         if errors::json_bytes(&item)?.len() <= limits::TRANSCRIPT_MESSAGE_BYTES {
-            state
-                .open_messages
-                .insert(key.clone(), sequence(&item.seq)?);
+            let seq = sequence(&item.seq)?;
+            state.open_messages.insert(key.clone(), seq);
             put(changes, pane, item, event_kind)?;
-            return Ok(());
+            return Ok(Some(seq));
         }
         item.text.truncate(original);
         let boundaries = text
@@ -242,11 +269,12 @@ pub fn append_text_role(
         if item.text.is_empty() {
             return Err(errors::invalid("Message metadata exceeds its limit"));
         }
+        let seq = sequence(&item.seq)?;
         put(changes, pane, item, event_kind)?;
         state.open_messages.remove(&key);
         text = &text[count..];
         if text.is_empty() {
-            return Ok(());
+            return Ok(Some(seq));
         }
     }
 }
@@ -257,24 +285,131 @@ pub fn complete(
     state: &mut State,
     changes: &mut Changes,
 ) -> Result<()> {
-    for (key, seq) in std::mem::take(&mut state.open_messages) {
+    complete_where(store, pane, state, changes, |_| true)
+}
+
+/// Ends the streamed text of one speaker, the parent or a subagent, so text it
+/// writes after a subagent row starts below that row.
+pub fn end_text(
+    store: &impl StorePort,
+    pane: &str,
+    state: &mut State,
+    subagent: Option<&str>,
+    changes: &mut Changes,
+) -> Result<()> {
+    let bases = ["message", "thought"].map(|kind| open_key(kind, subagent, None));
+    complete_where(store, pane, state, changes, |key| {
+        bases.iter().any(|base| {
+            key.strip_prefix(base.as_str())
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(':'))
+        })
+    })
+}
+
+fn complete_where(
+    store: &impl StorePort,
+    pane: &str,
+    state: &mut State,
+    changes: &mut Changes,
+    selected: impl Fn(&str) -> bool,
+) -> Result<()> {
+    let (done, open): (BTreeMap<_, _>, _) = std::mem::take(&mut state.open_messages)
+        .into_iter()
+        .partition(|(key, _)| selected(key));
+    state.open_messages = open;
+    for (key, seq) in done {
         if let Some(mut item) = message(store, pane, seq)? {
             item.complete = true;
-            let kind = if key == "thought" || key.starts_with("thought:") {
-                "agent_thought_chunk"
-            } else if key == "message" || key.starts_with("message:") {
-                "agent_message_chunk"
-            } else if key == "user" || key.starts_with("user:") {
-                // Only native replay assembles user text from chunks.
-                super::peer::restore_replayed(&mut item);
-                "agent_message_chunk"
-            } else if key.starts_with("tool:") {
-                "tool_call_update"
-            } else {
-                continue;
+            let kind = match open_key_kind(&key) {
+                "thought" => "agent_thought_chunk",
+                "message" => "agent_message_chunk",
+                "user" => {
+                    // Only native replay assembles user text from chunks.
+                    super::peer::restore_replayed(&mut item);
+                    "agent_message_chunk"
+                }
+                "tool" => "tool_call_update",
+                _ => continue,
             };
             put(changes, pane, item, kind)?;
         }
     }
     Ok(())
+}
+
+/// The harness process ended: finish what it left open. A replay in progress
+/// is abandoned instead, so nothing of it is published.
+pub fn close(
+    store: &impl StorePort,
+    pane: &str,
+    state: &mut State,
+    changes: &mut Changes,
+) -> Result<()> {
+    if state.phase == super::state::Phase::Loading {
+        state.open_messages.clear();
+        state.subagents.clear();
+        return Ok(());
+    }
+    complete(store, pane, state, changes)?;
+    super::subagents::disconnect_all(store, pane, state, changes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soyeht_protocol::{SubagentRun, SubagentStatus};
+
+    fn item(kind: TranscriptKind) -> TranscriptMessage {
+        TranscriptMessage {
+            local_id: "local".into(),
+            generation: 1,
+            seq: "4".into(),
+            role: TranscriptRole::Assistant,
+            kind,
+            text: String::new(),
+            complete: false,
+            prompt_id: None,
+            tool: None,
+            terminal: None,
+            plan: None,
+            usage: None,
+            agent_message: None,
+            subagent: None,
+            subagent_id: None,
+        }
+    }
+
+    #[test]
+    fn live_updates_name_the_subagent_that_owns_them() {
+        let mut row = item(TranscriptKind::Subagent);
+        row.subagent = Some(SubagentRun {
+            subagent_id: "child".into(),
+            name: "Explore".into(),
+            task: "Look around".into(),
+            status: SubagentStatus::Running,
+            model: None,
+            started_at: None,
+            finished_at: None,
+            summary: None,
+        });
+        let update = event("pane", &row, "subagent");
+        assert_eq!(update["subagent"]["subagentId"], "child");
+        assert!(update.get("subagentId").is_none());
+        let mut child = item(TranscriptKind::Message);
+        child.subagent_id = Some("child".into());
+        child.text = "Found it".into();
+        let update = event("pane", &child, "agent_message_chunk");
+        assert_eq!(update["subagentId"], "child");
+        assert_eq!(update["text"], "Found it");
+    }
+
+    #[test]
+    fn subagent_text_keys_never_collide_with_the_parent() {
+        let parent = open_key("message", None, Some("id"));
+        let child = open_key("message", Some("child"), Some("id"));
+        assert_ne!(parent, child);
+        assert_eq!(open_key_kind(&parent), "message");
+        assert_eq!(open_key_kind(&child), "message");
+        assert_eq!(open_key("tool", None, Some("call")), "tool:call");
+    }
 }

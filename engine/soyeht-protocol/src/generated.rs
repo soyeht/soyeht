@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a8839cec35449d060661a6c41b3d603a00a033af24c7dd6b7300e5b129b80f7c). Do not edit.
+// Generated from contracts/protocol.json (sha256 116973a54b0ee464e9d3ba530ff41e35f11418dc423f6204d42d16a0ce01883a). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1233,6 +1233,8 @@ pub enum TranscriptKind {
     System,
     #[serde(rename = "handover")]
     Handover,
+    #[serde(rename = "subagent")]
+    Subagent,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PermissionOptionKind {
@@ -1696,6 +1698,38 @@ pub struct TerminalOutput {
     pub exit_code: Option<i64>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SubagentStatus {
+    #[serde(rename = "running")]
+    Running,
+    #[serde(rename = "completed")]
+    Completed,
+    #[serde(rename = "failed")]
+    Failed,
+    #[serde(rename = "cancelled")]
+    Cancelled,
+    #[serde(rename = "disconnected")]
+    Disconnected,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SubagentRun {
+    #[serde(rename = "subagentId")]
+    pub subagent_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "task")]
+    pub task: String,
+    #[serde(rename = "status")]
+    pub status: SubagentStatus,
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    #[serde(rename = "finishedAt", skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
+    #[serde(rename = "summary", skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TranscriptMessage {
     #[serde(rename = "localId")]
     pub local_id: Id,
@@ -1723,6 +1757,10 @@ pub struct TranscriptMessage {
     pub usage: Option<TokenUsage>,
     #[serde(rename = "agentMessage", skip_serializing_if = "Option::is_none")]
     pub agent_message: Option<AgentMessageSource>,
+    #[serde(rename = "subagent", skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<SubagentRun>,
+    #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentRef {
@@ -2312,6 +2350,8 @@ pub struct AgentMessageUpdate {
     pub text: String,
     #[serde(rename = "complete")]
     pub complete: bool,
+    #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum AgentThoughtUpdateKind {
@@ -2338,6 +2378,8 @@ pub struct AgentThoughtUpdate {
     pub text: String,
     #[serde(rename = "complete")]
     pub complete: bool,
+    #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ToolCallUpdateKind {
@@ -2362,6 +2404,8 @@ pub struct ToolCallUpdate {
     pub local_id: Id,
     #[serde(rename = "tool")]
     pub tool: ToolCall,
+    #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ToolProgressUpdateKind {
@@ -2386,6 +2430,8 @@ pub struct ToolProgressUpdate {
     pub local_id: Id,
     #[serde(rename = "tool")]
     pub tool: ToolCall,
+    #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PlanUpdateKind {
@@ -2410,6 +2456,34 @@ pub struct PlanUpdate {
     pub local_id: Id,
     #[serde(rename = "entries")]
     pub entries: Vec<PlanEntry>,
+    #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SubagentUpdateKind {
+    #[serde(rename = "subagent")]
+    Subagent,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SubagentUpdate {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "kind")]
+    pub kind: SubagentUpdateKind,
+    #[serde(rename = "generation")]
+    pub generation: u32,
+    #[serde(rename = "seq")]
+    pub seq: Decimal,
+    #[serde(rename = "localId")]
+    pub local_id: Id,
+    #[serde(rename = "subagent")]
+    pub subagent: SubagentRun,
+    #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
+    pub subagent_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageUpdateKind {
@@ -2500,6 +2574,7 @@ pub enum PaneUpdateEvent {
     V5(UsageUpdate),
     V6(TerminalOutputUpdate),
     V7(ConfigOptionUpdate),
+    V8(SubagentUpdate),
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttentionItem {
