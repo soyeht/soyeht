@@ -1,4 +1,4 @@
-# Contract 06 · iPhone
+# Contract 06 · iPhone and iPad
 
 Status: SETTLED on 2026-09-10. Caio's decision: “follow what exists today;
 it has been confirmed to work”. Evidence of today's behavior is in
@@ -17,14 +17,14 @@ it has been confirmed to work”. Evidence of today's behavior is in
    refusals include a reason (expired, already used, invalid challenge, denied,
    revoked). Once per device; revocable in preferences.
 4. **Protocol**: the SAME event and request contract as other clients
-   (contracts 03 §12 and 04 §9); the iPhone is a view of the Mac session.
+   (contracts 03 §12 and 04 §9); the paired device is a view of the Mac session.
 5. **Reconnection**: on returning from the background, the app requests full
    state (panes, tasks, pending permission requests) before displaying anything;
    never just reopen the socket (lesson from internal analysis).
 6. **Push**: the engine on the Mac sends directly to APNs (as today) for:
    permission requests, tasks marked “your turn”, “no signal”, pane death.
    Live Activity for “agent running” (already exists for deployment; reuse it).
-7. **What the iPhone does in v1**: everything the person can do at the Mac.
+7. **What the iPhone and iPad do in v1**: everything the person can do at the Mac.
    A paired iPhone or iPad is a full remote control (owner decision,
    2026-09-26): view workspaces, panes and state; type into raw terminals
    (software keyboard with Esc, Ctrl, Tab and arrow keys, or a hardware
@@ -34,10 +34,14 @@ it has been confirmed to work”. Evidence of today's behavior is in
    device the same role powers as the local human (contract 08 §2.4); a phone
    screen that lacks a control for one of these is a missing feature, not a
    permission boundary.
+8. **Devices**: one iOS app serves iPhone and iPad, pairs the same way and has
+   the same powers. At regular width (iPad full screen or a wide Split View or
+   Stage Manager window) it shows workspaces and panes in a sidebar next to the
+   selected pane; at compact width it keeps the list that pushes a pane.
 
 ## 2. Outside v1
-Cloud relay; connections without Tailscale; a custom mesh (10.44/16) for the
-iPhone.
+Cloud relay; connections without Tailscale; a custom mesh (10.44/16) for
+paired devices.
 
 ## Review applied (2026-09-10, finding R10)
 The QR → challenge → consent → `deviceToken` path is defined in contract 08 §2.2; push and Live Activity in 08 §2.3; revocation invalidates the token, connections and push.

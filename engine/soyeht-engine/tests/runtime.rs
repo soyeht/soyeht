@@ -2145,6 +2145,164 @@ fn harness_switch_without_prior_turn_keeps_its_marker_at_the_switch_after_recove
     assert_handover_replay(&replayed, "Next agent", "after-empty-switch");
 }
 
+/// Runs one fake subagent turn and returns the finished transcript.
+fn subagent_turn(prompt: &str) -> (Rig, Client, String, Vec<Value>) {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":prompt,"idempotencyKey":prompt}),
+    );
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while client.pane(&pane)["phrase"] != "Agent turn ended" {
+        assert!(Instant::now() < deadline, "{prompt} did not finish");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let items = transcript_items(&mut client, &pane);
+    (rig, client, pane, items)
+}
+
+fn subagent_rows(items: &[Value]) -> Vec<&Value> {
+    items
+        .iter()
+        .filter(|item| item["kind"] == "subagent")
+        .collect()
+}
+
+/// Items a subagent owns, by the run's ID.
+fn owned_by<'a>(items: &'a [Value], row: &Value) -> Vec<&'a Value> {
+    let id = &row["subagent"]["subagentId"];
+    items
+        .iter()
+        .filter(|item| &item["subagentId"] == id)
+        .collect()
+}
+
+#[test]
+fn claude_subagent_is_one_row_holding_its_tool_calls_and_model() {
+    let (_rig, _client, _pane, items) = subagent_turn("subagents-claude");
+    let rows = subagent_rows(&items);
+    assert_eq!(rows.len(), 1);
+    let run = &rows[0]["subagent"];
+    assert_eq!(run["name"], "Find the config");
+    assert_eq!(run["task"], "Search the repository for the config file");
+    assert_eq!(run["status"], "completed");
+    assert_eq!(run["model"], "fake-claude-model");
+    assert_eq!(run["summary"], "The config is config/app.toml.");
+    assert!(run["startedAt"].is_string() && run["finishedAt"].is_string());
+    assert_eq!(rows[0]["complete"], true);
+    let owned = owned_by(&items, rows[0]);
+    assert_eq!(
+        owned
+            .iter()
+            .map(|item| item["kind"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["tool", "message"]
+    );
+    assert_eq!(owned[0]["tool"]["title"], "ls config");
+    assert_eq!(owned[0]["tool"]["status"], "completed");
+    // The spawning Agent call reports into the row, never as a tool row.
+    assert!(
+        !items
+            .iter()
+            .any(|item| item["kind"] == "tool" && item["subagentId"].is_null())
+    );
+    let parent = items
+        .iter()
+        .filter(|item| item["role"] == "assistant" && item["kind"] == "message")
+        .filter(|item| item["subagentId"].is_null())
+        .map(|item| item["text"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        parent,
+        [
+            "I'll delegate the search.",
+            "The config is in config/app.toml."
+        ]
+    );
+}
+
+#[test]
+fn codex_subagent_activity_and_usage_stay_out_of_the_parent() {
+    let (_rig, _client, _pane, items) = subagent_turn("subagents-codex");
+    let rows = subagent_rows(&items);
+    assert_eq!(rows.len(), 1);
+    let run = &rows[0]["subagent"];
+    assert_eq!(run["name"], "List files");
+    assert_eq!(run["status"], "completed");
+    assert!(run.get("model").is_none());
+    let owned = owned_by(&items, rows[0]);
+    assert_eq!(owned.len(), 2);
+    assert_eq!(owned[0]["tool"]["title"], "List files");
+    assert_eq!(owned[1]["text"], "Two files.");
+    let wait = items
+        .iter()
+        .find(|item| item["tool"]["title"] == "wait")
+        .expect("the parent's own wait call");
+    assert!(wait["subagentId"].is_null());
+    // The subagent's accounting is not the pane's context use.
+    assert!(
+        items
+            .iter()
+            .filter(|item| item["kind"] == "usage")
+            .all(|item| item["usage"]["totalTokens"] != "7")
+    );
+}
+
+#[test]
+fn parallel_subagents_each_keep_their_own_activity() {
+    let (_rig, _client, _pane, items) = subagent_turn("subagents-parallel");
+    let rows = subagent_rows(&items);
+    assert_eq!(
+        rows.iter()
+            .map(|row| row["subagent"]["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["First", "Second"]
+    );
+    for (row, text) in rows.iter().zip(["First done.", "Second done."]) {
+        assert_eq!(row["subagent"]["status"], "completed");
+        assert_eq!(row["subagent"]["summary"], text);
+        let owned = owned_by(&items, row);
+        assert_eq!(owned.len(), 2, "{text}");
+        assert_eq!(owned[1]["text"], text);
+    }
+}
+
+#[test]
+fn failed_subagent_row_reports_the_failure() {
+    let (_rig, _client, _pane, items) = subagent_turn("subagents-failure");
+    let rows = subagent_rows(&items);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["subagent"]["status"], "failed");
+    assert!(rows[0]["subagent"].get("summary").is_none());
+    let owned = owned_by(&items, rows[0]);
+    assert_eq!(owned.len(), 1);
+    assert_eq!(owned[0]["tool"]["status"], "failed");
+}
+
+#[test]
+fn subagent_rows_survive_engine_restart_and_native_replay() {
+    let (mut rig, client, pane, live) = subagent_turn("subagents-codex");
+    drop(client);
+    rig.kill_engine();
+    rig.start();
+    let mut restored = rig.client();
+    assert_eq!(transcript_items(&mut restored, &pane), live);
+    drop(restored);
+    let replayed = restart_and_wait_for_replay(&mut rig, &pane, &live);
+    let rows = subagent_rows(&replayed);
+    assert_eq!(rows.len(), 1);
+    let run = &rows[0]["subagent"];
+    assert_eq!(run["name"], "List files");
+    assert_eq!(run["status"], "completed");
+    assert_eq!(run["summary"], "Two files.");
+    // A replay does not know when the run happened.
+    assert!(run.get("startedAt").is_none() && run.get("finishedAt").is_none());
+    let owned = owned_by(&replayed, rows[0]);
+    assert_eq!(owned.len(), 2);
+    assert_eq!(owned[0]["tool"]["title"], "List files");
+}
+
 #[test]
 fn a_missing_current_agent_recovers_before_accepting_more_work() {
     let rig = Rig::new();
@@ -4593,10 +4751,12 @@ fn undisplayable_execute_permission_is_rejected_and_explained_in_the_transcript(
     );
 }
 
-fn mcp_permission(client: &mut Client, pane: &str, tool: &str, key: &str) -> Value {
+/// Runs a fake MCP approval turn, `tracked-mcp:<tool>` or
+/// `subagent-mcp:<tool>`, and returns the presented request.
+fn mcp_permission(client: &mut Client, pane: &str, turn: &str, key: &str) -> Value {
     client.call(
         "pane.prompt",
-        json!({"paneId":pane,"text":format!("permission-tracked-mcp:{tool}"),"idempotencyKey":key}),
+        json!({"paneId":pane,"text":format!("permission-{turn}"),"idempotencyKey":key}),
     );
     client.wait_state(pane, "waiting_for_you");
     client.section("requests")[0]["request"].clone()
@@ -4606,7 +4766,7 @@ fn mcp_permission(client: &mut Client, pane: &str, tool: &str, key: &str) -> Val
 fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_tracked_call() {
     let rig = Rig::new();
     let (mut client, pane) = rig.agent();
-    let first = mcp_permission(&mut client, &pane, "list_agents", "list-agents");
+    let first = mcp_permission(&mut client, &pane, "tracked-mcp:list_agents", "list-agents");
     assert_eq!(first["title"], "Use soyeht-workspace · list_agents");
     assert_eq!(first["presentation"]["command"], Value::Null);
     assert_eq!(
@@ -4617,7 +4777,12 @@ fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_track
     client.wait_state(&pane, "idle");
     // A grant for one tool never covers another tool whose request looks
     // the same without its tracked call.
-    let second = mcp_permission(&mut client, &pane, "message_agent", "message-agent");
+    let second = mcp_permission(
+        &mut client,
+        &pane,
+        "tracked-mcp:message_agent",
+        "message-agent",
+    );
     assert_eq!(second["title"], "Use soyeht-workspace · message_agent");
     client.call("pane.permission.answer", json!({"paneId":pane,"requestId":second["requestId"],"optionId":"deny","idempotencyKey":"deny-message"}));
     client.wait_state(&pane, "idle");
@@ -4644,6 +4809,60 @@ fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_track
             .event_count("pane.permission_requested")
             .unwrap(),
         2
+    );
+}
+
+#[test]
+fn subagent_mcp_approval_is_presented_from_the_subagents_tracked_call() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let request = mcp_permission(
+        &mut client,
+        &pane,
+        "subagent-mcp:message_agent",
+        "subagent-message",
+    );
+    assert_eq!(request["title"], "Use soyeht-workspace · message_agent");
+    assert_eq!(request["presentation"]["command"], Value::Null);
+    assert_eq!(
+        request["presentation"]["toolArguments"],
+        json!([{"name":"text","value":"  first line\n  second line"}])
+    );
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":request["requestId"],"optionId":"once","idempotencyKey":"once-subagent"}));
+    client.wait_state(&pane, "idle");
+    let items = transcript_items(&mut client, &pane);
+    let row = items
+        .iter()
+        .find(|item| item["kind"] == "subagent")
+        .expect("the asking subagent's row");
+    let tool = items
+        .iter()
+        .find(|item| item["kind"] == "tool")
+        .expect("the subagent's tool call");
+    assert_eq!(tool["subagentId"], row["subagent"]["subagentId"]);
+}
+
+#[test]
+fn a_parent_grant_never_approves_a_subagents_request_for_the_same_call() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let parent = mcp_permission(&mut client, &pane, "tracked-mcp:list_agents", "parent-list");
+    client.call("pane.permission.answer", json!({"paneId":pane,"requestId":parent["requestId"],"optionId":"always","idempotencyKey":"always-parent"}));
+    client.wait_state(&pane, "idle");
+    // Same tool call id, tool and arguments, asked from a subagent session.
+    let subagent = mcp_permission(
+        &mut client,
+        &pane,
+        "subagent-mcp:list_agents",
+        "subagent-list",
+    );
+    assert_eq!(subagent["title"], parent["title"]);
+    assert_eq!(subagent["presentation"], parent["presentation"]);
+    assert_eq!(
+        rig.database_probe()
+            .event_count_by_field("pane.permission_answered", "by", "rule")
+            .unwrap(),
+        0
     );
 }
 

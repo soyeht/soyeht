@@ -283,10 +283,7 @@ impl Core {
             )?;
         }
         changes.outgoing.clear();
-        if state.phase != super::state::Phase::Loading {
-            super::transcript::complete(&self.store, pane, &mut state, &mut changes)?;
-        }
-        state.open_messages.clear();
+        super::transcript::close(&self.store, pane, &mut state, &mut changes)?;
         if let Some(user) = state.operation_user.take() {
             changes.completed_user = Some(super::pending::Completion {
                 user,

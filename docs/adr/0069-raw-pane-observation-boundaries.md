@@ -289,6 +289,21 @@ frame ratio and time coverage is expected because coverage is measured by elapse
 contended result remains part of the evidence because a developer machine is often busy; the
 isolated result proves writer capacity without presenting it as a whole-machine guarantee.
 
+The isolated fixture itself has one unresolved severe failure. On 2026-09-17 a candidate gate
+retained 319 of 400 observations, recorded one gap and 1,539 dropped bytes, reached 33 outstanding
+items and reported 80.09 percent time coverage. The gate was not retried for approval. The changed
+Rust code was outside the fixture's reachable path, and normalized instruction streams for the
+fixture and its capture, projection and recording path were identical between base and candidate.
+Ten later base-only runs and a prospectively declared ten-pair AB/BA base-versus-candidate control
+all retained 400 observations with no loss and full coverage. Every paired arm had peak outstanding
+work of 4 or 5, and no candidate-attributable difference appeared. A paired startup control also
+found no startup cost. This removes the candidate from attribution; it does not explain the original
+failure. The fixture or machine therefore has an open, rare and severe queue-pressure mode whose
+frequency is unknown. A future occurrence remains a real gate result and must be preserved rather
+than retried away. The complete retained controls and the limitation that the original failing log
+was not preserved are recorded in
+[`docs/reports/evidence/2026-09-17-frame-dense-headroom/`](../reports/evidence/2026-09-17-frame-dense-headroom/README.md).
+
 The final full-gate sample with the interleaved estimator measured raw capture-off samples of
 11015, 10679, 10731, 11059, 10410, 10200, 10476, 10793, 10767 and 10395 microseconds, and
 capture-on samples of 10270, 11624, 10204, 10913, 10723, 10087, 10633, 10891, 10681 and 11292

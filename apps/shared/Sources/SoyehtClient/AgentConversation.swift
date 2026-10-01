@@ -31,11 +31,14 @@ struct AgentSilencePresentation: Sendable {
       || elapsedSeconds.map { $0 >= ProtocolLimits.noSignalSec } == true
   }
 
-  var elapsed: String? {
-    guard let elapsedSeconds else { return nil }
-    let hours = elapsedSeconds / 3_600
-    let minutes = (elapsedSeconds % 3_600) / 60
-    let seconds = elapsedSeconds % 60
+  var elapsed: String? { elapsedSeconds.map(AgentElapsedText.text(seconds:)) }
+}
+
+enum AgentElapsedText {
+  static func text(seconds elapsed: Int) -> String {
+    let hours = elapsed / 3_600
+    let minutes = (elapsed % 3_600) / 60
+    let seconds = elapsed % 60
     if hours > 0 { return "\(hours)h \(minutes)m" }
     return "\(minutes)m \(seconds)s"
   }
@@ -166,6 +169,7 @@ private struct AgentWell: ViewModifier {
   private let onExplicitRemoteAction: () -> Void
   @State private var prompt = ""
   @State private var follow = AgentConversationFollow()
+  @State private var subagents = AgentSubagentDisclosure()
   @FocusState private var promptFocused: Bool
 
   public init(
@@ -263,10 +267,8 @@ private struct AgentWell: ViewModifier {
             Label(notice, systemImage: "exclamationmark.triangle")
               .font(style.captionFont).foregroundStyle(style.warning).padding(10)
           }
-          ForEach(view.messages, id: \.localId) { message in
-            TranscriptRow(
-              message: message, workspaceId: pane?.workspaceId ?? "", style: style
-            ).id(message.localId)
+          ForEach(AgentTranscriptGrouping.entries(view.messages)) { entry in
+            transcriptEntry(entry).id(entry.id)
           }
           Color.clear.frame(height: 1).id(AgentConversationFollow.bottomAnchor)
         }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
@@ -286,6 +288,18 @@ private struct AgentWell: ViewModifier {
         proxy.scrollTo(AgentConversationFollow.bottomAnchor, anchor: .bottom)
         follow.revealed()
       }
+    }
+  }
+
+  /// Type-erased so subagent rows can hold nested subagent rows.
+  private func transcriptEntry(_ entry: AgentTranscriptEntry) -> AnyView {
+    switch entry {
+    case .message(let message):
+      AnyView(TranscriptRow(message: message, workspaceId: pane?.workspaceId ?? "", style: style))
+    case .subagent(let group):
+      AnyView(
+        AgentSubagentRow(
+          group: group, style: style, disclosure: $subagents, entry: transcriptEntry))
     }
   }
 
@@ -433,15 +447,26 @@ private struct AgentWell: ViewModifier {
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
-      Button(action: submit) {
-        Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
-          .frame(
-            width: style.canonicalLayout ? 30 : 36,
-            height: style.canonicalLayout ? 30 : 36
-          ).background(style.accent, in: Circle())
-      }.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .accessibilityLabel("Send message")
+      sendButton
     }.padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.vertical, 12)
+  }
+
+  /// On a paired device Return adds a line to the multi-line prompt, so Command-Return
+  /// sends from a hardware keyboard. The Mac keeps Return to send.
+  @ViewBuilder private var sendButton: some View {
+    let button = Button(action: submit) {
+      Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
+        .frame(
+          width: style.canonicalLayout ? 30 : 36,
+          height: style.canonicalLayout ? 30 : 36
+        ).background(style.accent, in: Circle())
+    }.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      .accessibilityLabel("Send message")
+    #if os(iOS)
+      button.keyboardShortcut(.return, modifiers: .command)
+    #else
+      button
+    #endif
   }
 
   private func configuration(_ options: [ConfigOption]) -> some View {

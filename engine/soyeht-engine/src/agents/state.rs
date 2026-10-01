@@ -211,6 +211,9 @@ pub struct State {
     pub discard_until_newline: bool,
     pub next_message_seq: u64,
     pub open_messages: BTreeMap<String, u64>,
+    /// Subagent sessions the harness reported, by session ID.
+    #[serde(default)]
+    pub(crate) subagents: BTreeMap<String, super::subagents::Tracked>,
     pub replay_role: Option<String>,
     pub probe_session_id: Option<String>,
     pub probe_started_ms: Option<i64>,
@@ -280,6 +283,7 @@ impl State {
             discard_until_newline: false,
             next_message_seq: 0,
             open_messages: BTreeMap::new(),
+            subagents: BTreeMap::new(),
             replay_role: None,
             probe_session_id: None,
             probe_started_ms: None,
@@ -585,6 +589,14 @@ impl State {
             next_cursor: (next < self.queue.len())
                 .then(|| format!("{}.{}", self.queue_revision, next)),
             paused: Some(self.queue_paused),
+        })
+    }
+
+    /// Whether a native request or update comes from this pane's session or
+    /// from a subagent session it reported.
+    pub(crate) fn owns_session(&self, session: Option<&str>) -> bool {
+        session.is_some_and(|session| {
+            self.session_id.as_deref() == Some(session) || self.subagents.contains_key(session)
         })
     }
 
