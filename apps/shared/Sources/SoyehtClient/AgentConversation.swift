@@ -44,73 +44,17 @@ enum AgentElapsedText {
   }
 }
 
-public struct AgentConversationStyle: Sendable {
-  public let canvas: Color
-  public let face: Color
-  public let well: Color
-  public let ink: Color
-  public let secondary: Color
-  public let muted: Color
-  public let accent: Color
-  public let shadowDark: Color
-  public let shadowLight: Color
-  public let wellShadow: Color
-  public let wellRim: Color
-  public let wellLip: Color?
-  public let success: Color
-  public let warning: Color
-  public let danger: Color
-  public let bodyFont: Font
-  public let captionFont: Font
-  public let controlFont: Font
-  public let headingFont: Font
-  public let monoFont: Font
-  public let monoSmallFont: Font
-  public let canonicalLayout: Bool
-
+extension AgentConversationView where ControlsAccessory == EmptyView {
   public init(
-    canvas: Color, face: Color, well: Color, ink: Color, secondary: Color, muted: Color,
-    accent: Color, shadowDark: Color, shadowLight: Color, wellShadow: Color, wellRim: Color,
-    wellLip: Color?, success: Color, warning: Color, danger: Color, bodyFont: Font,
-    captionFont: Font, controlFont: Font, headingFont: Font, monoFont: Font,
-    monoSmallFont: Font, canonicalLayout: Bool
+    client: EngineClient, paneId: String, isVisible: Bool = true,
+    showsConfiguration: Bool = true,
+    style: AgentConversationStyle = .standard,
+    onExplicitRemoteAction: @escaping () -> Void = {}
   ) {
-    self.canvas = canvas
-    self.face = face
-    self.well = well
-    self.ink = ink
-    self.secondary = secondary
-    self.muted = muted
-    self.accent = accent
-    self.shadowDark = shadowDark
-    self.shadowLight = shadowLight
-    self.wellShadow = wellShadow
-    self.wellRim = wellRim
-    self.wellLip = wellLip
-    self.success = success
-    self.warning = warning
-    self.danger = danger
-    self.bodyFont = bodyFont
-    self.captionFont = captionFont
-    self.controlFont = controlFont
-    self.headingFont = headingFont
-    self.monoFont = monoFont
-    self.monoSmallFont = monoSmallFont
-    self.canonicalLayout = canonicalLayout
-  }
-
-  @MainActor public static var standard: AgentConversationStyle {
-    AgentConversationStyle(
-      canvas: SoyehtThemeColors.canvas, face: SoyehtThemeColors.face,
-      well: SoyehtThemeColors.well, ink: SoyehtThemeColors.ink,
-      secondary: SoyehtThemeColors.secondary, muted: SoyehtThemeColors.muted,
-      accent: SoyehtThemeColors.accent, shadowDark: SoyehtThemeColors.shadowDark,
-      shadowLight: SoyehtThemeColors.shadowLight, wellShadow: SoyehtThemeColors.wellShadow,
-      wellRim: SoyehtThemeColors.wellRim, wellLip: SoyehtThemeColors.wellLip,
-      success: SoyehtThemeColors.success, warning: SoyehtThemeColors.warning,
-      danger: SoyehtThemeColors.danger, bodyFont: .body, captionFont: .caption,
-      controlFont: .caption, headingFont: .headline, monoFont: .caption.monospaced(),
-      monoSmallFont: .caption2.monospaced(), canonicalLayout: false)
+    self.init(
+      client: client, paneId: paneId, isVisible: isVisible,
+      showsConfiguration: showsConfiguration, style: style,
+      onExplicitRemoteAction: onExplicitRemoteAction, controlsAccessory: { EmptyView() })
   }
 }
 
@@ -160,13 +104,16 @@ private struct AgentWell: ViewModifier {
   }
 }
 
-@MainActor public struct AgentConversationView: View {
+/// `ControlsAccessory` sits next to the permission-mode menu; a host app uses it for
+/// pane controls it owns, such as the iPhone and iPad harness menu.
+@MainActor public struct AgentConversationView<ControlsAccessory: View>: View {
   @Bindable private var client: EngineClient
   private let paneId: String
   private let isVisible: Bool
   private let showsConfiguration: Bool
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
+  private let controlsAccessory: ControlsAccessory
   @State private var prompt = ""
   @State private var follow = AgentConversationFollow()
   @State private var subagents = AgentSubagentDisclosure()
@@ -176,7 +123,8 @@ private struct AgentWell: ViewModifier {
     client: EngineClient, paneId: String, isVisible: Bool = true,
     showsConfiguration: Bool = true,
     style: AgentConversationStyle = .standard,
-    onExplicitRemoteAction: @escaping () -> Void = {}
+    onExplicitRemoteAction: @escaping () -> Void = {},
+    @ViewBuilder controlsAccessory: () -> ControlsAccessory
   ) {
     self.client = client
     self.paneId = paneId
@@ -184,6 +132,7 @@ private struct AgentWell: ViewModifier {
     self.showsConfiguration = showsConfiguration
     self.style = style
     self.onExplicitRemoteAction = onExplicitRemoteAction
+    self.controlsAccessory = controlsAccessory()
   }
 
   private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
@@ -243,6 +192,7 @@ private struct AgentWell: ViewModifier {
           modes: modes, enabled: agent.operation == nil && client.connected, style: style,
           select: { client.setPermissionMode(paneId, to: $0) })
       }
+      controlsAccessory
       Spacer(minLength: 0)
       if isWorking {
         Button(role: .destructive) {
