@@ -48,6 +48,9 @@
       "padding": 1,
       "system_font_size": 1
     },
+    "apps/mac/Sources/AgentHarnessPicker.swift": {
+      "padding": 1
+    },
     "apps/mac/Sources/AppRail.swift": {
       "system_font_size": 1
     },
@@ -89,8 +92,8 @@
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
       "font_name": 7,
-      "padding": 6,
-      "system_font_size": 11
+      "padding": 5,
+      "system_font_size": 10
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
       "padding": 3,
@@ -251,7 +254,7 @@
     "apps/mac/Sources/EditorPaneView.swift": 902,
     "apps/mac/Sources/PreferencesPanel.swift": 995,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3832,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3579,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
@@ -269,7 +272,7 @@
     "engine/soyeht-engine/src/tasks/feedback.rs": 909,
     "engine/soyeht-engine/src/tasks/review.rs": 826,
     "engine/soyeht-engine/src/tasks/worktree.rs": 815,
-    "engine/soyeht-engine/src/terminal_capture.rs": 1599,
+    "engine/soyeht-engine/src/terminal_capture.rs": 1587,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1115,
     "engine/soyeht-engine/tests/runtime.rs": 9373,

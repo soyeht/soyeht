@@ -311,8 +311,10 @@ fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value
         known.map(|agent| &agent.state.phase),
     );
     Ok(json!(HarnessInfo {
+        // Pickers show the same label panes are named after ("Claude", not the
+        // registry's "Claude Agent"), so clients need no naming rule of their own.
+        name: super::naming::harness_label(&entry.launch).to_owned(),
         id: entry.launch.id,
-        name: entry.launch.name,
         available: resolved.is_some(),
         installed: Some(installed),
         version: initialized.map(|i| i.version.clone()).or_else(|| (!entry
@@ -515,5 +517,41 @@ mod tests {
             ),
             ErrorKind::ResyncRequired
         );
+    }
+
+    #[test]
+    fn harness_list_names_harnesses_with_the_label_panes_are_named_after() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-harness-label-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let core = Core::open(&directory).unwrap();
+        let prepared = prepare_catalog(
+            directory.clone(),
+            "harness.list",
+            &json!({}),
+            BTreeSet::new(),
+        )
+        .unwrap();
+        let listed = core.agent_catalog_prepared(prepared, &json!({})).unwrap();
+        let entries = registry::catalogue_entries(&directory).unwrap();
+        let claude = entries
+            .iter()
+            .find(|entry| entry.launch.id == "registry.claude-acp")
+            .unwrap();
+        let item = listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "registry.claude-acp")
+            .unwrap();
+        // The registry calls the adapter "Claude Agent"; panes and pickers say "Claude".
+        assert_eq!(claude.launch.name, "Claude Agent");
+        assert_eq!(
+            item["name"],
+            super::super::naming::harness_label(&claude.launch)
+        );
+        assert_eq!(item["name"], "Claude");
+        drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -31,12 +31,12 @@ public enum HarnessSwitchModel {
     switchState?.phase == .switching
   }
 
-  /// Every harness except the one the pane already runs, grouped and ordered the
-  /// same way as the new-agent picker.
-  public static func sections(
+  /// Every harness except the one the pane already runs, laid out the same way as
+  /// the new-agent picker.
+  public static func layout(
     _ harnesses: [HarnessInfo], current: String?, query: String = ""
-  ) -> [HarnessPickerSection] {
-    HarnessPickerModel.sections(harnesses.filter { $0.id != current }, query: query)
+  ) -> HarnessPickerLayout {
+    HarnessPickerModel.layout(harnesses.filter { $0.id != current }, query: query)
   }
 
   public static func defaultTarget(
