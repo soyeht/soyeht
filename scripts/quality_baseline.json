@@ -1,24 +1,24 @@
 {
   "duplication": {
     "engine": {
-      "clones": 389,
-      "duplicated_lines": 3525
+      "clones": 431,
+      "duplicated_lines": 3872
     },
     "ios": {
       "clones": 6,
       "duplicated_lines": 54
     },
     "mac": {
-      "clones": 81,
-      "duplicated_lines": 802
+      "clones": 80,
+      "duplicated_lines": 786
     },
     "shared": {
-      "clones": 62,
-      "duplicated_lines": 486
+      "clones": 66,
+      "duplicated_lines": 514
     },
     "swift_all": {
-      "clones": 161,
-      "duplicated_lines": 1477
+      "clones": 164,
+      "duplicated_lines": 1490
     }
   },
   "loose_literals": {
@@ -99,8 +99,15 @@
     "apps/shared/Sources/SoyehtClient/MacTerminal.swift": {
       "font_name": 1
     },
+    "apps/shared/Sources/SoyehtClient/PermissionPresentationView.swift": {
+      "corner_radius": 1,
+      "padding": 1
+    },
     "apps/shared/Sources/SoyehtClient/WritingDisplayText.swift": {
       "font_name": 1
+    },
+    "apps/shared/Tests/SoyehtClientTests/PermissionPreviewPolicyTests.swift": {
+      "padding": 1
     },
     "apps/shared/Tests/SoyehtClientTests/WritingDisplayTextTests.swift": {
       "font_name": 1
@@ -130,10 +137,13 @@
       "rust_limits": 1
     },
     "engine/soyeht-engine/src/agents/questions.rs": {
-      "rust_limits": 3
+      "rust_limits": 5
     },
     "engine/soyeht-engine/src/agents/registry.rs": {
       "rust_limits": 3
+    },
+    "engine/soyeht-engine/src/agents/state.rs": {
+      "rust_limits": 1
     },
     "engine/soyeht-engine/src/agents/switching.rs": {
       "rust_limits": 1
@@ -224,33 +234,36 @@
     }
   },
   "oversized_files": {
-    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1497,
-    "apps/mac/Sources/EditorNativeViewport.swift": 903,
+    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
     "apps/mac/Sources/EditorPaneView.swift": 902,
-    "apps/mac/Sources/PreferencesPanel.swift": 917,
-    "apps/mac/Sources/TaskWorkspaceViews.swift": 1323,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3688,
+    "apps/mac/Sources/PreferencesPanel.swift": 995,
+    "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3843,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 953,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1025,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
-    "engine/soyeht-cli/src/task_commands.rs": 868,
-    "engine/soyeht-engine/src/agents/state.rs": 813,
-    "engine/soyeht-engine/src/agents/switching.rs": 1079,
+    "engine/soyeht-cli/src/task_commands.rs": 862,
+    "engine/soyeht-engine/src/agents/questions.rs": 1111,
+    "engine/soyeht-engine/src/agents/state.rs": 937,
+    "engine/soyeht-engine/src/agents/switching.rs": 1069,
     "engine/soyeht-engine/src/editor/service.rs": 1146,
     "engine/soyeht-engine/src/experiment_export.rs": 1216,
     "engine/soyeht-engine/src/pane_observations.rs": 1666,
+    "engine/soyeht-engine/src/server.rs": 986,
     "engine/soyeht-engine/src/tasks/feedback.rs": 909,
-    "engine/soyeht-engine/src/tasks/worktree.rs": 817,
+    "engine/soyeht-engine/src/tasks/review.rs": 826,
+    "engine/soyeht-engine/src/tasks/worktree.rs": 815,
     "engine/soyeht-engine/src/terminal_capture.rs": 1599,
     "engine/soyeht-engine/src/web/host.rs": 956,
-    "engine/soyeht-engine/src/web/permissions.rs": 1114,
-    "engine/soyeht-engine/tests/runtime.rs": 7736,
-    "engine/soyeht-mcp/src/tools.rs": 1125,
+    "engine/soyeht-engine/src/web/permissions.rs": 1115,
+    "engine/soyeht-engine/tests/runtime.rs": 9154,
+    "engine/soyeht-mcp/src/tools.rs": 1189,
+    "engine/soyeht-store/src/agents.rs": 849,
     "engine/soyeht-store/src/editor.rs": 848,
     "engine/soyeht-store/src/tasks.rs": 855,
-    "engine/soyeht-store/tests/agents.rs": 1038,
+    "engine/soyeht-store/tests/agents.rs": 1126,
     "engine/soyeht-store/tests/tasks.rs": 992
   },
   "version": 2

@@ -96,13 +96,16 @@ None of these options accepts another profile or service name.
 
 ## Local quality ratchet
 
-In each fresh worktree, before pushing or running `bash scripts/check_all.sh`,
-install the pinned copy/paste detector with
-`npm ci --prefix scripts/quality --ignore-scripts`. Install the Rust unused-
-dependency scanner with `cargo install cargo-machete --locked` if it is missing.
-The quality gate fails with these commands when a required tool is absent; it
-never downloads a package from a Git hook. Periphery is optional and is reported
-as `SKIPPED` when unavailable, not as a passing check.
+Once per machine, with network access, install the pinned copy/paste detector
+with `npm ci --prefix scripts/quality --ignore-scripts` and the Rust unused-
+dependency scanner with
+`cargo install cargo-machete --version 0.9.2 --locked`. In a fresh worktree the
+gate restores jscpd 4.3.0 from `scripts/quality/package-lock.json` with
+`npm ci --offline`, using only the local npm cache. It finds `cargo-machete` on
+`PATH` or in `$CARGO_HOME/bin` (default `~/.cargo/bin`). When a tool is absent or
+has another version, the gate fails and prints the install command; it never
+downloads a package. Periphery is optional and is reported as `SKIPPED` when
+unavailable, not as a passing check.
 
 The engine and shared Swift scans include tests. The Mac and iOS apps currently
 have no Swift test directories, so their scans cover `Sources`; add any future

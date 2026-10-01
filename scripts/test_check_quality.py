@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -118,11 +121,27 @@ class QualityRatchetTests(unittest.TestCase):
             ):
                 tool_paths(Path(directory))
 
+    def test_missing_jscpd_is_restored_from_the_lockfile_without_network(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools = root / "scripts/quality"
+            tools.mkdir(parents=True)
+            for name in ("package.json", "package-lock.json"):
+                shutil.copy(ROOT / "scripts/quality" / name, tools / name)
+            jscpd, _ = tool_paths(root)
+            self.assertTrue(jscpd.is_file())
+
     def test_missing_machete_is_red_and_missing_periphery_is_skipped(self):
-        with patch("quality_core.shutil.which", return_value=None):
-            with self.assertRaisesRegex(QualityError, r"cargo install cargo-machete"):
-                tool_paths(ROOT)
-            self.assertIn("SKIPPED", periphery_status(ROOT))
+        with tempfile.TemporaryDirectory() as empty_cargo_home:
+            with (
+                patch("quality_core.shutil.which", return_value=None),
+                patch.dict(os.environ, {"CARGO_HOME": empty_cargo_home}),
+            ):
+                with self.assertRaisesRegex(
+                    QualityError, r"cargo install cargo-machete --version"
+                ):
+                    tool_paths(ROOT)
+                self.assertIn("SKIPPED", periphery_status(ROOT))
 
     def test_real_clone_is_detected_in_disposable_sources(self):
         jscpd, _ = tool_paths(ROOT)
@@ -222,14 +241,14 @@ class QualityRatchetTests(unittest.TestCase):
             def gate() -> subprocess.CompletedProcess[str]:
                 return subprocess.run(
                     [
-                        "python3",
+                        sys.executable,
                         str(ROOT / "scripts/check_quality.py"),
                         "--root",
                         str(root),
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=30,
+                    timeout=600,
                 )
 
             self.assertEqual(gate().returncode, 0)

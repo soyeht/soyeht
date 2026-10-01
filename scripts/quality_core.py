@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
 JSCPD_VERSION = "4.3.0"
+MACHETE_VERSION = "0.9.2"
+# Generous ceilings: a killed scanner is a false failure on a busy machine.
+SCAN_TIMEOUT = 300
+TOOL_TIMEOUT = 60
 FILE_LIMIT = 800
 AREAS = {
     "engine": ("engine", "rust", ".rs"),
@@ -45,26 +51,69 @@ class QualityError(Exception):
     """A gate prerequisite or measurement failed."""
 
 
+def install_jscpd_offline(repo: Path) -> str:
+    """Reproduce the locked jscpd from the local npm cache; never use the network."""
+    tools = repo / "scripts/quality"
+    if not (tools / "package-lock.json").is_file() or shutil.which("npm") is None:
+        return "npm or scripts/quality/package-lock.json is unavailable"
+    try:
+        result = subprocess.run(
+            ["npm", "ci", "--ignore-scripts", "--offline", "--no-audit", "--no-fund"],
+            cwd=tools,
+            capture_output=True,
+            text=True,
+            timeout=TOOL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return "offline npm ci timed out"
+    if result.returncode:
+        return "the local npm cache does not hold the locked packages"
+    return ""
+
+
+def find_machete() -> str | None:
+    found = shutil.which("cargo-machete")
+    if found:
+        return found
+    cargo_home = Path(os.environ.get("CARGO_HOME") or Path.home() / ".cargo")
+    candidate = cargo_home / "bin/cargo-machete"
+    return str(candidate) if candidate.is_file() else None
+
+
+def tool_version(executable: str, prefix: str = "") -> str:
+    result = subprocess.run(
+        [executable, "--version"],
+        capture_output=True,
+        text=True,
+        timeout=TOOL_TIMEOUT,
+    )
+    output = result.stdout.strip()
+    return output.removeprefix(prefix).strip() if result.returncode == 0 else ""
+
+
 def tool_paths(repo: Path) -> tuple[Path, str]:
+    """Locate the pinned tools; a missing jscpd is restored offline from the npm cache."""
     jscpd = repo / "scripts/quality/node_modules/.bin/jscpd"
     if not jscpd.is_file():
-        raise QualityError(
-            "jscpd is missing; run: npm ci --prefix scripts/quality --ignore-scripts "
-            "(the pre-push hook never downloads packages)"
-        )
-    version = subprocess.run(
-        [str(jscpd), "--version"], capture_output=True, text=True, timeout=10
-    )
-    if version.returncode or version.stdout.strip() != JSCPD_VERSION:
+        problem = install_jscpd_offline(repo)
+        if problem or not jscpd.is_file():
+            raise QualityError(
+                f"jscpd {JSCPD_VERSION} is missing and could not be restored offline "
+                f"({problem or 'npm ci produced no jscpd'}); run once with network: "
+                "npm ci --prefix scripts/quality --ignore-scripts "
+                "(the gate itself never downloads packages)"
+            )
+    if tool_version(str(jscpd)) != JSCPD_VERSION:
         raise QualityError(
             f"jscpd must be {JSCPD_VERSION}; run: "
             "npm ci --prefix scripts/quality --ignore-scripts"
         )
-    machete = shutil.which("cargo-machete")
+    machete = find_machete()
+    install = f"cargo install cargo-machete --version {MACHETE_VERSION} --locked"
     if machete is None:
-        raise QualityError(
-            "cargo-machete is missing; run: cargo install cargo-machete --locked"
-        )
+        raise QualityError(f"cargo-machete is missing; run: {install}")
+    if tool_version(machete, "cargo-machete") != MACHETE_VERSION:
+        raise QualityError(f"cargo-machete must be {MACHETE_VERSION}; run: {install}")
     return jscpd, machete
 
 
@@ -104,9 +153,14 @@ def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int |
             "--noTips",
             *paths,
         ]
-        result = subprocess.run(
-            command, cwd=repo, capture_output=True, text=True, timeout=45
-        )
+        try:
+            result = subprocess.run(
+                command, cwd=repo, capture_output=True, text=True, timeout=SCAN_TIMEOUT
+            )
+        except subprocess.TimeoutExpired as error:
+            raise QualityError(
+                f"jscpd exceeded {SCAN_TIMEOUT} s for {area}; the machine is overloaded"
+            ) from error
         report = Path(output) / "jscpd-report.json"
         if result.returncode or not report.is_file():
             detail = (result.stderr or result.stdout).strip()
@@ -154,7 +208,7 @@ def machete_status(repo: Path, executable: str) -> str:
         cwd=repo,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=TOOL_TIMEOUT,
     )
     if result.returncode == 0:
         return "PASS"
@@ -208,10 +262,15 @@ def periphery_status(repo: Path) -> str:
 
 def measure(repo: Path, jscpd: Path, machete: str) -> dict:
     oversized, literals = source_measurements(repo)
-    duplicates = {
-        area: duplicate_measurement(repo, area, jscpd) for area in DUPLICATION_SCANS
-    }
-    machete_status(repo, machete)
+    # The scans are independent processes; run them together to keep the hook fast.
+    with ThreadPoolExecutor(max_workers=len(DUPLICATION_SCANS) + 1) as pool:
+        unused_dependencies = pool.submit(machete_status, repo, machete)
+        scans = {
+            area: pool.submit(duplicate_measurement, repo, area, jscpd)
+            for area in DUPLICATION_SCANS
+        }
+        duplicates = {area: scan.result() for area, scan in scans.items()}
+        unused_dependencies.result()
     return {
         "version": 2,
         "duplication": duplicates,
