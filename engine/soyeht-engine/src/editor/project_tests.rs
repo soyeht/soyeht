@@ -269,15 +269,10 @@ async fn tree_lists_lazily_and_tells_the_watcher_when_a_folder_changes() {
     );
     fixture.notifications().await;
     fs::write(fixture.project().join("src/new.rs"), "").unwrap();
-    fixture.at(5_000);
-    fixture.core.advance_project_tree().unwrap();
-    let changed = fixture.notifications().await;
+    let changed = super::project_watch_tests::next_change(&mut fixture).await;
     assert_eq!(
         changed,
         vec![json!({"jsonrpc":"2.0","method":"project.tree_changed",
             "params":{"workspaceId":workspace_id,"paths":["src"]}})]
     );
-    fixture.at(9_000);
-    fixture.core.advance_project_tree().unwrap();
-    assert!(fixture.notifications().await.is_empty());
 }

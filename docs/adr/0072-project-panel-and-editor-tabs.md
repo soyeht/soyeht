@@ -58,8 +58,9 @@ neighbour, as Zed's default `activate_on_close: "history"`.
 `ignore` crate, as project search already uses), ignored entries flagged and
 shown only on request, `.git`, `.hg`, `.svn` and `.DS_Store` never shown, at
 most 5,000 entries. `project.tree.watch` names the folders a connection shows;
-the engine polls them once a second and sends that connection the
-non-durable `project.tree_changed`.
+the engine follows them and sends that connection the non-durable
+`project.tree_changed`. (It polled them once a second; ADR 0074 replaced the
+polling with operating-system file events.)
 
 `project.entry.create`, `project.entry.rename` and `project.entry.delete` act
 on workspace-relative paths of plain names. Each folder the path passes through
@@ -80,8 +81,9 @@ surface.
 ## Consequences
 
 The tree, tabs and preview behave the same on every paired client; activation
-history is per client. Directory polling costs one `read_dir` per watched folder
-per second, bounded at 256 folders per connection. A rename or delete can race
+history is per client. Following directories costs one recursive file-event
+stream per watched workspace (ADR 0074), bounded at 256 folders per
+connection. A rename or delete can race
 another process between the confinement check and the system call; the
 operation then fails or acts inside the folder that was checked. The trash path
 is macOS only for now.

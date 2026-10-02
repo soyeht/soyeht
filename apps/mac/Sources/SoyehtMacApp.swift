@@ -11,6 +11,7 @@ struct SoyehtMacApp: App {
   @State private var client: EngineClient
   @State private var themeStore = SoyehtThemeStore.shared
   @State private var attentionNotifications = AgentAttentionNotifications()
+  @State private var editorInputPreferences = EditorInputPreferences()
   private let webHost: MacWebHost
 
   init() {
@@ -67,6 +68,19 @@ struct SoyehtMacApp: App {
           NotificationCenter.default.post(name: .toggleSoyehtAppBar, object: nil)
         }
         .keyboardShortcut("b", modifiers: [.command, .shift])
+        // Zed's project panel key. The visible editor toggles its workspace's panel.
+        Button("Toggle Project Panel") {
+          NotificationCenter.default.post(name: .toggleSoyehtProjectPanel, object: nil)
+        }
+        .keyboardShortcut("e", modifiers: [.command, .shift])
+        // Zed binds Cmd+K Z, a chord a menu cannot hold; Option+Z is the Mac editors' key.
+        Toggle(
+          "Soft Wrap",
+          isOn: Binding(
+            get: { editorInputPreferences.softWrap },
+            set: { editorInputPreferences.setSoftWrap($0) })
+        )
+        .keyboardShortcut("z", modifiers: .option)
         Divider()
         workspaceViewCommand("Agents", destination: .agents, key: "1")
         workspaceViewCommand("Editor", destination: .editor, key: "2")
@@ -96,6 +110,7 @@ struct SoyehtMacApp: App {
       )
       .environment(themeStore)
       .environment(attentionNotifications)
+      .environment(editorInputPreferences)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
   }
@@ -208,4 +223,5 @@ extension Notification.Name {
   static let toggleSoyehtAppBar = Notification.Name("toggleSoyehtAppBar")
   static let selectSoyehtWorkspaceView = Notification.Name("selectSoyehtWorkspaceView")
   static let showSoyehtEditorPalette = Notification.Name("showSoyehtEditorPalette")
+  static let toggleSoyehtProjectPanel = Notification.Name("toggleSoyehtProjectPanel")
 }

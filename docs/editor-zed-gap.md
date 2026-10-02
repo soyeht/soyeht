@@ -9,7 +9,8 @@ is the closed v1 feature list; its section 4 puts completion, minimap and
 folding out of v1.
 
 Marks: **Have**: works end to end. **Partial**: exists with a material
-limitation. **Lack**: absent. The table reflects `main` before this change. The
+limitation. **Lack**: absent. **Out of scope**: the owner decided not to build
+it. The table reflects `main` before this change. The
 last row group says what this change closes.
 
 ## Feature table
@@ -24,19 +25,19 @@ last row group says what this change closes.
 | Find and replace (in file) | Partial | Only AppKit's find panel (`usesFindPanel = true`), which sees the loaded page (at most `editorViewportLines`), not the file; replace through it bypassed the engine. Project-wide search and replace exist (`file.search`, palette `.project`, `EditorNavigationPalette.replaceAll`). | [Search settings](https://zed.dev/docs/reference/all-settings#search), `buffer_search::Deploy` in [Vim](https://zed.dev/docs/vim#restoring-common-text-editing-and-zed-keybindings), [Project search](https://zed.dev/docs/finding-navigating#project-search) |
 | Go to line | Have | Palette mode `.line` (`EditorNavigationPalette.goToLine`) loads a page at the line; status bar shows `Ln, Col`. | `:<number>` in [Vim ex commands](https://zed.dev/docs/vim#ex-commands), [Line indicator format](https://zed.dev/docs/reference/all-settings#line-indicator-format) |
 | Syntax highlighting | Partial | Incremental tree-sitter for Rust, Swift, TypeScript, Python, JSON, Markdown, shell (`soyeht-editor/src/syntax.rs`), viewport-only projection. Classification is a node-kind heuristic with a short shared keyword list, not per-language highlight queries, so many tokens stay uncolored; no semantic tokens; 7 languages. | [Syntax highlighting and themes](https://zed.dev/docs/configuring-languages#syntax-highlighting-and-themes), [Semantic tokens](https://zed.dev/docs/semantic-tokens) |
-| Soft wrap | Lack | The text container never tracks the view width (`widthTracksTextView = false`, horizontally resizable). | [Soft wrap](https://zed.dev/docs/reference/all-settings#soft-wrap) |
+| Soft wrap | Have | Done (ADR 0074): View > Soft Wrap (`Option+Z`), one global choice. Shared `EditorWrapLayout` counts rows per page line, and the Mac text container is exactly that many cells wide. Line numbers stay on logical lines. Typing re-counts only the loaded page. | [Soft wrap](https://zed.dev/docs/reference/all-settings#soft-wrap) |
 | Line numbers and gutter | Have | `EditorLineGutter` draws numbers, the current line, git markers, agent review and agent cursors; no diagnostic or fold markers, no relative numbers. | [Gutter](https://zed.dev/docs/reference/all-settings#gutter), [Relative line numbers](https://zed.dev/docs/reference/all-settings#relative-line-numbers) |
 | Indentation, auto-indent | Partial | Newline keeps the indent and adds four example after `{[(` (`EditorEditing.insertionPlan`); no Tab/Shift-Tab block indent, no tab size or hard-tab setting, no outdent on `}`, no indent guides. | [Auto indent](https://zed.dev/docs/reference/all-settings#auto-indent), [Tab size](https://zed.dev/docs/reference/all-settings#tab-size), [Hard tabs](https://zed.dev/docs/reference/all-settings#hard-tabs), [Indent guides](https://zed.dev/docs/reference/all-settings#indent-guides) |
 | Bracket matching | Partial | Auto-close and type-over of `()[]{}""''` (`EditorEditing.closingCharacter`); no matching-bracket highlight, no jump to the match. | [Auto close](https://zed.dev/docs/reference/all-settings#auto-close), [Colorize brackets](https://zed.dev/docs/reference/all-settings#colorize-brackets), `%` in [Vim](https://zed.dev/docs/vim) |
 | LSP diagnostics | Have | `lsp.diagnostics` events, underline in severity color with a tooltip (`EditorNativeViewport.attributed`), issue count in the status bar; no next/previous-diagnostic navigation, no gutter or scrollbar marks. | [Diagnostics](https://zed.dev/docs/diagnostics) |
 | LSP go to definition, references | Have | `Cmd+click` and context menu → `file.definition` / `file.references` (`soyeht-lsp/src/client.rs`, `EditorPaneView.openDefinition`). | [Go to definition and references](https://zed.dev/docs/configuring-languages#go-to-definition-and-references) |
-| LSP hover | Lack | No `textDocument/hover` request in `soyeht-lsp`; only diagnostic tooltips. | [Hover information](https://zed.dev/docs/configuring-languages#hover-information) |
-| LSP completion | Lack | No `textDocument/completion`; contract 09 §4 marks completion out of v1. | [Completions](https://zed.dev/docs/completions) |
+| LSP hover | Out of scope | Owner decision (2026-10-02): the LLM agents cover it, so do not propose it again. Diagnostic tooltips stay. | [Hover information](https://zed.dev/docs/configuring-languages#hover-information) |
+| LSP completion | Out of scope | Owner decision (2026-10-02): the LLM agents cover it, so do not propose it again. Contract 09 §4 already left it out of v1. | [Completions](https://zed.dev/docs/completions) |
 | Minimap | Lack | None; out of v1 by contract 09 §4. | [Minimap](https://zed.dev/docs/reference/all-settings#minimap) |
 | Git gutter | Have | `file.diff` against HEAD feeds added/modified/deleted gutter bars, per-line blame in the status bar and a side-by-side sheet (`EditorDiffPresentation.swift`, `EditorDiffSheet`). | [Git gutter](https://zed.dev/docs/reference/all-settings#git-gutter), [Git](https://zed.dev/docs/git) |
 | Large-file performance | Have | Piece table with line index (`buffer.rs`), bounded viewport paging (`EditorViewportPaging`), incremental tree-sitter, CI gates: open 100k lines < 150 ms, search 1 GB < 1 s, VM key work p95 < 8 ms (`scripts/check_editor_performance.py`). Caveats: each write rebuilds a buffer from the full draft (`Service::prepare_edit`), and files above 50 MiB are refused. | No dedicated large-file page; [Performance](https://zed.dev/docs/performance) covers profiling |
 | Keybindings | Partial | Fixed VS Code-like set (`Cmd+P`, `Cmd+Shift+P`, double Shift, `Cmd+D`, `Cmd+/`) plus optional bounded Vim (ADR 0054); no user keymap or base-keymap choice. | [Key bindings](https://zed.dev/docs/key-bindings) |
-| File tree / project panel | Have | `EditorProjectPanel` browses the workspace lazily (`project.tree.list`), hides `.gitignore`d entries with a toggle and never shows `.git`, previews on click and keeps on double click or Return, creates, renames and trashes entries confined to the workspace (`project.entry.*`), reveals the active file, moves with the arrow keys, and follows disk changes (`project.tree.watch`, polled once a second). No multi-selection, drag and drop of entries, git status colors or folder auto-fold. | [Project panel](https://zed.dev/docs/project-panel) |
+| File tree / project panel | Have | `EditorProjectPanel` browses the workspace lazily (`project.tree.list`), hides `.gitignore`d entries with a toggle and never shows `.git`, previews on click and keeps on double click or Return, creates, renames and trashes entries confined to the workspace (`project.entry.*`), reveals the active file, moves with the arrow keys, and follows disk changes from FSEvents/inotify file events (`project.tree.watch`, ADR 0074; polling only where events are unavailable). A sidebar button in the editor header and `Cmd+Shift+E` show or hide it, per workspace; when it is kept open in a narrow window, the panes stack or tab instead (ADR 0074). No multi-selection, drag and drop of entries, git status colors or folder auto-fold. | [Project panel](https://zed.dev/docs/project-panel) |
 
 Shared code: every row marked Have or Partial keeps its logic in
 `SoyehtClient` or the engine, except the text view and gutter, which are
@@ -88,6 +89,22 @@ Closed by the follow-up change (ADR 0072):
 - Mac: `EditorProjectPanel` and `EditorTabBar` replace the open-files list and
   the decorative tabs; the editor destination shows the active tab only.
 
+## Panel toggle, file events and soft wrap
+
+Closed by the change of 2026-10-02 (ADR 0074):
+
+- Project panel: a sidebar button in the editor header, View > Toggle
+  Project Panel (`Cmd+Shift+E`), and a choice kept per workspace
+  (`EditorProjectPanelPreference`). `PaneLayoutFit` keeps a panel that was
+  forced open by stacking or tabbing the panes. It folds the panel only when
+  not even a lone editor fits with it.
+- Engine: `project.tree.watch` follows folders from `notify` file events
+  (FSEvents, inotify). It coalesces each burst, reads only the touched folders
+  and keeps the one-second poll only where no watcher starts. The protocol is
+  unchanged.
+- Soft wrap: `EditorWrapLayout` (shared) and `EditorTextLayout` (shared
+  AppKit), View > Soft Wrap (`Option+Z`).
+
 ## Prioritized plan
 
 Ranked by how soon a person editing code hits the gap, then by cost.
@@ -96,12 +113,12 @@ Ranked by how soon a person editing code hits the gap, then by cost.
 2. **In-file find and replace**: done (ADR 0073).
 3. **Project panel**: done (ADR 0072): a lazy worktree tree with open,
    create, rename and delete, plus closable, reorderable tabs.
-4. **LSP hover and completion**: add `textDocument/hover` and
-   `textDocument/completion` to `soyeht-lsp`, a popover in the shared client.
-   Completion needs the owner to lift contract 09 §4.
-5. **Soft wrap**: belongs in the shared visible-lines renderer (needed for the
-   iPad anyway); wrapping inside the current `NSTextView` page would be thrown
-   away.
+4. **LSP hover and completion**: out of scope by owner decision
+   (2026-10-02). The editor stays simple; the LLM agents cover completion and
+   hover. Do not propose them again.
+5. **Soft wrap**: done (ADR 0074), in the shared visible-lines layout
+   (`EditorWrapLayout`), which the iPad can reuse.
+6. **Project panel toggle and file events**: done (ADR 0074).
 
 Then, in order: indentation commands (Tab/Shift-Tab, tab size, outdent on
 close brace); per-language highlight queries; bracket-match highlight and jump;

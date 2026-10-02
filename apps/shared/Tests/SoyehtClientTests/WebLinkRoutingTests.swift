@@ -35,15 +35,9 @@ import Testing
 }
 
 @MainActor @Test func webLinkPreferencePersistsTheExternalOverride() {
-  let store = LinkMemoryPreferences()
+  let store = MemoryPreferenceStore()
   let preferences = WebLinkPreferences(preferences: store)
   #expect(!preferences.openExternalLinksInSoyeht)
   preferences.setOpenExternalLinksInSoyeht(true)
   #expect(WebLinkPreferences(preferences: store).openExternalLinksInSoyeht)
-}
-
-private final class LinkMemoryPreferences: ClientPreferenceStore {
-  var values: [String: Bool] = [:]
-  func bool(forKey key: String) -> Bool { values[key] ?? false }
-  func set(_ value: Bool, forKey key: String) { values[key] = value }
 }

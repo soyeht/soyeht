@@ -8,7 +8,9 @@ struct EditorPaneView: View {
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
   /// False when the layout gives the editor only its compact floor: the code keeps the width.
-  let showsProjectPanel: Bool
+  let projectPanelFits: Bool
+  /// Only the editor on screen answers Cmd+Shift+E.
+  let isVisible: Bool
   @State private var selectedPosition: TextPosition?
   @State private var showHistory = false
   @State private var showConflict = false
@@ -25,6 +27,16 @@ struct EditorPaneView: View {
     client.editorFiles.values.first { $0.file.paneId == pane.paneId }
   }
 
+  private var showsProjectPanel: Bool {
+    inputPreferences.projectPanel(for: pane.workspaceId).isShown(fits: projectPanelFits)
+  }
+
+  /// Hides a visible panel, else keeps it open for this workspace; the layout then stacks or
+  /// tabs the panes to make room (`PaneLayoutFit`).
+  private func toggleProjectPanel() {
+    inputPreferences.setProjectPanel(.toggled(from: showsProjectPanel), for: pane.workspaceId)
+  }
+
   private var currentDiff: FileDiffResult? {
     guard let file = view?.file, let diff,
       file.fileId == diff.fileId, file.revision == diff.revision
@@ -35,7 +47,8 @@ struct EditorPaneView: View {
   var body: some View {
     VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
       EditorPaneHeader(
-        file: view?.file, branch: branch, showHistory: { showHistory = true },
+        file: view?.file, branch: branch, projectPanelShown: showsProjectPanel,
+        toggleProjectPanel: toggleProjectPanel, showHistory: { showHistory = true },
         showConflict: { showConflict = true }, showDiff: { showDiff = true },
         diffReady: currentDiff != nil, diffProblem: diffProblem, headerDrag: headerDrag)
       if let view {
@@ -46,8 +59,8 @@ struct EditorPaneView: View {
           client: client, view: view, showsProjectPanel: showsProjectPanel,
           selectedPosition: $selectedPosition, navigationTarget: client.editorNavigationTarget,
           languageStatus: languageStatus, diff: currentDiff.map(EditorDiffPresentation.init),
-          vimEnabled: inputPreferences.vimEnabled, vimMode: $vimMode,
-          vimCommandLine: $vimCommandLine,
+          vimEnabled: inputPreferences.vimEnabled, softWrap: inputPreferences.softWrap,
+          vimMode: $vimMode, vimCommandLine: $vimCommandLine,
           definition: openDefinition, findReferences: findReferences
         )
       } else {
@@ -73,6 +86,9 @@ struct EditorPaneView: View {
       if let file = view?.file, let diff = currentDiff {
         EditorDiffSheet(file: file, result: diff, isPresented: $showDiff)
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .toggleSoyehtProjectPanel)) { _ in
+      if isVisible { toggleProjectPanel() }
     }
     .task(id: languageStatusKey) { await pollLanguageStatus() }
     .task(id: diffKey) { await loadDiff() }
@@ -188,6 +204,8 @@ struct EditorPaneView: View {
 private struct EditorPaneHeader: View {
   let file: SoyehtProtocol.FileDocument?
   let branch: String?
+  let projectPanelShown: Bool
+  let toggleProjectPanel: () -> Void
   let showHistory: () -> Void
   let showConflict: () -> Void
   let showDiff: () -> Void
@@ -197,8 +215,17 @@ private struct EditorPaneHeader: View {
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x7) {
+      Button(action: toggleProjectPanel) {
+        Image(systemName: "sidebar.left").font(
+          .system(size: MacTheme.TypeScale.control, weight: .medium))
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(projectPanelShown ? MacTheme.accent : MacTheme.secondary)
+      .help(projectPanelShown ? "Hide Project Panel (⇧⌘E)" : "Show Project Panel (⇧⌘E)")
+      .accessibilityLabel(projectPanelShown ? "Hide project panel" : "Show project panel")
+      .accessibilityIdentifier("editor-project-panel-toggle")
       Image(systemName: "doc.text")
-        .font(.system(size: 12, weight: .medium))
+        .font(.system(size: MacTheme.TypeScale.control, weight: .medium))
         .foregroundStyle(MacTheme.ink)
       Text(pathLabel)
         .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
@@ -206,17 +233,18 @@ private struct EditorPaneHeader: View {
       Spacer(minLength: MacTheme.Space.x8)
       if let branch {
         Image(systemName: "arrow.triangle.branch")
-          .font(.system(size: 11, weight: .medium)).foregroundStyle(MacTheme.muted)
+          .font(.system(size: MacTheme.TypeScale.small, weight: .medium)).foregroundStyle(
+            MacTheme.muted)
         Text(branch).font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
       }
       Button(action: showHistory) {
         Image(systemName: "clock.arrow.circlepath")
-          .font(.system(size: 11, weight: .medium))
+          .font(.system(size: MacTheme.TypeScale.small, weight: .medium))
       }
       .buttonStyle(.plain).foregroundStyle(MacTheme.secondary).help("File history")
       Button(action: showDiff) {
         Image(systemName: "rectangle.split.2x1")
-          .font(.system(size: 11, weight: .medium))
+          .font(.system(size: MacTheme.TypeScale.small, weight: .medium))
       }
       .buttonStyle(.plain)
       .foregroundStyle(diffProblem == nil ? MacTheme.secondary : MacTheme.danger)
@@ -262,7 +290,8 @@ private struct EditorConflictBanner: View {
   var body: some View {
     HStack(spacing: MacTheme.Space.x8) {
       Image(systemName: "exclamationmark.triangle.fill")
-        .font(.system(size: 12, weight: .semibold)).foregroundStyle(MacTheme.danger)
+        .font(.system(size: MacTheme.TypeScale.control, weight: .semibold)).foregroundStyle(
+          MacTheme.danger)
       Text("The file changed on disk while this draft was open.")
         .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
         .foregroundStyle(MacTheme.ink)
@@ -285,6 +314,7 @@ private struct EditorPaneBody: View {
   let languageStatus: LspServerStatus?
   let diff: EditorDiffPresentation?
   let vimEnabled: Bool
+  let softWrap: Bool
   @Binding var vimMode: EditorVimMode
   @Binding var vimCommandLine: String?
   let definition: (TextPosition) -> Void
@@ -301,7 +331,7 @@ private struct EditorPaneBody: View {
         EditorCodeViewport(
           client: client, view: view, selectedPosition: $selectedPosition,
           navigationTarget: navigationTarget,
-          diff: diff, vimEnabled: vimEnabled, vimMode: $vimMode,
+          diff: diff, vimEnabled: vimEnabled, softWrap: softWrap, vimMode: $vimMode,
           vimCommandLine: $vimCommandLine, definition: definition,
           findReferences: findReferences)
         if view.review != nil {
@@ -325,6 +355,7 @@ private struct EditorCodeViewport: View {
   let navigationTarget: EditorNavigationTarget?
   let diff: EditorDiffPresentation?
   let vimEnabled: Bool
+  let softWrap: Bool
   @Binding var vimMode: EditorVimMode
   @Binding var vimCommandLine: String?
   let definition: (TextPosition) -> Void
@@ -344,7 +375,8 @@ private struct EditorCodeViewport: View {
           agentReviewLines: reviewPresentation?.lines ?? [],
           agentCursors: Array(view.agentCursors.values),
           vimEnabled: vimEnabled, vimMode: $vimMode, vimCommandLine: $vimCommandLine,
-          onDefinition: definition, onReferences: findReferences, find: find
+          onDefinition: definition, onReferences: findReferences, find: find,
+          softWrap: softWrap
         )
         .background(MacTheme.face)
         if view.file.language == .markdown, let viewport = view.viewport {
@@ -388,7 +420,8 @@ struct EditorAgentReviewBar: View {
       VStack(alignment: .leading, spacing: MacTheme.Space.x6) {
         HStack(spacing: MacTheme.Space.x8) {
           Image(systemName: "person.crop.circle.badge.checkmark")
-            .font(.system(size: 12, weight: .semibold)).foregroundStyle(MacTheme.accent)
+            .font(.system(size: MacTheme.TypeScale.control, weight: .semibold)).foregroundStyle(
+              MacTheme.accent)
           Text(
             "Review \(presentation.hunks.count) agent \(presentation.hunks.count == 1 ? "change" : "changes")"
           )

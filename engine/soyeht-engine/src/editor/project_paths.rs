@@ -37,6 +37,11 @@ impl ProjectRoot {
         })
     }
 
+    /// The canonical workspace root.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// An existing directory; the empty path is the workspace root.
     pub fn directory(&self, relative: &str) -> io::Result<PathBuf> {
         let names = names(relative, true)?;
