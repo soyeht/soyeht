@@ -60,70 +60,9 @@ fn undo_result(result: FileUndoResult) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
-    use crate::editor::test_fixture::EditorFixture;
-    use serde_json::{Value, json};
-    use std::{
-        fs,
-        ops::{Deref, DerefMut},
-    };
-
-    struct Fixture {
-        base: EditorFixture,
-        file_id: String,
-    }
-
-    impl Deref for Fixture {
-        type Target = EditorFixture;
-        fn deref(&self) -> &EditorFixture {
-            &self.base
-        }
-    }
-
-    impl DerefMut for Fixture {
-        fn deref_mut(&mut self) -> &mut EditorFixture {
-            &mut self.base
-        }
-    }
-
-    impl Fixture {
-        async fn open(text: &str) -> Self {
-            let mut base = EditorFixture::new(&[("main.rs", text)]).await;
-            let file_id = base.open("main.rs", false)["file"]["fileId"]
-                .as_str()
-                .unwrap()
-                .to_owned();
-            Self { base, file_id }
-        }
-
-        fn read(&mut self) -> Value {
-            let file_id = self.file_id.clone();
-            self.base.read(&file_id)
-        }
-
-        fn revision(&mut self) -> String {
-            self.read()["file"]["revision"].as_str().unwrap().to_owned()
-        }
-
-        fn text(&mut self) -> String {
-            let file_id = self.file_id.clone();
-            self.base.text(&file_id)
-        }
-
-        fn type_at(&mut self, now_ms: i64, line: u32, column: u32, text: &str) {
-            self.base.at(now_ms);
-            let file_id = self.file_id.clone();
-            self.base.type_at(&file_id, line, column, text);
-        }
-
-        fn replay(&mut self, method: &str, key: &str) -> Value {
-            let revision = self.revision();
-            let file_id = self.file_id.clone();
-            self.call(
-                method,
-                json!({"fileId":file_id,"baseRevision":revision,"idempotencyKey":key}),
-            )
-        }
-    }
+    use super::super::test_support::Fixture;
+    use serde_json::json;
+    use std::fs;
 
     #[tokio::test]
     async fn undo_and_redo_replay_typing_bursts_through_the_durable_write_path() {
@@ -161,6 +100,19 @@ mod tests {
         fixture.type_at(9_000, 0, 0, "// ");
         assert_eq!(fixture.replay("file.redo", "redo-2")["applied"], false);
         assert_eq!(fixture.text(), "// fn main() {let}\n");
+    }
+
+    #[tokio::test]
+    async fn undo_lands_the_cursor_inside_the_restored_line() {
+        // Typing grew line 2 to 17 characters; after undo it is 9 again and
+        // the cursor must point at the restored edit, not past the line end.
+        let mut fixture = Fixture::open("fn main() {\nlet x = 1\n}\n").await;
+        fixture.type_at(1_000, 1, 9, " + 2 + 3");
+        let undone = fixture.replay("file.undo", "undo-line");
+        assert_eq!(undone["cursor"], json!({"line":1,"column":9}));
+        assert_eq!(fixture.text(), "fn main() {\nlet x = 1\n}\n");
+        let redone = fixture.replay("file.redo", "redo-line");
+        assert_eq!(redone["cursor"], json!({"line":1,"column":17}));
     }
 
     #[tokio::test]

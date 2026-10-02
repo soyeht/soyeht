@@ -19,6 +19,8 @@ const MAX_BYTES: usize = 16 << 20;
 pub struct EditStep {
     forward: Vec<TextEdit>,
     inverse: Vec<TextEdit>,
+    /// A command such as Replace All: always its own undo transaction.
+    standalone: bool,
 }
 
 /// A step applied to a buffer, with the cursor placed after its first replacement.
@@ -33,6 +35,14 @@ impl EditStep {
     /// Applies wire edits to `buffer` and returns the step that can undo and redo them.
     pub fn record(buffer: &mut TextBuffer, edits: &[TextEdit]) -> Result<AppliedStep> {
         apply_tracked(buffer, edits, false)
+    }
+
+    /// Applies edits the engine built itself (find and replace), bounded by
+    /// the document size, as a step that never joins a typing burst.
+    pub fn record_command(buffer: &mut TextBuffer, edits: &[TextEdit]) -> Result<AppliedStep> {
+        let mut applied = apply_tracked(buffer, edits, true)?;
+        applied.step.standalone = true;
+        Ok(applied)
     }
 
     fn bytes(&self) -> usize {
@@ -95,17 +105,18 @@ impl EditHistory {
         self.bytes += bytes;
         match self.undo.last_mut() {
             Some(top)
-                if top
-                    .last_ms
-                    .is_some_and(|last| (0..=GROUP_MS).contains(&(now_ms - last))) =>
+                if !step.standalone
+                    && top
+                        .last_ms
+                        .is_some_and(|last| (0..=GROUP_MS).contains(&(now_ms - last))) =>
             {
                 top.steps.push(step);
                 top.bytes += bytes;
                 top.last_ms = Some(now_ms);
             }
             _ => self.undo.push(Transaction {
+                last_ms: (!step.standalone).then_some(now_ms),
                 steps: vec![step],
-                last_ms: Some(now_ms),
                 bytes,
             }),
         }
@@ -225,6 +236,7 @@ fn apply_tracked(
         step: EditStep {
             forward: edits.to_vec(),
             inverse,
+            standalone: false,
         },
         applied,
         cursor,

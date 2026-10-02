@@ -2,6 +2,8 @@
 
 pub(crate) mod agent_review;
 pub(crate) mod api;
+mod creation;
+mod find;
 mod persistence;
 mod project_entries;
 mod project_files;
@@ -14,12 +16,13 @@ mod service;
 mod tabs;
 #[cfg(test)]
 pub(crate) mod test_fixture;
+#[cfg(test)]
+mod test_support;
 mod trash;
 mod undo;
 
-pub(crate) use project_files::{ProjectFile, enumerate_project_files};
+pub(crate) use project_files::{ProjectFile, enumerate_project_files, language};
 pub use project_tree::Watches as ProjectWatches;
-pub(crate) use service::language;
 pub use service::{FileSystemPort, Service, SystemFiles};
 pub(crate) use tabs::refresh_tabs;
 
@@ -38,6 +41,8 @@ pub fn handles(method: &str) -> bool {
             | "file.undo"
             | "file.redo"
             | "file.search"
+            | "file.find"
+            | "file.replace"
             | "project.tree.list"
             | "project.tree.watch"
             | "project.entry.create"
@@ -67,6 +72,8 @@ impl Core {
             "file.revert" => self.file_revert(connection, params),
             "file.undo" | "file.redo" => self.file_undo(connection, method, params),
             "file.search" => self.file_search(connection, params),
+            "file.find" => self.file_find(params),
+            "file.replace" => self.file_replace(connection, params),
             "project.tree.list" => self.project_tree_list(params),
             "project.tree.watch" => self.project_tree_watch(connection, params),
             "project.entry.create" => self.project_entry_create(connection, params),

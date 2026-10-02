@@ -104,7 +104,7 @@ impl Core {
             );
         }
         let text = self.editor.read_disk(&resolved.canonical)?;
-        let language = super::service::language(&resolved.canonical);
+        let language = super::language(&resolved.canonical);
         let pane = editor_pane(&workspace, &resolved.relative);
         let saved = StoredPane {
             pane: pane.clone(),
@@ -151,7 +151,7 @@ impl Core {
         let pane = editor_pane(request.workspace, &file.relative_path);
         file.pane_id = Some(pane.pane_id.clone());
         file.watching = true;
-        file.language = super::service::language(request.canonical);
+        file.language = super::language(request.canonical);
         let pending_draft = file.draft_text.is_some() && file.conflict_text.is_none();
         let file_id = file.file_id.clone();
         let saved = StoredPane {

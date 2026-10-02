@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aaafc5f521f9268613b64d8b29fb4de2476a93927623711d46145a30c08a5fbc). Do not edit.
+// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -4266,6 +4266,85 @@ pub struct FileSearchResult {
     pub replaced: u32,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum FileFindDirection {
+    #[serde(rename = "next")]
+    Next,
+    #[serde(rename = "previous")]
+    Previous,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileFindQuery {
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "caseSensitive")]
+    pub case_sensitive: bool,
+    #[serde(rename = "wholeWord")]
+    pub whole_word: bool,
+    #[serde(rename = "regex")]
+    pub regex: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileFindParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "query")]
+    pub query: FileFindQuery,
+    #[serde(rename = "from")]
+    pub from: TextPosition,
+    #[serde(rename = "direction")]
+    pub direction: FileFindDirection,
+    #[serde(rename = "visibleFromLine", skip_serializing_if = "Option::is_none")]
+    pub visible_from_line: Option<u32>,
+    #[serde(rename = "visibleLineCount", skip_serializing_if = "Option::is_none")]
+    pub visible_line_count: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileFindMatch {
+    #[serde(rename = "index")]
+    pub index: u32,
+    #[serde(rename = "range")]
+    pub range: TextRange,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileFindResult {
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "total")]
+    pub total: u32,
+    #[serde(rename = "current", skip_serializing_if = "Option::is_none")]
+    pub current: Option<FileFindMatch>,
+    #[serde(rename = "visible")]
+    pub visible: Vec<TextRange>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileReplaceParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "query")]
+    pub query: FileFindQuery,
+    #[serde(rename = "replacement")]
+    pub replacement: String,
+    #[serde(rename = "range", skip_serializing_if = "Option::is_none")]
+    pub range: Option<TextRange>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileReplaceResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "replaced")]
+    pub replaced: u32,
+    #[serde(rename = "changedLines")]
+    pub changed_lines: Vec<u32>,
+    #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<TextPosition>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileSymbol {
     #[serde(rename = "name")]
     pub name: String,
@@ -5889,6 +5968,10 @@ pub enum Request {
     FileRedo(FileUndoParams),
     #[serde(rename = "file.search")]
     FileSearch(FileSearchParams),
+    #[serde(rename = "file.find")]
+    FileFind(FileFindParams),
+    #[serde(rename = "file.replace")]
+    FileReplace(FileReplaceParams),
     #[serde(rename = "file.symbols")]
     FileSymbols(FileSymbolsParams),
     #[serde(rename = "file.definition")]
@@ -6327,6 +6410,13 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("file.undo", "FileUndoParams", "FileUndoResult", true),
     ("file.redo", "FileUndoParams", "FileUndoResult", true),
     ("file.search", "FileSearchParams", "FileSearchResult", true),
+    ("file.find", "FileFindParams", "FileFindResult", false),
+    (
+        "file.replace",
+        "FileReplaceParams",
+        "FileReplaceResult",
+        true,
+    ),
     (
         "file.symbols",
         "FileSymbolsParams",

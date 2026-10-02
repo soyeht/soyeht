@@ -66,7 +66,7 @@ impl Core {
                 continue;
             };
             moved.relative_path = format!("{to}{}", &file.relative_path[from.len()..]);
-            moved.language = super::service::language(Path::new(&moved.relative_path));
+            moved.language = super::language(Path::new(&moved.relative_path));
             moved.updated_ms = now;
             if let Some(pane) = moved
                 .pane_id

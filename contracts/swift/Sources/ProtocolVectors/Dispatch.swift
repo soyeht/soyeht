@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aaafc5f521f9268613b64d8b29fb4de2476a93927623711d46145a30c08a5fbc). Do not edit.
+// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -398,6 +398,13 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "FileSearchMatch": return try codec(SoyehtProtocol.FileSearchMatch.self, data)
         case "FileSearchParams": return try codec(SoyehtProtocol.FileSearchParams.self, data)
         case "FileSearchResult": return try codec(SoyehtProtocol.FileSearchResult.self, data)
+        case "FileFindDirection": return try codec(SoyehtProtocol.FileFindDirection.self, data)
+        case "FileFindQuery": return try codec(SoyehtProtocol.FileFindQuery.self, data)
+        case "FileFindParams": return try codec(SoyehtProtocol.FileFindParams.self, data)
+        case "FileFindMatch": return try codec(SoyehtProtocol.FileFindMatch.self, data)
+        case "FileFindResult": return try codec(SoyehtProtocol.FileFindResult.self, data)
+        case "FileReplaceParams": return try codec(SoyehtProtocol.FileReplaceParams.self, data)
+        case "FileReplaceResult": return try codec(SoyehtProtocol.FileReplaceResult.self, data)
         case "FileSymbol": return try codec(SoyehtProtocol.FileSymbol.self, data)
         case "FileSymbolsParams": return try codec(SoyehtProtocol.FileSymbolsParams.self, data)
         case "FileSymbolsResult": return try codec(SoyehtProtocol.FileSymbolsResult.self, data)

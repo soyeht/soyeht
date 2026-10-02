@@ -432,7 +432,7 @@ fn detached_file(
         pane_id: None,
         workspace_id: request.workspace_id.clone(),
         relative_path: project.relative.clone(),
-        language: super::service::language(&project.canonical),
+        language: super::language(&project.canonical),
         revision: 0,
         disk_revision: 0,
         disk_text: disk,

@@ -10,7 +10,7 @@
     },
     "mac": {
       "clones": 79,
-      "duplicated_lines": 779
+      "duplicated_lines": 776
     },
     "shared": {
       "clones": 66,
@@ -18,7 +18,7 @@
     },
     "swift_all": {
       "clones": 163,
-      "duplicated_lines": 1483
+      "duplicated_lines": 1480
     }
   },
   "loose_literals": {
@@ -263,7 +263,7 @@
     "engine/soyeht-engine/src/agents/questions.rs": 1119,
     "engine/soyeht-engine/src/agents/state.rs": 949,
     "engine/soyeht-engine/src/agents/switching.rs": 1063,
-    "engine/soyeht-engine/src/editor/service.rs": 1134,
+    "engine/soyeht-engine/src/editor/service.rs": 1079,
     "engine/soyeht-engine/src/experiment_export.rs": 1216,
     "engine/soyeht-engine/src/pane_observations.rs": 1666,
     "engine/soyeht-engine/src/server.rs": 1172,
