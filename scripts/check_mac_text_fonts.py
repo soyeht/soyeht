@@ -9,6 +9,7 @@ import sys
 
 
 APPROVED_FONT_NAMES = {
+    "Inter",
     "JetBrains Mono",
     "Newsreader",
     "Nunito",

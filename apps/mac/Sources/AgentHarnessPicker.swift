@@ -54,9 +54,9 @@ struct AgentHarnessPicker: View {
       HStack(spacing: MacTheme.Space.x8) {
         TextField("Search agents", text: $query)
           .textFieldStyle(.plain)
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
           .padding(.horizontal, MacTheme.Space.x10).frame(height: 32)
-          .neoWell(radius: MacTheme.Radius.compact)
+          .paneWell(radius: MacTheme.Radius.compact)
         Button {
           client.refreshHarnesses(rescan: true)
         } label: {
@@ -69,7 +69,7 @@ struct AgentHarnessPicker: View {
         VStack(spacing: MacTheme.Space.x10) {
           ProgressView()
           Text("Loading agents…")
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
             .foregroundStyle(MacTheme.muted)
         }
         .frame(maxWidth: .infinity, minHeight: 220)
@@ -151,9 +151,9 @@ struct AgentHarnessPicker: View {
           .foregroundStyle(statusColor(status)).frame(width: 18)
         VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
           Text(item.name)
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
+            .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold)).lineLimit(1)
           Text(HarnessPickerModel.statusLabel(for: item))
-            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
             .foregroundStyle(MacTheme.muted)
         }
         Spacer()
@@ -172,7 +172,7 @@ struct AgentHarnessPicker: View {
   @ViewBuilder private var selectedConfiguration: some View {
     if let selected, selected.available {
       Text(HarnessPickerModel.statusReason(for: selected))
-        .font(MacTheme.chrome(MacTheme.TypeScale.small))
+        .font(MacTheme.ui(MacTheme.TypeScale.small))
         .foregroundStyle(MacTheme.secondary)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("agent-setup-reason")
@@ -182,10 +182,10 @@ struct AgentHarnessPicker: View {
           ProgressView().controlSize(.small)
           Text("Loading models…")
         }
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
         .foregroundStyle(MacTheme.muted)
         .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
-        .neoWell(radius: MacTheme.Radius.compact)
+        .paneWell(radius: MacTheme.Radius.compact)
         .accessibilityIdentifier("model-picker-loading")
       } else {
         Menu {
@@ -210,9 +210,9 @@ struct AgentHarnessPicker: View {
             Image(systemName: "chevron.up.chevron.down")
               .font(.system(size: MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
           }
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
           .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
-          .neoWell(radius: MacTheme.Radius.compact)
+          .paneWell(radius: MacTheme.Radius.compact)
         }
         .menuStyle(.borderlessButton)
         if let reason = HarnessPickerModel.modelRefusalReason(for: selectedModel) {
@@ -221,18 +221,18 @@ struct AgentHarnessPicker: View {
           } icon: {
             Image(systemName: "exclamationmark.triangle.fill")
           }
-          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
           .foregroundStyle(MacTheme.warning)
           .fixedSize(horizontal: false, vertical: true)
           .accessibilityIdentifier("model-observed-refusal")
         }
         if modelContentState == .empty {
           Text("This agent provided no model choices.")
-            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
             .foregroundStyle(MacTheme.muted)
         } else if modelContentState == .unavailable {
           Text("Models will appear after this agent starts.")
-            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
             .foregroundStyle(MacTheme.muted)
         }
       }
@@ -242,7 +242,7 @@ struct AgentHarnessPicker: View {
           ForEach(choices, id: \.value) { choice in
             Button(choice.name) { effort = choice.value }
               .font(
-                MacTheme.chrome(
+                MacTheme.ui(
                   MacTheme.TypeScale.control, weight: effort == choice.value ? .bold : .semibold)
               )
               .frame(maxWidth: .infinity).padding(.vertical, MacTheme.Space.x6)
@@ -255,12 +255,12 @@ struct AgentHarnessPicker: View {
         HarnessPickerModel.statusReason(for: selected),
         systemImage: "exclamationmark.circle"
       )
-      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+      .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
       .foregroundStyle(MacTheme.muted)
       .accessibilityIdentifier("agent-setup-reason")
     } else {
       Text("Choose an agent to continue.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption))
         .foregroundStyle(MacTheme.secondary)
     }
   }

@@ -1,6 +1,22 @@
+import SwiftUI
+
+/// The two typefaces of the approved pane interior: Inter for the interface and JetBrains Mono
+/// for code. The terminal uses the same mono family, so code and terminal stay one face.
+public enum PaneInteriorFont {
+  public static let uiFamily = "Inter"
+  public static let monoFamily = "JetBrains Mono"
+
+  public static func ui(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    .custom(uiFamily, size: size).weight(weight)
+  }
+
+  public static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    .custom(monoFamily, size: size).weight(weight)
+  }
+}
+
 #if os(macOS)
   import AppKit
-  import SwiftUI
   import SwiftTerm
 
   private struct TerminalKeyboardInputEnabledKey: EnvironmentKey {
@@ -15,7 +31,7 @@
   }
 
   public enum MacTerminalFont {
-    public static let familyName = "JetBrains Mono"
+    public static let familyName = PaneInteriorFont.monoFamily
     public static let pointSize = CGFloat(PaneLayoutContentMetrics.terminalFontPointSize)
 
     public static func active() -> NSFont {

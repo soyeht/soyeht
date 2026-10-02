@@ -27,6 +27,9 @@ public struct SoyehtThemeColorSet {
   public let agentGreen: Color
   public let agentSand: Color
 
+  /// Thin separators. The approved palettes draw the `border` role in the well tone.
+  public var border: Color { well }
+
   public init(palette: SoyehtThemePalette) {
     canvas = Self.color(palette.canvas)
     face = Self.color(palette.face)
@@ -77,6 +80,7 @@ public struct SoyehtThemeColorSet {
   public static var face: Color { active.face }
   public static var well: Color { active.well }
   public static var hover: Color { active.hover }
+  public static var border: Color { active.border }
   public static var ink: Color { active.ink }
   public static var secondary: Color { active.secondary }
   public static var muted: Color { active.muted }

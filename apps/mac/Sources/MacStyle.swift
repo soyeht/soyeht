@@ -19,7 +19,7 @@ extension LocalizedStringKey.StringInterpolation {
   static var face: Color { SoyehtThemeColors.face }
   static var well: Color { SoyehtThemeColors.well }
   static var hover: Color { SoyehtThemeColors.hover }
-  static var border: Color { SoyehtThemeColors.well }
+  static var border: Color { SoyehtThemeColors.border }
   static var ink: Color { SoyehtThemeColors.ink }
   static var secondary: Color { SoyehtThemeColors.secondary }
   static var muted: Color { SoyehtThemeColors.muted }
@@ -115,6 +115,11 @@ extension LocalizedStringKey.StringInterpolation {
     .custom("JetBrains Mono", size: size).weight(weight)
   }
 
+  /// Inter, the interface face of the approved pane interior.
+  static func ui(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    PaneInteriorFont.ui(size, weight: weight)
+  }
+
   static func screenplay(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
     .custom("Courier Prime", size: size).weight(weight)
   }
@@ -158,14 +163,7 @@ extension LocalizedStringKey.StringInterpolation {
   }
 
   static var agentConversation: AgentConversationStyle {
-    AgentConversationStyle(
-      canvas: face, face: face, well: well, ink: ink, secondary: secondary, muted: muted,
-      accent: accent, shadowDark: shadowDark, shadowLight: shadowLight, wellShadow: wellShadow,
-      wellRim: wellRim, wellLip: wellLip, success: success, warning: warning, danger: danger,
-      bodyFont: chrome(TypeScale.body),
-      captionFont: chrome(TypeScale.caption), controlFont: chrome(TypeScale.control),
-      headingFont: chrome(TypeScale.caption, weight: .bold), monoFont: mono(TypeScale.control),
-      monoSmallFont: mono(TypeScale.micro), canonicalLayout: true)
+    .pane(SoyehtThemeColorSet(palette: SoyehtThemeColors.palette))
   }
 }
 

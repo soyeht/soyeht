@@ -73,7 +73,7 @@ struct EditorProjectPanel: View {
 
   private var header: some View {
     HStack(spacing: MacTheme.Space.x6) {
-      Text("FILES").font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+      Text("FILES").font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .bold))
         .tracking(EditorProjectMetrics.headerTracking).foregroundStyle(MacTheme.secondary)
       Spacer()
       headerButton("doc.badge.plus", help: "New file") { beginCreate(.file) }
@@ -98,7 +98,7 @@ struct EditorProjectPanel: View {
   {
     Button(action: action) {
       Image(systemName: symbol)
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .medium))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .medium))
     }
     .buttonStyle(.plain).foregroundStyle(MacTheme.muted).help(help)
     .disabled(!client.connected)
@@ -146,7 +146,7 @@ struct EditorProjectPanel: View {
   private func nameField(depth: Int, folder: Bool) -> some View {
     HStack(spacing: MacTheme.Space.x6) {
       Image(systemName: folder ? "folder" : "doc.text")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .medium))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .medium))
         .foregroundStyle(MacTheme.secondary)
       TextField("Name", text: $draftName)
         .textFieldStyle(.plain)
@@ -299,12 +299,12 @@ private struct EditorProjectRow: View {
   var body: some View {
     HStack(spacing: MacTheme.Space.x4) {
       Image(systemName: row.expanded ? "chevron.down" : "chevron.right")
-        .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .semibold))
         .foregroundStyle(MacTheme.muted)
         .opacity(row.node.isDirectory ? 1 : 0)
         .frame(width: EditorProjectMetrics.indent)
       Image(systemName: row.node.isDirectory ? "folder" : "doc.text")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .medium))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .medium))
         .foregroundStyle(active ? MacTheme.accent : MacTheme.secondary)
       Text(row.node.name)
         .font(MacTheme.mono(EditorProjectMetrics.nameFont, weight: active ? .bold : .regular))
@@ -342,15 +342,15 @@ struct EditorEmptySurface: View {
       EditorProjectPanel(client: client, workspaceId: workspaceId, activePath: nil)
       VStack(spacing: MacTheme.Space.x18) {
         Image(systemName: "doc.text")
-          .font(MacTheme.chrome(MacTheme.TypeScale.title, weight: .light))
+          .font(MacTheme.ui(MacTheme.TypeScale.title, weight: .light))
           .foregroundStyle(MacTheme.secondary)
         Text("Open a file to begin")
-          .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .bold))
         Text("Pick one in Files, or press ⌘P to find it by name.")
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.secondary)
         Button("Open file", action: openFile)
-          .buttonStyle(NeoPillButtonStyle(accent: true))
+          .buttonStyle(.panePrimary)
           .disabled(!client.connected)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -9,16 +9,16 @@
       "duplicated_lines": 54
     },
     "mac": {
-      "clones": 79,
-      "duplicated_lines": 776
+      "clones": 78,
+      "duplicated_lines": 766
     },
     "shared": {
-      "clones": 66,
-      "duplicated_lines": 514
+      "clones": 65,
+      "duplicated_lines": 506
     },
     "swift_all": {
-      "clones": 163,
-      "duplicated_lines": 1480
+      "clones": 161,
+      "duplicated_lines": 1462
     }
   },
   "loose_literals": {
@@ -65,7 +65,7 @@
       "system_font_size": 4
     },
     "apps/mac/Sources/EditorPaneView.swift": {
-      "corner_radius": 2,
+      "corner_radius": 1,
       "system_font_size": 7
     },
     "apps/mac/Sources/MacStyle.swift": {
@@ -91,9 +91,9 @@
       "system_font_size": 2
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
-      "font_name": 7,
+      "font_name": 5,
       "padding": 5,
-      "system_font_size": 10
+      "system_font_size": 9
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
       "padding": 3,
@@ -102,19 +102,11 @@
     "apps/mac/Sources/WritingSectionView.swift": {
       "system_font_size": 4
     },
-    "apps/shared/Sources/SoyehtClient/AgentConversation.swift": {
-      "corner_radius": 2,
-      "padding": 19
-    },
     "apps/shared/Sources/SoyehtClient/AgentSubagents.swift": {
       "padding": 2
     },
     "apps/shared/Sources/SoyehtClient/MacTerminal.swift": {
       "font_name": 1
-    },
-    "apps/shared/Sources/SoyehtClient/PermissionPresentationView.swift": {
-      "corner_radius": 1,
-      "padding": 1
     },
     "apps/shared/Sources/SoyehtClient/WritingDisplayText.swift": {
       "font_name": 1
@@ -253,7 +245,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
     "apps/mac/Sources/PreferencesPanel.swift": 995,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3549,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3547,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,

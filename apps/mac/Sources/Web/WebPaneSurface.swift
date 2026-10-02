@@ -102,21 +102,21 @@ private struct WebControlBadge: View {
     if session.humanHasControl {
       Button(action: session.handBack) {
         Label("Your turn · Hand control back", systemImage: "hand.raised.fill")
-          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
           .foregroundStyle(MacTheme.ink)
           .padding(.horizontal, MacTheme.Space.x10)
           .frame(height: 28)
-          .neoRaised(radius: MacTheme.Radius.pill, elevation: .card)
+          .paneCard(radius: MacTheme.Radius.pill)
       }
       .buttonStyle(.plain)
       .padding(MacTheme.Space.x12)
     } else if session.agentCommandRunning || view?.agentDriving == true {
       Label("Agent driving · \(domain)", systemImage: "cursorarrow.motionlines")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
         .foregroundStyle(MacTheme.accent)
         .padding(.horizontal, MacTheme.Space.x10)
         .frame(height: 28)
-        .neoRaised(radius: MacTheme.Radius.pill, elevation: .card)
+        .paneCard(radius: MacTheme.Radius.pill)
         .padding(MacTheme.Space.x12)
     }
   }
@@ -161,7 +161,7 @@ private struct WebNavigationBar: View {
     }
     .padding(.horizontal, MacTheme.Space.x10)
     .frame(height: PaneLayoutContentMetrics.webNavigationHeight)
-    .neoWell(radius: MacTheme.Radius.pill)
+    .paneCard(radius: MacTheme.Radius.pill)
   }
 
   private var zoomMenu: some View {
@@ -182,11 +182,11 @@ private struct WebNavigationBar: View {
       .popover(isPresented: $findPresented) {
         VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
           Text("Find in page")
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
           TextField("Text", text: $findText)
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+            .font(MacTheme.ui(MacTheme.TypeScale.caption))
             .textFieldStyle(.plain).padding(.horizontal, MacTheme.Space.x8)
-            .frame(width: 220, height: 26).neoWell(radius: MacTheme.Radius.compact)
+            .frame(width: 220, height: 26).paneWell(radius: MacTheme.Radius.compact)
             .onSubmit { find(backwards: false) }
           HStack {
             Button("Previous") { find(backwards: true) }
@@ -194,7 +194,7 @@ private struct WebNavigationBar: View {
             Spacer()
             if let findMatched {
               Text(findMatched ? "Match found" : "No match")
-                .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+                .font(MacTheme.ui(MacTheme.TypeScale.micro))
                 .foregroundStyle(findMatched ? MacTheme.success : MacTheme.muted)
             }
           }.buttonStyle(.plain)
@@ -210,12 +210,12 @@ private struct WebNavigationBar: View {
     .popover(isPresented: $inspectorPresented) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
         Text("Web Inspector")
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
         Text("This pane is inspectable. Choose it from Safari’s Develop menu.")
-          .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.ui(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
           .frame(width: 240, alignment: .leading)
         Button("Open Safari") { openSafari() }
-          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
           .buttonStyle(.plain).foregroundStyle(MacTheme.accent)
       }.padding(MacTheme.Space.x12)
     }
@@ -288,7 +288,7 @@ private struct WebNavigationBar: View {
     } label: {
       HStack(spacing: MacTheme.Space.x6) {
         Image(systemName: "cursorarrow.click.2").frame(width: 11, height: 11)
-        Text("Pick element").font(MacTheme.chrome(MacTheme.TypeScale.micro))
+        Text("Pick element").font(MacTheme.ui(MacTheme.TypeScale.micro))
       }
       .foregroundStyle(session.elementPicker.isActive ? MacTheme.accent : MacTheme.ink)
       .padding(.horizontal, MacTheme.Space.x8).frame(height: 20)
@@ -334,14 +334,14 @@ private struct WebNavigationBar: View {
         .onSubmit { navigate(address, nil) }
       if let label = serverLabel {
         Text(label)
-          .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+          .font(MacTheme.ui(MacTheme.TypeScale.micro))
           .foregroundStyle(MacTheme.muted)
           .lineLimit(1)
       }
     }
     .padding(.horizontal, MacTheme.Space.x10)
     .frame(height: 20)
-    .neoRaised(radius: MacTheme.Radius.pill, elevation: .chip)
+    .paneWell(radius: MacTheme.Radius.pill)
   }
 
   private var secure: Bool { URL(string: pane.url ?? "")?.scheme == "https" }
@@ -406,14 +406,14 @@ private struct WebPickTray: View {
     if picker.isActive || picker.selection != nil {
       HStack(spacing: MacTheme.Space.x10) {
         Image(systemName: "cursorarrow.click.2").foregroundStyle(MacTheme.accent)
-        Text(message).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        Text(message).font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
         Spacer()
         if picker.selection != nil, let preferred {
           Button {
             attach(preferred.paneId)
           } label: {
             Label("Attach to \(preferred.name)", systemImage: "paperclip")
-              .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+              .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
           }.buttonStyle(.plain)
           Menu {
             ForEach(agents, id: \.paneId) { agent in
@@ -424,10 +424,10 @@ private struct WebPickTray: View {
           }.menuStyle(.borderlessButton).fixedSize()
         }
         Button("Clear") { picker.navigationStarted() }
-          .font(MacTheme.chrome(MacTheme.TypeScale.small)).buttonStyle(.plain)
+          .font(MacTheme.ui(MacTheme.TypeScale.small)).buttonStyle(.plain)
       }
       .padding(.horizontal, MacTheme.Space.x12).frame(height: 34)
-      .neoRaised(radius: MacTheme.Radius.pill, elevation: .card)
+      .paneCard(radius: MacTheme.Radius.pill)
       .padding(MacTheme.Space.x12)
     }
   }
@@ -466,7 +466,7 @@ private struct WebStatusBar: View {
         HStack(spacing: MacTheme.Space.x6) {
           Image(systemName: "terminal").foregroundStyle(MacTheme.warning)
           Text("console: \(view?.warnings ?? 0) warnings · \(view?.errors ?? 0) errors")
-            .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+            .font(MacTheme.ui(MacTheme.TypeScale.micro))
         }
       }
       .buttonStyle(.plain)
@@ -475,7 +475,7 @@ private struct WebStatusBar: View {
         WebObservationPanel(session: session)
       }
       Text(sessionLabel)
-        .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+        .font(MacTheme.ui(MacTheme.TypeScale.micro))
     }
     .foregroundStyle(MacTheme.muted)
     .padding(.horizontal, MacTheme.Space.x12)
@@ -553,7 +553,7 @@ private struct WebObservationPanel: View {
             .lineLimit(1)
         }
         .padding(MacTheme.Space.x8)
-        .neoWell(radius: MacTheme.Radius.compact)
+        .paneWell(radius: MacTheme.Radius.compact)
       }
     }
   }
@@ -579,14 +579,14 @@ private struct WebObservationPanel: View {
             .textSelection(.enabled)
         }
         .padding(MacTheme.Space.x8)
-        .neoWell(radius: MacTheme.Radius.compact)
+        .paneWell(radius: MacTheme.Radius.compact)
       }
     }
   }
 
   private func empty(_ title: String) -> some View {
     Text(title)
-      .font(MacTheme.chrome(MacTheme.TypeScale.small))
+      .font(MacTheme.ui(MacTheme.TypeScale.small))
       .foregroundStyle(MacTheme.muted)
       .frame(maxWidth: .infinity, minHeight: 220)
   }

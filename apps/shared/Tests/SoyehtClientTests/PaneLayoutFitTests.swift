@@ -3,16 +3,17 @@ import Testing
 @testable import SoyehtClient
 
 private let fonts = acceptedFontMetrics
-private let halo = 15.0
+private let halo = PaneLayoutSpacing.paneHalo
 private let floors = PaneLayoutFloorFormula.footprintFloors(fonts: fonts, halo: halo)
 private let compactFloors = PaneLayoutFloorFormula.compactFootprintFloors(fonts: fonts, halo: halo)
 private let sizing = PaneLayoutSizingPolicy(
-  floors: floors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18),
+  floors: floors, gaps: PaneLayoutSpacing.gaps,
   compactFloors: compactFloors)
 private let window = PaneLayoutWindowPolicy(
   minimumExercisedViewport: PaneLayoutSize(width: 375, height: 375),
   largestPaneFootprintWidth: floors.values.map(\.width).max() ?? 0,
-  standardHorizontalInset: 18, topInset: 8, topBarHeight: 42, paneVerticalInset: 17,
+  standardHorizontalInset: PaneLayoutSpacing.outerMargin, topInset: 8, topBarHeight: 42,
+  paneVerticalInset: PaneLayoutSpacing.outerMargin,
   railWidth: 56)
 
 /// The automatic layout the Mac builds as panes open, editor first.
@@ -51,9 +52,9 @@ private func viewport1024By700(railOpen: Bool) -> PaneLayoutSize {
 func editorAndAgentFitA1024By700Window(railOpen: Bool) throws {
   let viewport = viewport1024By700(railOpen: railOpen)
   let tree = try workspace([.editor, .agent])
-  // With the rail open, the editor's full floor, project panel included, does not fit beside
-  // the agent; this is the overflow the fit removes.
-  #expect(try sizing.minimumSize(for: tree).width > viewport1024By700(railOpen: true).width)
+  // The tight grid (`PaneLayoutSpacing`) leaves 920 points with the rail open, enough for the
+  // editor's full floor, project panel included, beside the agent: 545 + 18 + 340 = 903.
+  #expect(try sizing.minimumSize(for: tree).width <= viewport1024By700(railOpen: true).width)
 
   let result = try PaneLayoutFit.layout(tree: tree, viewport: viewport, sizing: sizing)
   try expectFits(result, of: tree, in: viewport)
@@ -62,8 +63,26 @@ func editorAndAgentFitA1024By700Window(railOpen: Bool) throws {
   let editor = try #require(result.plan.paneRects["editor-0"])
   #expect(
     PaneLayoutFloorFormula.editorShowsProjectPanel(
-      surfaceWidth: editor.size.width - 2 * halo, fonts: fonts)
-      == (editor.size.width >= floors[.editor]!.width))
+      surfaceWidth: editor.size.width - 2 * halo, fonts: fonts))
+}
+
+@Test func editorAndAgentFitANarrowWindowWithACompactEditor() throws {
+  let viewport = window.paneViewport(
+    window: PaneLayoutSize(width: 900, height: 700), railOpen: true)
+  let tree = try workspace([.editor, .agent])
+  // 796 points cannot hold the full editor beside the agent; this is the overflow the fit
+  // removes by dropping the project panel (333 + 18 + 340 = 691).
+  #expect(try sizing.minimumSize(for: tree).width > viewport.width)
+
+  let result = try PaneLayoutFit.layout(tree: tree, viewport: viewport, sizing: sizing)
+  try expectFits(result, of: tree, in: viewport)
+  #expect(result.keepsArrangement)
+  #expect(result.plan.tabGroup == nil)
+  let editor = try #require(result.plan.paneRects["editor-0"])
+  #expect(editor.size.width < floors[.editor]!.width)
+  #expect(
+    !PaneLayoutFloorFormula.editorShowsProjectPanel(
+      surfaceWidth: editor.size.width - 2 * halo, fonts: fonts))
 }
 
 @Test(arguments: [false, true])
@@ -72,7 +91,7 @@ func editorAgentAndTerminalFitA1024By700Window(railOpen: Bool) throws {
   let tree = try workspace([.editor, .agent, .terminal])
 
   let result = try PaneLayoutFit.layout(tree: tree, viewport: viewport, sizing: sizing)
-  // Agent and terminal cannot stack in 616 points, and the three panes need 1139 points side by
+  // Agent and terminal cannot stack in 602 points, and the three panes need 1049 points side by
   // side even with a compact editor, so the two share one tab group beside the editor.
   try expectFits(result, of: tree, in: viewport)
   let group = try #require(result.plan.tabGroup)
@@ -105,7 +124,7 @@ func editorAgentAndTerminalFitA1024By700Window(railOpen: Bool) throws {
 }
 
 @Test func panesThatFitSideBySideAreRearrangedBeforeTheyAreTabbed() throws {
-  // Stacked agent and terminal overflow 616 points, but a row of the two fits.
+  // Stacked agent and terminal overflow 602 points, but a row of the two fits.
   let viewport = viewport1024By700(railOpen: true)
   let tree = try workspace([.agent, .terminal])
 

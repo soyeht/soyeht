@@ -148,7 +148,7 @@ private struct EditorTabItem: View {
   var body: some View {
     HStack(spacing: MacTheme.Space.x6) {
       Image(systemName: "doc.text")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .medium))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .medium))
       Text(String(tab.path.split(separator: "/").last ?? "File"))
         .font(MacTheme.mono(EditorTabMetrics.tabFont, weight: active ? .bold : .regular))
         .italic(preview)
@@ -181,7 +181,7 @@ private struct EditorTabItem: View {
       if hovering {
         Button(action: close) {
           Image(systemName: "xmark")
-            .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .semibold))
         }
         .buttonStyle(.plain)
         .help("Close tab (⌘W)")
