@@ -84,6 +84,9 @@ public enum PaneLayoutContentMetrics {
   public static let editorViewportVerticalInset = 20.0
   public static let editorReviewHeight = 42.0
   public static let editorStatusHeight = 24.0
+  public static let editorFindFieldHeight = 24.0
+  /// Lines the replace field up under the find field, past the disclosure.
+  public static let editorFindIndent = editorFindFieldHeight + 6.0
   /// The project panel beside the code; part of the editor's minimum width.
   public static let editorProjectPanelWidth = 212.0
 

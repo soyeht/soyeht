@@ -106,9 +106,31 @@ import SoyehtClient
     inputDelegate?.replayHistory(.redo)
   }
 
+  /// Edit > Find menu items reach the engine-backed find bar, never
+  /// AppKit's panel, which would search only the loaded page.
+  override func performFindPanelAction(_ sender: Any?) {
+    performFind(tag: (sender as? NSValidatedUserInterfaceItem)?.tag ?? 1)
+  }
+
+  override func performTextFinderAction(_ sender: Any?) {
+    performFind(tag: (sender as? NSValidatedUserInterfaceItem)?.tag ?? 1)
+  }
+
+  private func performFind(tag: Int) {
+    switch NSTextFinder.Action(rawValue: tag) {
+    case .nextMatch: inputDelegate?.findNext(backward: false)
+    case .previousMatch: inputDelegate?.findNext(backward: true)
+    case .showReplaceInterface, .replace, .replaceAll, .replaceAndFind:
+      inputDelegate?.presentFind(replace: true)
+    default: inputDelegate?.presentFind(replace: false)
+    }
+  }
+
   override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
     switch item.action {
-    case #selector(undo(_:)), #selector(redo(_:)): inputDelegate != nil
+    case #selector(undo(_:)), #selector(redo(_:)), #selector(performFindPanelAction(_:)),
+      #selector(performTextFinderAction(_:)):
+      inputDelegate != nil
     default: super.validateUserInterfaceItem(item)
     }
   }
@@ -123,6 +145,10 @@ import SoyehtClient
     case "d": inputDelegate?.selectNextOccurrence(selectedRanges.map(\.rangeValue))
     case "/": inputDelegate?.toggleComment(selectedRanges.map(\.rangeValue))
     case "z": inputDelegate?.replayHistory(flags.contains(.shift) ? .redo : .undo)
+    // Cmd+Shift+F stays Search Project; Cmd+Option+F opens find with replace.
+    case "f" where !flags.contains(.shift):
+      inputDelegate?.presentFind(replace: flags.contains(.option))
+    case "g": inputDelegate?.findNext(backward: flags.contains(.shift))
     case "s": break
     default: return super.performKeyEquivalent(with: event)
     }
@@ -134,6 +160,7 @@ import SoyehtClient
       onPerformanceKeyDownStart?()
       defer { onPerformanceKeyDownEnd?() }
     #endif
+    if event.keyCode == 53, inputDelegate?.closeFind() == true { return }
     let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     guard vimEnabled, !flags.contains(.command), !flags.contains(.control),
       !flags.contains(.option), let key = vimKey(event),

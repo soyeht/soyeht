@@ -252,6 +252,7 @@
     #expect(redone.applied)
     #expect(redone.cursor?.column == 13)
     #expect(client.editorFiles[opened.file.fileId]?.viewport?.lines.first?.text == "let value = 4")
+    try await exerciseFindAndReplace(client, fileId: opened.file.fileId)
     try await until { client.editorFiles[opened.file.fileId]?.file.dirty == false }
     let firstHistory = try await client.editorHistory(opened.file.fileId)
     let savedFour = try #require(firstHistory.items.first)
@@ -298,6 +299,27 @@
     #expect(try String(contentsOf: source, encoding: .utf8) == "let value = 6\n")
     client.closePane(opened.pane.paneId)
     try await until { !client.panes.contains { $0.paneId == opened.pane.paneId } }
+  }
+
+  /// Find runs in the engine over the whole file and selects the match;
+  /// Replace All is one engine edit that a single undo reverts.
+  @MainActor private func exerciseFindAndReplace(_ client: EngineClient, fileId: String)
+    async throws
+  {
+    let query = EditorFindOptions(wholeWord: true).query("value")
+    let found = try await client.findInEditorFile(
+      fileId, query: query, from: TextPosition(line: 0, column: 0), direction: .next)
+    #expect(found.total == 1)
+    #expect(found.current?.range.start.column == 4)
+    #expect(found.visible.count == 1)
+    #expect(client.editorNavigationTarget?.selectionEnd?.column == 9)
+    let replaced = try await client.replaceInEditorFile(
+      fileId, query: query, replacement: "count", range: nil)
+    #expect(replaced.replaced == 1)
+    #expect(client.editorFiles[fileId]?.viewport?.lines.first?.text == "let count = 4")
+    let undone = try await client.replayEditorHistory(fileId, direction: .undo)
+    #expect(undone.applied)
+    #expect(client.editorFiles[fileId]?.viewport?.lines.first?.text == "let value = 4")
   }
 
   @MainActor private func exerciseWritingRevision(

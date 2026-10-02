@@ -34,6 +34,7 @@ struct EditorNativeViewport: NSViewRepresentable {
   @Binding var vimCommandLine: String?
   let onDefinition: (TextPosition) -> Void
   let onReferences: (TextPosition) -> Void
+  var find: EditorFindController? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -64,6 +65,10 @@ struct EditorNativeViewport: NSViewRepresentable {
     /// wait so they are never computed against text the engine replaced.
     private var replayingHistory = false
     private var replayRendersAfterRevision: String?
+    private var documentHeight: CGFloat = 0
+    private var selectionPublishScheduled = false
+    private var findHighlightKey = ""
+    private var editorFocusRequest = 0
 
     init(_ parent: EditorNativeViewport) {
       self.parent = parent
@@ -85,9 +90,13 @@ struct EditorNativeViewport: NSViewRepresentable {
       scroll.borderType = .noBorder
       scroll.documentView = textView
       scroll.contentView.postsBoundsChangedNotifications = true
+      scroll.contentView.postsFrameChangedNotifications = true
       NotificationCenter.default.addObserver(
         self, selector: #selector(visibleBoundsChanged(_:)),
         name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+      NotificationCenter.default.addObserver(
+        self, selector: #selector(visibleFrameChanged(_:)),
+        name: NSView.frameDidChangeNotification, object: scroll.contentView)
       configureTextView()
       // A separate clipped gutter keeps the scroll view from covering sibling SwiftUI content.
       let gutter = EditorLineGutter(scrollView: scroll, textView: textView)
@@ -130,13 +139,81 @@ struct EditorNativeViewport: NSViewRepresentable {
           afterLoading: viewport, previousStart: previousViewportStart, previous: selection)
         textView.needsDisplay = true
         gutter?.needsDisplay = true
+        // The text under the caret changed, so the status bar must re-read it.
+        selectionChanged()
       }
       applyNavigation(viewport)
+      applyFind(viewport)
       if let before = replayRendersAfterRevision, viewport.file.revision != before {
         replayRendersAfterRevision = nil
         replayingHistory = false
       }
       requestViewportIfNeeded()
+    }
+
+    /// Highlights the engine's matches on the loaded page and hands focus
+    /// back to the text when the find bar closes.
+    private func applyFind(_ viewport: FileReadResult) {
+      let find = parent.find
+      if let request = find?.editorFocusRequest, request != editorFocusRequest {
+        editorFocusRequest = request
+        textView.window?.makeFirstResponder(textView)
+      }
+      // Ranges from another revision would mark the wrong text; the bar
+      // re-counts after every change and the highlights follow.
+      let result =
+        find?.isPresented == true && find?.result?.revision == viewport.file.revision
+        ? find?.result : nil
+      let visible = result?.visible ?? []
+      let key =
+        visible.isEmpty
+        ? ""
+        : "\(renderedIdentity ?? ""):\(result?.revision ?? ""):\(visible.count):\(visible.first.map { "\($0.start.line):\($0.start.column)" } ?? "")"
+      guard key != findHighlightKey, let storage = textView.textStorage else { return }
+      findHighlightKey = key
+      storage.beginEditing()
+      storage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: storage.length))
+      let color = NSColor(MacTheme.warning).withAlphaComponent(0.28)
+      for range in visible {
+        let target = EditorNavigationTarget(
+          id: "", fileId: viewport.file.fileId, position: range.start, selectionEnd: range.end)
+        guard let local = EditorViewportPaging.landing(target, in: viewport), local.length > 0,
+          NSMaxRange(local) <= storage.length
+        else { continue }
+        storage.addAttribute(.backgroundColor, value: color, range: local)
+      }
+      storage.endEditing()
+    }
+
+    func presentFind(replace: Bool) {
+      let range = textView.selectedRange()
+      let text = range.length > 0 ? (textView.string as NSString).substring(with: range) : nil
+      parent.find?.present(replace: replace, selection: selectedTextRange(), selectedText: text)
+    }
+
+    func findNext(backward: Bool) {
+      guard let find = parent.find else { return }
+      guard !find.query.isEmpty else { return presentFind(replace: false) }
+      if backward {
+        find.previous(before: selectedTextRange())
+      } else {
+        find.next(after: selectedTextRange())
+      }
+    }
+
+    /// Escape closes the find bar first; returns false when it was closed.
+    func closeFind() -> Bool {
+      guard let find = parent.find, find.isPresented else { return false }
+      find.close()
+      return true
+    }
+
+    private func selectedTextRange() -> SoyehtProtocol.TextRange? {
+      let range = textView.selectedRange()
+      guard let start = position(at: range.location),
+        let end = position(at: NSMaxRange(range))
+      else { return nil }
+      return SoyehtProtocol.TextRange(start: start, end: end)
     }
 
     private func applyTheme() {
@@ -150,21 +227,23 @@ struct EditorNativeViewport: NSViewRepresentable {
       requestViewportIfNeeded()
     }
 
+    @objc private func visibleFrameChanged(_ notification: Notification) {
+      guard let scrollView else { return }
+      EditorTextLayout.fit(
+        textView, visible: scrollView.contentSize, documentHeight: documentHeight)
+    }
+
     private func updateVirtualGeometry(_ viewport: FileReadResult) {
       guard let scrollView else { return }
       let top =
         PaneLayoutContentMetrics.editorTextInset + CGFloat(viewport.fromLine) * Self.lineHeight
       textView.textContainerInset = NSSize(
         width: PaneLayoutContentMetrics.editorTextInset, height: top)
-      let documentHeight =
+      documentHeight =
         2 * PaneLayoutContentMetrics.editorTextInset
         + CGFloat(viewport.file.lineCount) * Self.lineHeight
-      let height = max(scrollView.contentSize.height, documentHeight)
-      textView.minSize = NSSize(width: 0, height: height)
-      if abs(textView.frame.height - height) > 0.5 {
-        textView.setFrameSize(
-          NSSize(width: max(scrollView.contentSize.width, textView.frame.width), height: height))
-      }
+      EditorTextLayout.fit(
+        textView, visible: scrollView.contentSize, documentHeight: documentHeight)
       if requestedViewportStart == viewport.fromLine { requestedViewportStart = nil }
     }
 
@@ -325,7 +404,9 @@ struct EditorNativeViewport: NSViewRepresentable {
       // Undo belongs to the engine-owned history; AppKit's local stack would
       // rewind text the engine never sees.
       textView.allowsUndo = false
-      textView.usesFindPanel = true
+      // AppKit's find panel only sees the loaded page; Cmd+F opens the engine-backed bar.
+      textView.usesFindPanel = false
+      textView.usesFindBar = false
       textView.isAutomaticQuoteSubstitutionEnabled = false
       textView.isAutomaticDashSubstitutionEnabled = false
       textView.isAutomaticTextReplacementEnabled = false
@@ -336,15 +417,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       textView.insertionPointColor = NSColor(MacTheme.accent)
       textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
       textView.textContainerInset = NSSize(width: 10, height: 10)
-      textView.minSize = NSSize(width: 0, height: 0)
-      textView.maxSize = NSSize(
-        width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-      textView.isVerticallyResizable = true
-      textView.isHorizontallyResizable = true
-      textView.autoresizingMask = [.width]
-      textView.textContainer?.widthTracksTextView = false
-      textView.textContainer?.containerSize = NSSize(
-        width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+      EditorTextLayout.configure(textView)
       textView.typingAttributes = baseAttributes()
     }
 
@@ -438,37 +511,39 @@ struct EditorNativeViewport: NSViewRepresentable {
         return validSelections(previous, length: textView.string.utf16.count)
       }
       guard let position = parent.selectedPosition,
-        let offset = localOffset(position, in: viewport)
+        let offset = EditorViewportPaging.localOffset(position, in: viewport)
       else { return [NSValue(range: NSRange(location: 0, length: 0))] }
       return [NSValue(range: NSRange(location: offset, length: 0))]
     }
 
+    /// Lands an undo, redo, go-to or find target: the caret (or the match
+    /// selection) clamped to the loaded text, scrolled into view.
     private func applyNavigation(_ viewport: FileReadResult) {
       guard let target = parent.navigationTarget, target.fileId == viewport.file.fileId,
         target.id != appliedNavigationId,
-        let offset = localOffset(target.position, in: viewport)
+        let range = EditorViewportPaging.landing(target, in: viewport),
+        NSMaxRange(range) <= textView.string.utf16.count
       else { return }
       appliedNavigationId = target.id
-      let range = NSRange(location: offset, length: 0)
       textView.setSelectedRange(range)
       textView.scrollRangeToVisible(range)
       selectionChanged()
     }
 
-    private func localOffset(_ position: TextPosition, in viewport: FileReadResult) -> Int? {
-      guard position.line >= viewport.fromLine, position.line < viewport.toLine else { return nil }
-      let index = Int(position.line - viewport.fromLine)
-      guard index < viewport.lines.count else { return nil }
-      let prefix = viewport.lines.prefix(index).reduce(0) { $0 + $1.text.utf16.count + 1 }
-      let column = min(Int(position.column), viewport.lines[index].text.utf16.count)
-      return prefix + column
-    }
-
+    /// Publishes the caret to the status bar and gutter on the next turn of
+    /// the run loop. A binding written inside a SwiftUI view update can be
+    /// dropped, which left the status bar on the pre-undo position.
     private func selectionChanged() {
-      let location = textView.selectedRange().location
-      parent.selectedPosition = position(at: location)
-      gutter?.selectedLine = parent.selectedPosition?.line
-      gutter?.needsDisplay = true
+      guard !selectionPublishScheduled else { return }
+      selectionPublishScheduled = true
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.selectionPublishScheduled = false
+        let position = self.position(at: self.textView.selectedRange().location)
+        self.parent.selectedPosition = position
+        self.gutter?.selectedLine = position?.line
+        self.gutter?.needsDisplay = true
+      }
     }
 
     private func publishVimState() {

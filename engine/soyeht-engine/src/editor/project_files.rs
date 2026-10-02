@@ -1,5 +1,6 @@
 //! Project file enumeration shared by search, symbols and writing sections.
 
+use soyeht_protocol::EditorLanguage;
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -11,6 +12,20 @@ pub struct ProjectFile {
     pub relative: String,
     pub byte_count: u64,
     pub modified_ms: i64,
+}
+
+/// The closed editor language of a path; unknown extensions are plain text.
+pub fn language(path: &Path) -> EditorLanguage {
+    match path.extension().and_then(|value| value.to_str()) {
+        Some("rs") => EditorLanguage::Rust,
+        Some("swift") => EditorLanguage::Swift,
+        Some("ts" | "tsx" | "js" | "jsx") => EditorLanguage::Typescript,
+        Some("py") => EditorLanguage::Python,
+        Some("json") => EditorLanguage::Json,
+        Some("md" | "markdown") => EditorLanguage::Markdown,
+        Some("sh" | "bash" | "zsh") => EditorLanguage::Shell,
+        _ => EditorLanguage::PlainText,
+    }
 }
 
 pub(crate) fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile>> {
@@ -105,5 +120,15 @@ mod tests {
 
         fs::remove_dir_all(root).unwrap();
         fs::remove_file(outside).unwrap();
+    }
+
+    #[test]
+    fn language_mapping_is_closed_and_unknown_files_are_plain_text() {
+        assert_eq!(language(Path::new("main.rs")), EditorLanguage::Rust);
+        assert_eq!(language(Path::new("view.tsx")), EditorLanguage::Typescript);
+        assert_eq!(
+            language(Path::new("notes.unknown")),
+            EditorLanguage::PlainText
+        );
     }
 }
