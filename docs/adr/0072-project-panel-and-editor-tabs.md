@@ -30,8 +30,13 @@ pane (`EngineClient.layoutPanes`), and a stored layout that names another
 editor pane, including a layout saved with one split per file before tabs,
 gives that editor slot to the active pane (`PaneLayoutTree.adoptingLiveEditor`).
 Switching tabs therefore never moves agent or terminal panes, and nothing is
-persisted. The editor's minimum width includes the 212-point project panel, so
-the pane frame is never narrower than its content.
+persisted. The editor's full minimum width includes the 212-point project
+panel, so the pane frame is never narrower than its content. When the panes do
+not fit the window at their full floors, `PaneLayoutFit` lays them out at the
+editor's compact floor, without the panel, and the editor hides the panel until
+its pane is wide enough again; if they still do not fit, it presents them in
+one row or column, then puts agent and terminal panes behind one tab strip, so
+no pane is placed outside the window. The stored layout is not changed.
 
 `file.open` accepts `preview`. A preview takes the slot of the workspace's
 previous preview when that file is unedited and has no draft; the replaced pane

@@ -7,6 +7,8 @@ struct EditorPaneView: View {
   @Environment(EditorInputPreferences.self) private var inputPreferences
   let pane: Pane
   let headerDrag: PaneHeaderDragConfiguration?
+  /// False when the layout gives the editor only its compact floor: the code keeps the width.
+  let showsProjectPanel: Bool
   @State private var selectedPosition: TextPosition?
   @State private var showHistory = false
   @State private var showConflict = false
@@ -41,8 +43,8 @@ struct EditorPaneView: View {
           EditorConflictBanner(showConflict: { showConflict = true })
         }
         EditorPaneBody(
-          client: client, view: view, selectedPosition: $selectedPosition,
-          navigationTarget: client.editorNavigationTarget,
+          client: client, view: view, showsProjectPanel: showsProjectPanel,
+          selectedPosition: $selectedPosition, navigationTarget: client.editorNavigationTarget,
           languageStatus: languageStatus, diff: currentDiff.map(EditorDiffPresentation.init),
           vimEnabled: inputPreferences.vimEnabled, vimMode: $vimMode,
           vimCommandLine: $vimCommandLine,
@@ -277,6 +279,7 @@ private struct EditorConflictBanner: View {
 private struct EditorPaneBody: View {
   @Bindable var client: EngineClient
   let view: EditorFileView
+  let showsProjectPanel: Bool
   @Binding var selectedPosition: TextPosition?
   let navigationTarget: EditorNavigationTarget?
   let languageStatus: LspServerStatus?
@@ -289,8 +292,10 @@ private struct EditorPaneBody: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      EditorProjectPanel(
-        client: client, workspaceId: view.file.workspaceId, activePath: view.file.path)
+      if showsProjectPanel {
+        EditorProjectPanel(
+          client: client, workspaceId: view.file.workspaceId, activePath: view.file.path)
+      }
       VStack(spacing: 0) {
         EditorTabBar(client: client, selected: view.file)
         EditorCodeViewport(

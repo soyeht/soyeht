@@ -265,14 +265,18 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
   /// Presentation-only floors for leaves whose content differs from their eventual pane kind.
   /// They are keyed by pane ID so provisional UI never needs a persistable protocol kind.
   public var paneFloors: [String: PaneLayoutSize]
+  /// Smaller floors a kind reaches by folding optional chrome away. See `PaneLayoutFit`.
+  public var compactFloors: [PaneLayoutKind: PaneLayoutSize]
 
   public init(
     floors: [PaneLayoutKind: PaneLayoutSize], gaps: PaneLayoutGaps,
-    paneFloors: [String: PaneLayoutSize] = [:]
+    paneFloors: [String: PaneLayoutSize] = [:],
+    compactFloors: [PaneLayoutKind: PaneLayoutSize] = [:]
   ) {
     self.floors = floors
     self.gaps = gaps
     self.paneFloors = paneFloors
+    self.compactFloors = compactFloors
   }
 
   public func overridingFloor(forPaneId paneId: String, with floor: PaneLayoutSize) -> Self {
@@ -281,7 +285,7 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
     return copy
   }
 
-  fileprivate func branches(
+  func branches(
     for trees: [PaneLayoutTree], along axis: PaneLayoutAxis
   ) throws -> [PaneLayoutBranch] {
     try trees.map { tree in

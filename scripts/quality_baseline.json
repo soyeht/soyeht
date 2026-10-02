@@ -1,8 +1,8 @@
 {
   "duplication": {
     "engine": {
-      "clones": 432,
-      "duplicated_lines": 3867
+      "clones": 431,
+      "duplicated_lines": 3861
     },
     "ios": {
       "clones": 6,
@@ -10,7 +10,7 @@
     },
     "mac": {
       "clones": 79,
-      "duplicated_lines": 778
+      "duplicated_lines": 776
     },
     "shared": {
       "clones": 66,
@@ -18,7 +18,7 @@
     },
     "swift_all": {
       "clones": 163,
-      "duplicated_lines": 1482
+      "duplicated_lines": 1480
     }
   },
   "loose_literals": {
@@ -253,7 +253,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
     "apps/mac/Sources/PreferencesPanel.swift": 995,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3576,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3549,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
@@ -273,7 +273,7 @@
     "engine/soyeht-engine/src/terminal_capture.rs": 1587,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1115,
-    "engine/soyeht-engine/tests/runtime.rs": 9373,
+    "engine/soyeht-engine/tests/runtime.rs": 9372,
     "engine/soyeht-mcp/src/tools.rs": 1189,
     "engine/soyeht-store/src/agents.rs": 849,
     "engine/soyeht-store/src/editor.rs": 848,
