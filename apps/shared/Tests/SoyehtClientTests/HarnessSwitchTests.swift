@@ -9,13 +9,35 @@ import Testing
   let gemini = switchHarness(id: "registry.gemini", name: "Gemini", state: .sign_in)
   let missing = switchHarness(id: "registry.missing", name: "Absent", state: .not_installed)
 
-  let sections = HarnessSwitchModel.sections(
+  let layout = HarnessSwitchModel.layout(
     [missing, gemini, codex, claude], current: claude.id)
 
-  #expect(sections.map(\.group) == [.ready, .signIn, .unavailable])
-  #expect(sections.flatMap(\.items).map(\.id) == [codex.id, gemini.id, missing.id])
+  #expect(layout.sections.map(\.group) == [.ready, .signIn])
+  #expect(layout.sections.flatMap(\.items).map(\.id) == [codex.id, gemini.id])
+  #expect(layout.more.map(\.id) == [missing.id])
   #expect(
-    HarnessSwitchModel.sections([claude, codex], current: claude.id, query: "clau").isEmpty)
+    HarnessSwitchModel.layout([claude, codex], current: claude.id, query: "clau").isEmpty)
+}
+
+/// The switch menu of a 41-entry registry catalogue: the two installed harnesses lead,
+/// and the rest wait under "More harnesses" in a stable order.
+@Test func switchMenuCollapsesTheUninstalledCatalogueUnderMoreHarnesses() {
+  let claude = switchHarness(id: "registry.claude-acp", name: "Claude", state: .ready)
+  let codex = switchHarness(id: "registry.codex-acp", name: "Codex", state: .ready)
+  let missing = (0..<39).map { index in
+    switchHarness(id: "registry.agent-\(index)", name: "Agent \(index)", state: .not_installed)
+  }
+  let catalogue = missing + [codex, claude]
+
+  let layout = HarnessSwitchModel.layout(catalogue, current: claude.id)
+
+  #expect(layout.sections.flatMap(\.items).map(\.id) == [codex.id])
+  #expect(layout.more.count == 39)
+  #expect(layout.more.allSatisfy { !HarnessPickerModel.isInstalled($0) })
+  #expect(
+    HarnessSwitchModel.layout(catalogue.reversed(), current: claude.id).more.map(\.id)
+      == layout.more.map(\.id))
+  #expect(HarnessPickerLayout.moreTitle == "More harnesses")
 }
 
 @Test func switchDefaultTargetNeverPicksTheRunningHarness() {
