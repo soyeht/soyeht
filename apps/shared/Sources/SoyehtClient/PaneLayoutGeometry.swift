@@ -74,16 +74,19 @@ public struct PaneLayoutGeometryResult: Equatable, Sendable {
   public var paneRects: [String: PaneLayoutRect]
   /// Divider hit areas, confined to the gaps between direct siblings.
   public var dividers: [PaneLayoutDividerGeometry]
+  /// Panes `PaneLayoutFit` shows one at a time in the slot leaf of the presented tree.
+  public var tabGroup: PaneLayoutTabGroup?
 
   public init(
     nodes: [PaneLayoutNodePath: PaneLayoutNodeGeometry],
     panePaths: [String: PaneLayoutNodePath], paneRects: [String: PaneLayoutRect],
-    dividers: [PaneLayoutDividerGeometry] = []
+    dividers: [PaneLayoutDividerGeometry] = [], tabGroup: PaneLayoutTabGroup? = nil
   ) {
     self.nodes = nodes
     self.panePaths = panePaths
     self.paneRects = paneRects
     self.dividers = dividers
+    self.tabGroup = tabGroup
   }
 }
 

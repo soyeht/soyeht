@@ -8200,22 +8200,21 @@ fn two_idle_panes_claim_one_task_exactly_once() {
             json!({"paneId":pane,"text":"task-claim","idempotencyKey":key}),
         );
     }
+    let show = json!({"workspaceId":workspace,"taskId":task["taskId"]});
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
-        let shown = client.call(
-            "task.show",
-            json!({"workspaceId":workspace,"taskId":task["taskId"]}),
-        );
-        let first = client.call("pane.transcript", json!({"paneId":first_pane}));
-        let second = client.call("pane.transcript", json!({"paneId":second_pane}));
-        let restarts = [&first, &second]
-            .iter()
-            .filter(|value| transcript_contains(value, "\"willRestartSession\":true"))
-            .count();
-        let empties = [&first, &second]
-            .iter()
-            .filter(|value| transcript_contains(value, "\"empty\":true"))
-            .count();
+        // Transcripts before task.show: task.next commits the claim before it replies.
+        let transcripts = [&first_pane, &second_pane]
+            .map(|pane| client.call("pane.transcript", json!({"paneId":pane})));
+        let seen = |needle| {
+            transcripts
+                .iter()
+                .filter(|value| transcript_contains(value, needle))
+                .count()
+        };
+        let (restarts, empties) = (seen("\"willRestartSession\":true"), seen("\"empty\":true"));
+        let shown = client.call("task.show", show.clone());
+        assert!(restarts <= 1, "both idle panes claimed the task: {shown}");
         if restarts == 1 && empties == 1 {
             assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
             let owner = shown["task"]["ownerPaneId"].as_str().unwrap();

@@ -84,7 +84,8 @@ public enum PaneLayoutContentMetrics {
   public static let editorViewportVerticalInset = 20.0
   public static let editorReviewHeight = 42.0
   public static let editorStatusHeight = 24.0
-  /// The project panel beside the code; part of the editor's minimum width.
+  /// The project panel beside the code; part of the editor's full minimum width. A narrow
+  /// layout folds it away and lays the editor out at its compact floor.
   public static let editorProjectPanelWidth = 212.0
 
   public static let agentTaskHeight = 34.0
@@ -158,17 +159,7 @@ public enum PaneLayoutFloorFormula {
           + PaneLayoutContentMetrics.paneStackSpacing
           + (fonts.chrome.lineHeight + 2 * PaneLayoutContentMetrics.terminalStateVerticalInset)
           + terminalRows * fonts.terminal.lineHeight))
-    let editor = PaneLayoutSize(
-      width: ceil(
-        editorColumns * fonts.editor.characterWidth + PaneLayoutContentMetrics.editorGutterWidth
-          + 2 * PaneLayoutContentMetrics.editorTextInset + 2 * paneCardInset
-          + PaneLayoutContentMetrics.editorProjectPanelWidth),
-      height: 2 * paneCardInset + PaneLayoutContentMetrics.editorHeaderHeight
-        + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.editorTabHeight
-        + (12 * PaneLayoutContentMetrics.editorLineHeight
-          + PaneLayoutContentMetrics.editorViewportVerticalInset)
-        + PaneLayoutContentMetrics.editorReviewHeight
-        + PaneLayoutContentMetrics.editorStatusHeight)
+    let editor = editorSurfaceFloor(fonts: fonts, projectPanel: true)
     let agent = PaneLayoutSize(
       width: ceil(agentComposerCharacters * fonts.agent.characterWidth + 124),
       height: 2 * paneCardInset + PaneLayoutContentMetrics.genericPaneHeaderHeight
@@ -226,9 +217,42 @@ public enum PaneLayoutFloorFormula {
   public static func footprintFloors(
     fonts: PaneLayoutFontMetrics, halo: Double
   ) -> [PaneLayoutKind: PaneLayoutSize] {
-    surfaceFloors(fonts: fonts).mapValues {
-      PaneLayoutSize(width: ceil($0.width + 2 * halo), height: ceil($0.height + 2 * halo))
-    }
+    surfaceFloors(fonts: fonts).mapValues { footprint($0, halo: halo) }
+  }
+
+  /// Floors of panes that can fold optional chrome away when the viewport is narrow: the editor
+  /// without its project panel. `PaneLayoutFit` uses them only when the full floors do not fit.
+  public static func compactFootprintFloors(
+    fonts: PaneLayoutFontMetrics, halo: Double
+  ) -> [PaneLayoutKind: PaneLayoutSize] {
+    [.editor: footprint(editorSurfaceFloor(fonts: fonts, projectPanel: false), halo: halo)]
+  }
+
+  /// The editor shows its project panel only when its surface is as wide as its full floor.
+  public static func editorShowsProjectPanel(
+    surfaceWidth: Double, fonts: PaneLayoutFontMetrics
+  ) -> Bool {
+    surfaceWidth >= editorSurfaceFloor(fonts: fonts, projectPanel: true).width
+  }
+
+  private static func editorSurfaceFloor(
+    fonts: PaneLayoutFontMetrics, projectPanel: Bool
+  ) -> PaneLayoutSize {
+    PaneLayoutSize(
+      width: ceil(
+        editorColumns * fonts.editor.characterWidth + PaneLayoutContentMetrics.editorGutterWidth
+          + 2 * PaneLayoutContentMetrics.editorTextInset + 2 * paneCardInset
+          + (projectPanel ? PaneLayoutContentMetrics.editorProjectPanelWidth : 0)),
+      height: 2 * paneCardInset + PaneLayoutContentMetrics.editorHeaderHeight
+        + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.editorTabHeight
+        + (12 * PaneLayoutContentMetrics.editorLineHeight
+          + PaneLayoutContentMetrics.editorViewportVerticalInset)
+        + PaneLayoutContentMetrics.editorReviewHeight
+        + PaneLayoutContentMetrics.editorStatusHeight)
+  }
+
+  public static func footprint(_ surface: PaneLayoutSize, halo: Double) -> PaneLayoutSize {
+    PaneLayoutSize(width: ceil(surface.width + 2 * halo), height: ceil(surface.height + 2 * halo))
   }
 
   /// The complete compact chooser fixture: header, prompt/mode field, directory/branch metadata,

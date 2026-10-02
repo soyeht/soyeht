@@ -45,13 +45,24 @@ import UniformTypeIdentifiers
     fonts: fontMetrics, halo: paneHalo)
   static let newPaneSurfaceFloor = PaneLayoutFloorFormula.newPaneChooserSurfaceFloor(
     fonts: fontMetrics)
-  static let newPaneFootprintFloor = PaneLayoutSize(
-    width: ceil(newPaneSurfaceFloor.width + 2 * paneHalo),
-    height: ceil(newPaneSurfaceFloor.height + 2 * paneHalo))
+  static let newPaneFootprintFloor = PaneLayoutFloorFormula.footprint(
+    newPaneSurfaceFloor, halo: paneHalo)
   static let sizing = PaneLayoutSizingPolicy(
     floors: footprintFloors,
     gaps: PaneLayoutGaps(
-      horizontal: Double(MacTheme.Space.x18), vertical: Double(MacTheme.Space.x18)))
+      horizontal: Double(MacTheme.Space.x18), vertical: Double(MacTheme.Space.x18)),
+    compactFloors: PaneLayoutFloorFormula.compactFootprintFloors(fonts: fontMetrics, halo: paneHalo)
+  )
+  /// The floors `PaneLayoutFit` lays the stored tree out with in this viewport, so divider
+  /// gestures clamp against the floors on screen.
+  static func fittedSizing(_ tree: PaneLayoutTree, viewport: CGSize) -> PaneLayoutSizingPolicy {
+    let size = PaneLayoutSize(width: viewport.width, height: viewport.height)
+    return (try? PaneLayoutFit.layout(tree: tree, viewport: size, sizing: sizing).sizing) ?? sizing
+  }
+  static func editorShowsProjectPanel(cardWidth: CGFloat) -> Bool {
+    PaneLayoutFloorFormula.editorShowsProjectPanel(
+      surfaceWidth: Double(cardWidth), fonts: fontMetrics)
+  }
   static let chromePolicy = WritingChromePolicy()
   static func sizing(newPanePlaceholderId: String) -> PaneLayoutSizingPolicy {
     sizing.overridingFloor(forPaneId: newPanePlaceholderId, with: newPaneFootprintFloor)
@@ -1542,7 +1553,8 @@ struct PaneGrid: View {
           client: client, webHost: webHost, workspaceId: layout.workspaceId, panes: panes,
           tree: layout.tree, plan: layout.plan, viewportSize: viewportSize,
           interaction: interaction,
-          interactionsEnabled: mode == nil && newPane == nil && layoutPersistenceEnabled,
+          interactionsEnabled: mode == nil && newPane == nil && layoutPersistenceEnabled
+            && layout.keepsArrangement,
           newPane: newPane,
           onClose: onClose, onTasks: onTasks, onSplit: onSplit,
           onPaneDrop: commitPaneDrop
@@ -1615,15 +1627,20 @@ struct PaneGrid: View {
     if let newPane, newPane.draft.workspaceId == workspaceId {
       do {
         let tree = try newPane.draft.previewTree()
-        let sizing = MacPaneLayoutMetrics.sizing(
-          newPanePlaceholderId: newPane.draft.placeholderPaneId)
-        let plan = try PaneLayoutGeometry.layout(
-          tree: tree,
-          viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
-          sizing: sizing)
+        let viewport = PaneLayoutSize(width: viewportSize.width, height: viewportSize.height)
+        let fit = try PaneLayoutFit.layout(
+          tree: tree, viewport: viewport,
+          sizing: MacPaneLayoutMetrics.sizing(
+            newPanePlaceholderId: newPane.draft.placeholderPaneId))
+        // The chooser cannot sit in a tab group, so a preview keeps its arrangement and takes
+        // only the compact floors.
+        let plan =
+          fit.keepsArrangement
+          ? fit.plan
+          : try PaneLayoutGeometry.layout(tree: tree, viewport: viewport, sizing: fit.sizing)
         return ResolvedPaneGridLayout(
           workspaceId: workspaceId ?? "", state: PaneLayoutState(), tree: tree, plan: plan,
-          insertedPaneIds: [], isProvisional: true)
+          insertedPaneIds: [], isProvisional: true, keepsArrangement: true)
       } catch {
         Self.logger.error(
           "new_pane_layout_resolution_failed error=\(error.localizedDescription)")
@@ -1645,13 +1662,14 @@ struct PaneGrid: View {
         visibleTree = visibleTree?.removingPane(withId: paneId)
       }
       guard let tree = visibleTree else { return nil }
-      let plan = try PaneLayoutGeometry.layout(
+      let fit = try PaneLayoutFit.layout(
         tree: tree,
         viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
         sizing: MacPaneLayoutMetrics.sizing)
       return ResolvedPaneGridLayout(
-        workspaceId: workspaceId, state: state, tree: tree, plan: plan,
-        insertedPaneIds: reconciliation.insertedPaneIds, isProvisional: false)
+        workspaceId: workspaceId, state: state, tree: fit.tree, plan: fit.plan,
+        insertedPaneIds: reconciliation.insertedPaneIds, isProvisional: false,
+        keepsArrangement: fit.keepsArrangement)
     } catch {
       Self.logger.error("pane_layout_resolution_failed error=\(error.localizedDescription)")
       return nil
@@ -1714,6 +1732,8 @@ private struct ResolvedPaneGridLayout {
   let plan: PaneLayoutGeometryResult
   let insertedPaneIds: [String]
   let isProvisional: Bool
+  /// False while `PaneLayoutFit` rearranges the panes; layout gestures edit the stored tree.
+  let keepsArrangement: Bool
 
   var repairTaskID: String {
     "\(workspaceId):\(state.mode.rawValue):\(isProvisional):\(insertedPaneIds.joined(separator: ","))"
@@ -1791,6 +1811,8 @@ private struct PaneLayoutNodeSurface: View {
           placeholderSurface(newPane, geometry: geometry)
         } else if let pane = panesById[leaf.paneId] {
           leafSurface(pane: pane, geometry: geometry)
+        } else if let group = plan.tabGroup, leaf.paneId == PaneLayoutTabGroup.slotPaneId {
+          tabGroupSurface(group, geometry: geometry)
         }
       case .split(let split):
         if let companion = split.companion {
@@ -1868,7 +1890,8 @@ private struct PaneLayoutNodeSurface: View {
   }
 
   private func paneSurface(
-    pane: Pane, halo: CGFloat, contentWidth: CGFloat, contentHeight: CGFloat
+    pane: Pane, halo: CGFloat, contentWidth: CGFloat, contentHeight: CGFloat,
+    visible: Bool = true
   ) -> some View {
     let cardWidth = max(0, contentWidth - 2 * halo)
     return PaneCard(
@@ -1876,7 +1899,7 @@ private struct PaneLayoutNodeSurface: View {
       tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
       onTasks: onTasks, onSplit: onSplit,
       interaction: interactionsEnabled ? interaction : nil,
-      companionLinked: companionLinked, isVisible: isVisible, cardWidth: cardWidth,
+      companionLinked: companionLinked, isVisible: isVisible && visible, cardWidth: cardWidth,
       dropTargetSize: CGSize(
         width: cardWidth,
         height: max(0, contentHeight - 2 * halo)),
@@ -1888,6 +1911,34 @@ private struct PaneLayoutNodeSurface: View {
     )
     .padding(halo)
     .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
+  }
+
+  /// Every grouped pane stays mounted; only the selected one, or the first, is visible.
+  private func tabGroupSurface(
+    _ group: PaneLayoutTabGroup, geometry: PaneLayoutNodeGeometry
+  ) -> some View {
+    let panes = group.paneIds.compactMap { panesById[$0] }
+    let shown = panes.first { $0.paneId == client.selectedPaneId }?.paneId ?? group.paneIds.first
+    let area = group.paneRect.size
+    return VStack(spacing: 0) {
+      PaneTabStrip(
+        panes: panes, selectedPaneId: shown, identifier: "pane-group-tab",
+        onSelect: { client.select($0) })
+      ZStack(alignment: .topLeading) {
+        ForEach(panes, id: \.paneId) { pane in
+          let visible = pane.paneId == shown
+          paneSurface(
+            pane: pane, halo: CGFloat(MacPaneLayoutMetrics.paneHalo),
+            contentWidth: area.width, contentHeight: area.height, visible: visible
+          )
+          .id(pane.paneId)
+          .opacity(visible ? 1 : 0)
+          .allowsHitTesting(visible)
+          .accessibilityHidden(!visible)
+        }
+      }
+    }
+    .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
   }
 
   private func scrollAxes(for geometry: PaneLayoutNodeGeometry) -> Axis.Set {
@@ -2020,31 +2071,9 @@ private struct PaneLayoutCompanionSurface: View {
   }
 
   private func companionTabs(_ layout: WritingCompanionLayoutPlan) -> some View {
-    ScrollView(.horizontal) {
-      HStack(spacing: MacTheme.Space.x6) {
-        ForEach(layout.tabOrder, id: \.self) { paneId in
-          if let pane = panesById[paneId] {
-            Button {
-              client.select(paneId)
-            } label: {
-              Label(pane.name, systemImage: companionIcon(for: pane))
-                .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-                .lineLimit(1)
-                .padding(.horizontal, MacTheme.Space.x10)
-                .frame(height: PaneLayoutContentMetrics.companionTabStripHeight - 8)
-                .modifier(CompanionTabSurface(selected: paneId == layout.selectedPaneId))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("writing-companion-tab-\(paneId)")
-          }
-        }
-      }
-      .padding(.horizontal, MacTheme.Space.x4)
-      .frame(height: PaneLayoutContentMetrics.companionTabStripHeight)
-    }
-    .scrollIndicators(.hidden)
-    .background(MacTheme.canvas)
-    .accessibilityIdentifier("writing-companion-tabs")
+    PaneTabStrip(
+      panes: layout.tabOrder.compactMap { panesById[$0] }, selectedPaneId: layout.selectedPaneId,
+      identifier: "writing-companion-tab", onSelect: { client.select($0) })
   }
 
   @ViewBuilder private func companionLeaf(
@@ -2142,10 +2171,6 @@ private struct PaneLayoutCompanionSurface: View {
     return "pane-divider-\(value)-0"
   }
 
-  private func companionIcon(for pane: Pane) -> String {
-    pane.mode == .agent ? "cpu" : "doc.text"
-  }
-
   private func resizeDivider(
     axis: PaneLayoutAxis, translation: CGSize, viewport: PaneLayoutSize
   ) {
@@ -2219,18 +2244,6 @@ private struct PaneLayoutCompanionSurface: View {
     client.paneLayouts.cancelDraft(workspaceId: workspaceId)
     interaction.clear()
     client.problem = message
-  }
-}
-
-private struct CompanionTabSurface: ViewModifier {
-  let selected: Bool
-
-  func body(content: Content) -> some View {
-    if selected {
-      content.neoWell(radius: MacTheme.Radius.pill)
-    } else {
-      content.neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
-    }
   }
 }
 
@@ -2380,7 +2393,7 @@ private struct PaneLayoutSplitSurface: View {
         active.baseTree, splitAt: active.splitPath,
         dividerIndex: active.afterChildIndex, delta: delta,
         viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
-        sizing: MacPaneLayoutMetrics.sizing)
+        sizing: MacPaneLayoutMetrics.fittedSizing(active.baseTree, viewport: viewportSize))
       try client.paneLayouts.updateDraft(workspaceId: workspaceId, tree: tree)
     } catch {
       cancelDivider(message: "Couldn't resize the panes. The layout was not changed.")
@@ -2414,7 +2427,7 @@ private struct PaneLayoutSplitSurface: View {
       let equalized = try PaneLayoutTreeMutation.equalizing(
         tree, splitAt: divider.splitPath,
         viewport: PaneLayoutSize(width: viewportSize.width, height: viewportSize.height),
-        sizing: MacPaneLayoutMetrics.sizing)
+        sizing: MacPaneLayoutMetrics.fittedSizing(tree, viewport: viewportSize))
       try client.paneLayouts.commit(tree: equalized, workspaceId: workspaceId)
     } catch {
       client.problem = "Couldn't equalize the panes. The layout was not changed."
@@ -2468,48 +2481,6 @@ private struct RenderedPaneLayoutDivider: Identifiable {
       splitPath.components.isEmpty
       ? "root" : splitPath.components.map(String.init).joined(separator: "-")
     return "pane-divider-\(path)-\(afterChildIndex)"
-  }
-}
-
-private struct PaneLayoutDividerHandle: View {
-  let axis: PaneLayoutAxis
-  let accessibilityID: String
-  let onChanged: (CGSize) -> Void
-  let onEnded: () -> Void
-  let onDoubleClick: () -> Void
-  @State private var cursorIsActive = false
-
-  var body: some View {
-    Color.clear
-      .contentShape(Rectangle())
-      .gesture(
-        DragGesture(minimumDistance: 2)
-          .onChanged { onChanged($0.translation) }
-          .onEnded { _ in onEnded() }
-      )
-      .onTapGesture(count: 2, perform: onDoubleClick)
-      .onHover { inside in
-        guard inside != cursorIsActive else { return }
-        cursorIsActive = inside
-        if inside {
-          resizeCursor.push()
-        } else {
-          NSCursor.pop()
-        }
-      }
-      .onDisappear {
-        if cursorIsActive {
-          NSCursor.pop()
-          cursorIsActive = false
-        }
-      }
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(axis == .horizontal ? "Resize columns" : "Resize rows")
-      .accessibilityIdentifier(accessibilityID)
-  }
-
-  private var resizeCursor: NSCursor {
-    axis == .horizontal ? .resizeLeftRight : .resizeUpDown
   }
 }
 
@@ -2696,7 +2667,9 @@ private struct PaneCard: View {
   var body: some View {
     Group {
       if pane.mode == .editor {
-        EditorPaneView(client: client, pane: pane, headerDrag: dragConfiguration)
+        EditorPaneView(
+          client: client, pane: pane, headerDrag: dragConfiguration,
+          showsProjectPanel: MacPaneLayoutMetrics.editorShowsProjectPanel(cardWidth: cardWidth))
       } else if pane.mode == .writing, pane.writingKind == .text {
         WritingTextPane(
           client: client, pane: pane, headerDrag: dragConfiguration,

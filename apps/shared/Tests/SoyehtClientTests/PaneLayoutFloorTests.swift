@@ -2,7 +2,8 @@ import Testing
 
 @testable import SoyehtClient
 
-private let acceptedFontMetrics = PaneLayoutFontMetrics(
+/// The accepted floor report's font metrics; other layout tests derive their floors from it.
+let acceptedFontMetrics = PaneLayoutFontMetrics(
   terminal: PaneLayoutFontMetric(characterWidth: 8, lineHeight: 18, pointSize: 13),
   editor: PaneLayoutFontMetric(characterWidth: 6.9, lineHeight: 19, pointSize: 11.5),
   chrome: PaneLayoutFontMetric(characterWidth: 7.2, lineHeight: 17, pointSize: 12),
