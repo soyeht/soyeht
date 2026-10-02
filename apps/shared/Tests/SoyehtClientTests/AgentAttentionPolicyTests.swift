@@ -3,13 +3,6 @@ import Testing
 
 @testable import SoyehtClient
 
-private final class AttentionPreferences: ClientPreferenceStore {
-  var values: [String: Bool] = [:]
-
-  func bool(forKey key: String) -> Bool { values[key] ?? false }
-  func set(_ value: Bool, forKey key: String) { values[key] = value }
-}
-
 private func agentPane(
   _ id: String, workspaceId: String, state: PaneState = .idle
 ) -> Pane {
@@ -101,7 +94,7 @@ private func agentPane(
 }
 
 @Test @MainActor func attentionNotificationsRequireOptInAndInactiveApp() {
-  let preferences = AttentionPreferences()
+  let preferences = MemoryPreferenceStore()
   let settings = AgentAttentionNotificationSettings(preferences: preferences)
   #expect(!settings.enabled)
   #expect(!settings.shouldPost(appIsActive: false))

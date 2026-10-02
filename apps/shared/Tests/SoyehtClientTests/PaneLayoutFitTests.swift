@@ -124,3 +124,77 @@ func editorAgentAndTerminalFitA1024By700Window(railOpen: Bool) throws {
   #expect(compactFloors[.editor]!.width == floors[.editor]!.width - 212)
   #expect(compactFloors[.editor]!.height == floors[.editor]!.height)
 }
+
+/// What the editor pane shows in `result`, from its laid-out width and the workspace's choice.
+private func showsProjectPanel(
+  _ result: PaneLayoutFitResult, _ choice: EditorProjectPanelPreference
+) throws -> Bool {
+  let editor = try #require(result.plan.paneRects["editor-0"])
+  return choice.isShown(
+    fits: PaneLayoutFloorFormula.editorShowsProjectPanel(
+      surfaceWidth: editor.size.width - 2 * halo, fonts: fonts))
+}
+
+@Test(arguments: [false, true])
+func aProjectPanelKeptOpenInANarrowWindowStacksOrTabsThePanesInsteadOfClipping(
+  railOpen: Bool
+) throws {
+  let viewport = viewport1024By700(railOpen: railOpen)
+  for kinds in [[PaneLayoutKind.editor, .agent], [.editor, .agent, .terminal]] {
+    let tree = try workspace(kinds)
+    let automatic = try PaneLayoutFit.layout(tree: tree, viewport: viewport, sizing: sizing)
+    let kept = try PaneLayoutFit.layout(
+      tree: tree, viewport: viewport, sizing: sizing, projectPanel: .shown)
+    try expectFits(kept, of: tree, in: viewport)
+    #expect(try showsProjectPanel(kept, .shown), "\(kinds)")
+    #expect(kept.sizing.floors == sizing.floors, "full floors, panel included")
+    let editor = try #require(kept.plan.paneRects["editor-0"])
+    #expect(editor.size.width >= floors[.editor]!.width)
+    if !(try showsProjectPanel(automatic, .automatic)) {
+      #expect(kept.plan != automatic.plan, "the panel costs another arrangement")
+    }
+  }
+}
+
+@Test func aProjectPanelKeptOpenFoldsOnlyWhenNotEvenALoneEditorFitsWithIt() throws {
+  let tree = try workspace([.editor])
+  let viewport = PaneLayoutSize(
+    width: compactFloors[.editor]!.width + 100, height: floors[.editor]!.height + 100)
+  #expect(viewport.width < floors[.editor]!.width)
+
+  let result = try PaneLayoutFit.layout(
+    tree: tree, viewport: viewport, sizing: sizing, projectPanel: .shown)
+  try expectFits(result, of: tree, in: viewport)
+  #expect(try !showsProjectPanel(result, .shown))
+}
+
+@Test func aHiddenProjectPanelStaysHiddenInARoomyWindowAndGivesTheCodeItsWidth() throws {
+  let viewport = window.paneViewport(
+    window: PaneLayoutSize(width: 1600, height: 1000), railOpen: true)
+  let tree = try workspace([.editor, .agent, .terminal])
+
+  let result = try PaneLayoutFit.layout(
+    tree: tree, viewport: viewport, sizing: sizing, projectPanel: .hidden)
+  try expectFits(result, of: tree, in: viewport)
+  #expect(result.keepsArrangement)
+  #expect(result.sizing.floors[.editor] == compactFloors[.editor])
+  #expect(try !showsProjectPanel(result, .hidden))
+  let roomy = try PaneLayoutFit.layout(tree: tree, viewport: viewport, sizing: sizing)
+  #expect(try showsProjectPanel(roomy, .automatic))
+}
+
+@MainActor @Test func theProjectPanelChoiceTogglesFromWhatIsShownAndPersistsPerWorkspace() {
+  let store = MemoryPreferenceStore()
+  let preferences = EditorInputPreferences(preferences: store)
+  #expect(preferences.projectPanel(for: "w1") == .automatic)
+  preferences.setProjectPanel(.toggled(from: false), for: "w1")
+  preferences.setProjectPanel(.toggled(from: true), for: "w2")
+
+  let reopened = EditorInputPreferences(preferences: store)
+  #expect(reopened.projectPanel(for: "w1") == .shown)
+  #expect(reopened.projectPanel(for: "w2") == .hidden)
+  #expect(reopened.projectPanel(for: "w3") == .automatic)
+  #expect(EditorProjectPanelPreference.automatic.isShown(fits: true))
+  #expect(!EditorProjectPanelPreference.shown.isShown(fits: false))
+  #expect(!EditorProjectPanelPreference.hidden.isShown(fits: true))
+}

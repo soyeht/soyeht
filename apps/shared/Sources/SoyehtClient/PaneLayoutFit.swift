@@ -39,31 +39,28 @@ public struct PaneLayoutFitResult: Equatable, Sendable {
 /// 5. one tab group holding every pane.
 /// When nothing fits, as in a viewport smaller than a single floor, it uses the last
 /// presentation and the geometry scrolls, as before.
+///
+/// The workspace's project panel choice changes the order: `.shown` tries steps 1, 3, 4 and 5
+/// at full floors before any compact one, so the panel stays open while stacking or tabs make
+/// room for it; `.hidden` uses only the compact floors.
 public enum PaneLayoutFit {
   public static func layout(
-    tree: PaneLayoutTree, viewport: PaneLayoutSize, sizing: PaneLayoutSizingPolicy
+    tree: PaneLayoutTree, viewport: PaneLayoutSize, sizing: PaneLayoutSizingPolicy,
+    projectPanel: EditorProjectPanelPreference = .automatic
   ) throws -> PaneLayoutFitResult {
     var compact = sizing
     compact.floors.merge(sizing.compactFloors) { _, compactFloor in compactFloor }
-    var candidates = [
-      Candidate(tree: tree, sizing: sizing), Candidate(tree: tree, sizing: compact),
-    ]
-    let units = tree.layoutUnits
-    if units.count > 1 {
-      for axis in [PaneLayoutAxis.horizontal, .vertical] {
-        candidates.append(
-          Candidate(tree: try compact.arranging(units, along: axis), sizing: compact))
-      }
-      let auxiliaries = units.filter { $0.groupableRole == .auxiliary }
-      if auxiliaries.count > 1 {
-        let others = units.filter { $0.groupableRole != .auxiliary }
-        candidates.append(try compact.tabbing(auxiliaries, beside: others))
-      }
-      let groupable = units.filter { $0.groupableRole != nil }
-      if groupable.count > 1 {
-        let others = units.filter { $0.groupableRole == nil }
-        candidates.append(try compact.tabbing(groupable, beside: others))
-      }
+    let candidates: [Candidate]
+    switch projectPanel {
+    case .automatic:
+      candidates =
+        [Candidate(tree: tree, sizing: sizing)]
+        + (try presentations(of: tree, sizing: compact))
+    case .shown:
+      candidates =
+        try presentations(of: tree, sizing: sizing) + presentations(of: tree, sizing: compact)
+    case .hidden:
+      candidates = try presentations(of: tree, sizing: compact)
     }
     let chosen =
       try candidates.first { try $0.fits(viewport) } ?? candidates[candidates.count - 1]
@@ -86,6 +83,29 @@ public enum PaneLayoutFit {
     return PaneLayoutFitResult(
       tree: chosen.tree, sizing: chosen.sizing, plan: plan,
       keepsArrangement: chosen.tree == tree)
+  }
+
+  /// The stored arrangement, then one row, one column and the tab groups, at one set of floors.
+  private static func presentations(
+    of tree: PaneLayoutTree, sizing: PaneLayoutSizingPolicy
+  ) throws -> [Candidate] {
+    var candidates = [Candidate(tree: tree, sizing: sizing)]
+    let units = tree.layoutUnits
+    guard units.count > 1 else { return candidates }
+    for axis in [PaneLayoutAxis.horizontal, .vertical] {
+      candidates.append(Candidate(tree: try sizing.arranging(units, along: axis), sizing: sizing))
+    }
+    let auxiliaries = units.filter { $0.groupableRole == .auxiliary }
+    if auxiliaries.count > 1 {
+      let others = units.filter { $0.groupableRole != .auxiliary }
+      candidates.append(try sizing.tabbing(auxiliaries, beside: others))
+    }
+    let groupable = units.filter { $0.groupableRole != nil }
+    if groupable.count > 1 {
+      let others = units.filter { $0.groupableRole == nil }
+      candidates.append(try sizing.tabbing(groupable, beside: others))
+    }
+    return candidates
   }
 
   fileprivate struct Candidate {

@@ -11,6 +11,7 @@ struct SoyehtMacApp: App {
   @State private var client: EngineClient
   @State private var themeStore = SoyehtThemeStore.shared
   @State private var attentionNotifications = AgentAttentionNotifications()
+  @State private var editorInputPreferences = EditorInputPreferences()
   private let webHost: MacWebHost
 
   init() {
@@ -67,6 +68,19 @@ struct SoyehtMacApp: App {
           NotificationCenter.default.post(name: .toggleSoyehtAppBar, object: nil)
         }
         .keyboardShortcut("b", modifiers: [.command, .shift])
+        // Zed's project panel key. The visible editor toggles its workspace's panel.
+        Button("Toggle Project Panel") {
+          NotificationCenter.default.post(name: .toggleSoyehtProjectPanel, object: nil)
+        }
+        .keyboardShortcut(Self.keyboardShortcut(.projectPanel))
+        // Cmd+Option+Z: a key equivalent, never text (see `EditorShortcut.softWrap`).
+        Toggle(
+          "Soft Wrap",
+          isOn: Binding(
+            get: { editorInputPreferences.softWrap },
+            set: { editorInputPreferences.setSoftWrap($0) })
+        )
+        .keyboardShortcut(Self.keyboardShortcut(.softWrap))
         Divider()
         workspaceViewCommand("Agents", destination: .agents, key: "1")
         workspaceViewCommand("Editor", destination: .editor, key: "2")
@@ -96,8 +110,17 @@ struct SoyehtMacApp: App {
       )
       .environment(themeStore)
       .environment(attentionNotifications)
+      .environment(editorInputPreferences)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
+  }
+
+  private static func keyboardShortcut(_ shortcut: EditorShortcut) -> KeyboardShortcut {
+    var modifiers: EventModifiers = .command
+    if shortcut.shift { modifiers.insert(.shift) }
+    if shortcut.option { modifiers.insert(.option) }
+    if shortcut.control { modifiers.insert(.control) }
+    return KeyboardShortcut(KeyEquivalent(Character(shortcut.key)), modifiers: modifiers)
   }
 
   private func workspaceViewCommand(
@@ -208,4 +231,5 @@ extension Notification.Name {
   static let toggleSoyehtAppBar = Notification.Name("toggleSoyehtAppBar")
   static let selectSoyehtWorkspaceView = Notification.Name("selectSoyehtWorkspaceView")
   static let showSoyehtEditorPalette = Notification.Name("showSoyehtEditorPalette")
+  static let toggleSoyehtProjectPanel = Notification.Name("toggleSoyehtProjectPanel")
 }

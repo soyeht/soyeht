@@ -11,6 +11,9 @@ mod project_paths;
 #[cfg(test)]
 mod project_tests;
 mod project_tree;
+mod project_watch;
+#[cfg(test)]
+mod project_watch_tests;
 mod search;
 mod service;
 mod tabs;
@@ -22,7 +25,7 @@ mod trash;
 mod undo;
 
 pub(crate) use project_files::{ProjectFile, enumerate_project_files, language};
-pub use project_tree::Watches as ProjectWatches;
+pub use project_watch::Watches as ProjectWatches;
 pub use service::{FileSystemPort, Service, SystemFiles};
 pub(crate) use tabs::refresh_tabs;
 
