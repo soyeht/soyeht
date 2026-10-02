@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
+// Generated from contracts/protocol.json (sha256 578f80caffef28366ae7841db1357d0d82f8266894b673398523698e23c5a4db). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -375,6 +375,13 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "FileSearchMatch" => roundtrip::<FileSearchMatch>(value),
         "FileSearchParams" => roundtrip::<FileSearchParams>(value),
         "FileSearchResult" => roundtrip::<FileSearchResult>(value),
+        "FileFindDirection" => roundtrip::<FileFindDirection>(value),
+        "FileFindQuery" => roundtrip::<FileFindQuery>(value),
+        "FileFindParams" => roundtrip::<FileFindParams>(value),
+        "FileFindMatch" => roundtrip::<FileFindMatch>(value),
+        "FileFindResult" => roundtrip::<FileFindResult>(value),
+        "FileReplaceParams" => roundtrip::<FileReplaceParams>(value),
+        "FileReplaceResult" => roundtrip::<FileReplaceResult>(value),
         "FileSymbol" => roundtrip::<FileSymbol>(value),
         "FileSymbolsParams" => roundtrip::<FileSymbolsParams>(value),
         "FileSymbolsResult" => roundtrip::<FileSymbolsResult>(value),

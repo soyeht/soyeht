@@ -7104,6 +7104,11 @@
     "value": "content"
   },
   {
+    "name": "FileFindDirection",
+    "type": "FileFindDirection",
+    "value": "previous"
+  },
+  {
     "name": "HighlightKind",
     "type": "HighlightKind",
     "value": "keyword"
@@ -7501,6 +7506,141 @@
     "value": {
       "items": [],
       "replaced": 0
+    }
+  },
+  {
+    "name": "FileFindQuery",
+    "type": "FileFindQuery",
+    "value": {
+      "text": "x",
+      "caseSensitive": false,
+      "wholeWord": true,
+      "regex": false
+    }
+  },
+  {
+    "name": "FileFindParams",
+    "type": "FileFindParams",
+    "value": {
+      "fileId": "x",
+      "revision": "1",
+      "query": {
+        "text": "x",
+        "caseSensitive": false,
+        "wholeWord": true,
+        "regex": false
+      },
+      "from": {
+        "line": 0,
+        "column": 1
+      },
+      "direction": "next",
+      "visibleFromLine": 0,
+      "visibleLineCount": 200
+    }
+  },
+  {
+    "name": "FileFindMatch",
+    "type": "FileFindMatch",
+    "value": {
+      "index": 0,
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "FileFindResult",
+    "type": "FileFindResult",
+    "value": {
+      "revision": "1",
+      "total": 3,
+      "current": {
+        "index": 1,
+        "range": {
+          "start": {
+            "line": 0,
+            "column": 0
+          },
+          "end": {
+            "line": 0,
+            "column": 1
+          }
+        }
+      },
+      "visible": [
+        {
+          "start": {
+            "line": 0,
+            "column": 0
+          },
+          "end": {
+            "line": 0,
+            "column": 1
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "FileReplaceParams",
+    "type": "FileReplaceParams",
+    "value": {
+      "fileId": "x",
+      "baseRevision": "1",
+      "query": {
+        "text": "x",
+        "caseSensitive": false,
+        "wholeWord": true,
+        "regex": false
+      },
+      "replacement": "y",
+      "range": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 1
+        }
+      },
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "FileReplaceResult",
+    "type": "FileReplaceResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "2",
+        "diskRevision": "1",
+        "lineCount": 1,
+        "byteCount": "1",
+        "dirty": true,
+        "conflicted": false,
+        "watching": true
+      },
+      "replaced": 1,
+      "changedLines": [
+        0
+      ],
+      "cursor": {
+        "line": 0,
+        "column": 1
+      }
     }
   },
   {
@@ -8230,6 +8370,132 @@
       "result": {
         "items": [],
         "replaced": 0
+      }
+    }
+  },
+  {
+    "name": "request:file.find",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-find-1",
+      "method": "file.find",
+      "params": {
+        "fileId": "x",
+        "revision": "1",
+        "query": {
+          "text": "x",
+          "caseSensitive": false,
+          "wholeWord": true,
+          "regex": false
+        },
+        "from": {
+          "line": 0,
+          "column": 1
+        },
+        "direction": "next",
+        "visibleFromLine": 0,
+        "visibleLineCount": 200
+      }
+    }
+  },
+  {
+    "name": "response:file.find",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-find-1",
+      "result": {
+        "revision": "1",
+        "total": 3,
+        "current": {
+          "index": 1,
+          "range": {
+            "start": {
+              "line": 0,
+              "column": 0
+            },
+            "end": {
+              "line": 0,
+              "column": 1
+            }
+          }
+        },
+        "visible": [
+          {
+            "start": {
+              "line": 0,
+              "column": 0
+            },
+            "end": {
+              "line": 0,
+              "column": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:file.replace",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-replace-1",
+      "method": "file.replace",
+      "params": {
+        "fileId": "x",
+        "baseRevision": "1",
+        "query": {
+          "text": "x",
+          "caseSensitive": false,
+          "wholeWord": true,
+          "regex": false
+        },
+        "replacement": "y",
+        "range": {
+          "start": {
+            "line": 0,
+            "column": 0
+          },
+          "end": {
+            "line": 0,
+            "column": 1
+          }
+        },
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.replace",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-replace-1",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "2",
+          "diskRevision": "1",
+          "lineCount": 1,
+          "byteCount": "1",
+          "dirty": true,
+          "conflicted": false,
+          "watching": true
+        },
+        "replaced": 1,
+        "changedLines": [
+          0
+        ],
+        "cursor": {
+          "line": 0,
+          "column": 1
+        }
       }
     }
   },

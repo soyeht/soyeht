@@ -29,11 +29,16 @@ public struct EditorNavigationTarget: Sendable {
   public let id: String
   public let fileId: String
   public let position: TextPosition
+  /// When set, the landing selects `position..<selectionEnd`, such as a match.
+  public let selectionEnd: TextPosition?
 
-  public init(id: String, fileId: String, position: TextPosition) {
+  public init(
+    id: String, fileId: String, position: TextPosition, selectionEnd: TextPosition? = nil
+  ) {
     self.id = id
     self.fileId = fileId
     self.position = position
+    self.selectionEnd = selectionEnd
   }
 }
 
@@ -331,17 +336,23 @@ extension EngineClient {
       FileUndoParams(fileId: fileId, baseRevision: revision, idempotencyKey: UUID().uuidString)
     ).decoded(FileUndoResult.self)
     upsertEditor(result.file) { $0.changedLines = result.changedLines }
-    guard result.applied, let loaded = editorFiles[fileId]?.viewport else { return result }
-    let fromLine = EditorViewportPaging.landingStart(
-      line: result.cursor?.line ?? loaded.fromLine, loadedFrom: loaded.fromLine,
-      loadedTo: loaded.toLine)
-    _ = try await readEditorFile(
-      fileId: fileId, fromLine: fromLine, lineCount: EditorViewportPaging.pageLines)
+    guard result.applied else { return result }
+    try await reloadEditorPage(fileId, showing: result.cursor?.line)
     if let cursor = result.cursor {
       editorNavigationTarget = EditorNavigationTarget(
         id: UUID().uuidString, fileId: fileId, position: cursor)
     }
     return result
+  }
+
+  /// Reloads the page after an engine-side change, moving it only when
+  /// `line` lies outside the loaded page.
+  func reloadEditorPage(_ fileId: String, showing line: UInt32?) async throws {
+    guard let loaded = editorFiles[fileId]?.viewport else { return }
+    let fromLine = EditorViewportPaging.landingStart(
+      line: line ?? loaded.fromLine, loadedFrom: loaded.fromLine, loadedTo: loaded.toLine)
+    _ = try await readEditorFile(
+      fileId: fileId, fromLine: fromLine, lineCount: EditorViewportPaging.pageLines)
   }
 
   @discardableResult
@@ -535,7 +546,7 @@ extension EngineClient {
     }
   }
 
-  private func invalidateEditorRefresh(_ fileId: String) {
+  func invalidateEditorRefresh(_ fileId: String) {
     _ = nextEditorRefreshGeneration(fileId)
     editorRefreshTasks[fileId]?.cancel()
     editorRefreshTasks[fileId] = nil

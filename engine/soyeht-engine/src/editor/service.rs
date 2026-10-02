@@ -1,6 +1,11 @@
+use super::creation::{
+    create_contained_directories, validate_relative_creation_path, verify_existing_binary,
+};
 use super::project_files::ProjectFile;
 use crate::{errors, errors::Result};
-use soyeht_editor::{EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer};
+use soyeht_editor::{
+    AppliedStep, EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer,
+};
 use soyeht_protocol::{EditorLanguage, EditorLine, FileAuthor, TextEdit, TextPosition};
 use soyeht_store::editor::EditorFile;
 use std::{
@@ -218,74 +223,6 @@ impl FileSystemPort for SystemFiles {
         }
         Ok(canonical)
     }
-}
-
-fn verify_existing_binary(target: &Path, bytes: &[u8]) -> io::Result<()> {
-    let metadata = fs::symlink_metadata(target)?;
-    let expected_len = u64::try_from(bytes.len())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "writing image is too large"))?;
-    if metadata.file_type().is_symlink()
-        || !metadata.is_file()
-        || metadata.len() != expected_len
-        || fs::read(target)? != bytes
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "writing image target has different content",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_relative_creation_path(relative: &Path) -> io::Result<()> {
-    if relative.as_os_str().is_empty()
-        || relative.is_absolute()
-        || relative
-            .components()
-            .any(|part| !matches!(part, Component::Normal(_)))
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "document path must be a normal relative path",
-        ));
-    }
-    Ok(())
-}
-
-fn create_contained_directories(root: &Path, relative: &Path) -> io::Result<PathBuf> {
-    let mut current = root.to_path_buf();
-    let parent = relative.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "document path has no parent")
-    })?;
-    for component in parent.components() {
-        let Component::Normal(component) = component else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "document folder is invalid",
-            ));
-        };
-        let next = current.join(component);
-        match fs::create_dir(&next) {
-            Ok(()) => fs::File::open(&current)?.sync_all()?,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
-        }
-        let metadata = fs::symlink_metadata(&next)?;
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "document folder is not a regular directory",
-            ));
-        }
-        current = next.canonicalize()?;
-        if !current.starts_with(root) {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "document folder leaves the workspace",
-            ));
-        }
-    }
-    Ok(current)
 }
 
 struct OpenDocument {
@@ -590,8 +527,39 @@ impl Service {
         author: FileAuthor,
         now_ms: i64,
     ) -> Result<PreparedEdit> {
+        self.prepare_recorded(
+            file_id,
+            base_revision,
+            edits,
+            (author, now_ms),
+            EditStep::record,
+        )
+    }
+
+    /// Prepares edits the engine built itself (find and replace) against the
+    /// whole document as one undo transaction of their own.
+    pub fn prepare_command_edit(
+        &self,
+        file_id: &str,
+        base_revision: u64,
+        edits: &[TextEdit],
+        author: FileAuthor,
+        now_ms: i64,
+    ) -> Result<PreparedEdit> {
+        let record = EditStep::record_command;
+        self.prepare_recorded(file_id, base_revision, edits, (author, now_ms), record)
+    }
+
+    fn prepare_recorded(
+        &self,
+        file_id: &str,
+        base_revision: u64,
+        edits: &[TextEdit],
+        (author, now_ms): (FileAuthor, i64),
+        record: fn(&mut TextBuffer, &[TextEdit]) -> soyeht_editor::Result<AppliedStep>,
+    ) -> Result<PreparedEdit> {
         let (item, mut buffer) = self.revision_buffer(file_id, base_revision)?;
-        let recorded = EditStep::record(&mut buffer, edits)?;
+        let recorded = record(&mut buffer, edits)?;
         let history = HistoryChange::Record {
             base: base_revision,
             step: recorded.step,
@@ -841,19 +809,6 @@ fn changed_lines(applied: &[soyeht_editor::AppliedEdit]) -> Vec<u32> {
     lines.into_iter().collect()
 }
 
-pub fn language(path: &Path) -> EditorLanguage {
-    match path.extension().and_then(|value| value.to_str()) {
-        Some("rs") => EditorLanguage::Rust,
-        Some("swift") => EditorLanguage::Swift,
-        Some("ts" | "tsx" | "js" | "jsx") => EditorLanguage::Typescript,
-        Some("py") => EditorLanguage::Python,
-        Some("json") => EditorLanguage::Json,
-        Some("md" | "markdown") => EditorLanguage::Markdown,
-        Some("sh" | "bash" | "zsh") => EditorLanguage::Shell,
-        _ => EditorLanguage::PlainText,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1021,16 +976,6 @@ mod tests {
             service
                 .resolve_absolute(&root, &root.join("link.rs"))
                 .is_err()
-        );
-    }
-
-    #[test]
-    fn language_mapping_is_closed_and_unknown_files_are_plain_text() {
-        assert_eq!(language(Path::new("main.rs")), EditorLanguage::Rust);
-        assert_eq!(language(Path::new("view.tsx")), EditorLanguage::Typescript);
-        assert_eq!(
-            language(Path::new("notes.unknown")),
-            EditorLanguage::PlainText
         );
     }
 

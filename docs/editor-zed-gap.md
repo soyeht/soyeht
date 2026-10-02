@@ -18,8 +18,8 @@ last row group says what this change closes.
 | --- | --- | --- | --- |
 | File open, save, dirty state | Have | `file.open` (`editor/api.rs`); every accepted write persists a draft and autosaves 500 ms later (`editor/persistence.rs`, ADR 0047); header shows `· unsaved` / `· saved` / `· conflict` (`EditorPaneView.swift` `EditorPaneHeader`); disk changes reload or raise a conflict. No explicit `Cmd+S`: it is swallowed (`EditorTextView.performKeyEquivalent`). | [Autosave](https://zed.dev/docs/reference/all-settings#autosave) |
 | Multiple tabs / buffers | Partial | `EditorTabs` lists every open file of the workspace and selects its pane; the `xmark` is decoration only, so a tab cannot be closed from the strip, and there is no recent-order switcher. | [Editor tabs](https://zed.dev/docs/reference/all-settings#editor-tabs), [Tab Switcher](https://zed.dev/docs/tab-switcher) |
-| Undo / redo | Lack | Edits bypass AppKit's undo registration (`Coordinator.apply` writes the text storage directly), so `Cmd+Z` rewound nothing the engine knew; no engine undo method existed. | `editor::Undo` in [Vim: restoring common keybindings](https://zed.dev/docs/vim#restoring-common-text-editing-and-zed-keybindings); rename preview "you can undo the changes" in [Configuring languages](https://zed.dev/docs/configuring-languages#rename-symbol) |
-| Paste, cut, drag and drop, IME | Lack | Paste, cut and drop go through `NSTextView.shouldChangeText`, never through the custom `insertText` path, so they changed the page without an engine edit (reproduced with a headless `NSTextView`); dead-key composition left the marked character behind. | Baseline text-editing behavior; see [Multibuffers](https://zed.dev/docs/multibuffers#editing-in-a-multibuffer) for paste across cursors |
+| Undo / redo | Have | Engine-owned per-file `EditHistory` (`soyeht-editor/src/history.rs`), `file.undo` / `file.redo` through the durable write path, `Cmd+Z`, `Cmd+Shift+Z`, Edit menu and Vim `u` (ADR 0071). The caret after a replay could keep its pre-undo position in the status bar (fixed by this change). | `editor::Undo` in [Vim: restoring common keybindings](https://zed.dev/docs/vim#restoring-common-text-editing-and-zed-keybindings) |
+| Paste, cut, drag and drop, IME | Have | `EditorTextView.shouldChangeText` turns paste, cut and drop into verbatim engine edits; marked text stays local until the composition commits (ADR 0071). | Baseline text-editing behavior; see [Multibuffers](https://zed.dev/docs/multibuffers#editing-in-a-multibuffer) for paste across cursors |
 | Multi-cursor | Partial | `Cmd+D` next occurrence and `Opt+click` add cursor (`EditorNativeViewport.swift`, `EditorEditing.nextOccurrence`); search covers only the loaded page; no add-cursor above/below, no select-all-occurrences. | [Multibuffers](https://zed.dev/docs/multibuffers#editing-in-a-multibuffer), [Multi cursor modifier](https://zed.dev/docs/reference/all-settings#multi-cursor-modifier) |
 | Find and replace (in file) | Partial | Only AppKit's find panel (`usesFindPanel = true`), which sees the loaded page (at most `editorViewportLines`), not the file; replace through it bypassed the engine. Project-wide search and replace exist (`file.search`, palette `.project`, `EditorNavigationPalette.replaceAll`). | [Search settings](https://zed.dev/docs/reference/all-settings#search), `buffer_search::Deploy` in [Vim](https://zed.dev/docs/vim#restoring-common-text-editing-and-zed-keybindings), [Project search](https://zed.dev/docs/finding-navigating#project-search) |
 | Go to line | Have | Palette mode `.line` (`EditorNavigationPalette.goToLine`) loads a page at the line; status bar shows `Ln, Col`. | `:<number>` in [Vim ex commands](https://zed.dev/docs/vim#ex-commands), [Line indicator format](https://zed.dev/docs/reference/all-settings#line-indicator-format) |
@@ -46,30 +46,38 @@ iPad parity.
 
 ## Closed by this change
 
-Undo/redo and the paste/cut/drop/IME path move from **Lack** to **Have**:
+In-file find and replace moves from **Partial** to **Have** (ADR 0072):
 
-- Engine: `soyeht-editor` `EditHistory` records each accepted buffer change as
-  forward and inverse UTF-16 edits, groups writes closer than 300 ms, bounds the
-  history to 200 transactions and 16 MiB, and drops it when the file changes
-  through a path it did not record. `file.undo` / `file.redo` replay through the
-  durable write path (ADR 0071).
-- Protocol: `file.undo`, `file.redo`, `FileUndoParams`, `FileUndoResult`.
-- Shared client: `EngineClient.replayEditorHistory`, `EditorEditing.verbatimPlan`,
-  `EditorViewportPaging.landingStart`, Vim `u`.
-- Mac: `EditorTextView` routes every AppKit text change into an engine edit or
-  refuses it, keeps IME marked text local until commit, and sends `Cmd+Z`,
-  `Cmd+Shift+Z` and Edit-menu undo/redo to the engine.
+- Engine: `soyeht-editor/src/find.rs` counts every match, steps to the next or
+  previous one with wrap-around, and builds Replace All as at most 32 folded
+  edits; `ContentMatcher` gains whole-word, regex and `$1` expansion. A command
+  edit is its own undo transaction (`EditStep::record_command`).
+- Protocol: `file.find`, `file.replace`, `FileFindQuery`, `FileFindDirection`,
+  `FileFindParams`, `FileFindMatch`, `FileFindResult`, `FileReplaceParams`,
+  `FileReplaceResult`.
+- Shared client: `EditorFindController` (query, toggles, "3 of 41", next,
+  previous, Replace, Replace All), `EngineClient.findInEditorFile` pages to the
+  match and selects it, `EditorViewportPaging.landing` clamps every landing.
+- Mac: `EditorFindBar` replaces AppKit's find panel; `Cmd+F`, `Cmd+Option+F`,
+  `Cmd+G`, `Cmd+Shift+G`, the Edit > Find menu and Escape.
+
+Two fixes ride along:
+
+- After undo or redo the caret lands on the restored edit, clamped to the
+  line and the document, and the status bar follows: the caret position was
+  written to a SwiftUI binding during a view update, where it could be
+  dropped, so `Ln, Col` kept the pre-undo position.
+- A click right of a short line puts the caret at its end: AppKit shrank the
+  horizontally resizable text view to its longest line, so such clicks hit the
+  clip view. `EditorTextLayout.fit` keeps it at least as wide as the visible
+  area.
 
 ## Prioritized plan
 
 Ranked by how soon a person editing code hits the gap, then by cost.
 
-1. **Undo/redo and edit integrity**: done here. It was a correctness bug: the
-   first paste or `Cmd+Z` silently diverged the screen from the file.
-2. **In-file find and replace**: a `Cmd+F` bar backed by the engine's buffer
-   search (`soyeht-editor/src/search.rs` already scans whole text) with match
-   count, next/previous, case and regex toggles, and replace through
-   `file.write`. Drop AppKit's find panel, which sees one page.
+1. **Undo/redo and edit integrity**: done (ADR 0071).
+2. **In-file find and replace**: done here (ADR 0072).
 3. **Project panel**: a real worktree tree (the engine already enumerates
    project files with ignore rules in `editor/project_files.rs`) with open,
    create, rename and delete, plus closable tabs.

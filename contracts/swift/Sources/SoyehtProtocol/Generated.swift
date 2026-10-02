@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
+// Generated from contracts/protocol.json (sha256 578f80caffef28366ae7841db1357d0d82f8266894b673398523698e23c5a4db). Do not edit.
 import Foundation
 
 
@@ -4504,6 +4504,95 @@ public struct FileSearchResult: Codable, Sendable {
     public init(`items`: [FileSearchMatch], `replaced`: UInt32) {
         self.`items` = `items`
         self.`replaced` = `replaced`
+    }
+}
+
+public enum FileFindDirection: String, Codable, Sendable {
+    case `next` = "next"
+    case `previous` = "previous"
+}
+
+public struct FileFindQuery: Codable, Sendable {
+    public var `text`: String
+    public var `caseSensitive`: Bool
+    public var `wholeWord`: Bool
+    public var `regex`: Bool
+    public init(`text`: String, `caseSensitive`: Bool, `wholeWord`: Bool, `regex`: Bool) {
+        self.`text` = `text`
+        self.`caseSensitive` = `caseSensitive`
+        self.`wholeWord` = `wholeWord`
+        self.`regex` = `regex`
+    }
+}
+
+public struct FileFindParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `revision`: Decimal
+    public var `query`: FileFindQuery
+    public var `from`: TextPosition
+    public var `direction`: FileFindDirection
+    public var `visibleFromLine`: UInt32?
+    public var `visibleLineCount`: UInt32?
+    public init(`fileId`: Id, `revision`: Decimal, `query`: FileFindQuery, `from`: TextPosition, `direction`: FileFindDirection, `visibleFromLine`: UInt32? = nil, `visibleLineCount`: UInt32? = nil) {
+        self.`fileId` = `fileId`
+        self.`revision` = `revision`
+        self.`query` = `query`
+        self.`from` = `from`
+        self.`direction` = `direction`
+        self.`visibleFromLine` = `visibleFromLine`
+        self.`visibleLineCount` = `visibleLineCount`
+    }
+}
+
+public struct FileFindMatch: Codable, Sendable {
+    public var `index`: UInt32
+    public var `range`: TextRange
+    public init(`index`: UInt32, `range`: TextRange) {
+        self.`index` = `index`
+        self.`range` = `range`
+    }
+}
+
+public struct FileFindResult: Codable, Sendable {
+    public var `revision`: Decimal
+    public var `total`: UInt32
+    public var `current`: FileFindMatch?
+    public var `visible`: [TextRange]
+    public init(`revision`: Decimal, `total`: UInt32, `current`: FileFindMatch? = nil, `visible`: [TextRange]) {
+        self.`revision` = `revision`
+        self.`total` = `total`
+        self.`current` = `current`
+        self.`visible` = `visible`
+    }
+}
+
+public struct FileReplaceParams: Codable, Sendable {
+    public var `fileId`: Id
+    public var `baseRevision`: Decimal
+    public var `query`: FileFindQuery
+    public var `replacement`: String
+    public var `range`: TextRange?
+    public var `idempotencyKey`: Id
+    public init(`fileId`: Id, `baseRevision`: Decimal, `query`: FileFindQuery, `replacement`: String, `range`: TextRange? = nil, `idempotencyKey`: Id) {
+        self.`fileId` = `fileId`
+        self.`baseRevision` = `baseRevision`
+        self.`query` = `query`
+        self.`replacement` = `replacement`
+        self.`range` = `range`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct FileReplaceResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public var `replaced`: UInt32
+    public var `changedLines`: [UInt32]
+    public var `cursor`: TextPosition?
+    public init(`file`: FileDocument, `replaced`: UInt32, `changedLines`: [UInt32], `cursor`: TextPosition? = nil) {
+        self.`file` = `file`
+        self.`replaced` = `replaced`
+        self.`changedLines` = `changedLines`
+        self.`cursor` = `cursor`
     }
 }
 

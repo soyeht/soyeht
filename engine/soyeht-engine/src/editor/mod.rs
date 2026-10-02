@@ -2,14 +2,17 @@
 
 pub(crate) mod agent_review;
 pub(crate) mod api;
+mod creation;
+mod find;
 mod persistence;
 mod project_files;
 mod search;
 mod service;
+#[cfg(test)]
+mod test_support;
 mod undo;
 
-pub(crate) use project_files::{ProjectFile, enumerate_project_files};
-pub(crate) use service::language;
+pub(crate) use project_files::{ProjectFile, enumerate_project_files, language};
 pub use service::{FileSystemPort, Service, SystemFiles};
 
 use crate::{core::Core, errors, errors::Result};
@@ -27,6 +30,8 @@ pub fn handles(method: &str) -> bool {
             | "file.undo"
             | "file.redo"
             | "file.search"
+            | "file.find"
+            | "file.replace"
             | "editor.review.accept"
             | "editor.review.reject"
             | "editor.review.comment"
@@ -49,6 +54,8 @@ impl Core {
             "file.revert" => self.file_revert(connection, params),
             "file.undo" | "file.redo" => self.file_undo(connection, method, params),
             "file.search" => self.file_search(connection, params),
+            "file.find" => self.file_find(params),
+            "file.replace" => self.file_replace(connection, params),
             "editor.review.accept" | "editor.review.reject" => {
                 self.editor_review(connection, method, params)
             }

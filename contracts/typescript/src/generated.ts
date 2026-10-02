@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
+// Generated from contracts/protocol.json (sha256 578f80caffef28366ae7841db1357d0d82f8266894b673398523698e23c5a4db). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -2261,6 +2261,53 @@ export interface FileSearchResult {
   "replaced": number;
 }
 
+export type FileFindDirection = "next" | "previous";
+
+export interface FileFindQuery {
+  "text": string;
+  "caseSensitive": boolean;
+  "wholeWord": boolean;
+  "regex": boolean;
+}
+
+export interface FileFindParams {
+  "fileId": Id;
+  "revision": Decimal;
+  "query": FileFindQuery;
+  "from": TextPosition;
+  "direction": FileFindDirection;
+  "visibleFromLine"?: number;
+  "visibleLineCount"?: number;
+}
+
+export interface FileFindMatch {
+  "index": number;
+  "range": TextRange;
+}
+
+export interface FileFindResult {
+  "revision": Decimal;
+  "total": number;
+  "current"?: FileFindMatch;
+  "visible": Array<TextRange>;
+}
+
+export interface FileReplaceParams {
+  "fileId": Id;
+  "baseRevision": Decimal;
+  "query": FileFindQuery;
+  "replacement": string;
+  "range"?: TextRange;
+  "idempotencyKey": Id;
+}
+
+export interface FileReplaceResult {
+  "file": FileDocument;
+  "replaced": number;
+  "changedLines": Array<number>;
+  "cursor"?: TextPosition;
+}
+
 export interface FileSymbol {
   "name": string;
   "kind": FileSymbolKind;
@@ -3166,6 +3213,8 @@ export interface Methods {
   "file.undo": { params: FileUndoParams; result: FileUndoResult };
   "file.redo": { params: FileUndoParams; result: FileUndoResult };
   "file.search": { params: FileSearchParams; result: FileSearchResult };
+  "file.find": { params: FileFindParams; result: FileFindResult };
+  "file.replace": { params: FileReplaceParams; result: FileReplaceResult };
   "file.symbols": { params: FileSymbolsParams; result: FileSymbolsResult };
   "file.definition": { params: FilePositionParams; result: FileDefinitionResult };
   "file.references": { params: FilePositionParams; result: FileReferencesResult };

@@ -8110,6 +8110,185 @@
       ],
       "additionalProperties": true
     },
+    "FileFindDirection": {
+      "type": "string",
+      "enum": [
+        "next",
+        "previous"
+      ]
+    },
+    "FileFindQuery": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "caseSensitive": {
+          "type": "boolean"
+        },
+        "wholeWord": {
+          "type": "boolean"
+        },
+        "regex": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text",
+        "caseSensitive",
+        "wholeWord",
+        "regex"
+      ],
+      "additionalProperties": true
+    },
+    "FileFindParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "query": {
+          "$ref": "#/$defs/FileFindQuery"
+        },
+        "from": {
+          "$ref": "#/$defs/TextPosition"
+        },
+        "direction": {
+          "$ref": "#/$defs/FileFindDirection"
+        },
+        "visibleFromLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "visibleLineCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        }
+      },
+      "required": [
+        "fileId",
+        "revision",
+        "query",
+        "from",
+        "direction"
+      ],
+      "additionalProperties": true
+    },
+    "FileFindMatch": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        }
+      },
+      "required": [
+        "index",
+        "range"
+      ],
+      "additionalProperties": true
+    },
+    "FileFindResult": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "current": {
+          "$ref": "#/$defs/FileFindMatch"
+        },
+        "visible": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextRange"
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "total",
+        "visible"
+      ],
+      "additionalProperties": true
+    },
+    "FileReplaceParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "query": {
+          "$ref": "#/$defs/FileFindQuery"
+        },
+        "replacement": {
+          "type": "string",
+          "maxLength": 262144
+        },
+        "range": {
+          "$ref": "#/$defs/TextRange"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId",
+        "baseRevision",
+        "query",
+        "replacement",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "FileReplaceResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        },
+        "replaced": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "changedLines": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        "cursor": {
+          "$ref": "#/$defs/TextPosition"
+        }
+      },
+      "required": [
+        "file",
+        "replaced",
+        "changedLines"
+      ],
+      "additionalProperties": true
+    },
     "FileSymbol": {
       "type": "object",
       "properties": {
@@ -11955,6 +12134,24 @@
       },
       "result": {
         "$ref": "#/$defs/FileSearchResult"
+      },
+      "mutation": true
+    },
+    "file.find": {
+      "params": {
+        "$ref": "#/$defs/FileFindParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileFindResult"
+      },
+      "mutation": false
+    },
+    "file.replace": {
+      "params": {
+        "$ref": "#/$defs/FileReplaceParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileReplaceResult"
       },
       "mutation": true
     },

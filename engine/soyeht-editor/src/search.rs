@@ -31,13 +31,23 @@ struct ByteMatch {
     end: usize,
 }
 
+/// How a query matches text: exact or case-folded, anywhere or on word
+/// boundaries, literally or as a regular expression.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MatchOptions {
+    pub case_sensitive: bool,
+    pub whole_word: bool,
+    pub regex: bool,
+}
+
 pub struct ContentMatcher {
     pattern: ContentPattern,
+    options: MatchOptions,
 }
 
 enum ContentPattern {
     Sensitive(memmem::Finder<'static>),
-    Folded(regex::Regex),
+    Expression(regex::Regex),
 }
 
 pub fn search_content(
@@ -52,21 +62,89 @@ pub fn search_content(
 
 impl ContentMatcher {
     pub fn new(query: &str, case_sensitive: bool) -> Result<Self> {
+        Self::with_options(
+            query,
+            MatchOptions {
+                case_sensitive,
+                ..MatchOptions::default()
+            },
+        )
+    }
+
+    pub fn with_options(query: &str, options: MatchOptions) -> Result<Self> {
         if query.is_empty() {
             return Err(Error::EmptySearch);
         }
-        let pattern = if case_sensitive {
+        let pattern = if options.case_sensitive && !options.regex {
             ContentPattern::Sensitive(memmem::Finder::new(query.as_bytes()).into_owned())
         } else {
-            ContentPattern::Folded(
-                RegexBuilder::new(&regex::escape(query))
-                    .case_insensitive(true)
+            let source = if options.regex {
+                query.to_owned()
+            } else {
+                regex::escape(query)
+            };
+            ContentPattern::Expression(
+                RegexBuilder::new(&source)
+                    .case_insensitive(!options.case_sensitive)
+                    .multi_line(true)
                     .unicode(true)
                     .build()
                     .map_err(|_| Error::SearchPattern)?,
             )
         };
-        Ok(Self { pattern })
+        Ok(Self { pattern, options })
+    }
+
+    /// Every non-empty match in `text` as byte offsets, in document order.
+    pub fn byte_matches<'t>(&'t self, text: &'t str) -> impl Iterator<Item = (usize, usize)> + 't {
+        let found: Box<dyn Iterator<Item = (usize, usize)> + 't> = match &self.pattern {
+            ContentPattern::Sensitive(finder) => {
+                let length = finder.needle().len();
+                Box::new(
+                    finder
+                        .find_iter(text.as_bytes())
+                        .map(move |start| (start, start + length)),
+                )
+            }
+            ContentPattern::Expression(expression) => Box::new(
+                expression
+                    .find_iter(text)
+                    .map(|found| (found.start(), found.end())),
+            ),
+        };
+        let whole_word = self.options.whole_word;
+        found.filter(move |(start, end)| {
+            start < end && (!whole_word || on_word_boundaries(text, *start, *end))
+        })
+    }
+
+    /// Whether `start..end` is a match of this query, judged in the context
+    /// of the whole text so anchors and word boundaries hold.
+    pub fn matches_at(&self, text: &str, start: usize, end: usize) -> bool {
+        let Some(slice) = text.get(start..end) else {
+            return false;
+        };
+        let exact = match &self.pattern {
+            ContentPattern::Sensitive(finder) => slice.as_bytes() == finder.needle(),
+            ContentPattern::Expression(expression) => expression
+                .find_at(text, start)
+                .is_some_and(|found| found.start() == start && found.end() == end),
+        };
+        exact && start < end && (!self.options.whole_word || on_word_boundaries(text, start, end))
+    }
+
+    /// The text that replaces the match starting at `start`: the replacement
+    /// itself, or for a regular expression with `$1` and `${name}` expanded.
+    pub fn expand(&self, text: &str, start: usize, replacement: &str) -> String {
+        if let ContentPattern::Expression(expression) = &self.pattern
+            && self.options.regex
+            && let Some(captures) = expression.captures_at(text, start)
+        {
+            let mut expanded = String::new();
+            captures.expand(replacement, &mut expanded);
+            return expanded;
+        }
+        replacement.to_owned()
     }
 
     pub fn search(
@@ -96,25 +174,21 @@ impl ContentMatcher {
     }
 
     fn find_matches(&self, text: &str, limit: usize) -> Vec<ByteMatch> {
-        match &self.pattern {
-            ContentPattern::Sensitive(finder) => finder
-                .find_iter(text.as_bytes())
-                .take(limit)
-                .map(|start| ByteMatch {
-                    start,
-                    end: start + finder.needle().len(),
-                })
-                .collect(),
-            ContentPattern::Folded(expression) => expression
-                .find_iter(text)
-                .take(limit)
-                .map(|found| ByteMatch {
-                    start: found.start(),
-                    end: found.end(),
-                })
-                .collect(),
-        }
+        self.byte_matches(text)
+            .take(limit)
+            .map(|(start, end)| ByteMatch { start, end })
+            .collect()
     }
+}
+
+fn on_word_boundaries(text: &str, start: usize, end: usize) -> bool {
+    let before = text[..start].chars().next_back();
+    let after = text[end..].chars().next();
+    !before.is_some_and(is_word_character) && !after.is_some_and(is_word_character)
+}
+
+fn is_word_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
 }
 
 pub fn rank_paths(paths: &[String], query: &str, limit: usize) -> Result<Vec<PathSearchMatch>> {

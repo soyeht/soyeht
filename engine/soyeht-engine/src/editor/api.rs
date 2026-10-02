@@ -89,7 +89,7 @@ impl Core {
             );
         }
         let text = self.editor.read_disk(&resolved.canonical)?;
-        let language = super::service::language(&resolved.canonical);
+        let language = super::language(&resolved.canonical);
         let pane = editor_pane(&workspace, &resolved.relative);
         let saved = StoredPane {
             pane: pane.clone(),
