@@ -3,14 +3,25 @@
 pub(crate) mod agent_review;
 pub(crate) mod api;
 mod persistence;
+mod project_entries;
 mod project_files;
+mod project_paths;
+#[cfg(test)]
+mod project_tests;
+mod project_tree;
 mod search;
 mod service;
+mod tabs;
+#[cfg(test)]
+pub(crate) mod test_fixture;
+mod trash;
 mod undo;
 
 pub(crate) use project_files::{ProjectFile, enumerate_project_files};
+pub use project_tree::Watches as ProjectWatches;
 pub(crate) use service::language;
 pub use service::{FileSystemPort, Service, SystemFiles};
+pub(crate) use tabs::refresh_tabs;
 
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
@@ -27,6 +38,13 @@ pub fn handles(method: &str) -> bool {
             | "file.undo"
             | "file.redo"
             | "file.search"
+            | "project.tree.list"
+            | "project.tree.watch"
+            | "project.entry.create"
+            | "project.entry.rename"
+            | "project.entry.delete"
+            | "editor.tabs.list"
+            | "editor.tabs.move"
             | "editor.review.accept"
             | "editor.review.reject"
             | "editor.review.comment"
@@ -49,6 +67,13 @@ impl Core {
             "file.revert" => self.file_revert(connection, params),
             "file.undo" | "file.redo" => self.file_undo(connection, method, params),
             "file.search" => self.file_search(connection, params),
+            "project.tree.list" => self.project_tree_list(params),
+            "project.tree.watch" => self.project_tree_watch(connection, params),
+            "project.entry.create" => self.project_entry_create(connection, params),
+            "project.entry.rename" => self.project_entry_rename(connection, params),
+            "project.entry.delete" => self.project_entry_delete(connection, params),
+            "editor.tabs.list" => self.editor_tabs_list(params),
+            "editor.tabs.move" => self.editor_tabs_move(connection, params),
             "editor.review.accept" | "editor.review.reject" => {
                 self.editor_review(connection, method, params)
             }

@@ -38,6 +38,7 @@ pub struct Core {
     pub web: crate::web::Service,
     pub vcs: soyeht_vcs::Service,
     pub editor: crate::editor::Service,
+    pub(crate) project_watches: crate::editor::ProjectWatches,
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
@@ -116,6 +117,7 @@ impl Core {
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),
+            project_watches: Default::default(),
             languages: crate::languages::Service::restore(language_servers)?,
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
@@ -583,6 +585,7 @@ impl Core {
 
     pub fn poll_output(&mut self) -> Result<()> {
         self.advance_editor()?;
+        self.advance_project_tree()?;
         self.advance_local_servers()?;
         self.advance_web_commands()?;
         if self.ptyd.is_none() {

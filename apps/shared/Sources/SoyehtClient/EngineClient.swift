@@ -46,6 +46,7 @@ public final class EngineClient {
   public internal(set) var usageReadings: [UsageReading] = []
   public internal(set) var editorFiles: [String: EditorFileView] = [:]
   public internal(set) var editorNavigationTarget: EditorNavigationTarget?
+  public internal(set) var editorWorkspace = EditorWorkspaceReplica()
   public internal(set) var writingDocuments: [String: WritingDocumentView] = [:]
   public internal(set) var webPanes: [String: WebPaneView] = [:]
   public internal(set) var localServers: [LocalServer] = []
@@ -61,7 +62,7 @@ public final class EngineClient {
     let workspace = try await self.setWorkspacePaneLayout(workspaceId: workspaceId, state: state)
     return PaneLayoutState(
       workspaceLayout: workspace.layout,
-      livePanes: self.panes.filter { $0.workspaceId == workspaceId })
+      livePanes: self.layoutPanes(self.panes.filter { $0.workspaceId == workspaceId }))
   }
   public var gapText: String? {
     selectedPaneId.flatMap { terminalStreams.gapText(for: $0) }
@@ -560,8 +561,8 @@ public final class EngineClient {
     case .attentionChanged: try applyAttentionEvent(params)
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
     case .usageChanged: try applyUsageEvent(params)
-    case .fileChangedOnDisk, .fileSaved, .fileConflict, .lspDiagnostics,
-      .editorAgentCursor, .editorReviewRequested:
+    case .fileChangedOnDisk, .fileSaved, .fileConflict, .lspDiagnostics, .editorAgentCursor,
+      .editorReviewRequested, .editorTabsUpdated, .projectEntryRenamed, .projectTreeChanged:
       try applyEditorEvent(eventName, params)
     case .serversLocalChanged, .webNavigated, .webConsoleCounts, .webAgentDriving:
       try applyWebEvent(eventName, params)
@@ -776,11 +777,6 @@ public final class EngineClient {
     }
   }
 
-  /// Lets a platform surface drain the shared editor writer before it unmounts.
-  public func flushEditorEdits(fileId: String) async {
-    await settleEditorWrites(fileId)
-  }
-
   public func preferredAgentPane(in workspaceId: String) -> Pane? {
     if let paneId = lastAgentPaneByWorkspace[workspaceId],
       let pane = panes.first(where: { $0.paneId == paneId && $0.mode == .agent })
@@ -900,7 +896,7 @@ public final class EngineClient {
   public func paneLayoutState(for workspace: Workspace) -> PaneLayoutState {
     PaneLayoutState(
       workspaceLayout: workspace.layout,
-      livePanes: panes.filter { $0.workspaceId == workspace.workspaceId })
+      livePanes: layoutPanes(panes.filter { $0.workspaceId == workspace.workspaceId }))
   }
   private func synchronizePaneLayout(_ workspace: Workspace) {
     paneLayouts.synchronize(

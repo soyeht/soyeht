@@ -84,6 +84,8 @@ public enum PaneLayoutContentMetrics {
   public static let editorViewportVerticalInset = 20.0
   public static let editorReviewHeight = 42.0
   public static let editorStatusHeight = 24.0
+  /// The project panel beside the code; part of the editor's minimum width.
+  public static let editorProjectPanelWidth = 212.0
 
   public static let agentTaskHeight = 34.0
   public static let agentBodyTopInset = 4.0
@@ -159,7 +161,8 @@ public enum PaneLayoutFloorFormula {
     let editor = PaneLayoutSize(
       width: ceil(
         editorColumns * fonts.editor.characterWidth + PaneLayoutContentMetrics.editorGutterWidth
-          + 2 * PaneLayoutContentMetrics.editorTextInset + 2 * paneCardInset),
+          + 2 * PaneLayoutContentMetrics.editorTextInset + 2 * paneCardInset
+          + PaneLayoutContentMetrics.editorProjectPanelWidth),
       height: 2 * paneCardInset + PaneLayoutContentMetrics.editorHeaderHeight
         + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.editorTabHeight
         + (12 * PaneLayoutContentMetrics.editorLineHeight

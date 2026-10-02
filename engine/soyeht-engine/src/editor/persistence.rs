@@ -154,6 +154,19 @@ impl Core {
         Ok(())
     }
 
+    /// Runs a pending autosave now instead of waiting for its debounce; used
+    /// before a tab closes or its file moves. A conflict is left untouched.
+    pub(super) fn save_editor_now(&mut self, file_id: &str) -> Result<()> {
+        let pending = self
+            .editor
+            .stored(file_id)
+            .is_ok_and(|file| file.draft_text.is_some() && file.conflict_text.is_none());
+        if !pending || pause_editor_autosave(&self.directory) {
+            return Ok(());
+        }
+        self.advance_editor_save(file_id, self.now_ms())
+    }
+
     fn advance_editor_save(&mut self, file_id: &str, now: i64) -> Result<()> {
         let file = self.editor.stored(file_id)?.clone();
         let Some(draft) = file.draft_text.clone() else {

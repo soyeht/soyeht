@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9fb043de9bf8e82bdc7bb744ded87cac18546e1826b64e631c686a5e2e4b8eef). Do not edit.
+// Generated from contracts/protocol.json (sha256 aaafc5f521f9268613b64d8b29fb4de2476a93927623711d46145a30c08a5fbc). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -3895,6 +3895,8 @@ pub struct FileOpenParams {
     pub line: Option<u32>,
     #[serde(rename = "column", skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
+    #[serde(rename = "preview", skip_serializing_if = "Option::is_none")]
+    pub preview: Option<bool>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -4037,6 +4039,196 @@ pub struct FileUndoResult {
     pub changed_lines: Vec<u32>,
     #[serde(rename = "cursor", skip_serializing_if = "Option::is_none")]
     pub cursor: Option<TextPosition>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProjectEntryKind {
+    #[serde(rename = "file")]
+    File,
+    #[serde(rename = "directory")]
+    Directory,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntry {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "kind")]
+    pub kind: ProjectEntryKind,
+    #[serde(rename = "ignored")]
+    pub ignored: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTreeListParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "showIgnored", skip_serializing_if = "Option::is_none")]
+    pub show_ignored: Option<bool>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTreeListResult {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "entries")]
+    pub entries: Vec<ProjectEntry>,
+    #[serde(rename = "truncated")]
+    pub truncated: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTreeWatchParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "paths")]
+    pub paths: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTreeWatchResult {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "paths")]
+    pub paths: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTreeChangedEvent {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "paths")]
+    pub paths: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntryCreateParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "kind")]
+    pub kind: ProjectEntryKind,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntryCreateResult {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "entry")]
+    pub entry: ProjectEntry,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntryRenameParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "from")]
+    pub from: String,
+    #[serde(rename = "to")]
+    pub to: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntryRenameResult {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "from")]
+    pub from: String,
+    #[serde(rename = "to")]
+    pub to: String,
+    #[serde(rename = "files")]
+    pub files: Vec<FileDocument>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntryRenamedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "from")]
+    pub from: String,
+    #[serde(rename = "to")]
+    pub to: String,
+    #[serde(rename = "files")]
+    pub files: Vec<FileDocument>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProjectDeleteOutcome {
+    #[serde(rename = "trashed")]
+    Trashed,
+    #[serde(rename = "deleted")]
+    Deleted,
+    #[serde(rename = "needs_confirmation")]
+    NeedsConfirmation,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntryDeleteParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "permanent", skip_serializing_if = "Option::is_none")]
+    pub permanent: Option<bool>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectEntryDeleteResult {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "outcome")]
+    pub outcome: ProjectDeleteOutcome,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorTab {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "preview")]
+    pub preview: bool,
+    #[serde(rename = "previewRevision", skip_serializing_if = "Option::is_none")]
+    pub preview_revision: Option<Decimal>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorTabsListParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorTabsListResult {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "tabs")]
+    pub tabs: Vec<EditorTab>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorTabsMoveParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "index")]
+    pub index: u32,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditorTabsUpdatedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "tabs")]
+    pub tabs: Vec<EditorTab>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileSearchMatch {
@@ -5709,6 +5901,20 @@ pub enum Request {
     FileDiff(FileDiffParams),
     #[serde(rename = "file.format")]
     FileFormat(FileFormatParams),
+    #[serde(rename = "project.tree.list")]
+    ProjectTreeList(ProjectTreeListParams),
+    #[serde(rename = "project.tree.watch")]
+    ProjectTreeWatch(ProjectTreeWatchParams),
+    #[serde(rename = "project.entry.create")]
+    ProjectEntryCreate(ProjectEntryCreateParams),
+    #[serde(rename = "project.entry.rename")]
+    ProjectEntryRename(ProjectEntryRenameParams),
+    #[serde(rename = "project.entry.delete")]
+    ProjectEntryDelete(ProjectEntryDeleteParams),
+    #[serde(rename = "editor.tabs.list")]
+    EditorTabsList(EditorTabsListParams),
+    #[serde(rename = "editor.tabs.move")]
+    EditorTabsMove(EditorTabsMoveParams),
     #[serde(rename = "editor.review.accept")]
     EditorReviewAccept(EditorReviewParams),
     #[serde(rename = "editor.review.reject")]
@@ -6148,6 +6354,48 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("file.diff", "FileDiffParams", "FileDiffResult", false),
     ("file.format", "FileFormatParams", "FileFormatResult", true),
     (
+        "project.tree.list",
+        "ProjectTreeListParams",
+        "ProjectTreeListResult",
+        false,
+    ),
+    (
+        "project.tree.watch",
+        "ProjectTreeWatchParams",
+        "ProjectTreeWatchResult",
+        false,
+    ),
+    (
+        "project.entry.create",
+        "ProjectEntryCreateParams",
+        "ProjectEntryCreateResult",
+        true,
+    ),
+    (
+        "project.entry.rename",
+        "ProjectEntryRenameParams",
+        "ProjectEntryRenameResult",
+        true,
+    ),
+    (
+        "project.entry.delete",
+        "ProjectEntryDeleteParams",
+        "ProjectEntryDeleteResult",
+        true,
+    ),
+    (
+        "editor.tabs.list",
+        "EditorTabsListParams",
+        "EditorTabsListResult",
+        false,
+    ),
+    (
+        "editor.tabs.move",
+        "EditorTabsMoveParams",
+        "EditorTabsListResult",
+        true,
+    ),
+    (
         "editor.review.accept",
         "EditorReviewParams",
         "EditorReviewResult",
@@ -6347,6 +6595,7 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("task.request_review", "paneId"),
     ("task.complete", "paneId"),
     ("loop.set", "paneId"),
+    ("editor.tabs.move", "paneId"),
     ("web.navigate", "paneId"),
     ("web.snapshot", "paneId"),
     ("web.click", "paneId"),
@@ -6495,6 +6744,12 @@ pub enum EventName {
     EditorAgentCursor,
     #[serde(rename = "editor.review_requested")]
     EditorReviewRequested,
+    #[serde(rename = "project.tree_changed")]
+    ProjectTreeChanged,
+    #[serde(rename = "project.entry_renamed")]
+    ProjectEntryRenamed,
+    #[serde(rename = "editor.tabs_updated")]
+    EditorTabsUpdated,
     #[serde(rename = "servers.local.changed")]
     ServersLocalChanged,
     #[serde(rename = "web.navigated")]
@@ -6572,6 +6827,9 @@ impl EventName {
             Self::LspDiagnostics => "lsp.diagnostics",
             Self::EditorAgentCursor => "editor.agent_cursor",
             Self::EditorReviewRequested => "editor.review_requested",
+            Self::ProjectTreeChanged => "project.tree_changed",
+            Self::ProjectEntryRenamed => "project.entry_renamed",
+            Self::EditorTabsUpdated => "editor.tabs_updated",
             Self::ServersLocalChanged => "servers.local.changed",
             Self::WebNavigated => "web.navigated",
             Self::WebConsoleCounts => "web.console_counts",
@@ -6900,6 +7158,21 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::EditorReviewRequested,
         params_type: "EditorReviewRequestedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::ProjectTreeChanged,
+        params_type: "ProjectTreeChangedEvent",
+        durable: false,
+    },
+    EventDescriptor {
+        name: EventName::ProjectEntryRenamed,
+        params_type: "ProjectEntryRenamedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::EditorTabsUpdated,
+        params_type: "EditorTabsUpdatedEvent",
         durable: true,
     },
     EventDescriptor {

@@ -289,6 +289,9 @@ impl Core {
         if method == "pane.close" && self.agents.contains_key(id) {
             return self.close_agent(connection, params);
         }
+        if method == "pane.close" {
+            self.settle_editor_pane_before_close(id);
+        }
         let mut saved = self
             .panes
             .get(id)
@@ -381,10 +384,14 @@ impl Core {
         ) {
             events.push(("pane.updated".into(), json!({"pane":saved.pane})));
         }
+        let closes_editor = saved.closed && saved.pane.mode == PaneMode::Editor;
         let mutation = self.mutate(connection, method, params, |tx| {
             persist_pane(tx, &saved)?;
             if let Some(workspace) = &layout_workspace {
                 tx.update_workspace(workspace)?;
+            }
+            if closes_editor {
+                events.push(crate::editor::refresh_tabs(tx, &saved.pane.workspace_id)?);
             }
             Ok((result, events))
         })?;

@@ -660,7 +660,7 @@ struct WorkspaceWindow: View {
   private func layoutSnapshot(_ workspaceId: String) throws -> PaneLayoutReconciliation {
     try client.paneLayouts.reconciledPresentation(
       for: workspaceId,
-      livePanes: client.panes.filter { $0.workspaceId == workspaceId },
+      livePanes: client.layoutPanes(client.panes.filter { $0.workspaceId == workspaceId }),
       sizing: MacPaneLayoutMetrics.sizing)
   }
   private func newPanePlaceholderId() -> String {
@@ -1532,7 +1532,7 @@ struct PaneGrid: View {
   }
 
   private var panes: [Pane] {
-    workspacePanes.filter { mode == nil || $0.mode == mode }
+    client.paneGridPanes(workspacePanes, mode: mode)
   }
 
   var body: some View {
@@ -1550,20 +1550,17 @@ struct PaneGrid: View {
         .task(id: layout.repairTaskID) {
           persistRepairIfNeeded(layout)
         }
+      } else if panes.isEmpty, mode == .editor, let workspaceId {
+        EditorEmptySurface(client: client, workspaceId: workspaceId, openFile: openEditorFile)
+          .padding(PaneLayoutContentMetrics.paneCardInset)
       } else if panes.isEmpty {
         VStack(spacing: MacTheme.Space.x18) {
-          Image(systemName: mode == .editor ? "doc.text" : "rectangle.split.2x1")
+          Image(systemName: "rectangle.split.2x1")
             .font(.system(size: 42, weight: .light))
             .foregroundStyle(MacTheme.secondary)
-          Text(mode == .editor ? "Open a file to begin" : "Your space to begin")
+          Text("Your space to begin")
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
-          if mode == .editor {
-            Button("Open file", action: openEditorFile)
-              .buttonStyle(NeoPillButtonStyle(accent: true))
-              .disabled(!client.connected || workspaceId == nil)
-          } else {
-            Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))
-          }
+          Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))
         }
         .frame(width: viewportSize.width, height: viewportSize.height)
       }
@@ -1638,7 +1635,7 @@ struct PaneGrid: View {
     else { return nil }
     do {
       let reconciliation = try client.paneLayouts.reconciledPresentation(
-        for: workspace.workspaceId, livePanes: workspacePanes,
+        for: workspace.workspaceId, livePanes: client.layoutPanes(workspacePanes),
         sizing: MacPaneLayoutMetrics.sizing)
       let state = reconciliation.state
       guard let completeTree = state.tree else { return nil }
