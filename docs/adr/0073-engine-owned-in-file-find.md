@@ -1,4 +1,4 @@
-# ADR 0072: In-file find and replace run in the engine
+# ADR 0073: In-file find and replace run in the engine
 
 - Status: accepted
 - Date: 2026-10-01

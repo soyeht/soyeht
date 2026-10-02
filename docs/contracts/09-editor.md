@@ -28,6 +28,11 @@ watches the disk, keeps history); the app renders and edits.
 4. Go to definition (`Cmd+click`) and find references.
 5. File symbol list (functions, types) inside "search everywhere".
 6. Go to line N.
+6a. Project panel: the workspace folder as a lazy tree that respects
+    `.gitignore` (toggle to show ignored files, `.git` hidden), opens on click,
+    creates, renames and deletes (to the system trash) entries confined to the
+    workspace, reveals the active file, works from the keyboard and follows
+    disk changes. Closable, reorderable tabs with one preview tab (ADR 0072).
 
 **Editing**
 7. Syntax highlighting (tree-sitter) for Rust, Swift, TypeScript, Python,
@@ -39,7 +44,7 @@ watches the disk, keeps history); the app renders and edits.
     and input-method composition reach the engine like typing (ADR 0071).
 9b. In-file find and replace (`Cmd+F`, `Cmd+Option+F`, `Cmd+G`,
     `Cmd+Shift+G`, Escape) over the whole file with case, whole-word and
-    regex toggles, a match count, and Replace All as one undo step (ADR 0072).
+    regex toggles, a match count, and Replace All as one undo step (ADR 0073).
 10. VS Code keybindings by default.
 11. Vim mode (optional, off by default): normal/insert/visual, common motions
     and operators; ex commands limited to `:w`, `:q`, `:e`, `:%s`.
@@ -86,9 +91,11 @@ collaboration, extensions.
 ## 5. Changes to other contracts
 - 08 (engine and clients): methods `file.open|read|write|watch|history|
   revert|undo|redo|search|find|replace|symbols|definition|references|diagnostics|diff|format`,
-  `editor.review.accept|reject|comment`, `lsp.status`; events
-  `file.changed_on_disk`, `file.saved {by}`, `file.conflict`,
-  `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`.
+  `project.tree.list|watch`, `project.entry.create|rename|delete`,
+  `editor.tabs.list|move`, `editor.review.accept|reject|comment`, `lsp.status`;
+  events `file.changed_on_disk`, `file.saved {by}`, `file.conflict`,
+  `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`,
+  `editor.tabs_updated`, `project.entry_renamed`, `project.tree_changed`.
 - 07 (persistence): unsaved drafts and per-file version history in the
   database, capped per file (for example 200 versions or 50 MiB) with a
   clear button.

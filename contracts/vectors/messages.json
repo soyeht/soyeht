@@ -12424,5 +12424,598 @@
         "recorded": true
       }
     }
+  },
+  {
+    "name": "ProjectEntryKind",
+    "type": "ProjectEntryKind",
+    "value": "directory"
+  },
+  {
+    "name": "ProjectEntry",
+    "type": "ProjectEntry",
+    "value": {
+      "name": "main.rs",
+      "path": "src/main.rs",
+      "kind": "file",
+      "ignored": false
+    }
+  },
+  {
+    "name": "ProjectTreeListParams",
+    "type": "ProjectTreeListParams",
+    "value": {
+      "workspaceId": "x",
+      "path": "",
+      "showIgnored": false
+    }
+  },
+  {
+    "name": "ProjectTreeListResult",
+    "type": "ProjectTreeListResult",
+    "value": {
+      "workspaceId": "x",
+      "path": "src",
+      "entries": [
+        {
+          "name": "main.rs",
+          "path": "src/main.rs",
+          "kind": "file",
+          "ignored": false
+        }
+      ],
+      "truncated": false
+    }
+  },
+  {
+    "name": "ProjectTreeWatchParams",
+    "type": "ProjectTreeWatchParams",
+    "value": {
+      "workspaceId": "x",
+      "paths": [
+        "",
+        "src"
+      ]
+    }
+  },
+  {
+    "name": "ProjectTreeWatchResult",
+    "type": "ProjectTreeWatchResult",
+    "value": {
+      "workspaceId": "x",
+      "paths": [
+        "",
+        "src"
+      ]
+    }
+  },
+  {
+    "name": "ProjectTreeChangedEvent",
+    "type": "ProjectTreeChangedEvent",
+    "value": {
+      "workspaceId": "x",
+      "paths": [
+        "src"
+      ]
+    }
+  },
+  {
+    "name": "ProjectEntryCreateParams",
+    "type": "ProjectEntryCreateParams",
+    "value": {
+      "workspaceId": "x",
+      "path": "src/new.rs",
+      "kind": "file",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "ProjectEntryCreateResult",
+    "type": "ProjectEntryCreateResult",
+    "value": {
+      "workspaceId": "x",
+      "entry": {
+        "name": "main.rs",
+        "path": "src/main.rs",
+        "kind": "file",
+        "ignored": false
+      }
+    }
+  },
+  {
+    "name": "ProjectEntryRenameParams",
+    "type": "ProjectEntryRenameParams",
+    "value": {
+      "workspaceId": "x",
+      "from": "src/a.rs",
+      "to": "src/b.rs",
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "ProjectEntryRenameResult",
+    "type": "ProjectEntryRenameResult",
+    "value": {
+      "workspaceId": "x",
+      "from": "src/a.rs",
+      "to": "src/b.rs",
+      "files": [
+        {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "src/b.rs",
+          "language": "rust",
+          "revision": "3",
+          "diskRevision": "2",
+          "lineCount": 1,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "ProjectEntryRenamedEvent",
+    "type": "ProjectEntryRenamedEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "workspaceId": "x",
+      "from": "src/a.rs",
+      "to": "src/b.rs",
+      "files": [
+        {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "src/b.rs",
+          "language": "rust",
+          "revision": "3",
+          "diskRevision": "2",
+          "lineCount": 1,
+          "byteCount": "1",
+          "dirty": false,
+          "conflicted": false,
+          "watching": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "ProjectDeleteOutcome",
+    "type": "ProjectDeleteOutcome",
+    "value": "needs_confirmation"
+  },
+  {
+    "name": "ProjectEntryDeleteParams",
+    "type": "ProjectEntryDeleteParams",
+    "value": {
+      "workspaceId": "x",
+      "path": "src/old.rs",
+      "permanent": false,
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "ProjectEntryDeleteResult",
+    "type": "ProjectEntryDeleteResult",
+    "value": {
+      "workspaceId": "x",
+      "path": "src/old.rs",
+      "outcome": "trashed"
+    }
+  },
+  {
+    "name": "EditorTab",
+    "type": "EditorTab",
+    "value": {
+      "paneId": "x",
+      "fileId": "x",
+      "path": "src/main.rs",
+      "preview": true,
+      "previewRevision": "1"
+    }
+  },
+  {
+    "name": "EditorTabsListParams",
+    "type": "EditorTabsListParams",
+    "value": {
+      "workspaceId": "x"
+    }
+  },
+  {
+    "name": "EditorTabsListResult",
+    "type": "EditorTabsListResult",
+    "value": {
+      "workspaceId": "x",
+      "tabs": [
+        {
+          "paneId": "x",
+          "fileId": "x",
+          "path": "src/main.rs",
+          "preview": true,
+          "previewRevision": "1"
+        },
+        {
+          "paneId": "y",
+          "fileId": "y",
+          "path": "README.md",
+          "preview": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "EditorTabsMoveParams",
+    "type": "EditorTabsMoveParams",
+    "value": {
+      "workspaceId": "x",
+      "paneId": "x",
+      "index": 1,
+      "idempotencyKey": "x"
+    }
+  },
+  {
+    "name": "EditorTabsUpdatedEvent",
+    "type": "EditorTabsUpdatedEvent",
+    "value": {
+      "eventId": "1",
+      "at": "x",
+      "workspaceId": "x",
+      "tabs": [
+        {
+          "paneId": "x",
+          "fileId": "x",
+          "path": "src/main.rs",
+          "preview": true,
+          "previewRevision": "1"
+        },
+        {
+          "paneId": "y",
+          "fileId": "y",
+          "path": "README.md",
+          "preview": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "request:project.tree.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-1",
+      "method": "project.tree.list",
+      "params": {
+        "workspaceId": "x",
+        "path": "src",
+        "showIgnored": true
+      }
+    }
+  },
+  {
+    "name": "response:project.tree.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-1",
+      "result": {
+        "workspaceId": "x",
+        "path": "src",
+        "entries": [
+          {
+            "name": "main.rs",
+            "path": "src/main.rs",
+            "kind": "file",
+            "ignored": false
+          },
+          {
+            "name": "target",
+            "path": "src/target",
+            "kind": "directory",
+            "ignored": true
+          }
+        ],
+        "truncated": false
+      }
+    }
+  },
+  {
+    "name": "request:project.tree.watch",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-2",
+      "method": "project.tree.watch",
+      "params": {
+        "workspaceId": "x",
+        "paths": [
+          "",
+          "src"
+        ]
+      }
+    }
+  },
+  {
+    "name": "response:project.tree.watch",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-2",
+      "result": {
+        "workspaceId": "x",
+        "paths": [
+          "",
+          "src"
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:project.entry.create",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-3",
+      "method": "project.entry.create",
+      "params": {
+        "workspaceId": "x",
+        "path": "src/main.rs",
+        "kind": "file",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:project.entry.create",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-3",
+      "result": {
+        "workspaceId": "x",
+        "entry": {
+          "name": "main.rs",
+          "path": "src/main.rs",
+          "kind": "file",
+          "ignored": false
+        }
+      }
+    }
+  },
+  {
+    "name": "request:project.entry.rename",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-4",
+      "method": "project.entry.rename",
+      "params": {
+        "workspaceId": "x",
+        "from": "src/a.rs",
+        "to": "src/b.rs",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:project.entry.rename",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-4",
+      "result": {
+        "workspaceId": "x",
+        "from": "src/a.rs",
+        "to": "src/b.rs",
+        "files": [
+          {
+            "fileId": "x",
+            "paneId": "x",
+            "workspaceId": "x",
+            "path": "src/b.rs",
+            "language": "rust",
+            "revision": "3",
+            "diskRevision": "2",
+            "lineCount": 1,
+            "byteCount": "1",
+            "dirty": false,
+            "conflicted": false,
+            "watching": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:project.entry.delete",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-5",
+      "method": "project.entry.delete",
+      "params": {
+        "workspaceId": "x",
+        "path": "src/old.rs",
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:project.entry.delete",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-5",
+      "result": {
+        "workspaceId": "x",
+        "path": "src/old.rs",
+        "outcome": "needs_confirmation"
+      }
+    }
+  },
+  {
+    "name": "request:editor.tabs.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-6",
+      "method": "editor.tabs.list",
+      "params": {
+        "workspaceId": "x"
+      }
+    }
+  },
+  {
+    "name": "response:editor.tabs.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-6",
+      "result": {
+        "workspaceId": "x",
+        "tabs": [
+          {
+            "paneId": "x",
+            "fileId": "x",
+            "path": "src/main.rs",
+            "preview": true,
+            "previewRevision": "1"
+          },
+          {
+            "paneId": "y",
+            "fileId": "y",
+            "path": "README.md",
+            "preview": false
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:editor.tabs.move",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-7",
+      "method": "editor.tabs.move",
+      "params": {
+        "workspaceId": "x",
+        "paneId": "y",
+        "index": 0,
+        "idempotencyKey": "x"
+      }
+    }
+  },
+  {
+    "name": "response:editor.tabs.move",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "project-7",
+      "result": {
+        "workspaceId": "x",
+        "tabs": [
+          {
+            "paneId": "x",
+            "fileId": "x",
+            "path": "src/main.rs",
+            "preview": true,
+            "previewRevision": "1"
+          },
+          {
+            "paneId": "y",
+            "fileId": "y",
+            "path": "README.md",
+            "preview": false
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "event:project.tree_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "project.tree_changed",
+      "params": {
+        "workspaceId": "x",
+        "paths": [
+          "src"
+        ]
+      }
+    }
+  },
+  {
+    "name": "event:project.entry_renamed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "project.entry_renamed",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "workspaceId": "x",
+        "from": "src/a.rs",
+        "to": "src/b.rs",
+        "files": [
+          {
+            "fileId": "x",
+            "paneId": "x",
+            "workspaceId": "x",
+            "path": "src/b.rs",
+            "language": "rust",
+            "revision": "3",
+            "diskRevision": "2",
+            "lineCount": 1,
+            "byteCount": "1",
+            "dirty": false,
+            "conflicted": false,
+            "watching": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "event:editor.tabs_updated",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "editor.tabs_updated",
+      "params": {
+        "eventId": "1",
+        "at": "x",
+        "workspaceId": "x",
+        "tabs": [
+          {
+            "paneId": "x",
+            "fileId": "x",
+            "path": "src/main.rs",
+            "preview": true,
+            "previewRevision": "1"
+          },
+          {
+            "paneId": "y",
+            "fileId": "y",
+            "path": "README.md",
+            "preview": false
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "FileOpenParams-preview",
+    "type": "FileOpenParams",
+    "value": {
+      "workspaceId": "x",
+      "path": "src/main.rs",
+      "preview": true,
+      "idempotencyKey": "x"
+    }
   }
 ]

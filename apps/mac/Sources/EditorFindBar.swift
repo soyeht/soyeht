@@ -91,13 +91,11 @@ struct EditorFindBar: View {
   private func iconButton(
     _ symbol: String, help: String, action: @escaping () -> Void
   ) -> some View {
-    Button(action: action) {
+    let side = PaneLayoutContentMetrics.editorFindFieldHeight
+    return Button(action: action) {
       Image(systemName: symbol)
+        .frame(width: side, height: side)
         .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
-        .frame(
-          width: PaneLayoutContentMetrics.editorFindFieldHeight,
-          height: PaneLayoutContentMetrics.editorFindFieldHeight
-        )
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain).foregroundStyle(MacTheme.secondary).help(help)

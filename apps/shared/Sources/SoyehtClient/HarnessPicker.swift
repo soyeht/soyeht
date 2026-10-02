@@ -29,6 +29,24 @@ public struct HarnessPickerSection: Sendable {
   }
 }
 
+/// A picker's harnesses split for display: the installed ones in readiness groups,
+/// then everything else under one collapsed "More harnesses" entry, so a catalogue
+/// of dozens of registry adapters does not bury the few that can run.
+public struct HarnessPickerLayout: Sendable {
+  public static let moreTitle = "More harnesses"
+
+  public let sections: [HarnessPickerSection]
+  /// Harnesses that are not installed, in readiness-group order, then by name.
+  public let more: [HarnessInfo]
+
+  public init(sections: [HarnessPickerSection], more: [HarnessInfo]) {
+    self.sections = sections
+    self.more = more
+  }
+
+  public var isEmpty: Bool { sections.isEmpty && more.isEmpty }
+}
+
 public enum HarnessPickerContentState: Sendable, Equatable {
   case loading
   case emptyCatalogue
@@ -51,7 +69,7 @@ public enum HarnessPickerModel {
   ) -> HarnessPickerContentState {
     if loading && harnesses.isEmpty { return .loading }
     if harnesses.isEmpty { return .emptyCatalogue }
-    return sections(harnesses, query: query).isEmpty ? .noMatches : .results
+    return layout(harnesses, query: query).isEmpty ? .noMatches : .results
   }
 
   public static func modelContentState(
@@ -78,6 +96,25 @@ public enum HarnessPickerModel {
       let items = filtered.filter { pickerGroup(for: $0) == group }.sorted(by: ordered)
       return items.isEmpty ? nil : HarnessPickerSection(group: group, items: items)
     }
+  }
+
+  /// The picker's display layout. Every harness appears exactly once; the order is
+  /// a pure function of the catalogue, so it never shifts between refreshes.
+  public static func layout(_ harnesses: [HarnessInfo], query: String = "") -> HarnessPickerLayout {
+    let grouped = sections(harnesses, query: query)
+    return HarnessPickerLayout(
+      sections: grouped.compactMap { section in
+        let items = section.items.filter(isInstalled)
+        return items.isEmpty ? nil : HarnessPickerSection(group: section.group, items: items)
+      },
+      more: grouped.flatMap { $0.items.filter { !isInstalled($0) } })
+  }
+
+  /// Whether the harness is present on this machine: it has opened a session, or
+  /// its executable resolves and the engine did not report it as reachable only
+  /// through an unverified package runner.
+  public static func isInstalled(_ harness: HarnessInfo) -> Bool {
+    setupState(for: harness) == .ready || (harness.available && harness.installed != false)
   }
 
   public static func matches(_ harness: HarnessInfo, query: String) -> Bool {

@@ -149,7 +149,7 @@ class SchemaTests(unittest.TestCase):
             "file.definition", "file.references", "file.diagnostics", "file.diff",
             "file.format",
             "editor.review.accept", "editor.review.reject", "editor.review.comment",
-            "lsp.status",
+            "lsp.status", "editor.tabs.list", "editor.tabs.move",
         }
         expected_events = {
             "file.changed_on_disk", "file.saved", "file.conflict",
@@ -181,6 +181,26 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("idempotencyKey", definition["required"], name)
             if name not in exempt:
                 self.assertIn("baseRevision", definition["required"], name)
+
+    def test_project_panel_surface_is_path_based_and_bounded(self):
+        expected_methods = {
+            "project.tree.list", "project.tree.watch", "project.entry.create",
+            "project.entry.rename", "project.entry.delete",
+        }
+        self.assertLessEqual(expected_methods, set(self.schema["x-methods"]))
+        self.assertFalse(self.schema["x-events"]["project.tree_changed"]["durable"])
+        self.assertTrue(self.schema["x-events"]["project.entry_renamed"]["durable"])
+        self.assertTrue(self.schema["x-events"]["editor.tabs_updated"]["durable"])
+        for name in expected_methods:
+            method = self.schema["x-methods"][name]
+            definition = self.schema["$defs"][method["params"]["$ref"].split("/")[-1]]
+            self.assertIn("workspaceId", definition["required"], name)
+            if method["mutation"]:
+                self.assertIn("idempotencyKey", definition["required"], name)
+        self.assertIn("preview", self.schema["$defs"]["FileOpenParams"]["properties"])
+        limits = self.schema["x-limits"]
+        self.assertEqual(limits["projectTreeEntries"], 5000)
+        self.assertEqual(limits["projectTreeWatches"], 256)
 
     def test_browser_surface_is_complete_additive_and_bounded(self):
         expected_methods = {

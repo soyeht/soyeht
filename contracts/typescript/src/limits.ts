@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 578f80caffef28366ae7841db1357d0d82f8266894b673398523698e23c5a4db). Do not edit.
+// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,
@@ -42,6 +42,8 @@ export const limits = {
   "editorHistoryVersions": 200,
   "editorHistoryBytes": 52428800,
   "editorAutosaveMs": 500,
+  "projectTreeEntries": 5000,
+  "projectTreeWatches": 256,
   "webPanesPerWorkspace": 10,
   "webSnapshotBytes": 204800,
   "webScreenshotBytes": 2097152,

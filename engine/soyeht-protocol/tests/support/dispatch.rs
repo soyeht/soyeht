@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 578f80caffef28366ae7841db1357d0d82f8266894b673398523698e23c5a4db). Do not edit.
+// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -372,6 +372,26 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "FileRevertResult" => roundtrip::<FileRevertResult>(value),
         "FileUndoParams" => roundtrip::<FileUndoParams>(value),
         "FileUndoResult" => roundtrip::<FileUndoResult>(value),
+        "ProjectEntryKind" => roundtrip::<ProjectEntryKind>(value),
+        "ProjectEntry" => roundtrip::<ProjectEntry>(value),
+        "ProjectTreeListParams" => roundtrip::<ProjectTreeListParams>(value),
+        "ProjectTreeListResult" => roundtrip::<ProjectTreeListResult>(value),
+        "ProjectTreeWatchParams" => roundtrip::<ProjectTreeWatchParams>(value),
+        "ProjectTreeWatchResult" => roundtrip::<ProjectTreeWatchResult>(value),
+        "ProjectTreeChangedEvent" => roundtrip::<ProjectTreeChangedEvent>(value),
+        "ProjectEntryCreateParams" => roundtrip::<ProjectEntryCreateParams>(value),
+        "ProjectEntryCreateResult" => roundtrip::<ProjectEntryCreateResult>(value),
+        "ProjectEntryRenameParams" => roundtrip::<ProjectEntryRenameParams>(value),
+        "ProjectEntryRenameResult" => roundtrip::<ProjectEntryRenameResult>(value),
+        "ProjectEntryRenamedEvent" => roundtrip::<ProjectEntryRenamedEvent>(value),
+        "ProjectDeleteOutcome" => roundtrip::<ProjectDeleteOutcome>(value),
+        "ProjectEntryDeleteParams" => roundtrip::<ProjectEntryDeleteParams>(value),
+        "ProjectEntryDeleteResult" => roundtrip::<ProjectEntryDeleteResult>(value),
+        "EditorTab" => roundtrip::<EditorTab>(value),
+        "EditorTabsListParams" => roundtrip::<EditorTabsListParams>(value),
+        "EditorTabsListResult" => roundtrip::<EditorTabsListResult>(value),
+        "EditorTabsMoveParams" => roundtrip::<EditorTabsMoveParams>(value),
+        "EditorTabsUpdatedEvent" => roundtrip::<EditorTabsUpdatedEvent>(value),
         "FileSearchMatch" => roundtrip::<FileSearchMatch>(value),
         "FileSearchParams" => roundtrip::<FileSearchParams>(value),
         "FileSearchResult" => roundtrip::<FileSearchResult>(value),

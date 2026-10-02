@@ -61,9 +61,8 @@ fn undo_result(result: FileUndoResult) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::super::test_support::Fixture;
-    use crate::ports::testing::FixedClock;
     use serde_json::json;
-    use std::{fs, sync::Arc};
+    use std::fs;
 
     #[tokio::test]
     async fn undo_and_redo_replay_typing_bursts_through_the_durable_write_path() {
@@ -121,22 +120,21 @@ mod tests {
         let mut fixture = Fixture::open("alpha\n").await;
         fixture.type_at(1_000, 0, 5, " beta");
         let file_id = fixture.file_id.clone();
-        let stale = fixture.core.dispatch(
-            &fixture.connection,
-            json!({"jsonrpc":"2.0","id":99,"method":"file.undo",
-                "params":{"fileId":file_id,"baseRevision":"1","idempotencyKey":"stale"}}),
+        let stale = fixture.try_call(
+            "file.undo",
+            json!({"fileId":file_id,"baseRevision":"1","idempotencyKey":"stale"}),
         );
         assert!(stale.is_err());
 
         // Autosave, then an agent rewrites the file on disk: the reload moves the
         // revision without a recorded step, so the old positions must not replay.
-        fixture.core.clock = Arc::new(FixedClock(10_000));
+        fixture.at(10_000);
         fixture.core.advance_editor().unwrap();
         assert_eq!(fixture.read()["file"]["dirty"], false);
         let path = fixture.root.join("project/main.rs");
         assert_eq!(fs::read_to_string(&path).unwrap(), "alpha beta\n");
         fs::write(&path, "rewritten by an agent\n").unwrap();
-        fixture.core.clock = Arc::new(FixedClock(20_000));
+        fixture.at(20_000);
         fixture.core.advance_editor().unwrap();
         assert_eq!(fixture.text(), "rewritten by an agent\n");
         let undone = fixture.replay("file.undo", "after-reload");

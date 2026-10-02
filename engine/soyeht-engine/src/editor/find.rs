@@ -126,9 +126,7 @@ fn replace_result(result: FileReplaceResult) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::super::test_support::Fixture;
-    use crate::ports::testing::FixedClock;
     use serde_json::{Value, json};
-    use std::sync::Arc;
 
     fn query(text: &str, regex: bool) -> Value {
         json!({"text":text,"caseSensitive":true,"wholeWord":false,"regex":regex})
@@ -161,8 +159,7 @@ mod tests {
     }
 
     fn rejected(fixture: &mut Fixture, method: &str, params: Value) -> bool {
-        let request = json!({"jsonrpc":"2.0","id":90,"method":method,"params":params});
-        fixture.core.dispatch(&fixture.connection, request).is_err()
+        fixture.try_call(method, params).is_err()
     }
 
     #[tokio::test]
@@ -218,7 +215,7 @@ mod tests {
 
         // Typing just before Replace All stays a separate undo step.
         fixture.type_at(5_000, 0, 0, "// ");
-        fixture.core.clock = Arc::new(FixedClock(5_050));
+        fixture.at(5_050);
         let all = replace(&mut fixture, query(r"let (\w)", true), "var ${1}1", None);
         assert_eq!(all["replaced"], 2);
         assert_eq!(fixture.text(), "// var a1 = 1;\nvar b1 = value;\n");

@@ -58,26 +58,23 @@ struct PhoneHarnessMenu: View {
   }
 
   @ViewBuilder private func menuContent(current: String) -> some View {
-    let sections = HarnessSwitchModel.sections(client.harnesses, current: current)
+    let layout = HarnessSwitchModel.layout(client.harnesses, current: current)
     Section(HarnessSwitchModel.title) {
       Text(HarnessSwitchModel.handoverExplanation)
     }
-    if sections.isEmpty {
+    if layout.isEmpty {
       Text(client.harnessesLoading ? "Loading agents…" : "No other agents")
     }
-    ForEach(sections, id: \.group) { section in
+    ForEach(layout.sections, id: \.group) { section in
       Section(section.group.title) {
-        ForEach(section.items, id: \.id) { item in
-          Button {
-            target = item
-          } label: {
-            Text(item.name)
-            Text(HarnessPickerModel.statusLabel(for: item))
-          }
-          .disabled(!item.available)
-          .accessibilityIdentifier("agent-harness-\(item.id)")
-        }
+        ForEach(section.items, id: \.id, content: harnessButton)
       }
+    }
+    if !layout.more.isEmpty {
+      Menu(HarnessPickerLayout.moreTitle) {
+        ForEach(layout.more, id: \.id, content: harnessButton)
+      }
+      .accessibilityIdentifier("agent-harness-more")
     }
     Divider()
     Button {
@@ -85,6 +82,17 @@ struct PhoneHarnessMenu: View {
     } label: {
       Label("Check agents again", systemImage: "arrow.clockwise")
     }
+  }
+
+  private func harnessButton(_ item: HarnessInfo) -> some View {
+    Button {
+      target = item
+    } label: {
+      Text(item.name)
+      Text(HarnessPickerModel.statusLabel(for: item))
+    }
+    .disabled(!item.available)
+    .accessibilityIdentifier("agent-harness-\(item.id)")
   }
 
   private func label(current: String) -> some View {

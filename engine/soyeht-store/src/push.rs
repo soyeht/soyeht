@@ -203,7 +203,9 @@ mod tests {
             pair(&mut store, "phone");
             store
                 .connection()
-                .execute_batch("DROP TABLE push_registrations; PRAGMA user_version = 27;")
+                .execute_batch(
+                    "DROP TABLE push_registrations; DROP TABLE editor_tabs; PRAGMA user_version = 27;",
+                )
                 .unwrap();
             drop(store);
             let mut store = Store::open(path).unwrap();
@@ -211,7 +213,7 @@ mod tests {
                 .connection()
                 .pragma_query_value(None, "user_version", |value| value.get(0))
                 .unwrap();
-            assert_eq!(version, 28);
+            assert_eq!(version, crate::database::SCHEMA_VERSION);
             assert!(
                 store
                     .device::<serde_json::Value>("phone")

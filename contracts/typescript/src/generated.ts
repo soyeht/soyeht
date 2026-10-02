@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 578f80caffef28366ae7841db1357d0d82f8266894b673398523698e23c5a4db). Do not edit.
+// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -2145,6 +2145,7 @@ export interface FileOpenParams {
   "path": string;
   "line"?: number;
   "column"?: number;
+  "preview"?: boolean;
   "idempotencyKey": Id;
 }
 
@@ -2237,6 +2238,124 @@ export interface FileUndoResult {
   "applied": boolean;
   "changedLines": Array<number>;
   "cursor"?: TextPosition;
+}
+
+export type ProjectEntryKind = "file" | "directory";
+
+export interface ProjectEntry {
+  "name": string;
+  "path": string;
+  "kind": ProjectEntryKind;
+  "ignored": boolean;
+}
+
+export interface ProjectTreeListParams {
+  "workspaceId": Id;
+  "path": string;
+  "showIgnored"?: boolean;
+}
+
+export interface ProjectTreeListResult {
+  "workspaceId": Id;
+  "path": string;
+  "entries": Array<ProjectEntry>;
+  "truncated": boolean;
+}
+
+export interface ProjectTreeWatchParams {
+  "workspaceId": Id;
+  "paths": Array<string>;
+}
+
+export interface ProjectTreeWatchResult {
+  "workspaceId": Id;
+  "paths": Array<string>;
+}
+
+export interface ProjectTreeChangedEvent {
+  "workspaceId": Id;
+  "paths": Array<string>;
+}
+
+export interface ProjectEntryCreateParams {
+  "workspaceId": Id;
+  "path": string;
+  "kind": ProjectEntryKind;
+  "idempotencyKey": Id;
+}
+
+export interface ProjectEntryCreateResult {
+  "workspaceId": Id;
+  "entry": ProjectEntry;
+}
+
+export interface ProjectEntryRenameParams {
+  "workspaceId": Id;
+  "from": string;
+  "to": string;
+  "idempotencyKey": Id;
+}
+
+export interface ProjectEntryRenameResult {
+  "workspaceId": Id;
+  "from": string;
+  "to": string;
+  "files": Array<FileDocument>;
+}
+
+export interface ProjectEntryRenamedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "from": string;
+  "to": string;
+  "files": Array<FileDocument>;
+}
+
+export type ProjectDeleteOutcome = "trashed" | "deleted" | "needs_confirmation";
+
+export interface ProjectEntryDeleteParams {
+  "workspaceId": Id;
+  "path": string;
+  "permanent"?: boolean;
+  "idempotencyKey": Id;
+}
+
+export interface ProjectEntryDeleteResult {
+  "workspaceId": Id;
+  "path": string;
+  "outcome": ProjectDeleteOutcome;
+}
+
+export interface EditorTab {
+  "paneId": Id;
+  "fileId": Id;
+  "path": string;
+  "preview": boolean;
+  "previewRevision"?: Decimal;
+}
+
+export interface EditorTabsListParams {
+  "workspaceId": Id;
+}
+
+export interface EditorTabsListResult {
+  "workspaceId": Id;
+  "tabs": Array<EditorTab>;
+}
+
+export interface EditorTabsMoveParams {
+  "workspaceId": Id;
+  "paneId": Id;
+  "index": number;
+  "idempotencyKey": Id;
+}
+
+export interface EditorTabsUpdatedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "workspaceId": Id;
+  "tabs": Array<EditorTab>;
 }
 
 export interface FileSearchMatch {
@@ -3221,6 +3340,13 @@ export interface Methods {
   "file.diagnostics": { params: FileDiagnosticsParams; result: FileDiagnosticsResult };
   "file.diff": { params: FileDiffParams; result: FileDiffResult };
   "file.format": { params: FileFormatParams; result: FileFormatResult };
+  "project.tree.list": { params: ProjectTreeListParams; result: ProjectTreeListResult };
+  "project.tree.watch": { params: ProjectTreeWatchParams; result: ProjectTreeWatchResult };
+  "project.entry.create": { params: ProjectEntryCreateParams; result: ProjectEntryCreateResult };
+  "project.entry.rename": { params: ProjectEntryRenameParams; result: ProjectEntryRenameResult };
+  "project.entry.delete": { params: ProjectEntryDeleteParams; result: ProjectEntryDeleteResult };
+  "editor.tabs.list": { params: EditorTabsListParams; result: EditorTabsListResult };
+  "editor.tabs.move": { params: EditorTabsMoveParams; result: EditorTabsListResult };
   "editor.review.accept": { params: EditorReviewParams; result: EditorReviewResult };
   "editor.review.reject": { params: EditorReviewParams; result: EditorReviewResult };
   "editor.review.comment": { params: EditorReviewCommentParams; result: EditorReviewCommentResult };
@@ -3326,6 +3452,9 @@ export interface Events {
   "lsp.diagnostics": LspDiagnosticsEvent;
   "editor.agent_cursor": EditorAgentCursorEvent;
   "editor.review_requested": EditorReviewRequestedEvent;
+  "project.tree_changed": ProjectTreeChangedEvent;
+  "project.entry_renamed": ProjectEntryRenamedEvent;
+  "editor.tabs_updated": EditorTabsUpdatedEvent;
   "servers.local.changed": ServersLocalChangedEvent;
   "web.navigated": WebNavigatedEvent;
   "web.console_counts": WebConsoleCountsEvent;
@@ -3401,6 +3530,9 @@ export const eventRegistry = {
   "lsp.diagnostics": { paramsType: "LspDiagnosticsEvent", durable: true },
   "editor.agent_cursor": { paramsType: "EditorAgentCursorEvent", durable: true },
   "editor.review_requested": { paramsType: "EditorReviewRequestedEvent", durable: true },
+  "project.tree_changed": { paramsType: "ProjectTreeChangedEvent", durable: false },
+  "project.entry_renamed": { paramsType: "ProjectEntryRenamedEvent", durable: true },
+  "editor.tabs_updated": { paramsType: "EditorTabsUpdatedEvent", durable: true },
   "servers.local.changed": { paramsType: "ServersLocalChangedEvent", durable: false },
   "web.navigated": { paramsType: "WebNavigatedEvent", durable: true },
   "web.console_counts": { paramsType: "WebConsoleCountsEvent", durable: false },

@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 28;
+pub const SCHEMA_VERSION: u32 = 29;
 
 #[derive(Debug)]
 pub enum Error {
@@ -279,6 +279,9 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
     }
     if version < 28 {
         tx.execute_batch(include_str!("../migrations/028-push-registrations.sql"))?;
+    }
+    if version < 29 {
+        tx.execute_batch(include_str!("../migrations/029-editor-tabs.sql"))?;
     }
     Ok(())
 }

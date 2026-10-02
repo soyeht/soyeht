@@ -5,6 +5,7 @@ pub mod database;
 pub use database::{Error, Result};
 pub mod domain;
 pub mod editor;
+pub mod editor_tabs;
 mod english_values;
 pub mod languages;
 pub mod push;

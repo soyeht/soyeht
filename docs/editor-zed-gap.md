@@ -17,7 +17,7 @@ last row group says what this change closes.
 | Feature | Mark | Our evidence | Zed reference |
 | --- | --- | --- | --- |
 | File open, save, dirty state | Have | `file.open` (`editor/api.rs`); every accepted write persists a draft and autosaves 500 ms later (`editor/persistence.rs`, ADR 0047); header shows `· unsaved` / `· saved` / `· conflict` (`EditorPaneView.swift` `EditorPaneHeader`); disk changes reload or raise a conflict. No explicit `Cmd+S`: it is swallowed (`EditorTextView.performKeyEquivalent`). | [Autosave](https://zed.dev/docs/reference/all-settings#autosave) |
-| Multiple tabs / buffers | Partial | `EditorTabs` lists every open file of the workspace and selects its pane; the `xmark` is decoration only, so a tab cannot be closed from the strip, and there is no recent-order switcher. | [Editor tabs](https://zed.dev/docs/reference/all-settings#editor-tabs), [Tab Switcher](https://zed.dev/docs/tab-switcher) |
+| Multiple tabs / buffers | Have | Engine-owned tab order and one preview tab per workspace (`editor/tabs.rs`, `editor.tabs.list|move`, ADR 0072); `EditorTabBar` closes with the hover `×`, `Cmd+W` or a middle click, reorders by drag, cycles with `Cmd+Shift+[` / `]`; closing saves the draft first. No `Ctrl+Tab` recent-order switcher and no pinned tabs. | [Editor tabs](https://zed.dev/docs/reference/all-settings#editor-tabs), [Preview tabs](https://zed.dev/docs/reference/all-settings#preview-tabs), [Tab Switcher](https://zed.dev/docs/tab-switcher) |
 | Undo / redo | Have | Engine-owned per-file `EditHistory` (`soyeht-editor/src/history.rs`), `file.undo` / `file.redo` through the durable write path, `Cmd+Z`, `Cmd+Shift+Z`, Edit menu and Vim `u` (ADR 0071). The caret after a replay could keep its pre-undo position in the status bar (fixed by this change). | `editor::Undo` in [Vim: restoring common keybindings](https://zed.dev/docs/vim#restoring-common-text-editing-and-zed-keybindings) |
 | Paste, cut, drag and drop, IME | Have | `EditorTextView.shouldChangeText` turns paste, cut and drop into verbatim engine edits; marked text stays local until the composition commits (ADR 0071). | Baseline text-editing behavior; see [Multibuffers](https://zed.dev/docs/multibuffers#editing-in-a-multibuffer) for paste across cursors |
 | Multi-cursor | Partial | `Cmd+D` next occurrence and `Opt+click` add cursor (`EditorNativeViewport.swift`, `EditorEditing.nextOccurrence`); search covers only the loaded page; no add-cursor above/below, no select-all-occurrences. | [Multibuffers](https://zed.dev/docs/multibuffers#editing-in-a-multibuffer), [Multi cursor modifier](https://zed.dev/docs/reference/all-settings#multi-cursor-modifier) |
@@ -36,17 +36,18 @@ last row group says what this change closes.
 | Git gutter | Have | `file.diff` against HEAD feeds added/modified/deleted gutter bars, per-line blame in the status bar and a side-by-side sheet (`EditorDiffPresentation.swift`, `EditorDiffSheet`). | [Git gutter](https://zed.dev/docs/reference/all-settings#git-gutter), [Git](https://zed.dev/docs/git) |
 | Large-file performance | Have | Piece table with line index (`buffer.rs`), bounded viewport paging (`EditorViewportPaging`), incremental tree-sitter, CI gates: open 100k lines < 150 ms, search 1 GB < 1 s, VM key work p95 < 8 ms (`scripts/check_editor_performance.py`). Caveats: each write rebuilds a buffer from the full draft (`Service::prepare_edit`), and files above 50 MiB are refused. | No dedicated large-file page; [Performance](https://zed.dev/docs/performance) covers profiling |
 | Keybindings | Partial | Fixed VS Code-like set (`Cmd+P`, `Cmd+Shift+P`, double Shift, `Cmd+D`, `Cmd+/`) plus optional bounded Vim (ADR 0054); no user keymap or base-keymap choice. | [Key bindings](https://zed.dev/docs/key-bindings) |
-| File tree / project panel | Partial | `EditorFileTree` lists only files already open; it cannot browse the worktree or create, rename or delete files. `Cmd+P` opens any file by fuzzy name (`file.search` path scope). | [Project panel](https://zed.dev/docs/project-panel) |
+| File tree / project panel | Have | `EditorProjectPanel` browses the workspace lazily (`project.tree.list`), hides `.gitignore`d entries with a toggle and never shows `.git`, previews on click and keeps on double click or Return, creates, renames and trashes entries confined to the workspace (`project.entry.*`), reveals the active file, moves with the arrow keys, and follows disk changes (`project.tree.watch`, polled once a second). No multi-selection, drag and drop of entries, git status colors or folder auto-fold. | [Project panel](https://zed.dev/docs/project-panel) |
 
 Shared code: every row marked Have or Partial keeps its logic in
-`SoyehtClient` or the engine, except the text view, gutter and file tree, which
-are AppKit. The iPad has no code editor pane yet (`apps/ios/Sources` only hosts
+`SoyehtClient` or the engine, except the text view and gutter, which are
+AppKit; the project panel and tab strip draw shared models
+(`EditorProjectTree`, `EditorTabPolicy`). The iPad has no code editor pane yet (`apps/ios/Sources` only hosts
 writing surfaces), so the visible-lines renderer is the prerequisite for any
 iPad parity.
 
 ## Closed by this change
 
-In-file find and replace moves from **Partial** to **Have** (ADR 0072):
+In-file find and replace moves from **Partial** to **Have** (ADR 0073):
 
 - Engine: `soyeht-editor/src/find.rs` counts every match, steps to the next or
   previous one with wrap-around, and builds Replace All as at most 32 folded
@@ -72,15 +73,29 @@ Two fixes ride along:
   clip view. `EditorTextLayout.fit` keeps it at least as wide as the visible
   area.
 
+## Project panel and tabs
+
+Closed by the follow-up change (ADR 0072):
+
+- Engine: `editor_tabs` table (schema 29), `editor.tabs.list`, `editor.tabs.move`,
+  `file.open {preview}`, save-before-close on `pane.close`, and the
+  `project.tree.list|watch` and `project.entry.create|rename|delete` methods in
+  `editor/project_*.rs`, with path-escape, symlink, create, rename and delete
+  tests.
+- Shared client: `EditorProjectTree` (tree, reveal, keyboard),
+  `EditorTabPolicy` (activation, cycling, preview, reorder) and the
+  `EditorWorkspaceReplica` state behind them, ready for the iPad.
+- Mac: `EditorProjectPanel` and `EditorTabBar` replace the open-files list and
+  the decorative tabs; the editor destination shows the active tab only.
+
 ## Prioritized plan
 
 Ranked by how soon a person editing code hits the gap, then by cost.
 
 1. **Undo/redo and edit integrity**: done (ADR 0071).
-2. **In-file find and replace**: done here (ADR 0072).
-3. **Project panel**: a real worktree tree (the engine already enumerates
-   project files with ignore rules in `editor/project_files.rs`) with open,
-   create, rename and delete, plus closable tabs.
+2. **In-file find and replace**: done (ADR 0073).
+3. **Project panel**: done (ADR 0072): a lazy worktree tree with open,
+   create, rename and delete, plus closable, reorderable tabs.
 4. **LSP hover and completion**: add `textDocument/hover` and
    `textDocument/completion` to `soyeht-lsp`, a popover in the shared client.
    Completion needs the owner to lift contract 09 §4.

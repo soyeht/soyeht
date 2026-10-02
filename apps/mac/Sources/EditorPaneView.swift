@@ -289,9 +289,10 @@ private struct EditorPaneBody: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      EditorFileTree(client: client, selected: view.file)
+      EditorProjectPanel(
+        client: client, workspaceId: view.file.workspaceId, activePath: view.file.path)
       VStack(spacing: 0) {
-        EditorTabs(client: client, selected: view.file)
+        EditorTabBar(client: client, selected: view.file)
         EditorCodeViewport(
           client: client, view: view, selectedPosition: $selectedPosition,
           navigationTarget: navigationTarget,
@@ -309,139 +310,6 @@ private struct EditorPaneBody: View {
     }
     .background(MacTheme.face)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
-  }
-}
-
-private struct EditorFileTree: View {
-  @Bindable var client: EngineClient
-  let selected: SoyehtProtocol.FileDocument
-
-  var body: some View {
-    VStack(spacing: MacTheme.Space.x2) {
-      HStack(spacing: MacTheme.Space.x6) {
-        Text("FILES").font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
-          .tracking(0.8).foregroundStyle(MacTheme.secondary)
-        Spacer()
-        Image(systemName: "magnifyingglass")
-          .font(.system(size: 12, weight: .medium)).foregroundStyle(MacTheme.muted)
-      }
-      .padding(.horizontal, MacTheme.Space.x6).frame(height: 22)
-      ForEach(treeRows) { row in
-        HStack(spacing: MacTheme.Space.x6) {
-          Image(systemName: row.folder ? "folder" : "doc.text")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(row.selected ? MacTheme.accent : MacTheme.secondary)
-          Text(row.name)
-            .font(MacTheme.mono(11.5, weight: row.selected ? .bold : .regular))
-            .foregroundStyle(row.selected ? MacTheme.accent : MacTheme.ink)
-            .lineLimit(1)
-          Spacer(minLength: 0)
-        }
-        .padding(.leading, CGFloat(row.depth) * 12)
-        .padding(.horizontal, MacTheme.Space.x8).frame(height: 22)
-        .background(
-          row.selected ? MacTheme.well : Color.clear, in: RoundedRectangle(cornerRadius: 6)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { if let paneId = row.paneId { client.select(paneId) } }
-      }
-      Spacer(minLength: 0)
-    }
-    .padding(.vertical, MacTheme.Space.x10).padding(.horizontal, MacTheme.Space.x8)
-    .frame(width: 212).background(MacTheme.canvas)
-  }
-
-  private var treeRows: [EditorTreeRow] {
-    let files = client.editorFiles.values.map(\.file)
-      .filter { $0.workspaceId == selected.workspaceId }.sorted { $0.path < $1.path }
-    let workspace = client.workspaces.first { $0.workspaceId == selected.workspaceId }
-    var rows = [
-      EditorTreeRow(id: "root", name: workspace?.name ?? "Workspace", depth: 0, folder: true)
-    ]
-    var seen: Set<String> = []
-    for file in files {
-      let parts = file.path.split(separator: "/").map(String.init)
-      for index in parts.indices {
-        let key = parts[...index].joined(separator: "/")
-        guard seen.insert(key).inserted else { continue }
-        let isFile = index == parts.index(before: parts.endIndex)
-        rows.append(
-          EditorTreeRow(
-            id: key, name: parts[index], depth: index + 1, folder: !isFile,
-            paneId: isFile ? file.paneId : nil, selected: isFile && file.fileId == selected.fileId))
-      }
-    }
-    return rows
-  }
-}
-
-private struct EditorTreeRow: Identifiable {
-  let id: String
-  let name: String
-  let depth: Int
-  let folder: Bool
-  var paneId: String?
-  var selected = false
-}
-
-private struct EditorTabs: View {
-  @Bindable var client: EngineClient
-  let selected: SoyehtProtocol.FileDocument
-
-  var body: some View {
-    HStack(spacing: MacTheme.Space.x6) {
-      ForEach(files, id: \.fileId) { file in
-        Button {
-          client.select(file.paneId)
-        } label: {
-          HStack(spacing: MacTheme.Space.x6) {
-            Image(systemName: "doc.text")
-              .font(.system(size: 11, weight: .medium))
-            Text(fileName(file.path)).font(MacTheme.mono(11.5, weight: tabWeight(file)))
-            if file.dirty {
-              Circle().fill(MacTheme.warning).frame(width: 6, height: 6)
-            } else {
-              Image(systemName: "xmark")
-                .font(.system(size: 9, weight: .medium))
-                .accessibilityHidden(true)
-            }
-          }
-          .foregroundStyle(file.fileId == selected.fileId ? MacTheme.accent : MacTheme.secondary)
-          .padding(.horizontal, MacTheme.Space.x12)
-          .frame(height: PaneLayoutContentMetrics.editorTabHeight)
-          .background(
-            file.fileId == selected.fileId ? MacTheme.well : Color.clear,
-            in: Capsule())
-        }
-      }
-      Spacer(minLength: 0)
-      if let cursor = agentCursor {
-        HStack(spacing: MacTheme.Space.x6) {
-          Circle().fill(MacTheme.ink).frame(width: 6, height: 6)
-          Text(
-            "\(cursor.name) · \(UInt64(cursor.position.line) + 1):\(UInt64(cursor.position.column) + 1)"
-          )
-          .font(MacTheme.mono(10.5, weight: .bold)).foregroundStyle(MacTheme.ink)
-        }
-        .padding(.horizontal, MacTheme.Space.x10).frame(height: 22)
-        .background(MacTheme.agentBlue, in: Capsule())
-      }
-    }
-    .padding(.horizontal, MacTheme.Space.x8).frame(height: 34).background(MacTheme.canvas)
-  }
-
-  private var files: [SoyehtProtocol.FileDocument] {
-    client.editorFiles.values.map(\.file)
-      .filter { $0.workspaceId == selected.workspaceId }.sorted { $0.path < $1.path }
-  }
-  private var agentCursor: EditorAgentCursorEvent? {
-    client.editorFiles[selected.fileId]?.agentCursors.values.sorted { $0.name < $1.name }.first
-  }
-  private func fileName(_ path: String) -> String {
-    String(path.split(separator: "/").last ?? "File")
-  }
-  private func tabWeight(_ file: SoyehtProtocol.FileDocument) -> Font.Weight {
-    file.fileId == selected.fileId ? .bold : .regular
   }
 }
 

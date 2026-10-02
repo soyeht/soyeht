@@ -49,6 +49,8 @@ soyeht-store = { path = "../soyeht-store", features = ["test-support"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation.workspace = true
 security-framework.workspace = true
+objc2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }
 
 [lints]
 workspace = true

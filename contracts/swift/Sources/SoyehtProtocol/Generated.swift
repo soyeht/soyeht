@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 578f80caffef28366ae7841db1357d0d82f8266894b673398523698e23c5a4db). Do not edit.
+// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
 import Foundation
 
 
@@ -4288,12 +4288,14 @@ public struct FileOpenParams: Codable, Sendable {
     public var `path`: String
     public var `line`: UInt32?
     public var `column`: UInt32?
+    public var `preview`: Bool?
     public var `idempotencyKey`: Id
-    public init(`workspaceId`: Id, `path`: String, `line`: UInt32? = nil, `column`: UInt32? = nil, `idempotencyKey`: Id) {
+    public init(`workspaceId`: Id, `path`: String, `line`: UInt32? = nil, `column`: UInt32? = nil, `preview`: Bool? = nil, `idempotencyKey`: Id) {
         self.`workspaceId` = `workspaceId`
         self.`path` = `path`
         self.`line` = `line`
         self.`column` = `column`
+        self.`preview` = `preview`
         self.`idempotencyKey` = `idempotencyKey`
     }
 }
@@ -4463,6 +4465,227 @@ public struct FileUndoResult: Codable, Sendable {
         self.`applied` = `applied`
         self.`changedLines` = `changedLines`
         self.`cursor` = `cursor`
+    }
+}
+
+public enum ProjectEntryKind: String, Codable, Sendable {
+    case `file` = "file"
+    case `directory` = "directory"
+}
+
+public struct ProjectEntry: Codable, Sendable {
+    public var `name`: String
+    public var `path`: String
+    public var `kind`: ProjectEntryKind
+    public var `ignored`: Bool
+    public init(`name`: String, `path`: String, `kind`: ProjectEntryKind, `ignored`: Bool) {
+        self.`name` = `name`
+        self.`path` = `path`
+        self.`kind` = `kind`
+        self.`ignored` = `ignored`
+    }
+}
+
+public struct ProjectTreeListParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `showIgnored`: Bool?
+    public init(`workspaceId`: Id, `path`: String, `showIgnored`: Bool? = nil) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`showIgnored` = `showIgnored`
+    }
+}
+
+public struct ProjectTreeListResult: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `entries`: [ProjectEntry]
+    public var `truncated`: Bool
+    public init(`workspaceId`: Id, `path`: String, `entries`: [ProjectEntry], `truncated`: Bool) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`entries` = `entries`
+        self.`truncated` = `truncated`
+    }
+}
+
+public struct ProjectTreeWatchParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `paths`: [String]
+    public init(`workspaceId`: Id, `paths`: [String]) {
+        self.`workspaceId` = `workspaceId`
+        self.`paths` = `paths`
+    }
+}
+
+public struct ProjectTreeWatchResult: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `paths`: [String]
+    public init(`workspaceId`: Id, `paths`: [String]) {
+        self.`workspaceId` = `workspaceId`
+        self.`paths` = `paths`
+    }
+}
+
+public struct ProjectTreeChangedEvent: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `paths`: [String]
+    public init(`workspaceId`: Id, `paths`: [String]) {
+        self.`workspaceId` = `workspaceId`
+        self.`paths` = `paths`
+    }
+}
+
+public struct ProjectEntryCreateParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `kind`: ProjectEntryKind
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `path`: String, `kind`: ProjectEntryKind, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`kind` = `kind`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct ProjectEntryCreateResult: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `entry`: ProjectEntry
+    public init(`workspaceId`: Id, `entry`: ProjectEntry) {
+        self.`workspaceId` = `workspaceId`
+        self.`entry` = `entry`
+    }
+}
+
+public struct ProjectEntryRenameParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `from`: String
+    public var `to`: String
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `from`: String, `to`: String, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`from` = `from`
+        self.`to` = `to`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct ProjectEntryRenameResult: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `from`: String
+    public var `to`: String
+    public var `files`: [FileDocument]
+    public init(`workspaceId`: Id, `from`: String, `to`: String, `files`: [FileDocument]) {
+        self.`workspaceId` = `workspaceId`
+        self.`from` = `from`
+        self.`to` = `to`
+        self.`files` = `files`
+    }
+}
+
+public struct ProjectEntryRenamedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `from`: String
+    public var `to`: String
+    public var `files`: [FileDocument]
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `from`: String, `to`: String, `files`: [FileDocument]) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`from` = `from`
+        self.`to` = `to`
+        self.`files` = `files`
+    }
+}
+
+public enum ProjectDeleteOutcome: String, Codable, Sendable {
+    case `trashed` = "trashed"
+    case `deleted` = "deleted"
+    case `needs_confirmation` = "needs_confirmation"
+}
+
+public struct ProjectEntryDeleteParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `permanent`: Bool?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `path`: String, `permanent`: Bool? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`permanent` = `permanent`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct ProjectEntryDeleteResult: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `path`: String
+    public var `outcome`: ProjectDeleteOutcome
+    public init(`workspaceId`: Id, `path`: String, `outcome`: ProjectDeleteOutcome) {
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`outcome` = `outcome`
+    }
+}
+
+public struct EditorTab: Codable, Sendable {
+    public var `paneId`: Id
+    public var `fileId`: Id
+    public var `path`: String
+    public var `preview`: Bool
+    public var `previewRevision`: Decimal?
+    public init(`paneId`: Id, `fileId`: Id, `path`: String, `preview`: Bool, `previewRevision`: Decimal? = nil) {
+        self.`paneId` = `paneId`
+        self.`fileId` = `fileId`
+        self.`path` = `path`
+        self.`preview` = `preview`
+        self.`previewRevision` = `previewRevision`
+    }
+}
+
+public struct EditorTabsListParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public init(`workspaceId`: Id) {
+        self.`workspaceId` = `workspaceId`
+    }
+}
+
+public struct EditorTabsListResult: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `tabs`: [EditorTab]
+    public init(`workspaceId`: Id, `tabs`: [EditorTab]) {
+        self.`workspaceId` = `workspaceId`
+        self.`tabs` = `tabs`
+    }
+}
+
+public struct EditorTabsMoveParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `paneId`: Id
+    public var `index`: UInt32
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `paneId`: Id, `index`: UInt32, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`paneId` = `paneId`
+        self.`index` = `index`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct EditorTabsUpdatedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `workspaceId`: Id
+    public var `tabs`: [EditorTab]
+    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `tabs`: [EditorTab]) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`workspaceId` = `workspaceId`
+        self.`tabs` = `tabs`
     }
 }
 
@@ -6261,6 +6484,9 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case lspDiagnostics = "lsp.diagnostics"
     case editorAgentCursor = "editor.agent_cursor"
     case editorReviewRequested = "editor.review_requested"
+    case projectTreeChanged = "project.tree_changed"
+    case projectEntryRenamed = "project.entry_renamed"
+    case editorTabsUpdated = "editor.tabs_updated"
     case serversLocalChanged = "servers.local.changed"
     case webNavigated = "web.navigated"
     case webConsoleCounts = "web.console_counts"
@@ -6341,6 +6567,9 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .lspDiagnostics: EventDescriptor(paramsType: "LspDiagnosticsEvent", durable: true),
     .editorAgentCursor: EventDescriptor(paramsType: "EditorAgentCursorEvent", durable: true),
     .editorReviewRequested: EventDescriptor(paramsType: "EditorReviewRequestedEvent", durable: true),
+    .projectTreeChanged: EventDescriptor(paramsType: "ProjectTreeChangedEvent", durable: false),
+    .projectEntryRenamed: EventDescriptor(paramsType: "ProjectEntryRenamedEvent", durable: true),
+    .editorTabsUpdated: EventDescriptor(paramsType: "EditorTabsUpdatedEvent", durable: true),
     .serversLocalChanged: EventDescriptor(paramsType: "ServersLocalChangedEvent", durable: false),
     .webNavigated: EventDescriptor(paramsType: "WebNavigatedEvent", durable: true),
     .webConsoleCounts: EventDescriptor(paramsType: "WebConsoleCountsEvent", durable: false),

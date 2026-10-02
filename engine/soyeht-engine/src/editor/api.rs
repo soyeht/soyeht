@@ -1,10 +1,11 @@
-use super::persistence::{filesystem_author, next_revision, stored_version};
+use super::{
+    persistence::{filesystem_author, next_revision, stored_version},
+    tabs::EditorPaneOpening,
+};
 use crate::{
     core::Core,
     errors::{self, Result},
-    model::{RunningPane, StoredPane},
-    panes::persist_new_pane,
-    screen::Screen,
+    model::StoredPane,
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
@@ -24,6 +25,7 @@ struct ReattachRequest<'a> {
     line: Option<u32>,
     column: Option<u32>,
     pane_only: bool,
+    preview: bool,
     workspace: &'a soyeht_protocol::Workspace,
     canonical: &'a Path,
 }
@@ -41,6 +43,7 @@ impl Core {
             path: errors::param_str(params, "path")?.into(),
             line: None,
             column: None,
+            preview: None,
             idempotency_key: errors::param_str(params, "idempotencyKey")?.into(),
         };
         self.open_editor(connection, "pane.create", params, request, true)
@@ -70,8 +73,19 @@ impl Core {
             }) {
                 let result = self.open_result(&file, request.line, request.column)?;
                 let reply = open_reply(result, pane_only)?;
+                let pane_id = file.pane_id.clone().unwrap_or_default();
+                let pin = request.preview != Some(true);
                 return Ok(self
-                    .mutate(connection, method, params, |_| Ok((reply, vec![])))?
+                    .mutate(connection, method, params, |change| {
+                        let events = if pin {
+                            super::tabs::pin_tab(change, &request.workspace_id, &pane_id)?
+                                .into_iter()
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
+                        Ok((reply, events))
+                    })?
                     .result);
             }
             return self.reattach_editor(
@@ -82,6 +96,7 @@ impl Core {
                     line: request.line,
                     column: request.column,
                     pane_only,
+                    preview: request.preview == Some(true),
                     workspace: &workspace,
                     canonical: &resolved.canonical,
                 },
@@ -115,28 +130,18 @@ impl Core {
             updated_ms: self.now_ms(),
         };
         let (opened, syntax) = initial_open_result(&file, &pane, request.line, request.column)?;
-        let created_event = pane_created_event(&saved.pane, &opened.file);
-        let reply = open_reply(opened, pane_only)?;
-        let screen = Screen::open(
-            &self.directory.join("sessions").join(&saved.pane.pane_id),
-            false,
-        )?;
-        let mutation = self.mutate(connection, method, params, |change| {
-            persist_new_pane(change, &saved, None)?;
-            change.save_editor_file(&file)?;
-            Ok((reply, vec![("pane.created".into(), created_event)]))
-        })?;
-        if !mutation.repeated {
-            self.panes.insert(
-                pane.pane_id.clone(),
-                RunningPane {
-                    stored: saved,
-                    screen,
-                },
-            );
-            self.editor.insert_parsed(file, syntax);
-        }
-        Ok(mutation.result)
+        self.commit_editor_pane(EditorPaneOpening {
+            connection,
+            method,
+            params,
+            created_event: pane_created_event(&saved.pane, &opened.file),
+            reply: open_reply(opened, pane_only)?,
+            saved,
+            file,
+            syntax,
+            version: None,
+            preview: request.preview == Some(true),
+        })
     }
 
     fn reattach_editor(&mut self, request: ReattachRequest<'_>, file: EditorFile) -> Result<Value> {
@@ -146,6 +151,9 @@ impl Core {
         let pane = editor_pane(request.workspace, &file.relative_path);
         file.pane_id = Some(pane.pane_id.clone());
         file.watching = true;
+        file.language = super::language(request.canonical);
+        let pending_draft = file.draft_text.is_some() && file.conflict_text.is_none();
+        let file_id = file.file_id.clone();
         let saved = StoredPane {
             pane: pane.clone(),
             closed: false,
@@ -155,36 +163,23 @@ impl Core {
             sequence_base: 0,
         };
         let (opened, syntax) = initial_open_result(&file, &pane, request.line, request.column)?;
-        let created_event = pane_created_event(&saved.pane, &opened.file);
-        let reply = open_reply(opened, request.pane_only)?;
-        let screen = Screen::open(
-            &self.directory.join("sessions").join(&saved.pane.pane_id),
-            false,
-        )?;
-        let mutation = self.mutate(
-            request.connection,
-            request.method,
-            request.params,
-            |change| {
-                persist_new_pane(change, &saved, None)?;
-                change.save_editor_file(&file)?;
-                if let Some(version) = &version {
-                    change.record_file_version(version)?;
-                }
-                Ok((reply, vec![("pane.created".into(), created_event)]))
-            },
-        )?;
-        if !mutation.repeated {
-            self.panes.insert(
-                pane.pane_id.clone(),
-                RunningPane {
-                    stored: saved,
-                    screen,
-                },
-            );
-            self.editor.insert_parsed(file, syntax);
+        let result = self.commit_editor_pane(EditorPaneOpening {
+            connection: request.connection,
+            method: request.method,
+            params: request.params,
+            created_event: pane_created_event(&saved.pane, &opened.file),
+            reply: open_reply(opened, request.pane_only)?,
+            saved,
+            file,
+            syntax,
+            version,
+            preview: request.preview,
+        })?;
+        if pending_draft {
+            // A draft left behind by a closed tab resumes its pending autosave.
+            self.editor.defer_save(&file_id, self.now_ms());
         }
-        Ok(mutation.result)
+        Ok(result)
     }
 
     pub fn file_read(&mut self, params: &Value) -> Result<Value> {
