@@ -37,6 +37,7 @@ struct EditorNativeViewport: NSViewRepresentable {
   let onReferences: (TextPosition) -> Void
   var find: EditorFindController? = nil
   var softWrap = false
+  var onToggleSoftWrap: (() -> Void)? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -122,6 +123,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       viewportStart = viewport.fromLine
       language = view.file.language
       textView.inputDelegate = self
+      textView.onToggleSoftWrap = parent.onToggleSoftWrap
       textView.vimEnabled = parent.vimEnabled
       if wasVimEnabled, !parent.vimEnabled { vim.reset() }
       wasVimEnabled = parent.vimEnabled

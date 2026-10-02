@@ -50,9 +50,30 @@ error or a lost stream marks every folder of the workspace. Where no watcher
 starts, as when inotify runs out of watches, that workspace falls back to the
 old one-second polling. Watchers stop when no connection shows the workspace.
 
-**Soft wrap.** View > Soft Wrap (Option+Z) is one global choice, like Zed's
-`soft_wrap` setting. Zed binds Cmd+K Z, a chord a menu item cannot hold.
-Option+Z is VS Code's Mac key. Wrapping lives in shared code:
+**Soft wrap.** View > Soft Wrap (Cmd+Option+Z) is one global choice, like
+Zed's `soft_wrap` setting. The key must carry Command:
+
+- Option+Z, VS Code's key, types "Ω" on a US layout. The focused text view
+  inserted it into the file and the menu never saw it.
+- AppKit offers a Command key event to the window's views and then to the
+  main menu before any text view interprets it as typing.
+- Zed binds the chord Cmd+K Z, which a menu item cannot hold.
+
+Cmd+Option+Z is VS Code's key plus Command. Nothing else uses it:
+
+- not the app menus;
+- not the editor's own keys (Cmd+D, Cmd+/, Cmd+Z, Cmd+Shift+Z, Cmd+F,
+  Cmd+Option+F, Cmd+G, Cmd+Shift+G);
+- not the find bar;
+- not the tab keys (Cmd+W, Cmd+Shift+[ and ]).
+
+The editor's text view (`EditorKeyCommandTextView`, shared) runs it before its
+own Cmd+Z undo handling. When the find field has focus, the menu item
+catches it. `EditorShortcut` keeps the key in one place for the menu and the
+text view. No other editor shortcut is Option-only; Option+click, which adds
+a cursor, is a mouse gesture.
+
+Wrapping lives in shared code:
 
 - `EditorWrapLayout` counts rows per page line by character cells: a tab
   runs to the next stop of four cells, combining marks take no cell, and

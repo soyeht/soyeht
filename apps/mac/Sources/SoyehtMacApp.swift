@@ -72,15 +72,15 @@ struct SoyehtMacApp: App {
         Button("Toggle Project Panel") {
           NotificationCenter.default.post(name: .toggleSoyehtProjectPanel, object: nil)
         }
-        .keyboardShortcut("e", modifiers: [.command, .shift])
-        // Zed binds Cmd+K Z, a chord a menu cannot hold; Option+Z is the Mac editors' key.
+        .keyboardShortcut(Self.keyboardShortcut(.projectPanel))
+        // Cmd+Option+Z: a key equivalent, never text (see `EditorShortcut.softWrap`).
         Toggle(
           "Soft Wrap",
           isOn: Binding(
             get: { editorInputPreferences.softWrap },
             set: { editorInputPreferences.setSoftWrap($0) })
         )
-        .keyboardShortcut("z", modifiers: .option)
+        .keyboardShortcut(Self.keyboardShortcut(.softWrap))
         Divider()
         workspaceViewCommand("Agents", destination: .agents, key: "1")
         workspaceViewCommand("Editor", destination: .editor, key: "2")
@@ -113,6 +113,14 @@ struct SoyehtMacApp: App {
       .environment(editorInputPreferences)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
+  }
+
+  private static func keyboardShortcut(_ shortcut: EditorShortcut) -> KeyboardShortcut {
+    var modifiers: EventModifiers = .command
+    if shortcut.shift { modifiers.insert(.shift) }
+    if shortcut.option { modifiers.insert(.option) }
+    if shortcut.control { modifiers.insert(.control) }
+    return KeyboardShortcut(KeyEquivalent(Character(shortcut.key)), modifiers: modifiers)
   }
 
   private func workspaceViewCommand(

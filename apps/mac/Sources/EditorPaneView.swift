@@ -59,8 +59,8 @@ struct EditorPaneView: View {
           client: client, view: view, showsProjectPanel: showsProjectPanel,
           selectedPosition: $selectedPosition, navigationTarget: client.editorNavigationTarget,
           languageStatus: languageStatus, diff: currentDiff.map(EditorDiffPresentation.init),
-          vimEnabled: inputPreferences.vimEnabled, softWrap: inputPreferences.softWrap,
-          vimMode: $vimMode, vimCommandLine: $vimCommandLine,
+          vimEnabled: inputPreferences.vimEnabled, vimMode: $vimMode,
+          vimCommandLine: $vimCommandLine,
           definition: openDefinition, findReferences: findReferences
         )
       } else {
@@ -314,7 +314,6 @@ private struct EditorPaneBody: View {
   let languageStatus: LspServerStatus?
   let diff: EditorDiffPresentation?
   let vimEnabled: Bool
-  let softWrap: Bool
   @Binding var vimMode: EditorVimMode
   @Binding var vimCommandLine: String?
   let definition: (TextPosition) -> Void
@@ -331,7 +330,7 @@ private struct EditorPaneBody: View {
         EditorCodeViewport(
           client: client, view: view, selectedPosition: $selectedPosition,
           navigationTarget: navigationTarget,
-          diff: diff, vimEnabled: vimEnabled, softWrap: softWrap, vimMode: $vimMode,
+          diff: diff, vimEnabled: vimEnabled, vimMode: $vimMode,
           vimCommandLine: $vimCommandLine, definition: definition,
           findReferences: findReferences)
         if view.review != nil {
@@ -355,12 +354,12 @@ private struct EditorCodeViewport: View {
   let navigationTarget: EditorNavigationTarget?
   let diff: EditorDiffPresentation?
   let vimEnabled: Bool
-  let softWrap: Bool
   @Binding var vimMode: EditorVimMode
   @Binding var vimCommandLine: String?
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
   @State private var find: EditorFindController?
+  @Environment(EditorInputPreferences.self) private var inputPreferences
 
   var body: some View {
     VStack(spacing: 0) {
@@ -376,7 +375,8 @@ private struct EditorCodeViewport: View {
           agentCursors: Array(view.agentCursors.values),
           vimEnabled: vimEnabled, vimMode: $vimMode, vimCommandLine: $vimCommandLine,
           onDefinition: definition, onReferences: findReferences, find: find,
-          softWrap: softWrap
+          softWrap: inputPreferences.softWrap,
+          onToggleSoftWrap: { inputPreferences.setSoftWrap(!inputPreferences.softWrap) }
         )
         .background(MacTheme.face)
         if view.file.language == .markdown, let viewport = view.viewport {
