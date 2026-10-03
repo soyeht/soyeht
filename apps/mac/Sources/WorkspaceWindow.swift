@@ -2254,7 +2254,7 @@ private struct PaneCard: View {
     let harness = pane.agent.map {
       HarnessSwitchModel.control(
         current: $0.harness, switchState: client.agentPanes[pane.paneId]?.harnessSwitch,
-        harnesses: client.harnesses)
+        harnesses: client.harnesses, paneName: pane.name)
     }
     return PaneHeaderControls(mode: pane.mode, harness: harness)
   }

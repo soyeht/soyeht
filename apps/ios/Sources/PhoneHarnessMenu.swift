@@ -108,7 +108,7 @@ struct PhoneHarnessMenu: View {
   private func control(current: String) -> HarnessSwitchControl {
     HarnessSwitchModel.control(
       current: current, switchState: switchState, requested: requested,
-      harnesses: client.harnesses)
+      harnesses: client.harnesses, paneName: client.panes.first { $0.paneId == paneId }?.name)
   }
 
   private func switchHarness(to item: HarnessInfo) {
