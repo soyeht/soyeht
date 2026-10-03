@@ -472,7 +472,7 @@ private struct WebStatusBar: View {
       .buttonStyle(.plain)
       .help("Console and network activity")
       .popover(isPresented: $observationsPresented) {
-        WebObservationPanel(session: session)
+        WebObservationPanel(session: session).overlayScrollersWithin()
       }
       Text(sessionLabel)
         .font(MacTheme.ui(MacTheme.TypeScale.micro))

@@ -131,6 +131,7 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
       }
     }
     .background(style.face).foregroundStyle(style.ink)
+    .overlayScrollersWithin()
     .task(id: prompt.isEmpty) {
       guard !prompt.isEmpty else { return }
       while !Task.isCancelled && !prompt.isEmpty {

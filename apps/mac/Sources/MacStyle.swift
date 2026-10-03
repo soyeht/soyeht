@@ -101,7 +101,6 @@ extension LocalizedStringKey.StringInterpolation {
     static let taskCard = Elevation(offset: 3, blur: 6)
     static let action = Elevation(offset: 4, blur: 8)
     static let card = Elevation(offset: 4, blur: 9)
-    static let pane = Elevation(offset: 5, blur: 10)
     static let pill = Elevation(offset: 6, blur: 10)
     static let panel = Elevation(offset: 9, blur: 18)
     static let balloon = Elevation(lightOffset: 4, lightBlur: 10, darkOffset: 6, darkBlur: 14)
@@ -207,8 +206,7 @@ private struct EnclosingOverlayScrollerStyle: NSViewRepresentable {
         if let scrollView = view as? NSScrollView ?? view.enclosingScrollView {
           let identity = ObjectIdentifier(scrollView)
           if configured.insert(identity).inserted {
-            scrollView.scrollerStyle = .overlay
-            scrollView.autohidesScrollers = true
+            OverlayScrollers.apply(to: scrollView)
           }
           // Writing panes can place an AppKit text scroll view inside the SwiftUI
           // overflow scroll view. Continue above the nearest owner so both adopt

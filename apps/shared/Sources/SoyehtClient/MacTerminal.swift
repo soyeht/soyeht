@@ -50,7 +50,21 @@ public enum PaneInteriorFont {
     private var onActivate: (() -> Void)?
     private(set) var isReceivingOutput = false
 
+    private lazy var scrollerFade = TerminalScrollerFade(terminal: self)
+
     func updateActivation(_ action: @escaping () -> Void) { onActivate = action }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      scrollerFade.attach()
+      claimInitialFocusIfNeeded()
+    }
+
+    /// The display moved: show the scroller while the view is away from the live bottom.
+    override func scrolled(source terminal: Terminal, yDisp: Int) {
+      super.scrolled(source: terminal, yDisp: yDisp)
+      scrollerFade.displayScrolled(awayFromBottom: canScroll && scrollPosition < 1)
+    }
 
     func receive(_ bytes: Data, reset: Bool) {
       isReceivingOutput = true
@@ -70,8 +84,7 @@ public enum PaneInteriorFont {
       }
     }
 
-    override func viewDidMoveToWindow() {
-      super.viewDidMoveToWindow()
+    private func claimInitialFocusIfNeeded() {
       guard let window else {
         claimedInitialFocus = false
         return

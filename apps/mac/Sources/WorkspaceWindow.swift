@@ -65,7 +65,8 @@ import UniformTypeIdentifiers
     largestPaneFootprintWidth: footprintFloors.values.map(\.width).max() ?? 0,
     standardHorizontalInset: PaneLayoutSpacing.outerMargin,
     topInset: Double(MacTheme.Space.x8), topBarHeight: topBarHeight,
-    paneVerticalInset: PaneLayoutSpacing.outerMargin, railWidth: railWidth)
+    paneVerticalInset: PaneLayoutSpacing.outerMargin,
+    railWidth: railWidth + PaneLayoutSpacing.railGap)
 
   static let paneHeader = PaneHeaderLayoutPolicy(
     metrics: PaneHeaderLayoutMetrics(
@@ -475,7 +476,8 @@ struct WorkspaceWindow: View {
         .offset(x: contentOffset)
         if navigation.appBarOpen {
           appRail
-            .frame(width: policy.railWidth, height: paneViewport.height)
+            .frame(width: MacPaneLayoutMetrics.railWidth, height: paneViewport.height)
+            .background(railOverlays ? MacTheme.canvas : Color.clear)  // beside panes: halo shows
             .transition(.move(edge: .leading).combined(with: .opacity))
             .zIndex(30)
         }
@@ -2270,9 +2272,14 @@ private struct PaneLayoutSplitSurface: View {
   var body: some View {
     if let geometry = plan.nodes[path] {
       ScrollViewReader { proxy in
-        ScrollView(
-          split.axis == .horizontal ? .horizontal : .vertical,
-          showsIndicators: geometry.overflowAxes.contains(split.axis)
+        // Only a split that overflows scrolls: a scroll view clips, and the panes of a split
+        // that fits draw their shell shadows into the gaps and margins around them.
+        PaneLayoutContainer(
+          overflowAxes: geometry.overflowAxes.contains(split.axis)
+            ? (split.axis == .horizontal ? .horizontal : .vertical) : [],
+          size: CGSize(width: geometry.frame.size.width, height: geometry.frame.size.height),
+          contentSize: CGSize(
+            width: geometry.contentSize.width, height: geometry.contentSize.height)
         ) {
           ZStack(alignment: .topLeading) {
             ForEach(children) { child in
@@ -2318,15 +2325,7 @@ private struct PaneLayoutSplitSurface: View {
               }
             }
           }
-          .frame(
-            width: geometry.contentSize.width, height: geometry.contentSize.height,
-            alignment: .topLeading)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollDisabled(!geometry.overflowAxes.contains(split.axis))
-        // A split that fits lets its cards' shadows reach into the gaps and margins.
-        .scrollClipDisabled(!geometry.overflowAxes.contains(split.axis))
-        .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
         .onAppear { scrollSelectedPane(using: proxy) }
         .onChange(of: client.selectedPaneId) { _, _ in scrollSelectedPane(using: proxy) }
       }

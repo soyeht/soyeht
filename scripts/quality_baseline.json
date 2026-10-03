@@ -9,16 +9,16 @@
       "duplicated_lines": 54
     },
     "mac": {
-      "clones": 78,
-      "duplicated_lines": 766
+      "clones": 77,
+      "duplicated_lines": 759
     },
     "shared": {
       "clones": 65,
       "duplicated_lines": 506
     },
     "swift_all": {
-      "clones": 161,
-      "duplicated_lines": 1462
+      "clones": 160,
+      "duplicated_lines": 1455
     }
   },
   "loose_literals": {
@@ -245,7 +245,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
     "apps/mac/Sources/PreferencesPanel.swift": 995,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3547,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3546,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,

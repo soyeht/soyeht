@@ -6,9 +6,12 @@ import SwiftUI
 /// inside it is flat and colored only by palette roles. `scripts/check_pane_interior.py`
 /// rejects neumorphic modifiers, shadows and literal colors in the pane interior sources.
 extension View {
-  /// The raised pane card. The one neumorphic surface a pane draws.
+  /// The raised pane card in the active palette (`PaneShell`). The one neumorphic surface a
+  /// pane draws; its halo needs `PaneShellMetrics.halo` of unclipped room on every side. Every
+  /// scroll view inside the pane gets thin overlay scrollers that hide at rest.
   func paneShell() -> some View {
-    neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    modifier(PaneShell(colors: SoyehtThemeColorSet(palette: SoyehtThemeColors.palette)))
+      .overlayScrollersWithin()
   }
 
   /// A flat `canvas` card inside a pane: no border, no shadow.
