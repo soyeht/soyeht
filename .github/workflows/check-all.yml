@@ -1,0 +1,46 @@
+name: check-all
+# GitHub Actions is disabled by project decision; this file only keeps hosted CI
+# on the same step list as the local merge gate. Add gate steps to
+# scripts/check_all.sh, never here (scripts/test_gate_list.py enforces it).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: check-all-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check-all:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.7.0
+          cache: npm
+          cache-dependency-path: |
+            contracts/typescript/package-lock.json
+            scripts/quality/package-lock.json
+      - name: Install gate tools
+        run: |
+          brew install uv
+          npm ci --prefix scripts/quality --ignore-scripts
+          cargo install cargo-machete --version 0.9.2 --locked
+      - name: Merge gate
+        env:
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+          BASE_OID: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_OID" ]; then
+            bash scripts/check_all.sh --base "$BASE_OID" --event-file "$GITHUB_EVENT_PATH"
+          else
+            bash scripts/check_all.sh
+          fi

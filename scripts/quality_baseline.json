@@ -21,6 +21,7 @@
       "duplicated_lines": 1444
     }
   },
+  "engine_production_panics": 81,
   "loose_literals": {
     "apps/ios/Sources/PhoneHome.swift": {
       "corner_radius": 1,
@@ -269,5 +270,5 @@
     "engine/soyeht-store/tests/agents.rs": 1126,
     "engine/soyeht-store/tests/tasks.rs": 992
   },
-  "version": 2
+  "version": 3
 }

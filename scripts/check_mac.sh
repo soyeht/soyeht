@@ -24,7 +24,7 @@ set -e
 cat "$shared_log"
 if [[ $shared_status -eq 0 ]]; then
     echo 'shared: suite integral verde'
-elif ! python3 - "$shared_log" <<'PY'
+elif ! uv run python - "$shared_log" <<'PY'
 import pathlib
 import re
 import sys
@@ -53,5 +53,5 @@ xcodebuild -project apps/mac/SoyehtMac.xcodeproj -scheme SoyehtMac \
     -skipPackagePluginValidation ONLY_ACTIVE_ARCH=YES SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG \
     "SOYEHT_PACKAGES=$ROOT/.cache/apple-packages" "${SIGNING[@]}" build
 
-python3 scripts/check_pane_drag_type.py \
+uv run python scripts/check_pane_drag_type.py \
     "$ROOT/.cache/mac-derived/Build/Products/Debug/Soyeht Dev.app/Contents/Info.plist"

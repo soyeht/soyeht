@@ -94,7 +94,7 @@ They are not marked as passed because of builds or protocol tests.
 4. Install the new profile and check the engine:
 
    ```sh
-   python3 scripts/install_dev.py
+   uv run python scripts/install_dev.py
    engine/target/debug/soyeht --profile dev status
    engine/target/debug/soyeht --profile dev pane create --shell --cwd "$PWD"
    ```

@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from gate_base import BASE_BRANCH, resolve_base
+
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED_PARTS = {"generated.rs", "Generated.swift", "generated.ts", "schema.json"}
@@ -193,6 +195,20 @@ def matching_brace(source: str, opening: int) -> int | None:
     return None
 
 
+def is_engine_production_source(path: str) -> bool:
+    return (
+        path.startswith("engine/")
+        and "/src/" in path
+        and path.endswith(".rs")
+        and Path(path).name not in GENERATED_PARTS
+    )
+
+
+def production_panic_calls(source: str) -> int:
+    """Count unwrap, expect and panic! outside `#[cfg(test)]` items."""
+    return len(PANIC_CALL.findall(without_cfg_test(source)))
+
+
 def without_cfg_test(source: str) -> str:
     clean, _ = mask(source)
     output = list(clean)
@@ -296,7 +312,7 @@ def count_ignored_tests(path: str, source: str) -> int:
 
 def count_gate_steps(source: str) -> int:
     commands = (
-        r"python3\s+(?:-m\s+unittest|scripts/|contracts/)",
+        r"(?:python3|uv\s+run\s+python)\s+(?:-m\s+unittest|scripts/|contracts/)",
         r"cargo\s+(?:fmt|clippy|build|test)\b",
         r"bash\s+scripts/",
         r"swift\s+(?:format|test)\b",
@@ -341,19 +357,14 @@ def metrics(tree: Tree) -> Metrics:
         if path.endswith("Cargo.toml") and path != "engine/soyeht-store/Cargo.toml":
             if re.search(r"(?m)^\s*rusqlite(?:\.|\s*=)", source):
                 manifests.add(path)
-        if (
-            path.startswith("engine/")
-            and "/src/" in path
-            and path.endswith(".rs")
-            and Path(path).name not in GENERATED_PARTS
-        ):
+        if is_engine_production_source(path):
             if not path.startswith("engine/soyeht-store/"):
                 _, strings = mask(source, keep_strings=True)
                 matches = sum(len(SQL.findall(value)) for value in strings)
                 if matches:
                     sql_sources.add(path)
                     sql_statements += matches
-            panic_calls += len(PANIC_CALL.findall(without_cfg_test(source)))
+            panic_calls += production_panic_calls(source)
         generated = Path(path).name in GENERATED_PARTS or source.startswith("// Generated from ")
         if Path(path).suffix in SOURCE_SUFFIXES and not generated:
             functions.extend(source_functions(path, source))
@@ -485,16 +496,19 @@ def parse_args() -> argparse.Namespace:
             "check-function-length",
         ),
     )
-    parser.add_argument("--base")
+    parser.add_argument(
+        "--base",
+        help=f"full base commit OID (default: merge-base of {BASE_BRANCH} and HEAD)",
+    )
     parser.add_argument("--event-file", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = parse_args()
-    if arguments.base and not re.fullmatch(r"[0-9a-f]{40}", arguments.base):
-        raise ValueError("--base must be a full commit OID")
-    reference = arguments.base or "HEAD"
+    reference = resolve_base(ROOT, arguments.base)
+    origin = "--base" if arguments.base else f"merge-base with {BASE_BRANCH}"
+    print(f"{arguments.check}: base {reference} ({origin})")
     base = metrics(CommitTree(reference))
     head = metrics(WorkingTree())
     checks = {

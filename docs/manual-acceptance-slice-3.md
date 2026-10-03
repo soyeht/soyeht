@@ -17,7 +17,7 @@ profile and a disposable Git repository. Do not point a task at personal work.
    launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.engine" || true
    launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.ptyd" || true
    cargo build --manifest-path engine/Cargo.toml --locked --workspace
-   python3 scripts/install_dev.py
+   uv run python scripts/install_dev.py
    engine/target/debug/soyeht --profile dev status
    ```
 
@@ -79,7 +79,7 @@ profile and a disposable Git repository. Do not point a task at personal work.
 
    ```sh
    launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.engine"
-   python3 scripts/install_dev.py --component engine
+   uv run python scripts/install_dev.py --component engine
    engine/target/debug/soyeht --profile dev status
    ```
 

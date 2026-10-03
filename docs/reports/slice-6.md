@@ -170,7 +170,7 @@ The report PR repeats the complete gate from the final implementation base.
    dedicated worktree. Run `scripts/check_all.sh` with `FORBIDDEN_TERMS`
    supplied through the environment.
 2. Build the Rust workspace and install only the Dev profile with
-   `python3 scripts/install_dev.py`. Confirm schema 21 and connected engine and
+   `uv run python scripts/install_dev.py`. Confirm schema 21 and connected engine and
    ptyd services.
 3. Build and open the development-signed Mac app. Create a disposable workspace
    with the three `Writing` section folders.

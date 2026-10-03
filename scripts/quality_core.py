@@ -10,6 +10,9 @@ import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import NamedTuple
+
+from hardening_gate import is_engine_production_source, production_panic_calls
 
 
 JSCPD_VERSION = "4.3.0"
@@ -45,6 +48,19 @@ SWIFT_LITERAL_PATTERNS = {
 RUST_LITERAL_PATTERN = re.compile(r"\b(?:4096|512)\b")
 IGNORED_PARTS = {"target", ".build", ".cache", "node_modules"}
 IGNORED_FILES = {"generated.rs", "Generated.swift"}
+BASELINE_NAME = "scripts/quality_baseline.json"
+JUSTIFICATIONS_NAME = "scripts/quality_baseline_justifications.json"
+PANIC_KEY = "engine_production_panics"
+MEASUREMENT_VERSION = 3
+
+
+class Change(NamedTuple):
+    """One baseline entry that differs; only RELAXATION means "got worse"."""
+
+    direction: str
+    key: str
+    current: int
+    message: str
 
 
 class QualityError(Exception):
@@ -202,6 +218,15 @@ def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str,
     return oversized, literals
 
 
+def engine_production_panics(repo: Path) -> int:
+    """unwrap/expect/panic! in engine sources outside `#[cfg(test)]` items."""
+    total = 0
+    for path in source_files(repo, "engine", ".rs"):
+        if is_engine_production_source(path.relative_to(repo).as_posix()):
+            total += production_panic_calls(path.read_text(encoding="utf-8"))
+    return total
+
+
 def machete_status(repo: Path, executable: str) -> str:
     result = subprocess.run(
         [executable, "--skip-target-dir", str(repo / "engine")],
@@ -272,10 +297,11 @@ def measure(repo: Path, jscpd: Path, machete: str) -> dict:
         duplicates = {area: scan.result() for area, scan in scans.items()}
         unused_dependencies.result()
     return {
-        "version": 2,
+        "version": MEASUREMENT_VERSION,
         "duplication": duplicates,
         "oversized_files": oversized,
         "loose_literals": literals,
+        PANIC_KEY: engine_production_panics(repo),
     }
 
 
@@ -292,38 +318,43 @@ def baseline_from_measurement(measurement: dict) -> dict:
         },
         "oversized_files": measurement["oversized_files"],
         "loose_literals": measurement["loose_literals"],
+        PANIC_KEY: measurement[PANIC_KEY],
     }
 
 
-def differences(baseline: dict, actual: dict) -> list[tuple[str, str]]:
-    """Return (direction, explanation); only RELAXATION entries fail the gate."""
-    changes: list[tuple[str, str]] = []
+def compare(key: str, previous: int, current: int, label: str, hint: str = "") -> list[Change]:
+    if current == previous:
+        return []
+    direction = "RELAXATION" if current > previous else "IMPROVEMENT"
+    suffix = hint if direction == "RELAXATION" else ""
+    return [Change(direction, key, current, label + suffix)]
+
+
+def differences(baseline: dict, actual: dict) -> list[Change]:
+    """Every entry where `actual` differs from `baseline`, in a stable order."""
+    changes: list[Change] = []
     for area in DUPLICATION_SCANS:
         for metric in ("clones", "duplicated_lines"):
             current = actual["duplication"][area][metric]
             previous = baseline["duplication"][area][metric]
-            if current != previous:
-                direction = "RELAXATION" if current > previous else "IMPROVEMENT"
-                changes.append(
-                    (
-                        direction,
-                        f"duplication {area}.{metric}: baseline {previous}, actual {current}",
-                    )
-                )
+            changes += compare(
+                f"duplication.{area}.{metric}",
+                previous,
+                current,
+                f"duplication {area}.{metric}: baseline {previous}, actual {current}",
+            )
     previous_files = baseline["oversized_files"]
     current_files = actual["oversized_files"]
     for path in sorted(previous_files.keys() | current_files.keys()):
         previous = previous_files.get(path, FILE_LIMIT)
         current = current_files.get(path, FILE_LIMIT)
-        if current != previous:
-            direction = "RELAXATION" if current > previous else "IMPROVEMENT"
-            changes.append(
-                (
-                    direction,
-                    f"file {path}: cap {previous}, actual {current}"
-                    + ("; split the file" if direction == "RELAXATION" else ""),
-                )
-            )
+        changes += compare(
+            f"oversized_files.{path}",
+            previous,
+            current,
+            f"file {path}: cap {previous}, actual {current}",
+            "; split the file",
+        )
     previous_literals = baseline["loose_literals"]
     current_literals = actual["loose_literals"]
     for path in sorted(previous_literals.keys() | current_literals.keys()):
@@ -332,26 +363,72 @@ def differences(baseline: dict, actual: dict) -> list[tuple[str, str]]:
         for kind in sorted(previous_counts.keys() | current_counts.keys()):
             previous = previous_counts.get(kind, 0)
             current = current_counts.get(kind, 0)
-            if current != previous:
-                direction = "RELAXATION" if current > previous else "IMPROVEMENT"
-                changes.append(
-                    (
-                        direction,
-                        f"literal {path} {kind}: baseline {previous}, actual {current}"
-                        + (
-                            "; use a policy, token, font source or limits"
-                            if direction == "RELAXATION"
-                            else ""
-                        ),
-                    )
-                )
+            changes += compare(
+                f"loose_literals.{path}.{kind}",
+                previous,
+                current,
+                f"literal {path} {kind}: baseline {previous}, actual {current}",
+                "; use a policy, token, font source or limits",
+            )
+    # A baseline written before the panic ratchet existed has nothing to compare.
+    if PANIC_KEY in baseline and PANIC_KEY in actual:
+        previous, current = baseline[PANIC_KEY], actual[PANIC_KEY]
+        changes += compare(
+            PANIC_KEY,
+            previous,
+            current,
+            f"engine production unwrap/expect/panic!: baseline {previous}, actual {current}",
+            "; return an error instead",
+        )
     return changes
 
 
-def baseline_relaxations(before: dict, after: dict) -> list[str]:
-    """Highlight every loosened baseline entry, including exception caps."""
+def baseline_relaxations(before: dict, after: dict) -> list[Change]:
+    """Every loosened baseline entry, including exception caps."""
     return [
-        message
-        for direction, message in differences(before, after)
-        if direction == "RELAXATION"
+        change for change in differences(before, after) if change.direction == "RELAXATION"
+    ]
+
+
+def baseline_at(repo: Path, commit: str) -> dict | None:
+    """The checked-in baseline at `commit`, or None when it did not exist yet."""
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{BASELINE_NAME}"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout) if result.returncode == 0 else None
+
+
+def load_justifications(repo: Path) -> dict[str, dict]:
+    """Map of baseline key to {"value": raised value, "reason": why}."""
+    path = repo / JUSTIFICATIONS_NAME
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise QualityError(f"{JUSTIFICATIONS_NAME} must hold one JSON object")
+    return data
+
+
+def justification_for(change: Change, justifications: dict[str, dict]) -> str:
+    """The written reason for raising this entry to its new value, or ""."""
+    entry = justifications.get(change.key)
+    if not isinstance(entry, dict) or entry.get("value") != change.current:
+        return ""
+    reason = entry.get("reason")
+    return reason.strip() if isinstance(reason, str) else ""
+
+
+def unjustified_relaxations(
+    previous: dict | None, baseline: dict, justifications: dict[str, dict]
+) -> list[Change]:
+    """Baseline entries raised since `previous` without a matching written reason."""
+    if previous is None:
+        return []
+    return [
+        change
+        for change in baseline_relaxations(previous, baseline)
+        if not justification_for(change, justifications)
     ]

@@ -13,7 +13,7 @@ use unique directories under `/tmp/soyeht-next-test-*`.
 ```sh
 cargo build --manifest-path engine/Cargo.toml -p soyeht-ptyd
 cargo test --manifest-path engine/Cargo.toml -p soyeht-ptyd
-python3 scripts/install_ptyd_dev.py
+uv run python scripts/install_ptyd_dev.py
 ```
 
 Installation registers only `com.soyeht.next.dev.ptyd`, with KeepAlive.

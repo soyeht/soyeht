@@ -1,6 +1,6 @@
 # Agent session acceptances
 
-Build the Rust workspace, then run `python3 scripts/e2e_agents.py --report
+Build the Rust workspace, then run `uv run python scripts/e2e_agents.py --report
 .cache/e2e-agents.json`. The local merge gate runs this suite after the six
 shell acceptances. The retained workflow has the same step; hosted Actions
 remains disabled by project decision.
@@ -38,7 +38,7 @@ ACP adapters, at the versions the engine's registry snapshot pins, in disposable
 profiles:
 
 ```sh
-SOYEHT_REAL_ACP=1 python3 scripts/e2e_real_acp.py \
+SOYEHT_REAL_ACP=1 uv run python scripts/e2e_real_acp.py \
   --report .cache/e2e-real-acp.json
 ```
 
@@ -67,7 +67,7 @@ replace the physical iPhone procedure.
 A second opt-in check proves agent-to-agent messaging between real panes:
 
 ```sh
-SOYEHT_REAL_ACP=1 python3 scripts/e2e_real_agent_messaging.py \
+SOYEHT_REAL_ACP=1 uv run python scripts/e2e_real_agent_messaging.py \
   --report .cache/e2e-real-agent-messaging.json
 ```
 

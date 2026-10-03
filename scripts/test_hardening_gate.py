@@ -1,8 +1,38 @@
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import hardening_gate as gate
+from gate_base import BaseError, resolve_base
+
+
+def git(root, *arguments):
+    return subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Gate Test",
+            "-c",
+            "user.email=gate@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            *arguments,
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def commit(root, name):
+    (Path(root) / name).write_text(name)
+    git(root, "add", name)
+    git(root, "commit", "--quiet", "--message", name)
+    return git(root, "rev-parse", "HEAD")
 
 
 class MemoryTree:
@@ -105,6 +135,14 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
         self.assertEqual(result.acceptances, 1)
         self.assertEqual(result.gate_steps, 1)
 
+    def test_gate_steps_count_uv_run_python_like_python3(self):
+        source = (
+            "uv run python -m unittest discover -s scripts\n"
+            "uv run python scripts/check_quality.py\n"
+            "python3 contracts/generate.py --check\n"
+        )
+        self.assertEqual(gate.count_gate_steps(source), 3)
+
     def test_ratchets_reject_new_sql_panics_and_long_functions(self):
         empty = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 0, 0, 0, 0)
         long = gate.Function("engine/a.rs", "large", 1, 201)
@@ -148,6 +186,45 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
         }))
         self.assertEqual((base.ignored_tests, head.ignored_tests), (0, 1))
         self.assertTrue(gate.check_verification(base, head, False))
+
+
+class HardeningBaseTests(unittest.TestCase):
+    def test_default_base_is_the_merge_base_with_origin_main_not_head(self):
+        with tempfile.TemporaryDirectory() as root:
+            git(root, "init", "--quiet", "--initial-branch=main")
+            fork = commit(root, "fork")
+            commit(root, "main-only")
+            git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+            git(root, "switch", "--quiet", "--create", "feature", fork)
+            head = commit(root, "feature")
+            base = resolve_base(Path(root))
+            self.assertEqual(base, fork)
+            self.assertNotEqual(base, head)
+
+    def test_missing_origin_main_fails_instead_of_comparing_with_head(self):
+        with tempfile.TemporaryDirectory() as root:
+            git(root, "init", "--quiet")
+            commit(root, "only")
+            with self.assertRaisesRegex(BaseError, "merge-base of origin/main"):
+                resolve_base(Path(root))
+
+    def test_explicit_base_must_be_a_full_oid(self):
+        self.assertEqual(resolve_base(Path("."), "a" * 40), "a" * 40)
+        with self.assertRaisesRegex(BaseError, "full commit OID"):
+            resolve_base(Path("."), "main")
+
+    def test_main_measures_the_resolved_base(self):
+        resolved = "b" * 40
+        empty = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 0, 0, 0, 0)
+        with (
+            patch.object(sys, "argv", ["hardening_gate.py", "check-no-panic-in-production"]),
+            patch.object(gate, "resolve_base", return_value=resolved) as resolve,
+            patch.object(gate, "metrics", return_value=empty),
+            patch.object(gate, "CommitTree") as tree,
+        ):
+            self.assertEqual(gate.main(), 0)
+        resolve.assert_called_once_with(gate.ROOT, None)
+        tree.assert_called_once_with(resolved)
 
 
 if __name__ == "__main__":

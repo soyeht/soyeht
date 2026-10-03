@@ -160,7 +160,7 @@ The report PR repeats the complete gate from the final implementation base.
    `scripts/check_all.sh` with `FORBIDDEN_TERMS` supplied through the
    environment.
 3. Build the Rust workspace and install only the new Dev profile with
-   `python3 scripts/install_dev.py`. Confirm schema 15 and a connected ptyd.
+   `uv run python scripts/install_dev.py`. Confirm schema 15 and a connected ptyd.
 4. Build and open the development-signed Mac app.
 5. Follow [the slice 4 manual procedure](../manual-acceptance-slice-4.md) in a
    disposable Git repository. Record no credential, provider payload, usage
