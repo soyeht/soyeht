@@ -1,18 +1,33 @@
 use crate::{Error, Result, engine::EnginePort, tools::Service};
 use serde_json::{Value, json};
 use soyeht_protocol::ndjson::Decoder;
-use std::io::{BufRead, Write};
+use std::{
+    io::{BufRead, Write},
+    path::Path,
+};
 
 /// Harnesses may also load the user's own Soyeht servers with the same tool
 /// names; only this server speaks for the pane that started it.
-const INSTRUCTIONS: &str = "These tools act for this agent pane inside its Soyeht workspace. \
+const PANE_TOOLS: &str = "These tools act for this agent pane inside its Soyeht workspace. \
 To find or message another agent pane of this workspace, use list_agents and message_agent \
 from this server, not from another Soyeht server.";
+
+/// What every harness shows its model about this server. The skills part
+/// reaches harnesses that do not load skill folders natively (ADR 0075).
+pub fn instructions(skills: &Path) -> String {
+    let skills = skills.display();
+    format!(
+        "{PANE_TOOLS} Soyeht skills are folders in {skills} and in the project's \
+.agents/skills, each with a SKILL.md. When a task matches a skill's description, read its \
+SKILL.md and follow it. To create a skill, follow {skills}/create-skill/SKILL.md."
+    )
+}
 
 pub fn serve<P: EnginePort>(
     mut input: impl BufRead,
     mut output: impl Write,
     mut service: Service<P>,
+    instructions: &str,
 ) -> Result<()> {
     let mut decoder = Decoder::new(0);
     let mut ended_at_boundary = true;
@@ -29,7 +44,9 @@ pub fn serve<P: EnginePort>(
             ended_at_boundary = bytes.last() == Some(&b'\n');
             for record in decoder.push(decoder.next_offset(), bytes)?.lines {
                 let request: Value = serde_json::from_slice(&record.bytes)?;
-                if let Some(response) = dispatch(&mut service, &mut initialized, request) {
+                if let Some(response) =
+                    dispatch(&mut service, &mut initialized, instructions, request)
+                {
                     serde_json::to_writer(&mut output, &response?)?;
                     output.write_all(b"\n")?;
                     output.flush()?;
@@ -47,6 +64,7 @@ pub fn serve<P: EnginePort>(
 fn dispatch<P: EnginePort>(
     service: &mut Service<P>,
     initialized: &mut bool,
+    instructions: &str,
     request: Value,
 ) -> Option<Result<Value>> {
     let id = request.get("id")?.clone();
@@ -61,7 +79,7 @@ fn dispatch<P: EnginePort>(
                 "protocolVersion":"2025-11-25",
                 "capabilities":{"tools":{"listChanged":false}},
                 "serverInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")},
-                "instructions":INSTRUCTIONS
+                "instructions":instructions
             }))
         }
         Some("ping") => Ok(json!({})),
@@ -129,14 +147,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn stdio_server_negotiates_lists_tools_and_returns_structured_results() {
-        let input = concat!(
-            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
-            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}\n",
-            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n",
-            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"task_next\",\"arguments\":{}}}\n"
-        );
+    /// Serves `input` for an agent pane and returns what the server wrote.
+    fn serve_agent(input: impl AsRef<[u8]>) -> Vec<u8> {
         let context = TaskContext {
             workspace_id: "w".into(),
             pane_id: "p".into(),
@@ -145,17 +157,28 @@ mod tests {
             attempt: None,
         };
         let mut output = Vec::new();
-        serve(
-            Cursor::new(input),
-            &mut output,
-            Service::new(FakeEngine { role: Role::Agent }, context),
-        )
-        .unwrap();
-        let replies = String::from_utf8(output)
+        let service = Service::new(FakeEngine { role: Role::Agent }, context);
+        serve(Cursor::new(input), &mut output, service, PANE_TOOLS).unwrap();
+        output
+    }
+
+    fn replies(output: Vec<u8>) -> Vec<Value> {
+        String::from_utf8(output)
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    #[test]
+    fn stdio_server_negotiates_lists_tools_and_returns_structured_results() {
+        let input = concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"task_next\",\"arguments\":{}}}\n"
+        );
+        let replies = replies(serve_agent(input));
         assert_eq!(replies.len(), 3);
         assert_eq!(replies[0]["result"]["protocolVersion"], "2025-11-25");
         assert!(
@@ -173,25 +196,19 @@ mod tests {
     }
 
     #[test]
+    fn instructions_point_every_harness_at_the_skills_store() {
+        let text = instructions(Path::new("/data/skills/.agents/skills"));
+        assert!(text.starts_with(PANE_TOOLS));
+        assert!(text.contains("/data/skills/.agents/skills/create-skill/SKILL.md"));
+    }
+
+    #[test]
     fn oversized_input_is_discarded_without_hiding_the_next_exact_request() {
         let mut input = vec![b'x'; soyeht_protocol::limits::ACP_MESSAGE_BYTES + 1];
         input.extend_from_slice(
             b"\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"ping\",\"params\":{}}\n",
         );
-        let context = TaskContext {
-            workspace_id: "w".into(),
-            pane_id: "p".into(),
-            session_generation: 4,
-            task_id: None,
-            attempt: None,
-        };
-        let mut output = Vec::new();
-        serve(
-            Cursor::new(input),
-            &mut output,
-            Service::new(FakeEngine { role: Role::Agent }, context),
-        )
-        .unwrap();
+        let output = serve_agent(input);
         let reply: Value = serde_json::from_slice(&output).unwrap();
         assert_eq!(reply["id"], 4);
         assert_eq!(reply["result"], json!({}));
@@ -205,25 +222,7 @@ mod tests {
             "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"initialize\",\"params\":{}}\n",
             "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"task_next\",\"arguments\":{}}}\n"
         );
-        let context = TaskContext {
-            workspace_id: "w".into(),
-            pane_id: "p".into(),
-            session_generation: 4,
-            task_id: None,
-            attempt: None,
-        };
-        let mut output = Vec::new();
-        serve(
-            Cursor::new(input),
-            &mut output,
-            Service::new(FakeEngine { role: Role::Agent }, context),
-        )
-        .unwrap();
-        let replies = String::from_utf8(output)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .collect::<Vec<_>>();
+        let replies = replies(serve_agent(input));
         assert_eq!(replies[0]["error"]["code"], -32600);
         assert_eq!(replies[1]["error"]["code"], -32002);
         assert_eq!(

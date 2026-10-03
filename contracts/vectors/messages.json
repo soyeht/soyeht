@@ -7,6 +7,407 @@
     }
   },
   {
+    "name": "AgentCommand",
+    "type": "AgentCommand",
+    "value": {
+      "name": "review",
+      "description": "Reviews a change.",
+      "inputHint": "branch"
+    }
+  },
+  {
+    "name": "PaneCommandsListParams",
+    "type": "PaneCommandsListParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000003"
+    }
+  },
+  {
+    "name": "PaneCommandsListResult",
+    "type": "PaneCommandsListResult",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000003",
+      "items": [
+        {
+          "name": "review",
+          "description": "Reviews a change.",
+          "inputHint": "branch"
+        }
+      ]
+    }
+  },
+  {
+    "name": "PaneCommandsChangedEvent",
+    "type": "PaneCommandsChangedEvent",
+    "value": {
+      "eventId": "7",
+      "at": "2026-10-03T12:00:00.000Z",
+      "paneId": "00000000-0000-4000-8000-000000000003"
+    }
+  },
+  {
+    "name": "SkillName",
+    "type": "SkillName",
+    "value": "review"
+  },
+  {
+    "name": "SkillScope",
+    "type": "SkillScope",
+    "value": "user"
+  },
+  {
+    "name": "Skill",
+    "type": "Skill",
+    "value": {
+      "name": "review",
+      "scope": "workspace",
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "path": "/work/.agents/skills/review",
+      "description": "Reviews a change.",
+      "allowedTools": "Read Grep",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "SkillsListParams",
+    "type": "SkillsListParams",
+    "value": {
+      "workspaceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "SkillsListResult",
+    "type": "SkillsListResult",
+    "value": {
+      "items": [
+        {
+          "name": "review",
+          "scope": "workspace",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "/work/.agents/skills/review",
+          "description": "Reviews a change.",
+          "allowedTools": "Read Grep",
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "name": "Bad Name",
+          "scope": "user",
+          "path": "/data/skills/.agents/skills/Bad Name",
+          "problem": "The name must match the folder name."
+        }
+      ],
+      "userDirectory": "/data/skills/.agents/skills",
+      "workspaceDirectory": "/work/.agents/skills"
+    }
+  },
+  {
+    "name": "SkillsReadParams",
+    "type": "SkillsReadParams",
+    "value": {
+      "name": "review",
+      "workspaceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "SkillsReadResult",
+    "type": "SkillsReadResult",
+    "value": {
+      "skill": {
+        "name": "review",
+        "scope": "workspace",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "path": "/work/.agents/skills/review",
+        "description": "Reviews a change.",
+        "allowedTools": "Read Grep",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "content": "---\nname: review\ndescription: Reviews a change.\n---\n"
+    }
+  },
+  {
+    "name": "SkillsCreateParams",
+    "type": "SkillsCreateParams",
+    "value": {
+      "name": "review",
+      "description": "Reviews a change.",
+      "instructions": "Read the diff.",
+      "workspaceId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "SkillsUpdateParams",
+    "type": "SkillsUpdateParams",
+    "value": {
+      "name": "review",
+      "content": "---\nname: review\n---\n",
+      "baseRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "SkillsDeleteParams",
+    "type": "SkillsDeleteParams",
+    "value": {
+      "name": "review",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "name": "SkillMutationResult",
+    "type": "SkillMutationResult",
+    "value": {
+      "skill": {
+        "name": "review",
+        "scope": "workspace",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "path": "/work/.agents/skills/review",
+        "description": "Reviews a change.",
+        "allowedTools": "Read Grep",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "SkillsDeleteResult",
+    "type": "SkillsDeleteResult",
+    "value": {
+      "name": "review",
+      "removed": true
+    }
+  },
+  {
+    "name": "SkillsChangedEvent",
+    "type": "SkillsChangedEvent",
+    "value": {
+      "scope": "workspace",
+      "workspaceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "request:pane.commands.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.commands.list",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000003"
+      }
+    }
+  },
+  {
+    "name": "response:pane.commands.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "paneId": "00000000-0000-4000-8000-000000000003",
+        "items": [
+          {
+            "name": "review",
+            "description": "Reviews a change.",
+            "inputHint": "branch"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:skills.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "skills.list",
+      "params": {
+        "workspaceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:skills.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "name": "review",
+            "scope": "workspace",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "path": "/work/.agents/skills/review",
+            "description": "Reviews a change.",
+            "allowedTools": "Read Grep",
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "name": "Bad Name",
+            "scope": "user",
+            "path": "/data/skills/.agents/skills/Bad Name",
+            "problem": "The name must match the folder name."
+          }
+        ],
+        "userDirectory": "/data/skills/.agents/skills",
+        "workspaceDirectory": "/work/.agents/skills"
+      }
+    }
+  },
+  {
+    "name": "request:skills.read",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "skills.read",
+      "params": {
+        "name": "review",
+        "workspaceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:skills.read",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "skill": {
+          "name": "review",
+          "scope": "workspace",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "/work/.agents/skills/review",
+          "description": "Reviews a change.",
+          "allowedTools": "Read Grep",
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "content": "---\nname: review\ndescription: Reviews a change.\n---\n"
+      }
+    }
+  },
+  {
+    "name": "request:skills.create",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "skills.create",
+      "params": {
+        "name": "review",
+        "description": "Reviews a change.",
+        "instructions": "Read the diff.",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:skills.create",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "skill": {
+          "name": "review",
+          "scope": "workspace",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "/work/.agents/skills/review",
+          "description": "Reviews a change.",
+          "allowedTools": "Read Grep",
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:skills.update",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "skills.update",
+      "params": {
+        "name": "review",
+        "content": "---\nname: review\n---\n",
+        "baseRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:skills.update",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "skill": {
+          "name": "review",
+          "scope": "workspace",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "path": "/work/.agents/skills/review",
+          "description": "Reviews a change.",
+          "allowedTools": "Read Grep",
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    }
+  },
+  {
+    "name": "request:skills.delete",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "skills.delete",
+      "params": {
+        "name": "review",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000002"
+      }
+    }
+  },
+  {
+    "name": "response:skills.delete",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "name": "review",
+        "removed": true
+      }
+    }
+  },
+  {
+    "name": "event:pane.commands_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "pane.commands_changed",
+      "params": {
+        "eventId": "7",
+        "at": "2026-10-03T12:00:00.000Z",
+        "paneId": "00000000-0000-4000-8000-000000000003"
+      }
+    }
+  },
+  {
+    "name": "event:skills.changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "skills.changed",
+      "params": {
+        "scope": "workspace",
+        "workspaceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
     "name": "Id",
     "type": "Id",
     "value": "00000000-0000-4000-8000-000000000001"

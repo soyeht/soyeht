@@ -1343,6 +1343,7 @@ dependencies = [
  "soyeht-pane-state",
  "soyeht-protocol",
  "soyeht-ptyd",
+ "soyeht-skills",
  "soyeht-store",
  "soyeht-usage",
  "soyeht-vcs",
@@ -1374,6 +1375,7 @@ dependencies = [
  "serde",
  "serde_json",
  "soyeht-protocol",
+ "soyeht-skills",
  "uuid",
 ]
 
@@ -1406,6 +1408,15 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "soyeht-protocol",
+ "uuid",
+]
+
+[[package]]
+name = "soyeht-skills"
+version = "0.1.0"
+dependencies = [
+ "sha2",
  "soyeht-protocol",
  "uuid",
 ]

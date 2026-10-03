@@ -64,6 +64,27 @@ services, files and adapter installations afterward. The command never runs in t
 normal merge gate unless `SOYEHT_REAL_ACP=1` is explicitly present. It does not
 replace the physical iPhone procedure.
 
+`--skills` runs only the Soyeht skills check (ADR 0075) with Codex:
+
+```sh
+SOYEHT_REAL_ACP=1 uv run python scripts/e2e_real_acp.py --skills \
+  --report .cache/e2e-real-skills.json
+```
+
+Codex runs with a disposable `CODEX_HOME` that holds only a copy of the
+person's `auth.json`, so nothing is written to `~/.codex`.
+
+1. The first pane must list the starter `$create-skill` from the Soyeht skills
+   home.
+2. The first pane is asked to create a skill with that guide, including its
+   zero-context subagent test.
+3. The new skill must appear valid in `skills.list`.
+4. A second pane must list it as `$name` and follow it when asked for the task
+   alone.
+
+The report records the skill's description, how many subagent rows the first
+pane showed, and both panes' replies.
+
 A second opt-in check proves agent-to-agent messaging between real panes:
 
 ```sh

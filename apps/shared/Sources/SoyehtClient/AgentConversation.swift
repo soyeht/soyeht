@@ -352,6 +352,7 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
           client.cyclePermissionMode(paneId)
           return .handled
         }
+        .slashCompletion(client: client, paneId: paneId, text: $prompt, style: style)
       HStack(spacing: PaneInteriorMetrics.compactSpacing) {
         if let usage = contextUsage {
           AgentContextRing(used: usage.0, total: usage.1, style: style)
@@ -439,7 +440,7 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     guard !text.isEmpty else { return }
     prompt = ""
     onExplicitRemoteAction()
-    client.sendPrompt(paneId, text: text)
+    client.sendPrompt(paneId, text: client.slashCatalog(paneId: paneId).prompt(for: text))
     promptFocused = true
   }
 

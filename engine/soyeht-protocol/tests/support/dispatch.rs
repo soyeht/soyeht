@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 aa092afe2a17ef78283529df8078fdf853ea8b2d23df3a19c04a5fb55480d2ec). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -166,6 +166,23 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "ElicitationRequest" => roundtrip::<ElicitationRequest>(value),
         "AgentHarnessSwitch" => roundtrip::<AgentHarnessSwitch>(value),
         "AgentSession" => roundtrip::<AgentSession>(value),
+        "AgentCommand" => roundtrip::<AgentCommand>(value),
+        "PaneCommandsListParams" => roundtrip::<PaneCommandsListParams>(value),
+        "PaneCommandsListResult" => roundtrip::<PaneCommandsListResult>(value),
+        "PaneCommandsChangedEvent" => roundtrip::<PaneCommandsChangedEvent>(value),
+        "SkillName" => roundtrip::<SkillName>(value),
+        "SkillScope" => roundtrip::<SkillScope>(value),
+        "Skill" => roundtrip::<Skill>(value),
+        "SkillsListParams" => roundtrip::<SkillsListParams>(value),
+        "SkillsListResult" => roundtrip::<SkillsListResult>(value),
+        "SkillsReadParams" => roundtrip::<SkillsReadParams>(value),
+        "SkillsReadResult" => roundtrip::<SkillsReadResult>(value),
+        "SkillsCreateParams" => roundtrip::<SkillsCreateParams>(value),
+        "SkillsUpdateParams" => roundtrip::<SkillsUpdateParams>(value),
+        "SkillsDeleteParams" => roundtrip::<SkillsDeleteParams>(value),
+        "SkillMutationResult" => roundtrip::<SkillMutationResult>(value),
+        "SkillsDeleteResult" => roundtrip::<SkillsDeleteResult>(value),
+        "SkillsChangedEvent" => roundtrip::<SkillsChangedEvent>(value),
         "ProbeCapability" => roundtrip::<ProbeCapability>(value),
         "AuthMethod" => roundtrip::<AuthMethod>(value),
         "HarnessInfo" => roundtrip::<HarnessInfo>(value),

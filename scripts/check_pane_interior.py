@@ -25,6 +25,7 @@ INTERIOR_FILES = (
     "apps/shared/Sources/SoyehtClient/AgentSubagents.swift",
     "apps/shared/Sources/SoyehtClient/PermissionPresentationView.swift",
     "apps/shared/Sources/SoyehtClient/PaneInteriorControls.swift",
+    "apps/shared/Sources/SoyehtClient/SlashCompletionList.swift",
     "apps/mac/Sources/AgentHarnessPicker.swift",
     "apps/mac/Sources/PaneHarnessControl.swift",
     "apps/mac/Sources/EditorFindBar.swift",
