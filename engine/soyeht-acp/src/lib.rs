@@ -4,6 +4,7 @@ pub mod client;
 pub mod commands;
 pub mod config;
 pub mod continuation;
+pub mod prompt;
 pub mod rpc;
 pub mod session;
 pub mod subagents;

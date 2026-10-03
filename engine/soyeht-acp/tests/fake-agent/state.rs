@@ -18,6 +18,9 @@ pub struct Settings {
     /// option, `restricted` the same without full access, `legacy` as ACP
     /// session modes, `none` not at all.
     pub modes: String,
+    /// The `promptCapabilities` flags the agent advertises. The default
+    /// matches the pinned Claude and Codex adapters: image and embeddedContext.
+    pub prompt_capabilities: Vec<String>,
 }
 impl Settings {
     pub fn parse() -> Result<Self> {
@@ -29,6 +32,7 @@ impl Settings {
         let mut initialize_padding_bytes = 0;
         let mut replay_user_chunk_bytes = None;
         let mut modes = "config".to_owned();
+        let mut prompt_capabilities = vec!["image".to_owned(), "embeddedContext".to_owned()];
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -44,6 +48,22 @@ impl Settings {
                             matches!(value.as_str(), "config" | "restricted" | "legacy" | "none")
                         })
                         .ok_or_else(|| Error::UnknownOption(arg.clone()))?;
+                }
+                "--prompt-capabilities" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| Error::UnknownOption(arg.clone()))?;
+                    prompt_capabilities = value
+                        .split(',')
+                        .filter(|flag| !flag.is_empty() && *flag != "none")
+                        .map(str::to_owned)
+                        .collect();
+                    if prompt_capabilities
+                        .iter()
+                        .any(|flag| !matches!(flag.as_str(), "image" | "audio" | "embeddedContext"))
+                    {
+                        return Err(Error::UnknownOption(value));
+                    }
                 }
                 "--initialize-padding-bytes" => {
                     let value = args
@@ -88,6 +108,7 @@ impl Settings {
             initialize_padding_bytes,
             replay_user_chunk_bytes,
             modes,
+            prompt_capabilities,
         })
     }
     pub fn announces_mode_option(&self) -> bool {
@@ -114,6 +135,10 @@ pub struct Session {
     pub cwd: String,
     pub values: BTreeMap<String, Value>,
     pub history: Vec<(String, String)>,
+    /// Non-text prompt blocks by turn, replayed after that turn's text the
+    /// way the Claude adapter replays images.
+    #[serde(default)]
+    pub attached: BTreeMap<usize, Vec<Value>>,
     #[serde(default)]
     pub mcp_servers: Vec<Value>,
     #[serde(default)]
@@ -127,6 +152,7 @@ impl Session {
             id: Uuid::new_v4().to_string(),
             cwd,
             history: Vec::new(),
+            attached: BTreeMap::new(),
             mcp_servers,
             session_meta,
             additional_directories: Vec::new(),

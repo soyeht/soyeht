@@ -106,6 +106,7 @@ mod tests {
             agent_message: None,
             subagent: None,
             subagent_id: None,
+            attachments: None,
         };
         restore_replayed(&mut replayed);
         assert_eq!(replayed.text, "ping.\n\nsecond line");

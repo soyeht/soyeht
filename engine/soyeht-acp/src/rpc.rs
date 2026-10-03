@@ -80,6 +80,9 @@ pub enum Error {
     ContinuationTemplate,
     ContinuationMetadata,
     ContinuationMessages,
+    AttachmentPathMissing,
+    AttachmentPathNotAbsolute,
+    AttachmentSizeInvalid,
 }
 
 impl std::fmt::Display for Error {
@@ -181,6 +184,11 @@ impl std::fmt::Display for Error {
             Self::ContinuationMessages => {
                 formatter.write_str("continuation needs one whole message within its bound")
             }
+            Self::AttachmentPathMissing => formatter.write_str("queued attachment has no path"),
+            Self::AttachmentPathNotAbsolute => {
+                formatter.write_str("attachment path is not an absolute file path")
+            }
+            Self::AttachmentSizeInvalid => formatter.write_str("attachment size is invalid"),
         }
     }
 }

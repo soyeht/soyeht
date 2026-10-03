@@ -1,4 +1,4 @@
-use crate::{Error, RpcError, config::Options};
+use crate::{Error, RpcError, config::Options, prompt::PromptCapabilities};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -25,6 +25,9 @@ pub struct Initialization {
     pub version: String,
     pub advertised_load: bool,
     pub auth_methods: Vec<NativeAuth>,
+    /// Content beyond text and links that `session/prompt` may carry.
+    #[serde(default)]
+    pub prompt_capabilities: PromptCapabilities,
     /// The agent accepts ACP `additionalDirectories` on session requests.
     #[serde(default)]
     pub additional_directories: bool,
@@ -127,6 +130,7 @@ impl Initialization {
                 .as_bool()
                 .unwrap_or(false),
             auth_methods,
+            prompt_capabilities: PromptCapabilities::from_initialize(value),
             additional_directories:
                 value["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"]
                     .is_object(),

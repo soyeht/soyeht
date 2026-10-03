@@ -88,13 +88,19 @@ impl Rig {
         }
     }
     pub fn install_fake_harness(&self, modes: &str) {
+        self.install_fake_harness_with(&["--modes", modes]);
+    }
+    /// The test agent, launched with extra fake-agent arguments.
+    pub fn install_fake_harness_with(&self, arguments: &[&str]) {
+        let mut args = vec![json!("--state-dir"), json!(self.path.join("native"))];
+        args.extend(arguments.iter().map(|argument| json!(argument)));
         let binary =
             PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
         fs::write(
             self.path.join("harnesses.json"),
             serde_json::to_vec(&json!([{
                 "id":"test-agent","name":"Test agent","command":binary,
-                "args":["--state-dir",self.path.join("native"),"--modes",modes],"version":"test"
+                "args":args,"version":"test"
             }]))
             .unwrap(),
         )
@@ -150,11 +156,15 @@ impl Rig {
     }
     pub fn open_agent_announcing(
         &self,
-        mut client: Client,
+        client: Client,
         workspace: &Value,
         modes: &str,
     ) -> (Client, String) {
         self.install_fake_harness(modes);
+        self.open_installed_agent(client, workspace)
+    }
+    /// Opens a pane on the test agent already written to harnesses.json.
+    pub fn open_installed_agent(&self, mut client: Client, workspace: &Value) -> (Client, String) {
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent",
@@ -175,6 +185,10 @@ impl Rig {
     }
     /// An agent pane whose fake announces its modes as `config`, `legacy` or `none`.
     pub fn agent_announcing(&self, modes: &str) -> (Client, String) {
+        self.agent_with(&["--modes", modes])
+    }
+    /// An agent pane whose fake runs with extra arguments.
+    pub fn agent_with(&self, arguments: &[&str]) -> (Client, String) {
         let mut client = self.client();
         let workspace = client.call(
             "workspace.create",
@@ -182,7 +196,8 @@ impl Rig {
             "idempotencyKey":"agent-workspace"}),
         )["workspace"]["workspaceId"]
             .clone();
-        self.open_agent_announcing(client, &workspace, modes)
+        self.install_fake_harness_with(arguments);
+        self.open_installed_agent(client, &workspace)
     }
     pub fn agent_in_workspace(&self, workspace: &str) -> (Client, String) {
         self.open_agent(self.client(), &json!(workspace))
@@ -333,6 +348,53 @@ pub struct Client {
     pub socket: UnixStream,
     pub next: u64,
     pub messages: Vec<Frame>,
+}
+
+pub fn transcript_items(client: &mut Client, pane: &str) -> Vec<Value> {
+    client.call("pane.transcript", json!({"paneId":pane}))["items"]
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+pub fn wait_for_user_message(client: &mut Client, pane: &str, text: &str) -> Vec<Value> {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let items = transcript_items(client, pane);
+        if items
+            .iter()
+            .any(|message| message["role"] == "user" && message["text"] == text)
+        {
+            return items;
+        }
+        assert!(Instant::now() < deadline, "{text} was not recorded");
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Restarts the engine and its agents, then waits until the native replay has
+/// replaced every message the live transcript held.
+pub fn restart_and_wait_for_replay(rig: &mut Rig, pane: &str, live: &[Value]) -> Vec<Value> {
+    rig.kill_engine();
+    rig.restart_ptyd();
+    rig.start();
+    let mut restored = rig.client();
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        let items = transcript_items(&mut restored, pane);
+        if !items.is_empty()
+            && items
+                .iter()
+                .all(|item| live.iter().all(|old| old["localId"] != item["localId"]))
+        {
+            return items;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the native replay did not replace the transcript"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 impl Client {

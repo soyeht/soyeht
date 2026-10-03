@@ -3486,6 +3486,48 @@
     }
   },
   {
+    "name": "PromptAttachmentKind",
+    "type": "PromptAttachmentKind",
+    "value": "image"
+  },
+  {
+    "name": "PromptAttachment",
+    "type": "PromptAttachment",
+    "value": {
+      "kind": "image",
+      "name": "screenshot.png",
+      "mimeType": "image/png",
+      "bytes": "4",
+      "attachmentId": "00000000-0000-4000-8000-000000000001",
+      "thumbnail": "iVBORw=="
+    }
+  },
+  {
+    "name": "PanePromptParams:attachments",
+    "type": "PanePromptParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "text": "Describe these files.",
+      "attachments": [
+        {
+          "kind": "text",
+          "name": "notes.md",
+          "mimeType": "text/markdown",
+          "bytes": "6",
+          "data": "IyBOb3Rl"
+        },
+        {
+          "kind": "file",
+          "name": "report.pdf",
+          "mimeType": "application/pdf",
+          "bytes": "2048",
+          "path": "/Users/example/report.pdf"
+        }
+      ],
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
     "name": "PanePromptParams",
     "type": "PanePromptParams",
     "value": {

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aa092afe2a17ef78283529df8078fdf853ea8b2d23df3a19c04a5fb55480d2ec). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -202,6 +202,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "SubagentStatus": return try codec(SoyehtProtocol.SubagentStatus.self, data)
         case "SubagentRun": return try codec(SoyehtProtocol.SubagentRun.self, data)
         case "TranscriptMessage": return try codec(SoyehtProtocol.TranscriptMessage.self, data)
+        case "PromptAttachmentKind": return try codec(SoyehtProtocol.PromptAttachmentKind.self, data)
+        case "PromptAttachment": return try codec(SoyehtProtocol.PromptAttachment.self, data)
         case "AttachmentRef": return try codec(SoyehtProtocol.AttachmentRef.self, data)
         case "PanePromptParams": return try codec(SoyehtProtocol.PanePromptParams.self, data)
         case "PanePromptResult": return try codec(SoyehtProtocol.PanePromptResult.self, data)

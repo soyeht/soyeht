@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aa092afe2a17ef78283529df8078fdf853ea8b2d23df3a19c04a5fb55480d2ec). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 import Foundation
 
 
@@ -100,6 +100,7 @@ public enum ErrorKind: String, Codable, Sendable {
     case `writing_scene_not_found` = "writing_scene_not_found"
     case `writing_section_refused` = "writing_section_refused"
     case `harness_switch_failed` = "harness_switch_failed"
+    case `attachment_limit_exceeded` = "attachment_limit_exceeded"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -1571,9 +1572,9 @@ public struct PromptItem: Codable, Sendable {
     public var `status`: PromptStatus
     public var `queuedAt`: String
     public var `generation`: UInt32?
-    public var `attachments`: [AttachmentRef]?
+    public var `attachments`: [PromptAttachment]?
     public var `agentMessage`: AgentMessageSource?
-    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil, `agentMessage`: AgentMessageSource? = nil) {
+    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [PromptAttachment]? = nil, `agentMessage`: AgentMessageSource? = nil) {
         self.`promptId` = `promptId`
         self.`text` = `text`
         self.`origin` = `origin`
@@ -2149,7 +2150,8 @@ public struct TranscriptMessage: Codable, Sendable {
     public var `agentMessage`: AgentMessageSource?
     public var `subagent`: SubagentRun?
     public var `subagentId`: Id?
-    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil, `subagent`: SubagentRun? = nil, `subagentId`: Id? = nil) {
+    public var `attachments`: [PromptAttachment]?
+    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil, `subagent`: SubagentRun? = nil, `subagentId`: Id? = nil, `attachments`: [PromptAttachment]? = nil) {
         self.`localId` = `localId`
         self.`generation` = `generation`
         self.`seq` = `seq`
@@ -2165,6 +2167,35 @@ public struct TranscriptMessage: Codable, Sendable {
         self.`agentMessage` = `agentMessage`
         self.`subagent` = `subagent`
         self.`subagentId` = `subagentId`
+        self.`attachments` = `attachments`
+    }
+}
+
+public enum PromptAttachmentKind: String, Codable, Sendable {
+    case `image` = "image"
+    case `audio` = "audio"
+    case `text` = "text"
+    case `file` = "file"
+}
+
+public struct PromptAttachment: Codable, Sendable {
+    public var `kind`: PromptAttachmentKind
+    public var `name`: String
+    public var `mimeType`: String
+    public var `bytes`: Decimal
+    public var `attachmentId`: Id?
+    public var `data`: String?
+    public var `path`: String?
+    public var `thumbnail`: String?
+    public init(`kind`: PromptAttachmentKind, `name`: String, `mimeType`: String, `bytes`: Decimal, `attachmentId`: Id? = nil, `data`: String? = nil, `path`: String? = nil, `thumbnail`: String? = nil) {
+        self.`kind` = `kind`
+        self.`name` = `name`
+        self.`mimeType` = `mimeType`
+        self.`bytes` = `bytes`
+        self.`attachmentId` = `attachmentId`
+        self.`data` = `data`
+        self.`path` = `path`
+        self.`thumbnail` = `thumbnail`
     }
 }
 
@@ -2185,9 +2216,9 @@ public struct PanePromptParams: Codable, Sendable {
     public var `paneId`: Id
     public var `text`: String
     public var `origin`: PromptOrigin?
-    public var `attachments`: [AttachmentRef]?
+    public var `attachments`: [PromptAttachment]?
     public var `idempotencyKey`: Id
-    public init(`paneId`: Id, `text`: String, `origin`: PromptOrigin? = nil, `attachments`: [AttachmentRef]? = nil, `idempotencyKey`: Id) {
+    public init(`paneId`: Id, `text`: String, `origin`: PromptOrigin? = nil, `attachments`: [PromptAttachment]? = nil, `idempotencyKey`: Id) {
         self.`paneId` = `paneId`
         self.`text` = `text`
         self.`origin` = `origin`

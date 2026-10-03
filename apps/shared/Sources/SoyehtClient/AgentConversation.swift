@@ -69,6 +69,7 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
   private let onExplicitRemoteAction: () -> Void
   private let controlsAccessory: ControlsAccessory
   @State private var prompt = ""
+  @State private var attachments: AgentComposerAttachments
   @State private var follow = AgentConversationFollow()
   @State private var subagents = AgentSubagentDisclosure()
   @FocusState private var promptFocused: Bool
@@ -82,6 +83,8 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
   ) {
     self.client = client
     self.paneId = paneId
+    _attachments = State(
+      initialValue: AgentComposerAttachments(linkHostFiles: !client.pairedDevice))
     self.isVisible = isVisible
     self.showsConfiguration = showsConfiguration
     self.style = style
@@ -132,6 +135,7 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     }
     .background(style.face).foregroundStyle(style.ink)
     .overlayScrollersWithin()
+    .modifier(AgentAttachmentDropTarget(attachments: attachments, style: style))
     .task(id: prompt.isEmpty) {
       guard !prompt.isEmpty else { return }
       while !Task.isCancelled && !prompt.isEmpty {
@@ -227,6 +231,9 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
                 .font(style.captionFont.weight(.semibold))
             }
             Text(item.text).font(style.captionFont).lineLimit(2)
+            if let count = item.attachments?.count, count > 0 {
+              Label("\(count)", systemImage: "paperclip").font(style.captionFont)
+            }
           }
           Spacer()
           unavailableSteer
@@ -334,6 +341,7 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
   /// context ring, the "effort · mode ▾" chip, host controls and the send button.
   private var composer: some View {
     VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
+      AgentComposerAttachmentRow(attachments: attachments, style: style)
       // AppKit draws a plain field's own placeholder in the system color, so the placeholder
       // is drawn here in the palette's secondary ink instead.
       TextField("", text: $prompt, axis: .vertical)
@@ -353,7 +361,11 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
           return .handled
         }
         .slashCompletion(client: client, paneId: paneId, text: $prompt, style: style)
+        #if os(macOS)
+          .modifier(AgentComposerPaste(isFocused: promptFocused, attachments: attachments))
+        #endif
       HStack(spacing: PaneInteriorMetrics.compactSpacing) {
+        AgentAttachButton(attachments: attachments, style: style)
         if let usage = contextUsage {
           AgentContextRing(used: usage.0, total: usage.1, style: style)
         }
@@ -440,7 +452,9 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     guard !text.isEmpty else { return }
     prompt = ""
     onExplicitRemoteAction()
-    client.sendPrompt(paneId, text: client.slashCatalog(paneId: paneId).prompt(for: text))
+    client.sendPrompt(
+      paneId, text: client.slashCatalog(paneId: paneId).prompt(for: text),
+      attachments: attachments.take())
     promptFocused = true
   }
 

@@ -76,7 +76,9 @@ impl Runtime {
         let directory = self.settings.directory.to_string_lossy();
         self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
             "agentCapabilities":{"loadSession":self.settings.load!="unsupported",
-                "sessionCapabilities":{"additionalDirectories":{}}},
+                "sessionCapabilities":{"additionalDirectories":{}},
+                "promptCapabilities":self.settings.prompt_capabilities.iter()
+                    .map(|flag|(flag.clone(),json!(true))).collect::<serde_json::Map<_,_>>()},
             "testPadding":"x".repeat(self.settings.initialize_padding_bytes),
             "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--state-dir",directory,"--login"]}]}));
     }
@@ -155,6 +157,12 @@ impl Runtime {
                 }
                 for (index, (prompt, text)) in session.history.iter().enumerate() {
                     self.replay_user(&session.id, index, prompt);
+                    for block in session.attached.get(&index).into_iter().flatten() {
+                        self.update(
+                            &session.id,
+                            json!({"sessionUpdate":"user_message_chunk","content":block}),
+                        );
+                    }
                     if let Some(script) = subagents::script(prompt, &session.id, index) {
                         subagents::emit(self, &session.id, script);
                     } else if prompt == "separate-message-ids" {
@@ -322,16 +330,21 @@ impl Runtime {
             .filter_map(|block| block["text"].as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        if text == "report-images" {
-            let images: Vec<_> = prompt
-                .iter()
-                .filter(|block| block["type"] == "image")
-                .map(|block| {
-                    json!({"mimeType":block["mimeType"],"data":block["data"],
-                        "hasUri":block.get("uri").is_some()})
-                })
-                .collect();
-            text = format!("image-report:{}", Value::Array(images));
+        let attached: Vec<_> = prompt
+            .iter()
+            .filter(|block| block["type"] != "text")
+            .cloned()
+            .collect();
+        if !attached.is_empty()
+            && let Some(saved) = self.sessions.lock().unwrap().get_mut(&session)
+        {
+            let turn = saved.history.len();
+            saved.attached.insert(turn, attached);
+        }
+        if text == "report-blocks" {
+            // Every block after the text, as the agent received it.
+            let blocks: Vec<_> = prompt.iter().skip(1).cloned().collect();
+            text = format!("block-report:{}", Value::Array(blocks));
         }
         if text == "refuse-disabled-model" {
             self.error(id, -32603, "Internal error: Model is disabled");

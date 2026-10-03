@@ -3,7 +3,7 @@ use crate::{
     errors::{self, Result},
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+
 use soyeht_protocol::{AttachmentRef, WritingFormatKind, WritingFormatParams, limits};
 use std::path::Path;
 
@@ -34,7 +34,7 @@ impl Core {
             .ok_or_else(|| errors::invalid("Writing document has no containing folder"))?
             .to_owned();
         let bytes = self.commit_writing_image(connection, &reference)?;
-        let digest = hex_digest(&bytes);
+        let digest = crate::immutable_file::hex_digest(&bytes);
         let markdown_path = format!("assets/{digest}.png");
         let workspace_relative_path = parent.join(&markdown_path);
         let workspace_relative_path = workspace_relative_path
@@ -74,15 +74,4 @@ impl Core {
         }
         Ok(bytes)
     }
-}
-
-pub(super) fn hex_digest(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let digest = Sha256::digest(bytes);
-    let mut output = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        output.push(char::from(HEX[usize::from(byte >> 4)]));
-        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    output
 }

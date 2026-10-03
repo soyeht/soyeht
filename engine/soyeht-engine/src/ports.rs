@@ -16,7 +16,7 @@ use soyeht_ptyd::{
 };
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
-    agents::{AgentModelRefusal, HarnessReadiness, NativeRequest, Outgoing, PromptAttachment},
+    agents::{AgentModelRefusal, HarnessReadiness, NativeRequest, Outgoing},
     database::{Change, Mutation, Result as StoreResult, Store},
     domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
@@ -147,7 +147,6 @@ pub trait StorePort {
     fn device<T: DeserializeOwned>(&self, id: &str) -> StoreResult<Option<T>>;
     fn agent_runtime(&self, pane: &str) -> StoreResult<Option<State>>;
     fn agent_queue(&self, pane: &str) -> StoreResult<Vec<PromptItem>>;
-    fn agent_prompt_attachments(&self, prompt: &str) -> StoreResult<Vec<PromptAttachment>>;
     fn agent_open_requests(&self, pane: &str) -> StoreResult<Vec<NativeRequest>>;
     fn agent_request(&self, request_id: &str) -> StoreResult<Option<NativeRequest>>;
     fn agent_request_at(
@@ -307,10 +306,6 @@ impl StorePort for Store {
 
     fn agent_queue(&self, pane: &str) -> StoreResult<Vec<PromptItem>> {
         soyeht_store::agents::queue(self, pane)
-    }
-
-    fn agent_prompt_attachments(&self, prompt: &str) -> StoreResult<Vec<PromptAttachment>> {
-        soyeht_store::agents::prompt_attachments(self, prompt)
     }
 
     fn agent_open_requests(&self, pane: &str) -> StoreResult<Vec<NativeRequest>> {
@@ -600,10 +595,6 @@ pub(crate) mod testing {
         }
 
         fn agent_queue(&self, _pane: &str) -> StoreResult<Vec<PromptItem>> {
-            Ok(Vec::new())
-        }
-
-        fn agent_prompt_attachments(&self, _prompt: &str) -> StoreResult<Vec<PromptAttachment>> {
             Ok(Vec::new())
         }
 

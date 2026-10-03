@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 aa092afe2a17ef78283529df8078fdf853ea8b2d23df3a19c04a5fb55480d2ec). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -19,7 +19,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files" | "writing";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed" | "attachment_limit_exceeded";
 
 export interface RpcError {
   "code": number;
@@ -765,7 +765,7 @@ export interface PromptItem {
   "status": PromptStatus;
   "queuedAt": string;
   "generation"?: number;
-  "attachments"?: Array<AttachmentRef>;
+  "attachments"?: Array<PromptAttachment>;
   "agentMessage"?: AgentMessageSource;
 }
 
@@ -1078,6 +1078,20 @@ export interface TranscriptMessage {
   "agentMessage"?: AgentMessageSource;
   "subagent"?: SubagentRun;
   "subagentId"?: Id;
+  "attachments"?: Array<PromptAttachment>;
+}
+
+export type PromptAttachmentKind = "image" | "audio" | "text" | "file";
+
+export interface PromptAttachment {
+  "kind": PromptAttachmentKind;
+  "name": string;
+  "mimeType": string;
+  "bytes": Decimal;
+  "attachmentId"?: Id;
+  "data"?: string;
+  "path"?: string;
+  "thumbnail"?: string;
 }
 
 export interface AttachmentRef {
@@ -1091,7 +1105,7 @@ export interface PanePromptParams {
   "paneId": Id;
   "text": string;
   "origin"?: PromptOrigin;
-  "attachments"?: Array<AttachmentRef>;
+  "attachments"?: Array<PromptAttachment>;
   "idempotencyKey": Id;
 }
 
