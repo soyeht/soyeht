@@ -56,14 +56,16 @@ ADR when you change a boundary.
 - Loose Swift padding, corner-radius, font-size and font-name literals, and Rust
   `4096`/`512` literals, may not grow per file. Use a token, a policy or the
   generated limits.
-- `unwrap`/`expect`/`panic!` calls in `engine/*/src` may only go down. Inline
-  `#[cfg(test)]` items are skipped, but test modules kept in separate files under
-  `src/` are counted. Clippy also denies these calls in production code through
-  the workspace lints.
+- Engine production code has no `unwrap`/`expect`/`panic!` calls. The limit is
+  0, and no baseline edit or written reason can raise it. Test code is exempt:
+  crate `tests/` and `benches/`, inline `#[cfg(test)]` and
+  `#[cfg(all(test, ...))]` items, and modules declared `#[cfg(test)] mod x;`,
+  including their submodules. Clippy denies these calls through the workspace
+  lints too.
 - When a number improves, lower the baseline in the same PR:
   `uv run python scripts/check_quality.py --print-baseline > scripts/quality_baseline.json`.
   The check fails until you do.
-- Raising a baseline entry needs a written reason for the exact new value in
+- Raising any other baseline entry needs a written reason for the exact new value in
   `scripts/quality_baseline_justifications.json`. `review_report.py` shows each
   reason to the reviewer.
 

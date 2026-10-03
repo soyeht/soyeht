@@ -134,22 +134,21 @@ class QualityRatchetTests(unittest.TestCase):
             ["RELAXATION", "RELAXATION"],
         )
 
-    def test_engine_panic_count_can_only_go_down(self):
+    def test_any_engine_production_panic_fails_whatever_the_baseline_says(self):
         baseline = empty_measurement()
-        baseline[PANIC_KEY] = 81
         actual = copy.deepcopy(baseline)
-        actual[PANIC_KEY] = 82
+        actual[PANIC_KEY] = 1
         (change,) = differences(baseline, actual)
         self.assertEqual((change.direction, change.key), ("RELAXATION", PANIC_KEY))
-        actual[PANIC_KEY] = 80
-        self.assertEqual(differences(baseline, actual)[0].direction, "IMPROVEMENT")
-
-    def test_baseline_without_the_panic_entry_is_not_compared(self):
-        older = empty_measurement()
-        del older[PANIC_KEY]
-        current = empty_measurement()
-        current[PANIC_KEY] = 81
-        self.assertEqual(differences(older, current), [])
+        baseline[PANIC_KEY] = 5  # an edited baseline cannot buy headroom
+        self.assertEqual([c.key for c in differences(baseline, actual)], [PANIC_KEY])
+        reason = {PANIC_KEY: {"value": 1, "reason": "no reason is enough"}}
+        self.assertEqual(
+            [c.key for c in unjustified_relaxations(empty_measurement(), actual, reason)],
+            [PANIC_KEY],
+        )
+        actual[PANIC_KEY] = 0
+        self.assertEqual(differences(baseline, actual), [])
 
     def test_engine_panics_skip_test_items_tests_dirs_and_generated_code(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -161,11 +160,35 @@ class QualityRatchetTests(unittest.TestCase):
                 "fn loud() { panic!(\"stop\") }\n"
                 "// value.expect(\"in a comment\")\n"
                 "#[cfg(test)]\nmod tests { fn t() { None::<u8>.unwrap(); } }\n"
+                "#[cfg(all(test, target_os = \"macos\"))]\n"
+                "mod mac_tests { fn t() { None::<u8>.unwrap(); } }\n"
             )
             (source / "generated.rs").write_text("fn g() { None::<u8>.unwrap(); }\n")
-            tests = root / "engine/demo/tests"
-            tests.mkdir()
-            (tests / "it.rs").write_text("fn t() { None::<u8>.expect(\"x\"); }\n")
+            for directory_name in ("tests", "benches"):
+                extra = root / "engine/demo" / directory_name
+                extra.mkdir()
+                (extra / "it.rs").write_text("fn t() { None::<u8>.expect(\"x\"); }\n")
+            self.assertEqual(engine_production_panics(root), 2)
+
+    def test_engine_panics_skip_test_modules_in_their_own_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "engine/demo/src"
+            (source / "push").mkdir(parents=True)
+            (source / "lib.rs").write_text(
+                "mod push;\nmod live;\n#[cfg(test)]\nmod foo;\n"
+                "#[cfg(all(test, target_os = \"macos\"))]\npub(crate) mod mac_fixture;\n"
+                "pub fn after_declaration(v: Option<u8>) -> u8 { v.expect(\"counted\") }\n"
+            )
+            (source / "foo.rs").write_text(
+                "mod helpers;\nfn t() { None::<u8>.unwrap(); }\n"
+            )
+            (source / "foo").mkdir()
+            (source / "foo/helpers.rs").write_text("fn h() { panic!(\"test only\") }\n")
+            (source / "mac_fixture.rs").write_text("fn f() { None::<u8>.unwrap(); }\n")
+            (source / "push/mod.rs").write_text("#[cfg(test)]\nmod tests;\n")
+            (source / "push/tests.rs").write_text("fn t() { None::<u8>.unwrap(); }\n")
+            (source / "live.rs").write_text("pub fn live(v: Option<u8>) -> u8 { v.unwrap() }\n")
             self.assertEqual(engine_production_panics(root), 2)
 
     def test_raising_a_baseline_entry_needs_a_reason_for_that_value(self):
@@ -345,7 +368,7 @@ class QualityRatchetTests(unittest.TestCase):
             panicked = fixture.gate()
             self.assertEqual(panicked.returncode, 1)
             self.assertIn(
-                "REGRESSION: engine production unwrap/expect/panic!: baseline 0, actual 1",
+                "REGRESSION: engine production unwrap/expect/panic!: allowed 0, actual 1",
                 panicked.stderr,
             )
             risky.unlink()

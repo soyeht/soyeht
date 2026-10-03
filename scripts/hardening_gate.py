@@ -196,26 +196,83 @@ def matching_brace(source: str, opening: int) -> int | None:
 
 
 def is_engine_production_source(path: str) -> bool:
+    """A crate's `src/` tree; `tests/` and `benches/` are never production."""
+    parts = path.split("/")
     return (
-        path.startswith("engine/")
-        and "/src/" in path
+        len(parts) >= 4
+        and parts[0] == "engine"
+        and parts[2] == "src"
         and path.endswith(".rs")
-        and Path(path).name not in GENERATED_PARTS
+        and parts[-1] not in GENERATED_PARTS
     )
 
 
-def production_panic_calls(source: str) -> int:
-    """Count unwrap, expect and panic! outside `#[cfg(test)]` items."""
-    return len(PANIC_CALL.findall(without_cfg_test(source)))
+# `#[cfg(test)]` or `#[cfg(all(test, ...))]`, on source already masked by `mask`.
+CFG_TEST = (
+    r"#\s*\[\s*cfg\s*\(\s*(?:test|all\s*\((?:[^()]|\([^()]*\))*?\btest\b"
+    r"(?:[^()]|\([^()]*\))*\))\s*\)\s*\]"
+)
+CFG_TEST_ATTRIBUTE = re.compile(CFG_TEST)
+MODULE_FILE = r"(?:pub(?:\s*\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;"
+TEST_MODULE_FILE = re.compile(CFG_TEST + r"(?:\s*#\s*\[[^\]]*\])*\s*" + MODULE_FILE)
+ANY_MODULE_FILE = re.compile(r"\b" + MODULE_FILE)
+
+
+def child_module_paths(path: str, name: str) -> tuple[str, str]:
+    parent = Path(path)
+    directory = parent.parent
+    if parent.name not in {"lib.rs", "main.rs", "mod.rs"}:
+        directory = directory / parent.stem
+    return ((directory / f"{name}.rs").as_posix(), (directory / name / "mod.rs").as_posix())
+
+
+def test_module_files(sources: dict[str, str]) -> set[str]:
+    """Files compiled only for tests: `#[cfg(test)] mod x;` and their submodules."""
+    pending = [
+        candidate
+        for path, source in sources.items()
+        for found in TEST_MODULE_FILE.finditer(mask(source)[0])
+        for candidate in child_module_paths(path, found.group(1))
+    ]
+    test_files: set[str] = set()
+    while pending:
+        path = pending.pop()
+        if path not in sources or path in test_files:
+            continue
+        test_files.add(path)
+        for found in ANY_MODULE_FILE.finditer(mask(sources[path])[0]):
+            pending.extend(child_module_paths(path, found.group(1)))
+    return test_files
+
+
+def engine_production_panics(sources: dict[str, str]) -> int:
+    """The one panic counter: unwrap, expect and panic! in engine production code.
+
+    `sources` maps repository paths to text. Crate `tests/` and `benches/`,
+    inline `#[cfg(test)]` items and test modules kept in their own files are
+    excluded.
+    """
+    production = {
+        path: source for path, source in sources.items() if is_engine_production_source(path)
+    }
+    excluded = test_module_files(production)
+    return sum(
+        len(PANIC_CALL.findall(without_cfg_test(source)))
+        for path, source in production.items()
+        if path not in excluded
+    )
 
 
 def without_cfg_test(source: str) -> str:
     clean, _ = mask(source)
     output = list(clean)
-    pattern = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
-    for found in list(pattern.finditer(clean)):
+    for found in list(CFG_TEST_ATTRIBUTE.finditer(clean)):
         opening = clean.find("{", found.end())
         if opening < 0:
+            continue
+        declaration = clean.find(";", found.end(), opening)
+        if declaration >= 0:
+            # `mod x;` or `use ...;`: a module file is handled by test_module_files.
             continue
         closing = matching_brace(clean, opening)
         if closing is None:
@@ -348,7 +405,8 @@ def metrics(tree: Tree) -> Metrics:
     manifests: set[str] = set()
     sql_sources: set[str] = set()
     functions: list[Function] = []
-    panic_calls = tests = ignored_tests = acceptances = gate_steps = sql_statements = 0
+    engine_sources: dict[str, str] = {}
+    tests = ignored_tests = acceptances = gate_steps = sql_statements = 0
     for path in tree.paths():
         try:
             source = tree.read(path)
@@ -364,7 +422,7 @@ def metrics(tree: Tree) -> Metrics:
                 if matches:
                     sql_sources.add(path)
                     sql_statements += matches
-            panic_calls += production_panic_calls(source)
+            engine_sources[path] = source
         generated = Path(path).name in GENERATED_PARTS or source.startswith("// Generated from ")
         if Path(path).suffix in SOURCE_SUFFIXES and not generated:
             functions.extend(source_functions(path, source))
@@ -378,7 +436,7 @@ def metrics(tree: Tree) -> Metrics:
         frozenset(manifests),
         frozenset(sql_sources),
         sql_statements,
-        panic_calls,
+        engine_production_panics(engine_sources),
         tuple(functions),
         tests,
         acceptances,

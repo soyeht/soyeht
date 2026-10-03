@@ -13,6 +13,8 @@ from gate_base import BASE_BRANCH, resolve_base
 from quality_core import (
     BASELINE_NAME,
     JUSTIFICATIONS_NAME,
+    PANIC_CEILING,
+    PANIC_KEY,
     QualityError,
     baseline_at,
     baseline_from_measurement,
@@ -59,6 +61,10 @@ def main() -> int:
             raise QualityError("quality baseline version differs from the scanner")
         changes = differences(expected, current)
         regressions = [c.message for c in changes if c.direction == "RELAXATION"]
+        if expected.get(PANIC_KEY) != PANIC_CEILING:
+            regressions.append(
+                f"{PANIC_KEY} is absolute and must stay {PANIC_CEILING} in {BASELINE_NAME}"
+            )
         regressions += [
             f"pane interior {problem}; keep it flat (paneShell is the only raised surface)"
             for problem in pane_interior_problems(root)

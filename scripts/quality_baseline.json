@@ -21,7 +21,7 @@
       "duplicated_lines": 1444
     }
   },
-  "engine_production_panics": 81,
+  "engine_production_panics": 0,
   "loose_literals": {
     "apps/ios/Sources/PhoneHome.swift": {
       "corner_radius": 1,

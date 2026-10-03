@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
 
-from hardening_gate import is_engine_production_source, production_panic_calls
+from hardening_gate import engine_production_panics as count_engine_panics
 
 
 JSCPD_VERSION = "4.3.0"
@@ -51,6 +51,8 @@ IGNORED_FILES = {"generated.rs", "Generated.swift"}
 BASELINE_NAME = "scripts/quality_baseline.json"
 JUSTIFICATIONS_NAME = "scripts/quality_baseline_justifications.json"
 PANIC_KEY = "engine_production_panics"
+# Absolute: production code returns errors; no baseline or reason can raise it.
+PANIC_CEILING = 0
 MEASUREMENT_VERSION = 3
 
 
@@ -219,12 +221,13 @@ def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str,
 
 
 def engine_production_panics(repo: Path) -> int:
-    """unwrap/expect/panic! in engine sources outside `#[cfg(test)]` items."""
-    total = 0
-    for path in source_files(repo, "engine", ".rs"):
-        if is_engine_production_source(path.relative_to(repo).as_posix()):
-            total += production_panic_calls(path.read_text(encoding="utf-8"))
-    return total
+    """unwrap/expect/panic! in engine production code; the ceiling is 0."""
+    return count_engine_panics(
+        {
+            path.relative_to(repo).as_posix(): path.read_text(encoding="utf-8")
+            for path in source_files(repo, "engine", ".rs")
+        }
+    )
 
 
 def machete_status(repo: Path, executable: str) -> str:
@@ -370,14 +373,14 @@ def differences(baseline: dict, actual: dict) -> list[Change]:
                 f"literal {path} {kind}: baseline {previous}, actual {current}",
                 "; use a policy, token, font source or limits",
             )
-    # A baseline written before the panic ratchet existed has nothing to compare.
-    if PANIC_KEY in baseline and PANIC_KEY in actual:
-        previous, current = baseline[PANIC_KEY], actual[PANIC_KEY]
+    # Absolute ceiling, whatever the older side recorded.
+    if PANIC_KEY in actual and actual[PANIC_KEY] > PANIC_CEILING:
         changes += compare(
             PANIC_KEY,
-            previous,
-            current,
-            f"engine production unwrap/expect/panic!: baseline {previous}, actual {current}",
+            PANIC_CEILING,
+            actual[PANIC_KEY],
+            f"engine production unwrap/expect/panic!: allowed {PANIC_CEILING}, "
+            f"actual {actual[PANIC_KEY]}",
             "; return an error instead",
         )
     return changes
@@ -414,6 +417,8 @@ def load_justifications(repo: Path) -> dict[str, dict]:
 
 def justification_for(change: Change, justifications: dict[str, dict]) -> str:
     """The written reason for raising this entry to its new value, or ""."""
+    if change.key == PANIC_KEY:
+        return ""  # absolute; no reason can raise it
     entry = justifications.get(change.key)
     if not isinstance(entry, dict) or entry.get("value") != change.current:
         return ""

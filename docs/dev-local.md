@@ -122,15 +122,18 @@ Enable the versioned fast pre-push hook with
 
 The measurements must match `scripts/quality_baseline.json` exactly. More
 clones or duplicated lines, a file growing past its cap, more loose literals in
-a file, or more `unwrap`/`expect`/`panic!` calls in `engine/*/src` (inline
-`#[cfg(test)]` items are skipped; test modules in separate files are counted)
-fail as regressions. An improvement also fails
-until the same PR lowers the baseline, so the gain cannot be spent later:
+a file fail as regressions. Engine production code may contain no
+`unwrap`/`expect`/`panic!` calls at all: `engine_production_panics` is fixed
+at 0, and no reason can raise it. Crate `tests/` and `benches/`, inline
+`#[cfg(test)]`/`#[cfg(all(test, ...))]` items, and modules declared
+`#[cfg(test)] mod x;` (with their submodules) are test code and are not counted.
+An improvement also fails until the same PR lowers the baseline, so the gain
+cannot be spent later:
 `uv run python scripts/check_quality.py --print-baseline > scripts/quality_baseline.json`.
 Existing files above 800 lines have individual caps equal to their measured
 lines; new files above 800 lines fail.
 
-Raising any baseline entry above its value at the merge-base with `origin/main`
+Raising any other baseline entry above its value at the merge-base with `origin/main`
 is a relaxation. Each one needs a written reason in
 `scripts/quality_baseline_justifications.json`, keyed as the failure message
 prints it, for the exact new value:
