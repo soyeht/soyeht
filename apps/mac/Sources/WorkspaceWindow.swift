@@ -311,8 +311,8 @@ struct WorkspaceWindow: View {
       railOpen: navigation.appBarOpen)
     let horizontalInset = policy.horizontalInset(windowWidth: windowSize.width)
     let rowWidth = max(0, windowSize.width - 2 * horizontalInset)
-    let railOverlays = policy.railOverlays(windowWidth: windowSize.width)
-    let contentOffset = navigation.appBarOpen && !railOverlays ? policy.railWidth : 0
+    let placement = policy.horizontalPlacement(
+      windowWidth: windowSize.width, railOpen: navigation.appBarOpen)
 
     return VStack(spacing: CGFloat(policy.paneVerticalInset)) {
       WorkspaceTopBar(
@@ -325,10 +325,12 @@ struct WorkspaceWindow: View {
           viewportSize: CGSize(width: paneViewport.width, height: paneViewport.height)
         )
         .frame(width: paneViewport.width, height: paneViewport.height)
-        .offset(x: contentOffset)
+        .offset(x: placement.paneLeading - horizontalInset)
         if navigation.appBarOpen {
           appRail
-            .frame(width: policy.railWidth, height: paneViewport.height)
+            .frame(width: MacPaneLayoutMetrics.railWidth, height: paneViewport.height)
+            .background(placement.railOverlays ? MacTheme.canvas : Color.clear)  // halo shows
+            .offset(x: placement.railLeading - horizontalInset)
             .transition(.move(edge: .leading).combined(with: .opacity))
             .zIndex(30)
         }
@@ -1640,9 +1642,12 @@ private struct PaneLayoutSplitSurface: View {
   var body: some View {
     if let geometry = plan.nodes[path] {
       ScrollViewReader { proxy in
-        ScrollView(
-          split.axis == .horizontal ? .horizontal : .vertical,
-          showsIndicators: geometry.overflowAxes.contains(split.axis)
+        PaneLayoutContainer(
+          overflowAxes: geometry.overflowAxes.contains(split.axis)
+            ? (split.axis == .horizontal ? .horizontal : .vertical) : [],
+          size: CGSize(width: geometry.frame.size.width, height: geometry.frame.size.height),
+          contentSize: CGSize(
+            width: geometry.contentSize.width, height: geometry.contentSize.height)
         ) {
           ZStack(alignment: .topLeading) {
             ForEach(children) { child in
@@ -1688,13 +1693,7 @@ private struct PaneLayoutSplitSurface: View {
               }
             }
           }
-          .frame(
-            width: geometry.contentSize.width, height: geometry.contentSize.height,
-            alignment: .topLeading)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollDisabled(!geometry.overflowAxes.contains(split.axis))
-        .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
         .onAppear { scrollSelectedPane(using: proxy) }
         .onChange(of: client.selectedPaneId) { _, _ in scrollSelectedPane(using: proxy) }
       }
@@ -2061,7 +2060,7 @@ private struct PaneCard: View {
           paneBody
         }
         .padding(PaneLayoutContentMetrics.paneCardInset)
-        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+        .paneShell()
       }
     }
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
@@ -2102,11 +2101,11 @@ private struct PaneCard: View {
     .sheet(isPresented: $showingCaptureDeletion) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x18) {
         Text("Keep the captured experiment data?")
-          .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .semibold))
+          .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .semibold))
         Text(
           "Recording has stopped. Delete removes only this pane's recorded segments. Export files remain at \(experimentExportsPath)."
         )
-        .font(MacTheme.chrome(MacTheme.TypeScale.control))
+        .font(MacTheme.ui(MacTheme.TypeScale.control))
         .foregroundStyle(MacTheme.secondary)
         HStack {
           Button("Keep data") {
@@ -2150,11 +2149,12 @@ private struct PaneCard: View {
       hasSummary: pane.mode == .agent && agentSummary != nil,
       hasStatus: pane.mode == .agent, hasHarnessControl: headerControls.harness != nil)
     return headerContent(plan: plan)
-      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+      .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .medium))
       .foregroundStyle(MacTheme.secondary)
       .padding(.horizontal, MacTheme.Space.x12)
       .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
-      .background(tint, in: Capsule())
+      .contentShape(Rectangle())
+      .paneInteriorSeparator(MacTheme.border)
       .paneHeaderDrag(dragConfiguration)
   }
 
@@ -2165,7 +2165,8 @@ private struct PaneCard: View {
           width: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth,
           height: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth)
       Text(pane.name)
-        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.body, weight: .heavy))
+        .foregroundStyle(MacTheme.ink)
         .lineLimit(1).truncationMode(.tail).layoutPriority(3)
         .help(pane.name)
       if companionLinked {
@@ -2363,7 +2364,7 @@ private struct PaneCard: View {
             Image(systemName: "list.bullet.clipboard").foregroundStyle(MacTheme.accent)
             Text(task.taskId).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
               .foregroundStyle(MacTheme.muted)
-            Text(task.title).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            Text(task.title).font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
               .lineLimit(1)
             Spacer()
             if let branch = task.worktree?.branch {
@@ -2375,7 +2376,7 @@ private struct PaneCard: View {
           }
           .padding(.horizontal, MacTheme.Space.x12)
           .frame(height: PaneLayoutContentMetrics.agentTaskHeight)
-          .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
+          .paneCard()
         }
         AgentConversationView(
           client: client, paneId: pane.paneId, isVisible: isVisible,
@@ -2389,7 +2390,7 @@ private struct PaneCard: View {
       VStack(spacing: 0) {
         if let notice = TerminalStatePresentation.notice(for: pane.state) {
           Label(notice.text, systemImage: notice.systemImage)
-            .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .semibold))
             .foregroundStyle(terminalNoticeColor(notice))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, MacTheme.Space.x10)
@@ -2403,7 +2404,7 @@ private struct PaneCard: View {
             terminalKeyboardInputEnabled && client.selectedPaneId == pane.paneId)
         if let gap = client.gapText(for: pane.paneId) {
           Label(gap, systemImage: TerminalStatePresentation.recordedGap.systemImage)
-            .font(MacTheme.chrome(MacTheme.TypeScale.control))
+            .font(MacTheme.ui(MacTheme.TypeScale.control))
             .foregroundStyle(terminalNoticeColor(TerminalStatePresentation.recordedGap))
             .padding(MacTheme.Space.x10)
         }
@@ -2431,7 +2432,7 @@ private struct PaneCard: View {
   private func terminalNoticeBackground(_ notice: TerminalNotice) -> Color {
     switch notice.severity {
     case .neutral: MacTheme.face
-    case .warning: MacTheme.warning.opacity(0.12)
+    case .warning: MacTheme.well
     }
   }
 
@@ -2518,7 +2519,7 @@ private struct NewPaneSheet: View {
         }
         .help("Close new pane")
       }
-      .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
+      .font(MacTheme.ui(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
       .padding(.horizontal, MacTheme.Space.x12)
       .frame(height: PaneLayoutContentMetrics.newPaneHeaderHeight)
       .background(MacTheme.well, in: Capsule())
@@ -2526,7 +2527,7 @@ private struct NewPaneSheet: View {
       ScrollView(.vertical, showsIndicators: true) {
         VStack(spacing: PaneLayoutContentMetrics.newPaneSectionSpacing) {
           Text("What do you want to do?")
-            .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+            .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .bold))
             .frame(height: PaneLayoutContentMetrics.newPaneHeadingHeight)
           VStack(spacing: 0) {
             if mode == .agent {
@@ -2534,7 +2535,7 @@ private struct NewPaneSheet: View {
                 TextField("", text: $prompt, axis: .vertical)
                   .textFieldStyle(.plain)
                   .lineLimit(1...4)
-                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .font(MacTheme.ui(MacTheme.TypeScale.body))
                   .foregroundStyle(MacTheme.ink)
                   .focused($promptFocused)
                   .padding(.trailing, 54)
@@ -2542,7 +2543,7 @@ private struct NewPaneSheet: View {
                   .accessibilityHint("Type the first message for the new agent")
                 if prompt.isEmpty {
                   Text("Ask anything. Choose a directory and an agent below.")
-                    .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                    .font(MacTheme.ui(MacTheme.TypeScale.body))
                     .foregroundStyle(MacTheme.muted)
                     .allowsHitTesting(false)
                 }
@@ -2551,7 +2552,7 @@ private struct NewPaneSheet: View {
                   Button("⌘⇧C") { promptFocused = true }
                     .buttonStyle(.plain)
                     .keyboardShortcut("c", modifiers: [.command, .shift])
-                    .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+                    .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
                     .foregroundStyle(MacTheme.muted)
                     .accessibilityLabel("Focus new agent message")
                 }
@@ -2561,7 +2562,7 @@ private struct NewPaneSheet: View {
             } else {
               HStack(alignment: .top) {
                 Text("Open a terminal in the directory selected below.")
-                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .font(MacTheme.ui(MacTheme.TypeScale.body))
                   .foregroundStyle(MacTheme.muted)
                 Spacer()
               }
@@ -2578,11 +2579,11 @@ private struct NewPaneSheet: View {
                   HStack(spacing: MacTheme.Space.x6) {
                     Image(systemName: "cpu")
                     Text(selectedAgentLabel)
-                      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                      .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
                     if !effort.isEmpty {
                       Text("·").foregroundStyle(MacTheme.muted)
                       Text(effort.capitalized)
-                        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+                        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
                         .foregroundStyle(MacTheme.secondary)
                     }
                     Image(systemName: "chevron.down").font(.system(size: 10))
@@ -2593,7 +2594,7 @@ private struct NewPaneSheet: View {
               } else {
                 Button(action: create) {
                   Text("Terminal")
-                    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                    .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
                 }
                 .buttonStyle(.plain)
                 .disabled(directory == nil || submitting)
@@ -2601,10 +2602,9 @@ private struct NewPaneSheet: View {
               }
               Spacer()
               Button(action: create) {
-                Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold))
-                  .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
-                  .neoAccent(radius: MacTheme.Radius.pill)
+                PaneSendButtonLabel.mac
               }
+              .buttonStyle(.plain)
               .disabled(
                 directory == nil || (mode == .agent && selectedHarness?.available != true)
                   || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
@@ -2615,7 +2615,7 @@ private struct NewPaneSheet: View {
           .padding(EdgeInsets(top: 14, leading: 16, bottom: 12, trailing: 16))
           .frame(maxWidth: .infinity)
           .frame(height: PaneLayoutContentMetrics.newPaneFormHeight)
-          .neoWell(radius: MacTheme.Radius.control)
+          .paneCard(radius: PaneInteriorMetrics.composerRadius)
 
           metadata
             .frame(height: PaneLayoutContentMetrics.newPaneMetadataHeight)
@@ -2635,7 +2635,7 @@ private struct NewPaneSheet: View {
       .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
     }
     .padding(PaneLayoutContentMetrics.paneCardInset)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .paneShell()
     .onAppear {
       client.refreshHarnesses(rescan: true)
       selectFirstHarness()
@@ -2657,16 +2657,16 @@ private struct NewPaneSheet: View {
   @ViewBuilder private func modeSwitch(horizontal: Bool) -> some View {
     let content = Group {
       Text(mode == .agent ? "Prefer the command line?" : "Prefer a structured agent?")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
         .foregroundStyle(MacTheme.muted)
       Button(action: toggleMode) {
         Label(
           mode == .agent ? "Open a terminal" : "Open an agent",
           systemImage: mode == .agent ? "terminal" : "cpu")
       }
-      .buttonStyle(NeoPillButtonStyle())
+      .buttonStyle(.paneSecondary)
       Text("⌘⇧Enter")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
         .foregroundStyle(MacTheme.muted)
     }
     if horizontal {
@@ -2710,7 +2710,7 @@ private struct NewPaneSheet: View {
         }.menuStyle(.borderlessButton).fixedSize()
       }
     }
-    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+    .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .semibold))
     .foregroundStyle(MacTheme.secondary)
     .frame(maxWidth: .infinity)
   }
@@ -2805,9 +2805,9 @@ struct AgentHarnessSwitchPicker: View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
         Text(HarnessSwitchModel.title)
-          .font(MacTheme.chrome(MacTheme.TypeScale.body, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.body, weight: .bold))
         Text(HarnessSwitchModel.handoverExplanation)
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.muted)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -2818,10 +2818,10 @@ struct AgentHarnessSwitchPicker: View {
         catalogue: catalogue, effortOption: effortOption, excludingHarness: currentHarness)
       Button(action: switchHarness) {
         Text(actionLabel)
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
           .frame(maxWidth: .infinity)
       }
-      .buttonStyle(NeoPillButtonStyle(accent: true))
+      .buttonStyle(.panePrimary)
       .disabled(selectedHarness?.available != true || submitting)
       .padding(.horizontal, MacTheme.Space.x14)
       .padding(.bottom, MacTheme.Space.x14)

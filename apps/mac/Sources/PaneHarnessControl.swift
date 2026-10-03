@@ -20,18 +20,18 @@ struct PaneHarnessControl: View {
           ProgressView().controlSize(.mini)
         }
         Text(control.title)
-          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+          .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
           .foregroundStyle(MacTheme.ink)
           .lineLimit(1).truncationMode(.tail)
         Image(systemName: HarnessSwitchControl.symbol)
           .imageScale(.small)
-          .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .bold))
       }
       .padding(.horizontal, MacTheme.Space.x8)
       .frame(
         height: CGFloat(PaneLayoutContentMetrics.genericPaneHeaderHeight) - MacTheme.Space.x6
       )
-      .background(MacTheme.well, in: Capsule())
+      .paneWell(radius: MacTheme.Radius.pill)
       .contentShape(Capsule())
     }
     .buttonStyle(.plain)

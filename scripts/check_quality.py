@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 
+from check_pane_interior import scan as pane_interior_problems
 from quality_core import (
     QualityError,
     baseline_from_measurement,
@@ -44,6 +45,10 @@ def main() -> int:
             raise QualityError("quality baseline version differs from the scanner")
         changes = differences(expected, current)
         regressions = [text for direction, text in changes if direction == "RELAXATION"]
+        regressions += [
+            f"pane interior {problem}; keep it flat (paneShell is the only raised surface)"
+            for problem in pane_interior_problems(root)
+        ]
         improvements = [text for direction, text in changes if direction == "IMPROVEMENT"]
         for explanation in regressions:
             print(f"quality: REGRESSION: {explanation}", file=sys.stderr)

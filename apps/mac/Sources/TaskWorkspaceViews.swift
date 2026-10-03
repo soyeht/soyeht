@@ -42,7 +42,7 @@ struct TaskWorkspaceView: View {
     }
     .padding(MacTheme.Space.x10)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .paneShell()
     .padding(EdgeInsets(top: 8, leading: 6, bottom: 6, trailing: 6))
     .overlay(alignment: .top) {
       if showNewTask {

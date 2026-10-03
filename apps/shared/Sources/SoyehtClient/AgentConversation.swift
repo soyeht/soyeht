@@ -58,54 +58,8 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
   }
 }
 
-private struct AgentRaised: ViewModifier {
-  let style: AgentConversationStyle
-  var radius: CGFloat = 14
-  var offset: CGFloat = 3
-  var blur: CGFloat = 6
-  func body(content: Content) -> some View {
-    if style.canonicalLayout {
-      content.background(style.face, in: RoundedRectangle(cornerRadius: radius))
-        .compositingGroup()
-        .shadow(color: style.shadowLight, radius: blur / 2, x: -offset, y: -offset)
-        .shadow(color: style.shadowDark, radius: blur / 2, x: offset, y: offset)
-    } else {
-      content.background(style.face, in: RoundedRectangle(cornerRadius: radius))
-        .shadow(color: style.shadowLight.opacity(0.78), radius: 5, x: -3, y: -3)
-        .shadow(color: style.shadowDark.opacity(0.42), radius: 5, x: 3, y: 3)
-    }
-  }
-}
-
-private struct AgentWell: ViewModifier {
-  let style: AgentConversationStyle
-  var radius: CGFloat = 12
-  func body(content: Content) -> some View {
-    if style.canonicalLayout {
-      content.background {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
-          .fill(
-            style.well
-              .shadow(.inner(color: style.wellShadow, radius: 3, x: 3, y: 3))
-              .shadow(.inner(color: style.wellRim, radius: 3, x: -3, y: -3))
-          )
-          .overlay {
-            if let lip = style.wellLip {
-              RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(lip, lineWidth: 1)
-            }
-          }
-      }
-    } else {
-      content.background(style.face, in: RoundedRectangle(cornerRadius: radius))
-        .shadow(color: style.shadowLight.opacity(0.78), radius: 5, x: -3, y: -3)
-        .shadow(color: style.shadowDark.opacity(0.42), radius: 5, x: 3, y: 3)
-    }
-  }
-}
-
-/// `ControlsAccessory` sits next to the permission-mode menu; a host app uses it for
-/// pane controls it owns, such as the iPhone and iPad harness menu.
+/// `ControlsAccessory` sits next to the permission-mode menu in the composer; a host app uses
+/// it for pane controls it owns, such as the iPhone and iPad harness menu.
 @MainActor public struct AgentConversationView<ControlsAccessory: View>: View {
   @Bindable private var client: EngineClient
   private let paneId: String
@@ -141,28 +95,33 @@ private struct AgentWell: ViewModifier {
     guard let state = pane?.state else { return false }
     return [.working, .waiting_for_you, .cancelling, .no_signal].contains(state)
   }
+  private var inset: CGFloat {
+    style.canonicalLayout ? PaneInteriorMetrics.cardPadding : PaneInteriorMetrics.phoneInset
+  }
 
   public var body: some View {
     VStack(spacing: 0) {
-      controls
-      Divider().opacity(0.35)
       transcript
       if let silentSince = pane?.agent?.silentSince {
         noOutput(since: silentSince, state: pane?.state)
       }
       if !view.authMethods.isEmpty { authentication }
       if let permission = view.permission {
-        PermissionCard(client: client, request: permission, style: style)
+        AgentPermissionCard(client: client, request: permission, style: style)
+          .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
       }
       if let elicitation = view.elicitation {
-        ElicitationCard(client: client, request: elicitation, style: style).id(
-          elicitation.requestId)
+        AgentElicitationCard(client: client, request: elicitation, style: style)
+          .id(elicitation.requestId)
+          .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
       }
       if !view.queue.isEmpty || view.queuePaused { queue }
       if let draft = client.agentWebDrafts[paneId] {
-        WebElementAttachmentCard(
+        AgentWebElementAttachmentCard(
           draft: draft, style: style,
-          remove: { client.discardWebAttachmentDraft(paneId) })
+          remove: { client.discardWebAttachmentDraft(paneId) }
+        )
+        .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
       }
       composer
       if showsConfiguration, let options = pane?.agent?.options.filter({ !$0.isPermissionMode }),
@@ -171,7 +130,8 @@ private struct AgentWell: ViewModifier {
         configuration(options)
       }
     }
-    .background(style.canvas).foregroundStyle(style.ink)
+    .background(style.face).foregroundStyle(style.ink)
+    .overlayScrollersWithin()
     .task(id: prompt.isEmpty) {
       guard !prompt.isEmpty else { return }
       while !Task.isCancelled && !prompt.isEmpty {
@@ -184,45 +144,25 @@ private struct AgentWell: ViewModifier {
     }
   }
 
-  private var controls: some View {
-    HStack(spacing: 10) {
-      if let usage = contextUsage { ContextRing(used: usage.0, total: usage.1, style: style) }
-      if let agent = pane?.agent, let modes = AgentPermissionModes(agent: agent) {
-        AgentPermissionModeMenu(
-          modes: modes, enabled: agent.operation == nil && client.connected, style: style,
-          select: { client.setPermissionMode(paneId, to: $0) })
-      }
-      controlsAccessory
-      Spacer(minLength: 0)
-      if isWorking {
-        Button(role: .destructive) {
-          client.cancelAgent(paneId)
-        } label: {
-          Label("Cancel", systemImage: "stop.fill")
-        }.buttonStyle(.bordered).disabled(pane?.state == .cancelling)
-      }
-    }.font(style.controlFont).padding(.horizontal, style.canonicalLayout ? 14 : 16)
-      .padding(.vertical, style.canonicalLayout ? 8 : 10)
-  }
-
   private var transcript: some View {
     ScrollViewReader { proxy in
       ScrollView {
-        LazyVStack(spacing: 12) {
+        LazyVStack(spacing: PaneInteriorMetrics.stackSpacing) {
           if view.hasOlderMessages {
             Button("Load earlier messages") { client.loadOlderAgentMessages(paneId) }
-              .font(style.captionFont).buttonStyle(.bordered)
+              .buttonStyle(PanePillButtonStyle(.secondary, style: style))
           }
           if let notice = view.notice {
             Label(notice, systemImage: "exclamationmark.triangle")
-              .font(style.captionFont).foregroundStyle(style.warning).padding(10)
+              .font(style.captionFont).foregroundStyle(style.warning)
+              .frame(maxWidth: .infinity, alignment: .leading)
           }
           let entries = AgentTranscriptGrouping.entries(view.messages)
           ForEach(entries) { entry in transcriptEntry(entry).id(entry.id) }
           AgentSubagentWaitingStatus(entries: entries, style: style)
           Color.clear.frame(height: 1).id(AgentConversationFollow.bottomAnchor)
-        }.padding(.horizontal, style.canonicalLayout ? 14 : 16)
-          .padding(.vertical, style.canonicalLayout ? 12 : 16)
+        }.padding(.horizontal, inset)
+          .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
       }
       .onChange(of: view.messages.count) { _, _ in
         guard follow.messagesChanged(isVisible: isVisible) else { return }
@@ -245,7 +185,8 @@ private struct AgentWell: ViewModifier {
   private func transcriptEntry(_ entry: AgentTranscriptEntry) -> AnyView {
     switch entry {
     case .message(let message):
-      AnyView(TranscriptRow(message: message, workspaceId: pane?.workspaceId ?? "", style: style))
+      AnyView(
+        AgentTranscriptRow(message: message, workspaceId: pane?.workspaceId ?? "", style: style))
     case .subagent(let group):
       AnyView(
         AgentSubagentRow(
@@ -260,7 +201,7 @@ private struct AgentWell: ViewModifier {
   }
 
   private var queue: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
       HStack {
         let agentMessageCount = view.queue.filter { $0.agentMessage != nil }.count
         let countLabel =
@@ -274,11 +215,12 @@ private struct AgentWell: ViewModifier {
             ? "pause.circle" : "text.line.last.and.arrowtriangle.forward")
         Spacer()
         if view.queuePaused {
-          Button("Resume") { client.resumeAgentQueue(paneId) }.buttonStyle(.borderedProminent)
+          Button("Resume") { client.resumeAgentQueue(paneId) }
+            .buttonStyle(PanePillButtonStyle(.primary, style: style))
         }
       }.font(style.captionFont.weight(.semibold))
       ForEach(view.queue, id: \.promptId) { item in
-        HStack(spacing: 8) {
+        HStack(spacing: PaneInteriorMetrics.compactSpacing) {
           VStack(alignment: .leading, spacing: 2) {
             if let sender = item.agentMessage {
               Text("From \(sender.displayName)")
@@ -291,14 +233,15 @@ private struct AgentWell: ViewModifier {
           Button(role: .destructive) {
             client.removeQueuedPrompt(paneId, promptId: item.promptId)
           } label: {
-            Image(systemName: "xmark")
+            Image(systemName: "xmark").foregroundStyle(style.secondary)
           }
           .buttonStyle(.plain).accessibilityLabel("Remove queued message")
         }
       }
-    }.padding(12).modifier(AgentRaised(style: style, radius: 12))
-      .padding(.horizontal, style.canonicalLayout ? 14 : 16)
-      .padding(.bottom, 10)
+    }
+    .padding(PaneInteriorMetrics.cardPadding)
+    .paneInteriorFill(style.canvas)
+    .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
   }
 
   private func noOutput(since: String, state: PaneState?) -> some View {
@@ -306,7 +249,7 @@ private struct AgentWell: ViewModifier {
       let presentation = AgentSilencePresentation(
         silentSince: since, paneState: state, now: timeline.date)
       let elapsed = presentation.elapsed
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
         Label(
           presentation.escalated
             ? elapsed.map { "No output from the agent for \($0)" }
@@ -328,19 +271,19 @@ private struct AgentWell: ViewModifier {
         HStack {
           Spacer()
           Button("Cancel turn", role: .destructive) { client.cancelAgent(paneId) }
-            .buttonStyle(.bordered)
+            .buttonStyle(PanePillButtonStyle(.destructive, style: style))
         }
       }
-      .padding(12)
-      .modifier(AgentRaised(style: style, radius: 12))
-      .padding(.horizontal, style.canonicalLayout ? 14 : 16)
-      .padding(.bottom, 10)
+      .padding(PaneInteriorMetrics.cardPadding)
+      .paneInteriorFill(style.canvas)
+      .padding(.horizontal, inset)
+      .padding(.bottom, PaneInteriorMetrics.rowSpacing)
       .accessibilityIdentifier("agent-no-output")
     }
   }
 
   private var authentication: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: PaneInteriorMetrics.rowSpacing) {
       Label("Sign in to continue", systemImage: "person.badge.key")
         .font(style.headingFont).foregroundStyle(style.warning)
       #if os(macOS)
@@ -362,17 +305,19 @@ private struct AgentWell: ViewModifier {
               Spacer()
               Image(systemName: method.terminal ? "terminal" : "arrow.right.circle")
             }
-          }.buttonStyle(.bordered)
+            .padding(PaneInteriorMetrics.rowSpacing)
+            .paneInteriorFill(style.well, radius: PaneInteriorMetrics.wellRadius)
+            .contentShape(Rectangle())
+          }.buttonStyle(.plain)
         }
       #else
         Text("Finish sign-in on the Mac, then return here.")
           .font(style.captionFont).foregroundStyle(style.secondary)
       #endif
-    }.padding(14)
-      .modifier(
-        AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
-      )
-      .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
+    }
+    .padding(PaneInteriorMetrics.cardPadding)
+    .paneInteriorFill(style.canvas)
+    .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
   }
 
   @ViewBuilder private var unavailableSteer: some View {
@@ -385,31 +330,64 @@ private struct AgentWell: ViewModifier {
     #endif
   }
 
+  /// The approved composer: one flat card holding the message field above a row with the
+  /// context ring, the "effort · mode ▾" chip, host controls and the send button.
   private var composer: some View {
-    HStack(alignment: .bottom, spacing: 10) {
-      TextField("Message the agent", text: $prompt, axis: .vertical)
-        .lineLimit(1...6).textFieldStyle(.plain).focused($promptFocused)
+    VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
+      // AppKit draws a plain field's own placeholder in the system color, so the placeholder
+      // is drawn here in the palette's secondary ink instead.
+      TextField("", text: $prompt, axis: .vertical)
+        .overlay(alignment: .topLeading) {
+          if prompt.isEmpty {
+            Text("Message the agent").foregroundStyle(style.secondary)
+              .allowsHitTesting(false).accessibilityHidden(true)
+          }
+        }
+        .accessibilityLabel("Message the agent")
+        .lineLimit(1...6).textFieldStyle(.plain).font(style.bodyFont)
+        .foregroundStyle(style.ink).focused($promptFocused)
         .onSubmit { submit() }
         .onKeyPress(.tab, phases: .down) { press in
           guard press.modifiers.contains(.shift) else { return .ignored }
           client.cyclePermissionMode(paneId)
           return .handled
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
-      sendButton
-    }.padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.vertical, 12)
+      HStack(spacing: PaneInteriorMetrics.compactSpacing) {
+        if let usage = contextUsage {
+          AgentContextRing(used: usage.0, total: usage.1, style: style)
+        }
+        if let agent = pane?.agent, let modes = AgentPermissionModes(agent: agent) {
+          AgentPermissionModeMenu(
+            modes: modes, effort: AgentEffortLabel.text(agent.options),
+            enabled: agent.operation == nil && client.connected, style: style,
+            select: { client.setPermissionMode(paneId, to: $0) })
+        }
+        controlsAccessory
+        Spacer(minLength: 0)
+        if isWorking {
+          Button(role: .destructive) {
+            client.cancelAgent(paneId)
+          } label: {
+            Label("Cancel", systemImage: "stop.fill")
+          }
+          .buttonStyle(PanePillButtonStyle(.destructive, style: style))
+          .disabled(pane?.state == .cancelling)
+        }
+        sendButton
+      }
+      .font(style.controlFont)
+    }
+    .padding(.horizontal, PaneInteriorMetrics.cardPadding)
+    .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
+    .paneInteriorFill(style.canvas, radius: PaneInteriorMetrics.composerRadius)
+    .padding(.horizontal, inset).padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
   }
 
   /// On a paired device Return adds a line to the multi-line prompt, so Command-Return
   /// sends from a hardware keyboard. The Mac keeps Return to send.
   @ViewBuilder private var sendButton: some View {
     let button = Button(action: submit) {
-      Image(systemName: "arrow.up").font(.headline).foregroundStyle(.white)
-        .frame(
-          width: style.canonicalLayout ? 30 : 36,
-          height: style.canonicalLayout ? 30 : 36
-        ).background(style.accent, in: Circle())
+      PaneSendButtonLabel(ink: style.ink, face: style.face, font: style.controlFont.weight(.bold))
     }.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       .accessibilityLabel("Send message")
     #if os(iOS)
@@ -420,7 +398,7 @@ private struct AgentWell: ViewModifier {
   }
 
   private func configuration(_ options: [ConfigOption]) -> some View {
-    HStack(spacing: 8) {
+    HStack(spacing: PaneInteriorMetrics.compactSpacing) {
       ForEach(options, id: \.id) { option in
         if option.type == .select {
           Menu {
@@ -444,8 +422,8 @@ private struct AgentWell: ViewModifier {
       }
       Spacer()
       if pane?.agent?.operation != nil { ProgressView().controlSize(.small) }
-    }.font(style.captionFont).padding(.horizontal, style.canonicalLayout ? 14 : 16)
-      .padding(.bottom, 12)
+    }.font(style.captionFont).tint(style.ink).padding(.horizontal, inset)
+      .padding(.bottom, PaneInteriorMetrics.cardVerticalPadding)
   }
 
   private var contextUsage: (Double, Double)? {
@@ -481,274 +459,12 @@ private struct AgentWell: ViewModifier {
   }
 }
 
-private struct WebElementAttachmentCard: View {
-  let draft: AgentWebAttachmentDraft
-  let style: AgentConversationStyle
-  let remove: () -> Void
-
-  private var element: WebPickedElement { draft.package.elements[0] }
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 8) {
-        Image(systemName: "cursorarrow.click.2").foregroundStyle(style.accent)
-        Text(title).font(style.captionFont.weight(.bold))
-        Spacer()
-        Button(action: remove) { Image(systemName: "xmark").foregroundStyle(style.muted) }
-          .buttonStyle(.plain).accessibilityLabel("Remove selected page elements")
-      }
-      field("page", draft.package.url)
-      field("selector", element.selector)
-      if let component = element.component {
-        field("source", source(component), color: style.success)
-      }
-      field("html", element.outerHtml)
-      field("styles", styleSummary(element.styles))
-      field(
-        "accessibility",
-        "role \(element.accessibility.role) · name \(element.accessibility.name) · "
-          + element.accessibility.state)
-      field(
-        "position",
-        "x \(element.viewportRect.x) · y \(element.viewportRect.y) · viewport "
-          + "\(element.viewportRect.width)×\(element.viewportRect.height)")
-      imagePreview
-      if draft.package.elements.count > 1 {
-        Text("\(draft.package.elements.count) elements selected")
-          .font(style.captionFont).foregroundStyle(style.secondary)
-      }
-    }
-    .padding(14).modifier(AgentRaised(style: style, radius: 20, offset: 5, blur: 10))
-    .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
-  }
-
-  private var title: String {
-    "Page element attached to this request"
-  }
-
-  private func field(_ label: String, _ value: String, color: Color? = nil) -> some View {
-    HStack(alignment: .top, spacing: 10) {
-      Text(label).font(style.captionFont).foregroundStyle(style.muted).frame(
-        width: 72, alignment: .leading)
-      Text(value).font(style.monoSmallFont).foregroundStyle(color ?? style.ink).lineLimit(2)
-        .textSelection(.enabled)
-    }
-  }
-
-  @ViewBuilder private var imagePreview: some View {
-    #if os(macOS)
-      if let first = draft.images.first, let image = NSImage(data: first.bytes) {
-        Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 96)
-          .background(style.well, in: RoundedRectangle(cornerRadius: 8))
-      }
-    #else
-      EmptyView()
-    #endif
-  }
-
-  private func source(_ component: WebComponentSource) -> String {
-    let location =
-      component.sourceFile.map { file in
-        " · \(file)\(component.line.map { ":\($0)" } ?? "")"
-      } ?? ""
-    return "\(component.component) · \(component.framework)\(location)"
-  }
-
-  private func styleSummary(_ value: WebComputedStyles) -> String {
-    "\(value.color) on \(value.background) · \(value.font) · radius \(value.borderRadius)"
-  }
-}
-
-private struct ContextRing: View {
-  let used: Double
-  let total: Double
-  let style: AgentConversationStyle
-  private var fraction: Double { used / total }
-  private var color: Color {
-    fraction > 0.9 ? style.danger : fraction > 0.75 ? style.warning : style.accent
-  }
-  var body: some View {
-    Menu {
-      Text("\(Int(used)) of \(Int(total)) context tokens")
-    } label: {
-      ZStack {
-        Circle().stroke(style.shadowDark.opacity(0.35), lineWidth: 3)
-        Circle().trim(from: 0, to: fraction).stroke(
-          color, style: StrokeStyle(lineWidth: 3, lineCap: .round)
-        )
-        .rotationEffect(.degrees(-90))
-      }.frame(width: 22, height: 22)
-    }.accessibilityLabel("Context use \(Int(fraction * 100)) percent")
-  }
-}
-
-private struct TranscriptRow: View {
-  let message: TranscriptMessage
-  let workspaceId: String
-  let style: AgentConversationStyle
-  @State private var showsThought = false
-  var body: some View {
-    Group {
-      switch message.kind {
-      case .handover:
-        Label {
-          Text("Conversation continued with \(message.text)")
-        } icon: {
-          Image(systemName: "arrow.triangle.2.circlepath")
-        }
-        .font(style.captionFont).foregroundStyle(style.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-      case .thought:
-        DisclosureGroup("Thought", isExpanded: $showsThought) {
-          FilePathText(message.text, workspaceId: workspaceId)
-            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 6)
-        }.foregroundStyle(style.secondary)
-      case .tool:
-        if let tool = message.tool {
-          HStack(alignment: .top, spacing: 10) {
-            Image(
-              systemName: tool.status == .failed
-                ? "exclamationmark.triangle" : "wrench.and.screwdriver")
-            VStack(alignment: .leading, spacing: 4) {
-              Text(tool.title).fontWeight(.semibold)
-              Text(tool.status.rawValue.replacingOccurrences(of: "_", with: " "))
-                .font(style.captionFont)
-              ForEach(Array(tool.locations.enumerated()), id: \.offset) { _, location in
-                FilePathText(
-                  location.line.map { "\(location.path):\(UInt64($0) + 1)" } ?? location.path,
-                  workspaceId: workspaceId
-                )
-                .font(style.monoFont).textSelection(.enabled)
-              }
-            }
-            Spacer()
-          }.padding(style.canonicalLayout ? 10 : 11)
-            .modifier(
-              AgentRaised(
-                style: style, radius: style.canonicalLayout ? 10 : 11, offset: 2, blur: 4)
-            )
-        }
-      case .terminal:
-        if let output = message.terminal {
-          FilePathText(
-            Data(base64Encoded: output.bytes).map { String(decoding: $0, as: UTF8.self) } ?? "",
-            workspaceId: workspaceId
-          )
-          .font(style.monoFont).textSelection(.enabled).frame(
-            maxWidth: .infinity, alignment: .leading
-          )
-          .padding(style.canonicalLayout ? 10 : 11)
-          .background(
-            style.canonicalLayout ? style.well : Color.black.opacity(0.06),
-            in: RoundedRectangle(cornerRadius: 10))
-        }
-      case .plan:
-        VStack(alignment: .leading, spacing: 5) {
-          Label("Plan", systemImage: "list.bullet.clipboard").fontWeight(.semibold)
-          ForEach(Array((message.plan ?? []).enumerated()), id: \.offset) { _, entry in
-            Label(
-              entry.content,
-              systemImage: entry.status == .completed ? "checkmark.circle.fill" : "circle")
-          }
-        }.font(style.captionFont).frame(maxWidth: .infinity, alignment: .leading)
-      case .usage:
-        EmptyView()
-      default:
-        VStack(alignment: .leading, spacing: 4) {
-          if let sender = message.agentMessage {
-            Text(sender.displayName).font(style.captionFont).textCase(.uppercase)
-              .foregroundStyle(style.muted)
-          }
-          FilePathText(message.text, workspaceId: workspaceId)
-            .textSelection(.enabled)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(
-          message.role == .user
-            ? (style.canonicalLayout ? style.well : style.accent.opacity(0.15)) : style.face,
-          in: RoundedRectangle(cornerRadius: style.canonicalLayout ? 12 : 14)
-        )
-        .padding(.leading, message.role == .user ? 48 : 0)
-        .padding(.trailing, message.role == .user ? 0 : 48)
-      }
-    }.font(style.bodyFont)
-  }
-}
-
-private struct PermissionCard: View {
-  let client: EngineClient
-  let request: PermissionRequest
-  let style: AgentConversationStyle
-  var body: some View {
-    VStack(alignment: .leading, spacing: 9) {
-      Label(request.title, systemImage: "shield.lefthalf.filled.badge.checkmark")
-        .font(style.headingFont).foregroundStyle(style.warning)
-      if !request.detail.isEmpty {
-        Text(request.detail).font(style.bodyFont).foregroundStyle(style.secondary)
-          .textSelection(.enabled)
-      }
-      if let presentation = request.presentation {
-        PermissionPresentationView(presentation: presentation, style: style)
-      }
-      HStack {
-        ForEach(request.options, id: \.optionId) { option in
-          if option.kind == .allow_once {
-            Button(option.name) { client.answerPermission(request, optionId: option.optionId) }
-              .buttonStyle(.borderedProminent)
-          } else {
-            Button(option.name) { client.answerPermission(request, optionId: option.optionId) }
-              .buttonStyle(.bordered)
-          }
-        }
-      }
-    }.padding(14)
-      .modifier(
-        AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
-      )
-      .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
-  }
-}
-
-private struct ElicitationCard: View {
-  let client: EngineClient
-  let request: ElicitationRequest
-  let style: AgentConversationStyle
-  @State private var values: [String: String] = [:]
-  private var fields: [(String, String)] {
-    guard case .object(let schema) = request.schema,
-      case .object(let properties) = schema["properties"]
-    else { return [] }
-    return properties.keys.sorted().map { key in
-      (key, properties[key]?["title"].string ?? key)
-    }
-  }
-  var body: some View {
-    VStack(alignment: .leading, spacing: 9) {
-      Label(request.title, systemImage: "list.clipboard").font(style.headingFont)
-      ForEach(fields, id: \.0) { field in
-        TextField(
-          field.1,
-          text: Binding(
-            get: { values[field.0, default: ""] }, set: { values[field.0] = $0 })
-        )
-        .textFieldStyle(.roundedBorder)
-      }
-      HStack {
-        Button("Cancel", role: .cancel) {
-          client.answerElicitation(request, fields: nil, cancel: true)
-        }
-        Spacer()
-        Button("Submit") {
-          client.answerElicitation(
-            request, fields: .object(values.mapValues(JsonValue.string)), cancel: false)
-        }.buttonStyle(.borderedProminent).disabled(fields.isEmpty)
-      }
-    }.padding(14)
-      .modifier(
-        AgentRaised(style: style, radius: style.canonicalLayout ? 12 : 14, offset: 4, blur: 9)
-      )
-      .padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.bottom, 10)
+/// The reasoning effort the composer chip names before the permission mode ("High · …").
+enum AgentEffortLabel {
+  static func text(_ options: [ConfigOption]) -> String? {
+    guard let option = options.first(where: { ($0.category ?? $0.id) == "thought_level" }),
+      case .v0(let value) = option.currentValue
+    else { return nil }
+    return option.options.first { $0.value == value }?.name ?? value
   }
 }
