@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod error;
 mod mcp;
+mod skills;
 mod state;
 mod subagents;
 mod turns;
@@ -74,7 +75,8 @@ impl Runtime {
         );
         let directory = self.settings.directory.to_string_lossy();
         self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
-            "agentCapabilities":{"loadSession":self.settings.load!="unsupported"},
+            "agentCapabilities":{"loadSession":self.settings.load!="unsupported",
+                "sessionCapabilities":{"additionalDirectories":{}}},
             "testPadding":"x".repeat(self.settings.initialize_padding_bytes),
             "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--state-dir",directory,"--login"]}]}));
     }
@@ -91,18 +93,28 @@ impl Runtime {
             self.error(id, -32602, "mcpServers required");
             return;
         }
-        let servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
-        let session = Session::new(cwd.into(), servers, params.get("_meta").cloned());
-        let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
-            Ok(mcp) => mcp,
-            Err(_) => {
-                self.error(id, -32603, "Could not start session MCP server");
-                return;
-            }
+        let mut session = Session::new(cwd.into(), Vec::new(), None);
+        if !self.attach(&id, &mut session, params) {
+            return;
+        }
+        self.answer(id, session.response(&self.settings));
+        skills::advertise(self, &session);
+    }
+
+    /// Takes the request's MCP servers, metadata and additional directories,
+    /// starts the session's MCP client and registers the session. On failure
+    /// it answers the request with the error and returns false.
+    fn attach(&self, id: &Value, session: &mut Session, params: &Value) -> bool {
+        session.mcp_servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
+        session.session_meta = params.get("_meta").cloned();
+        session.additional_directories = skills::directories(params);
+        let Ok(mcp) = mcp::Client::from_servers(&session.mcp_servers) else {
+            self.error(id.clone(), -32603, "Could not start session MCP server");
+            return false;
         };
         if session.save(&self.settings).is_err() {
-            self.error(id, -32603, "Could not persist fake session");
-            return;
+            self.error(id.clone(), -32603, "Could not persist fake session");
+            return false;
         }
         self.sessions
             .lock()
@@ -114,7 +126,7 @@ impl Runtime {
                 .unwrap()
                 .insert(session.id.clone(), mcp);
         }
-        self.answer(id, session.response(&self.settings));
+        true
     }
 
     fn load_session(&self, id: Value, params: &Value) {
@@ -138,28 +150,8 @@ impl Runtime {
             Ok(mut session) => {
                 // Like real adapters, a reloaded session starts in the default mode.
                 session.values.insert("mode".into(), json!("ask"));
-                session.mcp_servers = params["mcpServers"].as_array().cloned().unwrap_or_default();
-                session.session_meta = params.get("_meta").cloned();
-                let mcp = match mcp::Client::from_servers(&session.mcp_servers) {
-                    Ok(mcp) => mcp,
-                    Err(_) => {
-                        self.error(id, -32603, "Could not start session MCP server");
-                        return;
-                    }
-                };
-                if session.save(&self.settings).is_err() {
-                    self.error(id, -32603, "Could not persist fake session");
+                if !self.attach(&id, &mut session, params) {
                     return;
-                }
-                self.sessions
-                    .lock()
-                    .unwrap()
-                    .insert(session.id.clone(), session.clone());
-                if let Some(mcp) = mcp {
-                    self.mcp_clients
-                        .lock()
-                        .unwrap()
-                        .insert(session.id.clone(), mcp);
                 }
                 for (index, (prompt, text)) in session.history.iter().enumerate() {
                     self.replay_user(&session.id, index, prompt);
@@ -179,6 +171,7 @@ impl Runtime {
                 let mut response = session.response(&self.settings);
                 response.as_object_mut().unwrap().remove("sessionId");
                 self.answer(id, response);
+                skills::advertise(self, &session);
             }
             Err(_) => self.error(id, -32002, "Session not found"),
         }

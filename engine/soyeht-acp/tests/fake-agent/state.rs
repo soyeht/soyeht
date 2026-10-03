@@ -118,6 +118,8 @@ pub struct Session {
     pub mcp_servers: Vec<Value>,
     #[serde(default)]
     pub session_meta: Option<Value>,
+    #[serde(default)]
+    pub additional_directories: Vec<String>,
 }
 impl Session {
     pub fn new(cwd: String, mcp_servers: Vec<Value>, session_meta: Option<Value>) -> Self {
@@ -127,6 +129,7 @@ impl Session {
             history: Vec::new(),
             mcp_servers,
             session_meta,
+            additional_directories: Vec::new(),
             values: BTreeMap::from([
                 ("model".into(), json!("model-a")),
                 ("effort".into(), json!("medium")),

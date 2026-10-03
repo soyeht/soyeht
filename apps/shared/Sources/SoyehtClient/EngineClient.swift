@@ -34,7 +34,7 @@ public final class EngineClient {
   public internal(set) var harnessLoadCount = 0
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
-  public private(set) var preferredHarnessId: String?
+  public internal(set) var preferredHarnessId: String?
   /// Preferred permission mode for new panes, per harness, as the harness names it.
   public internal(set) var harnessDefaultModes: [String: String] = [:]
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
@@ -44,6 +44,7 @@ public final class EngineClient {
   public internal(set) var attentionByWorkspace: [String: [AttentionItem]] = [:]
   public internal(set) var paneLoops: [String: LoopConfig] = [:]
   public internal(set) var usageReadings: [UsageReading] = []
+  public internal(set) var slashSources = SlashSources()
   public internal(set) var editorFiles: [String: EditorFileView] = [:]
   public internal(set) var editorNavigationTarget: EditorNavigationTarget?
   public internal(set) var editorWorkspace = EditorWorkspaceReplica()
@@ -561,6 +562,7 @@ public final class EngineClient {
     case .attentionChanged: try applyAttentionEvent(params)
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
     case .usageChanged: try applyUsageEvent(params)
+    case .skillsChanged, .paneCommandsChanged: try applySlashEvent(eventName, params)
     case .fileChangedOnDisk, .fileSaved, .fileConflict, .lspDiagnostics, .editorAgentCursor,
       .editorReviewRequested, .editorTabsUpdated, .projectEntryRenamed, .projectTreeChanged:
       try applyEditorEvent(eventName, params)
@@ -569,8 +571,7 @@ public final class EngineClient {
     case .settingsChanged:
       try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
-      .ptydReconnected, .ptydLost, .paneConfigChanging,
-      .paneConfigChanged:
+      .ptydReconnected, .ptydLost, .paneConfigChanging, .paneConfigChanged:
       break
     case .writingChanged: try applyWritingEvent(params)
     }
@@ -579,28 +580,6 @@ public final class EngineClient {
     let workspaceId = params["workspaceId"].string
     workspaces.removeAll { $0.workspaceId == workspaceId }
     if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
-  }
-  private func loadPreferredHarness() async throws {
-    let result = try await request(
-      "settings.get", .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
-    ).decoded(SettingsGetResult.self)
-    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
-  }
-
-  public func setPreferredHarness(_ harnessId: String) async throws {
-    let result = try await mutation(
-      "settings.set",
-      SettingsSetParams(
-        key: HarnessPickerModel.preferredHarnessKey, value: .string(harnessId),
-        idempotencyKey: UUID().uuidString)
-    ).decoded(SettingsSetResult.self)
-    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
-  }
-
-  func applySettingsChanged(_ event: SettingsChangedEvent) {
-    if applyDefaultPermissionModeChanged(event) { return }
-    guard event.key == HarnessPickerModel.preferredHarnessKey else { return }
-    preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
   }
   private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
     switch eventName {

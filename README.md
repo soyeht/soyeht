@@ -13,6 +13,7 @@ One agent is a chat. Five harnesses running side by side are an operations probl
 - **Orchestration over MCP.** Agents use MCP tools such as `list_agents` and `message_agent` to find each other, hand off work, and wait for replies. You set roles, communication policies and races between panes; every agent has an inbox.
 - **Task list and loops.** Every workspace has a task list. Agents pull the next task, or you hand one to them; each task has one owner at a time, and a task goes back to the list if its agent dies. A loop delivers a prompt you wrote to a pane on the schedule you choose, so an agent keeps working through the list on its own.
 - **Any harness, any model.** Soyeht does not replace your agent. Each pane runs the harness you already use (Claude Code, Codex, Gemini CLI, OpenCode, or anything that runs in a terminal) with the model it is configured for. Soyeht observes and coordinates.
+- **Skills in every harness.** Keep reusable `SKILL.md` skills in one place. Claude Code and Codex load them natively, typing "/" in the composer runs one, and any agent can write a new skill when you ask it to.
 - **Workspaces and panes.** Tabs of workspaces, panes side by side, one harness or shell per pane. Layout is persisted.
 - **A real terminal, plus a view over it.** The raw terminal is always there. On top of it, Soyeht reads each harness's structured output to show threads, tasks and the harness's state: working, blocked, idle.
 - **Continue from your phone.** Pick up any conversation on your iPhone and keep going.

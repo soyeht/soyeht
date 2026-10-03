@@ -452,7 +452,8 @@ fn update_in_subagent(
         Update::UserMessage { .. }
         | Update::Usage(_)
         | Update::Configuration(_)
-        | Update::Mode(_) => return Ok(false),
+        | Update::Mode(_)
+        | Update::Commands(_) => return Ok(false),
     }
     Ok(true)
 }
@@ -633,6 +634,11 @@ fn update_in_parent(
         }
         Update::Mode(mode) => {
             update_mode(pane, generation, state, mode, changes)?;
+            false
+        }
+        // A catalogue, not turn output: some adapters send it while wedged.
+        Update::Commands(commands) => {
+            super::commands::replace(pane, state, commands, changes);
             false
         }
     };

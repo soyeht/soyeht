@@ -397,6 +397,7 @@ private struct AgentWell: ViewModifier {
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
+        .slashCompletion(client: client, paneId: paneId, text: $prompt, style: style)
       sendButton
     }.padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.vertical, 12)
   }
@@ -461,7 +462,7 @@ private struct AgentWell: ViewModifier {
     guard !text.isEmpty else { return }
     prompt = ""
     onExplicitRemoteAction()
-    client.sendPrompt(paneId, text: text)
+    client.sendPrompt(paneId, text: client.slashCatalog(paneId: paneId).prompt(for: text))
     promptFocused = true
   }
 

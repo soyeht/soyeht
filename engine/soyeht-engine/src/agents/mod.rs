@@ -1,7 +1,9 @@
 pub mod attachments;
 pub mod authentication;
 pub mod catalog;
+pub mod commands;
 pub mod configuration;
+pub mod continuation;
 pub mod custom;
 pub mod delivery;
 pub mod driver;
@@ -15,6 +17,7 @@ pub mod lifecycle;
 pub mod mcp;
 pub mod methods;
 pub mod naming;
+pub mod opening;
 pub mod peer;
 pub mod pending;
 pub mod questions;

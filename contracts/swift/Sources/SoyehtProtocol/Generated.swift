@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 aa092afe2a17ef78283529df8078fdf853ea8b2d23df3a19c04a5fb55480d2ec). Do not edit.
 import Foundation
 
 
@@ -1763,6 +1763,174 @@ public struct AgentSession: Codable, Sendable {
         self.`queuePaused` = `queuePaused`
         self.`role` = `role`
         self.`harnessSwitch` = `harnessSwitch`
+    }
+}
+
+public struct AgentCommand: Codable, Sendable {
+    public var `name`: String
+    public var `description`: String
+    public var `inputHint`: String?
+    public init(`name`: String, `description`: String, `inputHint`: String? = nil) {
+        self.`name` = `name`
+        self.`description` = `description`
+        self.`inputHint` = `inputHint`
+    }
+}
+
+public struct PaneCommandsListParams: Codable, Sendable {
+    public var `paneId`: Id
+    public init(`paneId`: Id) {
+        self.`paneId` = `paneId`
+    }
+}
+
+public struct PaneCommandsListResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `items`: [AgentCommand]
+    public init(`paneId`: Id, `items`: [AgentCommand]) {
+        self.`paneId` = `paneId`
+        self.`items` = `items`
+    }
+}
+
+public struct PaneCommandsChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+    }
+}
+
+public typealias SkillName = String
+
+public enum SkillScope: String, Codable, Sendable {
+    case `user` = "user"
+    case `workspace` = "workspace"
+}
+
+public struct Skill: Codable, Sendable {
+    public var `name`: SkillName
+    public var `scope`: SkillScope
+    public var `workspaceId`: Id?
+    public var `path`: String
+    public var `description`: String?
+    public var `allowedTools`: String?
+    public var `revision`: String?
+    public var `problem`: String?
+    public init(`name`: SkillName, `scope`: SkillScope, `workspaceId`: Id? = nil, `path`: String, `description`: String? = nil, `allowedTools`: String? = nil, `revision`: String? = nil, `problem`: String? = nil) {
+        self.`name` = `name`
+        self.`scope` = `scope`
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`description` = `description`
+        self.`allowedTools` = `allowedTools`
+        self.`revision` = `revision`
+        self.`problem` = `problem`
+    }
+}
+
+public struct SkillsListParams: Codable, Sendable {
+    public var `workspaceId`: Id?
+    public init(`workspaceId`: Id? = nil) {
+        self.`workspaceId` = `workspaceId`
+    }
+}
+
+public struct SkillsListResult: Codable, Sendable {
+    public var `items`: [Skill]
+    public var `userDirectory`: String
+    public var `workspaceDirectory`: String?
+    public init(`items`: [Skill], `userDirectory`: String, `workspaceDirectory`: String? = nil) {
+        self.`items` = `items`
+        self.`userDirectory` = `userDirectory`
+        self.`workspaceDirectory` = `workspaceDirectory`
+    }
+}
+
+public struct SkillsReadParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `workspaceId`: Id?
+    public init(`name`: SkillName, `workspaceId`: Id? = nil) {
+        self.`name` = `name`
+        self.`workspaceId` = `workspaceId`
+    }
+}
+
+public struct SkillsReadResult: Codable, Sendable {
+    public var `skill`: Skill
+    public var `content`: String
+    public init(`skill`: Skill, `content`: String) {
+        self.`skill` = `skill`
+        self.`content` = `content`
+    }
+}
+
+public struct SkillsCreateParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `description`: String
+    public var `instructions`: String?
+    public var `workspaceId`: Id?
+    public var `idempotencyKey`: Id
+    public init(`name`: SkillName, `description`: String, `instructions`: String? = nil, `workspaceId`: Id? = nil, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`description` = `description`
+        self.`instructions` = `instructions`
+        self.`workspaceId` = `workspaceId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct SkillsUpdateParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `content`: String
+    public var `baseRevision`: String
+    public var `workspaceId`: Id?
+    public var `idempotencyKey`: Id
+    public init(`name`: SkillName, `content`: String, `baseRevision`: String, `workspaceId`: Id? = nil, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`content` = `content`
+        self.`baseRevision` = `baseRevision`
+        self.`workspaceId` = `workspaceId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct SkillsDeleteParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `workspaceId`: Id?
+    public var `idempotencyKey`: Id
+    public init(`name`: SkillName, `workspaceId`: Id? = nil, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`workspaceId` = `workspaceId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct SkillMutationResult: Codable, Sendable {
+    public var `skill`: Skill
+    public init(`skill`: Skill) {
+        self.`skill` = `skill`
+    }
+}
+
+public struct SkillsDeleteResult: Codable, Sendable {
+    public var `name`: SkillName
+    public var `removed`: Bool
+    public init(`name`: SkillName, `removed`: Bool) {
+        self.`name` = `name`
+        self.`removed` = `removed`
+    }
+}
+
+public struct SkillsChangedEvent: Codable, Sendable {
+    public var `scope`: SkillScope
+    public var `workspaceId`: Id?
+    public init(`scope`: SkillScope, `workspaceId`: Id? = nil) {
+        self.`scope` = `scope`
+        self.`workspaceId` = `workspaceId`
     }
 }
 
@@ -6461,6 +6629,8 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case paneNeedsLogin = "pane.needs_login"
     case paneAuthFinished = "pane.auth_finished"
     case paneUpdate = "pane.update"
+    case paneCommandsChanged = "pane.commands_changed"
+    case skillsChanged = "skills.changed"
     case attentionChanged = "attention.changed"
     case paneQueuePaused = "pane.queue.paused"
     case paneQueueResumed = "pane.queue.resumed"
@@ -6544,6 +6714,8 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .paneNeedsLogin: EventDescriptor(paramsType: "PaneNeedsLoginEvent", durable: true),
     .paneAuthFinished: EventDescriptor(paramsType: "PaneAuthFinishedEvent", durable: true),
     .paneUpdate: EventDescriptor(paramsType: "PaneUpdateEvent", durable: true),
+    .paneCommandsChanged: EventDescriptor(paramsType: "PaneCommandsChangedEvent", durable: true),
+    .skillsChanged: EventDescriptor(paramsType: "SkillsChangedEvent", durable: false),
     .attentionChanged: EventDescriptor(paramsType: "AttentionChangedEvent", durable: true),
     .paneQueuePaused: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),
     .paneQueueResumed: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),

@@ -198,3 +198,28 @@ public enum HarnessPickerModel {
     return leftName == rightName ? lhs.id < rhs.id : leftName < rightName
   }
 }
+
+extension EngineClient {
+  func loadPreferredHarness() async throws {
+    let result = try await request(
+      "settings.get", .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
+    ).decoded(SettingsGetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  public func setPreferredHarness(_ harnessId: String) async throws {
+    let result = try await mutation(
+      "settings.set",
+      SettingsSetParams(
+        key: HarnessPickerModel.preferredHarnessKey, value: .string(harnessId),
+        idempotencyKey: UUID().uuidString)
+    ).decoded(SettingsSetResult.self)
+    preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  func applySettingsChanged(_ event: SettingsChangedEvent) {
+    if applyDefaultPermissionModeChanged(event) { return }
+    guard event.key == HarnessPickerModel.preferredHarnessKey else { return }
+    preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+}

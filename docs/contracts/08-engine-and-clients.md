@@ -129,7 +129,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.next` | no | no | yes | no |
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
-| `device.*`, `settings.set`, `harness.custom.*` | yes | yes | no | no |
+| `device.*`, `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
 
 ## 3. State snapshot and events without loss (R05)
@@ -202,6 +202,9 @@ localId, generation, seq, complete`,
 `pane.message.send {toPaneId, text}` and `pane.message.list` (persisted pane-to-pane
 messages with `queued|delivered|read` state),
 `pane.record.set {on}` (do not record this pane's screen; contract 07 §2).
+`pane.commands.list {paneId}` → `{paneId, items: [{name, description, inputHint?}]}`,
+the slash commands the harness last advertised with ACP
+`available_commands_update` (ADR 0075).
 
 **Tasks** (1:1 map to contract 03 §11 MCP tools):
 `task.create`, `task.list {workspaceId, state?, limit, cursor?}`,
@@ -235,7 +238,9 @@ capabilities), `model.list {harness}` (session catalog when available, with
 closed source `not_probed | native_session`),
 `device.pair.start|decide`, `device.list`, `device.revoke`,
 `push.register|unregister`, `settings.get`/`settings.set {key, value}`
-(schema-typed keys), `engine.status` → `{version, generation,
+(schema-typed keys), `skills.list {workspaceId?}` → `{items, userDirectory,
+workspaceDirectory?}` and `skills.read|create|update|delete` over the user's and
+a workspace's skill folders (ADR 0075), `engine.status` → `{version, generation,
 ptyd: {connected, version, generation}, db: {id, schemaVersion}}`.
 
 ## 5. Events (notifications)
@@ -280,6 +285,8 @@ executable schema carry no state cursor and never enter replay.
 - `file.changed_on_disk`, `file.saved {by}`, `file.conflict`
 - `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`
 - `usage.changed {provider, state, primary?, secondary?, source, fetchedAt}`
+- `pane.commands_changed {paneId}` (read the list with `pane.commands.list`),
+  `skills.changed {scope, workspaceId?}` (non-durable; list again)
 - `pane.message {fromPaneId, toPaneId, text, state}`
 - `device.pair_requested`, `device.paired`, `device.revoked`
 - `engine.updating`, `engine.restarted {generation}`, `ptyd.reconnected

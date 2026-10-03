@@ -95,6 +95,7 @@ fn run() -> Result<()> {
         io::stdin().lock(),
         io::stdout().lock(),
         Service::new(client, config.context),
+        &server::instructions(&soyeht_skills::home::user_store(&config.data_dir)),
     )
 }
 
