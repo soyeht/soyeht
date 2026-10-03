@@ -201,31 +201,49 @@ fn replace_all_is_one_bounded_undo_step() {
     assert!(none.is_empty() && zero == 0);
 }
 
+/// Fastest of a few runs, so a scheduler stall during one run is ignored.
+fn fastest<T>(mut run: impl FnMut() -> T) -> (T, Duration) {
+    let mut best = Duration::MAX;
+    let mut output = None;
+    for _ in 0..3 {
+        let started = Instant::now();
+        output = Some(run());
+        best = best.min(started.elapsed());
+    }
+    (output.unwrap(), best)
+}
+
 #[test]
 fn whole_file_find_on_the_largest_editor_buffer_stays_fast() {
     // The largest file the editor opens, with a match on every line: counting,
-    // stepping and window projection must stay within the search bench budget.
+    // stepping and window projection must stay one linear pass, measured
+    // against a plain substring scan of the same text in this process so the
+    // bound holds however loaded the machine is.
     let line = "fn handle_request(context: &Context) -> Result<()> { needle }\n";
     let lines = soyeht_protocol::limits::EDITOR_HISTORY_BYTES / line.len() - 1;
     let text = line.repeat(lines);
     let needle = matcher("needle", true, false, false);
-    let started = Instant::now();
-    let outcome = find(
-        &text,
-        &FindRequest {
-            matcher: &needle,
-            from: position(u32::try_from(lines / 2).unwrap(), 0),
-            direction: FindDirection::Previous,
-            window: 0..2_000,
-            visible_limit: 500,
-        },
-    );
-    let elapsed = started.elapsed();
+    let (scanned, baseline) = fastest(|| text.matches("needle").count());
+    let (outcome, elapsed) = fastest(|| {
+        find(
+            &text,
+            &FindRequest {
+                matcher: &needle,
+                from: position(u32::try_from(lines / 2).unwrap(), 0),
+                direction: FindDirection::Previous,
+                window: 0..2_000,
+                visible_limit: 500,
+            },
+        )
+    });
+    assert_eq!(scanned, lines);
     assert_eq!(outcome.total, lines);
     assert_eq!(outcome.current.unwrap().index, lines / 2 - 1);
     assert_eq!(outcome.visible.len(), 500);
+    // Find runs at about 2x the scan in debug and below it in release; a
+    // second pass per match would be orders of magnitude past this bound.
     assert!(
-        elapsed < Duration::from_millis(1_000),
-        "whole-file find took {elapsed:?}"
+        elapsed < baseline * 10,
+        "whole-file find took {elapsed:?}, a plain scan {baseline:?}"
     );
 }
