@@ -18,15 +18,8 @@ struct UsageRing: View {
             .fill(MacTheme.face)
             .overlay { Circle().stroke(MacTheme.well, lineWidth: 5) }
             .frame(width: 34, height: 34)
-          if let fraction = presentation.fraction {
-            Circle()
-              .trim(from: 0, to: fraction)
-              .stroke(
-                bandColor, style: StrokeStyle(lineWidth: 3, lineCap: .round)
-              )
-              .rotationEffect(.degrees(-90))
-              .frame(width: 40, height: 40)
-          }
+          UsageRingArc(presentation, lineWidth: 3)
+            .frame(width: 40, height: 40)
           ProviderGlyph(reading.provider)
             .foregroundStyle(MacTheme.ink)
             .frame(width: 16, height: 16)
@@ -37,12 +30,13 @@ struct UsageRing: View {
           .foregroundStyle(presentation.isStale ? MacTheme.muted : MacTheme.secondary)
           .frame(height: 15)
       }
-      .opacity(presentation.fraction == nil ? 0.46 : 1)
+      .opacity(presentation.emphasis.ringOpacity)
       .frame(width: 40, height: 55)
     }
     .buttonStyle(.plain)
     .help("\(reading.provider.displayName) usage")
     .accessibilityLabel("\(reading.provider.displayName) usage \(presentation.percentage)")
+    .accessibilityValue(presentation.isStale ? "Last known reading" : "")
     .accessibilityIdentifier("usage-ring-\(reading.provider.rawValue)")
     .onHover { value in
       withAnimation(.easeOut(duration: 0.12)) { hovering = value }
@@ -59,16 +53,6 @@ struct UsageRing: View {
   }
 
   private var presentation: UsagePresentation { UsagePresentation(reading) }
-
-  private var bandColor: Color {
-    switch presentation.band {
-    case .success: MacTheme.success
-    case .warning: MacTheme.warning
-    case .danger: MacTheme.danger
-    case nil: MacTheme.muted
-    }
-  }
-
 }
 
 struct UsageDetailBalloon: View {
@@ -86,17 +70,19 @@ struct UsageDetailBalloon: View {
         if let secondary = reading.secondary {
           UsageWindowRow(window: secondary, stale: reading.state == .stale)
         }
+        if let hint = UsagePresentation(reading).staleHint {
+          Text(hint)
+            .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+            .foregroundStyle(MacTheme.muted)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       } else {
         stateMessage(stateLabel, icon: "exclamationmark.circle")
       }
-      Text(
-        "Source: \(reading.source.displayName) · "
-          + (reading.state == .stale
-            ? UsageTimeText.asOf(reading.fetchedAt) : UsageTimeText.fetched(reading.fetchedAt))
-      )
-      .font(MacTheme.chrome(MacTheme.TypeScale.micro))
-      .foregroundStyle(MacTheme.muted)
-      .lineLimit(1)
+      Text("Source: \(reading.source.displayName) · \(UsageTimeText.age(of: reading))")
+        .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+        .foregroundStyle(MacTheme.muted)
+        .lineLimit(1)
     }
     .padding(MacTheme.Space.x12)
     .frame(width: 250, alignment: .leading)
@@ -123,6 +109,7 @@ struct UsageDetailBalloon: View {
     Label(message, systemImage: icon)
       .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
       .foregroundStyle(MacTheme.secondary)
+      .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
   }
 
@@ -164,7 +151,9 @@ private struct UsageWindowRow: View {
       GeometryReader { geometry in
         ZStack(alignment: .leading) {
           Capsule().fill(MacTheme.well)
-          Capsule().fill(color).frame(width: geometry.size.width * fraction)
+          Capsule().fill(UsageBand(usedFraction: fraction).color)
+            .opacity(stale ? UsageEmphasis.lastKnown.arcOpacity : 1)
+            .frame(width: geometry.size.width * fraction)
         }
       }
       .frame(height: 6)
@@ -172,12 +161,6 @@ private struct UsageWindowRow: View {
   }
 
   private var fraction: Double { min(max(window.used, 0), 1) }
-  private var color: Color {
-    if stale { return MacTheme.muted }
-    if fraction < 0.5 { return MacTheme.success }
-    if fraction <= 0.8 { return MacTheme.warning }
-    return MacTheme.danger
-  }
 }
 
 struct UsageSettingsDetail: View {
@@ -271,43 +254,5 @@ struct UsageSettingsDetail: View {
 
   private func refresh() {
     Task { try? await client.refreshUsage(selectedProvider) }
-  }
-}
-
-private enum UsageTimeText {
-  static func reset(_ value: String?) -> String {
-    guard let value, let date = timestamp(value) else { return "Reset unavailable" }
-    let seconds = date.timeIntervalSinceNow
-    guard seconds > 0 else { return "Reset due" }
-    return "Resets in \(duration(seconds))"
-  }
-
-  static func fetched(_ value: String) -> String {
-    guard let date = timestamp(value) else { return "time unavailable" }
-    let seconds = max(0, Date().timeIntervalSince(date))
-    if seconds < 60 { return "updated just now" }
-    return "updated \(duration(seconds)) ago"
-  }
-
-  static func asOf(_ value: String) -> String {
-    guard let date = timestamp(value) else { return "time unavailable" }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.dateFormat = "HH:mm"
-    return "as of \(formatter.string(from: date))"
-  }
-
-  private static func timestamp(_ value: String) -> Date? {
-    UsageTimestamp.date(from: value)
-  }
-
-  private static func duration(_ seconds: TimeInterval) -> String {
-    let minutes = max(1, Int(seconds) / 60)
-    if minutes < 60 { return "\(minutes)m" }
-    let hours = minutes / 60
-    let remainder = minutes % 60
-    if hours < 24 { return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m" }
-    let days = hours / 24
-    return "\(days)d \(hours % 24)h"
   }
 }

@@ -95,12 +95,7 @@ private struct PhoneUsageRing: View {
       ZStack {
         Circle()
           .stroke(PhonePalette.secondary.opacity(0.28), lineWidth: 7)
-        if let fraction = presentation.fraction {
-          Circle()
-            .trim(from: 0, to: fraction)
-            .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-            .rotationEffect(.degrees(-90))
-        }
+        UsageRingArc(presentation, lineWidth: 5)
         ProviderGlyph(reading.provider)
           .foregroundStyle(PhonePalette.ink)
           .frame(width: 24, height: 24)
@@ -110,7 +105,7 @@ private struct PhoneUsageRing: View {
         .font(.caption.bold())
         .foregroundStyle(PhonePalette.secondary)
     }
-    .opacity(presentation.fraction == nil ? 0.46 : 1)
+    .opacity(presentation.emphasis.ringOpacity)
     .padding(10)
     .background(selected ? PhonePalette.face : Color.clear, in: RoundedRectangle(cornerRadius: 16))
     .overlay {
@@ -124,15 +119,6 @@ private struct PhoneUsageRing: View {
   }
 
   private var presentation: UsagePresentation { UsagePresentation(reading) }
-
-  private var color: Color {
-    switch presentation.band {
-    case .success: PhonePalette.success
-    case .warning: PhonePalette.warning
-    case .danger: PhonePalette.danger
-    case nil: PhonePalette.secondary
-    }
-  }
 }
 
 private struct PhoneUsageDetail: View {
@@ -151,12 +137,17 @@ private struct PhoneUsageDetail: View {
       } else if reading.state == .no_access {
         stateMessage("Allow access in Settings on your Mac.", icon: "lock")
       } else if let primary = reading.primary {
-        PhoneUsageWindow(window: primary)
-        if let secondary = reading.secondary { PhoneUsageWindow(window: secondary) }
+        PhoneUsageWindow(window: primary, stale: reading.state == .stale)
+        if let secondary = reading.secondary {
+          PhoneUsageWindow(window: secondary, stale: reading.state == .stale)
+        }
+        if let hint = UsagePresentation(reading).staleHint {
+          Text(hint).font(.caption2).foregroundStyle(PhonePalette.secondary)
+        }
       } else {
         stateMessage(stateLabel, icon: "exclamationmark.circle")
       }
-      Text("Source: \(reading.source.displayName) · \(PhoneUsageTime.fetched(reading.fetchedAt))")
+      Text("Source: \(reading.source.displayName) · \(UsageTimeText.age(of: reading))")
         .font(.caption2)
         .foregroundStyle(PhonePalette.secondary)
     }
@@ -194,6 +185,7 @@ private struct PhoneUsageDetail: View {
 
 private struct PhoneUsageWindow: View {
   let window: UsageWindow
+  let stale: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
@@ -202,46 +194,14 @@ private struct PhoneUsageWindow: View {
         Spacer()
         Text("\(Int((fraction * 100).rounded()))%").font(.caption.bold())
       }
-      ProgressView(value: fraction).tint(color)
-      Text(PhoneUsageTime.reset(window.resetsAt))
+      ProgressView(value: fraction)
+        .tint(UsageBand(usedFraction: fraction).color)
+        .opacity(stale ? UsageEmphasis.lastKnown.arcOpacity : 1)
+      Text(UsageTimeText.reset(window.resetsAt))
         .font(.caption2)
         .foregroundStyle(PhonePalette.secondary)
     }
   }
 
   private var fraction: Double { min(max(window.used, 0), 1) }
-  private var color: Color {
-    if fraction < 0.5 { return PhonePalette.success }
-    if fraction <= 0.8 { return PhonePalette.warning }
-    return PhonePalette.danger
-  }
-}
-
-private enum PhoneUsageTime {
-  static func reset(_ value: String?) -> String {
-    guard let value, let date = timestamp(value) else { return "Reset unavailable" }
-    let seconds = date.timeIntervalSinceNow
-    guard seconds > 0 else { return "Reset due" }
-    return "Resets in \(duration(seconds))"
-  }
-
-  static func fetched(_ value: String) -> String {
-    guard let date = timestamp(value) else { return "time unavailable" }
-    let seconds = max(0, Date().timeIntervalSince(date))
-    if seconds < 60 { return "updated just now" }
-    return "updated \(duration(seconds)) ago"
-  }
-
-  private static func timestamp(_ value: String) -> Date? {
-    UsageTimestamp.date(from: value)
-  }
-
-  private static func duration(_ seconds: TimeInterval) -> String {
-    let minutes = max(1, Int(seconds) / 60)
-    if minutes < 60 { return "\(minutes)m" }
-    let hours = minutes / 60
-    let remainder = minutes % 60
-    if hours < 24 { return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m" }
-    return "\(hours / 24)d \(hours % 24)h"
-  }
 }

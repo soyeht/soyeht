@@ -13,6 +13,9 @@ use std::{
 };
 
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Upper bound for `~/.claude.json`, which keeps every project's settings beside the usage
+/// entry the Claude reader parses.
+const CLAUDE_CONFIG_MAX_BYTES: u64 = 32 * 1024 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const CURSOR_ENDPOINT: &str =
     "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
@@ -81,19 +84,19 @@ impl UsageSourcePort for SystemSources {
 }
 
 impl SystemSources {
+    /// No file means Claude Code has never run for this user. The file is Claude Code's whole
+    /// configuration, not a usage file, so it has its own bound instead of the protocol's frame
+    /// size: a long-used install outgrows one frame with project history alone.
     fn read_claude_cache(&self) -> SourceRead {
         let Ok(metadata) = fs::metadata(&self.commands.claude_cache) else {
-            return SourceRead::Unavailable(None);
+            return SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound));
         };
-        let Ok(max_bytes) = u64::try_from(limits::JSON_BYTES) else {
-            return SourceRead::Unavailable(None);
-        };
-        if metadata.len() > max_bytes {
+        if metadata.len() > CLAUDE_CONFIG_MAX_BYTES {
             return SourceRead::Unavailable(None);
         }
         fs::read(&self.commands.claude_cache)
             .ok()
-            .filter(|bytes| bytes.len() <= limits::JSON_BYTES)
+            .filter(|bytes| u64::try_from(bytes.len()).is_ok_and(|n| n <= CLAUDE_CONFIG_MAX_BYTES))
             .map_or(SourceRead::Unavailable(None), SourceRead::Payload)
     }
 
@@ -549,9 +552,31 @@ mod tests {
         });
         assert!(
             sources.read(UsageProvider::Claude, UsageSource::ClaudeDesktopCache)
-                == SourceRead::Unavailable(None)
+                == SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound))
         );
         assert!(!spawn_marker.exists());
+    }
+
+    #[test]
+    fn claude_configuration_larger_than_one_frame_is_still_read() {
+        let fixture = Fixture::new();
+        let claude_cache = fixture.0.join("claude.json");
+        let history = "x".repeat(limits::JSON_BYTES + 1);
+        let document = format!(
+            r#"{{"projects":"{history}","cachedUsageUtilization":{{"fetchedAtMs":1000,"utilization":{{}}}}}}"#
+        );
+        fs::write(&claude_cache, &document).unwrap();
+        let unused = fixture.0.join("unused");
+        let mut sources = SystemSources::with_commands(Commands {
+            claude_cache,
+            second_cli: unused.clone(),
+            keychain: unused.clone(),
+            http: unused,
+        });
+        assert!(matches!(
+            sources.read(UsageProvider::Claude, UsageSource::ClaudeDesktopCache),
+            SourceRead::Payload(bytes) if bytes == document.as_bytes()
+        ));
     }
 
     #[test]
