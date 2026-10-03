@@ -19,7 +19,7 @@ struct PaneTabStrip: View {
             onSelect(pane.paneId)
           } label: {
             Label(pane.name, systemImage: icon(for: pane))
-              .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+              .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
               .lineLimit(1)
               .padding(.horizontal, MacTheme.Space.x10)
               .frame(height: PaneLayoutContentMetrics.companionTabStripHeight - 8)
@@ -51,9 +51,9 @@ private struct PaneTabSurface: ViewModifier {
 
   func body(content: Content) -> some View {
     if selected {
-      content.neoWell(radius: MacTheme.Radius.pill)
+      content.foregroundStyle(MacTheme.ink).paneWell(radius: MacTheme.Radius.pill)
     } else {
-      content.neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
+      content.foregroundStyle(MacTheme.secondary).contentShape(Capsule())
     }
   }
 }

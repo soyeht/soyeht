@@ -412,7 +412,7 @@ enum PhoneWritingMetrics {
     screenplay: screenplayMetric)
   static let floors = PaneLayoutFloorFormula.surfaceFloors(fonts: fonts)
   static let sizing = PaneLayoutSizingPolicy(
-    floors: floors, gaps: PaneLayoutGaps(horizontal: 18, vertical: 18))
+    floors: floors, gaps: PaneLayoutSpacing.gaps)
   static let policy = PhoneWritingLayoutPolicy(floors: floors)
   static let chromePolicy = PhoneWritingChromePolicy()
   static let sheetPolicy = PhoneWritingSheetPolicy()

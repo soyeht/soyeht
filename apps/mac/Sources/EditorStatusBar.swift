@@ -13,9 +13,9 @@ struct EditorStatusBar: View {
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
-      Text(language).font(MacTheme.chrome(MacTheme.TypeScale.small)).help(languageHelp)
-      Text("UTF-8").font(MacTheme.chrome(MacTheme.TypeScale.small))
-      Text("LF").font(MacTheme.chrome(MacTheme.TypeScale.small))
+      Text(language).font(MacTheme.ui(MacTheme.TypeScale.small)).help(languageHelp)
+      Text("UTF-8").font(MacTheme.ui(MacTheme.TypeScale.small))
+      Text("LF").font(MacTheme.ui(MacTheme.TypeScale.small))
       if vimEnabled {
         Text(vimCommandLine ?? "-- \(vimMode.rawValue.uppercased()) --")
           .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
@@ -24,22 +24,22 @@ struct EditorStatusBar: View {
       Text(
         "Ln \(identifier: UInt64(selectedPosition?.line ?? view.viewport?.fromLine ?? 0) + 1), Col \(identifier: UInt64(selectedPosition?.column ?? 0) + 1)"
       )
-      .font(MacTheme.chrome(MacTheme.TypeScale.small))
+      .font(MacTheme.ui(MacTheme.TypeScale.small))
       Spacer(minLength: 0)
       if let blame = selectedBlame {
         Text("\(blame.author) · \(blame.summary)")
-          .font(MacTheme.chrome(MacTheme.TypeScale.small)).lineLimit(1)
+          .font(MacTheme.ui(MacTheme.TypeScale.small)).lineLimit(1)
           .help("\(blame.commit) · line \(UInt64(blame.line) + 1)")
       }
       if !view.diagnostics.isEmpty {
         Circle().fill(MacTheme.warning).frame(width: 6, height: 6)
         Text("\(view.diagnostics.count) issues")
-          .font(MacTheme.chrome(MacTheme.TypeScale.small))
+          .font(MacTheme.ui(MacTheme.TypeScale.small))
       }
       if let diff, !diff.markers.isEmpty {
         Circle().fill(MacTheme.diffAdded).frame(width: 6, height: 6)
         Text("\(diff.markers.count) changed lines")
-          .font(MacTheme.chrome(MacTheme.TypeScale.small))
+          .font(MacTheme.ui(MacTheme.TypeScale.small))
       }
     }
     .foregroundStyle(MacTheme.secondary)

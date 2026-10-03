@@ -15,7 +15,7 @@ struct EditorMarkdownPreview: View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: MacTheme.Space.x6) {
         Text("PREVIEW")
-          .font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .bold))
           .tracking(0.8).foregroundStyle(MacTheme.secondary)
         Spacer(minLength: 0)
         if let preview, preview.isPartial {
@@ -29,7 +29,7 @@ struct EditorMarkdownPreview: View {
       if let preview {
         ScrollView {
           Text(preview.content)
-            .font(MacTheme.chrome(MacTheme.TypeScale.body))
+            .font(MacTheme.ui(MacTheme.TypeScale.body))
             .foregroundStyle(MacTheme.ink)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -37,7 +37,7 @@ struct EditorMarkdownPreview: View {
         }
       } else {
         Text("This viewport cannot be previewed.")
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }

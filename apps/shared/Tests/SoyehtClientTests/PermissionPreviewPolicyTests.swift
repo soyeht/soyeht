@@ -103,12 +103,11 @@ import Testing
   /// Black-on-white style, so the rendered text is the only dark ink in a well.
   @MainActor private var inkOnWhite: AgentConversationStyle {
     AgentConversationStyle(
-      canvas: .white, face: .white, well: .white, ink: .black, secondary: .white, muted: .white,
-      accent: .white, shadowDark: .white, shadowLight: .white, wellShadow: .white,
-      wellRim: .white, wellLip: nil, success: .white, warning: .white, danger: .white,
-      bodyFont: .body, captionFont: .caption, controlFont: .caption, headingFont: .headline,
-      monoFont: .caption.monospaced(), monoSmallFont: .caption2.monospaced(),
-      canonicalLayout: false)
+      canvas: .white, face: .white, well: .white, border: .white, ink: .black,
+      secondary: .white, muted: .white, accent: .white, success: .white, warning: .white,
+      danger: .white, bodyFont: .body, captionFont: .caption, controlFont: .caption,
+      headingFont: .headline, monoFont: .caption.monospaced(),
+      monoSmallFont: .caption2.monospaced(), canonicalLayout: false)
   }
 
   /// Leftmost dark pixel, in points from the view's leading edge.

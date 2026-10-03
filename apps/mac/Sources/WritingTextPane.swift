@@ -199,14 +199,14 @@ struct WritingTextPane: View {
         .scrollDisabled(plan.overflowAxes.isEmpty)
         .frame(width: proxy.size.width, height: proxy.size.height)
         .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
-        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+        .paneShell()
       } else {
         VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
           writingHeader(document: nil)
           ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(PaneLayoutContentMetrics.paneCardInset)
-        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+        .paneShell()
       }
     }
     .task(id: writingLoadKey) { await loadIfNeeded() }

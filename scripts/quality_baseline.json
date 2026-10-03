@@ -9,16 +9,16 @@
       "duplicated_lines": 54
     },
     "mac": {
-      "clones": 79,
-      "duplicated_lines": 775
+      "clones": 77,
+      "duplicated_lines": 758
     },
     "shared": {
-      "clones": 65,
-      "duplicated_lines": 504
+      "clones": 64,
+      "duplicated_lines": 496
     },
     "swift_all": {
-      "clones": 162,
-      "duplicated_lines": 1469
+      "clones": 159,
+      "duplicated_lines": 1444
     }
   },
   "loose_literals": {
@@ -62,11 +62,11 @@
       "system_font_size": 4
     },
     "apps/mac/Sources/EditorPaneView.swift": {
-      "corner_radius": 2,
+      "corner_radius": 1,
       "system_font_size": 1
     },
     "apps/mac/Sources/MacStyle.swift": {
-      "font_name": 4
+      "font_name": 3
     },
     "apps/mac/Sources/PaneAutomationControls.swift": {
       "padding": 4,
@@ -89,7 +89,7 @@
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
       "padding": 5,
-      "system_font_size": 10
+      "system_font_size": 9
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
       "padding": 3,
@@ -98,19 +98,11 @@
     "apps/mac/Sources/WritingSectionView.swift": {
       "system_font_size": 4
     },
-    "apps/shared/Sources/SoyehtClient/AgentConversation.swift": {
-      "corner_radius": 2,
-      "padding": 19
-    },
     "apps/shared/Sources/SoyehtClient/AgentSubagents.swift": {
       "padding": 2
     },
     "apps/shared/Sources/SoyehtClient/MacTerminal.swift": {
       "font_name": 1
-    },
-    "apps/shared/Sources/SoyehtClient/PermissionPresentationView.swift": {
-      "corner_radius": 1,
-      "padding": 1
     },
     "apps/shared/Sources/SoyehtClient/WritingDisplayText.swift": {
       "font_name": 1

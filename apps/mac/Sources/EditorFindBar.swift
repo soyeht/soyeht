@@ -95,7 +95,7 @@ struct EditorFindBar: View {
     return Button(action: action) {
       Image(systemName: symbol)
         .frame(width: side, height: side)
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain).foregroundStyle(MacTheme.secondary).help(help)
@@ -104,7 +104,7 @@ struct EditorFindBar: View {
   private func pill(_ title: String, primary: Bool, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Text(title)
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
         .foregroundStyle(primary ? MacTheme.face : MacTheme.ink)
         .padding(.horizontal, MacTheme.Space.x12)
         .frame(height: PaneLayoutContentMetrics.editorFindFieldHeight)

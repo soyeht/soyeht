@@ -34,13 +34,13 @@ struct EditorHistorySheet: View {
     HStack {
       VStack(alignment: .leading, spacing: MacTheme.Space.x3) {
         Text("Local history")
-          .font(MacTheme.chrome(MacTheme.TypeScale.title, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.title, weight: .bold))
           .foregroundStyle(MacTheme.ink)
         Text(file.path)
           .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
       }
       Spacer()
-      Button("Done", action: { dismiss() }).buttonStyle(NeoPillButtonStyle())
+      Button("Done", action: { dismiss() }).buttonStyle(.paneSecondary)
     }
   }
 
@@ -50,7 +50,7 @@ struct EditorHistorySheet: View {
         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
       } else if versions.isEmpty {
         Text("No saved versions yet")
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.ui(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollView {
@@ -60,14 +60,14 @@ struct EditorHistorySheet: View {
             }
             if nextCursor != nil {
               Button("Load older versions") { Task { await loadMore() } }
-                .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
-                .buttonStyle(NeoPillButtonStyle())
+                .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
+                .buttonStyle(.paneSecondary)
             }
           }
         }
       }
     }
-    .frame(width: 260).padding(MacTheme.Space.x8).neoWell(radius: MacTheme.Radius.control)
+    .frame(width: 260).padding(MacTheme.Space.x8).paneWell(radius: MacTheme.Radius.control)
   }
 
   private func versionRow(_ version: FileVersion) -> some View {
@@ -77,12 +77,12 @@ struct EditorHistorySheet: View {
       VStack(alignment: .leading, spacing: MacTheme.Space.x3) {
         HStack {
           Text(version.author.name)
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
           Spacer()
           Text("r\(identifier: version.revision)").font(MacTheme.mono(MacTheme.TypeScale.micro))
         }
         Text(historyTime(version.createdAt))
-          .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.ui(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
         Text(byteLabel(version.byteCount))
           .font(MacTheme.mono(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
       }
@@ -97,13 +97,13 @@ struct EditorHistorySheet: View {
   private var footer: some View {
     HStack {
       if let problem {
-        Text(problem).font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(
+        Text(problem).font(MacTheme.ui(MacTheme.TypeScale.small)).foregroundStyle(
           MacTheme.danger)
       }
       Spacer()
       Button("Restore this version") { Task { await restore() } }
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-        .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(selected == nil)
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
+        .buttonStyle(.panePrimary).disabled(selected == nil)
     }
   }
 
@@ -182,10 +182,10 @@ struct EditorConflictSheet: View {
         .font(.system(size: 14, weight: .semibold)).foregroundStyle(MacTheme.danger)
       VStack(alignment: .leading, spacing: MacTheme.Space.x3) {
         Text("Choose how to continue")
-          .font(MacTheme.chrome(MacTheme.TypeScale.title, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.title, weight: .bold))
           .foregroundStyle(MacTheme.ink)
         Text("The disk changed after your draft. Both versions are preserved.")
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.ui(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
       }
       Spacer()
     }
@@ -194,14 +194,14 @@ struct EditorConflictSheet: View {
   private var conflictFooter: some View {
     HStack {
       if let problem {
-        Text(problem).font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(
+        Text(problem).font(MacTheme.ui(MacTheme.TypeScale.small)).foregroundStyle(
           MacTheme.danger)
       }
       Spacer()
-      Button("Return to editing") { dismiss() }.buttonStyle(NeoPillButtonStyle())
+      Button("Return to editing") { dismiss() }.buttonStyle(.paneSecondary)
       Button("Keep my draft") { Task { await keepDraft() } }
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-        .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(draft == nil || disk == nil)
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
+        .buttonStyle(.panePrimary).disabled(draft == nil || disk == nil)
     }
   }
 
@@ -228,7 +228,7 @@ private struct EditorVersionPreview: View {
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x6) {
       Text(title)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
         .foregroundStyle(MacTheme.ink)
       if let viewport {
         ScrollView([.horizontal, .vertical]) {
@@ -240,16 +240,16 @@ private struct EditorVersionPreview: View {
           Text(
             "Preview limited to \(identifier: viewport.toLine) of \(viewport.file.lineCount) lines"
           )
-          .font(MacTheme.chrome(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
+          .font(MacTheme.ui(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
         }
       } else {
         Text(placeholder)
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.ui(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
     .padding(MacTheme.Space.x10).frame(maxWidth: .infinity, maxHeight: .infinity)
-    .neoWell(radius: MacTheme.Radius.control)
+    .paneWell(radius: MacTheme.Radius.control)
   }
 }
 
