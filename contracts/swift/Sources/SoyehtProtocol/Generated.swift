@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 import Foundation
 
 
@@ -100,6 +100,7 @@ public enum ErrorKind: String, Codable, Sendable {
     case `writing_scene_not_found` = "writing_scene_not_found"
     case `writing_section_refused` = "writing_section_refused"
     case `harness_switch_failed` = "harness_switch_failed"
+    case `attachment_limit_exceeded` = "attachment_limit_exceeded"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -1571,9 +1572,9 @@ public struct PromptItem: Codable, Sendable {
     public var `status`: PromptStatus
     public var `queuedAt`: String
     public var `generation`: UInt32?
-    public var `attachments`: [AttachmentRef]?
+    public var `attachments`: [PromptAttachment]?
     public var `agentMessage`: AgentMessageSource?
-    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [AttachmentRef]? = nil, `agentMessage`: AgentMessageSource? = nil) {
+    public init(`promptId`: Id, `text`: String, `origin`: PromptOrigin, `status`: PromptStatus, `queuedAt`: String, `generation`: UInt32? = nil, `attachments`: [PromptAttachment]? = nil, `agentMessage`: AgentMessageSource? = nil) {
         self.`promptId` = `promptId`
         self.`text` = `text`
         self.`origin` = `origin`
@@ -1763,6 +1764,174 @@ public struct AgentSession: Codable, Sendable {
         self.`queuePaused` = `queuePaused`
         self.`role` = `role`
         self.`harnessSwitch` = `harnessSwitch`
+    }
+}
+
+public struct AgentCommand: Codable, Sendable {
+    public var `name`: String
+    public var `description`: String
+    public var `inputHint`: String?
+    public init(`name`: String, `description`: String, `inputHint`: String? = nil) {
+        self.`name` = `name`
+        self.`description` = `description`
+        self.`inputHint` = `inputHint`
+    }
+}
+
+public struct PaneCommandsListParams: Codable, Sendable {
+    public var `paneId`: Id
+    public init(`paneId`: Id) {
+        self.`paneId` = `paneId`
+    }
+}
+
+public struct PaneCommandsListResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `items`: [AgentCommand]
+    public init(`paneId`: Id, `items`: [AgentCommand]) {
+        self.`paneId` = `paneId`
+        self.`items` = `items`
+    }
+}
+
+public struct PaneCommandsChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `paneId`: Id
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`paneId` = `paneId`
+    }
+}
+
+public typealias SkillName = String
+
+public enum SkillScope: String, Codable, Sendable {
+    case `user` = "user"
+    case `workspace` = "workspace"
+}
+
+public struct Skill: Codable, Sendable {
+    public var `name`: SkillName
+    public var `scope`: SkillScope
+    public var `workspaceId`: Id?
+    public var `path`: String
+    public var `description`: String?
+    public var `allowedTools`: String?
+    public var `revision`: String?
+    public var `problem`: String?
+    public init(`name`: SkillName, `scope`: SkillScope, `workspaceId`: Id? = nil, `path`: String, `description`: String? = nil, `allowedTools`: String? = nil, `revision`: String? = nil, `problem`: String? = nil) {
+        self.`name` = `name`
+        self.`scope` = `scope`
+        self.`workspaceId` = `workspaceId`
+        self.`path` = `path`
+        self.`description` = `description`
+        self.`allowedTools` = `allowedTools`
+        self.`revision` = `revision`
+        self.`problem` = `problem`
+    }
+}
+
+public struct SkillsListParams: Codable, Sendable {
+    public var `workspaceId`: Id?
+    public init(`workspaceId`: Id? = nil) {
+        self.`workspaceId` = `workspaceId`
+    }
+}
+
+public struct SkillsListResult: Codable, Sendable {
+    public var `items`: [Skill]
+    public var `userDirectory`: String
+    public var `workspaceDirectory`: String?
+    public init(`items`: [Skill], `userDirectory`: String, `workspaceDirectory`: String? = nil) {
+        self.`items` = `items`
+        self.`userDirectory` = `userDirectory`
+        self.`workspaceDirectory` = `workspaceDirectory`
+    }
+}
+
+public struct SkillsReadParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `workspaceId`: Id?
+    public init(`name`: SkillName, `workspaceId`: Id? = nil) {
+        self.`name` = `name`
+        self.`workspaceId` = `workspaceId`
+    }
+}
+
+public struct SkillsReadResult: Codable, Sendable {
+    public var `skill`: Skill
+    public var `content`: String
+    public init(`skill`: Skill, `content`: String) {
+        self.`skill` = `skill`
+        self.`content` = `content`
+    }
+}
+
+public struct SkillsCreateParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `description`: String
+    public var `instructions`: String?
+    public var `workspaceId`: Id?
+    public var `idempotencyKey`: Id
+    public init(`name`: SkillName, `description`: String, `instructions`: String? = nil, `workspaceId`: Id? = nil, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`description` = `description`
+        self.`instructions` = `instructions`
+        self.`workspaceId` = `workspaceId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct SkillsUpdateParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `content`: String
+    public var `baseRevision`: String
+    public var `workspaceId`: Id?
+    public var `idempotencyKey`: Id
+    public init(`name`: SkillName, `content`: String, `baseRevision`: String, `workspaceId`: Id? = nil, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`content` = `content`
+        self.`baseRevision` = `baseRevision`
+        self.`workspaceId` = `workspaceId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct SkillsDeleteParams: Codable, Sendable {
+    public var `name`: SkillName
+    public var `workspaceId`: Id?
+    public var `idempotencyKey`: Id
+    public init(`name`: SkillName, `workspaceId`: Id? = nil, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`workspaceId` = `workspaceId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct SkillMutationResult: Codable, Sendable {
+    public var `skill`: Skill
+    public init(`skill`: Skill) {
+        self.`skill` = `skill`
+    }
+}
+
+public struct SkillsDeleteResult: Codable, Sendable {
+    public var `name`: SkillName
+    public var `removed`: Bool
+    public init(`name`: SkillName, `removed`: Bool) {
+        self.`name` = `name`
+        self.`removed` = `removed`
+    }
+}
+
+public struct SkillsChangedEvent: Codable, Sendable {
+    public var `scope`: SkillScope
+    public var `workspaceId`: Id?
+    public init(`scope`: SkillScope, `workspaceId`: Id? = nil) {
+        self.`scope` = `scope`
+        self.`workspaceId` = `workspaceId`
     }
 }
 
@@ -1981,7 +2150,8 @@ public struct TranscriptMessage: Codable, Sendable {
     public var `agentMessage`: AgentMessageSource?
     public var `subagent`: SubagentRun?
     public var `subagentId`: Id?
-    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil, `subagent`: SubagentRun? = nil, `subagentId`: Id? = nil) {
+    public var `attachments`: [PromptAttachment]?
+    public init(`localId`: Id, `generation`: UInt32, `seq`: Decimal, `role`: TranscriptRole, `kind`: TranscriptKind, `text`: String, `complete`: Bool, `promptId`: Id? = nil, `tool`: ToolCall? = nil, `terminal`: TerminalOutput? = nil, `plan`: [PlanEntry]? = nil, `usage`: TokenUsage? = nil, `agentMessage`: AgentMessageSource? = nil, `subagent`: SubagentRun? = nil, `subagentId`: Id? = nil, `attachments`: [PromptAttachment]? = nil) {
         self.`localId` = `localId`
         self.`generation` = `generation`
         self.`seq` = `seq`
@@ -1997,6 +2167,35 @@ public struct TranscriptMessage: Codable, Sendable {
         self.`agentMessage` = `agentMessage`
         self.`subagent` = `subagent`
         self.`subagentId` = `subagentId`
+        self.`attachments` = `attachments`
+    }
+}
+
+public enum PromptAttachmentKind: String, Codable, Sendable {
+    case `image` = "image"
+    case `audio` = "audio"
+    case `text` = "text"
+    case `file` = "file"
+}
+
+public struct PromptAttachment: Codable, Sendable {
+    public var `kind`: PromptAttachmentKind
+    public var `name`: String
+    public var `mimeType`: String
+    public var `bytes`: Decimal
+    public var `attachmentId`: Id?
+    public var `data`: String?
+    public var `path`: String?
+    public var `thumbnail`: String?
+    public init(`kind`: PromptAttachmentKind, `name`: String, `mimeType`: String, `bytes`: Decimal, `attachmentId`: Id? = nil, `data`: String? = nil, `path`: String? = nil, `thumbnail`: String? = nil) {
+        self.`kind` = `kind`
+        self.`name` = `name`
+        self.`mimeType` = `mimeType`
+        self.`bytes` = `bytes`
+        self.`attachmentId` = `attachmentId`
+        self.`data` = `data`
+        self.`path` = `path`
+        self.`thumbnail` = `thumbnail`
     }
 }
 
@@ -2017,9 +2216,9 @@ public struct PanePromptParams: Codable, Sendable {
     public var `paneId`: Id
     public var `text`: String
     public var `origin`: PromptOrigin?
-    public var `attachments`: [AttachmentRef]?
+    public var `attachments`: [PromptAttachment]?
     public var `idempotencyKey`: Id
-    public init(`paneId`: Id, `text`: String, `origin`: PromptOrigin? = nil, `attachments`: [AttachmentRef]? = nil, `idempotencyKey`: Id) {
+    public init(`paneId`: Id, `text`: String, `origin`: PromptOrigin? = nil, `attachments`: [PromptAttachment]? = nil, `idempotencyKey`: Id) {
         self.`paneId` = `paneId`
         self.`text` = `text`
         self.`origin` = `origin`
@@ -6461,6 +6660,8 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case paneNeedsLogin = "pane.needs_login"
     case paneAuthFinished = "pane.auth_finished"
     case paneUpdate = "pane.update"
+    case paneCommandsChanged = "pane.commands_changed"
+    case skillsChanged = "skills.changed"
     case attentionChanged = "attention.changed"
     case paneQueuePaused = "pane.queue.paused"
     case paneQueueResumed = "pane.queue.resumed"
@@ -6544,6 +6745,8 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .paneNeedsLogin: EventDescriptor(paramsType: "PaneNeedsLoginEvent", durable: true),
     .paneAuthFinished: EventDescriptor(paramsType: "PaneAuthFinishedEvent", durable: true),
     .paneUpdate: EventDescriptor(paramsType: "PaneUpdateEvent", durable: true),
+    .paneCommandsChanged: EventDescriptor(paramsType: "PaneCommandsChangedEvent", durable: true),
+    .skillsChanged: EventDescriptor(paramsType: "SkillsChangedEvent", durable: false),
     .attentionChanged: EventDescriptor(paramsType: "AttentionChangedEvent", durable: true),
     .paneQueuePaused: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),
     .paneQueueResumed: EventDescriptor(paramsType: "PaneQueueStateEvent", durable: true),

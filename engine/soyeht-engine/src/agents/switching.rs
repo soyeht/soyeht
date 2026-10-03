@@ -259,7 +259,7 @@ impl Core {
                     .client
                     .request(
                         "session/new",
-                        super::hooks::session_parameters(
+                        super::opening::parameters(
                             &self.directory,
                             &candidate.state,
                             soyeht_acp::client::new_session_with_mcp(

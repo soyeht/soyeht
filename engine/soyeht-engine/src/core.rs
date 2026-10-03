@@ -39,6 +39,7 @@ pub struct Core {
     pub vcs: soyeht_vcs::Service,
     pub editor: crate::editor::Service,
     pub(crate) project_watches: crate::editor::ProjectWatches,
+    pub(crate) skill_watches: crate::skills::Watches,
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
@@ -118,6 +119,7 @@ impl Core {
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),
             project_watches: Default::default(),
+            skill_watches: Default::default(),
             languages: crate::languages::Service::restore(language_servers)?,
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
@@ -168,6 +170,13 @@ impl Core {
                 .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
         }
         core.restore_experiment_captures()?;
+        if let Err(error) = core.start_skills() {
+            // Skills are optional: the engine serves everything else without them.
+            eprintln!(
+                "{}",
+                json!({"event":"engine.skills_unavailable","kind":errors::kind(&error)})
+            );
+        }
         let editor_restore_ms = core.now_ms();
         for file in editor_files {
             core.editor.restore(file, editor_restore_ms);
@@ -586,6 +595,7 @@ impl Core {
     pub fn poll_output(&mut self) -> Result<()> {
         self.advance_editor()?;
         self.advance_project_tree()?;
+        self.advance_skills()?;
         self.advance_local_servers()?;
         self.advance_web_commands()?;
         if self.ptyd.is_none() {

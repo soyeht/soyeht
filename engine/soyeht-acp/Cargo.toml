@@ -13,6 +13,7 @@ serde_json.workspace = true
 base64.workspace = true
 sha2.workspace = true
 uuid.workspace = true
+url.workspace = true
 
 [[bin]]
 name = "soyeht-fake-acp"

@@ -79,6 +79,12 @@ struct AgentTranscriptRow: View {
         .foregroundStyle(message.agentMessage == nil ? style.secondary : style.accent)
       FilePathText(message.text, workspaceId: workspaceId)
         .textSelection(.enabled)
+      if let attachments = message.attachments, !attachments.isEmpty {
+        AgentAttachmentChips(
+          items: attachments.enumerated().map {
+            AgentAttachmentPresentation(attachment: $0.element, index: $0.offset)
+          }, style: style)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, PaneInteriorMetrics.cardPadding)

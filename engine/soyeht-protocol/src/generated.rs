@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -167,6 +167,8 @@ pub enum ErrorKind {
     WritingSectionRefused,
     #[serde(rename = "harness_switch_failed")]
     HarnessSwitchFailed,
+    #[serde(rename = "attachment_limit_exceeded")]
+    AttachmentLimitExceeded,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -1430,7 +1432,7 @@ pub struct PromptItem {
     #[serde(rename = "generation", skip_serializing_if = "Option::is_none")]
     pub generation: Option<u32>,
     #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<AttachmentRef>>,
+    pub attachments: Option<Vec<PromptAttachment>>,
     #[serde(rename = "agentMessage", skip_serializing_if = "Option::is_none")]
     pub agent_message: Option<AgentMessageSource>,
 }
@@ -1585,6 +1587,145 @@ pub struct AgentSession {
     pub role: AgentPaneRole,
     #[serde(rename = "harnessSwitch", skip_serializing_if = "Option::is_none")]
     pub harness_switch: Option<AgentHarnessSwitch>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentCommand {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "description")]
+    pub description: String,
+    #[serde(rename = "inputHint", skip_serializing_if = "Option::is_none")]
+    pub input_hint: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneCommandsListParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneCommandsListResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "items")]
+    pub items: Vec<AgentCommand>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneCommandsChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+}
+pub type SkillName = String;
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SkillScope {
+    #[serde(rename = "user")]
+    User,
+    #[serde(rename = "workspace")]
+    Workspace,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Skill {
+    #[serde(rename = "name")]
+    pub name: SkillName,
+    #[serde(rename = "scope")]
+    pub scope: SkillScope,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "path")]
+    pub path: String,
+    #[serde(rename = "description", skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "allowedTools", skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<String>,
+    #[serde(rename = "revision", skip_serializing_if = "Option::is_none")]
+    pub revision: Option<String>,
+    #[serde(rename = "problem", skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsListParams {
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<Skill>,
+    #[serde(rename = "userDirectory")]
+    pub user_directory: String,
+    #[serde(rename = "workspaceDirectory", skip_serializing_if = "Option::is_none")]
+    pub workspace_directory: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsReadParams {
+    #[serde(rename = "name")]
+    pub name: SkillName,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsReadResult {
+    #[serde(rename = "skill")]
+    pub skill: Skill,
+    #[serde(rename = "content")]
+    pub content: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsCreateParams {
+    #[serde(rename = "name")]
+    pub name: SkillName,
+    #[serde(rename = "description")]
+    pub description: String,
+    #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsUpdateParams {
+    #[serde(rename = "name")]
+    pub name: SkillName,
+    #[serde(rename = "content")]
+    pub content: String,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: String,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsDeleteParams {
+    #[serde(rename = "name")]
+    pub name: SkillName,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillMutationResult {
+    #[serde(rename = "skill")]
+    pub skill: Skill,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsDeleteResult {
+    #[serde(rename = "name")]
+    pub name: SkillName,
+    #[serde(rename = "removed")]
+    pub removed: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SkillsChangedEvent {
+    #[serde(rename = "scope")]
+    pub scope: SkillScope,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProbeCapability {
@@ -1799,6 +1940,38 @@ pub struct TranscriptMessage {
     pub subagent: Option<SubagentRun>,
     #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
     pub subagent_id: Option<Id>,
+    #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<PromptAttachment>>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PromptAttachmentKind {
+    #[serde(rename = "image")]
+    Image,
+    #[serde(rename = "audio")]
+    Audio,
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "file")]
+    File,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PromptAttachment {
+    #[serde(rename = "kind")]
+    pub kind: PromptAttachmentKind,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    #[serde(rename = "bytes")]
+    pub bytes: Decimal,
+    #[serde(rename = "attachmentId", skip_serializing_if = "Option::is_none")]
+    pub attachment_id: Option<Id>,
+    #[serde(rename = "data", skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(rename = "thumbnail", skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentRef {
@@ -1820,7 +1993,7 @@ pub struct PanePromptParams {
     #[serde(rename = "origin", skip_serializing_if = "Option::is_none")]
     pub origin: Option<PromptOrigin>,
     #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<AttachmentRef>>,
+    pub attachments: Option<Vec<PromptAttachment>>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -5906,6 +6079,18 @@ pub enum Request {
     HarnessCustomUpdate(HarnessCustomUpdateParams),
     #[serde(rename = "harness.custom.remove")]
     HarnessCustomRemove(HarnessCustomRemoveParams),
+    #[serde(rename = "pane.commands.list")]
+    PaneCommandsList(PaneCommandsListParams),
+    #[serde(rename = "skills.list")]
+    SkillsList(SkillsListParams),
+    #[serde(rename = "skills.read")]
+    SkillsRead(SkillsReadParams),
+    #[serde(rename = "skills.create")]
+    SkillsCreate(SkillsCreateParams),
+    #[serde(rename = "skills.update")]
+    SkillsUpdate(SkillsUpdateParams),
+    #[serde(rename = "skills.delete")]
+    SkillsDelete(SkillsDeleteParams),
     #[serde(rename = "model.list")]
     ModelList(ModelListParams),
     #[serde(rename = "pane.queue.resume")]
@@ -6314,6 +6499,32 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "HarnessCustomRemoveResult",
         true,
     ),
+    (
+        "pane.commands.list",
+        "PaneCommandsListParams",
+        "PaneCommandsListResult",
+        false,
+    ),
+    ("skills.list", "SkillsListParams", "SkillsListResult", false),
+    ("skills.read", "SkillsReadParams", "SkillsReadResult", false),
+    (
+        "skills.create",
+        "SkillsCreateParams",
+        "SkillMutationResult",
+        true,
+    ),
+    (
+        "skills.update",
+        "SkillsUpdateParams",
+        "SkillMutationResult",
+        true,
+    ),
+    (
+        "skills.delete",
+        "SkillsDeleteParams",
+        "SkillsDeleteResult",
+        true,
+    ),
     ("model.list", "ModelListParams", "ModelListResult", false),
     (
         "pane.queue.resume",
@@ -6674,6 +6885,7 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.auth.start", "paneId"),
     ("pane.transcript", "paneId"),
     ("pane.draft", "paneId"),
+    ("pane.commands.list", "paneId"),
     ("model.list", "paneId"),
     ("pane.queue.resume", "paneId"),
     ("task.next", "paneId"),
@@ -6788,6 +7000,10 @@ pub enum EventName {
     PaneAuthFinished,
     #[serde(rename = "pane.update")]
     PaneUpdate,
+    #[serde(rename = "pane.commands_changed")]
+    PaneCommandsChanged,
+    #[serde(rename = "skills.changed")]
+    SkillsChanged,
     #[serde(rename = "attention.changed")]
     AttentionChanged,
     #[serde(rename = "pane.queue.paused")]
@@ -6894,6 +7110,8 @@ impl EventName {
             Self::PaneNeedsLogin => "pane.needs_login",
             Self::PaneAuthFinished => "pane.auth_finished",
             Self::PaneUpdate => "pane.update",
+            Self::PaneCommandsChanged => "pane.commands_changed",
+            Self::SkillsChanged => "skills.changed",
             Self::AttentionChanged => "attention.changed",
             Self::PaneQueuePaused => "pane.queue.paused",
             Self::PaneQueueResumed => "pane.queue.resumed",
@@ -7136,6 +7354,16 @@ pub const EVENTS: &[EventDescriptor] = &[
         durable: true,
     },
     EventDescriptor {
+        name: EventName::PaneCommandsChanged,
+        params_type: "PaneCommandsChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::SkillsChanged,
+        params_type: "SkillsChangedEvent",
+        durable: false,
+    },
+    EventDescriptor {
         name: EventName::AttentionChanged,
         params_type: "AttentionChangedEvent",
         durable: true,
@@ -7330,5 +7558,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::WritingSceneNotFound => -32033,
         ErrorKind::WritingSectionRefused => -32034,
         ErrorKind::HarnessSwitchFailed => -32035,
+        ErrorKind::AttachmentLimitExceeded => -32036,
     }
 }

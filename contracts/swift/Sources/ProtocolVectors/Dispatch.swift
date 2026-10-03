@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -169,6 +169,23 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "ElicitationRequest": return try codec(SoyehtProtocol.ElicitationRequest.self, data)
         case "AgentHarnessSwitch": return try codec(SoyehtProtocol.AgentHarnessSwitch.self, data)
         case "AgentSession": return try codec(SoyehtProtocol.AgentSession.self, data)
+        case "AgentCommand": return try codec(SoyehtProtocol.AgentCommand.self, data)
+        case "PaneCommandsListParams": return try codec(SoyehtProtocol.PaneCommandsListParams.self, data)
+        case "PaneCommandsListResult": return try codec(SoyehtProtocol.PaneCommandsListResult.self, data)
+        case "PaneCommandsChangedEvent": return try codec(SoyehtProtocol.PaneCommandsChangedEvent.self, data)
+        case "SkillName": return try codec(SoyehtProtocol.SkillName.self, data)
+        case "SkillScope": return try codec(SoyehtProtocol.SkillScope.self, data)
+        case "Skill": return try codec(SoyehtProtocol.Skill.self, data)
+        case "SkillsListParams": return try codec(SoyehtProtocol.SkillsListParams.self, data)
+        case "SkillsListResult": return try codec(SoyehtProtocol.SkillsListResult.self, data)
+        case "SkillsReadParams": return try codec(SoyehtProtocol.SkillsReadParams.self, data)
+        case "SkillsReadResult": return try codec(SoyehtProtocol.SkillsReadResult.self, data)
+        case "SkillsCreateParams": return try codec(SoyehtProtocol.SkillsCreateParams.self, data)
+        case "SkillsUpdateParams": return try codec(SoyehtProtocol.SkillsUpdateParams.self, data)
+        case "SkillsDeleteParams": return try codec(SoyehtProtocol.SkillsDeleteParams.self, data)
+        case "SkillMutationResult": return try codec(SoyehtProtocol.SkillMutationResult.self, data)
+        case "SkillsDeleteResult": return try codec(SoyehtProtocol.SkillsDeleteResult.self, data)
+        case "SkillsChangedEvent": return try codec(SoyehtProtocol.SkillsChangedEvent.self, data)
         case "ProbeCapability": return try codec(SoyehtProtocol.ProbeCapability.self, data)
         case "AuthMethod": return try codec(SoyehtProtocol.AuthMethod.self, data)
         case "HarnessInfo": return try codec(SoyehtProtocol.HarnessInfo.self, data)
@@ -185,6 +202,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "SubagentStatus": return try codec(SoyehtProtocol.SubagentStatus.self, data)
         case "SubagentRun": return try codec(SoyehtProtocol.SubagentRun.self, data)
         case "TranscriptMessage": return try codec(SoyehtProtocol.TranscriptMessage.self, data)
+        case "PromptAttachmentKind": return try codec(SoyehtProtocol.PromptAttachmentKind.self, data)
+        case "PromptAttachment": return try codec(SoyehtProtocol.PromptAttachment.self, data)
         case "AttachmentRef": return try codec(SoyehtProtocol.AttachmentRef.self, data)
         case "PanePromptParams": return try codec(SoyehtProtocol.PanePromptParams.self, data)
         case "PanePromptResult": return try codec(SoyehtProtocol.PanePromptResult.self, data)

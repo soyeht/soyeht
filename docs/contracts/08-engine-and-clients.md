@@ -129,7 +129,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.next` | no | no | yes | no |
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
-| `device.*`, `settings.set`, `harness.custom.*` | yes | yes | no | no |
+| `device.*`, `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
 
 ## 3. State snapshot and events without loss (R05)
@@ -184,7 +184,10 @@ model?, effort?, permission?, cwd|worktree?, taskId?, name?}` →
 {workspaceId, layout}` (layout is shared and changes only through this request),
 `pane.focus` (per client), `pane.resize {cols, rows}` (policy: the engine uses
 size from the last human client to resize), `pane.input {bytes}` (raw terminal),
-`pane.prompt {text, attachments?, idempotencyKey}` → `{promptId, queued}`,
+`pane.prompt {text, attachments?, idempotencyKey}` → `{promptId, queued}`
+(each `PromptAttachment` has `kind`, `name`, `mimeType`, `bytes` and one source:
+`attachmentId` for type 3 chunks, inline base64 `data`, or a `path` on the
+engine's Mac; the engine stages sent bytes and queues paths, ADR 0076),
 `pane.queue.list`, `pane.queue.remove {promptId}`,
 `pane.cancel`,
 `pane.permission.answer {requestId, optionId}`,
@@ -202,6 +205,9 @@ localId, generation, seq, complete`,
 `pane.message.send {toPaneId, text}` and `pane.message.list` (persisted pane-to-pane
 messages with `queued|delivered|read` state),
 `pane.record.set {on}` (do not record this pane's screen; contract 07 §2).
+`pane.commands.list {paneId}` → `{paneId, items: [{name, description, inputHint?}]}`,
+the slash commands the harness last advertised with ACP
+`available_commands_update` (ADR 0075).
 
 **Tasks** (1:1 map to contract 03 §11 MCP tools):
 `task.create`, `task.list {workspaceId, state?, limit, cursor?}`,
@@ -235,7 +241,9 @@ capabilities), `model.list {harness}` (session catalog when available, with
 closed source `not_probed | native_session`),
 `device.pair.start|decide`, `device.list`, `device.revoke`,
 `push.register|unregister`, `settings.get`/`settings.set {key, value}`
-(schema-typed keys), `engine.status` → `{version, generation,
+(schema-typed keys), `skills.list {workspaceId?}` → `{items, userDirectory,
+workspaceDirectory?}` and `skills.read|create|update|delete` over the user's and
+a workspace's skill folders (ADR 0075), `engine.status` → `{version, generation,
 ptyd: {connected, version, generation}, db: {id, schemaVersion}}`.
 
 ## 5. Events (notifications)
@@ -280,6 +288,8 @@ executable schema carry no state cursor and never enter replay.
 - `file.changed_on_disk`, `file.saved {by}`, `file.conflict`
 - `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`
 - `usage.changed {provider, state, primary?, secondary?, source, fetchedAt}`
+- `pane.commands_changed {paneId}` (read the list with `pane.commands.list`),
+  `skills.changed {scope, workspaceId?}` (non-durable; list again)
 - `pane.message {fromPaneId, toPaneId, text, state}`
 - `device.pair_requested`, `device.paired`, `device.revoked`
 - `engine.updating`, `engine.restarted {generation}`, `ptyd.reconnected
@@ -333,6 +343,7 @@ executable schema carry no state cursor and never enter replay.
 | JSON body (type 1), any message including snapshot parts | ≤ 1 MiB |
 | binary terminal body (type 2) | 16 B subheader + ≤ 64 KiB bytes |
 | attachment body (type 3) | 16 B subheader + ≤ 256 KiB, chunked with `attachmentId` |
+| prompt attachments | ≤ 20 files; sent bytes ≤ 10 MiB each and ≤ 20 MiB per prompt; inline `data` ≤ 192 KiB; thumbnail ≤ 6 KiB; over a limit = `attachment_limit_exceeded` |
 | `pane.transcript` per page | ≤ 200 messages or 512 KiB |
 | comments within snapshot | 20 per task (remainder through `task.comments`) |
 | retained event log | 10,000 events or 7 days |
@@ -346,9 +357,12 @@ in order on the same connection. Their payloads are concatenated. The first
 following JSON message that contains the matching `AttachmentRef` completes
 the transfer and declares its MIME type, display name and total byte count.
 The receiver accepts the reference only when the accumulated byte count equals
-the declared decimal `bytes`; an unknown, duplicated, interleaved, oversized or
-incomplete attachment fails closed. Unreferenced bytes are connection-scoped
-and are discarded when the connection closes. When a response contains an
+the declared decimal `bytes`; an unknown, duplicated, interleaved or
+incomplete attachment fails closed. Chunks over the byte or count limit are
+discarded and the request that names them fails with `attachment_limit_exceeded`,
+so the connection stays open. Every committing request, successful or not,
+empties the connection's pending attachments. Unreferenced bytes are
+connection-scoped and are discarded when the connection closes. When a response contains an
 attachment, its type 3 chunks precede that JSON response on the wire.
 
 **Multipart snapshot (without a `slow_consumer` cycle).** `state.snapshot`

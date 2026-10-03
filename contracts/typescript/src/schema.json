@@ -123,7 +123,8 @@
         "writing_line_not_found",
         "writing_scene_not_found",
         "writing_section_refused",
-        "harness_switch_failed"
+        "harness_switch_failed",
+        "attachment_limit_exceeded"
       ]
     },
     "RpcError": {
@@ -2684,7 +2685,7 @@
         "attachments": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/AttachmentRef"
+            "$ref": "#/$defs/PromptAttachment"
           }
         },
         "agentMessage": {
@@ -3044,6 +3045,331 @@
         "queue",
         "draft",
         "role"
+      ],
+      "additionalProperties": true
+    },
+    "AgentCommand": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1024
+        },
+        "inputHint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCommandsListParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCommandsListResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentCommand"
+          }
+        }
+      },
+      "required": [
+        "paneId",
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "PaneCommandsChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "SkillName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "SkillScope": {
+      "type": "string",
+      "enum": [
+        "user",
+        "workspace"
+      ]
+    },
+    "Skill": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "scope": {
+          "$ref": "#/$defs/SkillScope"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1024
+        },
+        "allowedTools": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1024
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "problem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "name",
+        "scope",
+        "path"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsListParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "SkillsListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Skill"
+          }
+        },
+        "userDirectory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "workspaceDirectory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "items",
+        "userDirectory"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsReadParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsReadResult": {
+      "type": "object",
+      "properties": {
+        "skill": {
+          "$ref": "#/$defs/Skill"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 262144
+        }
+      },
+      "required": [
+        "skill",
+        "content"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsCreateParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 262144
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsUpdateParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 262144
+        },
+        "baseRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "name",
+        "content",
+        "baseRevision",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsDeleteParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "name",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "SkillMutationResult": {
+      "type": "object",
+      "properties": {
+        "skill": {
+          "$ref": "#/$defs/Skill"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsDeleteResult": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "removed"
+      ],
+      "additionalProperties": true
+    },
+    "SkillsChangedEvent": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/SkillScope"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "scope"
       ],
       "additionalProperties": true
     },
@@ -3462,6 +3788,12 @@
         },
         "subagentId": {
           "$ref": "#/$defs/Id"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PromptAttachment"
+          }
         }
       },
       "required": [
@@ -3472,6 +3804,64 @@
         "kind",
         "text",
         "complete"
+      ],
+      "additionalProperties": true
+    },
+    "PromptAttachmentKind": {
+      "type": "string",
+      "description": "What the client attached. The engine checks it against mimeType and chooses the ACP content block from the agent's promptCapabilities.",
+      "enum": [
+        "image",
+        "audio",
+        "text",
+        "file"
+      ]
+    },
+    "PromptAttachment": {
+      "type": "object",
+      "description": "A file sent with a prompt. A request carries exactly one source: attachmentId (bytes sent as type-3 frames before the request), data (inline bytes) or path (a file already on the engine host). Queued prompts and transcript messages carry the engine-owned path instead, never data or attachmentId.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PromptAttachmentKind"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "bytes": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "attachmentId": {
+          "$ref": "#/$defs/Id"
+        },
+        "data": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "maxLength": 262144
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "thumbnail": {
+          "type": "string",
+          "description": "A small PNG or JPEG preview made by the client and kept with the transcript.",
+          "contentEncoding": "base64",
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "mimeType",
+        "bytes"
       ],
       "additionalProperties": true
     },
@@ -3516,7 +3906,7 @@
         "attachments": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/AttachmentRef"
+            "$ref": "#/$defs/PromptAttachment"
           }
         },
         "idempotencyKey": {
@@ -12317,6 +12707,60 @@
       },
       "mutation": true
     },
+    "pane.commands.list": {
+      "params": {
+        "$ref": "#/$defs/PaneCommandsListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneCommandsListResult"
+      },
+      "mutation": false
+    },
+    "skills.list": {
+      "params": {
+        "$ref": "#/$defs/SkillsListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillsListResult"
+      },
+      "mutation": false
+    },
+    "skills.read": {
+      "params": {
+        "$ref": "#/$defs/SkillsReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillsReadResult"
+      },
+      "mutation": false
+    },
+    "skills.create": {
+      "params": {
+        "$ref": "#/$defs/SkillsCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillMutationResult"
+      },
+      "mutation": true
+    },
+    "skills.update": {
+      "params": {
+        "$ref": "#/$defs/SkillsUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillMutationResult"
+      },
+      "mutation": true
+    },
+    "skills.delete": {
+      "params": {
+        "$ref": "#/$defs/SkillsDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SkillsDeleteResult"
+      },
+      "mutation": true
+    },
     "model.list": {
       "params": {
         "$ref": "#/$defs/ModelListParams"
@@ -13325,6 +13769,18 @@
       },
       "durable": true
     },
+    "pane.commands_changed": {
+      "params": {
+        "$ref": "#/$defs/PaneCommandsChangedEvent"
+      },
+      "durable": true
+    },
+    "skills.changed": {
+      "params": {
+        "$ref": "#/$defs/SkillsChangedEvent"
+      },
+      "durable": false
+    },
     "attention.changed": {
       "params": {
         "$ref": "#/$defs/AttentionChangedEvent"
@@ -13595,6 +14051,9 @@
     "editorAutosaveMs": 500,
     "projectTreeEntries": 5000,
     "projectTreeWatches": 256,
+    "agentCommands": 256,
+    "skillBytes": 262144,
+    "skillEntries": 256,
     "webPanesPerWorkspace": 10,
     "webSnapshotBytes": 204800,
     "webScreenshotBytes": 2097152,
@@ -13606,6 +14065,11 @@
     "webPickedElements": 20,
     "webOuterHtmlBytes": 2048,
     "webPickCropWidth": 640,
+    "promptAttachments": 20,
+    "promptAttachmentBytes": 10485760,
+    "promptAttachmentTotalBytes": 20971520,
+    "promptAttachmentInlineBytes": 196608,
+    "promptAttachmentThumbnailBytes": 6144,
     "webCommandWaiters": 64,
     "portScanBytes": 1048576,
     "writingSectionEntries": 500,
@@ -13713,6 +14177,7 @@
     "writing_line_not_found": -32032,
     "writing_scene_not_found": -32033,
     "writing_section_refused": -32034,
-    "harness_switch_failed": -32035
+    "harness_switch_failed": -32035,
+    "attachment_limit_exceeded": -32036
   }
 }

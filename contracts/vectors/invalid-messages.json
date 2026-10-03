@@ -1,5 +1,17 @@
 [
   {
+    "type": "PromptAttachmentKind",
+    "value": "video"
+  },
+  {
+    "type": "PromptAttachment",
+    "value": {
+      "kind": "image",
+      "name": "missing-size.png",
+      "mimeType": "image/png"
+    }
+  },
+  {
     "type": "PaneState",
     "value": "future_state"
   },

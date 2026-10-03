@@ -74,11 +74,15 @@ pub enum Error {
     MissingToolCallId,
     MissingPlanEntries,
     MissingModeId,
+    MissingCommands,
     MissingSubagentId,
     InvalidSubagentState,
     ContinuationTemplate,
     ContinuationMetadata,
     ContinuationMessages,
+    AttachmentPathMissing,
+    AttachmentPathNotAbsolute,
+    AttachmentSizeInvalid,
 }
 
 impl std::fmt::Display for Error {
@@ -166,6 +170,7 @@ impl std::fmt::Display for Error {
             Self::MissingToolCallId => formatter.write_str("tool update has no call ID"),
             Self::MissingPlanEntries => formatter.write_str("plan has no entries"),
             Self::MissingModeId => formatter.write_str("mode update has no mode ID"),
+            Self::MissingCommands => formatter.write_str("command update has no command list"),
             Self::MissingSubagentId => {
                 formatter.write_str("subagent update has no valid subagent session ID")
             }
@@ -179,6 +184,11 @@ impl std::fmt::Display for Error {
             Self::ContinuationMessages => {
                 formatter.write_str("continuation needs one whole message within its bound")
             }
+            Self::AttachmentPathMissing => formatter.write_str("queued attachment has no path"),
+            Self::AttachmentPathNotAbsolute => {
+                formatter.write_str("attachment path is not an absolute file path")
+            }
+            Self::AttachmentSizeInvalid => formatter.write_str("attachment size is invalid"),
         }
     }
 }

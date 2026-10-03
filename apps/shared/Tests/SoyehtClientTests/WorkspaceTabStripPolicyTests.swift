@@ -175,3 +175,91 @@ private func stripItems(spacing: Double = 10) -> [WorkspaceTabStripItem] {
       of: "last", direction: .next, orderedWorkspaceIds: order) == nil)
   #expect(order == ["first", "middle", "last"])
 }
+
+@Test func selectingAnyWorkspaceScrollsItsTabFullyIntoView() {
+  let items = stripItems()
+  let contentWidth = items.last!.maxX
+  for start in [0.0, 700, contentWidth - 375] {
+    let viewport = WorkspaceTabStripViewport(offset: start, width: 375)
+    for item in items {
+      let offset =
+        WorkspaceTabStripPolicy.revealOffset(
+          workspaceId: item.workspaceId, items: items, viewport: viewport,
+          contentWidth: contentWidth) ?? viewport.offset
+      let revealed = WorkspaceTabStripViewport(offset: offset, width: viewport.width)
+      let plan = WorkspaceTabStripPolicy.plan(
+        items: items, activeWorkspaceId: item.workspaceId, viewport: revealed)
+
+      #expect(plan.fullyVisibleWorkspaceIds.contains(item.workspaceId))
+      #expect(plan.sticky == nil)
+      #expect(offset >= 0 && offset <= contentWidth - viewport.width)
+    }
+  }
+}
+
+@Test func alreadyVisibleActiveTabDoesNotScroll() {
+  let items = stripItems()
+  let viewport = WorkspaceTabStripViewport(offset: 0, width: 700)
+  #expect(
+    WorkspaceTabStripPolicy.revealOffset(
+      workspaceId: "workspace-1", items: items, viewport: viewport,
+      contentWidth: items.last!.maxX) == nil)
+}
+
+@Test func overflowDetectionReportsEachHiddenSide() {
+  let contentWidth = stripItems().last!.maxX
+  let atStart = WorkspaceTabStripPolicy.overflow(
+    contentWidth: contentWidth, viewport: WorkspaceTabStripViewport(offset: 0, width: 700))
+  #expect(atStart == WorkspaceTabStripOverflow(hiddenLeading: false, hiddenTrailing: true))
+
+  let middle = WorkspaceTabStripPolicy.overflow(
+    contentWidth: contentWidth, viewport: WorkspaceTabStripViewport(offset: 700, width: 700))
+  #expect(middle == WorkspaceTabStripOverflow(hiddenLeading: true, hiddenTrailing: true))
+
+  let atEnd = WorkspaceTabStripPolicy.overflow(
+    contentWidth: contentWidth,
+    viewport: WorkspaceTabStripViewport(offset: contentWidth - 700, width: 700))
+  #expect(atEnd == WorkspaceTabStripOverflow(hiddenLeading: true, hiddenTrailing: false))
+
+  let fits = WorkspaceTabStripPolicy.overflow(
+    contentWidth: contentWidth, viewport: WorkspaceTabStripViewport(offset: 0, width: 3_440))
+  #expect(!fits.overflows)
+  // Layout rounding below half a point never reports a hidden edge.
+  let rounded = WorkspaceTabStripPolicy.overflow(
+    contentWidth: 700.4, viewport: WorkspaceTabStripViewport(offset: 0.3, width: 700))
+  #expect(!rounded.overflows)
+
+  #expect(WorkspaceTabStripPolicy.overflows(contentWidth: contentWidth, availableWidth: 1_024))
+  #expect(!WorkspaceTabStripPolicy.overflows(contentWidth: 700.4, availableWidth: 700))
+}
+
+@Test func edgeChevronsPageMostOfAViewportAndStopAtTheEnds() {
+  let contentWidth = 2_000.0
+  let viewport = WorkspaceTabStripViewport(offset: 500, width: 500)
+  #expect(
+    WorkspaceTabStripPolicy.pageOffset(
+      toward: .trailing, viewport: viewport, contentWidth: contentWidth) == 900)
+  #expect(
+    WorkspaceTabStripPolicy.pageOffset(
+      toward: .leading, viewport: viewport, contentWidth: contentWidth) == 100)
+  #expect(
+    WorkspaceTabStripPolicy.pageOffset(
+      toward: .leading, viewport: WorkspaceTabStripViewport(offset: 100, width: 500),
+      contentWidth: contentWidth) == 0)
+  #expect(
+    WorkspaceTabStripPolicy.pageOffset(
+      toward: .trailing, viewport: WorkspaceTabStripViewport(offset: 1_400, width: 500),
+      contentWidth: contentWidth) == 1_500)
+}
+
+@Test func onlyAVerticalMouseWheelTurnScrollsTheStripSideways() {
+  #expect(
+    WorkspaceTabStripPolicy.wheelScrollsHorizontally(
+      deltaX: 0, deltaY: -3, hasPreciseDeltas: false))
+  #expect(
+    !WorkspaceTabStripPolicy.wheelScrollsHorizontally(
+      deltaX: -3, deltaY: 0, hasPreciseDeltas: false))
+  #expect(
+    !WorkspaceTabStripPolicy.wheelScrollsHorizontally(
+      deltaX: 0, deltaY: -12, hasPreciseDeltas: true))
+}

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 public enum ProtocolLimits {
     public static let jsonBytes = 1048576
     public static let terminalPayloadBytes = 65536
@@ -44,6 +44,9 @@ public enum ProtocolLimits {
     public static let editorAutosaveMs = 500
     public static let projectTreeEntries = 5000
     public static let projectTreeWatches = 256
+    public static let agentCommands = 256
+    public static let skillBytes = 262144
+    public static let skillEntries = 256
     public static let webPanesPerWorkspace = 10
     public static let webSnapshotBytes = 204800
     public static let webScreenshotBytes = 2097152
@@ -55,6 +58,11 @@ public enum ProtocolLimits {
     public static let webPickedElements = 20
     public static let webOuterHtmlBytes = 2048
     public static let webPickCropWidth = 640
+    public static let promptAttachments = 20
+    public static let promptAttachmentBytes = 10485760
+    public static let promptAttachmentTotalBytes = 20971520
+    public static let promptAttachmentInlineBytes = 196608
+    public static let promptAttachmentThumbnailBytes = 6144
     public static let webCommandWaiters = 64
     public static let portScanBytes = 1048576
     public static let writingSectionEntries = 500

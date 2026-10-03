@@ -1,6 +1,4 @@
-use super::creation::{
-    create_contained_directories, validate_relative_creation_path, verify_existing_binary,
-};
+use super::creation::{create_contained_directories, validate_relative_creation_path};
 use super::project_files::ProjectFile;
 use crate::{errors, errors::Result};
 use soyeht_editor::{
@@ -195,25 +193,7 @@ impl FileSystemPort for SystemFiles {
             io::Error::new(io::ErrorKind::InvalidInput, "image filename is missing")
         })?;
         let target = parent.join(filename);
-        let temporary = parent.join(format!(".soyeht-asset-{}", Uuid::new_v4()));
-        let mut temporary_file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
-        let prepared = (|| {
-            temporary_file.write_all(bytes)?;
-            temporary_file.sync_all()?;
-            match fs::hard_link(&temporary, &target) {
-                Ok(()) => Ok(()),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    verify_existing_binary(&target, bytes)
-                }
-                Err(error) => Err(error),
-            }
-        })();
-        let _ = fs::remove_file(&temporary);
-        prepared?;
-        fs::File::open(&parent)?.sync_all()?;
+        crate::immutable_file::publish(&target, bytes)?;
         let canonical = target.canonicalize()?;
         if !canonical.starts_with(&root) {
             return Err(io::Error::new(

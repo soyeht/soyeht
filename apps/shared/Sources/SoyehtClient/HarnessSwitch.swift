@@ -51,9 +51,53 @@ public enum HarnessSwitchModel {
     return "Restart conversation with \(target.name)"
   }
 
-  /// The harness's display name when the catalogue knows it, else its identifier.
-  public static func displayName(of harnessId: String, in harnesses: [HarnessInfo]) -> String {
-    harnesses.first { $0.id == harnessId }?.name ?? harnessId
+  /// A harness name without the ACP adapter's suffix ("Claude Agent" → "Claude"), the rule
+  /// the engine names agent panes by.
+  public static func shortName(_ name: String) -> String {
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasSuffix(adapterSuffix) else { return trimmed }
+    let label = trimmed.dropLast(adapterSuffix.count).trimmingCharacters(in: .whitespaces)
+    return label.isEmpty ? trimmed : label
+  }
+
+  private static let adapterSuffix = " Agent"
+
+  /// The control that opens the switch from an agent pane: the harness the pane runs, named
+  /// on a menu button ("Claude ▾"), or the one it is switching to while the switch runs.
+  ///
+  /// The title is the engine's display name from the harness catalogue (`harness.list`
+  /// already applies the engine's naming rule). Before the catalogue loads, the running
+  /// harness falls back to the pane's display name, and any other harness to a name read
+  /// from its identifier. A raw launch identifier is never shown.
+  public static func control(
+    current: String, switchState: AgentHarnessSwitchView?, requested: String? = nil,
+    harnesses: [HarnessInfo], paneName: String?
+  ) -> HarnessSwitchControl {
+    let busy = requested != nil || isSwitching(switchState)
+    let shown = busy ? (switchState?.toHarness ?? requested ?? current) : current
+    let title: String
+    if let entry = harnesses.first(where: { $0.id == shown }) {
+      title = shortName(entry.name)
+    } else if shown == current,
+      let paneName = paneName?.trimmingCharacters(in: .whitespaces), !paneName.isEmpty
+    {
+      title = paneName
+    } else {
+      title = readableName(ofHarnessId: shown)
+    }
+    return HarnessSwitchControl(title: title, busy: busy)
+  }
+
+  /// A last-resort name from a launch identifier: "registry.claude-acp" → "Claude".
+  static func readableName(ofHarnessId harnessId: String) -> String {
+    var name = Substring(harnessId)
+    for prefix in ["registry.", "local.", "custom."] where name.hasPrefix(prefix) {
+      name = name.dropFirst(prefix.count)
+    }
+    if name.hasSuffix("-acp") { name = name.dropLast("-acp".count) }
+    let words = name.split(whereSeparator: { $0 == "-" || $0 == "_" || $0 == "." })
+    guard !words.isEmpty else { return "Agent" }
+    return words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
   }
 
   /// Runs one switch request and turns its result or error into an outcome. An
@@ -69,6 +113,23 @@ public enum HarnessSwitchModel {
       return .failed(error.localizedDescription)
     }
   }
+}
+
+/// What the harness control of an agent pane shows, on the Mac pane header and in the
+/// iPhone and iPad agent pane: the running harness named on a menu button.
+public struct HarnessSwitchControl: Equatable, Sendable {
+  public static let accessibilityLabel = "Switch harness"
+  public static let accessibilityHint =
+    "Restarts this pane on another harness and hands the conversation over"
+  /// The menu indicator after the name ("Claude ▾").
+  public static let symbol = "chevron.down"
+
+  /// The running harness's short name, for example "Claude".
+  public let title: String
+  /// A switch is running; the title names the harness it switches to.
+  public let busy: Bool
+
+  public var help: String { "\(Self.accessibilityLabel) (running \(title))" }
 }
 
 extension EngineClient {

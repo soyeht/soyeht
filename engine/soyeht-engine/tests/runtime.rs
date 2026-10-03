@@ -12,35 +12,20 @@ use soyeht_store::{
     database::Store,
     editor::{EditorFile, ProjectReplacement, ProjectReplacementItem},
     tasks::{ReviewStage, TaskReviewRecord},
-    test_support::DatabaseProbe,
 };
 use std::{
     fs,
     io::Write,
     os::unix::{fs::PermissionsExt, fs::symlink, net::UnixStream},
     path::PathBuf,
-    process::{Child, Command, Stdio},
-    sync::{Mutex, MutexGuard},
+    process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
 use uuid::Uuid;
 
-// Process-heavy integration tests share the runner. Wait for the observable
-// effect rather than assuming it will occur within one scheduling quantum.
-const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
-// This is a negative observation window, so increasing it would slow the
-// passing suite and weaken the assertion that backpressure remains bounded.
-const BACKPRESSURE_OBSERVATION_WINDOW: Duration = Duration::from_secs(6);
-// Every Rig owns an engine and supervisor process. Keep those process-heavy
-// controls in one queue without reducing the parallelism of pure tests.
-static RUNTIME_RIG_SLOT: Mutex<()> = Mutex::new(());
-
-fn runtime_rig_slot() -> MutexGuard<'static, ()> {
-    RUNTIME_RIG_SLOT
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
+mod support;
+use support::*;
 
 #[test]
 fn workspace_pane_layout_is_validated_persisted_and_restored() {
@@ -132,13 +117,6 @@ fn workspace_pane_layout_is_validated_persisted_and_restored() {
     assert_eq!(restored_layout, &pruned_layout);
 }
 
-struct Rig {
-    _runtime_slot: MutexGuard<'static, ()>,
-    path: PathBuf,
-    engine: Option<Child>,
-    ptyd: Child,
-}
-
 #[test]
 fn writing_section_listing_ignores_protected_workspace_siblings() {
     let rig = Rig::new();
@@ -217,17 +195,7 @@ fn pane_created_events_carry_replica_metadata_for_other_clients() {
     );
     observer.call("engine.status", json!({}));
 
-    let events: Vec<Value> = observer
-        .messages
-        .iter()
-        .filter_map(|frame| {
-            let Frame::Json(bytes) = frame else {
-                return None;
-            };
-            let value: Value = serde_json::from_slice(bytes).ok()?;
-            (value["method"] == "pane.created").then_some(value["params"].clone())
-        })
-        .collect();
+    let events = observer.notifications("pane.created");
     let editor = events
         .iter()
         .find(|event| event["pane"]["mode"] == "editor")
@@ -1036,269 +1004,6 @@ fn runtime_rig_slot_keeps_owner_failure_visible_and_recovers_the_queue() {
     drop(runtime_rig_slot());
 }
 
-impl Rig {
-    fn new() -> Self {
-        let runtime_slot = runtime_rig_slot();
-        let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));
-        fs::create_dir(&path).unwrap();
-        install_fake_worktrunk(&path);
-        install_fake_lsp(&path);
-        let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"));
-        let ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
-            .arg("--data-dir")
-            .arg(&path)
-            .env("PATH", test_path(&path))
-            .env("ZDOTDIR", &path)
-            .stdout(Stdio::null())
-            .spawn()
-            .expect("build workspace binaries before engine integration tests");
-        let mut rig = Self {
-            _runtime_slot: runtime_slot,
-            path,
-            engine: None,
-            ptyd,
-        };
-        rig.start();
-        rig
-    }
-    fn start(&mut self) {
-        self.engine = Some(
-            Command::new(env!("CARGO_BIN_EXE_soyeht-engine"))
-                .args(["--listen", "127.0.0.1:0", "--data-dir"])
-                .arg(&self.path)
-                .env("PATH", test_path(&self.path))
-                .env("ZDOTDIR", &self.path)
-                .stdout(Stdio::null())
-                .spawn()
-                .unwrap(),
-        );
-        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        while UnixStream::connect(self.path.join("engine.sock")).is_err() {
-            assert!(Instant::now() < deadline, "engine ready timeout");
-            thread::sleep(Duration::from_millis(10));
-        }
-    }
-    fn install_fake_harness(&self, modes: &str) {
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
-        fs::write(
-            self.path.join("harnesses.json"),
-            serde_json::to_vec(&json!([{
-                "id":"test-agent","name":"Test agent","command":binary,
-                "args":["--state-dir",self.path.join("native"),"--modes",modes],"version":"test"
-            }]))
-            .unwrap(),
-        )
-        .unwrap();
-    }
-    fn install_fake_claude_runner(&self) {
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
-        let executable = self.path.join("bin/npx");
-        fs::write(
-            &executable,
-            format!(
-                "#!/bin/sh\nexec '{}' --state-dir '{}'\n",
-                binary.display(),
-                self.path.join("claude-native").display()
-            ),
-        )
-        .unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    fn install_switch_harnesses(&self) {
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
-        fs::write(
-            self.path.join("harnesses.json"),
-            serde_json::to_vec(&json!([
-                {
-                    "id":"test-agent","name":"Test agent","command":binary,
-                    "args":["--state-dir",self.path.join("native")],"version":"test"
-                },
-                {
-                    "id":"next-agent","name":"Next agent","command":binary,
-                    "args":["--state-dir",self.path.join("next-native"),
-                        "--initialize-padding-bytes","65000"],"version":"test"
-                },
-                {
-                    "id":"chunked-agent","name":"Chunked Agent","command":binary,
-                    "args":["--state-dir",self.path.join("chunked-native"),
-                        "--replay-user-chunk-bytes","64"],"version":"test"
-                },
-                {
-                    "id":"broken-agent","name":"Broken agent","command":binary,
-                    "args":["--state-dir",self.path.join("broken-native"),"--require-login"],
-                    "version":"test"
-                }
-            ]))
-            .unwrap(),
-        )
-        .unwrap();
-    }
-    fn open_agent(&self, client: Client, workspace: &Value) -> (Client, String) {
-        self.open_agent_announcing(client, workspace, "config")
-    }
-    fn open_agent_announcing(
-        &self,
-        mut client: Client,
-        workspace: &Value,
-        modes: &str,
-    ) -> (Client, String) {
-        self.install_fake_harness(modes);
-        let pane = client.call(
-            "pane.create",
-            json!({"workspaceId":workspace,"mode":"agent",
-            "harness":"test-agent","idempotencyKey":Uuid::new_v4().to_string()}),
-        )["paneId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        while !client.pane(&pane)["agent"]["sessionId"].is_string() {
-            assert!(Instant::now() < deadline, "agent session did not open");
-            thread::sleep(Duration::from_millis(20));
-        }
-        (client, pane)
-    }
-    fn agent(&self) -> (Client, String) {
-        self.agent_announcing("config")
-    }
-    /// An agent pane whose fake announces its modes as `config`, `legacy` or `none`.
-    fn agent_announcing(&self, modes: &str) -> (Client, String) {
-        let mut client = self.client();
-        let workspace = client.call(
-            "workspace.create",
-            json!({"name":"Test","path":self.path,
-            "idempotencyKey":"agent-workspace"}),
-        )["workspace"]["workspaceId"]
-            .clone();
-        self.open_agent_announcing(client, &workspace, modes)
-    }
-    fn agent_in_workspace(&self, workspace: &str) -> (Client, String) {
-        self.open_agent(self.client(), &json!(workspace))
-    }
-    fn database_probe(&self) -> DatabaseProbe {
-        DatabaseProbe::open(&self.path).unwrap()
-    }
-    fn native_session(&self, session_id: &str) -> Value {
-        serde_json::from_slice(
-            &fs::read(self.path.join("native").join(format!("{session_id}.json"))).unwrap(),
-        )
-        .unwrap()
-    }
-    // Shift only a stopped test engine's persisted timestamps. There is no
-    // runtime clock override or shortened deadline in the shipped executable.
-    fn age_agent(&self, pane: &str, cancel: bool) {
-        assert!(self.engine.is_none());
-        self.database_probe().age_agent(pane, cancel).unwrap();
-    }
-    fn set_agent_silent_since(&self, pane: &str, value: i64) {
-        assert!(self.engine.is_none());
-        self.database_probe()
-            .set_agent_silent_since(pane, value)
-            .unwrap();
-    }
-    fn kill_engine(&mut self) {
-        if let Some(mut child) = self.engine.take() {
-            child.kill().unwrap();
-            child.wait().unwrap();
-        }
-        let _ = fs::remove_file(self.path.join("engine.sock"));
-    }
-    fn restart_ptyd(&mut self) {
-        self.ptyd.kill().unwrap();
-        self.ptyd.wait().unwrap();
-        let _ = fs::remove_file(self.path.join("ptyd.sock"));
-        let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"));
-        self.ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
-            .arg("--data-dir")
-            .arg(&self.path)
-            .env("PATH", test_path(&self.path))
-            .env("ZDOTDIR", &self.path)
-            .stdout(Stdio::null())
-            .spawn()
-            .unwrap();
-        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        while UnixStream::connect(self.path.join("ptyd.sock")).is_err() {
-            assert!(Instant::now() < deadline, "ptyd ready timeout");
-            thread::sleep(Duration::from_millis(10));
-        }
-    }
-    fn client(&self) -> Client {
-        Client::new(self.path.join("engine.sock"))
-    }
-    fn hook_client(&self) -> Client {
-        Client::new_named(self.path.join("engine.sock"), "soyeht-hook", json!([]))
-    }
-}
-
-fn test_path(root: &std::path::Path) -> std::ffi::OsString {
-    std::env::join_paths(
-        std::iter::once(root.join("bin")).chain(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        )),
-    )
-    .unwrap()
-}
-
-fn install_fake_lsp(root: &std::path::Path) {
-    let bin = root.join("bin");
-    fs::create_dir_all(&bin).unwrap();
-    let binary =
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-lsp");
-    symlink(binary, bin.join("rust-analyzer")).unwrap();
-}
-
-fn install_fake_worktrunk(root: &std::path::Path) {
-    let bin = root.join("bin");
-    fs::create_dir_all(&bin).unwrap();
-    let executable = bin.join("wt");
-    fs::write(
-        &executable,
-        r#"#!/bin/sh
-repository="$2"
-command="$3"
-if [ "$command" = "list" ]; then
-  printf '{"schema":2,"items":['
-  separator=""
-  for path in "$repository"/.test-worktrees/*; do
-    [ -d "$path" ] || continue
-    branch=$(cat "$path/.soyeht-test-branch")
-    modified=false
-    [ -e "$path/.dirty" ] && modified=true
-    integration=',"default_branch":{"integration":{"reason":"ancestor"}}'
-    [ -e "$path/.unreachable" ] && integration=""
-    printf '%s{"branch":"%s","head":{"sha":"abc"},"worktree":{"path":"%s","changes":{"staged":false,"modified":%s,"untracked":false,"renamed":false,"deleted":false}}%s}' "$separator" "$branch" "$path" "$modified" "$integration"
-    separator=,
-  done
-  printf ']}\n'
-  exit 0
-fi
-branch=""
-for argument in "$@"; do branch="$argument"; done
-safe_branch=$(printf '%s' "$branch" | tr '/' '-')
-path="$repository/.test-worktrees/$safe_branch"
-if [ "$command" = "switch" ]; then
-  mkdir -p "$path"
-  printf '%s' "$branch" > "$path/.soyeht-test-branch"
-  printf '{"path":"%s","branch":"%s"}\n' "$path" "$branch"
-  exit 0
-fi
-if [ "$command" = "remove" ]; then
-  rm -rf "$path"
-  printf '{"kind":"worktree","branch":"%s","path":"%s","branch_outcome":"not_attempted"}\n' "$branch" "$path"
-  exit 0
-fi
-exit 2
-"#,
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(executable, permissions).unwrap();
-}
-
 fn binding_hello(path: &std::path::Path, binding: &str) -> (UnixStream, Value) {
     let mut socket = UnixStream::connect(path).unwrap();
     let challenge = Frame::read_from(&mut socket).unwrap().unwrap();
@@ -1737,31 +1442,6 @@ fn initialize_review_repository(root: &std::path::Path) -> PathBuf {
     run(&["switch", "-c", "task/test"]);
     repository
 }
-impl Drop for Rig {
-    fn drop(&mut self) {
-        if let Some(mut child) = self.engine.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        if let Ok(mut client) = PtyClient::connect(&self.path.join("ptyd.sock"), u64::MAX)
-            && let Ok(Response::Instances(instances)) = client.request(Request::List)
-        {
-            for instance in instances {
-                let _ = client.request(Request::Close {
-                    instance_id: instance.instance_id,
-                });
-            }
-        }
-        let _ = self.ptyd.kill();
-        let _ = self.ptyd.wait();
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
-struct Client {
-    socket: UnixStream,
-    next: u64,
-    messages: Vec<Frame>,
-}
 
 #[test]
 fn web_host_attachment_frames_are_accepted_and_forwarded_before_the_response() {
@@ -1827,84 +1507,6 @@ fn web_host_attachment_frames_are_accepted_and_forwarded_before_the_response() {
     assert_eq!(
         response["result"]["image"]["bytes"],
         image.len().to_string()
-    );
-}
-
-#[test]
-fn prompt_images_commit_with_the_queue_and_reach_acp_in_exact_order() {
-    let rig = Rig::new();
-    let (mut client, pane) = rig.agent();
-    let session = client.pane(&pane)["agent"]["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let attachment_id = "10213243-5465-4768-99aa-bbccddeeff00";
-    let image = b"selected-element";
-    Frame::Attachment {
-        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
-        bytes: image.to_vec(),
-    }
-    .write_to(&mut client.socket)
-    .unwrap();
-    let params = json!({"paneId":pane,"text":"report-images","attachments":[{
-            "attachmentId":attachment_id,"mimeType":"image/png",
-            "name":"selected-element.png","bytes":image.len().to_string()
-        }],"idempotencyKey":"prompt-with-image"});
-    let first = client.call("pane.prompt", params.clone());
-    let expected = format!(
-        "image-report:[{{\"data\":\"{}\",\"hasUri\":false,\"mimeType\":\"image/png\"}}]",
-        STANDARD.encode(image)
-    );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let history = rig.native_session(&session)["history"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        if history.iter().any(|turn| turn[0] == expected) {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "prompt image did not reach ACP: {history:?}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
-    let mut retry = rig.client();
-    Frame::Attachment {
-        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
-        bytes: image.to_vec(),
-    }
-    .write_to(&mut retry.socket)
-    .unwrap();
-    assert_eq!(retry.call("pane.prompt", params.clone()), first);
-
-    let mut changed = rig.client();
-    let mut changed_image = image.to_vec();
-    *changed_image.last_mut().unwrap() = b'x';
-    Frame::Attachment {
-        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
-        bytes: changed_image,
-    }
-    .write_to(&mut changed.socket)
-    .unwrap();
-    assert_eq!(
-        changed.request("pane.prompt", params)["error"]["data"]["kind"],
-        "idempotency_conflict"
-    );
-    assert_eq!(
-        rig.native_session(&session)["history"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|turn| turn[0] == expected)
-            .count(),
-        1
-    );
-    assert!(
-        soyeht_store::agents::queue(&Store::open(&rig.path).unwrap(), &pane)
-            .unwrap()
-            .is_empty()
     );
 }
 
@@ -2007,53 +1609,6 @@ fn harness_switch_starts_a_new_session_with_bounded_context_and_retires_the_old_
         assert!(
             Instant::now() < deadline,
             "the new session did not serve a prompt after retired-process cleanup"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
-}
-
-fn transcript_items(client: &mut Client, pane: &str) -> Vec<Value> {
-    client.call("pane.transcript", json!({"paneId":pane}))["items"]
-        .as_array()
-        .unwrap()
-        .clone()
-}
-
-fn wait_for_user_message(client: &mut Client, pane: &str, text: &str) -> Vec<Value> {
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let items = transcript_items(client, pane);
-        if items
-            .iter()
-            .any(|message| message["role"] == "user" && message["text"] == text)
-        {
-            return items;
-        }
-        assert!(Instant::now() < deadline, "{text} was not recorded");
-        thread::sleep(Duration::from_millis(20));
-    }
-}
-
-/// Restarts the engine and its agents, then waits until the native replay has
-/// replaced every message the live transcript held.
-fn restart_and_wait_for_replay(rig: &mut Rig, pane: &str, live: &[Value]) -> Vec<Value> {
-    rig.kill_engine();
-    rig.restart_ptyd();
-    rig.start();
-    let mut restored = rig.client();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let items = transcript_items(&mut restored, pane);
-        if !items.is_empty()
-            && items
-                .iter()
-                .all(|item| live.iter().all(|old| old["localId"] != item["localId"]))
-        {
-            return items;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the native replay did not replace the transcript"
         );
         thread::sleep(Duration::from_millis(20));
     }
@@ -2670,76 +2225,6 @@ fn old_process_close_failure_is_durable_and_retried_after_the_new_session_commit
         process_instances_at(&rig, generation).len(),
         1,
         "retired process cleanup did not converge"
-    );
-}
-
-#[test]
-fn queued_prompt_image_survives_engine_restart_before_delivery() {
-    let mut rig = Rig::new();
-    let (mut client, pane) = rig.agent();
-    let session = client.pane(&pane)["agent"]["sessionId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    client.call(
-        "pane.prompt",
-        json!({"paneId":pane,"text":"slow","idempotencyKey":"hold-image"}),
-    );
-    client.wait_state(&pane, "working");
-    let attachment_id = "20314253-6475-4869-aabb-ccddeeff0011";
-    let image = b"durable-image";
-    Frame::Attachment {
-        header: soyeht_protocol::attachment::attachment_header(attachment_id).unwrap(),
-        bytes: image.to_vec(),
-    }
-    .write_to(&mut client.socket)
-    .unwrap();
-    let queued = client.call(
-        "pane.prompt",
-        json!({"paneId":pane,"text":"report-images","attachments":[{
-            "attachmentId":attachment_id,"mimeType":"image/png",
-            "name":"durable.png","bytes":image.len().to_string()
-        }],"idempotencyKey":"durable-prompt-image"}),
-    );
-    rig.kill_engine();
-    let store = Store::open(&rig.path).unwrap();
-    let prompt_id = queued["promptId"].as_str().unwrap();
-    assert_eq!(
-        soyeht_store::agents::prompt_attachments(&store, prompt_id)
-            .unwrap()
-            .first()
-            .unwrap()
-            .bytes,
-        image
-    );
-    drop(store);
-    rig.start();
-    let mut restored = rig.client();
-    let expected = format!(
-        "image-report:[{{\"data\":\"{}\",\"hasUri\":false,\"mimeType\":\"image/png\"}}]",
-        STANDARD.encode(image)
-    );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        if rig.native_session(&session)["history"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|turn| turn[0] == expected)
-        {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "restored prompt image was not delivered"
-        );
-        let _ = restored.pane(&pane);
-        thread::sleep(Duration::from_millis(20));
-    }
-    assert!(
-        soyeht_store::agents::prompt_attachments(&Store::open(&rig.path).unwrap(), prompt_id)
-            .unwrap()
-            .is_empty()
     );
 }
 
@@ -3660,23 +3145,7 @@ enum SignInEnding {
 }
 
 fn wait_for_pane_event(observer: &mut Client, method: &str, pane: &str) -> Value {
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        observer.call("engine.status", json!({}));
-        let found = observer.messages.iter().find_map(|frame| {
-            let Frame::Json(bytes) = frame else {
-                return None;
-            };
-            let value: Value = serde_json::from_slice(bytes).ok()?;
-            (value["method"] == method && value["params"]["paneId"] == pane)
-                .then(|| value["params"].clone())
-        });
-        if let Some(event) = found {
-            return event;
-        }
-        assert!(Instant::now() < deadline, "{method} was not published");
-        thread::sleep(Duration::from_millis(20));
-    }
+    observer.wait_for_notification(method, |params| params["paneId"] == pane)
 }
 
 fn sign_in_output_is_readable(client: &mut Client, terminal: &str) -> bool {
@@ -6621,165 +6090,6 @@ fn editor_disk_reload_and_conflict_preserve_both_versions_until_resolution() {
         file["conflicted"] == false && file["dirty"] == false
     });
     assert_eq!(fs::read_to_string(&path).unwrap(), "chosen\n");
-}
-
-impl Client {
-    fn wait_state(&mut self, pane: &str, state: &str) -> Value {
-        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        loop {
-            let view = self.pane(pane);
-            if view["state"] == state {
-                return view;
-            }
-            assert!(Instant::now() < deadline, "expected {state}: {view}");
-            thread::sleep(Duration::from_millis(20));
-        }
-    }
-    fn section(&mut self, section: &str) -> Vec<Value> {
-        self.snapshot()
-            .1
-            .into_iter()
-            .filter(|p| p["section"] == section)
-            .flat_map(|p| p["data"].as_array().unwrap().clone())
-            .collect()
-    }
-    fn new(path: PathBuf) -> Self {
-        Self::new_with_capabilities(path, json!([]))
-    }
-    fn new_with_capabilities(path: PathBuf, capabilities: Value) -> Self {
-        Self::new_named(path, "runtime-test", capabilities)
-    }
-    fn new_named(path: PathBuf, name: &str, capabilities: Value) -> Self {
-        let socket = UnixStream::connect(path).unwrap();
-        socket
-            .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
-            .unwrap();
-        socket
-            .set_write_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
-            .unwrap();
-        let mut client = Self {
-            socket,
-            next: 0,
-            messages: vec![],
-        };
-        let Some(Frame::Json(bytes)) = Frame::read_from(&mut client.socket).unwrap() else {
-            panic!("challenge")
-        };
-        assert_eq!(
-            serde_json::from_slice::<Value>(&bytes).unwrap()["method"],
-            "auth.challenge"
-        );
-        let welcome = client.call(
-            "hello",
-            json!({"client":name,"clientVersion":"1","protocolVersion":1,
-                "capabilities":capabilities}),
-        );
-        assert_eq!(welcome["role"], "human_local");
-        client
-    }
-    fn request(&mut self, method: &str, params: Value) -> Value {
-        self.next += 1;
-        let id = self.next;
-        Frame::Json(
-            serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
-                .unwrap(),
-        )
-        .write_to(&mut self.socket)
-        .unwrap();
-        loop {
-            let frame = Frame::read_from(&mut self.socket)
-                .unwrap()
-                .expect("server frame");
-            if let Frame::Json(bytes) = &frame {
-                let value: Value = serde_json::from_slice(bytes).unwrap();
-                if value["id"] == id {
-                    return value;
-                }
-            }
-            self.messages.push(frame);
-        }
-    }
-    fn call(&mut self, method: &str, params: Value) -> Value {
-        let response = self.request(method, params);
-        assert!(response.get("error").is_none(), "{response}");
-        response["result"].clone()
-    }
-    fn snapshot(&mut self) -> (Value, Vec<Value>) {
-        self.messages.clear();
-        let result = self.call("state.snapshot", json!({}));
-        let parts = self
-            .messages
-            .iter()
-            .filter_map(|f| {
-                if let Frame::Json(b) = f {
-                    let v: Value = serde_json::from_slice(b).unwrap();
-                    (v["method"] == "state.snapshot_part").then_some(v["params"].clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(parts.len(), result["parts"].as_u64().unwrap() as usize);
-        (result, parts)
-    }
-    fn pane(&mut self, id: &str) -> Value {
-        self.snapshot()
-            .1
-            .into_iter()
-            .filter(|p| p["section"] == "panes")
-            .flat_map(|p| p["data"].as_array().unwrap().clone())
-            .find(|p| p["paneId"] == id)
-            .expect("pane in snapshot")
-    }
-    fn create(&mut self, rig: &Rig) -> (String, String) {
-        let workspace = self.call(
-            "workspace.create",
-            json!({"name":"Test","path":rig.path,"idempotencyKey":Uuid::new_v4().to_string()}),
-        )["workspace"]["workspaceId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let pane = self.call(
-            "pane.create",
-            json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":"create-pane"}),
-        )["paneId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        while self.pane(&pane)["pid"].is_null() {
-            assert!(Instant::now() < deadline);
-            thread::sleep(Duration::from_millis(10));
-        }
-        (workspace, pane)
-    }
-    fn tail(&mut self, pane: &str) -> (Value, Vec<Frame>) {
-        self.messages.clear();
-        let info = self.call(
-            "pane.stream.subscribe",
-            json!({"paneId":pane,"from":"tail"}),
-        );
-        let mut frames = std::mem::take(&mut self.messages);
-        loop {
-            let frame = Frame::read_from(&mut self.socket).unwrap().expect("replay");
-            let done = if let Frame::Json(b) = &frame {
-                serde_json::from_slice::<Value>(b).unwrap()["method"] == "stream.replay_done"
-            } else {
-                false
-            };
-            frames.push(frame);
-            if done {
-                break;
-            }
-        }
-        frames.retain(|frame| match frame {
-            Frame::Terminal { pane_ref, .. } => {
-                Some(*pane_ref as u64) == info["binaryPaneRef"].as_u64()
-            }
-            _ => true,
-        });
-        (info, frames)
-    }
 }
 
 #[test]

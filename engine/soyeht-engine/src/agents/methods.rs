@@ -7,7 +7,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{AgentMessageSource, PaneMode, PaneState, PromptOrigin, limits};
-use soyeht_store::agents::{self, PromptAttachment};
+use soyeht_store::agents;
 
 pub(crate) fn handles(method: &str) -> bool {
     matches!(
@@ -328,7 +328,7 @@ impl Core {
         connection: &str,
         method: &str,
         params: &Value,
-        prompt_attachments: Vec<PromptAttachment>,
+        prompt_attachments: Vec<super::attachments::PreparedAttachment>,
     ) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
@@ -351,22 +351,22 @@ impl Core {
                     // commit, so held agent messages follow it, never precede it.
                     state.draft_until_ms = 0;
                 }
-                let references = (!prompt_attachments.is_empty()).then(|| {
+                let attachments = (!prompt_attachments.is_empty()).then(|| {
                     prompt_attachments
                         .iter()
-                        .map(|attachment| attachment.reference.clone())
+                        .map(|prepared| prepared.attachment.clone())
                         .collect()
                 });
                 let prompt = state.enqueue_with_attachments(
                     errors::param_str(params, "text")?.into(),
                     origin,
                     timestamp.clone(),
-                    references,
+                    attachments,
                 )?;
-                if !prompt_attachments.is_empty() {
-                    changes
-                        .prompt_attachments
-                        .insert(prompt.prompt_id.clone(), prompt_attachments);
+                // Staged bytes are written only once the queue accepted the
+                // prompt, and before the commit that names their paths.
+                for prepared in &prompt_attachments {
+                    prepared.publish()?;
                 }
                 changes.events.push(queued(pane, &state, now_ms));
                 json!({"promptId":prompt.prompt_id,"queued":true})

@@ -2,19 +2,6 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-struct PaneAutomationButton: View {
-  @Binding var showing: Bool
-
-  var body: some View {
-    Button {
-      showing.toggle()
-    } label: {
-      Image(systemName: "repeat").padding(6)
-    }
-    .help("Loop and lead controls")
-  }
-}
-
 struct PaneAutomationPanel: View {
   @Bindable var client: EngineClient
   let pane: Pane
@@ -50,8 +37,10 @@ struct PaneAutomationPanel: View {
         Button("Lead") { role = .chief }
       } label: {
         HStack(spacing: MacTheme.Space.x8) {
-          Image(systemName: "repeat").font(.system(size: 15, weight: .medium))
-            .foregroundStyle(MacTheme.accent)
+          Image(systemName: PaneHeaderAction.loop.systemImage).font(
+            .system(size: 15, weight: .medium)
+          )
+          .foregroundStyle(MacTheme.accent)
           Text("Loop this pane")
             .font(MacTheme.chrome(14, weight: .bold)).foregroundStyle(MacTheme.ink)
         }

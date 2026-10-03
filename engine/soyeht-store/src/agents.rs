@@ -5,8 +5,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::{
-    AttachmentRef, HarnessSetupReason, HarnessSetupState, PaneTranscriptResult, ProbeCapability,
-    TranscriptMessage, attachment::attachment_header, limits,
+    HarnessSetupReason, HarnessSetupState, PaneTranscriptResult, ProbeCapability,
+    TranscriptMessage, limits,
 };
 use soyeht_protocol::{PromptItem, PromptStatus};
 
@@ -165,51 +165,27 @@ pub fn record_message(
     Ok(())
 }
 
-pub fn enqueue_prompt(change: &Change<'_>, pane: &str, item: &PromptItem) -> Result<()> {
-    enqueue_prompt_with_attachments(change, pane, item, &[])
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PromptAttachment {
-    pub reference: AttachmentRef,
-    pub bytes: Vec<u8>,
-}
-
-fn validate_prompt_attachments(item: &PromptItem, attachments: &[PromptAttachment]) -> Result<()> {
-    let references = item.attachments.as_deref().unwrap_or_default();
-    if references.len() != attachments.len() || references.len() > limits::WEB_PICKED_ELEMENTS {
-        return Err(Error::InvalidQueuedPrompt);
-    }
-    let mut total = 0usize;
-    for (reference, attachment) in references.iter().zip(attachments) {
-        if reference != &attachment.reference
-            || reference.mime_type != "image/png"
-            || reference.name.is_empty()
-            || reference.name.len() > 256
-            || attachment_header(&reference.attachment_id).is_err()
-            || reference.bytes.parse::<usize>().ok() != Some(attachment.bytes.len())
-            || reference.bytes != attachment.bytes.len().to_string()
-            || attachment.bytes.is_empty()
-        {
-            return Err(Error::InvalidQueuedPrompt);
-        }
-        total = total
-            .checked_add(attachment.bytes.len())
-            .ok_or(Error::InvalidQueuedPrompt)?;
-    }
-    if total > limits::WEB_SCREENSHOT_BYTES {
+/// A queued prompt names its attachments by engine-owned absolute paths; their
+/// bytes never enter the database.
+fn validate_prompt_attachments(item: &PromptItem) -> Result<()> {
+    let attachments = item.attachments.as_deref().unwrap_or_default();
+    if attachments.len() > limits::PROMPT_ATTACHMENTS
+        || attachments.iter().any(|attachment| {
+            attachment.data.is_some()
+                || attachment.attachment_id.is_some()
+                || !attachment
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.starts_with('/'))
+        })
+    {
         return Err(Error::InvalidQueuedPrompt);
     }
     Ok(())
 }
 
-pub fn enqueue_prompt_with_attachments(
-    change: &Change<'_>,
-    pane: &str,
-    item: &PromptItem,
-    attachments: &[PromptAttachment],
-) -> Result<()> {
-    validate_prompt_attachments(item, attachments)?;
+pub fn enqueue_prompt(change: &Change<'_>, pane: &str, item: &PromptItem) -> Result<()> {
+    validate_prompt_attachments(item)?;
     let tx = change.connection();
     if item.text.is_empty()
         || item.text.len() > limits::PROMPT_BYTES
@@ -226,10 +202,7 @@ pub fn enqueue_prompt_with_attachments(
         )
         .optional()?;
     if let Some((owner, previous)) = prior {
-        return if owner == pane
-            && previous == raw
-            && prompt_attachments_from(tx, &item.prompt_id)? == attachments
-        {
+        return if owner == pane && previous == raw {
             Ok(())
         } else {
             Err(Error::IdempotencyConflict)
@@ -247,43 +220,7 @@ pub fn enqueue_prompt_with_attachments(
         "INSERT INTO agent_prompt_queue(prompt_id,pane_id,payload) VALUES (?1,?2,?3)",
         params![item.prompt_id, pane, raw],
     )?;
-    for (ordinal, attachment) in attachments.iter().enumerate() {
-        tx.execute(
-            "INSERT INTO agent_prompt_attachments(prompt_id,ordinal,attachment_id,mime_type,name,bytes) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![
-                item.prompt_id,
-                ordinal as i64,
-                attachment.reference.attachment_id,
-                attachment.reference.mime_type,
-                attachment.reference.name,
-                attachment.bytes
-            ],
-        )?;
-    }
     Ok(())
-}
-
-fn prompt_attachments_from(db: &Connection, prompt: &str) -> Result<Vec<PromptAttachment>> {
-    let mut statement = db.prepare(
-        "SELECT attachment_id,mime_type,name,bytes FROM agent_prompt_attachments WHERE prompt_id=?1 ORDER BY ordinal",
-    )?;
-    let rows = statement.query_map([prompt], |row| {
-        let bytes: Vec<u8> = row.get(3)?;
-        Ok(PromptAttachment {
-            reference: AttachmentRef {
-                attachment_id: row.get(0)?,
-                mime_type: row.get(1)?,
-                name: row.get(2)?,
-                bytes: bytes.len().to_string(),
-            },
-            bytes,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
-}
-
-pub fn prompt_attachments(store: &Store, prompt: &str) -> Result<Vec<PromptAttachment>> {
-    prompt_attachments_from(store.connection(), prompt)
 }
 
 pub fn remove_prompt(change: &Change<'_>, pane: &str, prompt: &str) -> Result<bool> {

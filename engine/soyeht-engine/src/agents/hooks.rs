@@ -53,7 +53,7 @@ struct HookLabelParams {
     _idempotency_key: String,
 }
 
-pub(crate) fn session_parameters(
+pub(crate) fn claude_hook_parameters(
     data_directory: &Path,
     state: &State,
     mut params: Value,
@@ -259,7 +259,7 @@ mod tests {
     fn claude_session_gets_exec_hooks_but_other_harnesses_do_not() {
         let claude = state(CLAUDE_HARNESS_ID);
         let params =
-            session_parameters(Path::new("/profile"), &claude, json!({"cwd":"/tmp"})).unwrap();
+            claude_hook_parameters(Path::new("/profile"), &claude, json!({"cwd":"/tmp"})).unwrap();
         let hooks = &params["_meta"]["claudeCode"]["options"]["settings"]["hooks"];
         assert_eq!(hooks.as_object().unwrap().len(), 5);
         let handler = &hooks["Stop"][0]["hooks"][0];
@@ -274,7 +274,7 @@ mod tests {
 
         let other = state("registry.codex-acp");
         let plain =
-            session_parameters(Path::new("/profile"), &other, json!({"cwd":"/tmp"})).unwrap();
+            claude_hook_parameters(Path::new("/profile"), &other, json!({"cwd":"/tmp"})).unwrap();
         assert!(plain.get("_meta").is_none());
     }
 

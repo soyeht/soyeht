@@ -1,7 +1,9 @@
 pub mod attachments;
 pub mod authentication;
 pub mod catalog;
+pub mod commands;
 pub mod configuration;
+pub mod continuation;
 pub mod custom;
 pub mod delivery;
 pub mod driver;
@@ -15,6 +17,7 @@ pub mod lifecycle;
 pub mod mcp;
 pub mod methods;
 pub mod naming;
+pub mod opening;
 pub mod peer;
 pub mod pending;
 pub mod questions;
@@ -41,11 +44,11 @@ use soyeht_protocol::{
     Workspace, ndjson::Decoder,
 };
 use soyeht_store::{
-    agents::{self, AgentModelRefusal, NativeRequest, Outgoing, PromptAttachment},
+    agents::{self, AgentModelRefusal, NativeRequest, Outgoing},
     database::{Change, Mutation},
 };
 use state::State;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use uuid::Uuid;
 
 pub struct Running {
@@ -82,7 +85,6 @@ pub struct Changes {
     pub workspace_layout: Option<Workspace>,
     /// A sign-in terminal closed with this commit once the agent confirmed sign-in.
     pub closed_login_pane: Option<StoredPane>,
-    pub prompt_attachments: BTreeMap<String, Vec<PromptAttachment>>,
     pub(crate) message_rate: Option<(String, String, i64, i64)>,
     pub(crate) task_owner_loss: Option<crate::tasks::TaskOwnerLoss>,
     pub(crate) task_human_move: Option<crate::tasks::TaskHumanMove>,
@@ -323,13 +325,7 @@ impl AgentPersistence<'_> {
                 .iter()
                 .any(|item| item.prompt_id == prompt.prompt_id)
             {
-                let attachments = self
-                    .changes
-                    .prompt_attachments
-                    .get(&prompt.prompt_id)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default();
-                agents::enqueue_prompt_with_attachments(tx, self.id, prompt, attachments)?;
+                agents::enqueue_prompt(tx, self.id, prompt)?;
             }
         }
         for request in &self.changes.received {

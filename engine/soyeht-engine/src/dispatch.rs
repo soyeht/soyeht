@@ -73,7 +73,9 @@ impl Core {
                 next_binary_ref: 1,
                 pair_request: None,
                 web_host: false,
-                attachments: AttachmentAssembler::new(limits::WEB_SCREENSHOT_BYTES)?,
+                attachments: AttachmentAssembler::new(
+                    limits::PROMPT_ATTACHMENT_TOTAL_BYTES.max(limits::WEB_SCREENSHOT_BYTES),
+                )?,
             },
         );
         Ok(id)
@@ -316,7 +318,7 @@ impl Core {
         request_id: Value,
         method: &str,
         params: &Value,
-        prompt_attachments: Vec<soyeht_store::agents::PromptAttachment>,
+        prompt_attachments: Vec<crate::agents::attachments::PreparedAttachment>,
         writing_image: Option<crate::writing::attachments::WritingImageAttachment>,
     ) -> Result<Outcome> {
         let result = match method {
@@ -351,6 +353,10 @@ impl Core {
             "pane.elicitation.answer" => self.agent_answer(connection, method, params)?,
             "task.show" | "task.list" | "task.comments" => {
                 self.task_query(connection, method, params)?
+            }
+            "pane.commands.list" => self.pane_commands_list(params)?,
+            method if crate::skills::handles(method) => {
+                self.skills_request(connection, method, params)?
             }
             "usage.list" => self.usage_list()?,
             "usage.refresh" => self.usage_refresh(connection, params)?,

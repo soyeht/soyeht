@@ -3,8 +3,8 @@
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttachmentRef, HarnessSetupReason, HarnessSetupState, Pane, PaneMode, PaneState,
-    ProbeCapability, ProbeResult, PromptItem, PromptOrigin, PromptStatus, StateSource,
+    HarnessSetupReason, HarnessSetupState, Pane, PaneMode, PaneState, ProbeCapability, ProbeResult,
+    PromptAttachment, PromptAttachmentKind, PromptItem, PromptOrigin, PromptStatus, StateSource,
     TranscriptMessage, Workspace, limits,
 };
 use soyeht_store::{
@@ -502,110 +502,64 @@ fn full_prompt_queue_retains_escaped_text_and_changes_atomically_with_the_checkp
     );
 }
 
-fn prompt_with_image() -> (PromptItem, agents::PromptAttachment) {
-    let reference = AttachmentRef {
-        attachment_id: "00112233-4455-4677-8899-aabbccddeeff".into(),
-        mime_type: "image/png".into(),
-        name: "element.png".into(),
-        bytes: "4".into(),
-    };
-    (
-        PromptItem {
-            prompt_id: "prompt-image".into(),
-            text: "Inspect this element".into(),
-            origin: PromptOrigin::Human,
-            status: PromptStatus::Queued,
-            queued_at: "fixed".into(),
-            generation: None,
-            attachments: Some(vec![reference.clone()]),
-            agent_message: None,
-        },
-        agents::PromptAttachment {
-            reference,
-            bytes: vec![137, 80, 78, 71],
-        },
-    )
+fn prompt_with_attachment() -> PromptItem {
+    PromptItem {
+        prompt_id: "prompt-image".into(),
+        text: "Inspect this element".into(),
+        origin: PromptOrigin::Human,
+        status: PromptStatus::Queued,
+        queued_at: "fixed".into(),
+        generation: None,
+        attachments: Some(vec![PromptAttachment {
+            kind: PromptAttachmentKind::Image,
+            name: "element.png".into(),
+            mime_type: "image/png".into(),
+            bytes: "4".into(),
+            attachment_id: None,
+            data: None,
+            path: Some("/data/prompt-attachments/abc/element.png".into()),
+            thumbnail: Some("iVBORw==".into()),
+        }]),
+        agent_message: None,
+    }
+}
+
+fn enqueue_result(store: &mut Store, key: &str, prompt: &PromptItem) -> bool {
+    store
+        .mutate("test", key, key, |tx| {
+            agents::enqueue_prompt(tx, "p", prompt)?;
+            Ok((json!({}), vec![]))
+        })
+        .is_ok()
 }
 
 #[test]
-fn prompt_images_commit_with_the_queue_survive_reopen_and_cascade_on_remove() {
+fn queued_attachments_are_paths_that_survive_reopen_and_fail_closed() {
     let profile = Profile::new();
     let mut store = profile.store();
     seed(&mut store);
-    let (prompt, attachment) = prompt_with_image();
-    store
-        .mutate("test", "image", "image", |tx| {
-            agents::enqueue_prompt_with_attachments(
-                tx,
-                "p",
-                &prompt,
-                std::slice::from_ref(&attachment),
-            )?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    let prompt = prompt_with_attachment();
+    for unstaged in [
+        |attachment: &mut PromptAttachment| attachment.path = None,
+        |attachment: &mut PromptAttachment| attachment.path = Some("relative.png".into()),
+        |attachment: &mut PromptAttachment| attachment.data = Some("AAAA".into()),
+        |attachment: &mut PromptAttachment| attachment.attachment_id = Some("id".into()),
+    ] {
+        let mut wrong = prompt.clone();
+        unstaged(&mut wrong.attachments.as_mut().unwrap()[0]);
+        assert!(!enqueue_result(&mut store, "wrong", &wrong));
+    }
+    assert!(enqueue_result(&mut store, "right", &prompt));
+    assert!(enqueue_result(&mut store, "retry", &prompt));
+    let mut changed = prompt.clone();
+    changed.attachments.as_mut().unwrap()[0].bytes = "5".into();
+    assert!(!enqueue_result(&mut store, "changed", &changed));
     drop(store);
-
-    let mut store = profile.store();
-    assert_eq!(agents::queue(&store, "p").unwrap(), vec![prompt.clone()]);
-    assert_eq!(
-        agents::prompt_attachments(&store, &prompt.prompt_id).unwrap(),
-        vec![attachment.clone()]
-    );
-    store
-        .mutate("test", "remove-image", "remove-image", |tx| {
-            assert!(agents::remove_prompt(tx, "p", &prompt.prompt_id)?);
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
-    assert!(
-        agents::prompt_attachments(&store, &prompt.prompt_id)
-            .unwrap()
-            .is_empty()
-    );
+    assert_eq!(agents::queue(&profile.store(), "p").unwrap(), vec![prompt]);
 }
 
 #[test]
-fn prompt_images_fail_closed_on_metadata_bytes_and_idempotency_mismatch() {
-    let profile = Profile::new();
-    let mut store = profile.store();
-    seed(&mut store);
-    let (prompt, attachment) = prompt_with_image();
-    let mut wrong = attachment.clone();
-    wrong.bytes.push(0);
-    assert!(
-        store
-            .mutate("test", "wrong", "wrong", |tx| {
-                agents::enqueue_prompt_with_attachments(tx, "p", &prompt, &[wrong])?;
-                Ok((json!({}), vec![]))
-            })
-            .is_err()
-    );
-    store
-        .mutate("test", "right", "right", |tx| {
-            agents::enqueue_prompt_with_attachments(
-                tx,
-                "p",
-                &prompt,
-                std::slice::from_ref(&attachment),
-            )?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
-    let mut changed = attachment;
-    changed.bytes[3] = 70;
-    assert!(
-        store
-            .mutate("test", "changed", "changed", |tx| {
-                agents::enqueue_prompt_with_attachments(tx, "p", &prompt, &[changed])?;
-                Ok((json!({}), vec![]))
-            })
-            .is_err()
-    );
-}
-
-#[test]
-fn migration_from_populated_v18_preserves_the_queue_and_adds_prompt_images() {
+fn migration_from_populated_v18_preserves_the_queue_and_drops_attachment_blobs() {
     let profile = Profile::new();
     let connection = Connection::open(profile.0.join("soyeht.db")).unwrap();
     connection.execute_batch("PRAGMA foreign_keys=ON").unwrap();
@@ -638,27 +592,32 @@ fn migration_from_populated_v18_preserves_the_queue_and_adds_prompt_images() {
              INSERT INTO panes(id,workspace_id,payload,instance_key) VALUES ('p','w','{}','process');
              INSERT INTO agent_runtime(pane_id,generation,payload) VALUES ('p',1,'{}');
              INSERT INTO agent_prompt_queue(prompt_id,pane_id,payload) VALUES
-               ('old-prompt','p','{\"promptId\":\"old-prompt\",\"text\":\"keep\",\"origin\":\"human\",\"status\":\"queued\",\"queuedAt\":\"fixed\"}');",
+               ('old-prompt','p','{\"promptId\":\"old-prompt\",\"text\":\"keep\",\"origin\":\"human\",\"status\":\"queued\",\"queuedAt\":\"fixed\",
+                 \"attachments\":[{\"attachmentId\":\"a\",\"mimeType\":\"image/png\",\"name\":\"old.png\",\"bytes\":\"4\"}]}');",
         )
         .unwrap();
     drop(connection);
 
     let mut store = profile.store();
-    assert_eq!(agents::queue(&store, "p").unwrap()[0].text, "keep");
+    let queue = agents::queue(&store, "p").unwrap();
     assert_eq!(
-        store
-            .connection()
-            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
-            .unwrap(),
-        SCHEMA_VERSION
+        (queue[0].text.as_str(), &queue[0].attachments),
+        ("keep", &None)
     );
-    let (prompt, attachment) = prompt_with_image();
-    store
-        .mutate("test", "new-image", "new-image", |tx| {
-            agents::enqueue_prompt_with_attachments(tx, "p", &prompt, &[attachment])?;
-            Ok((json!({}), vec![]))
-        })
+    let tables: i64 = store
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name='agent_prompt_attachments'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
+    assert_eq!(tables, 0);
+    assert!(enqueue_result(
+        &mut store,
+        "new-image",
+        &prompt_with_attachment()
+    ));
 }
 
 #[test]
