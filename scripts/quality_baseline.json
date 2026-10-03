@@ -1,8 +1,8 @@
 {
   "duplication": {
     "engine": {
-      "clones": 431,
-      "duplicated_lines": 3861
+      "clones": 430,
+      "duplicated_lines": 3851
     },
     "ios": {
       "clones": 6,
@@ -17,8 +17,8 @@
       "duplicated_lines": 504
     },
     "swift_all": {
-      "clones": 162,
-      "duplicated_lines": 1469
+      "clones": 161,
+      "duplicated_lines": 1448
     }
   },
   "loose_literals": {
@@ -69,7 +69,7 @@
       "font_name": 4
     },
     "apps/mac/Sources/PaneAutomationControls.swift": {
-      "padding": 4,
+      "padding": 3,
       "system_font_size": 4
     },
     "apps/mac/Sources/PreferencesPanel.swift": {
@@ -89,7 +89,7 @@
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
       "padding": 5,
-      "system_font_size": 10
+      "system_font_size": 6
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
       "padding": 3,
@@ -249,7 +249,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
     "apps/mac/Sources/PreferencesPanel.swift": 995,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3410,
+    "apps/mac/Sources/WorkspaceWindow.swift": 2873,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,

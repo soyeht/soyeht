@@ -56,6 +56,29 @@ public enum HarnessSwitchModel {
     harnesses.first { $0.id == harnessId }?.name ?? harnessId
   }
 
+  /// A harness name without the ACP adapter's suffix ("Claude Agent" → "Claude"), the rule
+  /// the engine names agent panes by.
+  public static func shortName(_ name: String) -> String {
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    guard trimmed.hasSuffix(adapterSuffix) else { return trimmed }
+    let label = trimmed.dropLast(adapterSuffix.count).trimmingCharacters(in: .whitespaces)
+    return label.isEmpty ? trimmed : label
+  }
+
+  private static let adapterSuffix = " Agent"
+
+  /// The control that opens the switch from an agent pane: the harness the pane runs, named
+  /// on a menu button ("Claude ▾"), or the one it is switching to while the switch runs.
+  public static func control(
+    current: String, switchState: AgentHarnessSwitchView?, requested: String? = nil,
+    harnesses: [HarnessInfo]
+  ) -> HarnessSwitchControl {
+    let busy = requested != nil || isSwitching(switchState)
+    let shown = busy ? (switchState?.toHarness ?? requested ?? current) : current
+    return HarnessSwitchControl(
+      title: shortName(displayName(of: shown, in: harnesses)), busy: busy)
+  }
+
   /// Runs one switch request and turns its result or error into an outcome. An
   /// unavailable target is refused locally, without contacting the engine.
   @MainActor public static func run(
@@ -69,6 +92,23 @@ public enum HarnessSwitchModel {
       return .failed(error.localizedDescription)
     }
   }
+}
+
+/// What the harness control of an agent pane shows, on the Mac pane header and in the
+/// iPhone and iPad agent pane: the running harness named on a menu button.
+public struct HarnessSwitchControl: Equatable, Sendable {
+  public static let accessibilityLabel = "Switch harness"
+  public static let accessibilityHint =
+    "Restarts this pane on another harness and hands the conversation over"
+  /// The menu indicator after the name ("Claude ▾").
+  public static let symbol = "chevron.down"
+
+  /// The running harness's short name, for example "Claude".
+  public let title: String
+  /// A switch is running; the title names the harness it switches to.
+  public let busy: Bool
+
+  public var help: String { "\(Self.accessibilityLabel) (running \(title))" }
 }
 
 extension EngineClient {
