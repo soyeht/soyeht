@@ -10,15 +10,15 @@
     },
     "mac": {
       "clones": 77,
-      "duplicated_lines": 759
+      "duplicated_lines": 758
     },
     "shared": {
-      "clones": 65,
-      "duplicated_lines": 506
+      "clones": 64,
+      "duplicated_lines": 496
     },
     "swift_all": {
-      "clones": 160,
-      "duplicated_lines": 1455
+      "clones": 159,
+      "duplicated_lines": 1444
     }
   },
   "loose_literals": {
@@ -58,18 +58,15 @@
       "corner_radius": 1,
       "system_font_size": 1
     },
-    "apps/mac/Sources/EditorNativeViewport.swift": {
-      "font_name": 2
-    },
     "apps/mac/Sources/EditorNavigationPalette.swift": {
       "system_font_size": 4
     },
     "apps/mac/Sources/EditorPaneView.swift": {
       "corner_radius": 1,
-      "system_font_size": 7
+      "system_font_size": 1
     },
     "apps/mac/Sources/MacStyle.swift": {
-      "font_name": 7
+      "font_name": 3
     },
     "apps/mac/Sources/PaneAutomationControls.swift": {
       "padding": 4,
@@ -91,7 +88,6 @@
       "system_font_size": 2
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
-      "font_name": 5,
       "padding": 5,
       "system_font_size": 9
     },
@@ -245,7 +241,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
     "apps/mac/Sources/PreferencesPanel.swift": 995,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3546,
+    "apps/mac/Sources/WorkspaceWindow.swift": 3410,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,

@@ -5,19 +5,20 @@ import SwiftUI
 
 @MainActor enum EditorTextMetrics {
   static let lineHeight: CGFloat = PaneLayoutContentMetrics.editorLineHeight
+  static let font = MacTheme.monoNSFont(PaneLayoutContentMetrics.editorFontPointSize)
+  static let characterWidth = ("0" as NSString).size(withAttributes: [.font: font]).width
 
-  static func attributes() -> [NSAttributedString.Key: Any] {
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.minimumLineHeight = lineHeight
-    paragraph.maximumLineHeight = lineHeight
-    return [
-      .font: NSFont(
-        name: "JetBrains Mono", size: PaneLayoutContentMetrics.editorFontPointSize)
-        ?? NSFont.monospacedSystemFont(
-          ofSize: PaneLayoutContentMetrics.editorFontPointSize, weight: .regular),
+  static func attributes(wraps: Bool) -> [NSAttributedString.Key: Any] {
+    [
+      .font: font,
       .foregroundColor: NSColor(MacTheme.ink),
-      .paragraphStyle: paragraph,
+      .paragraphStyle: paragraphStyle(wraps: wraps),
     ]
+  }
+
+  static func paragraphStyle(wraps: Bool) -> NSParagraphStyle {
+    EditorTextLayout.paragraphStyle(
+      lineHeight: lineHeight, characterWidth: characterWidth, wraps: wraps)
   }
 }
 
@@ -35,6 +36,8 @@ struct EditorNativeViewport: NSViewRepresentable {
   let onDefinition: (TextPosition) -> Void
   let onReferences: (TextPosition) -> Void
   var find: EditorFindController? = nil
+  var softWrap = false
+  var onToggleSoftWrap: (() -> Void)? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -66,6 +69,8 @@ struct EditorNativeViewport: NSViewRepresentable {
     private var replayingHistory = false
     private var replayRendersAfterRevision: String?
     private var documentHeight: CGFloat = 0
+    /// Rows of the loaded page; one per line unless soft wrap is on.
+    private var wrapLayout = EditorWrapLayout(text: "", columns: nil)
     private var selectionPublishScheduled = false
     private var findHighlightKey = ""
     private var editorFocusRequest = 0
@@ -118,13 +123,15 @@ struct EditorNativeViewport: NSViewRepresentable {
       viewportStart = viewport.fromLine
       language = view.file.language
       textView.inputDelegate = self
+      textView.onToggleSoftWrap = parent.onToggleSoftWrap
       textView.vimEnabled = parent.vimEnabled
       if wasVimEnabled, !parent.vimEnabled { vim.reset() }
       wasVimEnabled = parent.vimEnabled
       publishVimState()
+      applyWrap()
       gutter?.update(
-        startLine: viewport.fromLine, lineCount: viewport.lines.count,
-        markers: parent.diffMarkers, agentReviewLines: parent.agentReviewLines,
+        startLine: viewport.fromLine, markers: parent.diffMarkers,
+        agentReviewLines: parent.agentReviewLines,
         agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line)
       updateVirtualGeometry(viewport)
       let identity =
@@ -134,6 +141,7 @@ struct EditorNativeViewport: NSViewRepresentable {
         guard let storage = textView.textStorage else { return }
         storage.setAttributedString(attributed(viewport, diagnostics: view.diagnostics))
         renderedIdentity = identity
+        measureWrap()
         updateVirtualGeometry(viewport)
         textView.selectedRanges = selections(
           afterLoading: viewport, previousStart: previousViewportStart, previous: selection)
@@ -229,8 +237,43 @@ struct EditorNativeViewport: NSViewRepresentable {
 
     @objc private func visibleFrameChanged(_ notification: Notification) {
       guard let scrollView else { return }
+      if applyWrap(), let viewport = parent.view.viewport {
+        updateVirtualGeometry(viewport)
+        return
+      }
       EditorTextLayout.fit(
         textView, visible: scrollView.contentSize, documentHeight: documentHeight)
+    }
+
+    /// Follows the soft wrap choice and the visible width; true when the cells per row
+    /// changed, which re-wraps the page.
+    @discardableResult private func applyWrap() -> Bool {
+      guard let scrollView else { return false }
+      let columns =
+        parent.softWrap
+        ? EditorTextLayout.wrapColumns(
+          textView, visibleWidth: scrollView.contentSize.width,
+          characterWidth: EditorTextMetrics.characterWidth)
+        : nil
+      guard columns != wrapLayout.columns else { return false }
+      scrollView.hasHorizontalScroller = columns == nil
+      EditorTextLayout.configure(
+        textView, wrapColumns: columns, characterWidth: EditorTextMetrics.characterWidth)
+      textView.typingAttributes = baseAttributes(wraps: columns != nil)
+      if let storage = textView.textStorage, storage.length > 0 {
+        storage.addAttribute(
+          .paragraphStyle, value: EditorTextMetrics.paragraphStyle(wraps: columns != nil),
+          range: NSRange(location: 0, length: storage.length))
+      }
+      wrapLayout = EditorWrapLayout(text: "", columns: columns)
+      measureWrap()
+      return true
+    }
+
+    /// Re-counts the rows of the page text on screen; it never reads beyond the page.
+    private func measureWrap() {
+      wrapLayout = EditorWrapLayout(text: textView.string, columns: wrapLayout.columns)
+      gutter?.setLayout(wrapLayout)
     }
 
     private func updateVirtualGeometry(_ viewport: FileReadResult) {
@@ -241,7 +284,7 @@ struct EditorNativeViewport: NSViewRepresentable {
         width: PaneLayoutContentMetrics.editorTextInset, height: top)
       documentHeight =
         2 * PaneLayoutContentMetrics.editorTextInset
-        + CGFloat(viewport.file.lineCount) * Self.lineHeight
+        + CGFloat(wrapLayout.documentRows(totalLines: viewport.file.lineCount)) * Self.lineHeight
       EditorTextLayout.fit(
         textView, visible: scrollView.contentSize, documentHeight: documentHeight)
       if requestedViewportStart == viewport.fromLine { requestedViewportStart = nil }
@@ -256,7 +299,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       else { return }
       let visibleTop = max(
         0, scrollView.contentView.bounds.minY - PaneLayoutContentMetrics.editorTextInset)
-      let visibleFrom = UInt32(clamping: Int(visibleTop / Self.lineHeight))
+      let visibleFrom = wrapLayout.logicalLine(
+        atDocumentRow: Int(visibleTop / Self.lineHeight), fromLine: viewport.fromLine)
       let visibleLines = UInt32(
         clamping: Int(ceil(scrollView.contentSize.height / Self.lineHeight)) + 2)
       guard
@@ -418,7 +462,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       textView.selectedTextAttributes = [.backgroundColor: NSColor(MacTheme.selection)]
       textView.textContainerInset = NSSize(width: 10, height: 10)
       EditorTextLayout.configure(textView)
-      textView.typingAttributes = baseAttributes()
+      textView.typingAttributes = baseAttributes(wraps: false)
     }
 
     private func apply(_ plan: EditorInputPlan) {
@@ -434,7 +478,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       }
       textView.selectedRanges = plan.selections.map(NSValue.init(range:))
       selectionChanged()
-      gutter?.setLineCount(textView.string.components(separatedBy: "\n").count)
+      measureWrap()
       if !plan.edits.isEmpty {
         parent.client.enqueueEditorEdits(fileId: parent.view.file.fileId, edits: plan.edits)
       }
@@ -444,7 +488,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       _ viewport: FileReadResult, diagnostics: [FileDiagnostic]
     ) -> NSAttributedString {
       let text = EditorEditing.viewportText(viewport.lines)
-      let result = NSMutableAttributedString(string: text, attributes: baseAttributes())
+      let result = NSMutableAttributedString(
+        string: text, attributes: baseAttributes(wraps: wrapLayout.columns != nil))
       var offset = 0
       for line in viewport.lines {
         let length = line.text.utf16.count
@@ -484,8 +529,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       }
     }
 
-    private func baseAttributes() -> [NSAttributedString.Key: Any] {
-      EditorTextMetrics.attributes()
+    private func baseAttributes(wraps: Bool) -> [NSAttributedString.Key: Any] {
+      EditorTextMetrics.attributes(wraps: wraps)
     }
 
     private func highlightColor(_ kind: HighlightKind) -> NSColor {
@@ -617,107 +662,5 @@ struct EditorNativeViewport: NSViewRepresentable {
 
   required init?(coder: NSCoder) {
     nil
-  }
-}
-
-@MainActor final class EditorLineGutter: NSView {
-  static let width: CGFloat = PaneLayoutContentMetrics.editorGutterWidth
-  override var isFlipped: Bool { true }
-  private weak var textView: NSTextView?
-  private weak var scrollView: NSScrollView?
-  private var startLine: UInt32 = 0
-  private var lineCount = 0
-  private var diffMarkers: [UInt32: Set<EditorDiffMarker>] = [:]
-  private var agentReviewLines: Set<UInt32> = []
-  private var agentCursors: [UInt32: String] = [:]
-  var selectedLine: UInt32?
-
-  init(scrollView: NSScrollView, textView: NSTextView) {
-    self.scrollView = scrollView
-    self.textView = textView
-    super.init(frame: .zero)
-    wantsLayer = true
-  }
-
-  required init?(coder: NSCoder) {
-    super.init(coder: coder)
-  }
-
-  func update(
-    startLine: UInt32, lineCount: Int, markers: [UInt32: Set<EditorDiffMarker>],
-    agentReviewLines: Set<UInt32>, agentCursors: [EditorAgentCursorEvent], selectedLine: UInt32?
-  ) {
-    self.startLine = startLine
-    self.lineCount = lineCount
-    diffMarkers = markers
-    self.agentReviewLines = agentReviewLines
-    self.agentCursors = Dictionary(
-      agentCursors.map { ($0.position.line, $0.name) }, uniquingKeysWith: { first, _ in first })
-    self.selectedLine = selectedLine
-    needsDisplay = true
-  }
-
-  func setLineCount(_ value: Int) {
-    lineCount = value
-    needsDisplay = true
-  }
-
-  override func draw(_ rect: NSRect) {
-    super.draw(rect)
-    NSColor(MacTheme.face).setFill()
-    rect.fill()
-    guard let textView, let scrollView else { return }
-    let offset = scrollView.contentView.bounds.minY
-    let inset = textView.textContainerInset.height
-    let font =
-      NSFont(name: "JetBrains Mono", size: 11)
-      ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: font, .foregroundColor: NSColor(MacTheme.muted),
-    ]
-    for index in 0..<lineCount {
-      let line = startLine + UInt32(clamping: index)
-      let y = inset + CGFloat(index) * 19 - offset
-      guard y + 19 >= rect.minY, y <= rect.maxY else { continue }
-      if selectedLine == line {
-        NSColor(MacTheme.well).setFill()
-        NSRect(x: 0, y: y, width: Self.width, height: 19).fill()
-      }
-      drawMarkers(diffMarkers[line] ?? [], y: y)
-      drawAgentFacts(line: line, y: y)
-      let label = "\(UInt64(line) + 1)" as NSString
-      let size = label.size(withAttributes: attributes)
-      label.draw(
-        at: NSPoint(x: Self.width - size.width - 10, y: y + 2), withAttributes: attributes)
-    }
-  }
-
-  private func drawAgentFacts(line: UInt32, y: CGFloat) {
-    if agentReviewLines.contains(line) {
-      NSColor(MacTheme.agentBlue).setFill()
-      NSRect(x: 4, y: y, width: 3, height: 19).fill()
-    }
-    guard let name = agentCursors[line] else { return }
-    NSColor(MacTheme.accent).setFill()
-    NSBezierPath(ovalIn: NSRect(x: 9, y: y + 7, width: 6, height: 6)).fill()
-    toolTip = "\(name) is editing line \(UInt64(line) + 1)"
-  }
-
-  private func drawMarkers(_ markers: Set<EditorDiffMarker>, y: CGFloat) {
-    let ordered = markers.sorted { $0.rawValue < $1.rawValue }
-    guard !ordered.isEmpty else { return }
-    let height = 19 / CGFloat(ordered.count)
-    for (index, marker) in ordered.enumerated() {
-      markerColor(marker).setFill()
-      NSRect(x: 0, y: y + CGFloat(index) * height, width: 3, height: height).fill()
-    }
-  }
-
-  private func markerColor(_ marker: EditorDiffMarker) -> NSColor {
-    switch marker {
-    case .added: NSColor(MacTheme.diffAdded)
-    case .modified: NSColor(MacTheme.warning)
-    case .deleted: NSColor(MacTheme.danger)
-    }
   }
 }

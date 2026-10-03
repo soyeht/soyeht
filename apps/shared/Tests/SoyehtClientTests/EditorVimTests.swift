@@ -121,15 +121,9 @@ import Testing
 }
 
 @Test @MainActor func vimPreferenceIsOffByDefaultAndPersistsExplicitChanges() {
-  let preferences = VimMemoryPreferences()
+  let preferences = MemoryPreferenceStore()
   let initial = EditorInputPreferences(preferences: preferences)
   #expect(initial.vimEnabled == false)
   initial.setVimEnabled(true)
   #expect(EditorInputPreferences(preferences: preferences).vimEnabled)
-}
-
-private final class VimMemoryPreferences: ClientPreferenceStore {
-  private var values: [String: Bool] = [:]
-  func bool(forKey key: String) -> Bool { values[key] ?? false }
-  func set(_ value: Bool, forKey key: String) { values[key] = value }
 }

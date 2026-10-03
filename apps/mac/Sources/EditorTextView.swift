@@ -4,7 +4,7 @@ import SoyehtClient
 /// The editor text view never edits its storage on its own: every change goes
 /// to the coordinator, which turns it into an engine edit, so the visible text
 /// and the engine buffer cannot drift apart.
-@MainActor final class EditorTextView: NSTextView {
+@MainActor final class EditorTextView: EditorKeyCommandTextView {
   weak var inputDelegate: EditorNativeViewport.Coordinator?
   var vimEnabled = false
   private var contextOffset = 0
@@ -135,11 +135,11 @@ import SoyehtClient
     }
   }
 
-  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+  override func editorKeyEquivalent(with event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     let key = event.charactersIgnoringModifiers?.lowercased()
     guard flags.contains(.command), window?.firstResponder === self else {
-      return super.performKeyEquivalent(with: event)
+      return super.editorKeyEquivalent(with: event)
     }
     switch key {
     case "d": inputDelegate?.selectNextOccurrence(selectedRanges.map(\.rangeValue))
@@ -150,7 +150,7 @@ import SoyehtClient
       inputDelegate?.presentFind(replace: flags.contains(.option))
     case "g": inputDelegate?.findNext(backward: flags.contains(.shift))
     case "s": break
-    default: return super.performKeyEquivalent(with: event)
+    default: return super.editorKeyEquivalent(with: event)
     }
     return true
   }
