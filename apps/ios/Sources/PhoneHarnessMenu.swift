@@ -2,9 +2,9 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-/// The agent pane's harness menu, next to the permission-mode menu. It shows the
-/// harness the pane runs and restarts the pane on another one; the engine hands the
-/// conversation over to the new session, as it does from the Mac pane header.
+/// The agent pane's harness menu, next to the permission-mode menu. Like the Mac pane
+/// header it names the harness the pane runs ("Claude ▾") and restarts the pane on another
+/// one; the engine hands the conversation over to the new session.
 struct PhoneHarnessMenu: View {
   let client: EngineClient
   let paneId: String
@@ -15,7 +15,6 @@ struct PhoneHarnessMenu: View {
 
   private var current: String? { client.panes.first { $0.paneId == paneId }?.agent?.harness }
   private var switchState: AgentHarnessSwitchView? { client.agentPanes[paneId]?.harnessSwitch }
-  private var busy: Bool { requested != nil || HarnessSwitchModel.isSwitching(switchState) }
 
   var body: some View {
     if let current {
@@ -28,9 +27,9 @@ struct PhoneHarnessMenu: View {
       .buttonStyle(.bordered)
       .tint(PhonePalette.secondary)
       .disabled(!client.canSwitchAgentHarness(paneId) || requested != nil)
-      .accessibilityLabel("Agent")
-      .accessibilityValue(labelText(current: current))
-      .accessibilityHint("Switches this pane to another agent and hands the conversation over")
+      .accessibilityLabel(HarnessSwitchControl.accessibilityLabel)
+      .accessibilityValue(control(current: current).title)
+      .accessibilityHint(HarnessSwitchControl.accessibilityHint)
       .accessibilityIdentifier("agent-harness-menu")
       .task(id: client.connected) {
         if client.connected { client.refreshHarnesses() }
@@ -96,21 +95,20 @@ struct PhoneHarnessMenu: View {
   }
 
   private func label(current: String) -> some View {
-    HStack(spacing: 5) {
-      if busy {
-        ProgressView().controlSize(.mini)
-      } else {
-        Image(systemName: "arrow.triangle.2.circlepath")
-      }
-      Text(labelText(current: current)).lineLimit(1).truncationMode(.tail)
+    let control = control(current: current)
+    return HStack(spacing: 5) {
+      if control.busy { ProgressView().controlSize(.mini) }
+      Text(control.title).lineLimit(1).truncationMode(.tail)
+      Image(systemName: HarnessSwitchControl.symbol).imageScale(.small)
     }
     .frame(maxWidth: sizeClass == .regular ? nil : 120)
   }
 
   /// The running harness, or the one the pane is switching to.
-  private func labelText(current: String) -> String {
-    let shown = busy ? (switchState?.toHarness ?? requested ?? current) : current
-    return HarnessSwitchModel.displayName(of: shown, in: client.harnesses)
+  private func control(current: String) -> HarnessSwitchControl {
+    HarnessSwitchModel.control(
+      current: current, switchState: switchState, requested: requested,
+      harnesses: client.harnesses, paneName: client.panes.first { $0.paneId == paneId }?.name)
   }
 
   private func switchHarness(to item: HarnessInfo) {

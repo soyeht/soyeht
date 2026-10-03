@@ -1,24 +1,24 @@
 {
   "duplication": {
     "engine": {
-      "clones": 427,
-      "duplicated_lines": 3799
+      "clones": 426,
+      "duplicated_lines": 3789
     },
     "ios": {
       "clones": 6,
       "duplicated_lines": 54
     },
     "mac": {
-      "clones": 76,
-      "duplicated_lines": 750
+      "clones": 74,
+      "duplicated_lines": 733
     },
     "shared": {
-      "clones": 65,
-      "duplicated_lines": 504
+      "clones": 64,
+      "duplicated_lines": 496
     },
     "swift_all": {
-      "clones": 159,
-      "duplicated_lines": 1444
+      "clones": 155,
+      "duplicated_lines": 1398
     }
   },
   "loose_literals": {
@@ -62,14 +62,14 @@
       "system_font_size": 4
     },
     "apps/mac/Sources/EditorPaneView.swift": {
-      "corner_radius": 2,
+      "corner_radius": 1,
       "system_font_size": 1
     },
     "apps/mac/Sources/MacStyle.swift": {
-      "font_name": 4
+      "font_name": 3
     },
     "apps/mac/Sources/PaneAutomationControls.swift": {
-      "padding": 4,
+      "padding": 3,
       "system_font_size": 4
     },
     "apps/mac/Sources/PreferencesPanel.swift": {
@@ -89,7 +89,7 @@
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
       "padding": 5,
-      "system_font_size": 10
+      "system_font_size": 5
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
       "padding": 3,
@@ -98,19 +98,11 @@
     "apps/mac/Sources/WritingSectionView.swift": {
       "system_font_size": 4
     },
-    "apps/shared/Sources/SoyehtClient/AgentConversation.swift": {
-      "corner_radius": 2,
-      "padding": 19
-    },
     "apps/shared/Sources/SoyehtClient/AgentSubagents.swift": {
       "padding": 2
     },
     "apps/shared/Sources/SoyehtClient/MacTerminal.swift": {
       "font_name": 1
-    },
-    "apps/shared/Sources/SoyehtClient/PermissionPresentationView.swift": {
-      "corner_radius": 1,
-      "padding": 1
     },
     "apps/shared/Sources/SoyehtClient/WritingDisplayText.swift": {
       "font_name": 1
@@ -246,7 +238,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
     "apps/mac/Sources/PreferencesPanel.swift": 926,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 3410,
+    "apps/mac/Sources/WorkspaceWindow.swift": 2873,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,

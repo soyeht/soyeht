@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Compact menu of the harness's own permission modes for an agent pane
-/// header. The label shows the confirmed mode, or a spinner and the requested
-/// mode while the harness has not confirmed it yet.
+/// Compact menu of the harness's own permission modes in the agent composer. The flat
+/// label reads "High · Accept Edits ▾": the reasoning effort, when the harness reports one,
+/// then the confirmed mode, or a spinner and the requested mode while the harness has not
+/// confirmed it yet. A mode that approves everything is drawn in `warning`.
 struct AgentPermissionModeMenu: View {
   let modes: AgentPermissionModes
+  var effort: String? = nil
   let enabled: Bool
   let style: AgentConversationStyle
   let select: (String) -> Void
@@ -20,18 +22,22 @@ struct AgentPermissionModeMenu: View {
         .disabled(mode.id == modes.current)
       }
     } label: {
-      HStack(spacing: 5) {
+      HStack(spacing: PaneInteriorMetrics.tightSpacing) {
         if modes.pending != nil {
           ProgressView().controlSize(.mini)
-        } else {
-          Image(systemName: fullAccess ? "exclamationmark.shield" : "checkmark.shield")
+        } else if fullAccess {
+          Image(systemName: "exclamationmark.shield")
         }
-        Text(title).lineLimit(1).truncationMode(.tail)
+        Text(label).lineLimit(1).truncationMode(.tail)
       }
+      .font(style.monoSmallFont.weight(.semibold))
+      .foregroundStyle(fullAccess ? style.warning : style.ink)
+      .contentShape(Rectangle())
     }
     .menuStyle(.button)
-    .buttonStyle(.bordered)
-    .tint(fullAccess ? style.warning : style.secondary)
+    .buttonStyle(.plain)
+    .menuIndicator(.hidden)
+    .fixedSize()
     .disabled(!enabled || modes.pending != nil)
     .accessibilityLabel("Permission mode")
     .accessibilityValue(accessibilityValue)
@@ -43,6 +49,10 @@ struct AgentPermissionModeMenu: View {
 
   private var title: String {
     (modes.pendingMode ?? modes.currentMode)?.name ?? modes.pending ?? modes.current ?? "Mode"
+  }
+
+  private var label: String {
+    ([effort, title].compactMap { $0 }.joined(separator: " · ")) + " ▾"
   }
 
   private var accessibilityValue: String {

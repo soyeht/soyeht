@@ -12,17 +12,11 @@ struct SlashCompletion: ViewModifier {
   @State private var selection = 0
   @State private var dismissed: String?
 
-  private enum Metrics {
-    static let visibleRows = 6
-    static let rowSpacing: CGFloat = 2
-    static let inset: CGFloat = 8
-    static let radius: CGFloat = 10
-    static let gap: CGFloat = 6
-  }
+  private static let visibleRows = 6
 
   private var matches: [SlashSuggestion] {
     guard let query = SlashCatalog.query(in: text), query != dismissed else { return [] }
-    return Array(client.slashCatalog(paneId: paneId).matches(query).prefix(Metrics.visibleRows))
+    return Array(client.slashCatalog(paneId: paneId).matches(query).prefix(Self.visibleRows))
   }
 
   func body(content: Content) -> some View {
@@ -42,14 +36,16 @@ struct SlashCompletion: ViewModifier {
       .onChange(of: text) { _, _ in selection = 0 }
       .overlay(alignment: .topLeading) {
         if !matches.isEmpty {
-          list(matches).alignmentGuide(.top) { $0[.bottom] + Metrics.gap }
+          list(matches).alignmentGuide(.top) {
+            $0[.bottom] + PaneInteriorMetrics.compactSpacing
+          }
         }
       }
       .task(id: client.connectionRevision) { await client.loadSlashSources(paneId: paneId) }
   }
 
   private func list(_ matches: [SlashSuggestion]) -> some View {
-    VStack(alignment: .leading, spacing: Metrics.rowSpacing) {
+    VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(matches.enumerated()), id: \.element.id) { index, suggestion in
         Button {
           text = SlashCatalog.accept(suggestion)
@@ -59,14 +55,17 @@ struct SlashCompletion: ViewModifier {
         .buttonStyle(.plain)
       }
     }
-    .padding(Metrics.inset)
-    .background(style.face, in: RoundedRectangle(cornerRadius: Metrics.radius))
-    .shadow(color: style.shadowDark.opacity(0.3), radius: Metrics.inset, y: Metrics.gap / 2)
+    .padding(PaneInteriorMetrics.tightSpacing)
+    .paneInteriorFill(style.face)
+    .overlay {
+      RoundedRectangle(cornerRadius: PaneInteriorMetrics.cardRadius, style: .continuous)
+        .strokeBorder(style.border, lineWidth: PaneInteriorMetrics.separatorWidth)
+    }
     .accessibilityIdentifier("agent-slash-completion")
   }
 
   private func row(_ suggestion: SlashSuggestion, selected: Bool) -> some View {
-    HStack(spacing: Metrics.inset) {
+    HStack(spacing: PaneInteriorMetrics.compactSpacing) {
       Text("/" + suggestion.name).font(style.bodyFont.weight(.semibold))
       if let hint = suggestion.hint {
         Text(hint).font(style.captionFont).foregroundStyle(style.muted)
@@ -78,9 +77,11 @@ struct SlashCompletion: ViewModifier {
         Text("Skill").font(style.captionFont).foregroundStyle(style.accent)
       }
     }
-    .padding(.horizontal, Metrics.inset).padding(.vertical, Metrics.gap)
+    .padding(.horizontal, PaneInteriorMetrics.compactSpacing)
+    .padding(.vertical, PaneInteriorMetrics.rowVerticalPadding)
     .background(
-      selected ? style.well : .clear, in: RoundedRectangle(cornerRadius: Metrics.radius)
+      selected ? style.well : .clear,
+      in: RoundedRectangle(cornerRadius: PaneInteriorMetrics.wellRadius)
     )
     .contentShape(Rectangle())
   }

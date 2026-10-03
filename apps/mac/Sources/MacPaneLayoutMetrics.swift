@@ -14,17 +14,11 @@ import SoyehtProtocol
   static let workspaceOverflowPopoverWidth = 340.0
   static let workspaceOverflowPopoverMaximumHeight = 420.0
   static let workspaceTabFadeWidth = Double(MacTheme.Space.x18)
-  static let paneVerticalInset = 17.0
   static let railWidth = 56.0
   static let railButtonSize = 36.0
 
-  static let paneHalo: Double = {
-    let elevation = MacTheme.Elevation.pane
-    return Double(
-      max(
-        abs(elevation.lightOffset) + elevation.lightBlur,
-        abs(elevation.darkOffset) + elevation.darkBlur))
-  }()
+  /// Pane cards fill their footprints; their shadows share the gap (`PaneLayoutSpacing`).
+  static let paneHalo = PaneLayoutSpacing.paneHalo
   static let workspaceTabShadowClearance: Double = {
     let elevation = MacTheme.Elevation.pill
     return Double(
@@ -44,8 +38,7 @@ import SoyehtProtocol
     newPaneSurfaceFloor, halo: paneHalo)
   static let sizing = PaneLayoutSizingPolicy(
     floors: footprintFloors,
-    gaps: PaneLayoutGaps(
-      horizontal: Double(MacTheme.Space.x18), vertical: Double(MacTheme.Space.x18)),
+    gaps: PaneLayoutSpacing.gaps,
     compactFloors: PaneLayoutFloorFormula.compactFootprintFloors(fonts: fontMetrics, halo: paneHalo)
   )
   /// The floors `PaneLayoutFit` lays the stored tree out with in this viewport, so divider
@@ -69,9 +62,9 @@ import SoyehtProtocol
   static let window = PaneLayoutWindowPolicy(
     minimumExercisedViewport: minimumExercisedViewport,
     largestPaneFootprintWidth: footprintFloors.values.map(\.width).max() ?? 0,
-    standardHorizontalInset: Double(MacTheme.Space.x18),
+    standardHorizontalInset: PaneLayoutSpacing.outerMargin,
     topInset: Double(MacTheme.Space.x8), topBarHeight: topBarHeight,
-    paneVerticalInset: paneVerticalInset, railWidth: railWidth)
+    paneVerticalInset: PaneLayoutSpacing.outerMargin, railWidth: railWidth)
 
   static let paneHeader = PaneHeaderLayoutPolicy(
     metrics: PaneHeaderLayoutMetrics(
@@ -81,7 +74,7 @@ import SoyehtProtocol
       readableTitleWidth: ceil(
         PaneLayoutContentMetrics.genericPaneHeaderReadableTitleCharacters
           * metric(
-            font(named: MacTheme.monoFamily, size: MacTheme.TypeScale.small), character: "0"
+            font(named: PaneInteriorFont.uiFamily, size: MacTheme.TypeScale.body), character: "0"
           ).characterWidth),
       summaryWidth: ceil(
         PaneLayoutContentMetrics.genericPaneHeaderSummaryCharacters
@@ -93,7 +86,8 @@ import SoyehtProtocol
           * metric(
             font(named: MacTheme.monoFamily, size: MacTheme.TypeScale.micro), character: "0"
           ).characterWidth),
-      actionWidth: PaneLayoutContentMetrics.genericPaneHeaderActionWidth))
+      actionWidth: PaneLayoutContentMetrics.genericPaneHeaderActionWidth,
+      harnessControlWidth: PaneLayoutContentMetrics.genericPaneHeaderHarnessControlWidth))
 
   static func paneHeaderAvailableWidth(cardWidth: CGFloat) -> Double {
     max(
@@ -113,7 +107,8 @@ import SoyehtProtocol
     chrome: metric(
       font(named: MacTheme.chromeFamily, size: MacTheme.TypeScale.control), character: "0"),
     agent: metric(
-      font(named: MacTheme.chromeFamily, size: MacTheme.TypeScale.body), character: "0"),
+      font(named: PaneInteriorFont.uiFamily, size: PaneInteriorMetrics.bodyPointSize),
+      character: "0"),
     prose: proseMetric(for: .reading_serif),
     screenplay: screenplayMetric)
 

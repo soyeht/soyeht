@@ -165,6 +165,48 @@ fn missing_or_invalid_cached_usage_is_unavailable() {
 }
 
 #[test]
+fn claude_null_windows_are_left_out_instead_of_invalidating_the_reading() {
+    // Claude Code writes `null` for a limit the account does not have and for a window
+    // that has not started; the remaining window is still a reading.
+    let cases = [
+        (
+            r#"{"five_hour":null,"seven_day":{"utilization":40,"resets_at":"later"}}"#,
+            "Weekly",
+            0.4,
+        ),
+        (
+            r#"{"five_hour":{"utilization":30,"resets_at":"soon"},"seven_day":null}"#,
+            "Current session",
+            0.3,
+        ),
+        (
+            r#"{"five_hour":{"utilization":0,"resets_at":null},"seven_day":{"utilization":55,"resets_at":"later"}}"#,
+            "Weekly",
+            0.55,
+        ),
+    ];
+    for (utilization, label, used) in cases {
+        let payload = format!(
+            r#"{{"cachedUsageUtilization":{{"fetchedAtMs":1789729200000,"utilization":{utilization}}}}}"#
+        );
+        let (outcome, _) = refresh(
+            UsageProvider::Claude,
+            vec![(
+                UsageProvider::Claude,
+                UsageSource::ClaudeDesktopCache,
+                SourceRead::Payload(payload.into_bytes()),
+            )],
+        );
+        assert_eq!(outcome.reading.state, UsageState::Ok, "{utilization}");
+        let primary = outcome.reading.primary.unwrap();
+        assert_eq!((primary.label.as_str(), primary.used), (label, used));
+        assert!(outcome.reading.secondary.is_none());
+    }
+    let none_running = br#"{"cachedUsageUtilization":{"fetchedAtMs":1789729200000,"utilization":{"five_hour":null,"seven_day":null}}}"#;
+    assert_eq!(claude_unavailable_reason(none_running), None);
+}
+
+#[test]
 fn malformed_claude_cache_is_invalid_data_not_unpopulated() {
     let cases = [
         br#"{"cachedUsageUtilization":{"fetchedAtMs":"wrong","utilization":{}}}"#.as_slice(),

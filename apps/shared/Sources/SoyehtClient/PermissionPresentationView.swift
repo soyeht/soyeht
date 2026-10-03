@@ -82,8 +82,8 @@ private struct PermissionWell<Content: View>: View {
         }
       }
       .font(style.monoSmallFont)
-      .padding(8)
-      .background(style.well, in: RoundedRectangle(cornerRadius: 8))
+      .padding(PaneInteriorMetrics.compactSpacing)
+      .paneInteriorFill(style.well, radius: PaneInteriorMetrics.wellRadius)
   }
 }
 
