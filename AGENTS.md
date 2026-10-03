@@ -22,8 +22,11 @@ Each layer depends only on the layers listed above it.
    - Pure, bounded domain crates: `soyeht-editor`, `soyeht-writing`,
      `soyeht-web`, `soyeht-pane-state`, `soyeht-usage`, `soyeht-lsp`, and
      `soyeht-vcs` (which has no Soyeht dependencies).
+   - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
-   and WebSocket API. `soyeht-cli` and `soyeht-mcp` are clients of the protocol.
+   and WebSocket API. The `soyeht-cli` binary uses protocol, ptyd and store;
+   the `soyeht-mcp` binary uses protocol and skills. Neither depends on the
+   engine crate.
 5. `apps/shared` (`SoyehtClient`): the shared Swift client. It holds the engine
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it.
