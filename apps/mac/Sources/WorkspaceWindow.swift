@@ -65,8 +65,7 @@ import UniformTypeIdentifiers
     largestPaneFootprintWidth: footprintFloors.values.map(\.width).max() ?? 0,
     standardHorizontalInset: PaneLayoutSpacing.outerMargin,
     topInset: Double(MacTheme.Space.x8), topBarHeight: topBarHeight,
-    paneVerticalInset: PaneLayoutSpacing.outerMargin,
-    railWidth: railWidth + PaneLayoutSpacing.railGap)
+    paneVerticalInset: PaneLayoutSpacing.outerMargin, railWidth: railWidth)
 
   static let paneHeader = PaneHeaderLayoutPolicy(
     metrics: PaneHeaderLayoutMetrics(
@@ -459,8 +458,8 @@ struct WorkspaceWindow: View {
       railOpen: navigation.appBarOpen)
     let horizontalInset = policy.horizontalInset(windowWidth: windowSize.width)
     let rowWidth = max(0, windowSize.width - 2 * horizontalInset)
-    let railOverlays = policy.railOverlays(windowWidth: windowSize.width)
-    let contentOffset = navigation.appBarOpen && !railOverlays ? policy.railWidth : 0
+    let placement = policy.horizontalPlacement(
+      windowWidth: windowSize.width, railOpen: navigation.appBarOpen)
 
     return VStack(spacing: CGFloat(policy.paneVerticalInset)) {
       WorkspaceTopBar(
@@ -473,11 +472,12 @@ struct WorkspaceWindow: View {
           viewportSize: CGSize(width: paneViewport.width, height: paneViewport.height)
         )
         .frame(width: paneViewport.width, height: paneViewport.height)
-        .offset(x: contentOffset)
+        .offset(x: placement.paneLeading - horizontalInset)
         if navigation.appBarOpen {
           appRail
             .frame(width: MacPaneLayoutMetrics.railWidth, height: paneViewport.height)
-            .background(railOverlays ? MacTheme.canvas : Color.clear)  // beside panes: halo shows
+            .background(placement.railOverlays ? MacTheme.canvas : Color.clear)  // halo shows
+            .offset(x: placement.railLeading - horizontalInset)
             .transition(.move(edge: .leading).combined(with: .opacity))
             .zIndex(30)
         }

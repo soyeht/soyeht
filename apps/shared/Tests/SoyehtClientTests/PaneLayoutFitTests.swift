@@ -14,7 +14,7 @@ private let window = PaneLayoutWindowPolicy(
   largestPaneFootprintWidth: floors.values.map(\.width).max() ?? 0,
   standardHorizontalInset: PaneLayoutSpacing.outerMargin, topInset: 8, topBarHeight: 42,
   paneVerticalInset: PaneLayoutSpacing.outerMargin,
-  railWidth: 56 + PaneLayoutSpacing.railGap)
+  railWidth: 56)
 
 /// The automatic layout the Mac builds as panes open, editor first.
 private func workspace(_ kinds: [PaneLayoutKind]) throws -> PaneLayoutTree {
@@ -52,7 +52,7 @@ private func viewport1024By700(railOpen: Bool) -> PaneLayoutSize {
 func editorAndAgentFitA1024By700Window(railOpen: Bool) throws {
   let viewport = viewport1024By700(railOpen: railOpen)
   let tree = try workspace([.editor, .agent])
-  // The tight grid (`PaneLayoutSpacing`) leaves 914 points with the rail open, enough for the
+  // The tight grid (`PaneLayoutSpacing`) leaves 920 points with the rail open, enough for the
   // editor's full floor, project panel included, beside the agent: 545 + 18 + 340 = 903.
   #expect(try sizing.minimumSize(for: tree).width <= viewport1024By700(railOpen: true).width)
 
@@ -70,7 +70,7 @@ func editorAndAgentFitA1024By700Window(railOpen: Bool) throws {
   let viewport = window.paneViewport(
     window: PaneLayoutSize(width: 900, height: 700), railOpen: true)
   let tree = try workspace([.editor, .agent])
-  // 790 points cannot hold the full editor beside the agent; this is the overflow the fit
+  // 796 points cannot hold the full editor beside the agent; this is the overflow the fit
   // removes by dropping the project panel (333 + 18 + 340 = 691).
   #expect(try sizing.minimumSize(for: tree).width > viewport.width)
 
