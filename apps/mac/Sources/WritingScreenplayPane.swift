@@ -52,7 +52,7 @@ struct WritingScreenplayPane: View {
           client: client, pane: pane, document: writing.document, structure: structure,
           showScreenplay: { showingBeatBoard = false }
         )
-        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+        .paneShell()
         .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
       } else {
         GeometryReader { proxy in
@@ -71,14 +71,14 @@ struct WritingScreenplayPane: View {
             .scrollDisabled(plan.overflowAxes.isEmpty)
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
-            .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+            .paneShell()
           } else {
             VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
               screenplayHeader(document: writing?.document, structure: structure)
               ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .padding(PaneLayoutContentMetrics.paneCardInset)
-            .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+            .paneShell()
           }
         }
       }

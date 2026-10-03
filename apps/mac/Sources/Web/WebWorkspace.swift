@@ -39,18 +39,18 @@ private struct WebEmptyState: View {
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
       Text("Open a local server")
-        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.subheading, weight: .bold))
       Text("Choose a server detected on this Mac, or enter an address.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption))
         .foregroundStyle(MacTheme.secondary)
       serverList
       addressField
       Toggle(isOn: $incognito) {
         VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
           Text("Incognito pane")
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
           Text("Use a temporary session that is discarded when this pane closes.")
-            .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+            .font(MacTheme.ui(MacTheme.TypeScale.micro))
             .foregroundStyle(MacTheme.secondary)
         }
       }
@@ -58,7 +58,7 @@ private struct WebEmptyState: View {
     }
     .padding(MacTheme.Space.x14)
     .frame(width: 420)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .paneShell()
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .task { await refreshWhileVisible() }
   }
@@ -68,12 +68,12 @@ private struct WebEmptyState: View {
       HStack(spacing: MacTheme.Space.x10) {
         ProgressView().controlSize(.small)
         Text("Looking for local servers…")
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.muted)
       }
       .padding(.horizontal, MacTheme.Space.x10)
       .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-      .neoWell(radius: MacTheme.Radius.compact)
+      .paneWell(radius: MacTheme.Radius.compact)
     } else {
       ScrollView {
         LazyVStack(spacing: MacTheme.Space.x8) {
@@ -98,12 +98,12 @@ private struct WebEmptyState: View {
         .foregroundStyle(MacTheme.secondary)
       TextField("localhost:3000 or example.com", text: $address)
         .textFieldStyle(.plain)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption))
         .onSubmit { open(address) }
     }
     .padding(.horizontal, MacTheme.Space.x12)
     .frame(height: 28)
-    .neoWell(radius: MacTheme.Radius.pill)
+    .paneWell(radius: MacTheme.Radius.pill)
   }
 
   private func refreshWhileVisible() async {
@@ -138,7 +138,7 @@ private struct LocalServerRow: View {
           .font(MacTheme.mono(MacTheme.TypeScale.caption, weight: .bold))
           .lineLimit(1)
         Text("\(server.cwd) · port \(identifier: server.port) · pid \(identifier: server.pid)")
-          .font(MacTheme.chrome(MacTheme.TypeScale.micro))
+          .font(MacTheme.ui(MacTheme.TypeScale.micro))
           .foregroundStyle(MacTheme.secondary)
           .lineLimit(1)
       }
@@ -149,6 +149,6 @@ private struct LocalServerRow: View {
     }
     .padding(.horizontal, MacTheme.Space.x10)
     .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-    .neoWell(radius: MacTheme.Radius.compact)
+    .paneWell(radius: MacTheme.Radius.compact)
   }
 }

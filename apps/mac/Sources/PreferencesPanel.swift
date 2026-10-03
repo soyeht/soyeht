@@ -12,6 +12,7 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
   case tasks
   case links
   case editor
+  case skills
 
   var id: Self { self }
 
@@ -26,6 +27,7 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
     case .tasks: "Tasks & loops"
     case .editor: "Shortcuts"
     case .links: "Links"
+    case .skills: "Skills"
     }
   }
 
@@ -40,12 +42,13 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
     case .tasks: "list.bullet.clipboard"
     case .editor: "keyboard"
     case .links: "link"
+    case .skills: "wand.and.stars"
     }
   }
 
   var hasDetail: Bool {
     switch self {
-    case .general, .appearance, .harnesses, .usage, .editor, .links: true
+    case .general, .appearance, .harnesses, .usage, .editor, .links, .skills: true
     case .engine, .phone, .tasks: false
     }
   }
@@ -173,6 +176,7 @@ struct PreferencesPanel: View {
       UsageSettingsDetail(client: client, selectedProvider: $selectedUsageProvider)
     case .editor: EditorInputPreferencesPanel()
     case .links: WebLinkPreferencesPanel()
+    case .skills: SkillsPreferencesPanel(client: client)
     case .engine, .phone, .tasks: EmptyView()
     }
   }
@@ -391,79 +395,6 @@ private struct ThemePreviewSwatch: View {
       }
       .frame(width: 22, height: 22)
       .offset(x: 26)
-  }
-}
-
-private struct WebLinkPreferencesPanel: View {
-  @Environment(WebLinkPreferences.self) private var preferences
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
-      Text("Web links").font(MacTheme.chrome(18, weight: .bold))
-      Text("Local links open in a web pane. Choose whether other web links do too.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
-      Button {
-        preferences.setOpenExternalLinksInSoyeht(!preferences.openExternalLinksInSoyeht)
-      } label: {
-        HStack(spacing: MacTheme.Space.x14) {
-          VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
-            Text("Open external links in Soyeht")
-              .font(MacTheme.chrome(14, weight: .bold))
-            Text("When off, external links use the system browser")
-              .font(MacTheme.chrome(MacTheme.TypeScale.control))
-              .foregroundStyle(MacTheme.secondary)
-          }
-          Spacer()
-          PreferenceToggle(isOn: preferences.openExternalLinksInSoyeht)
-        }
-        .padding(.horizontal, MacTheme.Space.x16).frame(height: 64)
-        .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
-      }
-      .buttonStyle(.plain)
-      Text("localhost and loopback links always open in Soyeht.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.muted)
-      Spacer()
-    }
-    .padding(.vertical, MacTheme.Space.x16).padding(.horizontal, 22)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
-  }
-}
-
-private struct EditorInputPreferencesPanel: View {
-  @Environment(EditorInputPreferences.self) private var preferences
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
-      Text("Editor shortcuts").font(MacTheme.chrome(18, weight: .bold))
-      Text("Choose how the editor interprets unmodified keys. This setting applies only to you.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
-        .foregroundStyle(MacTheme.secondary)
-      Button {
-        preferences.setVimEnabled(!preferences.vimEnabled)
-      } label: {
-        HStack(spacing: MacTheme.Space.x14) {
-          VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
-            Text("Vim mode").font(MacTheme.chrome(14, weight: .bold))
-            Text("Normal, insert and visual modes with bounded Ex commands")
-              .font(MacTheme.chrome(MacTheme.TypeScale.control))
-              .foregroundStyle(MacTheme.secondary)
-          }
-          Spacer()
-          PreferenceToggle(isOn: preferences.vimEnabled)
-        }
-        .padding(.horizontal, MacTheme.Space.x16).frame(height: 64)
-        .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
-      }
-      .buttonStyle(.plain)
-      Text("Off restores the standard editor bindings immediately.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small))
-        .foregroundStyle(MacTheme.muted)
-      Spacer()
-    }
-    .padding(.vertical, MacTheme.Space.x16).padding(.horizontal, 22)
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 }
 
@@ -960,7 +891,7 @@ private struct PreferenceChip: View {
   }
 }
 
-private struct PreferenceToggle: View {
+struct PreferenceToggle: View {
   let isOn: Bool
 
   var body: some View {

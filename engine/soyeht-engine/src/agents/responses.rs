@@ -85,7 +85,7 @@ fn open(
             state,
             changes,
             "session/load",
-            super::hooks::session_parameters(
+            super::opening::parameters(
                 runtime.data_directory,
                 state,
                 client::load_session_with_mcp(&saved.pane.cwd, &id, &servers),
@@ -103,7 +103,7 @@ fn open(
             state,
             changes,
             "session/new",
-            super::hooks::session_parameters(
+            super::opening::parameters(
                 runtime.data_directory,
                 state,
                 client::new_session_with_mcp(&saved.pane.cwd, &servers),

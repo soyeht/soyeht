@@ -400,6 +400,11 @@ fn execute_turn(
         }
         return crate::subagents::emit(runtime, session, script);
     }
+    let saved = runtime.sessions.lock().unwrap()[session].clone();
+    if let Some(output) = crate::skills::turn(runtime, &saved, text) {
+        emit(runtime, session, &output);
+        return output;
+    }
     if let Some(output) = crate::mcp::task_turn(runtime, session, text) {
         emit(runtime, session, &output);
         return output;

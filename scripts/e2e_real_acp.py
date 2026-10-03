@@ -53,7 +53,7 @@ def pinned_package(registry_id):
     return package, version
 
 
-def install_adapter(directory, package, version):
+def install_adapter(directory, package, version, environment=None):
     npm = shutil.which("npm")
     node = shutil.which("node")
     require(npm is not None and node is not None, "Node.js and npm are required")
@@ -67,7 +67,7 @@ def install_adapter(directory, package, version):
     ], check=True)
     adapter = directory / f"node_modules/{package}/dist/index.js"
     require(adapter.is_file(), f"npm did not install the pinned {package}")
-    environment = quiet_launcher(directory, package, node)
+    environment = {**(environment or {}), **quiet_launcher(directory, package, node, environment)}
     return write_script(directory / "run-real-acp", [
         *(f"export {key}={shlex.quote(value)}" for key, value in environment.items()),
         f"exec {shlex.quote(node)} {shlex.quote(str(adapter))}",
@@ -89,7 +89,7 @@ def installed_file(directory, package, relative):
     return found
 
 
-def quiet_launcher(directory, package, node):
+def quiet_launcher(directory, package, node, environment=None):
     """Environment that makes the adapter start its CLI without user extensions."""
     if package.endswith("/claude-agent-acp"):
         arch = {"x86_64": "x64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
@@ -103,6 +103,7 @@ def quiet_launcher(directory, package, node):
     listing = subprocess.run(
         [node, str(codex), *features, "mcp", "list", "--json"],
         cwd=directory, check=True, capture_output=True, text=True, timeout=60,
+        env={**os.environ, **(environment or {})},
     )
     names = [server["name"] for server in json.loads(listing.stdout)]
     require(all(name.replace("-", "").replace("_", "").isalnum() for name in names),
@@ -409,6 +410,96 @@ def run_harness(binaries, name, adapter, version, report, model=None, only=None)
         services.close()
 
 
+# Soyeht skills (ADR 0075): one Codex pane writes a skill with the create-skill
+# guide, including its zero-context test; a second pane then uses it unprompted.
+SKILL = "soyeht-e2e-greeting"
+GREETING = "SOYEHT-GREETING-7Q"
+CREATE_SKILL = (
+    f"Create a Soyeht skill named {SKILL}. Whenever someone asks for a Soyeht-style "
+    f"greeting, the skill must make the agent reply with exactly {GREETING} and nothing "
+    "else. Follow the create-skill skill completely, including its zero-context test, "
+    "then tell me what you tested and the outcome."
+)
+USE_SKILL = "Give me a Soyeht-style greeting."
+
+
+def disposable_codex_home(directory):
+    """A CODEX_HOME holding only a copy of the person's sign-in, so ~/.codex is never written."""
+    source = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
+    home = directory / "codex-home"
+    home.mkdir(mode=0o700)
+    if source.is_file():
+        shutil.copyfile(source, home / "auth.json")
+        (home / "auth.json").chmod(0o600)
+    return home
+
+
+def command_names(client, pane_id):
+    items = client.call("pane.commands.list", {"paneId": pane_id})["items"]
+    return [item["name"] for item in items]
+
+
+def full_access(client, pane_id):
+    mode = next((m["value"] for m in mode_option(client, pane_id)["options"]
+                 if m.get("kind") == FULL_ACCESS), None)
+    require(mode is not None, "the harness offers no full-access mode")
+    set_mode(client, pane_id, mode)
+
+
+def last_reply(client, pane_id):
+    items = client.call("pane.transcript", {"paneId": pane_id, "limit": 200})["items"]
+    replies = [item.get("text", "") for item in items
+               if item["role"] == "assistant" and item["kind"] == "message" and not item.get("subagentId")]
+    return replies[-1] if replies else "", items
+
+
+def run_skills(binaries, adapter, version, report):
+    services = Services(binaries)
+    author = user = client = None
+    try:
+        client, author = open_real_agent(services, "codex", adapter, version)
+        full_access(client, author)
+        results = report["results"]
+        until(lambda: "$create-skill" in command_names(client, author),
+              "Codex did not load the Soyeht skills home", seconds=90)
+        results.append({"name": "real_codex_lists_soyeht_skills", "passed": True})
+
+        created = client.mutate("pane.prompt", paneId=author, text=CREATE_SKILL)["promptId"]
+        until(lambda: ended(services, created), "the skill was not created", seconds=1200)
+        listed = client.call("skills.list", {})["items"]
+        skill = next((item for item in listed if item["name"] == SKILL), None)
+        require(skill is not None, f"{SKILL} is not in the store")
+        require("problem" not in skill, f"{SKILL} is invalid: {skill.get('problem')}")
+        summary, items = last_reply(client, author)
+        subagents = [item["subagent"] for item in items if item["kind"] == "subagent"]
+        results.append({"name": "real_codex_creates_a_skill", "passed": True,
+                        "description": skill.get("description"),
+                        "zeroContextSubagents": len(subagents), "authorSummary": summary[:1500]})
+
+        workspace = client.pane(author)["workspaceId"]
+        user = client.mutate("pane.create", workspaceId=workspace, mode="agent",
+                             harness="real-codex")["paneId"]
+        until(lambda: client.pane(user).get("agent", {}).get("sessionId"),
+              "the second Codex pane did not open", seconds=90)
+        full_access(client, user)
+        require("$" + SKILL in command_names(client, user),
+                "the second pane does not list the new skill")
+        used = client.mutate("pane.prompt", paneId=user, text=USE_SKILL)["promptId"]
+        until(lambda: ended(services, used), "the skill was not used", seconds=600)
+        reply, _ = last_reply(client, user)
+        results.append({"name": "real_codex_uses_the_skill_from_another_pane",
+                        "passed": GREETING in reply, "reply": reply[:500]})
+        require(GREETING in reply, "the second pane did not follow the skill")
+        report["status"] = "passed"
+    except (AssertionError, NotSignedIn):
+        for name, pane_id in (("authorTail", author), ("userTail", user)):
+            if pane_id:
+                report[name] = transcript_tail(services.client(), pane_id)
+        raise
+    finally:
+        services.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin-dir", type=Path, default=ROOT / "engine/target/debug")
@@ -418,6 +509,9 @@ def main():
         "--model", action="append", default=[], metavar="HARNESS=MODEL",
         help="start a harness on one of its announced models, e.g. when the account "
              "cannot use the configured default")
+    parser.add_argument(
+        "--skills", action="store_true",
+        help="run only the Soyeht skills acceptance with Codex in a disposable CODEX_HOME")
     parser.add_argument(
         "--only", choices=["image"],
         help="run only the named check after the session opens")
@@ -432,13 +526,19 @@ def main():
     models = dict(value.split("=", 1) for value in args.model)
     started = time.monotonic()
     harnesses = {}
-    for name in args.harness or sorted(HARNESSES):
+    for name in ["codex"] if args.skills else args.harness or sorted(HARNESSES):
         package, version = pinned_package(HARNESSES[name])
         report = harnesses[name] = {
             "adapter": package, "version": version, "status": "failed", "results": [],
         }
         try:
             with tempfile.TemporaryDirectory(prefix=f"soyeht-real-{name}-") as directory:
+                if args.skills:
+                    home = disposable_codex_home(Path(directory))
+                    adapter = install_adapter(
+                        Path(directory), package, version, {"CODEX_HOME": str(home)})
+                    run_skills(binaries, adapter, version, report)
+                    continue
                 adapter = install_adapter(Path(directory), package, version)
                 run_harness(
                     binaries, name, adapter, version, report, models.get(name), args.only)

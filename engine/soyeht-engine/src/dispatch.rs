@@ -354,6 +354,10 @@ impl Core {
             "task.show" | "task.list" | "task.comments" => {
                 self.task_query(connection, method, params)?
             }
+            "pane.commands.list" => self.pane_commands_list(params)?,
+            method if crate::skills::handles(method) => {
+                self.skills_request(connection, method, params)?
+            }
             "usage.list" => self.usage_list()?,
             "usage.refresh" => self.usage_refresh(connection, params)?,
             "servers.local.list" => self.local_servers_list()?,

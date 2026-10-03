@@ -27,10 +27,6 @@ use uuid::Uuid;
 mod support;
 use support::*;
 
-// This is a negative observation window, so increasing it would slow the
-// passing suite and weaken the assertion that backpressure remains bounded.
-const BACKPRESSURE_OBSERVATION_WINDOW: Duration = Duration::from_secs(6);
-
 #[test]
 fn workspace_pane_layout_is_validated_persisted_and_restored() {
     let mut rig = Rig::new();
@@ -199,17 +195,7 @@ fn pane_created_events_carry_replica_metadata_for_other_clients() {
     );
     observer.call("engine.status", json!({}));
 
-    let events: Vec<Value> = observer
-        .messages
-        .iter()
-        .filter_map(|frame| {
-            let Frame::Json(bytes) = frame else {
-                return None;
-            };
-            let value: Value = serde_json::from_slice(bytes).ok()?;
-            (value["method"] == "pane.created").then_some(value["params"].clone())
-        })
-        .collect();
+    let events = observer.notifications("pane.created");
     let editor = events
         .iter()
         .find(|event| event["pane"]["mode"] == "editor")
@@ -3159,23 +3145,7 @@ enum SignInEnding {
 }
 
 fn wait_for_pane_event(observer: &mut Client, method: &str, pane: &str) -> Value {
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        observer.call("engine.status", json!({}));
-        let found = observer.messages.iter().find_map(|frame| {
-            let Frame::Json(bytes) = frame else {
-                return None;
-            };
-            let value: Value = serde_json::from_slice(bytes).ok()?;
-            (value["method"] == method && value["params"]["paneId"] == pane)
-                .then(|| value["params"].clone())
-        });
-        if let Some(event) = found {
-            return event;
-        }
-        assert!(Instant::now() < deadline, "{method} was not published");
-        thread::sleep(Duration::from_millis(20));
-    }
+    observer.wait_for_notification(method, |params| params["paneId"] == pane)
 }
 
 fn sign_in_output_is_readable(client: &mut Client, terminal: &str) -> bool {

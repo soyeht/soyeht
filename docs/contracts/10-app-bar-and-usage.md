@@ -27,11 +27,23 @@ rail grows with the readers. Claude and Codex show the used fraction of the
 weekly window by default, falling back to the current window when no weekly
 reading is available. Other providers show their primary reported window.
 The provider glyph sits inside the ring; the percentage sits below it. Band
-colors use the existing tokens: below 50 % `success`, 50–80 % `warning`,
-above 80 % `danger`. A provider with no reading yet draws a dimmed ring with
-"—". A reading older than 15 minutes keeps its last percentage, but the
-ring and values turn gray and the detail reports `as of HH:mm`. A provider that is signed in
-but has no reader draws nothing: no ring, no placeholder.
+colors use the existing tokens: below 50 % `success`, 50–80 % `warning`
+(both ends included), above 80 % `danger`. The rule lives once, in
+`UsageBand` (`apps/shared/Sources/SoyehtClient/UsagePresentation.swift`);
+the Mac rail, the Mac balloon and Settings, and the iPhone and iPad Settings
+all draw through it. A provider that is signed in but has no reader draws
+nothing: no ring, no placeholder.
+
+**Ring states** (`UsageEmphasis`):
+
+| State | Engine state | Arc | Percentage | Detail |
+| --- | --- | --- | --- | --- |
+| Current | `ok`, read in the last 15 minutes | band color, full strength | shown | `updated … ago` |
+| Last known | `stale`: older than 15 minutes, or restored after a restart and not read again | band color of the last reading, muted (45 % opacity) | last value, muted | `as of HH:mm` |
+| No reading | `unavailable` (including not checked yet), `login_needed`, `no_access` | none; the whole ring is dimmed | "—" | the reason |
+
+A last-known ring never turns gray: it keeps the color band of its value so a
+glance still tells green from red, and the muting tells it is old.
 
 Hover opens the detail balloon (screen 12b): provider name, primary window
 used and when it resets, secondary window (for example the week) used and
@@ -60,6 +72,17 @@ balloon shows which one answered. Verified sources are recorded in
   rename would therefore show "unavailable" indefinitely rather than "invalid
   data", even after Claude Code has fetched usage. If the ring stays
   unavailable on a Mac where Claude Code shows usage, check the key name first.
+  *When the entry exists:* Claude Code writes `cachedUsageUtilization` only
+  after it fetches the account's usage itself, which its `/usage` screen does;
+  ordinary turns, in the terminal or through the ACP registry adapter, do not
+  refresh it, and the install method (native, npm or the adapter's bundled
+  CLI) does not change where it lives. A Mac where `/usage` was never opened
+  shows "—" with that explanation, and an old entry shows as last known. The
+  file is Claude Code's whole configuration, so the reader bounds it at 32 MiB
+  rather than the 1 MiB protocol frame; a missing file reports "not found".
+  Each window (`five_hour`, `seven_day`) must be present; a `null` window, or
+  one whose `utilization` or `resets_at` is `null`, is a window Claude Code
+  reports as not running and is left out, so the other window still shows.
 - **Codex**: (1) a disposable `codex app-server` asked for
   `account/rateLimits/read` (the same channel the harness already uses in
   contract 04); (2) the access token in the Codex login file sent to the

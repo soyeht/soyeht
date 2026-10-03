@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a7cac209c62c670efaab2f34fd36e081e14164bcd1fc7f064e0e3e5939f7511a). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -864,6 +864,98 @@ export interface AgentSession {
   "queuePaused"?: boolean;
   "role": AgentPaneRole;
   "harnessSwitch"?: AgentHarnessSwitch;
+}
+
+export interface AgentCommand {
+  "name": string;
+  "description": string;
+  "inputHint"?: string;
+}
+
+export interface PaneCommandsListParams {
+  "paneId": Id;
+}
+
+export interface PaneCommandsListResult {
+  "paneId": Id;
+  "items": Array<AgentCommand>;
+}
+
+export interface PaneCommandsChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "paneId": Id;
+}
+
+export type SkillName = string;
+
+export type SkillScope = "user" | "workspace";
+
+export interface Skill {
+  "name": SkillName;
+  "scope": SkillScope;
+  "workspaceId"?: Id;
+  "path": string;
+  "description"?: string;
+  "allowedTools"?: string;
+  "revision"?: string;
+  "problem"?: string;
+}
+
+export interface SkillsListParams {
+  "workspaceId"?: Id;
+}
+
+export interface SkillsListResult {
+  "items": Array<Skill>;
+  "userDirectory": string;
+  "workspaceDirectory"?: string;
+}
+
+export interface SkillsReadParams {
+  "name": SkillName;
+  "workspaceId"?: Id;
+}
+
+export interface SkillsReadResult {
+  "skill": Skill;
+  "content": string;
+}
+
+export interface SkillsCreateParams {
+  "name": SkillName;
+  "description": string;
+  "instructions"?: string;
+  "workspaceId"?: Id;
+  "idempotencyKey": Id;
+}
+
+export interface SkillsUpdateParams {
+  "name": SkillName;
+  "content": string;
+  "baseRevision": string;
+  "workspaceId"?: Id;
+  "idempotencyKey": Id;
+}
+
+export interface SkillsDeleteParams {
+  "name": SkillName;
+  "workspaceId"?: Id;
+  "idempotencyKey": Id;
+}
+
+export interface SkillMutationResult {
+  "skill": Skill;
+}
+
+export interface SkillsDeleteResult {
+  "name": SkillName;
+  "removed": boolean;
+}
+
+export interface SkillsChangedEvent {
+  "scope": SkillScope;
+  "workspaceId"?: Id;
 }
 
 export interface ProbeCapability {
@@ -3315,6 +3407,12 @@ export interface Methods {
   "harness.custom.create": { params: HarnessCustomCreateParams; result: HarnessCustomMutationResult };
   "harness.custom.update": { params: HarnessCustomUpdateParams; result: HarnessCustomMutationResult };
   "harness.custom.remove": { params: HarnessCustomRemoveParams; result: HarnessCustomRemoveResult };
+  "pane.commands.list": { params: PaneCommandsListParams; result: PaneCommandsListResult };
+  "skills.list": { params: SkillsListParams; result: SkillsListResult };
+  "skills.read": { params: SkillsReadParams; result: SkillsReadResult };
+  "skills.create": { params: SkillsCreateParams; result: SkillMutationResult };
+  "skills.update": { params: SkillsUpdateParams; result: SkillMutationResult };
+  "skills.delete": { params: SkillsDeleteParams; result: SkillsDeleteResult };
   "model.list": { params: ModelListParams; result: ModelListResult };
   "pane.queue.resume": { params: PaneQueueResumeParams; result: PaneQueueResumeResult };
   "task.create": { params: TaskCreateParams; result: TaskCreateResult };
@@ -3443,6 +3541,8 @@ export interface Events {
   "pane.needs_login": PaneNeedsLoginEvent;
   "pane.auth_finished": PaneAuthFinishedEvent;
   "pane.update": PaneUpdateEvent;
+  "pane.commands_changed": PaneCommandsChangedEvent;
+  "skills.changed": SkillsChangedEvent;
   "attention.changed": AttentionChangedEvent;
   "pane.queue.paused": PaneQueueStateEvent;
   "pane.queue.resumed": PaneQueueStateEvent;
@@ -3521,6 +3621,8 @@ export const eventRegistry = {
   "pane.needs_login": { paramsType: "PaneNeedsLoginEvent", durable: true },
   "pane.auth_finished": { paramsType: "PaneAuthFinishedEvent", durable: true },
   "pane.update": { paramsType: "PaneUpdateEvent", durable: true },
+  "pane.commands_changed": { paramsType: "PaneCommandsChangedEvent", durable: true },
+  "skills.changed": { paramsType: "SkillsChangedEvent", durable: false },
   "attention.changed": { paramsType: "AttentionChangedEvent", durable: true },
   "pane.queue.paused": { paramsType: "PaneQueueStateEvent", durable: true },
   "pane.queue.resumed": { paramsType: "PaneQueueStateEvent", durable: true },

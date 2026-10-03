@@ -1,4 +1,5 @@
-//! The engine and supervisor rig shared by the integration test crates.
+//! The engine integration rig: a disposable engine and supervisor, and a
+//! JSON-RPC client. Each test crate uses the part it needs.
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
@@ -22,6 +23,10 @@ use uuid::Uuid;
 // Process-heavy integration tests share the runner. Wait for the observable
 // effect rather than assuming it will occur within one scheduling quantum.
 pub const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
+
+// This is a negative observation window, so increasing it would slow the
+// passing suite and weaken the assertion that backpressure remains bounded.
+pub const BACKPRESSURE_OBSERVATION_WINDOW: Duration = Duration::from_secs(6);
 
 // Every Rig owns an engine and supervisor process. Keep those process-heavy
 // controls in one queue without reducing the parallelism of pure tests.
@@ -87,10 +92,10 @@ impl Rig {
     }
     /// The test agent, launched with extra fake-agent arguments.
     pub fn install_fake_harness_with(&self, arguments: &[&str]) {
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
         let mut args = vec![json!("--state-dir"), json!(self.path.join("native"))];
         args.extend(arguments.iter().map(|argument| json!(argument)));
+        let binary =
+            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
         fs::write(
             self.path.join("harnesses.json"),
             serde_json::to_vec(&json!([{
@@ -393,6 +398,35 @@ pub fn restart_and_wait_for_replay(rig: &mut Rig, pane: &str, live: &[Value]) ->
 }
 
 impl Client {
+    /// Parameters of the notifications `method` received so far.
+    pub fn notifications(&self, method: &str) -> Vec<Value> {
+        self.messages
+            .iter()
+            .filter_map(|frame| {
+                let Frame::Json(bytes) = frame else {
+                    return None;
+                };
+                let value: Value = serde_json::from_slice(bytes).ok()?;
+                (value["method"] == method).then(|| value["params"].clone())
+            })
+            .collect()
+    }
+    /// Waits for a notification `method` whose parameters satisfy `accept`.
+    pub fn wait_for_notification(
+        &mut self,
+        method: &str,
+        accept: impl Fn(&Value) -> bool,
+    ) -> Value {
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+        loop {
+            self.call("engine.status", json!({}));
+            if let Some(params) = self.notifications(method).into_iter().find(&accept) {
+                return params;
+            }
+            assert!(Instant::now() < deadline, "{method} was not published");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
     pub fn wait_state(&mut self, pane: &str, state: &str) -> Value {
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         loop {

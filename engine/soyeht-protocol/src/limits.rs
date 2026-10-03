@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a7cac209c62c670efaab2f34fd36e081e14164bcd1fc7f064e0e3e5939f7511a). Do not edit.
+// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;
@@ -44,6 +44,9 @@ pub const EDITOR_HISTORY_BYTES: usize = 52428800;
 pub const EDITOR_AUTOSAVE_MS: usize = 500;
 pub const PROJECT_TREE_ENTRIES: usize = 5000;
 pub const PROJECT_TREE_WATCHES: usize = 256;
+pub const AGENT_COMMANDS: usize = 256;
+pub const SKILL_BYTES: usize = 262144;
+pub const SKILL_ENTRIES: usize = 256;
 pub const WEB_PANES_PER_WORKSPACE: usize = 10;
 pub const WEB_SNAPSHOT_BYTES: usize = 204800;
 pub const WEB_SCREENSHOT_BYTES: usize = 2097152;

@@ -32,6 +32,22 @@ Workspace layout follows one invariant: populated operational content starts at
 the top leading edge. Empty states expand across the whole available workspace
 and center within that surface; they do not inherit a content column's width.
 
+The workspace tabs in the top bar scroll sideways like any Apple scroll view:
+trackpad swipe, Shift+wheel or a plain mouse wheel. A thin overlay indicator
+appears only while the strip moves, and each edge that hides tabs shows a fade
+with a chevron that pages one view. Selecting a workspace scrolls its tab fully
+into view; scrolled away by hand, the active tab stays pinned at the edge it
+left from. "+N" lists the workspaces whose tabs are hidden. The rules live in
+`WorkspaceTabStripPolicy` (apps/shared).
+
+An agent pane's header names its harness on a menu button ("Claude ▾",
+accessibility label "Switch harness"). It opens the switch popover: installed
+harnesses first, then model and effort, then the button that restarts the
+conversation on the chosen harness. The loop and lead controls use a timer
+icon, and every header icon has a tooltip and an accessibility label from
+`PaneHeaderControls` (apps/shared). The iPhone and iPad agent pane shows the
+same harness name and switch menu.
+
 An agent pane is created from the same new-pane sheet by selecting agent mode,
 an installed harness, its advertised model and effort, a permission mode and a
 working directory. The conversation view renders normalized messages, thoughts,

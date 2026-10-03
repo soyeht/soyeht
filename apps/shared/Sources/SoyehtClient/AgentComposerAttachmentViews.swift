@@ -9,20 +9,13 @@ import UniformTypeIdentifiers
   import UIKit
 #endif
 
-/// Sizes of the attachment controls. The visual redesign replaces these views;
-/// the state and the staging stay in `AgentComposerAttachments`.
+/// Sizes the pane interior does not already name. The views are flat, palette-only
+/// and thin: the visual redesign replaces them, and the state and the staging stay
+/// in `AgentComposerAttachments`.
 private enum AttachmentMetrics {
-  static let spacing: CGFloat = 6
-  static let chipRadius: CGFloat = 8
-  static let chipHorizontal: CGFloat = 8
-  static let chipVertical: CGFloat = 5
   static let thumbnail: CGFloat = 26
   static let thumbnailRadius: CGFloat = 4
   static let chipNameWidth: CGFloat = 160
-  static let dropRadius: CGFloat = 12
-  static let dropLine: CGFloat = 2
-  /// Lines the button up with the first line of the composer's text field.
-  static let buttonBottomInset: CGFloat = 11
 }
 
 /// Attachment chips: removable in the composer, read-only in a sent message.
@@ -33,14 +26,14 @@ struct AgentAttachmentChips: View {
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: AttachmentMetrics.spacing) {
+      HStack(spacing: PaneInteriorMetrics.compactSpacing) {
         ForEach(items) { item in chip(item) }
       }
     }
   }
 
   private func chip(_ item: AgentAttachmentPresentation) -> some View {
-    HStack(spacing: AttachmentMetrics.spacing) {
+    HStack(spacing: PaneInteriorMetrics.compactSpacing) {
       preview(item)
       VStack(alignment: .leading, spacing: 0) {
         Text(item.name).lineLimit(1).truncationMode(.middle).foregroundStyle(style.ink)
@@ -55,9 +48,9 @@ struct AgentAttachmentChips: View {
       }
     }
     .font(style.captionFont)
-    .padding(.horizontal, AttachmentMetrics.chipHorizontal)
-    .padding(.vertical, AttachmentMetrics.chipVertical)
-    .background(style.well, in: RoundedRectangle(cornerRadius: AttachmentMetrics.chipRadius))
+    .padding(.horizontal, PaneInteriorMetrics.compactSpacing)
+    .padding(.vertical, PaneInteriorMetrics.tightSpacing)
+    .paneInteriorFill(style.well, radius: PaneInteriorMetrics.wellRadius)
     .accessibilityElement(children: .combine)
   }
 
@@ -87,7 +80,7 @@ struct AgentComposerAttachmentRow: View {
   let style: AgentConversationStyle
 
   var body: some View {
-    VStack(alignment: .leading, spacing: AttachmentMetrics.spacing) {
+    VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
       if !attachments.items.isEmpty {
         AgentAttachmentChips(
           items: attachments.items.map(AgentAttachmentPresentation.init(draft:)), style: style,
@@ -114,7 +107,6 @@ struct AgentAttachButton: View {
 
   var body: some View {
     control
-      .padding(.bottom, AttachmentMetrics.buttonBottomInset)
       .fileImporter(
         isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true
       ) { result in
@@ -123,7 +115,8 @@ struct AgentAttachButton: View {
   }
 
   private var icon: some View {
-    Image(systemName: "plus").font(.headline).foregroundStyle(style.secondary)
+    Image(systemName: "plus").font(style.controlFont.weight(.bold))
+      .foregroundStyle(style.secondary)
       .accessibilityLabel("Attach files")
   }
 
@@ -180,8 +173,8 @@ struct AgentAttachmentDropTarget: ViewModifier {
       }
       .overlay {
         if targeted {
-          RoundedRectangle(cornerRadius: AttachmentMetrics.dropRadius)
-            .strokeBorder(style.accent, lineWidth: AttachmentMetrics.dropLine)
+          RoundedRectangle(cornerRadius: PaneInteriorMetrics.cardRadius)
+            .strokeBorder(style.accent, lineWidth: PaneInteriorMetrics.separatorWidth * 2)
             .allowsHitTesting(false)
         }
       }

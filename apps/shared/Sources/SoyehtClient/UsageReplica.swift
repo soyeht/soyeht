@@ -1,105 +1,10 @@
 import Foundation
 import SoyehtProtocol
-import SwiftUI
-
-public enum UsageBand: Sendable {
-  case success
-  case warning
-  case danger
-}
-
-public enum UsageTimestamp {
-  public static func date(from value: String) -> Date? {
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
-  }
-}
 
 enum UsageDetailsRefreshPolicy {
   static func shouldRefresh(_ reading: UsageReading) -> Bool {
     reading.state == .stale
       || (reading.state == .unavailable && reading.unavailableReason == .not_checked)
-  }
-}
-
-public struct UsagePresentation: Sendable {
-  public let reading: UsageReading
-
-  public init(_ reading: UsageReading) {
-    self.reading = reading
-  }
-
-  public var displayedWindow: UsageWindow? {
-    switch reading.provider {
-    case .claude, .codex:
-      weeklyWindow ?? reading.secondary ?? reading.primary
-    case .cursor:
-      reading.primary
-    }
-  }
-
-  private var weeklyWindow: UsageWindow? {
-    [reading.primary, reading.secondary]
-      .compactMap { $0 }
-      .first { $0.label.lowercased().contains("week") }
-  }
-
-  public var fraction: Double? {
-    guard reading.state == .ok || reading.state == .stale,
-      let used = displayedWindow?.used
-    else { return nil }
-    return min(max(used, 0), 1)
-  }
-
-  public var isStale: Bool { reading.state == .stale }
-
-  public var unavailableMessage: String {
-    switch reading.unavailableReason {
-    case .not_checked: "Usage has not been checked yet."
-    case .tool_not_found: "\(reading.provider.displayName) not found on this Mac."
-    case .app_server_failed: "\(reading.provider.displayName) app server could not provide usage."
-    case .invalid_response: "Usage reader returned invalid data."
-    case nil: "Usage is unavailable."
-    }
-  }
-
-  public var percentage: String {
-    guard let fraction else { return "—" }
-    return "\(Int((fraction * 100).rounded()))%"
-  }
-
-  public var band: UsageBand? {
-    guard reading.state == .ok, let fraction else { return nil }
-    if fraction < 0.5 { return .success }
-    if fraction <= 0.8 { return .warning }
-    return .danger
-  }
-
-}
-
-public struct ProviderGlyph: View {
-  private let provider: UsageProvider
-
-  public init(_ provider: UsageProvider) {
-    self.provider = provider
-  }
-
-  public var body: some View {
-    Image(provider.resourceName, bundle: .module)
-      .resizable()
-      .renderingMode(.template)
-      .aspectRatio(contentMode: .fit)
-  }
-}
-
-extension UsageProvider {
-  fileprivate var resourceName: String {
-    switch self {
-    case .claude: "claude"
-    case .codex: "codex"
-    case .cursor: "cursor"
-    }
   }
 }
 

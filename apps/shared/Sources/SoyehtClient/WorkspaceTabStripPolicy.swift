@@ -61,6 +61,20 @@ public enum WorkspaceTabFocusDirection: Sendable {
   case next
 }
 
+/// Which sides of the strip hide tabs, for the edge fades and chevrons.
+public struct WorkspaceTabStripOverflow: Equatable, Sendable {
+  public var hiddenLeading: Bool
+  public var hiddenTrailing: Bool
+
+  public init(hiddenLeading: Bool, hiddenTrailing: Bool) {
+    self.hiddenLeading = hiddenLeading
+    self.hiddenTrailing = hiddenTrailing
+  }
+
+  /// The tabs are wider than the strip, so it scrolls.
+  public var overflows: Bool { hiddenLeading || hiddenTrailing }
+}
+
 public enum WorkspaceTabStripPolicy {
   /// Plans visibility from frames in scroll-content coordinates.
   ///
@@ -129,6 +143,43 @@ public enum WorkspaceTabStripPolicy {
     } else {
       return nil
     }
+    return min(max(0, target), max(0, contentWidth - max(0, viewport.width)))
+  }
+
+  /// Sub-point differences come from layout rounding and never hide a tab.
+  static let edgeTolerance = 0.5
+
+  /// Detects content hidden on each side of the viewport, in scroll-content coordinates.
+  public static func overflow(
+    contentWidth: Double, viewport: WorkspaceTabStripViewport
+  ) -> WorkspaceTabStripOverflow {
+    WorkspaceTabStripOverflow(
+      hiddenLeading: viewport.offset > edgeTolerance,
+      hiddenTrailing: contentWidth - viewport.maxX > edgeTolerance)
+  }
+
+  /// Whether tabs this wide need the overflow control in a strip this wide.
+  public static func overflows(contentWidth: Double, availableWidth: Double) -> Bool {
+    contentWidth > availableWidth + edgeTolerance
+  }
+
+  /// A mouse wheel only turns vertically, so over a strip that scrolls sideways its turn scrolls
+  /// the strip, as in Finder and Safari. Trackpad swipes report precise deltas on both axes and
+  /// keep their own direction; Shift+wheel already arrives as a horizontal delta.
+  public static func wheelScrollsHorizontally(
+    deltaX: Double, deltaY: Double, hasPreciseDeltas: Bool
+  ) -> Bool {
+    !hasPreciseDeltas && abs(deltaY) > abs(deltaX)
+  }
+
+  /// The offset an edge chevron scrolls to: most of a viewport towards that edge, keeping a
+  /// sliver of the previous view so people do not lose their place.
+  public static func pageOffset(
+    toward edge: WorkspaceTabStickyEdge, viewport: WorkspaceTabStripViewport,
+    contentWidth: Double
+  ) -> Double {
+    let page = max(0, viewport.width) * 0.8
+    let target = edge == .leading ? viewport.offset - page : viewport.offset + page
     return min(max(0, target), max(0, contentWidth - max(0, viewport.width)))
   }
 

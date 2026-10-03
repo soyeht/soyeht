@@ -1,4 +1,4 @@
-# ADR 0075: Prompt attachments
+# ADR 0076: Prompt attachments
 
 - Status: accepted
 - Date: 2026-10-03

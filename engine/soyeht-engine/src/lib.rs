@@ -22,6 +22,7 @@ pub mod push;
 pub mod screen;
 pub mod server;
 pub mod settings;
+pub mod skills;
 pub mod streams;
 pub mod tasks;
 mod terminal_capture;

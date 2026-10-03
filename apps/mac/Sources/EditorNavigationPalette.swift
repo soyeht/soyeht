@@ -49,7 +49,7 @@ struct EditorNavigationPalette: View {
         .textFieldStyle(.plain)
         .font(MacTheme.mono(MacTheme.TypeScale.control))
         .padding(.horizontal, MacTheme.Space.x12).frame(height: 36)
-        .neoWell(radius: MacTheme.Radius.control)
+        .paneWell(radius: MacTheme.Radius.control)
         .focused($queryFocused)
         .onSubmit { submitPrimary() }
       if activeMode == .project { replacementField }
@@ -90,9 +90,9 @@ struct EditorNavigationPalette: View {
       TextField("Replace with", text: $replacement)
         .textFieldStyle(.plain).font(MacTheme.mono(MacTheme.TypeScale.control))
         .padding(.horizontal, MacTheme.Space.x12).frame(height: 34)
-        .neoWell(radius: MacTheme.Radius.control)
+        .paneWell(radius: MacTheme.Radius.control)
       Button("Replace all") { replaceAll() }
-        .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(query.isEmpty)
+        .buttonStyle(.panePrimary).disabled(query.isEmpty)
     }
   }
 

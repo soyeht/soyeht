@@ -41,7 +41,7 @@ Raw terminal panes continue to exist and do not use this path.
    `initialize` `promptCapabilities` allow: `image` for PNG, JPEG, GIF and WebP,
    `audio`, an embedded text `resource`, and otherwise a `resource_link` to the
    file's absolute path, which every ACP v1 agent accepts. A file that would
-   push the message past one ACP line is linked (ADR 0075).
+   push the message past one ACP line is linked (ADR 0076).
 7. **`session/update`.** The engine stores everything in the pane transcript
    and forwards it to clients: message chunks, thoughts, tool calls and updates,
    plan, options changed by the agent, token usage and `state_update`. The turn

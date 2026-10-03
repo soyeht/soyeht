@@ -59,9 +59,68 @@ private final class RateLimitRetryProbe {
   #expect(UsagePresentation(reading(used: 0.80)).band == .warning)
   #expect(UsagePresentation(reading(used: 0.81)).band == .danger)
   #expect(UsagePresentation(reading(state: .stale)).percentage == "40%")
-  #expect(UsagePresentation(reading(state: .stale)).band == nil)
   #expect(UsagePresentation(reading(state: .stale)).isStale)
   #expect(UsagePresentation(reading(state: .unavailable, used: nil)).fraction == nil)
+}
+
+@Test func usageBandIsTheSingleThresholdRule() {
+  #expect(UsageBand(usedFraction: 0) == .success)
+  #expect(UsageBand(usedFraction: 0.19) == .success)
+  #expect(UsageBand(usedFraction: 0.499) == .success)
+  #expect(UsageBand(usedFraction: 0.5) == .warning)
+  #expect(UsageBand(usedFraction: 0.8) == .warning)
+  #expect(UsageBand(usedFraction: 0.801) == .danger)
+  #expect(UsageBand(usedFraction: 1.4) == .danger)
+  #expect(UsageBand(usedFraction: -0.2) == .success)
+}
+
+@MainActor @Test func usageBandDrawsWithThePaletteRoles() {
+  #expect(UsageBand.success.color == SoyehtThemeColors.success)
+  #expect(UsageBand.warning.color == SoyehtThemeColors.warning)
+  #expect(UsageBand.danger.color == SoyehtThemeColors.danger)
+}
+
+@Test func ringStatesKeepTheLastKnownBandMutedAndDimAnEmptyRing() {
+  let current = UsagePresentation(reading(.codex, used: 0.19))
+  #expect(current.band == .success)
+  #expect(current.emphasis == .current)
+  #expect(current.emphasis.arcOpacity == 1)
+
+  let stale = UsagePresentation(reading(.codex, state: .stale, used: 0.19))
+  #expect(stale.band == .success)
+  #expect(stale.percentage == "19%")
+  #expect(stale.emphasis == .lastKnown)
+  #expect(stale.emphasis.arcOpacity > 0 && stale.emphasis.arcOpacity < 1)
+  #expect(stale.emphasis.ringOpacity == 1)
+  #expect(UsagePresentation(reading(state: .stale, used: 0.9)).band == .danger)
+
+  let unchecked = UsagePresentation(
+    UsageReading(
+      provider: .claude, state: .unavailable, unavailableReason: .not_checked,
+      source: .claude_desktop_cache, fetchedAt: ""))
+  #expect(unchecked.band == nil)
+  #expect(unchecked.percentage == "—")
+  #expect(unchecked.emphasis == .none)
+  #expect(unchecked.emphasis.ringOpacity < 1)
+  for state in [UsageState.login_needed, .no_access] {
+    #expect(UsagePresentation(reading(state: state, used: nil)).emphasis == .none)
+  }
+}
+
+@Test func claudeCacheStatesExplainHowClaudeCodeSavesAReading() {
+  let unpopulated = UsageReading(
+    provider: .claude, state: .unavailable, source: .claude_desktop_cache,
+    fetchedAt: "2026-09-23T12:00:00Z")
+  #expect(UsagePresentation(unpopulated).unavailableMessage.contains("/usage"))
+  let stale = UsageReading(
+    provider: .claude, state: .stale,
+    secondary: UsageWindow(used: 0.3, resetsAt: "later", label: "Weekly"),
+    source: .claude_desktop_cache, fetchedAt: "2026-09-23T12:00:00Z")
+  #expect(UsagePresentation(stale).staleHint?.contains("/usage") == true)
+  #expect(UsagePresentation(reading(.codex, state: .stale)).staleHint == nil)
+  let generic = UsageReading(
+    provider: .codex, state: .unavailable, source: .codex_app_server, fetchedAt: "")
+  #expect(UsagePresentation(generic).unavailableMessage == "Usage is unavailable.")
 }
 
 @Test func usageUnavailableReasonIsTypedAndSafeForDisplay() {

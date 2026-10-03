@@ -52,13 +52,12 @@ import Testing
       == nil)
 }
 
-@Test func switchLabelsNameTheTargetAndFallBackToTheIdentifier() {
+@Test func switchLabelsNameTheTarget() {
   let codex = switchHarness(id: "codex", name: "Codex", state: .ready)
 
   #expect(HarnessSwitchModel.actionLabel(for: codex) == "Restart conversation with Codex")
   #expect(HarnessSwitchModel.actionLabel(for: nil) == "Choose another agent")
-  #expect(HarnessSwitchModel.displayName(of: "codex", in: [codex]) == "Codex")
-  #expect(HarnessSwitchModel.displayName(of: "custom.gone", in: [codex]) == "custom.gone")
+  #expect(HarnessSwitchModel.readableName(ofHarnessId: "custom.gone") == "Gone")
 }
 
 @Test func switchIsBlockedWhileDisconnectedConfiguringOrAlreadySwitching() {
@@ -113,6 +112,98 @@ import Testing
   client.agentPanes["pane"]?.harnessSwitch = AgentHarnessSwitchView(
     fromHarness: "claude", toHarness: "codex", phase: .switching)
   #expect(HarnessSwitchModel.isSwitching(client.agentPanes["pane"]?.harnessSwitch))
+}
+
+@Test func agentPaneHeaderExposesASwitchHarnessControlNamedAfterTheRunningHarness() throws {
+  let claude = switchHarness(id: "registry.claude-acp", name: "Claude Agent", state: .ready)
+  let codex = switchHarness(id: "registry.codex-acp", name: "Codex", state: .ready)
+  let harness = HarnessSwitchModel.control(
+    current: claude.id, switchState: nil, harnesses: [claude, codex], paneName: "Reviewer")
+
+  let header = PaneHeaderControls(mode: .agent, harness: harness)
+
+  let control = try #require(header.harness)
+  #expect(control.title == "Claude")
+  #expect(!control.busy)
+  #expect(HarnessSwitchControl.accessibilityLabel == "Switch harness")
+  #expect(control.help == "Switch harness (running Claude)")
+  #expect(HarnessSwitchControl.symbol == "chevron.down")
+}
+
+@Test func harnessControlNamesTheTargetWhileASwitchRuns() {
+  let claude = switchHarness(id: "registry.claude-acp", name: "Claude Agent", state: .ready)
+  let codex = switchHarness(id: "registry.codex-acp", name: "Codex", state: .ready)
+  let switching = AgentHarnessSwitchView(
+    fromHarness: claude.id, toHarness: codex.id, phase: .switching)
+
+  let running = HarnessSwitchModel.control(
+    current: claude.id, switchState: switching, harnesses: [claude, codex],
+    paneName: "Claude")
+  #expect(running == HarnessSwitchControl(title: "Codex", busy: true))
+  let requested = HarnessSwitchModel.control(
+    current: claude.id, switchState: nil, requested: codex.id, harnesses: [claude, codex],
+    paneName: "Claude")
+  #expect(requested == HarnessSwitchControl(title: "Codex", busy: true))
+}
+
+/// VM1 regression: a pane launched as "registry.claude-acp" showed "registry.cla… ▾".
+@Test func registryClaudePaneReadsClaudeAndNeverItsLaunchId() {
+  let claude = switchHarness(id: "registry.claude-acp", name: "Claude", state: .ready)
+  let codex = switchHarness(id: "registry.codex-acp", name: "Codex", state: .ready)
+
+  // Catalogue loaded: the engine's display name from harness.list.
+  #expect(
+    HarnessSwitchModel.control(
+      current: "registry.claude-acp", switchState: nil, harnesses: [claude, codex],
+      paneName: "Reviewer"
+    ).title == "Claude")
+  // Catalogue not loaded yet: the pane's display name.
+  #expect(
+    HarnessSwitchModel.control(
+      current: "registry.claude-acp", switchState: nil, harnesses: [], paneName: "Claude"
+    ).title == "Claude")
+  // Neither: a name read from the identifier, never the identifier itself.
+  for paneName in [nil, "", "  "] as [String?] {
+    #expect(
+      HarnessSwitchModel.control(
+        current: "registry.claude-acp", switchState: nil, harnesses: [], paneName: paneName
+      ).title == "Claude")
+  }
+  let target = HarnessSwitchModel.control(
+    current: "registry.claude-acp", switchState: nil, requested: "registry.codex-acp",
+    harnesses: [], paneName: "Claude")
+  #expect(target.title == "Codex")
+  #expect(HarnessSwitchModel.readableName(ofHarnessId: "local.my_tool") == "My Tool")
+  for id in ["registry.claude-acp", "registry.codex-acp", "local.tool"] {
+    let title = HarnessSwitchModel.control(
+      current: id, switchState: nil, harnesses: [], paneName: nil
+    ).title
+    #expect(!title.contains("registry.") && !title.contains("local.") && title != id)
+  }
+}
+
+@Test func harnessShortNameDropsOnlyTheAdapterSuffix() {
+  #expect(HarnessSwitchModel.shortName("Claude Agent") == "Claude")
+  #expect(HarnessSwitchModel.shortName("Codex") == "Codex")
+  #expect(HarnessSwitchModel.shortName(" Agent") == "Agent")
+  #expect(HarnessSwitchModel.shortName("Test agent") == "Test agent")
+}
+
+@Test func paneHeaderIconsAreNamedAndLoopNoLongerLooksLikeSwitching() {
+  let agent = PaneHeaderControls(
+    mode: .agent, harness: HarnessSwitchControl(title: "Claude", busy: false))
+  #expect(agent.actions == [.loop, .tasks, .splitColumns, .splitRows, .close])
+  for action in PaneHeaderAction.allCases {
+    #expect(!action.title.isEmpty)
+    #expect(!action.accessibilityIdentifier(paneId: "p").isEmpty)
+  }
+  #expect(!PaneHeaderAction.loop.systemImage.contains("arrow"))
+  #expect(PaneHeaderAction.loop.systemImage != "repeat")
+
+  let terminal = PaneHeaderControls(
+    mode: .terminal, harness: HarnessSwitchControl(title: "Claude", busy: false))
+  #expect(terminal.harness == nil)
+  #expect(terminal.actions == [.tasks, .splitColumns, .splitRows, .close])
 }
 
 private func agentSession(operation: ConfigOperation?) -> AgentSession {

@@ -27,6 +27,31 @@ private let headerPolicy = PaneHeaderLayoutPolicy(
   #expect(plan.summaryMaximumWidth == nil)
 }
 
+@Test func harnessControlTakesItsRoomInBothPlacements() {
+  let withHarness = PaneHeaderLayoutPolicy(
+    metrics: PaneHeaderLayoutMetrics(
+      horizontalPadding: 24, spacing: 7, stateDotWidth: 7,
+      readableTitleWidth: 56, summaryWidth: 72, statusWidth: 84,
+      actionWidth: 24, harnessControlWidth: 92))
+  let inline = withHarness.requiredWidth(
+    actionCount: 5, includesSummary: false, includesStatus: true,
+    includesHarnessControl: true)
+  #expect(
+    inline
+      == withHarness.requiredWidth(
+        actionCount: 5, includesSummary: false, includesStatus: true) + 92 + 7)
+  #expect(
+    withHarness.plan(
+      availableWidth: inline, actionCount: 5, hasSummary: false, hasStatus: true,
+      hasHarnessControl: true
+    ).actionPlacement == .inline)
+  #expect(
+    withHarness.plan(
+      availableWidth: inline - 1, actionCount: 5, hasSummary: false, hasStatus: true,
+      hasHarnessControl: true
+    ).actionPlacement == .menu)
+}
+
 @Test func roomyHeadersKeepTheirActionsInline() {
   let threshold = headerPolicy.requiredWidth(
     actionCount: 6, includesSummary: true, includesStatus: true)

@@ -28,6 +28,9 @@ pub struct Initialization {
     /// Content beyond text and links that `session/prompt` may carry.
     #[serde(default)]
     pub prompt_capabilities: PromptCapabilities,
+    /// The agent accepts ACP `additionalDirectories` on session requests.
+    #[serde(default)]
+    pub additional_directories: bool,
 }
 
 impl Initialization {
@@ -128,6 +131,9 @@ impl Initialization {
                 .unwrap_or(false),
             auth_methods,
             prompt_capabilities: PromptCapabilities::from_initialize(value),
+            additional_directories:
+                value["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"]
+                    .is_object(),
         })
     }
 }
@@ -189,6 +195,7 @@ pub enum Update {
     Usage(Value),
     Configuration(Options),
     Mode(String),
+    Commands(Vec<soyeht_protocol::AgentCommand>),
     Subagent(crate::subagents::Lifecycle),
 }
 
@@ -245,6 +252,7 @@ pub fn update(owns: impl Fn(&str) -> bool, params: &Value) -> Result<Option<Upda
                 .ok_or(Error::MissingModeId)?
                 .into(),
         ),
+        "available_commands_update" => Update::Commands(crate::commands::parse(value)?),
         "subagent_spawned" => Update::Subagent(crate::subagents::spawned(value)?),
         "subagent_state_update" => Update::Subagent(crate::subagents::finished(value)?),
         _ => return Ok(None),
@@ -262,6 +270,11 @@ mod tests {
         )
         .unwrap();
         assert!(initialization.advertised_load);
+        assert!(!initialization.additional_directories);
+        let directories = Initialization::parse(&json!({"protocolVersion":1,
+            "agentCapabilities":{"sessionCapabilities":{"additionalDirectories":{}}}}))
+        .unwrap();
+        assert!(directories.additional_directories);
         for (code, expected) in [
             (-32601, ProbeResult::Unsupported),
             (-32000, ProbeResult::Unauthenticated),

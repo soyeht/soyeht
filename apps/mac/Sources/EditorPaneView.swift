@@ -68,7 +68,7 @@ struct EditorPaneView: View {
       }
     }
     .padding(PaneLayoutContentMetrics.paneCardInset)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .paneShell()
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .accessibilityIdentifier("editor-pane")
     .sheet(isPresented: $showHistory) {
@@ -193,7 +193,7 @@ struct EditorPaneView: View {
     VStack(spacing: MacTheme.Space.x10) {
       ProgressView()
       Text("Loading editor viewport")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
         .foregroundStyle(MacTheme.secondary)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -252,17 +252,18 @@ private struct EditorPaneHeader: View {
       .help(diffProblem ?? "Compare the current buffer with HEAD")
       if file?.conflicted == true {
         Button(action: showConflict) {
-          Text(statusLabel).font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+          Text(statusLabel).font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
         }
         .buttonStyle(.plain).foregroundStyle(statusColor).help("Compare conflicting versions")
       } else {
-        Text(statusLabel).font(MacTheme.chrome(MacTheme.TypeScale.small))
+        Text(statusLabel).font(MacTheme.ui(MacTheme.TypeScale.small))
           .foregroundStyle(statusColor)
       }
     }
     .padding(.horizontal, MacTheme.Space.x12)
     .frame(height: PaneLayoutContentMetrics.editorHeaderHeight)
-    .background(MacTheme.well, in: Capsule())
+    .contentShape(Rectangle())
+    .paneInteriorSeparator(MacTheme.border)
     .paneHeaderDrag(headerDrag)
   }
 
@@ -293,15 +294,15 @@ private struct EditorConflictBanner: View {
         .font(.system(size: MacTheme.TypeScale.control, weight: .semibold)).foregroundStyle(
           MacTheme.danger)
       Text("The file changed on disk while this draft was open.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
         .foregroundStyle(MacTheme.ink)
       Spacer(minLength: 0)
       Button("Compare versions", action: showConflict)
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
-        .buttonStyle(NeoPillButtonStyle())
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
+        .buttonStyle(.paneSecondary)
     }
     .padding(.horizontal, MacTheme.Space.x10).frame(height: 34)
-    .background(MacTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+    .paneWell(radius: MacTheme.Radius.compact)
   }
 }
 
@@ -425,11 +426,11 @@ struct EditorAgentReviewBar: View {
           Text(
             "Review \(presentation.hunks.count) agent \(presentation.hunks.count == 1 ? "change" : "changes")"
           )
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
           Spacer(minLength: 0)
           Button(commentLabel) { showComment = true }
-            .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
-            .buttonStyle(NeoPillButtonStyle())
+            .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
+            .buttonStyle(.paneSecondary)
             .disabled(selectedPosition == nil)
         }
         ScrollView(.horizontal) {
@@ -502,7 +503,7 @@ private struct EditorAgentReviewHunkCard: View {
     HStack(spacing: MacTheme.Space.x8) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
         Text("\(hunk.authorName) · line \(identifier: UInt64(hunk.line) + 1)")
-          .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
           .foregroundStyle(MacTheme.ink)
         Text(hunk.summary.isEmpty ? "Agent change" : hunk.summary)
           .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
@@ -512,11 +513,11 @@ private struct EditorAgentReviewHunkCard: View {
         .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
         .foregroundStyle(MacTheme.accent)
       Button("Accept", action: accept)
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
-        .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(busy)
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
+        .buttonStyle(.panePrimary).disabled(busy)
       Button("Reject", action: reject)
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
-        .buttonStyle(NeoPillButtonStyle()).disabled(busy)
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
+        .buttonStyle(.paneSecondary).disabled(busy)
     }
     .padding(.horizontal, MacTheme.Space.x10)
     .frame(height: PaneLayoutContentMetrics.editorReviewHeight)
@@ -537,18 +538,18 @@ private struct EditorReviewCommentSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
       Text("Request a change on line \(identifier: UInt64(line ?? 0) + 1)")
-        .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .bold))
       Text("The request goes to the agent that authored the pending change.")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+        .font(MacTheme.ui(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
       TextEditor(text: $comment)
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption)).scrollContentBackground(.hidden)
+        .font(MacTheme.ui(MacTheme.TypeScale.caption)).scrollContentBackground(.hidden)
         .padding(MacTheme.Space.x8).frame(minHeight: 120)
-        .neoWell(radius: MacTheme.Radius.control)
+        .paneWell(radius: MacTheme.Radius.control)
       HStack {
         Spacer()
-        Button("Cancel") { isPresented = false }.buttonStyle(NeoPillButtonStyle())
+        Button("Cancel") { isPresented = false }.buttonStyle(.paneSecondary)
         Button("Send request", action: submit)
-          .buttonStyle(NeoPillButtonStyle(accent: true)).disabled(!contentReady)
+          .buttonStyle(.panePrimary).disabled(!contentReady)
       }
     }
     .padding(MacTheme.Space.x16).macSheetSurface(.reviewComment)
@@ -581,15 +582,15 @@ private struct EditorDiffSheet: View {
     HStack(spacing: MacTheme.Space.x10) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x3) {
         Text("Changes against HEAD")
-          .font(MacTheme.chrome(MacTheme.TypeScale.title, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.title, weight: .bold))
         Text(file.path)
           .font(MacTheme.mono(MacTheme.TypeScale.small)).foregroundStyle(MacTheme.secondary)
       }
       Spacer()
       Text(changeSummary)
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
         .foregroundStyle(MacTheme.secondary)
-      Button("Done") { isPresented = false }.buttonStyle(NeoPillButtonStyle())
+      Button("Done") { isPresented = false }.buttonStyle(.paneSecondary)
     }
   }
 
@@ -613,7 +614,7 @@ private struct EditorDiffSheet: View {
         }
       }
     }
-    .neoWell(radius: MacTheme.Radius.control)
+    .paneWell(radius: MacTheme.Radius.control)
   }
 
   private var emptyState: some View {
@@ -621,15 +622,15 @@ private struct EditorDiffSheet: View {
       Image(systemName: "checkmark.circle")
         .font(.system(size: 24, weight: .medium)).foregroundStyle(MacTheme.success)
       Text("The current buffer matches HEAD")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
         .foregroundStyle(MacTheme.secondary)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .neoWell(radius: MacTheme.Radius.control)
+    .paneWell(radius: MacTheme.Radius.control)
   }
 
   private func diffColumnLabel(_ label: String) -> some View {
-    Text(label).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+    Text(label).font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .bold))
       .tracking(0.8).foregroundStyle(MacTheme.secondary)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, MacTheme.Space.x10).frame(height: 22)
@@ -659,7 +660,7 @@ private struct EditorDiffCell: View {
         .font(MacTheme.mono(11.5)).foregroundStyle(MacTheme.ink)
         .frame(minWidth: 390, maxWidth: .infinity, alignment: .leading)
       if let author = side.author {
-        Text(author.name).font(MacTheme.chrome(MacTheme.TypeScale.micro, weight: .bold))
+        Text(author.name).font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .bold))
           .foregroundStyle(MacTheme.secondary).padding(.horizontal, MacTheme.Space.x6)
       }
     }
@@ -711,13 +712,13 @@ private struct EditorReferencesSheet: View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
       HStack {
         Text("References")
-          .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .bold))
         Spacer()
-        Button("Done") { isPresented = false }.buttonStyle(NeoPillButtonStyle())
+        Button("Done") { isPresented = false }.buttonStyle(.paneSecondary)
       }
       if items.isEmpty {
         Text("No references found")
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.ui(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollView {

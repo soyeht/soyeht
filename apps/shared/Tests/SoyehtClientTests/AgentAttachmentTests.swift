@@ -59,6 +59,18 @@ private func temporaryFile(_ name: String, contents: Data) throws -> URL {
   return url
 }
 
+/// Staging finishes off the main actor. The wait counts polls, not wall-clock time, so a
+/// busy runner that delays each poll still gets every poll.
+@MainActor private func waitForAttachments(_ composer: AgentComposerAttachments, count: Int)
+  async throws
+{
+  var polls = 0
+  while composer.items.count < count && polls < 1_000 {
+    polls += 1
+    try await Task.sleep(for: .milliseconds(10))
+  }
+}
+
 private func draft(bytes: Int, name: String = "file.bin") -> AgentAttachmentDraft {
   AgentAttachmentDraft(
     kind: .file, name: name, mimeType: "application/octet-stream", byteCount: bytes,
@@ -262,10 +274,7 @@ private func draft(bytes: Int, name: String = "file.bin") -> AgentAttachmentDraf
     let png = try picture(width: 20, height: 20, as: .png)
     #expect(composer.paste(AgentPasteboardContent(image: .init(data: png, type: .png))))
     #expect(!composer.paste(AgentPasteboardContent(hasText: true)))
-    let deadline = Date().addingTimeInterval(10)
-    while composer.items.isEmpty && Date() < deadline {
-      try await Task.sleep(for: .milliseconds(20))
-    }
+    try await waitForAttachments(composer, count: 1)
     #expect(composer.items.count == 1)
     #expect(composer.take().count == 1)
     #expect(composer.items.isEmpty)
@@ -289,10 +298,7 @@ private func draft(bytes: Int, name: String = "file.bin") -> AgentAttachmentDraf
   let image = NSItemProvider(item: png as NSData, typeIdentifier: UTType.png.identifier)
   let dropped = try #require(NSItemProvider(contentsOf: file))
   #expect(composer.attach(providers: [dropped, image]))
-  let deadline = Date().addingTimeInterval(10)
-  while composer.items.count < 2 && Date() < deadline {
-    try await Task.sleep(for: .milliseconds(20))
-  }
+  try await waitForAttachments(composer, count: 2)
   #expect(Set(composer.items.map(\.kind)) == [.file, .image])
   #expect(composer.items.contains { $0.source == .hostFile(file.standardizedFileURL.path) })
 }

@@ -72,6 +72,8 @@ public enum PaneLayoutContentMetrics {
   public static let genericPaneHeaderSummaryCharacters = 12.0
   public static let genericPaneHeaderStatusCharacters = 15.0
   public static let genericPaneHeaderActionWidth = 24.0
+  /// The agent pane's harness menu button ("Claude ▾"); longer names truncate inside it.
+  public static let genericPaneHeaderHarnessControlWidth = 92.0
   public static let terminalFontPointSize = 13.0
   public static let terminalStateVerticalInset = 7.0
 

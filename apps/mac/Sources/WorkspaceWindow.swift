@@ -311,8 +311,8 @@ struct WorkspaceWindow: View {
       railOpen: navigation.appBarOpen)
     let horizontalInset = policy.horizontalInset(windowWidth: windowSize.width)
     let rowWidth = max(0, windowSize.width - 2 * horizontalInset)
-    let railOverlays = policy.railOverlays(windowWidth: windowSize.width)
-    let contentOffset = navigation.appBarOpen && !railOverlays ? policy.railWidth : 0
+    let placement = policy.horizontalPlacement(
+      windowWidth: windowSize.width, railOpen: navigation.appBarOpen)
 
     return VStack(spacing: CGFloat(policy.paneVerticalInset)) {
       WorkspaceTopBar(
@@ -325,10 +325,12 @@ struct WorkspaceWindow: View {
           viewportSize: CGSize(width: paneViewport.width, height: paneViewport.height)
         )
         .frame(width: paneViewport.width, height: paneViewport.height)
-        .offset(x: contentOffset)
+        .offset(x: placement.paneLeading - horizontalInset)
         if navigation.appBarOpen {
           appRail
-            .frame(width: policy.railWidth, height: paneViewport.height)
+            .frame(width: MacPaneLayoutMetrics.railWidth, height: paneViewport.height)
+            .background(placement.railOverlays ? MacTheme.canvas : Color.clear)  // halo shows
+            .offset(x: placement.railLeading - horizontalInset)
             .transition(.move(edge: .leading).combined(with: .opacity))
             .zIndex(30)
         }
@@ -813,487 +815,6 @@ private struct PairedPhoneRow: View {
   }
 }
 
-private struct WorkspaceTabAnchorPreferenceKey: PreferenceKey {
-  static let defaultValue: [String: Anchor<CGRect>] = [:]
-
-  static func reduce(
-    value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]
-  ) {
-    value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-  }
-}
-
-private struct WorkspaceTabStripMeasurement: Equatable {
-  var items: [WorkspaceTabStripItem]
-  var viewportWidth: Double
-  var contentWidth: Double
-
-  static let empty = WorkspaceTabStripMeasurement(
-    items: [], viewportWidth: 0, contentWidth: 0)
-}
-
-private struct WorkspaceTabMeasurementPreferenceKey: PreferenceKey {
-  static let defaultValue = WorkspaceTabStripMeasurement.empty
-
-  static func reduce(
-    value: inout WorkspaceTabStripMeasurement,
-    nextValue: () -> WorkspaceTabStripMeasurement
-  ) {
-    value = nextValue()
-  }
-}
-
-private struct WorkspaceTopBar: View {
-  @Bindable var client: EngineClient
-  let workspaceId: String?
-  let onSelectWorkspace: (String) -> Void
-  let onCloseWorkspace: (String) -> Void
-  let onNewPane: () -> Void
-  let onTasks: () -> Void
-  let onToggleAppBar: () -> Void
-
-  @State private var measurement = WorkspaceTabStripMeasurement.empty
-  @State private var plan = WorkspaceTabStripPlan(
-    fullyVisibleWorkspaceIds: [], hiddenWorkspaceIds: [], sticky: nil)
-  @State private var showsOverflowControl = false
-  @State private var overflowPresented = false
-  @FocusState private var focusedWorkspaceId: String?
-
-  var body: some View {
-    ScrollViewReader { proxy in
-      HStack(spacing: MacTheme.Space.x10) {
-        Color.clear.frame(width: 52, height: MacPaneLayoutMetrics.topBarControlHeight)
-        Button(action: onToggleAppBar) {
-          Image(systemName: "rectangle.grid.2x2")
-            .font(.system(size: 15, weight: .semibold))
-            .frame(
-              width: MacPaneLayoutMetrics.topBarControlHeight,
-              height: MacPaneLayoutMetrics.topBarControlHeight
-            )
-            .neoRaised(radius: MacTheme.Radius.control)
-        }
-        .help("Toggle app bar")
-        .accessibilityIdentifier("toggle-app-bar")
-
-        workspaceStrip(proxy)
-
-        if showsOverflowControl, plan.hiddenCount > 0 {
-          Button("+\(plan.hiddenCount)") { overflowPresented.toggle() }
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
-            .foregroundStyle(MacTheme.accent)
-            .frame(
-              width: MacPaneLayoutMetrics.workspaceOverflowButtonWidth,
-              height: MacPaneLayoutMetrics.topBarControlHeight
-            )
-            .neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
-            .help("Show \(plan.hiddenCount) more workspaces")
-            .accessibilityLabel("\(plan.hiddenCount) more workspaces")
-            .accessibilityIdentifier("workspace-tabs-overflow")
-            .popover(isPresented: $overflowPresented, arrowEdge: .bottom) {
-              WorkspaceOverflowList(
-                workspaces: hiddenWorkspaces, attention: client.agentAttention,
-                onSelect: { workspaceId in
-                  overflowPresented = false
-                  onSelectWorkspace(workspaceId)
-                  reveal(workspaceId, edge: nil, using: proxy)
-                })
-            }
-        }
-
-        Button(action: onNewPane) {
-          Image(systemName: "plus").font(.system(size: 14, weight: .semibold))
-            .frame(
-              width: MacPaneLayoutMetrics.topBarControlHeight,
-              height: MacPaneLayoutMetrics.topBarControlHeight
-            ).neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
-        }
-        .help("Open a terminal or agent pane").disabled(!client.connected)
-        .accessibilityIdentifier("new-pane")
-        if !client.connected {
-          HStack(spacing: MacTheme.Space.x6) {
-            Circle().fill(MacTheme.warning).frame(width: 7, height: 7)
-            Text("Reconnecting")
-              .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
-              .foregroundStyle(MacTheme.secondary)
-          }
-        }
-      }
-      .frame(height: MacPaneLayoutMetrics.topBarHeight)
-      .onChange(of: workspaceId) { _, selectedId in
-        let nextPlan = planned(from: measurement, activeWorkspaceId: selectedId)
-        plan = nextPlan
-        guard let selectedId, !nextPlan.fullyVisibleWorkspaceIds.contains(selectedId) else {
-          return
-        }
-        reveal(selectedId, edge: nextPlan.sticky?.edge, using: proxy)
-      }
-      .onChange(of: client.workspaces.map(\.workspaceId)) { _, workspaceIds in
-        let liveIds = Set(workspaceIds)
-        if !plan.hiddenWorkspaceIds.allSatisfy(liveIds.contains) {
-          updatePlan(from: measurement)
-        }
-      }
-    }
-  }
-
-  private var hiddenWorkspaces: [Workspace] {
-    let hidden = Set(plan.hiddenWorkspaceIds)
-    return client.workspaces.filter { hidden.contains($0.workspaceId) }
-  }
-
-  private func workspaceStrip(_ proxy: ScrollViewProxy) -> some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: MacTheme.Space.x10) {
-        ForEach(client.workspaces, id: \.workspaceId) { workspace in
-          WorkspaceTab(
-            workspaceId: workspace.workspaceId, name: workspace.name,
-            selected: workspace.workspaceId == workspaceId,
-            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
-            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
-            keyboardFocusable: plan.sticky?.workspaceId != workspace.workspaceId,
-            focusedWorkspaceId: $focusedWorkspaceId,
-            action: { onSelectWorkspace(workspace.workspaceId) },
-            onClose: { onCloseWorkspace(workspace.workspaceId) }
-          )
-          .opacity(plan.sticky?.workspaceId == workspace.workspaceId ? 0 : 1)
-          .allowsHitTesting(plan.sticky?.workspaceId != workspace.workspaceId)
-          .accessibilityHidden(plan.sticky?.workspaceId == workspace.workspaceId)
-          .id(workspace.workspaceId)
-          .anchorPreference(
-            key: WorkspaceTabAnchorPreferenceKey.self, value: .bounds,
-            transform: { [workspace.workspaceId: $0] })
-        }
-      }
-      .padding(MacPaneLayoutMetrics.workspaceTabShadowClearance)
-    }
-    .accessibilityIdentifier("workspace-tab-strip")
-    .frame(maxWidth: .infinity)
-    .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
-    .clipped()
-    .overlayPreferenceValue(WorkspaceTabAnchorPreferenceKey.self) { anchors in
-      GeometryReader { geometry in
-        let items = client.workspaces.compactMap { workspace -> WorkspaceTabStripItem? in
-          guard let anchor = anchors[workspace.workspaceId] else { return nil }
-          let bounds = geometry[anchor]
-          return WorkspaceTabStripItem(
-            workspaceId: workspace.workspaceId,
-            minX: Double(bounds.minX), width: Double(bounds.width))
-        }
-        Color.clear.preference(
-          key: WorkspaceTabMeasurementPreferenceKey.self,
-          value: WorkspaceTabStripMeasurement(
-            items: items, viewportWidth: Double(geometry.size.width),
-            contentWidth: contentWidth(for: items)))
-      }
-    }
-    .onPreferenceChange(WorkspaceTabMeasurementPreferenceKey.self) { updatePlan(from: $0) }
-    .onMoveCommand { direction in moveWorkspaceFocus(direction, using: proxy) }
-    .overlay { workspaceTabFades }
-    .overlay(alignment: plan.sticky?.edge == .leading ? .leading : .trailing) {
-      if let sticky = plan.sticky,
-        let workspace = client.workspaces.first(where: { $0.workspaceId == sticky.workspaceId })
-      {
-        ZStack(alignment: sticky.edge == .leading ? .leading : .trailing) {
-          workspaceStickyBackdrop(
-            edge: sticky.edge, width: stickyOcclusionWidth(for: sticky, in: measurement))
-          WorkspaceTab(
-            workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
-            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
-            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
-            keyboardFocusable: false, focusedWorkspaceId: nil,
-            action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
-            onClose: { onCloseWorkspace(workspace.workspaceId) },
-            identifierPrefix: "workspace-tab-sticky"
-          )
-          .frame(width: stickyTabWidth(for: sticky, in: measurement))
-          .padding(.horizontal, MacPaneLayoutMetrics.workspaceTabShadowClearance)
-        }
-        .frame(
-          width: stickyOcclusionWidth(for: sticky, in: measurement),
-          height: MacPaneLayoutMetrics.workspaceTabViewportHeight,
-          alignment: sticky.edge == .leading ? .leading : .trailing
-        )
-        .transition(.opacity)
-      }
-    }
-    .animation(.easeInOut(duration: 0.16), value: plan.sticky)
-  }
-
-  private var workspaceTabFades: some View {
-    ZStack {
-      if plan.sticky?.edge != .leading {
-        LinearGradient(
-          colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
-          startPoint: .leading, endPoint: .trailing
-        )
-        .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      if plan.sticky?.edge != .trailing {
-        LinearGradient(
-          colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
-          startPoint: .leading, endPoint: .trailing
-        )
-        .frame(width: MacPaneLayoutMetrics.workspaceTabFadeWidth)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-      }
-    }
-    .frame(height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
-    .clipped()
-    .allowsHitTesting(false)
-  }
-
-  private func updatePlan(from nextMeasurement: WorkspaceTabStripMeasurement) {
-    measurement = nextMeasurement
-    let overflowReservation =
-      MacPaneLayoutMetrics.workspaceOverflowButtonWidth + Double(MacTheme.Space.x10)
-    let widthWithoutOverflow =
-      nextMeasurement.viewportWidth
-      + (showsOverflowControl ? overflowReservation : 0)
-    let needsOverflow = nextMeasurement.contentWidth > widthWithoutOverflow + 0.5
-    showsOverflowControl = needsOverflow
-    plan = planned(from: nextMeasurement, activeWorkspaceId: workspaceId)
-  }
-
-  private func contentWidth(for items: [WorkspaceTabStripItem]) -> Double {
-    guard let minimum = items.map(\.minX).min(), let maximum = items.map(\.maxX).max() else {
-      return 0
-    }
-    return maximum - minimum + 2 * MacPaneLayoutMetrics.workspaceTabShadowClearance
-  }
-
-  private func planned(
-    from measurement: WorkspaceTabStripMeasurement, activeWorkspaceId: String?
-  ) -> WorkspaceTabStripPlan {
-    let viewport = WorkspaceTabStripViewport(offset: 0, width: measurement.viewportWidth)
-    let initial = WorkspaceTabStripPolicy.plan(
-      items: measurement.items, activeWorkspaceId: activeWorkspaceId,
-      viewport: viewport)
-    let occlusion = initial.sticky.map { stickyOcclusionWidth(for: $0, in: measurement) } ?? 0
-    return WorkspaceTabStripPolicy.plan(
-      items: measurement.items, activeWorkspaceId: activeWorkspaceId,
-      viewport: viewport, stickyOcclusionWidth: occlusion)
-  }
-
-  private func stickyOcclusionWidth(
-    for sticky: WorkspaceTabStickyPresentation, in measurement: WorkspaceTabStripMeasurement
-  ) -> Double {
-    let clearance = MacPaneLayoutMetrics.workspaceTabShadowClearance
-    let tabWidth = stickyTabWidth(for: sticky, in: measurement)
-    let footprint = tabWidth + 2 * clearance + Double(MacTheme.Space.x10)
-    return min(measurement.viewportWidth, footprint)
-  }
-
-  private func stickyTabWidth(
-    for sticky: WorkspaceTabStickyPresentation, in measurement: WorkspaceTabStripMeasurement
-  ) -> Double {
-    let measured =
-      measurement.items.first(where: { $0.workspaceId == sticky.workspaceId })?.width
-      ?? MacPaneLayoutMetrics.workspaceTabMaximumWidth
-    return min(
-      measured,
-      max(
-        0,
-        measurement.viewportWidth - 2 * MacPaneLayoutMetrics.workspaceTabShadowClearance))
-  }
-
-  @ViewBuilder private func workspaceStickyBackdrop(
-    edge: WorkspaceTabStickyEdge, width: Double
-  ) -> some View {
-    let fadeWidth = min(width, MacPaneLayoutMetrics.workspaceTabFadeWidth)
-    let opaqueWidth = max(0, width - fadeWidth)
-    HStack(spacing: 0) {
-      if edge == .leading {
-        MacTheme.canvas.frame(width: opaqueWidth)
-        LinearGradient(
-          colors: [MacTheme.canvas, MacTheme.canvas.opacity(0)],
-          startPoint: .leading, endPoint: .trailing
-        )
-        .frame(width: fadeWidth)
-      } else {
-        LinearGradient(
-          colors: [MacTheme.canvas.opacity(0), MacTheme.canvas],
-          startPoint: .leading, endPoint: .trailing
-        )
-        .frame(width: fadeWidth)
-        MacTheme.canvas.frame(width: opaqueWidth)
-      }
-    }
-    .frame(width: width, height: MacPaneLayoutMetrics.workspaceTabViewportHeight)
-    .allowsHitTesting(false)
-  }
-
-  private func moveWorkspaceFocus(
-    _ move: MoveCommandDirection, using proxy: ScrollViewProxy
-  ) {
-    let direction: WorkspaceTabFocusDirection
-    let edge: WorkspaceTabStickyEdge
-    switch move {
-    case .left:
-      direction = .previous
-      edge = .leading
-    case .right:
-      direction = .next
-      edge = .trailing
-    default:
-      return
-    }
-    let orderedIds = client.workspaces.map(\.workspaceId)
-    guard
-      let neighbor = WorkspaceTabStripPolicy.focusNeighbor(
-        of: focusedWorkspaceId ?? workspaceId, direction: direction,
-        orderedWorkspaceIds: orderedIds)
-    else { return }
-    focusedWorkspaceId = neighbor
-    reveal(neighbor, edge: edge, using: proxy)
-  }
-
-  private func reveal(
-    _ workspaceId: String, edge: WorkspaceTabStickyEdge?, using proxy: ScrollViewProxy
-  ) {
-    let anchor: UnitPoint
-    switch edge {
-    case .leading: anchor = .leading
-    case .trailing: anchor = .trailing
-    case nil: anchor = .center
-    }
-    withAnimation(.easeInOut(duration: 0.18)) {
-      proxy.scrollTo(workspaceId, anchor: anchor)
-    }
-  }
-}
-
-private struct WorkspaceTab: View {
-  let workspaceId: String
-  let name: String
-  let selected: Bool
-  let waitingCount: Int
-  let isWorking: Bool
-  let keyboardFocusable: Bool
-  let focusedWorkspaceId: FocusState<String?>.Binding?
-  let action: () -> Void
-  let onClose: () -> Void
-  var identifierPrefix = "workspace-tab"
-
-  var body: some View {
-    HStack(spacing: MacTheme.Space.x6) {
-      Button(action: action) {
-        HStack(spacing: MacTheme.Space.x8) {
-          Image(systemName: "folder").font(.system(size: 14, weight: .medium))
-            .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
-          Text(name).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-            .foregroundStyle(selected ? MacTheme.accent : MacTheme.ink).lineLimit(1)
-          if waitingCount > 0 {
-            AgentAttentionBadge(count: waitingCount)
-          } else if isWorking {
-            AgentWorkingDot()
-          }
-        }
-      }
-      .modifier(
-        WorkspaceTabKeyboardFocus(
-          workspaceId: workspaceId, enabled: keyboardFocusable,
-          focusedWorkspaceId: focusedWorkspaceId)
-      )
-      .onKeyPress(.return) {
-        guard keyboardFocusable else { return .ignored }
-        action()
-        return .handled
-      }
-      .help(name)
-      .accessibilityLabel(
-        waitingCount > 0
-          ? "\(name), \(AgentAttentionPolicy.waitingLabel(count: waitingCount))"
-          : isWorking ? "\(name), agents working" : name
-      )
-      .accessibilityAddTraits(selected ? .isSelected : [])
-      .accessibilityIdentifier("\(identifierPrefix)-\(workspaceId)")
-
-      Button(action: onClose) {
-        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
-          .foregroundStyle(MacTheme.muted)
-      }
-      .focusable(false)
-      .help("Close \(name)")
-      .accessibilityLabel("Close workspace \(name)")
-      .accessibilityIdentifier("\(identifierPrefix)-close-\(workspaceId)")
-    }
-    .padding(.horizontal, MacTheme.Space.x12)
-    .frame(height: MacPaneLayoutMetrics.workspaceTabHeight)
-    .frame(maxWidth: MacPaneLayoutMetrics.workspaceTabMaximumWidth)
-    .modifier(WorkspaceTabSurface(selected: selected))
-  }
-}
-
-private struct WorkspaceTabKeyboardFocus: ViewModifier {
-  let workspaceId: String
-  let enabled: Bool
-  let focusedWorkspaceId: FocusState<String?>.Binding?
-
-  @ViewBuilder func body(content: Content) -> some View {
-    if enabled, let focusedWorkspaceId {
-      content
-        .focusable(true)
-        .focused(focusedWorkspaceId, equals: workspaceId)
-    } else {
-      content.focusable(false)
-    }
-  }
-}
-
-private struct WorkspaceOverflowList: View {
-  let workspaces: [Workspace]
-  let attention: AgentAttentionSummary
-  let onSelect: (String) -> Void
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x10) {
-      Text("More workspaces")
-        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: MacTheme.Space.x6) {
-          ForEach(workspaces, id: \.workspaceId) { workspace in
-            Button {
-              onSelect(workspace.workspaceId)
-            } label: {
-              HStack(alignment: .top, spacing: MacTheme.Space.x8) {
-                Image(systemName: "folder")
-                  .foregroundStyle(MacTheme.secondary)
-                Text(workspace.name)
-                  .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-                  .foregroundStyle(MacTheme.ink)
-                  .multilineTextAlignment(.leading)
-                  .fixedSize(horizontal: false, vertical: true)
-                if attention.waitingCount(in: workspace.workspaceId) > 0 {
-                  AgentAttentionBadge(count: attention.waitingCount(in: workspace.workspaceId))
-                } else if attention.hasWorkingAgent(in: workspace.workspaceId) {
-                  AgentWorkingDot()
-                }
-                Spacer(minLength: 0)
-              }
-              .padding(.horizontal, MacTheme.Space.x10)
-              .padding(.vertical, MacTheme.Space.x8)
-              .contentShape(Rectangle())
-            }
-            .help(workspace.name)
-            .accessibilityLabel(
-              attention.waitingCount(in: workspace.workspaceId) > 0
-                ? "\(workspace.name), \(AgentAttentionPolicy.waitingLabel(count: attention.waitingCount(in: workspace.workspaceId)))"
-                : attention.hasWorkingAgent(in: workspace.workspaceId)
-                  ? "\(workspace.name), agents working" : workspace.name
-            )
-            .accessibilityIdentifier("workspace-overflow-\(workspace.workspaceId)")
-          }
-        }
-      }
-      .frame(maxHeight: MacPaneLayoutMetrics.workspaceOverflowPopoverMaximumHeight)
-    }
-    .padding(MacTheme.Space.x14)
-    .frame(width: MacPaneLayoutMetrics.workspaceOverflowPopoverWidth)
-    .background(MacTheme.canvas)
-  }
-}
-
 struct AgentAttentionBadge: View {
   let count: Int
 
@@ -1313,18 +834,6 @@ struct AgentWorkingDot: View {
     Circle().fill(MacTheme.accent)
       .frame(width: MacTheme.Space.x7, height: MacTheme.Space.x7)
       .accessibilityLabel("Agents working")
-  }
-}
-
-private struct WorkspaceTabSurface: ViewModifier {
-  let selected: Bool
-
-  func body(content: Content) -> some View {
-    if selected {
-      content.neoWell(radius: MacTheme.Radius.pill)
-    } else {
-      content.neoRaised(radius: MacTheme.Radius.pill, elevation: .pill)
-    }
   }
 }
 
@@ -2133,9 +1642,12 @@ private struct PaneLayoutSplitSurface: View {
   var body: some View {
     if let geometry = plan.nodes[path] {
       ScrollViewReader { proxy in
-        ScrollView(
-          split.axis == .horizontal ? .horizontal : .vertical,
-          showsIndicators: geometry.overflowAxes.contains(split.axis)
+        PaneLayoutContainer(
+          overflowAxes: geometry.overflowAxes.contains(split.axis)
+            ? (split.axis == .horizontal ? .horizontal : .vertical) : [],
+          size: CGSize(width: geometry.frame.size.width, height: geometry.frame.size.height),
+          contentSize: CGSize(
+            width: geometry.contentSize.width, height: geometry.contentSize.height)
         ) {
           ZStack(alignment: .topLeading) {
             ForEach(children) { child in
@@ -2181,13 +1693,7 @@ private struct PaneLayoutSplitSurface: View {
               }
             }
           }
-          .frame(
-            width: geometry.contentSize.width, height: geometry.contentSize.height,
-            alignment: .topLeading)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollDisabled(!geometry.overflowAxes.contains(split.axis))
-        .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
         .onAppear { scrollSelectedPane(using: proxy) }
         .onChange(of: client.selectedPaneId) { _, _ in scrollSelectedPane(using: proxy) }
       }
@@ -2518,7 +2024,6 @@ private struct PaneCard: View {
   let dropTargetSize: CGSize?
   let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
   @State private var showingAutomation = false
-  @State private var showingHarnessSwitch = false
   @State private var showingCaptureConsent = false
   @State private var showingCaptureDeletion = false
   @State private var captureMutationInFlight = false
@@ -2555,7 +2060,7 @@ private struct PaneCard: View {
           paneBody
         }
         .padding(PaneLayoutContentMetrics.paneCardInset)
-        .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+        .paneShell()
       }
     }
     .contentShape(RoundedRectangle(cornerRadius: MacTheme.Radius.card))
@@ -2596,11 +2101,11 @@ private struct PaneCard: View {
     .sheet(isPresented: $showingCaptureDeletion) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x18) {
         Text("Keep the captured experiment data?")
-          .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .semibold))
+          .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .semibold))
         Text(
           "Recording has stopped. Delete removes only this pane's recorded segments. Export files remain at \(experimentExportsPath)."
         )
-        .font(MacTheme.chrome(MacTheme.TypeScale.control))
+        .font(MacTheme.ui(MacTheme.TypeScale.control))
         .foregroundStyle(MacTheme.secondary)
         HStack {
           Button("Keep data") {
@@ -2642,18 +2147,15 @@ private struct PaneCard: View {
       availableWidth: MacPaneLayoutMetrics.paneHeaderAvailableWidth(cardWidth: cardWidth),
       actionCount: headerActionCount,
       hasSummary: pane.mode == .agent && agentSummary != nil,
-      hasStatus: pane.mode == .agent)
+      hasStatus: pane.mode == .agent, hasHarnessControl: headerControls.harness != nil)
     return headerContent(plan: plan)
-      .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .medium))
+      .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .medium))
       .foregroundStyle(MacTheme.secondary)
       .padding(.horizontal, MacTheme.Space.x12)
       .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
-      .background(tint, in: Capsule())
+      .contentShape(Rectangle())
+      .paneInteriorSeparator(MacTheme.border)
       .paneHeaderDrag(dragConfiguration)
-      .popover(isPresented: $showingHarnessSwitch, arrowEdge: .bottom) {
-        AgentHarnessSwitchPicker(
-          client: client, pane: pane, isPresented: $showingHarnessSwitch)
-      }
   }
 
   private func headerContent(plan: PaneHeaderLayoutPlan) -> some View {
@@ -2663,7 +2165,8 @@ private struct PaneCard: View {
           width: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth,
           height: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth)
       Text(pane.name)
-        .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
+        .font(MacTheme.ui(MacTheme.TypeScale.body, weight: .heavy))
+        .foregroundStyle(MacTheme.ink)
         .lineLimit(1).truncationMode(.tail).layoutPriority(3)
         .help(pane.name)
       if companionLinked {
@@ -2688,6 +2191,9 @@ private struct PaneCard: View {
           .frame(maxWidth: MacPaneLayoutMetrics.paneHeader.metrics.statusWidth)
           .layoutPriority(2)
       }
+      if let harness = headerControls.harness {
+        PaneHarnessControl(client: client, pane: pane, control: harness)
+      }
       if plan.actionPlacement == .inline {
         inlineHeaderActions
       } else {
@@ -2707,23 +2213,17 @@ private struct PaneCard: View {
       captureFeedback
       if [.terminal, .agent].contains(pane.mode) { captureButton }
     #endif
-    if pane.mode == .agent {
+    ForEach(headerControls.actions, id: \.self) { action in
       Button {
-        showingHarnessSwitch = true
+        perform(action)
       } label: {
-        Image(systemName: "arrow.triangle.2.circlepath")
+        Image(systemName: action.systemImage)
       }
-      .help("Switch agent")
-      .accessibilityLabel("Switch agent")
-      .accessibilityIdentifier("switch-agent-\(pane.paneId)")
-      .disabled(!client.canSwitchAgentHarness(pane.paneId))
-      PaneAutomationButton(showing: $showingAutomation)
+      .help(action.title)
+      .accessibilityLabel(action.title)
+      .accessibilityIdentifier(action.accessibilityIdentifier(paneId: pane.paneId))
+      .disabled(isDisabled(action))
     }
-    Button(action: onTasks) { Image(systemName: "line.3.horizontal.decrease") }
-      .help("Open workspace tasks")
-    splitColumnButton
-    splitRowButton
-    closePaneButton
   }
 
   private var compactHeaderActions: some View {
@@ -2731,42 +2231,15 @@ private struct PaneCard: View {
       #if DEBUG
         if [.terminal, .agent].contains(pane.mode) { captureMenuButton }
       #endif
-      if pane.mode == .agent {
-        Button {
-          showingHarnessSwitch = true
+      ForEach(headerControls.actions, id: \.self) { action in
+        if action == .splitColumns || action == .close { Divider() }
+        Button(role: action == .close ? .destructive : nil) {
+          perform(action)
         } label: {
-          Label("Switch agent", systemImage: "arrow.triangle.2.circlepath")
+          Label(action.title, systemImage: action.systemImage)
         }
-        .disabled(!client.canSwitchAgentHarness(pane.paneId))
-        Button {
-          showingAutomation.toggle()
-        } label: {
-          Label("Loop and lead controls", systemImage: "repeat")
-        }
+        .disabled(isDisabled(action))
       }
-      Button(action: onTasks) {
-        Label("Open workspace tasks", systemImage: "line.3.horizontal.decrease")
-      }
-      Divider()
-      Button {
-        onSplit(pane.paneId, .columns)
-      } label: {
-        Label("Split into columns", systemImage: "rectangle.split.2x1")
-      }
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
-      Button {
-        onSplit(pane.paneId, .rows)
-      } label: {
-        Label("Split into rows", systemImage: "rectangle.split.1x2")
-      }
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
-      Divider()
-      Button(role: .destructive) {
-        onClose(pane.paneId)
-      } label: {
-        Label("Close pane", systemImage: "xmark")
-      }
-      .disabled(!client.connected || interaction?.blocksLayoutActions == true)
     } label: {
       Image(systemName: "ellipsis.circle")
         .frame(width: PaneLayoutContentMetrics.genericPaneHeaderActionWidth)
@@ -2777,40 +2250,32 @@ private struct PaneCard: View {
     .accessibilityIdentifier("pane-header-actions-\(pane.paneId)")
   }
 
-  private var splitColumnButton: some View {
-    Button {
-      onSplit(pane.paneId, .columns)
-    } label: {
-      Image(systemName: "rectangle.split.2x1")
+  /// The harness control and icon actions this header shows (`PaneHeaderControls`).
+  private var headerControls: PaneHeaderControls {
+    let harness = pane.agent.map {
+      HarnessSwitchModel.control(
+        current: $0.harness, switchState: client.agentPanes[pane.paneId]?.harnessSwitch,
+        harnesses: client.harnesses, paneName: pane.name)
     }
-    .help("Split pane into columns")
-    .accessibilityLabel("Split pane into columns")
-    .accessibilityIdentifier("split-pane-columns-\(pane.paneId)")
-    .disabled(!client.connected || interaction?.blocksLayoutActions == true)
+    return PaneHeaderControls(mode: pane.mode, harness: harness)
   }
 
-  private var splitRowButton: some View {
-    Button {
-      onSplit(pane.paneId, .rows)
-    } label: {
-      Image(systemName: "rectangle.split.1x2")
+  private func perform(_ action: PaneHeaderAction) {
+    switch action {
+    case .loop: showingAutomation.toggle()
+    case .tasks: onTasks()
+    case .splitColumns: onSplit(pane.paneId, .columns)
+    case .splitRows: onSplit(pane.paneId, .rows)
+    case .close: onClose(pane.paneId)
     }
-    .help("Split pane into rows")
-    .accessibilityLabel("Split pane into rows")
-    .accessibilityIdentifier("split-pane-rows-\(pane.paneId)")
-    .disabled(!client.connected || interaction?.blocksLayoutActions == true)
   }
 
-  private var closePaneButton: some View {
-    Button {
-      onClose(pane.paneId)
-    } label: {
-      Image(systemName: "xmark")
+  private func isDisabled(_ action: PaneHeaderAction) -> Bool {
+    switch action {
+    case .loop, .tasks: false
+    case .splitColumns, .splitRows, .close:
+      !client.connected || interaction?.blocksLayoutActions == true
     }
-    .help("Close this pane")
-    .accessibilityLabel("Close this pane")
-    .accessibilityIdentifier("close-pane-\(pane.paneId)")
-    .disabled(!client.connected || interaction?.blocksLayoutActions == true)
   }
 
   #if DEBUG
@@ -2881,8 +2346,7 @@ private struct PaneCard: View {
   }
 
   private var headerActionCount: Int {
-    var count = 4  // Tasks, two split directions, and close.
-    if pane.mode == .agent { count += 2 }
+    var count = headerControls.actions.count
     #if DEBUG
       if [.terminal, .agent].contains(pane.mode) { count += 1 }
     #endif
@@ -2900,7 +2364,7 @@ private struct PaneCard: View {
             Image(systemName: "list.bullet.clipboard").foregroundStyle(MacTheme.accent)
             Text(task.taskId).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
               .foregroundStyle(MacTheme.muted)
-            Text(task.title).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+            Text(task.title).font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
               .lineLimit(1)
             Spacer()
             if let branch = task.worktree?.branch {
@@ -2912,7 +2376,7 @@ private struct PaneCard: View {
           }
           .padding(.horizontal, MacTheme.Space.x12)
           .frame(height: PaneLayoutContentMetrics.agentTaskHeight)
-          .neoRaised(radius: MacTheme.Radius.control, elevation: .chip)
+          .paneCard()
         }
         AgentConversationView(
           client: client, paneId: pane.paneId, isVisible: isVisible,
@@ -2926,7 +2390,7 @@ private struct PaneCard: View {
       VStack(spacing: 0) {
         if let notice = TerminalStatePresentation.notice(for: pane.state) {
           Label(notice.text, systemImage: notice.systemImage)
-            .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+            .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .semibold))
             .foregroundStyle(terminalNoticeColor(notice))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, MacTheme.Space.x10)
@@ -2940,7 +2404,7 @@ private struct PaneCard: View {
             terminalKeyboardInputEnabled && client.selectedPaneId == pane.paneId)
         if let gap = client.gapText(for: pane.paneId) {
           Label(gap, systemImage: TerminalStatePresentation.recordedGap.systemImage)
-            .font(MacTheme.chrome(MacTheme.TypeScale.control))
+            .font(MacTheme.ui(MacTheme.TypeScale.control))
             .foregroundStyle(terminalNoticeColor(TerminalStatePresentation.recordedGap))
             .padding(MacTheme.Space.x10)
         }
@@ -2968,7 +2432,7 @@ private struct PaneCard: View {
   private func terminalNoticeBackground(_ notice: TerminalNotice) -> Color {
     switch notice.severity {
     case .neutral: MacTheme.face
-    case .warning: MacTheme.warning.opacity(0.12)
+    case .warning: MacTheme.well
     }
   }
 
@@ -3055,7 +2519,7 @@ private struct NewPaneSheet: View {
         }
         .help("Close new pane")
       }
-      .font(MacTheme.chrome(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
+      .font(MacTheme.ui(MacTheme.TypeScale.control)).foregroundStyle(MacTheme.secondary)
       .padding(.horizontal, MacTheme.Space.x12)
       .frame(height: PaneLayoutContentMetrics.newPaneHeaderHeight)
       .background(MacTheme.well, in: Capsule())
@@ -3063,7 +2527,7 @@ private struct NewPaneSheet: View {
       ScrollView(.vertical, showsIndicators: true) {
         VStack(spacing: PaneLayoutContentMetrics.newPaneSectionSpacing) {
           Text("What do you want to do?")
-            .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
+            .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .bold))
             .frame(height: PaneLayoutContentMetrics.newPaneHeadingHeight)
           VStack(spacing: 0) {
             if mode == .agent {
@@ -3071,7 +2535,7 @@ private struct NewPaneSheet: View {
                 TextField("", text: $prompt, axis: .vertical)
                   .textFieldStyle(.plain)
                   .lineLimit(1...4)
-                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .font(MacTheme.ui(MacTheme.TypeScale.body))
                   .foregroundStyle(MacTheme.ink)
                   .focused($promptFocused)
                   .padding(.trailing, 54)
@@ -3079,7 +2543,7 @@ private struct NewPaneSheet: View {
                   .accessibilityHint("Type the first message for the new agent")
                 if prompt.isEmpty {
                   Text("Ask anything. Choose a directory and an agent below.")
-                    .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                    .font(MacTheme.ui(MacTheme.TypeScale.body))
                     .foregroundStyle(MacTheme.muted)
                     .allowsHitTesting(false)
                 }
@@ -3088,7 +2552,7 @@ private struct NewPaneSheet: View {
                   Button("⌘⇧C") { promptFocused = true }
                     .buttonStyle(.plain)
                     .keyboardShortcut("c", modifiers: [.command, .shift])
-                    .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+                    .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
                     .foregroundStyle(MacTheme.muted)
                     .accessibilityLabel("Focus new agent message")
                 }
@@ -3098,7 +2562,7 @@ private struct NewPaneSheet: View {
             } else {
               HStack(alignment: .top) {
                 Text("Open a terminal in the directory selected below.")
-                  .font(MacTheme.chrome(MacTheme.TypeScale.body))
+                  .font(MacTheme.ui(MacTheme.TypeScale.body))
                   .foregroundStyle(MacTheme.muted)
                 Spacer()
               }
@@ -3115,11 +2579,11 @@ private struct NewPaneSheet: View {
                   HStack(spacing: MacTheme.Space.x6) {
                     Image(systemName: "cpu")
                     Text(selectedAgentLabel)
-                      .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                      .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
                     if !effort.isEmpty {
                       Text("·").foregroundStyle(MacTheme.muted)
                       Text(effort.capitalized)
-                        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+                        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
                         .foregroundStyle(MacTheme.secondary)
                     }
                     Image(systemName: "chevron.down").font(.system(size: 10))
@@ -3130,7 +2594,7 @@ private struct NewPaneSheet: View {
               } else {
                 Button(action: create) {
                   Text("Terminal")
-                    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+                    .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
                 }
                 .buttonStyle(.plain)
                 .disabled(directory == nil || submitting)
@@ -3138,10 +2602,9 @@ private struct NewPaneSheet: View {
               }
               Spacer()
               Button(action: create) {
-                Image(systemName: "arrow.up").font(.system(size: 14, weight: .bold))
-                  .foregroundStyle(MacTheme.onAccent).frame(width: 30, height: 30)
-                  .neoAccent(radius: MacTheme.Radius.pill)
+                PaneSendButtonLabel.mac
               }
+              .buttonStyle(.plain)
               .disabled(
                 directory == nil || (mode == .agent && selectedHarness?.available != true)
                   || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
@@ -3152,7 +2615,7 @@ private struct NewPaneSheet: View {
           .padding(EdgeInsets(top: 14, leading: 16, bottom: 12, trailing: 16))
           .frame(maxWidth: .infinity)
           .frame(height: PaneLayoutContentMetrics.newPaneFormHeight)
-          .neoWell(radius: MacTheme.Radius.control)
+          .paneCard(radius: PaneInteriorMetrics.composerRadius)
 
           metadata
             .frame(height: PaneLayoutContentMetrics.newPaneMetadataHeight)
@@ -3172,7 +2635,7 @@ private struct NewPaneSheet: View {
       .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
     }
     .padding(PaneLayoutContentMetrics.paneCardInset)
-    .neoRaised(radius: MacTheme.Radius.card, elevation: .pane)
+    .paneShell()
     .onAppear {
       client.refreshHarnesses(rescan: true)
       selectFirstHarness()
@@ -3194,16 +2657,16 @@ private struct NewPaneSheet: View {
   @ViewBuilder private func modeSwitch(horizontal: Bool) -> some View {
     let content = Group {
       Text(mode == .agent ? "Prefer the command line?" : "Prefer a structured agent?")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
         .foregroundStyle(MacTheme.muted)
       Button(action: toggleMode) {
         Label(
           mode == .agent ? "Open a terminal" : "Open an agent",
           systemImage: mode == .agent ? "terminal" : "cpu")
       }
-      .buttonStyle(NeoPillButtonStyle())
+      .buttonStyle(.paneSecondary)
       Text("⌘⇧Enter")
-        .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .semibold))
+        .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
         .foregroundStyle(MacTheme.muted)
     }
     if horizontal {
@@ -3247,7 +2710,7 @@ private struct NewPaneSheet: View {
         }.menuStyle(.borderlessButton).fixedSize()
       }
     }
-    .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
+    .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .semibold))
     .foregroundStyle(MacTheme.secondary)
     .frame(maxWidth: .infinity)
   }
@@ -3322,7 +2785,7 @@ private struct NewPaneSheet: View {
   }
 }
 
-private struct AgentHarnessSwitchPicker: View {
+struct AgentHarnessSwitchPicker: View {
   @Bindable var client: EngineClient
   let pane: Pane
   @Binding var isPresented: Bool
@@ -3342,9 +2805,9 @@ private struct AgentHarnessSwitchPicker: View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
       VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
         Text(HarnessSwitchModel.title)
-          .font(MacTheme.chrome(MacTheme.TypeScale.body, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.body, weight: .bold))
         Text(HarnessSwitchModel.handoverExplanation)
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.muted)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -3355,10 +2818,10 @@ private struct AgentHarnessSwitchPicker: View {
         catalogue: catalogue, effortOption: effortOption, excludingHarness: currentHarness)
       Button(action: switchHarness) {
         Text(actionLabel)
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .bold))
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
           .frame(maxWidth: .infinity)
       }
-      .buttonStyle(NeoPillButtonStyle(accent: true))
+      .buttonStyle(.panePrimary)
       .disabled(selectedHarness?.available != true || submitting)
       .padding(.horizontal, MacTheme.Space.x14)
       .padding(.bottom, MacTheme.Space.x14)
