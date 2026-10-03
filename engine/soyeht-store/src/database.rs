@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 29;
+pub const SCHEMA_VERSION: u32 = 30;
 
 #[derive(Debug)]
 pub enum Error {
@@ -282,6 +282,37 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
     }
     if version < 29 {
         tx.execute_batch(include_str!("../migrations/029-editor-tabs.sql"))?;
+    }
+    if version < 30 {
+        tx.execute_batch(include_str!(
+            "../migrations/030-prompt-attachment-files.sql"
+        ))?;
+        drop_legacy_prompt_attachments(tx)?;
+    }
+    Ok(())
+}
+
+/// Version 30 names queued attachments by engine-owned paths. A prompt queued
+/// with the earlier byte reference cannot be delivered, so it keeps its text.
+fn drop_legacy_prompt_attachments(tx: &Transaction<'_>) -> Result<()> {
+    for (table, field) in [
+        ("agent_prompt_queue", "$.attachments"),
+        ("agent_runtime", "$.active.attachments"),
+    ] {
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+            [table],
+            |row| row.get(0),
+        )?;
+        if exists {
+            tx.execute(
+                &format!(
+                    "UPDATE {table} SET payload=json_remove(payload,?1) \
+                     WHERE json_type(payload,?1) IS NOT NULL"
+                ),
+                [field],
+            )?;
+        }
     }
     Ok(())
 }

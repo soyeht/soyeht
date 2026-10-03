@@ -115,6 +115,7 @@ private struct AgentWell: ViewModifier {
   private let onExplicitRemoteAction: () -> Void
   private let controlsAccessory: ControlsAccessory
   @State private var prompt = ""
+  @State private var attachments: AgentComposerAttachments
   @State private var follow = AgentConversationFollow()
   @State private var subagents = AgentSubagentDisclosure()
   @FocusState private var promptFocused: Bool
@@ -128,6 +129,8 @@ private struct AgentWell: ViewModifier {
   ) {
     self.client = client
     self.paneId = paneId
+    _attachments = State(
+      initialValue: AgentComposerAttachments(linkHostFiles: !client.pairedDevice))
     self.isVisible = isVisible
     self.showsConfiguration = showsConfiguration
     self.style = style
@@ -172,6 +175,7 @@ private struct AgentWell: ViewModifier {
       }
     }
     .background(style.canvas).foregroundStyle(style.ink)
+    .modifier(AgentAttachmentDropTarget(attachments: attachments, style: style))
     .task(id: prompt.isEmpty) {
       guard !prompt.isEmpty else { return }
       while !Task.isCancelled && !prompt.isEmpty {
@@ -285,6 +289,9 @@ private struct AgentWell: ViewModifier {
                 .font(style.captionFont.weight(.semibold))
             }
             Text(item.text).font(style.captionFont).lineLimit(2)
+            if let count = item.attachments?.count, count > 0 {
+              Label("\(count)", systemImage: "paperclip").font(style.captionFont)
+            }
           }
           Spacer()
           unavailableSteer
@@ -386,19 +393,30 @@ private struct AgentWell: ViewModifier {
   }
 
   private var composer: some View {
-    HStack(alignment: .bottom, spacing: 10) {
-      TextField("Message the agent", text: $prompt, axis: .vertical)
-        .lineLimit(1...6).textFieldStyle(.plain).focused($promptFocused)
-        .onSubmit { submit() }
-        .onKeyPress(.tab, phases: .down) { press in
-          guard press.modifiers.contains(.shift) else { return .ignored }
-          client.cyclePermissionMode(paneId)
-          return .handled
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
-      sendButton
+    VStack(alignment: .leading, spacing: 8) {
+      AgentComposerAttachmentRow(attachments: attachments, style: style)
+      HStack(alignment: .bottom, spacing: 10) {
+        AgentAttachButton(attachments: attachments, style: style)
+        composerField
+        sendButton
+      }
     }.padding(.horizontal, style.canonicalLayout ? 14 : 16).padding(.vertical, 12)
+  }
+
+  private var composerField: some View {
+    TextField("Message the agent", text: $prompt, axis: .vertical)
+      .lineLimit(1...6).textFieldStyle(.plain).focused($promptFocused)
+      .onSubmit { submit() }
+      .onKeyPress(.tab, phases: .down) { press in
+        guard press.modifiers.contains(.shift) else { return .ignored }
+        client.cyclePermissionMode(paneId)
+        return .handled
+      }
+      .padding(.horizontal, 14).padding(.vertical, 11)
+      .modifier(AgentWell(style: style, radius: style.canonicalLayout ? 12 : 14))
+      #if os(macOS)
+        .modifier(AgentComposerPaste(isFocused: promptFocused, attachments: attachments))
+      #endif
   }
 
   /// On a paired device Return adds a line to the multi-line prompt, so Command-Return
@@ -461,7 +479,7 @@ private struct AgentWell: ViewModifier {
     guard !text.isEmpty else { return }
     prompt = ""
     onExplicitRemoteAction()
-    client.sendPrompt(paneId, text: text)
+    client.sendPrompt(paneId, text: text, attachments: attachments.take())
     promptFocused = true
   }
 
@@ -662,6 +680,12 @@ private struct TranscriptRow: View {
           }
           FilePathText(message.text, workspaceId: workspaceId)
             .textSelection(.enabled)
+          if let attachments = message.attachments, !attachments.isEmpty {
+            AgentAttachmentChips(
+              items: attachments.enumerated().map {
+                AgentAttachmentPresentation(attachment: $0.element, index: $0.offset)
+              }, style: style)
+          }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

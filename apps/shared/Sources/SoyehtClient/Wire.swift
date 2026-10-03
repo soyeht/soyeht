@@ -261,13 +261,14 @@ struct WirePayload {
   let message: JsonValue
   let attachments: [WebHostAttachment]
 
-  func frames(maxAttachments: Int = 20) throws -> [Frame] {
+  func frames(maxAttachments: Int = ProtocolLimits.promptAttachments) throws -> [Frame] {
     guard attachments.count <= maxAttachments else { throw ClientFailure.invalidFrame }
     var frames: [Frame] = []
     for attachment in attachments {
       guard !attachment.bytes.isEmpty,
         attachment.reference.bytes == String(attachment.bytes.count),
-        attachment.bytes.count <= ProtocolLimits.webScreenshotBytes,
+        attachment.bytes.count
+          <= max(ProtocolLimits.promptAttachmentBytes, ProtocolLimits.webScreenshotBytes),
         let uuid = UUID(uuidString: attachment.reference.attachmentId),
         uuid.uuidString.lowercased() == attachment.reference.attachmentId
       else { throw ClientFailure.invalidFrame }

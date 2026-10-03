@@ -73,7 +73,9 @@ impl Core {
                 next_binary_ref: 1,
                 pair_request: None,
                 web_host: false,
-                attachments: AttachmentAssembler::new(limits::WEB_SCREENSHOT_BYTES)?,
+                attachments: AttachmentAssembler::new(
+                    limits::PROMPT_ATTACHMENT_TOTAL_BYTES.max(limits::WEB_SCREENSHOT_BYTES),
+                )?,
             },
         );
         Ok(id)
@@ -316,7 +318,7 @@ impl Core {
         request_id: Value,
         method: &str,
         params: &Value,
-        prompt_attachments: Vec<soyeht_store::agents::PromptAttachment>,
+        prompt_attachments: Vec<crate::agents::attachments::PreparedAttachment>,
         writing_image: Option<crate::writing::attachments::WritingImageAttachment>,
     ) -> Result<Outcome> {
         let result = match method {

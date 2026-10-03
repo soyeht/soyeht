@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7cac209c62c670efaab2f34fd36e081e14164bcd1fc7f064e0e3e5939f7511a). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -182,6 +182,8 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "SubagentStatus" => roundtrip::<SubagentStatus>(value),
         "SubagentRun" => roundtrip::<SubagentRun>(value),
         "TranscriptMessage" => roundtrip::<TranscriptMessage>(value),
+        "PromptAttachmentKind" => roundtrip::<PromptAttachmentKind>(value),
+        "PromptAttachment" => roundtrip::<PromptAttachment>(value),
         "AttachmentRef" => roundtrip::<AttachmentRef>(value),
         "PanePromptParams" => roundtrip::<PanePromptParams>(value),
         "PanePromptResult" => roundtrip::<PanePromptResult>(value),

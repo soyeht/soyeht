@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7cac209c62c670efaab2f34fd36e081e14164bcd1fc7f064e0e3e5939f7511a). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,
@@ -55,6 +55,11 @@ export const limits = {
   "webPickedElements": 20,
   "webOuterHtmlBytes": 2048,
   "webPickCropWidth": 640,
+  "promptAttachments": 20,
+  "promptAttachmentBytes": 10485760,
+  "promptAttachmentTotalBytes": 20971520,
+  "promptAttachmentInlineBytes": 196608,
+  "promptAttachmentThumbnailBytes": 6144,
   "webCommandWaiters": 64,
   "portScanBytes": 1048576,
   "writingSectionEntries": 500,

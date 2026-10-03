@@ -5,7 +5,9 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_protocol::{PromptItem, TranscriptKind, TranscriptMessage, TranscriptRole, limits};
+use soyeht_protocol::{
+    PromptAttachment, PromptItem, TranscriptKind, TranscriptMessage, TranscriptRole, limits,
+};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -36,6 +38,7 @@ pub fn new_message(
         agent_message: None,
         subagent: None,
         subagent_id: None,
+        attachments: None,
     })
 }
 
@@ -50,6 +53,49 @@ pub fn open_key(kind: &str, subagent: Option<&str>, id: Option<&str>) -> String 
         key = format!("{key}:{id}");
     }
     key
+}
+
+/// ACP messageId identifies a message, not a text fragment. Hash the opaque ID
+/// to keep the checkpoint key bounded without exposing adapter identifiers.
+fn chunk_key(kind: &str, subagent: Option<&str>, message_id: Option<&str>) -> String {
+    let message_id = message_id.map(|id| format!("{:x}", Sha256::digest(id.as_bytes())));
+    open_key(kind, subagent, message_id.as_deref())
+}
+
+/// Adds a file a native replay reported to the user message it belongs to,
+/// starting that message when the file comes before any text.
+pub fn attach_to_replayed_user(
+    store: &impl StorePort,
+    pane: &str,
+    state: &mut State,
+    generation: u32,
+    message_id: Option<&str>,
+    attachment: PromptAttachment,
+    changes: &mut Changes,
+) -> Result<()> {
+    let key = chunk_key("user", None, message_id);
+    let open = match state.open_messages.get(&key) {
+        Some(seq) => message(store, pane, *seq)?,
+        None => None,
+    };
+    let mut item = match open {
+        Some(item) => item,
+        None => new_message(
+            state,
+            generation,
+            TranscriptRole::User,
+            TranscriptKind::Message,
+            String::new(),
+            false,
+        )?,
+    };
+    let attachments = item.attachments.get_or_insert_with(Vec::new);
+    if attachments.len() >= limits::PROMPT_ATTACHMENTS {
+        return Ok(());
+    }
+    attachments.push(attachment);
+    state.open_messages.insert(key, sequence(&item.seq)?);
+    put(changes, pane, item, "agent_message_chunk")
 }
 
 fn open_key_kind(key: &str) -> &str {
@@ -78,10 +124,13 @@ pub fn user_prompt(
     changes: &mut Changes,
 ) -> Result<()> {
     let mut text = prompt.text.as_str();
+    let mut attachments = prompt.attachments.clone();
     // JSON escaping can multiply the UTF-8 body size by six. Keep complete
     // records bounded even when the accepted prompt contains only controls.
     while !text.is_empty() {
-        let mut end = text.len().min(32 * 1024);
+        // The first part shows what the user attached, so it holds less text.
+        let part = if attachments.is_some() { 16 } else { 32 } * 1024;
+        let mut end = text.len().min(part);
         while !text.is_char_boundary(end) {
             end -= 1;
         }
@@ -94,8 +143,29 @@ pub fn user_prompt(
             true,
         )?;
         message.agent_message = prompt.agent_message.clone();
+        message.attachments = attachments.take();
+        fit_attachments(&mut message)?;
         changes.messages.push(message);
         text = &text[end..];
+    }
+    Ok(())
+}
+
+/// Keeps a message with attachments within its stored bound. Thumbnails are
+/// dropped from the last attachment back; names, sizes and paths stay.
+fn fit_attachments(message: &mut TranscriptMessage) -> Result<()> {
+    let mut thumbnails = message.attachments.as_ref().map_or(0, Vec::len);
+    while errors::json_bytes(message)?.len() > limits::TRANSCRIPT_MESSAGE_BYTES {
+        match message.attachments.as_mut() {
+            Some(attachments) if thumbnails > 0 => {
+                thumbnails -= 1;
+                attachments[thumbnails].thumbnail = None;
+            }
+            _ => {
+                message.attachments = None;
+                break;
+            }
+        }
     }
     Ok(())
 }
@@ -198,12 +268,7 @@ pub fn append_text_role(
         return Ok(None);
     }
     let thought = key == "thought";
-    // ACP messageId identifies a message, not a text fragment. Hash the opaque ID
-    // to keep the checkpoint key bounded without exposing adapter identifiers.
-    let message_id = chunk
-        .message_id
-        .map(|id| format!("{:x}", Sha256::digest(id.as_bytes())));
-    let key = open_key(key, chunk.subagent, message_id.as_deref());
+    let key = chunk_key(key, chunk.subagent, chunk.message_id);
     let event_kind = if thought {
         "agent_thought_chunk"
     } else {
@@ -359,6 +424,29 @@ mod tests {
     use super::*;
     use soyeht_protocol::{SubagentRun, SubagentStatus};
 
+    #[test]
+    fn a_prompt_with_the_largest_attachments_keeps_its_first_part_within_bounds() {
+        let attachment = soyeht_protocol::PromptAttachment {
+            kind: soyeht_protocol::PromptAttachmentKind::Image,
+            name: "shot.png".into(),
+            mime_type: "image/png".into(),
+            bytes: "1".into(),
+            attachment_id: None,
+            data: None,
+            path: Some(format!("/{}", "p".repeat(4000))),
+            thumbnail: Some("A".repeat(8192)),
+        };
+        let mut message = item(TranscriptKind::Message);
+        message.text = "\u{1}".repeat(16 * 1024);
+        message.attachments = Some(vec![attachment; limits::PROMPT_ATTACHMENTS]);
+        fit_attachments(&mut message).unwrap();
+        assert!(errors::json_bytes(&message).unwrap().len() <= limits::TRANSCRIPT_MESSAGE_BYTES);
+        let kept = message.attachments.unwrap();
+        assert_eq!(kept.len(), limits::PROMPT_ATTACHMENTS);
+        assert!(kept[0].thumbnail.is_some() || kept.iter().all(|a| a.thumbnail.is_none()));
+        assert!(kept.last().unwrap().thumbnail.is_none());
+    }
+
     fn item(kind: TranscriptKind) -> TranscriptMessage {
         TranscriptMessage {
             local_id: "local".into(),
@@ -376,6 +464,7 @@ mod tests {
             agent_message: None,
             subagent: None,
             subagent_id: None,
+            attachments: None,
         }
     }
 

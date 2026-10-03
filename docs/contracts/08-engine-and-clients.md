@@ -184,7 +184,10 @@ model?, effort?, permission?, cwd|worktree?, taskId?, name?}` →
 {workspaceId, layout}` (layout is shared and changes only through this request),
 `pane.focus` (per client), `pane.resize {cols, rows}` (policy: the engine uses
 size from the last human client to resize), `pane.input {bytes}` (raw terminal),
-`pane.prompt {text, attachments?, idempotencyKey}` → `{promptId, queued}`,
+`pane.prompt {text, attachments?, idempotencyKey}` → `{promptId, queued}`
+(each `PromptAttachment` has `kind`, `name`, `mimeType`, `bytes` and one source:
+`attachmentId` for type 3 chunks, inline base64 `data`, or a `path` on the
+engine's Mac; the engine stages sent bytes and queues paths, ADR 0075),
 `pane.queue.list`, `pane.queue.remove {promptId}`,
 `pane.cancel`,
 `pane.permission.answer {requestId, optionId}`,
@@ -333,6 +336,7 @@ executable schema carry no state cursor and never enter replay.
 | JSON body (type 1), any message including snapshot parts | ≤ 1 MiB |
 | binary terminal body (type 2) | 16 B subheader + ≤ 64 KiB bytes |
 | attachment body (type 3) | 16 B subheader + ≤ 256 KiB, chunked with `attachmentId` |
+| prompt attachments | ≤ 20 files; sent bytes ≤ 10 MiB each and ≤ 20 MiB per prompt; inline `data` ≤ 192 KiB; thumbnail ≤ 6 KiB; over a limit = `attachment_limit_exceeded` |
 | `pane.transcript` per page | ≤ 200 messages or 512 KiB |
 | comments within snapshot | 20 per task (remainder through `task.comments`) |
 | retained event log | 10,000 events or 7 days |
@@ -346,9 +350,12 @@ in order on the same connection. Their payloads are concatenated. The first
 following JSON message that contains the matching `AttachmentRef` completes
 the transfer and declares its MIME type, display name and total byte count.
 The receiver accepts the reference only when the accumulated byte count equals
-the declared decimal `bytes`; an unknown, duplicated, interleaved, oversized or
-incomplete attachment fails closed. Unreferenced bytes are connection-scoped
-and are discarded when the connection closes. When a response contains an
+the declared decimal `bytes`; an unknown, duplicated, interleaved or
+incomplete attachment fails closed. Chunks over the byte or count limit are
+discarded and the request that names them fails with `attachment_limit_exceeded`,
+so the connection stays open. Every committing request, successful or not,
+empties the connection's pending attachments. Unreferenced bytes are
+connection-scoped and are discarded when the connection closes. When a response contains an
 attachment, its type 3 chunks precede that JSON response on the wire.
 
 **Multipart snapshot (without a `slow_consumer` cycle).** `state.snapshot`

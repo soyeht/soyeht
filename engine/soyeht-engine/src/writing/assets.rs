@@ -28,7 +28,7 @@ impl Core {
         let after = self.editor.resolve(root, relative)?;
         if before.canonical != after.canonical
             || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
-            || super::attachments::hex_digest(&bytes) != expected_digest
+            || crate::immutable_file::hex_digest(&bytes) != expected_digest
             || self.editor.stored(&request.file_id)?.revision != file.revision
         {
             return Err(errors::stale_version(

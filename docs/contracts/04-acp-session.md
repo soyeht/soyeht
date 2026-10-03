@@ -36,7 +36,12 @@ Raw terminal panes continue to exist and do not use this path.
    `session/set_config_option` (contract 02).
 6. **`session/prompt`.** User text, the task's first prompt, or the continuation
    package (contract 01), as content blocks. The agent responds “accepted”
-   immediately; the result comes through notifications.
+   immediately; the result comes through notifications. Files attached to the
+   prompt follow the text, one block each, in the richest form the agent's
+   `initialize` `promptCapabilities` allow: `image` for PNG, JPEG, GIF and WebP,
+   `audio`, an embedded text `resource`, and otherwise a `resource_link` to the
+   file's absolute path, which every ACP v1 agent accepts. A file that would
+   push the message past one ACP line is linked (ADR 0075).
 7. **`session/update`.** The engine stores everything in the pane transcript
    and forwards it to clients: message chunks, thoughts, tool calls and updates,
    plan, options changed by the agent, token usage and `state_update`. The turn

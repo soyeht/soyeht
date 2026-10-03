@@ -55,7 +55,27 @@ fn update_user(
         return Ok(());
     }
     if content["type"] != "text" {
-        return Err(errors::invalid("Unsupported replay content"));
+        // A replayed image or file is shown as an attachment of its message; a
+        // block Soyeht cannot describe is left out instead of failing the load.
+        let Some(attachment) = soyeht_acp::prompt::replayed_attachment(&content) else {
+            return Ok(());
+        };
+        // A message with a file is never the internal continuation prompt, so
+        // text held to recognize that prompt is shown first.
+        if let Some(pending) = state
+            .replay_user
+            .as_mut()
+            .filter(|pending| !pending.streaming)
+        {
+            pending.streaming = true;
+            let text = std::mem::take(&mut pending.text);
+            if !text.is_empty() {
+                append_replayed_user(store, pane, state, generation, &text, message_id, changes)?;
+            }
+        }
+        return transcript::attach_to_replayed_user(
+            store, pane, state, generation, message_id, attachment, changes,
+        );
     }
     let text = content["text"]
         .as_str()

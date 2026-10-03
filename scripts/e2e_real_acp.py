@@ -2,6 +2,7 @@
 """Exercise the authenticated Claude and Codex ACP adapters in disposable local profiles."""
 
 import argparse
+import base64
 import json
 import os
 import platform
@@ -10,8 +11,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+import struct
 import tempfile
 import time
+import zlib
 from pathlib import Path
 
 from e2e import ROOT, Services, require
@@ -304,6 +307,41 @@ def engine_restart_preserves_process(services, mac, pane_id):
             "the recovered real turn has no complete assistant message")
 
 
+def solid_png(rgb, size=64):
+    """A PNG filled with one color, written without an imaging library."""
+    def chunk(kind, data):
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+    rows = b"".join(b"\x00" + bytes(rgb) * size for _ in range(size))
+    header = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+IMAGE_PROMPT = ("Look at the attached image. Which single color fills it? "
+                "Reply with only the color name.")
+
+
+def image_attachment_is_described(services, mac, pane_id):
+    """The agent sees a generated PNG sent as a prompt attachment."""
+    png = solid_png((220, 20, 20))
+    prompt_id = mac.mutate("pane.prompt", paneId=pane_id, text=IMAGE_PROMPT, attachments=[{
+        "kind": "image", "name": "square.png", "mimeType": "image/png",
+        "bytes": str(len(png)), "data": base64.b64encode(png).decode(),
+    }])["promptId"]
+    until(lambda: signed_in(mac, pane_id) and ended(services, prompt_id),
+          "the image turn did not finish", seconds=240)
+    items = mac.call("pane.transcript", {"paneId": pane_id, "limit": 100})["items"]
+    turn = [item for item in items if item.get("promptId") == prompt_id]
+    reply = " ".join(item["text"] for item in turn
+                     if item["role"] == "assistant" and item["kind"] == "message").strip()
+    sent = [item for item in turn if item["role"] == "user" and item.get("attachments")]
+    require(sent and sent[0]["attachments"][0]["name"] == "square.png",
+            "the user message does not show its attachment")
+    require("red" in reply.lower(), f"the agent did not describe the red image: {reply[:200]!r}")
+    return reply[:200]
+
+
 def transcript_tail(client, pane_id):
     items = client.call("pane.transcript", {"paneId": pane_id, "limit": 12})["items"]
     return [{"role": item["role"], "kind": item["kind"], "text": item.get("text", "")[:300],
@@ -311,7 +349,7 @@ def transcript_tail(client, pane_id):
             for item in items]
 
 
-def run_harness(binaries, name, adapter, version, report, model=None):
+def run_harness(binaries, name, adapter, version, report, model=None, only=None):
     services = Services(binaries)
     # Harness sandboxes let shell commands write the workspace and temporary
     # directories; a disposable directory under the user cache is outside both.
@@ -325,6 +363,12 @@ def run_harness(binaries, name, adapter, version, report, model=None):
             option = agent_option(mac, pane_id, lambda option: option.get("category") == "model")
             mac.mutate("pane.config.set", paneId=pane_id, configId=option["id"], value=model)
             report["model"] = model
+        reply = image_attachment_is_described(services, mac, pane_id)
+        report["results"].append(
+            {"name": "real_image_attachment_is_described", "reply": reply, "passed": True})
+        if only == "image":
+            report["status"] = "passed"
+            return
         option = mode_option(mac, pane_id)
         modes = option["options"]
         report["modes"] = [
@@ -374,6 +418,9 @@ def main():
         "--model", action="append", default=[], metavar="HARNESS=MODEL",
         help="start a harness on one of its announced models, e.g. when the account "
              "cannot use the configured default")
+    parser.add_argument(
+        "--only", choices=["image"],
+        help="run only the named check after the session opens")
     args = parser.parse_args()
     if os.environ.get("SOYEHT_REAL_ACP") != "1":
         raise SystemExit("Set SOYEHT_REAL_ACP=1 to authorize the authenticated local test")
@@ -393,7 +440,8 @@ def main():
         try:
             with tempfile.TemporaryDirectory(prefix=f"soyeht-real-{name}-") as directory:
                 adapter = install_adapter(Path(directory), package, version)
-                run_harness(binaries, name, adapter, version, report, models.get(name))
+                run_harness(
+                    binaries, name, adapter, version, report, models.get(name), args.only)
         except NotSignedIn as reason:
             report["status"] = "skipped"
             report["reason"] = str(reason)

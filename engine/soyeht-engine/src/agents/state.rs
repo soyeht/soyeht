@@ -3,8 +3,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use soyeht_acp::{Client, config::Options, session::Initialization};
 use soyeht_protocol::{
-    AgentHarnessSwitch, AgentPaneRole, AgentSession, AttachmentRef, ConfigOperation, ConfigValue,
-    HarnessLaunch, PaneQueueListResult, PromptItem, PromptOrigin, PromptStatus,
+    AgentHarnessSwitch, AgentPaneRole, AgentSession, ConfigOperation, ConfigValue, HarnessLaunch,
+    PaneQueueListResult, PromptAttachment, PromptItem, PromptOrigin, PromptStatus,
     QueuedPromptSummary, Role, TaskExecutor, limits,
 };
 use std::collections::{BTreeMap, VecDeque};
@@ -426,7 +426,7 @@ impl State {
         text: String,
         origin: PromptOrigin,
         at: String,
-        attachments: Option<Vec<AttachmentRef>>,
+        attachments: Option<Vec<PromptAttachment>>,
     ) -> Result<PromptItem> {
         self.enqueue_identified_with_attachments(
             Uuid::new_v4().to_string(),
@@ -453,7 +453,7 @@ impl State {
         text: String,
         origin: PromptOrigin,
         at: String,
-        attachments: Option<Vec<AttachmentRef>>,
+        attachments: Option<Vec<PromptAttachment>>,
     ) -> Result<PromptItem> {
         if text.is_empty() || text.len() > limits::PROMPT_BYTES {
             return Err(errors::invalid(

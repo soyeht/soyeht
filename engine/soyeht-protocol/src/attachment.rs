@@ -1,6 +1,9 @@
 use crate::{AttachmentRef, Error, Result, frame::Frame, limits};
 use uuid::Uuid;
 
+/// Collects type-3 frames until the next JSON request commits them. A transfer
+/// over the byte or count limit is discarded and reported by that request, so
+/// the sender receives an error response instead of a closed connection.
 #[derive(Debug)]
 pub struct AttachmentAssembler {
     maximum_bytes: usize,
@@ -8,6 +11,7 @@ pub struct AttachmentAssembler {
     bytes: Vec<u8>,
     completed: Vec<([u8; 16], Vec<u8>)>,
     last_completed_id: Option<[u8; 16]>,
+    overflowed: bool,
 }
 
 impl AttachmentAssembler {
@@ -21,10 +25,14 @@ impl AttachmentAssembler {
             bytes: Vec::new(),
             completed: Vec::new(),
             last_completed_id: None,
+            overflowed: false,
         })
     }
 
     pub fn push(&mut self, header: [u8; 16], chunk: &[u8]) -> Result<()> {
+        if self.overflowed {
+            return Ok(());
+        }
         if chunk.is_empty()
             || self.last_completed_id == Some(header)
             || self.completed.iter().any(|(id, _)| *id == header)
@@ -32,38 +40,60 @@ impl AttachmentAssembler {
             return Err(Error::DuplicateAttachment);
         }
         if self.active_id.is_some_and(|active| active != header) {
-            self.finish_active()?;
+            self.finish_active();
         }
-        let completed_bytes = self
+        let length = self
             .completed
             .iter()
-            .try_fold(0usize, |total, (_, bytes)| total.checked_add(bytes.len()))
-            .ok_or(Error::AttachmentTooLarge)?;
-        let length = completed_bytes
-            .checked_add(self.bytes.len())
-            .and_then(|length| length.checked_add(chunk.len()))
-            .ok_or(Error::AttachmentTooLarge)?;
-        if length > self.maximum_bytes {
-            return Err(Error::AttachmentTooLarge);
+            .try_fold(self.bytes.len(), |total, (_, bytes)| {
+                total.checked_add(bytes.len())
+            })
+            .and_then(|length| length.checked_add(chunk.len()));
+        if self.overflowed || length.is_none_or(|length| length > self.maximum_bytes) {
+            self.overflow();
+            return Ok(());
         }
         self.active_id = Some(header);
         self.bytes.extend_from_slice(chunk);
         Ok(())
     }
 
-    fn finish_active(&mut self) -> Result<()> {
-        if self.active_id.is_some() && self.completed.len() >= limits::WEB_PICKED_ELEMENTS {
-            return Err(Error::AttachmentTooLarge);
-        }
+    fn finish_active(&mut self) {
         let Some(id) = self.active_id.take() else {
-            return Ok(());
+            return;
         };
+        if self.completed.len() >= limits::PROMPT_ATTACHMENTS {
+            self.overflow();
+            return;
+        }
         self.completed.push((id, std::mem::take(&mut self.bytes)));
-        Ok(())
     }
 
+    fn overflow(&mut self) {
+        self.reset();
+        self.overflowed = true;
+    }
+
+    fn reset(&mut self) {
+        self.active_id = None;
+        self.bytes = Vec::new();
+        self.completed = Vec::new();
+        self.overflowed = false;
+    }
+
+    /// Hands the collected transfers to the request that names them. Every
+    /// outcome, success or error, leaves the assembler empty for the next one.
     pub fn commit_all(&mut self, references: &[AttachmentRef]) -> Result<Vec<Vec<u8>>> {
-        self.finish_active()?;
+        let result = self.take(references);
+        self.reset();
+        result
+    }
+
+    fn take(&mut self, references: &[AttachmentRef]) -> Result<Vec<Vec<u8>>> {
+        self.finish_active();
+        if self.overflowed {
+            return Err(Error::AttachmentTooLarge);
+        }
         if references.iter().try_fold(false, |duplicate, reference| {
             Ok::<_, Error>(
                 duplicate
@@ -76,7 +106,7 @@ impl AttachmentAssembler {
             return Err(Error::UnknownAttachment);
         }
         let mut output = Vec::with_capacity(references.len());
-        for (reference, (id, bytes)) in references.iter().zip(&self.completed) {
+        for (reference, (id, bytes)) in references.iter().zip(&mut self.completed) {
             let expected_id = attachment_header(&reference.attachment_id)?;
             if expected_id != *id {
                 return Err(Error::UnknownAttachment);
@@ -84,10 +114,9 @@ impl AttachmentAssembler {
             if decimal_bytes(&reference.bytes)? != bytes.len() {
                 return Err(Error::IncompleteAttachment);
             }
-            output.push(bytes.clone());
+            output.push(std::mem::take(bytes));
         }
         self.last_completed_id = self.completed.last().map(|(id, _)| *id);
-        self.completed.clear();
         Ok(output)
     }
 
@@ -98,7 +127,7 @@ impl AttachmentAssembler {
     }
 
     pub fn is_pending(&self) -> bool {
-        self.active_id.is_some() || !self.completed.is_empty()
+        self.overflowed || self.active_id.is_some() || !self.completed.is_empty()
     }
 }
 
@@ -180,13 +209,27 @@ mod tests {
             .push(attachment_header(second).unwrap(), b"c")
             .unwrap();
         assert!(matches!(
-            input.push(attachment_header(second).unwrap(), b"de"),
-            Err(Error::AttachmentTooLarge)
-        ));
-        assert!(matches!(
             input.commit_all(&[reference(second, 1), reference(first, 2)]),
             Err(Error::UnknownAttachment)
         ));
+        assert!(!input.is_pending(), "a failed commit leaves nothing behind");
+
+        let mut oversize = AttachmentAssembler::new(4).unwrap();
+        oversize
+            .push(attachment_header(first).unwrap(), b"ab")
+            .unwrap();
+        oversize
+            .push(attachment_header(second).unwrap(), b"cde")
+            .unwrap();
+        assert!(oversize.is_pending(), "the overflow waits for its request");
+        assert!(matches!(
+            oversize.commit_all(&[reference(first, 2), reference(second, 3)]),
+            Err(Error::AttachmentTooLarge)
+        ));
+        oversize
+            .push(attachment_header(second).unwrap(), b"cd")
+            .unwrap();
+        assert_eq!(oversize.commit(&reference(second, 2)).unwrap(), b"cd");
         let mut incomplete = AttachmentAssembler::new(4).unwrap();
         incomplete
             .push(attachment_header(first).unwrap(), b"ab")

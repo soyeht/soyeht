@@ -7,7 +7,8 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_acp::{
-    Message, RpcError, client,
+    Message, RpcError,
+    prompt::{self, PromptFile},
     rpc::{Record as NativeRecord, decode},
 };
 use soyeht_protocol::{
@@ -30,21 +31,55 @@ fn next_prompt<S: StorePort, C: Clock + ?Sized>(
     Ok((open, next))
 }
 
-fn prompt_payload(store: &impl StorePort, session: &str, prompt: &PromptItem) -> Result<Value> {
-    let attachments =
-        StorePort::agent_prompt_attachments(store, &prompt.prompt_id).map_err(errors::storage)?;
-    let images: Vec<_> = attachments
+/// The `session/prompt` parameters for a queued prompt. Only files this agent
+/// could take inline are read; a file that is gone or too large is linked.
+fn prompt_payload(
+    state: &super::state::State,
+    session: &str,
+    prompt: &PromptItem,
+) -> Result<Value> {
+    let capabilities = state
+        .initialized
+        .as_ref()
+        .map(|initialized| initialized.prompt_capabilities)
+        .unwrap_or_default();
+    let files = prompt
+        .attachments
         .iter()
-        .map(|attachment| client::PromptImage {
-            mime_type: &attachment.reference.mime_type,
-            bytes: &attachment.bytes,
+        .flatten()
+        .map(PromptFile::from_attachment)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(native_error)?;
+    let contents: Vec<_> = files
+        .iter()
+        .map(|file| {
+            file.needs_contents(capabilities)
+                .then(|| read_inline_candidate(file.path))
+                .flatten()
         })
         .collect();
-    Ok(client::prompt_with_images(
+    let files: Vec<_> = files
+        .into_iter()
+        .zip(contents.iter().map(Option::as_deref))
+        .collect();
+    prompt::prompt_with_files(
         session,
         &super::peer::native_text(prompt),
-        &images,
-    ))
+        &files,
+        capabilities,
+    )
+    .map_err(native_error)
+}
+
+fn read_inline_candidate(path: &str) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(soyeht_protocol::limits::ACP_MESSAGE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (bytes.len() <= soyeht_protocol::limits::ACP_MESSAGE_BYTES).then_some(bytes)
 }
 
 #[derive(Clone, Copy)]
@@ -615,11 +650,12 @@ impl Core {
             .events
             .push(super::methods::queued(pane, &state, self.now_ms()));
         transcript::user_prompt(&mut state, saved.pane.generation, &prompt, &mut changes)?;
+        let payload = prompt_payload(&state, &session, &prompt)?;
         responses::call(
             &mut state,
             &mut changes,
             "session/prompt",
-            prompt_payload(&self.store, &session, &prompt)?,
+            payload,
             &prompt.prompt_id,
             self.now_ms(),
         )?;

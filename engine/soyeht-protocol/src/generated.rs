@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9c3e466061dbb671b17b1453e7779e19f331785331c9d15f829e79a80d802347). Do not edit.
+// Generated from contracts/protocol.json (sha256 a7cac209c62c670efaab2f34fd36e081e14164bcd1fc7f064e0e3e5939f7511a). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -167,6 +167,8 @@ pub enum ErrorKind {
     WritingSectionRefused,
     #[serde(rename = "harness_switch_failed")]
     HarnessSwitchFailed,
+    #[serde(rename = "attachment_limit_exceeded")]
+    AttachmentLimitExceeded,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -1430,7 +1432,7 @@ pub struct PromptItem {
     #[serde(rename = "generation", skip_serializing_if = "Option::is_none")]
     pub generation: Option<u32>,
     #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<AttachmentRef>>,
+    pub attachments: Option<Vec<PromptAttachment>>,
     #[serde(rename = "agentMessage", skip_serializing_if = "Option::is_none")]
     pub agent_message: Option<AgentMessageSource>,
 }
@@ -1799,6 +1801,38 @@ pub struct TranscriptMessage {
     pub subagent: Option<SubagentRun>,
     #[serde(rename = "subagentId", skip_serializing_if = "Option::is_none")]
     pub subagent_id: Option<Id>,
+    #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<PromptAttachment>>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum PromptAttachmentKind {
+    #[serde(rename = "image")]
+    Image,
+    #[serde(rename = "audio")]
+    Audio,
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "file")]
+    File,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PromptAttachment {
+    #[serde(rename = "kind")]
+    pub kind: PromptAttachmentKind,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    #[serde(rename = "bytes")]
+    pub bytes: Decimal,
+    #[serde(rename = "attachmentId", skip_serializing_if = "Option::is_none")]
+    pub attachment_id: Option<Id>,
+    #[serde(rename = "data", skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(rename = "thumbnail", skip_serializing_if = "Option::is_none")]
+    pub thumbnail: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AttachmentRef {
@@ -1820,7 +1854,7 @@ pub struct PanePromptParams {
     #[serde(rename = "origin", skip_serializing_if = "Option::is_none")]
     pub origin: Option<PromptOrigin>,
     #[serde(rename = "attachments", skip_serializing_if = "Option::is_none")]
-    pub attachments: Option<Vec<AttachmentRef>>,
+    pub attachments: Option<Vec<PromptAttachment>>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -7330,5 +7364,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::WritingSceneNotFound => -32033,
         ErrorKind::WritingSectionRefused => -32034,
         ErrorKind::HarnessSwitchFailed => -32035,
+        ErrorKind::AttachmentLimitExceeded => -32036,
     }
 }
