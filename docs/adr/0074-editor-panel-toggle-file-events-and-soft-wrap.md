@@ -77,7 +77,7 @@ Wrapping lives in shared code:
 
 - `EditorWrapLayout` counts rows per page line by character cells: a tab
   runs to the next stop of four cells, combining marks take no cell, and
-  example hang at the end of a row, as in AppKit. It also maps document rows
+  a space hangs at the end of a row, as in AppKit. It also maps document rows
   to logical lines for paging.
 - `EditorTextLayout` gives the Mac text view a container exactly `columns`
   cells wide, and a paragraph style that wraps by character, with matching

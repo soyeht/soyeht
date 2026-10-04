@@ -5,7 +5,7 @@
 /// count one row each; the estimate only moves the scroll extent, and the page that comes into
 /// view is measured when it loads. Wrapping is by character in a monospaced font: every Unicode
 /// scalar takes one cell, combining marks none, a tab runs to the next multiple of `tabWidth`
-/// within its row, and example past the row end hang there instead of starting a row, which is
+/// within its row, and a space past the row end hangs there instead of starting a row, which is
 /// how the Mac text view breaks lines with
 /// `EditorTextLayout.paragraphStyle`. Line numbers stay on logical lines: the gutter labels the
 /// first row of each line.
@@ -40,7 +40,7 @@ public struct EditorWrapLayout: Equatable, Sendable {
       }
       guard let columns = self.columns else { continue }
       var width = Self.cells(scalar, at: column)
-      // Example hang past the row end, as in AppKit; the next character starts the new row.
+      // A space hangs past the row end, as in AppKit; the next character starts the new row.
       if scalar != " ", column > 0, column + width > columns {
         rows += 1
         column = 0
