@@ -11,7 +11,7 @@ swiftc "$source_dir/EventPoster.swift" -framework CoreGraphics -o "$build_dir/po
 swiftc "$source_dir/Runner.swift" -framework AppKit -framework WebKit -o "$build_dir/runner"
 
 port=18765
-python3 -m http.server "$port" --bind 127.0.0.1 --directory "$source_dir" >"$build_dir/http.log" 2>&1 &
+uv run python -m http.server "$port" --bind 127.0.0.1 --directory "$source_dir" >"$build_dir/http.log" 2>&1 &
 server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 

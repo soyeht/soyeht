@@ -2,16 +2,20 @@
 
 GitHub Actions is disabled until the product is ready. Before every merge, run
 `bash scripts/check_all.sh` with `FORBIDDEN_TERMS` supplied through the environment.
-This local merge gate runs the workflow checks in sequence and stops at the first
-failure. Record the results in the PR description. To also scan PR history and
-the final title/body, pass `--base FULL_BASE_OID --event-file PATH_TO_EVENT_JSON`.
-Keep the vocabulary outside the repository. The workflows remain available for
-when hosted CI resumes.
+`scripts/check_all.sh` is the only list of gate steps; it runs them in sequence
+and stops at the first failure. Record the results in the PR description. To
+also scan PR history and the final title/body, pass
+`--base FULL_BASE_OID --event-file PATH_TO_EVENT_JSON`. Without `--base`, the
+ratchets compare with the merge-base of `origin/main` and `HEAD`, and fail when
+it cannot be resolved; run `git fetch origin main` first. Keep the vocabulary
+outside the repository. `.github/workflows/check-all.yml` only calls
+`check_all.sh`, for when hosted CI resumes; add new steps to the script, never to
+a workflow.
 
 The editor performance proof is collected separately on VM1, from the same
 checkout as the PR. Set `SOYEHT_EDITOR_METER_VM=1` and a locally configured
 `SOYEHT_DEVELOPMENT_TEAM` in the VM (never commit either value), then run
-`python3 scripts/check_editor_performance.py --measure`. The command builds
+`uv run python scripts/check_editor_performance.py --measure`. The command builds
 and UI-tests a signed Release app three times; it does not run on the host.
 The measurement app has its own bundle ID and does not replace a running Dev app.
 Copy `.cache/editor-performance-vm.json` to the review checkout's `.cache`
@@ -31,7 +35,7 @@ Install the tools listed in `docs/toolchains.md`. Build from the repository root
 
 ```sh
 cargo build --manifest-path engine/Cargo.toml --locked --workspace
-python3 scripts/install_dev.py
+uv run python scripts/install_dev.py
 engine/target/debug/soyeht --profile dev status
 engine/target/debug/soyeht --profile dev pane create --shell
 engine/target/debug/soyeht --profile dev pane list
@@ -44,7 +48,7 @@ identity is available, select one explicitly:
 
 ```sh
 SOYEHT_DEVELOPMENT_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
-  python3 scripts/install_dev.py
+  uv run python scripts/install_dev.py
 ```
 
 The installer fails before copying a binary if it cannot establish and verify
@@ -81,12 +85,12 @@ a service that remains loaded.
 launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.engine"
 launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.ptyd"
 cargo build --manifest-path engine/Cargo.toml --locked --workspace
-python3 scripts/install_dev.py
+uv run python scripts/install_dev.py
 ```
 
 To update only the engine and preserve shells, stop only
 `com.soyeht.next.dev.engine`, build and run
-`python3 scripts/install_dev.py --component engine`. The supervisor remains
+`uv run python scripts/install_dev.py --component engine`. The supervisor remains
 active and the engine adopts the same processes.
 
 Tests may use `--data-dir PATH` to connect to a temporary installation.
@@ -113,16 +117,26 @@ test targets to the scanner when they are created.
 
 Enable the versioned fast pre-push hook with
 `git config core.hooksPath .githooks`. It runs only
-`python3 scripts/check_quality.py`, not the full merge gate. The full
+`uv run python scripts/check_quality.py`, not the full merge gate. The full
 `bash scripts/check_all.sh` remains a manual pre-merge requirement.
 
-The gate fails only on regressions: more clones or duplicated lines, a file
-growing past its cap, or more loose literals in a file. When a metric improves
-or an oversized file shrinks, the gate passes and prints an `improvement` line;
-lower the baseline in the same PR so the ratchet keeps the gain. Existing files above 800 lines have individual caps
-equal to their measured lines; new files above 800 lines fail. Any increase or
-new exception is a baseline relaxation requiring written justification in the
-PR. Run `python3 scripts/check_quality.py --print-baseline` to inspect current
-measurements, then update the baseline deliberately. Give reviewers the output
-of `python3 scripts/review_report.py BASE_COMMIT`; it marks every relaxation
-with a red indicator.
+The measurements must match `scripts/quality_baseline.json` exactly. More
+clones or duplicated lines, a file growing past its cap, more loose literals in
+a file fail as regressions. Engine production code may contain no
+`unwrap`/`expect`/`panic!` calls at all: `engine_production_panics` is fixed
+at 0, and no reason can raise it. Crate `tests/` and `benches/`, inline
+`#[cfg(test)]`/`#[cfg(all(test, ...))]` items, and modules declared
+`#[cfg(test)] mod x;` (with their submodules) are test code and are not counted.
+An improvement also fails until the same PR lowers the baseline, so the gain
+cannot be spent later:
+`uv run python scripts/check_quality.py --print-baseline > scripts/quality_baseline.json`.
+Existing files above 800 lines have individual caps equal to their measured
+lines; new files above 800 lines fail.
+
+Raising any other baseline entry above its value at the merge-base with `origin/main`
+is a relaxation. Each one needs a written reason in
+`scripts/quality_baseline_justifications.json`, keyed as the failure message
+prints it, for the exact new value:
+`{"oversized_files.engine/x.rs": {"value": 900, "reason": "..."}}`. Give
+reviewers the output of `uv run python scripts/review_report.py BASE_COMMIT`; it
+marks every relaxation with a red indicator and shows its reason.

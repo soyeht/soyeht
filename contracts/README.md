@@ -39,7 +39,7 @@ strings; in binary frames they are big-endian u64.
 To change a format, edit the schema and corresponding vectors:
 
 ```sh
-python3 contracts/generate.py
+uv run python contracts/generate.py
 ```
 
 The generator does not use the network. It produces Rust, Swift and TypeScript

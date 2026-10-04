@@ -14,20 +14,26 @@ from pathlib import Path
 
 from quality_core import (
     AREAS,
+    BASELINE_NAME,
     DUPLICATION_SCANS,
+    JUSTIFICATIONS_NAME,
+    PANIC_KEY,
     QualityError,
     SWIFT_LITERAL_PATTERNS,
+    baseline_at,
     baseline_from_measurement,
     baseline_relaxations,
     differences,
+    justification_for,
+    load_justifications,
     measure,
     periphery_status,
     tool_paths,
+    unjustified_relaxations,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE_NAME = "scripts/quality_baseline.json"
 
 
 def base_measurement(commit: str, jscpd: Path, machete: str) -> dict:
@@ -54,15 +60,8 @@ def base_measurement(commit: str, jscpd: Path, machete: str) -> dict:
 
 
 def base_baseline(commit: str, measured: dict) -> dict:
-    existing = subprocess.run(
-        ["git", "show", f"{commit}:{BASELINE_NAME}"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
-    if existing.returncode == 0:
-        return json.loads(existing.stdout)
-    return baseline_from_measurement(measured)
+    existing = baseline_at(ROOT, commit)
+    return existing if existing is not None else baseline_from_measurement(measured)
 
 
 def literal_totals(measurement: dict, area: str) -> dict[str, int]:
@@ -85,6 +84,7 @@ def render(
     base: str,
     periphery: str,
     previous_baseline: dict | None = None,
+    justifications: dict[str, dict] | None = None,
 ) -> str:
     lines = [f"Q1 quality delta vs {base}"]
     for area in DUPLICATION_SCANS:
@@ -115,6 +115,10 @@ def render(
         new = new_literals.get(path, {})
         if old != new:
             lines.append(f"  literal {path}: {old or 'none'} -> {new or 'none'}")
+    lines.append(
+        f"engine production unwrap/expect/panic!: {before[PANIC_KEY]} -> "
+        f"{current[PANIC_KEY]}"
+    )
     lines.append("cargo-machete: PASS")
     lines.append(f"Periphery: {periphery}")
     relaxations = baseline_relaxations(
@@ -122,19 +126,25 @@ def render(
     )
     if relaxations:
         lines.append(
-            "🔴 BASELINE RELAXATION — written justification required in the PR:"
+            "🔴 BASELINE RELAXATION — written justification required in "
+            f"{JUSTIFICATIONS_NAME}:"
         )
-        lines.extend(f"🔴 {explanation}" for explanation in relaxations)
+        for change in relaxations:
+            reason = justification_for(change, justifications or {})
+            lines.append(
+                f"🔴 {change.message} — "
+                + (f"justification: {reason}" if reason else "MISSING justification")
+            )
     else:
         lines.append("Baseline relaxations: none")
     drift = differences(after, current)
-    regressions = [text for direction, text in drift if direction == "RELAXATION"]
-    improvements = [text for direction, text in drift if direction == "IMPROVEMENT"]
+    regressions = [c.message for c in drift if c.direction == "RELAXATION"]
+    improvements = [c.message for c in drift if c.direction == "IMPROVEMENT"]
     if regressions:
         lines.append("FAIL: current measurements regress past the checked-in baseline:")
         lines.extend(f"  {explanation}" for explanation in regressions)
     if improvements:
-        lines.append("Improvements not yet recorded; lower the baseline in this PR:")
+        lines.append("FAIL: improvements not yet recorded; lower the baseline in this PR:")
         lines.extend(f"  {explanation}" for explanation in improvements)
     return "\n".join(lines)
 
@@ -156,6 +166,7 @@ def main() -> int:
         previous_baseline = base_baseline(commit, before)
         after = json.loads((ROOT / BASELINE_NAME).read_text())
         current = measure(ROOT, jscpd, machete)
+        justifications = load_justifications(ROOT)
         print(
             render(
                 before,
@@ -164,13 +175,13 @@ def main() -> int:
                 commit[:12],
                 periphery_status(ROOT),
                 previous_baseline,
+                justifications,
             )
         )
-        regressed = any(
-            direction == "RELAXATION"
-            for direction, _ in differences(after, current)
+        failed = bool(differences(after, current)) or bool(
+            unjustified_relaxations(previous_baseline, after, justifications)
         )
-        return 1 if regressed else 0
+        return 1 if failed else 0
     except (
         QualityError,
         OSError,

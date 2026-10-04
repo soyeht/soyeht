@@ -141,7 +141,7 @@ run is not accepted as evidence while hosted execution is disabled.
 
    ```sh
    cargo build --manifest-path engine/Cargo.toml --locked --workspace
-   python3 scripts/install_dev.py
+   uv run python scripts/install_dev.py
    engine/target/debug/soyeht --profile dev status
    ```
 

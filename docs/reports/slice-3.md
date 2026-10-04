@@ -125,7 +125,7 @@ text. The report PR repeats the same gate from the final implementation base.
    `scripts/check_all.sh` with `FORBIDDEN_TERMS` supplied through the
    environment.
 3. Build the Rust workspace and install only the new Dev profile with
-   `python3 scripts/install_dev.py`. Confirm the engine reports schema version
+   `uv run python scripts/install_dev.py`. Confirm the engine reports schema version
    10 and a connected ptyd.
 4. If macOS presents a Documents-folder request for `soyeht-ptyd`, allow it
    before diagnosing an ACP session as stalled. The task worktree inherits the

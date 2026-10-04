@@ -17,7 +17,7 @@ account identifier, usage value, usage percentage, or provider response body.
    launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.engine" || true
    launchctl bootout "gui/$(id -u)/com.soyeht.next.dev.ptyd" || true
    cargo build --manifest-path engine/Cargo.toml --locked --workspace
-   python3 scripts/install_dev.py
+   uv run python scripts/install_dev.py
    engine/target/debug/soyeht --profile dev status
    ```
 

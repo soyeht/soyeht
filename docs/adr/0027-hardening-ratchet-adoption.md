@@ -23,6 +23,7 @@ any other check.
 
 Hardening round 1 removes the inherited debt and enables the three Clippy panic
 lints as absolute compile-time denials. The comparison base is always the exact
-pull request base during a merge gate. A developer run without `--base`
-compares the working tree with `HEAD`, so uncommitted regressions are still
-visible.
+pull request base during a merge gate. A run without `--base` compares the
+working tree with the merge-base of `origin/main` and `HEAD`, so committed and
+uncommitted regressions on a branch are both visible. When that merge-base
+cannot be resolved, the check fails instead of falling back to `HEAD`.

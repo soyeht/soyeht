@@ -1,4 +1,6 @@
 #!/bin/bash
+# The single list of merge-gate steps. CI workflows call this script and keep
+# no step list of their own (scripts/test_gate_list.py enforces it).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -8,27 +10,30 @@ cd "$repo_root"
 run_exact_rust_test() {
     local expected="$1"
     shift
-    "$@" 2>&1 | python3 "$repo_root/scripts/require_one_rust_test.py" "$expected"
+    "$@" 2>&1 | uv run python "$repo_root/scripts/require_one_rust_test.py" "$expected"
 }
 
 # Optional scanner arguments cover the exact PR base and final title/body.
-python3 -m unittest discover -s scripts -p 'test_forbidden_terms.py'
-python3 scripts/forbidden_terms.py "$@"
+uv run python -m unittest discover -s scripts -p 'test_forbidden_terms.py'
+uv run python scripts/forbidden_terms.py "$@"
 unset FORBIDDEN_TERMS
 
-python3 -m unittest discover -s scripts -p 'test_hardening_gate.py'
-python3 -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
-python3 scripts/hardening_gate.py check-no-sql-outside-store "$@"
-python3 scripts/hardening_gate.py check-no-panic-in-production "$@"
-python3 scripts/hardening_gate.py check-verification-not-weakened "$@"
-python3 scripts/hardening_gate.py check-function-length "$@"
-python3 -m unittest discover -s scripts -p 'test_check_quality.py'
-python3 -m unittest discover -s scripts -p 'test_check_pane_interior.py'
-python3 scripts/check_quality.py
+uv run python -m unittest discover -s scripts -p 'test_hardening_gate.py'
+uv run python -m unittest discover -s scripts -p 'test_gate_list.py'
+uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
+# Without --base, the ratchets compare with the merge-base of origin/main and
+# HEAD and stop the gate when it cannot be resolved.
+uv run python scripts/hardening_gate.py check-no-sql-outside-store "$@"
+uv run python scripts/hardening_gate.py check-no-panic-in-production "$@"
+uv run python scripts/hardening_gate.py check-verification-not-weakened "$@"
+uv run python scripts/hardening_gate.py check-function-length "$@"
+uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
+uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
+uv run python scripts/check_quality.py
 
-python3 contracts/generate.py --check
-python3 -m unittest discover -s contracts -p 'test_*.py'
-python3 -m unittest discover -s scripts -p 'test_install_dev.py'
+uv run python contracts/generate.py --check
+uv run python -m unittest discover -s contracts -p 'test_*.py'
+uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
 
 (
     cd engine
@@ -47,32 +52,32 @@ python3 -m unittest discover -s scripts -p 'test_install_dev.py'
         terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
         -- --ignored --exact --nocapture --test-threads=1
 )
-python3 -m unittest discover -s scripts -p 'test_tcc_guard.py'
-python3 scripts/tcc_guard.py snapshot .cache/tcc-guard.json
-python3 scripts/e2e.py --report .cache/e2e.json
-python3 scripts/e2e_agents.py --report .cache/e2e-agents.json
-python3 scripts/e2e_tasks.py --report .cache/e2e-tasks.json
-python3 scripts/e2e_editor.py --report .cache/e2e-editor.json
-python3 scripts/e2e_web.py --report .cache/e2e-web.json
-python3 scripts/e2e_writing.py --report .cache/e2e-writing.json
+uv run python -m unittest discover -s scripts -p 'test_tcc_guard.py'
+uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
+uv run python scripts/e2e.py --report .cache/e2e.json
+uv run python scripts/e2e_agents.py --report .cache/e2e-agents.json
+uv run python scripts/e2e_tasks.py --report .cache/e2e-tasks.json
+uv run python scripts/e2e_editor.py --report .cache/e2e-editor.json
+uv run python scripts/e2e_web.py --report .cache/e2e-web.json
+uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
-    python3 scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
-    python3 scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
+    uv run python scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
+    uv run python scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
 fi
-python3 scripts/tcc_guard.py check .cache/tcc-guard.json
+uv run python scripts/tcc_guard.py check .cache/tcc-guard.json
 
 bash scripts/check_swift.sh
-python3 -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'
-python3 scripts/check_mac_text_fonts.py
-python3 -m unittest discover -s scripts -p 'test_check_mac_identifier_text.py'
-python3 scripts/check_mac_identifier_text.py
-python3 -m unittest discover -s scripts -p 'test_check_mac_view_colors.py'
-python3 scripts/check_mac_view_colors.py
+uv run python -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'
+uv run python scripts/check_mac_text_fonts.py
+uv run python -m unittest discover -s scripts -p 'test_check_mac_identifier_text.py'
+uv run python scripts/check_mac_identifier_text.py
+uv run python -m unittest discover -s scripts -p 'test_check_mac_view_colors.py'
+uv run python scripts/check_mac_view_colors.py
 swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources
 swift test --package-path apps/shared
 bash scripts/check_mac.sh
-python3 -m unittest discover -s scripts -p 'test_check_editor_performance.py'
-python3 scripts/check_editor_performance.py
+uv run python -m unittest discover -s scripts -p 'test_check_editor_performance.py'
+uv run python scripts/check_editor_performance.py
 bash scripts/check_ios.sh
 
 (

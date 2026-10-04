@@ -11,7 +11,7 @@ Build the Rust workspace and run the opt-in check from the repository root:
 
 ```sh
 (cd engine && cargo build --locked --workspace)
-SOYEHT_REAL_ACP=1 python3 scripts/e2e_real_acp.py \
+SOYEHT_REAL_ACP=1 uv run python scripts/e2e_real_acp.py \
   --report .cache/e2e-real-acp.json
 ```
 

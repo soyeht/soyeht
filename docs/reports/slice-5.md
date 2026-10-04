@@ -140,7 +140,7 @@ The report PR repeats the complete gate from the final implementation base.
    `scripts/check_all.sh` with `FORBIDDEN_TERMS` supplied through the
    environment.
 3. Build the Rust workspace and install only the new Dev profile with
-   `python3 scripts/install_dev.py`. Confirm schema 19 and connected engine and
+   `uv run python scripts/install_dev.py`. Confirm schema 19 and connected engine and
    ptyd services.
 4. Build and open the development-signed Mac app. Start a disposable local HTTP
    server and create a web pane from its detected row or address.
