@@ -50,7 +50,7 @@ import Testing
 }
 
 @Test func spacesHangPastTheRowEndAndTheNextCharacterStartsTheRow() {
-  // Eight cells: "abcdef" then three example hang on row one, "g" opens row two.
+  // Eight cells: "abcdef" then three space characters hang on row one, "g" opens row two.
   #expect(EditorWrapLayout(text: "abcdef   g", columns: 8).rowCount == 2)
   #expect(
     EditorWrapLayout(text: "abcdef" + String(repeating: " ", count: 30), columns: 8).rowCount == 1)
