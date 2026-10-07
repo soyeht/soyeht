@@ -96,6 +96,116 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
         result = gate.metrics(MemoryTree({"engine/tool/src/lib.rs": source}))
         self.assertEqual([(item.name, item.lines) for item in result.functions], [("real", 1)])
 
+    def function_lengths(self, path, source):
+        result = gate.metrics(MemoryTree({path: source}))
+        return [(item.name, item.lines) for item in result.functions]
+
+    def test_swift_protocol_requirement_is_not_credited_with_the_next_type(self):
+        body = "        work()\n" * 40
+        source = (
+            "protocol DictationTimer {\n"
+            "    func cancel()\n"
+            "}\n"
+            "final class Timer: DictationTimer {\n"
+            "    func cancel() {\n" + body + "    }\n"
+            "}\n"
+        )
+        self.assertEqual(self.function_lengths("apps/shared/Timer.swift", source), [("cancel", 42)])
+
+    def test_swift_bodyless_requirements_end_at_newline_brace_or_semicolon(self):
+        source = (
+            "protocol Port {\n"
+            "    func one()\n"
+            "    func two() throws\n"
+            "    func three() -> Int where Self: Sendable\n"
+            "    init(value: Int)\n"
+            "    func four(); func five()\n"
+            "}\n"
+            "protocol Inline { func six() }\n"
+            "struct Real {\n"
+            "    func real() {\n        work()\n    }\n"
+            "}\n"
+        )
+        self.assertEqual(self.function_lengths("apps/shared/Port.swift", source), [("real", 3)])
+
+    def test_swift_signatures_that_span_lines_keep_their_body(self):
+        source = (
+            "struct Model {\n"
+            "    @discardableResult\n"
+            "    @MainActor\n"
+            "    func multiline(\n"
+            "        first: Int,\n"
+            "        second: String\n"
+            "    ) async throws -> Int {\n"
+            "        work()\n"
+            "    }\n"
+            "    func constrained<T: Sequence>(items: T) -> [T.Element]\n"
+            "        where T.Element: Hashable,\n"
+            "              T: Sendable\n"
+            "    {\n"
+            "        work()\n"
+            "    }\n"
+            "    func trailingWhere<T>(items: T) -> Int where\n"
+            "        T: Equatable {\n"
+            "        work()\n"
+            "    }\n"
+            "    func arrow(callback: (Int) -> Void)\n"
+            "        -> (Int,\n"
+            "            String)\n"
+            "    {\n"
+            "        work()\n"
+            "    }\n"
+            "    func generic<T: Fn() -> Void>(_ value: T) { work() }\n"
+            "}\n"
+        )
+        self.assertEqual(
+            self.function_lengths("apps/shared/Model.swift", source),
+            [("multiline", 6), ("constrained", 6), ("trailingWhere", 4), ("arrow", 6), ("generic", 1)],
+        )
+
+    def test_swift_closure_in_default_argument_does_not_open_the_body(self):
+        source = (
+            "protocol Loader {\n"
+            "    func load(done: () -> Void = { work() })\n"
+            "}\n"
+            "struct Real {\n"
+            "    func load(done: () -> Void = {\n        work()\n    }) {\n        run()\n    }\n"
+            "}\n"
+        )
+        self.assertEqual(self.function_lengths("apps/shared/Loader.swift", source), [("load", 5)])
+
+    def test_rust_signatures_with_semicolons_and_where_clauses_keep_their_body(self):
+        source = (
+            "trait Port {\n"
+            "    fn load(&self) -> [u8; 4];\n"
+            "}\n"
+            "fn array(bytes: [u8; 4]) -> [u8; 2] {\n    work();\n}\n"
+            "fn bounded<F>(call: F) -> u8\n"
+            "where\n    F: Fn(u8) -> u8,\n{\n    work();\n}\n"
+            "fn closure(call: impl Fn() -> u8) { work(); }\n"
+        )
+        self.assertEqual(
+            self.function_lengths("engine/tool/src/lib.rs", source),
+            [("array", 3), ("bounded", 6), ("closure", 1)],
+        )
+
+    def test_rust_lifetimes_do_not_hide_the_signature_from_the_scanner(self):
+        source = (
+            "fn matches<'t>(&'t self, text: &'t str) -> impl Iterator<Item = (usize, usize)> + 't {\n"
+            "    work();\n}\n"
+            "fn brace() -> char { '{' }\n"
+        )
+        self.assertEqual(
+            self.function_lengths("engine/tool/src/lib.rs", source), [("matches", 3), ("brace", 1)]
+        )
+
+    def test_typescript_overloads_and_default_closures(self):
+        source = (
+            "function overload(x: number): void;\n"
+            "function overload(x: string, cb = () => { work(); }): void {\n  work();\n}\n"
+        )
+        self.assertEqual(self.function_lengths("web/src/app.ts", source), [("overload", 3)])
+
     def test_panic_inventory_covers_every_production_crate(self):
         result = gate.metrics(MemoryTree({
             "engine/soyeht-store/src/lib.rs": "fn store() { None.unwrap(); }",

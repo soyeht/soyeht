@@ -93,8 +93,16 @@ def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def mask(text: str, *, keep_strings: bool = False) -> tuple[str, list[str]]:
-    """Blank comments and literals while preserving offsets and newlines."""
+LIFETIME = re.compile(r"'[A-Za-z_]\w*(?![\w'])")
+
+
+def mask(
+    text: str, *, keep_strings: bool = False, lifetimes: bool = False
+) -> tuple[str, list[str]]:
+    """Blank comments and literals while preserving offsets and newlines.
+
+    With `lifetimes`, a Rust `'a` is kept as code instead of opening a character literal.
+    """
     output = list(text)
     strings: list[str] = []
     index = 0
@@ -162,6 +170,10 @@ def mask(text: str, *, keep_strings: bool = False) -> tuple[str, list[str]]:
                 blank(start, index)
             continue
 
+        lifetime = LIFETIME.match(text, index) if lifetimes else None
+        if lifetime:
+            index = lifetime.end()
+            continue
         if text[index] == "'":
             closing = index + 1
             escaped = False
@@ -283,15 +295,76 @@ def without_cfg_test(source: str) -> str:
     return "".join(output)
 
 
+SWIFT_CONTINUES_AFTER_LINE = re.compile(r"\s*(?:\{|->|,|&|where\b|throws\b|rethrows\b|async\b)")
+SWIFT_CONTINUES_BEFORE_LINE = re.compile(r"(?:->|,|&|:|==|\bwhere)$")
+
+
+def skip_generic_parameters(clean: str, index: int) -> int:
+    """Return the index after a `<...>` list at `index`, ignoring `->` and `=>` arrows."""
+    cursor = index
+    while clean[cursor:cursor + 1].isspace():
+        cursor += 1
+    if clean[cursor:cursor + 1] != "<":
+        return index
+    depth = 0
+    while cursor < len(clean):
+        character = clean[cursor]
+        if character == "<":
+            depth += 1
+        elif character == ">" and clean[cursor - 1] not in "-=":
+            depth -= 1
+            if depth == 0:
+                return cursor + 1
+        cursor += 1
+    return index
+
+
+def swift_line_continues(clean: str, newline: int) -> bool:
+    """Whether a declaration signature goes on after the newline at `newline`."""
+    if SWIFT_CONTINUES_AFTER_LINE.match(clean, newline + 1):
+        return True
+    line_start = clean.rfind("\n", 0, newline) + 1
+    return bool(SWIFT_CONTINUES_BEFORE_LINE.search(clean[line_start:newline].rstrip()))
+
+
+def body_opening(clean: str, start: int, *, swift: bool) -> int | None:
+    """Find the `{` that opens the body of the declaration signature at `start`.
+
+    Nesting is tracked so braces in default-argument closures and semicolons in
+    array types do not count. A signature that ends first has no body: a Rust or
+    TypeScript `;`, a closing `}` of the enclosing type, or, in Swift, a newline
+    that does not continue the signature (a protocol requirement).
+    """
+    depth = 0
+    cursor = skip_generic_parameters(clean, start)
+    while cursor < len(clean):
+        character = clean[cursor]
+        if character in "([":
+            depth += 1
+        elif character in ")]":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif depth == 0:
+            if character == "{":
+                return cursor
+            if character in ";}":
+                return None
+            if swift and character == "\n" and not swift_line_continues(clean, cursor):
+                return None
+        cursor += 1
+    return None
+
+
 def brace_functions(path: str, source: str, pattern: re.Pattern[str]) -> list[Function]:
-    clean, _ = mask(source)
+    clean, _ = mask(source, lifetimes=pattern is RUST_FUNCTION)
+    swift = pattern is SWIFT_FUNCTION
     functions = []
     for found in pattern.finditer(clean):
-        opening = clean.find("{", found.end() - 1)
-        if opening < 0:
-            continue
-        semicolon = clean.find(";", found.end() - 1, opening)
-        if semicolon >= 0:
+        # `init(` and `deinit {` end on the opening delimiter; a name ends before it.
+        start = found.end() - 1 if clean[found.end() - 1] in "({" else found.end()
+        opening = body_opening(clean, start, swift=swift)
+        if opening is None:
             continue
         closing = matching_brace(clean, opening)
         if closing is None:
