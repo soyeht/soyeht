@@ -925,9 +925,7 @@ struct PaneGrid: View {
           .padding(PaneLayoutContentMetrics.paneCardInset)
       } else if panes.isEmpty {
         VStack(spacing: MacTheme.Space.x18) {
-          Image(systemName: "rectangle.split.2x1")
-            .font(.system(size: 42, weight: .light))
-            .foregroundStyle(MacTheme.secondary)
+          SoyehtMark()
           Text("Your space to begin")
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
           Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))

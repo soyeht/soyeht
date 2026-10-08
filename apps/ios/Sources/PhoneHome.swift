@@ -109,8 +109,7 @@ struct PhoneHome: View {
   private var onboarding: some View {
     ScrollView {
       VStack(spacing: 26) {
-        Image(systemName: "laptopcomputer.and.iphone").font(.system(size: 64, weight: .light))
-          .foregroundStyle(PhonePalette.accent).padding(.top, 38)
+        SoyehtMark().padding(.top, 38)
         Text("Your work, with you").font(.system(size: 28, weight: .bold, design: .rounded))
           .multilineTextAlignment(.center)
         Text(

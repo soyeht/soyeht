@@ -18,6 +18,7 @@ let package = Package(
             ],
             resources: [.process("Resources")]
         ),
+        .executableTarget(name: "SoyehtIconGenerator", dependencies: ["SoyehtClient"]),
         .testTarget(name: "SoyehtClientTests", dependencies: ["SoyehtClient"]),
     ]
 )

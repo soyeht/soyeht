@@ -49,6 +49,7 @@
 				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"INFOPLIST_FILE" = "Info.plist";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
 				"CODE_SIGN_ENTITLEMENTS" = "SoyehtPhone.entitlements";
 				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
 				"SUPPORTS_MACCATALYST" = "NO";
@@ -84,7 +85,7 @@
 		"AD936FCBED631FA67E05C3EA" = {
 			"isa" = "PBXGroup";
 			"sourceTree" = "<group>";
-			"children" = ( "41CF6794BA4200B839C53531", "D20000000000000000000011", "D90000000000000000000011", "0A3E27B8CA818264D75C8D81", );
+			"children" = ( "41CF6794BA4200B839C53531", "D20000000000000000000011", "D90000000000000000000011", "DB0000000000000000000011", "0A3E27B8CA818264D75C8D81", );
 		};
 		"4C9A8D7A2C3C670C889D63E4" = {
 			"isa" = "XCBuildConfiguration";
@@ -107,6 +108,7 @@
 				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"INFOPLIST_FILE" = "Info.plist";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
 				"CODE_SIGN_ENTITLEMENTS" = "SoyehtPhone.entitlements";
 				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
 				"SUPPORTS_MACCATALYST" = "NO";
@@ -123,8 +125,18 @@
 		"41D311A605520FC7B8B9A980" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ( "D20000000000000000000001", );
+			"files" = ( "D20000000000000000000001", "DB0000000000000000000001", );
 			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"DB0000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "DB0000000000000000000011";
+		};
+		"DB0000000000000000000011" = {
+			"path" = "Resources/Assets.xcassets";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder.assetcatalog";
+			"sourceTree" = "<group>";
 		};
 		"D20000000000000000000001" = {
 			"isa" = "PBXBuildFile";

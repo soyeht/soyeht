@@ -26,7 +26,7 @@
     "apps/ios/Sources/PhoneHome.swift": {
       "corner_radius": 1,
       "padding": 7,
-      "system_font_size": 3
+      "system_font_size": 2
     },
     "apps/ios/Sources/PhonePaneDetail.swift": {
       "padding": 3,
@@ -90,7 +90,7 @@
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
       "padding": 5,
-      "system_font_size": 5
+      "system_font_size": 4
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
       "padding": 3,
@@ -236,7 +236,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1492,
     "apps/mac/Sources/PreferencesPanel.swift": 926,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
-    "apps/mac/Sources/WorkspaceWindow.swift": 2860,
+    "apps/mac/Sources/WorkspaceWindow.swift": 2858,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
