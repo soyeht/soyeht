@@ -9,6 +9,19 @@ public enum SpeechEvent: Equatable, Sendable {
   case failed(String)
 }
 
+extension SpeechEvent {
+  /// What a recognizer callback carries, as one event: a transcript wins over an error.
+  init?(text: String?, isFinal: Bool, failure: String?) {
+    if let text {
+      self = isFinal ? .final(text) : .partial(text)
+    } else if let failure {
+      self = .failed(failure)
+    } else {
+      return nil
+    }
+  }
+}
+
 public enum DictationAuthorization: Equatable, Sendable {
   case authorized
   case denied(String)

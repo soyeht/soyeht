@@ -15,9 +15,7 @@ import Foundation
   }
 
   public func authorize() async -> DictationAuthorization {
-    let speech = await withCheckedContinuation { continuation in
-      SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
-    }
+    let speech = await SystemCallback.value { SFSpeechRecognizer.requestAuthorization($0) }
     guard speech == .authorized else {
       return .denied("Allow speech recognition for Soyeht in System Settings to dictate.")
     }
@@ -55,14 +53,14 @@ import Foundation
   }
 
   /// The audio tap runs on the audio thread, so it is built outside the main actor.
-  private nonisolated static func feed(
+  nonisolated static func feed(
     _ request: SFSpeechAudioBufferRecognitionRequest
   ) -> AVAudioNodeTapBlock {
     { buffer, _ in request.append(buffer) }
   }
 
   /// Results arrive on the recognizer's queue and hop to the main actor.
-  private nonisolated static func report(
+  nonisolated static func report(
     to onEvent: @escaping @MainActor (SpeechEvent) -> Void
   ) -> @Sendable (SFSpeechRecognitionResult?, (any Error)?) -> Void {
     { result, error in
@@ -70,12 +68,8 @@ import Foundation
       let isFinal = result?.isFinal ?? false
       let failure = error?.localizedDescription
       Task { @MainActor in
-        if let text, isFinal {
-          onEvent(.final(text))
-        } else if let text {
-          onEvent(.partial(text))
-        } else if let failure {
-          onEvent(.failed(failure))
+        if let event = SpeechEvent(text: text, isFinal: isFinal, failure: failure) {
+          onEvent(event)
         }
       }
     }
@@ -105,9 +99,13 @@ import Foundation
 
   private static func microphoneAccess() async -> Bool {
     #if os(iOS)
-      await AVAudioApplication.requestRecordPermission()
+      await SystemCallback.value {
+        AVAudioApplication.requestRecordPermission(completionHandler: $0)
+      }
     #else
-      await AVCaptureDevice.requestAccess(for: .audio)
+      await SystemCallback.value {
+        AVCaptureDevice.requestAccess(for: .audio, completionHandler: $0)
+      }
     #endif
   }
 }
