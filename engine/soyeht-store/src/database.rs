@@ -246,6 +246,7 @@ pub struct Snapshot {
 pub struct Store {
     pub(crate) connection: Connection,
     pub db_id: String,
+    pub(crate) resting: crate::resting::Resting,
 }
 
 /// The only database write capability exposed to engine mutations.
@@ -437,7 +438,13 @@ impl Store {
             connection.query_row("SELECT value FROM metadata WHERE key='db_id'", [], |row| {
                 row.get(0)
             })?;
-        Ok(Self { connection, db_id })
+        #[cfg(feature = "test-support")]
+        crate::test_support::count_statements(&connection);
+        Ok(Self {
+            connection,
+            db_id,
+            resting: Default::default(),
+        })
     }
 
     /// This connection belongs only to the engine. All writes use its transaction.

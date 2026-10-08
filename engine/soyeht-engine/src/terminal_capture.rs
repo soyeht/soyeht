@@ -722,17 +722,14 @@ mod tests {
         model::{RunningPane, StoredPane},
         outbox,
         pane_observations::label_write_timeout_message,
-        ports::{
-            PortScanObservation, PortScanPort,
-            testing::{FakeSupervisor, FixedClock},
-        },
+        ports::testing::{EmptyPortScan, FakeSupervisor, FixedClock},
         screen::Screen,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use soyeht_pane_state::RecordedRow;
     use soyeht_protocol::{Pane, PaneState, StateSource};
     use soyeht_ptyd::wire::{Output, Response};
-    use std::{collections::VecDeque, fs, io, os::unix::fs::PermissionsExt, time::Instant};
+    use std::{collections::VecDeque, fs, os::unix::fs::PermissionsExt, time::Instant};
     use uuid::Uuid;
 
     const CADENCE_RUNS: usize = 10;
@@ -847,17 +844,6 @@ mod tests {
             time_coverage_basis_points(0, 100, [(20, 30), (50, 60)].into_iter()),
             8_000
         );
-    }
-
-    struct EmptyPortScan;
-
-    impl PortScanPort for EmptyPortScan {
-        fn scan(&mut self) -> io::Result<PortScanObservation> {
-            Ok(PortScanObservation {
-                listeners: Vec::new(),
-                directories: Vec::new(),
-            })
-        }
     }
 
     #[test]

@@ -171,6 +171,10 @@ impl Core {
     }
 
     fn advance_dependency_blocks(&mut self) -> Result<()> {
+        // A dependency block ends only when a task row changes.
+        let Some(seen) = self.store.begin_poll("dependency_blocks", self.now_ms()) else {
+            return Ok(());
+        };
         let blocked = self.store.blocked_tasks().map_err(errors::storage)?;
         for task in blocked {
             let Some(blocking) = task.blocking.as_ref() else {
@@ -198,6 +202,7 @@ impl Core {
                 _ => {}
             }
         }
+        self.store.rest("dependency_blocks", seen, i64::MAX);
         Ok(())
     }
 

@@ -424,12 +424,13 @@ impl Core {
         inject_per_pane_poll_failure(self, pane)?;
         drop_current_agent_before_poll(self, pane)?;
         self.decode_agent_log(pane)?;
-        let saved = self.panes[pane].stored.clone();
+        let stored = &self.panes[pane].stored;
+        let sequence_base = stored.sequence_base;
         let instance_id = errors::invariant(
-            saved.instance_id.clone(),
+            stored.instance_id.clone(),
             "Agent process has no adopted instance",
         )?;
-        let seq = self.panes[pane].screen.next_offset() - saved.sequence_base;
+        let seq = self.panes[pane].screen.next_offset() - sequence_base;
         let Response::Output(output) = self.pty_request(Request::Drain {
             instance_id: instance_id.clone(),
             from_seq: seq,
@@ -451,8 +452,8 @@ impl Core {
                 .ok_or_else(|| errors::internal("Agent pane disappeared during output gap"))?
                 .screen
                 .append(Record::Gap {
-                    from: saved.sequence_base + seq,
-                    to: saved.sequence_base + output.from_seq,
+                    from: sequence_base + seq,
+                    to: sequence_base + output.from_seq,
                 })?;
         }
         let bytes = STANDARD
@@ -469,15 +470,21 @@ impl Core {
                 .ok_or_else(|| errors::internal("Agent pane disappeared during output append"))?
                 .screen
                 .append(Record::Data {
-                    offset: saved.sequence_base + output.from_seq,
+                    offset: sequence_base + output.from_seq,
                     bytes,
                 })?;
         }
         self.decode_agent_log(pane)?;
-        self.pty_request(Request::Ack {
-            instance_id,
-            seq: self.agents[pane].state.acknowledged_offset,
-        })?;
+        let acknowledged = self.agents[pane].state.acknowledged_offset;
+        if errors::invariant(self.agents.get_mut(pane), "Agent runtime disappeared")?
+            .idle
+            .needs_acknowledgement(&instance_id, acknowledged)
+        {
+            self.pty_request(Request::Ack {
+                instance_id,
+                seq: acknowledged,
+            })?;
+        }
         if output.exited {
             // Exit does not imply that the last page has been consumed. Keep
             // draining before retiring the process or trying to write to it.
@@ -490,11 +497,17 @@ impl Core {
                 return self.fail_agent(pane, "Agent process exited");
             }
         }
+        // An idle agent has nothing to advance until its state changes.
+        if self.agents[pane].is_settled(self.now_ms()) {
+            return Ok(());
+        }
+        let revision = self.agents[pane].idle.revision();
         if !self.check_agent_deadlines(pane)? {
             return Ok(());
         }
         self.advance_agent(pane)?;
-        self.flush_agent_outbox(pane)
+        self.flush_agent_outbox(pane)?;
+        self.settle_agent(pane, revision)
     }
 
     pub(crate) fn restart_after_probe(&mut self, pane: &str) -> Result<()> {
@@ -754,22 +767,7 @@ mod tests {
     #[test]
     fn agent_session_rule_reads_requests_and_time_through_ports() {
         let store = MemoryStore::default();
-        let mut state = super::super::state::State::new(
-            HarnessLaunch {
-                id: "test".into(),
-                name: "Test".into(),
-                command: "/test".into(),
-                args: Vec::new(),
-                version: "1".into(),
-                environment: None,
-            },
-            "digest".into(),
-            None,
-        )
-        .unwrap();
-        state.phase = Phase::Ready;
-        state.session_id = Some("session".into());
-        state.requested_options.clear();
+        let mut state = super::super::idle::tests::ready_state();
         state
             .enqueue("do work".into(), PromptOrigin::Automatic, "fixed".into())
             .unwrap();

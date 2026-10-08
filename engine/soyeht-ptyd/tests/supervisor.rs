@@ -238,14 +238,7 @@ fn killing_a_command_preserves_its_output_until_explicit_release() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(matches!(
-        client
-            .request(Request::Close {
-                instance_id: instance.instance_id.clone()
-            })
-            .unwrap(),
-        Response::Ok
-    ));
+    close(&mut client, &instance);
     assert!(matches!(
         client
             .request(Request::Drain {
@@ -342,14 +335,7 @@ fn output_overflow_is_explicit_and_does_not_block_the_child() {
             .unwrap(),
         Response::Ok
     ));
-    assert!(matches!(
-        client
-            .request(Request::Close {
-                instance_id: instance.instance_id
-            })
-            .unwrap(),
-        Response::Ok
-    ));
+    close(&mut client, &instance);
 }
 
 #[test]
@@ -522,14 +508,7 @@ fn pipes_recover_native_requests_after_ack_and_reconnect_without_echoing_stdin()
         matches!(client.request(Request::Resize { instance_id: instance.instance_id.clone(), cols: 80, rows: 24 }).unwrap(), Response::Error { kind, .. } if kind == "wrong_process_kind")
     );
     assert_private_diagnostic(&daemon, &instance.instance_id);
-    assert!(matches!(
-        client
-            .request(Request::Close {
-                instance_id: instance.instance_id
-            })
-            .unwrap(),
-        Response::Ok
-    ));
+    close(&mut client, &instance);
 }
 
 #[test]
@@ -653,4 +632,98 @@ fn pipe_guard_preserves_native_exit_code_and_reports_spawn_failure() {
         client.request(Request::Spawn(config)).unwrap(),
         Response::Error { .. }
     ));
+}
+
+fn is_running(pid: u32) -> bool {
+    let status = Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    let status = String::from_utf8(status.stdout).unwrap();
+    !status.trim().is_empty() && !status.trim().starts_with('Z')
+}
+
+/// An adapter whose child starts its own session, as a shell tool does. The
+/// child leaves the adapter's process group, so killing the group misses it.
+fn adapter_with_escaped_child(daemon: &Daemon, kind: ProcessKind) -> (Spawn, PathBuf) {
+    let marker = daemon.directory.join("escaped.pid");
+    let mut config = daemon.shell();
+    config.kind = kind;
+    config.argv = vec![
+        "/usr/bin/perl".into(),
+        "-e".into(),
+        r#"use POSIX qw(setsid);
+        if (fork() == 0) {
+            setsid();
+            open(my $file, '>', $ARGV[0]); print $file $$; close $file;
+            exec('sleep', '300');
+        }
+        sleep 300;"#
+            .into(),
+        marker.to_string_lossy().into_owned(),
+    ];
+    (config, marker)
+}
+
+fn wait_for_pid(marker: &PathBuf) -> u32 {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        if let Ok(text) = fs::read_to_string(marker)
+            && let Ok(pid) = text.trim().parse()
+        {
+            return pid;
+        }
+        assert!(Instant::now() < deadline, "the escaped child never started");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn close(client: &mut Client, instance: &Instance) {
+    assert!(matches!(
+        client
+            .request(Request::Close {
+                instance_id: instance.instance_id.clone()
+            })
+            .unwrap(),
+        Response::Ok
+    ));
+}
+
+#[test]
+fn closing_an_agent_adapter_ends_children_that_left_its_process_group() {
+    let (daemon, mut client) = Daemon::start();
+    let (config, marker) = adapter_with_escaped_child(&daemon, ProcessKind::PipesAcp);
+    let instance = spawn(&mut client, config);
+    let escaped = wait_for_pid(&marker);
+    assert!(is_running(escaped) && is_running(instance.pid));
+
+    close(&mut client, &instance);
+
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while is_running(escaped) || is_running(instance.pid) {
+        assert!(
+            Instant::now() < deadline,
+            "a child of the closed adapter survived"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn closing_a_terminal_keeps_the_group_only_rule() {
+    let (daemon, mut client) = Daemon::start();
+    let (config, marker) = adapter_with_escaped_child(&daemon, ProcessKind::Pty);
+    let instance = spawn(&mut client, config);
+    let escaped = wait_for_pid(&marker);
+
+    close(&mut client, &instance);
+
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while is_running(instance.pid) {
+        assert!(Instant::now() < deadline, "the terminal process survived");
+        thread::sleep(Duration::from_millis(20));
+    }
+    // A daemon the user detached from a terminal is not the supervisor's to end.
+    assert!(is_running(escaped));
+    let _ = Command::new("kill").arg(escaped.to_string()).status();
 }

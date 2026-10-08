@@ -4,11 +4,13 @@ pub mod agents;
 pub mod database;
 pub use database::{Error, Result};
 pub mod domain;
+mod due;
 pub mod editor;
 pub mod editor_tabs;
 mod english_values;
 pub mod languages;
 pub mod push;
+mod resting;
 pub mod segments;
 pub mod tasks;
 #[cfg(feature = "test-support")]

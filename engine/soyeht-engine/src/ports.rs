@@ -413,6 +413,18 @@ pub(crate) mod testing {
         }
     }
 
+    /// A machine with nothing listening.
+    pub struct EmptyPortScan;
+
+    impl PortScanPort for EmptyPortScan {
+        fn scan(&mut self) -> std::io::Result<PortScanObservation> {
+            Ok(PortScanObservation {
+                listeners: Vec::new(),
+                directories: Vec::new(),
+            })
+        }
+    }
+
     #[derive(Default)]
     pub struct FakeSupervisor {
         pub requests: Vec<Value>,

@@ -860,7 +860,7 @@ impl Core {
     }
 
     pub(crate) fn cleanup_retired_agent_processes(&mut self) -> Result<()> {
-        let panes = self.agents.keys().cloned().collect::<Vec<_>>();
+        let panes = self.panes_with_retired_processes();
         for pane in panes {
             // Closed agent panes remain in the runtime map so their durable
             // process-retirement ledger can converge. `agent_state` rejects

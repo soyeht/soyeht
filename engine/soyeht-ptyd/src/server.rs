@@ -290,7 +290,7 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
             .instances
             .remove(&instance.spawn.instance_key);
         let mut child = lock(&live.child, "child")?;
-        process::terminate_group(child.id());
+        terminate(&live, child.id());
         let _ = child.wait();
         return Err(failure);
     }
@@ -306,13 +306,23 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
     Ok(Response::Instance(instance))
 }
 
+/// Ends an instance's process. A guarded process is an agent adapter or a
+/// language server, whose whole process tree must go with it.
+fn terminate(live: &Live, pid: u32) {
+    if live.guard.is_some() {
+        process::terminate_tree(pid);
+    } else {
+        process::terminate_group(pid);
+    }
+}
+
 fn execute_kill(state: &State, instance_id: &str) -> Result<Response> {
     let Some(live) = state.live.get(instance_id) else {
         return Ok(error("not_found", "process not found"));
     };
     let mut child = lock(&live.child, "child")?;
     if child.try_wait()?.is_none() {
-        process::terminate_group(child.id());
+        terminate(live, child.id());
         let _ = child.wait();
     }
     // Keep the live output and registry entry until Close. ACP kill stops a
@@ -342,7 +352,7 @@ fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
         if let Some(live) = state.live.remove(instance_id) {
             let mut child = lock(&live.child, "child")?;
             if child.try_wait()?.is_none() {
-                process::terminate_group(child.id());
+                terminate(&live, child.id());
                 let _ = child.wait();
             }
             live.exited.store(true, Ordering::Release);

@@ -405,6 +405,7 @@ impl Core {
         for id in ids {
             self.reconcile_pane(&id, &instances, &reserved_panes)?;
         }
+        self.close_orphaned_agent_processes(&instances)?;
         self.reconcile_language_servers(&instances)
     }
 

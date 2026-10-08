@@ -1,8 +1,8 @@
 {
   "duplication": {
     "engine": {
-      "clones": 413,
-      "duplicated_lines": 3678
+      "clones": 411,
+      "duplicated_lines": 3659
     },
     "ios": {
       "clones": 6,
@@ -244,7 +244,7 @@
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-cli/src/task_commands.rs": 862,
     "engine/soyeht-engine/src/agents/questions.rs": 1119,
-    "engine/soyeht-engine/src/agents/state.rs": 885,
+    "engine/soyeht-engine/src/agents/state.rs": 884,
     "engine/soyeht-engine/src/agents/switching.rs": 1063,
     "engine/soyeht-engine/src/editor/service.rs": 1036,
     "engine/soyeht-engine/src/experiment_export.rs": 1216,
@@ -253,13 +253,12 @@
     "engine/soyeht-engine/src/tasks/feedback.rs": 909,
     "engine/soyeht-engine/src/tasks/review.rs": 826,
     "engine/soyeht-engine/src/tasks/worktree.rs": 815,
-    "engine/soyeht-engine/src/terminal_capture.rs": 1587,
+    "engine/soyeht-engine/src/terminal_capture.rs": 1573,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1115,
     "engine/soyeht-engine/tests/runtime.rs": 8682,
     "engine/soyeht-mcp/src/tools.rs": 1189,
     "engine/soyeht-store/src/editor.rs": 848,
-    "engine/soyeht-store/src/tasks.rs": 855,
     "engine/soyeht-store/tests/agents.rs": 1085,
     "engine/soyeht-store/tests/tasks.rs": 992
   },

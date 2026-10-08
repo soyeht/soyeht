@@ -13,11 +13,13 @@ pub mod failures;
 pub mod filesystem;
 pub mod forms;
 pub mod hooks;
+pub mod idle;
 pub mod lifecycle;
 pub mod mcp;
 pub mod methods;
 pub mod naming;
 pub mod opening;
+pub mod orphans;
 pub mod peer;
 pub mod pending;
 pub mod questions;
@@ -54,12 +56,14 @@ use uuid::Uuid;
 pub struct Running {
     pub state: State,
     pub decoder: Decoder,
+    pub(crate) idle: idle::Idle,
 }
 impl Running {
     pub fn new(state: State) -> Self {
         Self {
             decoder: Decoder::new(state.acknowledged_offset),
             state,
+            idle: Default::default(),
         }
     }
 }
@@ -366,7 +370,9 @@ impl Core {
     }
 
     pub(crate) fn replace_agent_state(&mut self, id: &str, state: State) -> Result<()> {
-        errors::invariant(self.agents.get_mut(id), "Agent runtime disappeared")?.state = state;
+        let running = errors::invariant(self.agents.get_mut(id), "Agent runtime disappeared")?;
+        running.state = state;
+        running.idle.touch();
         Ok(())
     }
 
@@ -378,6 +384,7 @@ impl Core {
         .stored = saved;
         if let Some(running) = self.agents.get_mut(id) {
             running.state = state;
+            running.idle.touch();
         } else {
             self.agents.insert(id.to_owned(), Running::new(state));
         }

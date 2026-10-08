@@ -55,7 +55,7 @@ pub enum Phase {
     Faulted,
 }
 
-fn output_observed() -> bool {
+fn default_true() -> bool {
     true
 }
 
@@ -99,7 +99,7 @@ pub struct State {
     pub(crate) hook_binding: Binding,
     #[serde(default = "default_mcp_role")]
     pub(crate) mcp_role: Role,
-    #[serde(default = "mcp_enabled")]
+    #[serde(default = "default_true")]
     pub(crate) mcp_enabled: bool,
     pub launch: HarnessLaunch,
     pub binary_digest: String,
@@ -134,7 +134,7 @@ pub struct State {
     #[serde(default)]
     pub queue_paused: bool,
     pub active: Option<PromptItem>,
-    #[serde(default = "output_observed")]
+    #[serde(default = "default_true")]
     pub active_output_observed: bool,
     #[serde(default)]
     pub active_silent_since_ms: Option<i64>,
@@ -172,6 +172,8 @@ pub struct State {
     pub(crate) replay_continuation_turn: bool,
     #[serde(default)]
     pub(crate) retired_processes: Vec<RetiredAgentProcess>,
+    #[serde(skip)]
+    pub(crate) _clone_probe: super::idle::CloneProbe,
 }
 
 impl State {
@@ -233,6 +235,7 @@ impl State {
             replay_user: None,
             replay_continuation_turn: false,
             retired_processes: Vec::new(),
+            _clone_probe: Default::default(),
         })
     }
 
@@ -556,10 +559,6 @@ fn requestable_options<'de, D: Deserializer<'de>>(
     let mut options = BTreeMap::<String, ConfigValue>::deserialize(deserializer)?;
     options.retain(|key, _| REQUESTABLE_OPTIONS.contains(&key.as_str()));
     Ok(options)
-}
-
-fn mcp_enabled() -> bool {
-    true
 }
 
 fn default_mcp_role() -> Role {

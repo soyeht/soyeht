@@ -182,11 +182,19 @@ impl Core {
     }
 
     pub(crate) fn advance_task_dispatches(&mut self) -> Result<()> {
+        let Some(seen) = self.store.begin_poll("task_dispatches", self.now_ms()) else {
+            return Ok(());
+        };
         let pending = self.store.dispatch_checkpoints().map_err(errors::storage)?;
+        let mut waiting = false;
         for (workspace, task, checkpoint) in pending {
             if checkpoint.stage != "prompt_accepted" {
+                waiting = true;
                 self.advance_task_dispatch(&workspace, &task, checkpoint)?;
             }
+        }
+        if !waiting {
+            self.store.rest("task_dispatches", seen, i64::MAX);
         }
         Ok(())
     }

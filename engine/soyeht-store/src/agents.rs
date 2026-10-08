@@ -382,7 +382,7 @@ pub fn outgoing(store: &Store, key: &str) -> Result<Option<Outgoing>> {
 }
 pub fn outbox(store: &Store, pane: &str) -> Result<Vec<Outgoing>> {
     let db = store.connection();
-    let mut statement = db.prepare("SELECT operation_key,pane_id,generation,instance_id,supervisor_id,bytes,accepted_bytes,attempt FROM agent_outbox WHERE pane_id=?1 ORDER BY ordinal")?;
+    let mut statement = db.prepare_cached("SELECT operation_key,pane_id,generation,instance_id,supervisor_id,bytes,accepted_bytes,attempt FROM agent_outbox WHERE pane_id=?1 ORDER BY ordinal")?;
     Ok(statement
         .query_map([pane], outgoing_row)?
         .collect::<rusqlite::Result<_>>()?)
@@ -512,7 +512,7 @@ pub fn request_at(
 }
 pub fn open_requests(store: &Store, pane: &str) -> Result<Vec<NativeRequest>> {
     let db = store.connection();
-    let mut statement = db.prepare(&format!("SELECT {REQUEST_COLUMNS} FROM agent_requests WHERE pane_id=?1 AND result IS NULL ORDER BY source_seq"))?;
+    let mut statement = db.prepare_cached(&format!("SELECT {REQUEST_COLUMNS} FROM agent_requests WHERE pane_id=?1 AND result IS NULL ORDER BY source_seq"))?;
     Ok(statement
         .query_map([pane], request_row)?
         .collect::<rusqlite::Result<_>>()?)

@@ -128,3 +128,24 @@ pub fn terminate_group(pid: u32) {
         }
     }
 }
+
+/// Ends a guarded (agent or language server) process and everything below
+/// it, including children that left its process group. A terminal keeps
+/// the group-only rule: a daemon the user detached from a shell stays.
+pub fn terminate_tree(pid: u32) {
+    // Snapshot first: once the leader dies its children are reparented and
+    // no longer reachable from it.
+    let escaped = crate::tree::descendants(pid);
+    terminate_group(pid);
+    for descendant in escaped {
+        if let Ok(descendant) = i32::try_from(descendant)
+            && descendant > 1
+        {
+            // SAFETY: the pid was read from the process table an instant ago,
+            // as a descendant of the instance this supervisor spawned.
+            unsafe {
+                libc::kill(descendant, libc::SIGKILL);
+            }
+        }
+    }
+}

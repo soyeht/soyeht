@@ -164,14 +164,23 @@ impl Store {
         if now_ms < 0 {
             return Err(Error::InvalidWebPermission);
         }
-        let mut statement = self.connection.prepare(
-            "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE result IS NULL AND expires_ms<=?1 ORDER BY expires_ms,request_id",
-        )?;
-        statement
-            .query_map([now_ms], permission_row)?
-            .map(|row| row.and_then(|request| valid_permission(request).map_err(to_sql_error)))
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(Into::into)
+        self.rested_rows(
+            "web_permissions",
+            now_ms,
+            || {
+                let mut statement = self.connection.prepare_cached(
+                    "SELECT request_id,pane_id,workspace_id,generation,task_id,kind,domain,public,expires_ms,result FROM web_permission_requests WHERE result IS NULL AND expires_ms<=?1 ORDER BY expires_ms,request_id",
+                )?;
+                statement
+                    .query_map([now_ms], permission_row)?
+                    .map(|row| {
+                        row.and_then(|request| valid_permission(request).map_err(to_sql_error))
+                    })
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(Into::into)
+            },
+            Store::next_web_permission_expiry_ms,
+        )
     }
 }
 

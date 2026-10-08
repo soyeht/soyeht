@@ -102,7 +102,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
             guard: Some(parent),
         }),
         Err(error) => {
-            process::terminate_group(child.id());
+            process::terminate_tree(child.id());
             let _ = child.wait();
             Err(error)
         }

@@ -27,8 +27,15 @@ impl Core {
                 ids.push(id.clone());
             }
         }
+        // A faulted agent is visited on every tick; each process is closed once.
+        ids.retain(|id| !self.agents[pane].idle.already_closed(id));
         for instance_id in ids {
-            self.pty_request(Request::Close { instance_id })?;
+            self.pty_request(Request::Close {
+                instance_id: instance_id.clone(),
+            })?;
+            errors::invariant(self.agents.get_mut(pane), "Agent runtime disappeared")?
+                .idle
+                .mark_closed(instance_id);
         }
         Ok(())
     }
