@@ -263,15 +263,17 @@ async fn tree_lists_lazily_and_tells_the_watcher_when_a_folder_changes() {
     assert_eq!(names(&all), vec!["build", "src", ".gitignore"]);
     assert_eq!(all["entries"][0]["ignored"], true);
 
-    fixture.call(
-        "project.tree.watch",
-        json!({"workspaceId":workspace_id,"paths":["","src"]}),
+    // The watcher is told the folders it follows; what the operating system
+    // would report is sent by the test (see `project_watch_tests`).
+    let mut followed = super::project_watch_tests::Followed::attach(fixture);
+    followed.watch(&["", "src"]).await;
+    fs::write(followed.fixture.project().join("src/new.rs"), "").unwrap();
+    followed.emit(
+        notify::EventKind::Create(notify::event::CreateKind::File),
+        &["src/new.rs"],
     );
-    fixture.notifications().await;
-    fs::write(fixture.project().join("src/new.rs"), "").unwrap();
-    let changed = super::project_watch_tests::next_change(&mut fixture).await;
     assert_eq!(
-        changed,
+        followed.changes().await,
         vec![json!({"jsonrpc":"2.0","method":"project.tree_changed",
             "params":{"workspaceId":workspace_id,"paths":["src"]}})]
     );

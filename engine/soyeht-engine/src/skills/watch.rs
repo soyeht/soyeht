@@ -22,10 +22,21 @@ const PROBE_INTERVAL_MS: i64 = 2_000;
 /// `None` is the user's folder, `Some(id)` a workspace's.
 type Key = Option<String>;
 
+struct Events {
+    receiver: Receiver<notify::Result<Event>>,
+    // Dropping the watcher stops the stream. Tests feed `receiver` directly.
+    _watcher: Option<RecommendedWatcher>,
+}
+
 struct Folder {
     root: PathBuf,
-    events: Option<(Receiver<notify::Result<Event>>, RecommendedWatcher)>,
+    events: Option<Events>,
     fingerprint: u64,
+    /// The listing the fingerprint comes from was read before the event
+    /// stream started, so one more read is due: a change in between is in no
+    /// event and in no fingerprint.
+    catch_up: bool,
+    polling_only: bool,
 }
 
 #[derive(Default)]
@@ -37,11 +48,36 @@ pub struct Watches {
     burst_started_ms: Option<i64>,
     last_event_ms: i64,
     probe_due_ms: i64,
+    /// Never start event streams: every folder is looked at on the probe.
+    polling_only: bool,
 }
 
 impl Watches {
+    /// Replaces the event stream of a followed folder with a channel the
+    /// test feeds, so event handling runs without the operating system.
+    #[cfg(test)]
+    pub(super) fn inject_events(
+        &mut self,
+        workspace_id: Option<&str>,
+    ) -> mpsc::Sender<notify::Result<Event>> {
+        let (sender, receiver) = mpsc::channel();
+        if let Some(folder) = self.folder_mut(workspace_id) {
+            folder.events = Some(Events {
+                receiver,
+                _watcher: None,
+            });
+        }
+        sender
+    }
+
+    /// Follows folders by looking at them every probe instead of by events.
+    #[cfg(any(debug_assertions, test))]
+    pub(super) fn poll_only(&mut self) {
+        self.polling_only = true;
+    }
+
     pub(super) fn follow_user(&mut self, root: &Path, listed: &[Skill]) {
-        self.user = Some(Folder::new(root, listed));
+        self.user = Some(Folder::new(root, listed, self.polling_only));
     }
 
     pub(super) fn show(
@@ -51,12 +87,13 @@ impl Watches {
         root: &Path,
         listed: &[Skill],
     ) {
+        let polling_only = self.polling_only;
         let (folder, viewers) = self
             .workspaces
             .entry(workspace_id.into())
-            .or_insert_with(|| (Folder::new(root, listed), BTreeSet::new()));
+            .or_insert_with(|| (Folder::new(root, listed, polling_only), BTreeSet::new()));
         if folder.root != root {
-            *folder = Folder::new(root, listed);
+            *folder = Folder::new(root, listed, polling_only);
         }
         viewers.insert(connection.into());
     }
@@ -86,7 +123,7 @@ impl Watches {
             .iter_mut()
             .map(|(id, (folder, _))| (Some(id.clone()), folder));
         for (key, folder) in user.chain(workspaces) {
-            if folder.drain() | (probe && folder.reattach()) {
+            if folder.drain() | (probe && folder.reattach()) | folder.take_catch_up() {
                 self.dirty.insert(key);
                 arrived = true;
             }
@@ -115,13 +152,16 @@ impl Watches {
             .collect()
     }
 
-    /// Keeps a folder's new listing; true when it differs from the last one.
-    pub(super) fn record(&mut self, workspace_id: Option<&str>, listed: &[Skill]) -> bool {
-        let folder = match workspace_id {
+    fn folder_mut(&mut self, workspace_id: Option<&str>) -> Option<&mut Folder> {
+        match workspace_id {
             None => self.user.as_mut(),
             Some(id) => self.workspaces.get_mut(id).map(|(folder, _)| folder),
-        };
-        let Some(folder) = folder else {
+        }
+    }
+
+    /// Keeps a folder's new listing; true when it differs from the last one.
+    pub(super) fn record(&mut self, workspace_id: Option<&str>, listed: &[Skill]) -> bool {
+        let Some(folder) = self.folder_mut(workspace_id) else {
             return false;
         };
         let current = fingerprint(listed);
@@ -132,14 +172,21 @@ impl Watches {
 }
 
 impl Folder {
-    fn new(root: &Path, listed: &[Skill]) -> Self {
+    fn new(root: &Path, listed: &[Skill], polling_only: bool) -> Self {
         let mut folder = Self {
             root: root.into(),
             events: None,
             fingerprint: fingerprint(listed),
+            catch_up: true,
+            polling_only,
         };
         folder.reattach();
         folder
+    }
+
+    /// True once after the folder was first listed.
+    fn take_catch_up(&mut self) -> bool {
+        std::mem::take(&mut self.catch_up)
     }
 
     /// Follows the folder while it exists. True when it appeared, vanished,
@@ -147,7 +194,9 @@ impl Folder {
     fn reattach(&mut self) -> bool {
         match (self.root.is_dir(), self.events.is_some()) {
             (true, false) => {
-                self.events = event_source(&self.root);
+                if !self.polling_only {
+                    self.events = event_source(&self.root);
+                }
                 true
             }
             (false, true) => {
@@ -160,12 +209,12 @@ impl Folder {
 
     /// Empties the event queue; true when anything arrived.
     fn drain(&mut self) -> bool {
-        let Some((events, _)) = &self.events else {
+        let Some(events) = &self.events else {
             return false;
         };
         let mut arrived = false;
         loop {
-            match events.try_recv() {
+            match events.receiver.try_recv() {
                 Ok(_) => arrived = true,
                 Err(TryRecvError::Empty) => return arrived,
                 Err(TryRecvError::Disconnected) => {
@@ -177,11 +226,14 @@ impl Folder {
     }
 }
 
-fn event_source(root: &Path) -> Option<(Receiver<notify::Result<Event>>, RecommendedWatcher)> {
-    let (sender, events) = mpsc::channel();
+fn event_source(root: &Path) -> Option<Events> {
+    let (sender, receiver) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(sender).ok()?;
     watcher.watch(root, RecursiveMode::Recursive).ok()?;
-    Some((events, watcher))
+    Some(Events {
+        receiver,
+        _watcher: Some(watcher),
+    })
 }
 
 fn fingerprint(listed: &[Skill]) -> u64 {
@@ -210,25 +262,152 @@ mod tests {
         }
     }
 
+    const WORKSPACE: &str = "workspace";
+
+    fn temp_folder() -> PathBuf {
+        std::env::temp_dir().join(format!("soyeht-skill-watch-{}", uuid::Uuid::new_v4()))
+    }
+
+    fn workspace_key() -> Option<String> {
+        Some(WORKSPACE.into())
+    }
+
+    /// Folders to list again: the turn that takes events, then the turn after
+    /// the quiet period.
+    fn settle(watches: &mut Watches, now: i64) -> Vec<(Key, PathBuf)> {
+        assert!(
+            watches.settled(now, |_| true).is_empty(),
+            "a burst settles only after its quiet period"
+        );
+        watches.settled(now + QUIET_MS, |_| true)
+    }
+
+    /// A watched folder whose first read is already done.
+    fn followed(root: &Path, polling_only: bool) -> Watches {
+        let mut watches = Watches::default();
+        if polling_only {
+            watches.poll_only();
+        }
+        watches.show("connection", WORKSPACE, root, &[]);
+        assert_eq!(settle(&mut watches, 0).len(), 1, "the catch-up read");
+        watches
+    }
+
+    /// An existing watched folder fed by the returned channel.
+    fn injected() -> (PathBuf, Watches, mpsc::Sender<notify::Result<Event>>) {
+        let root = temp_folder();
+        std::fs::create_dir_all(&root).unwrap();
+        let mut watches = followed(&root, false);
+        let events = watches.inject_events(Some(WORKSPACE));
+        (root, watches, events)
+    }
+
     #[test]
     fn a_missing_folder_is_probed_and_listings_are_announced_only_when_changed() {
-        let root =
-            std::env::temp_dir().join(format!("soyeht-skill-watch-{}", uuid::Uuid::new_v4()));
-        let mut watches = Watches::default();
-        watches.show("connection", "workspace", &root, &[]);
-        assert!(watches.settled(0, |_| true).is_empty());
+        let root = temp_folder();
+        let mut watches = followed(&root, true);
+        assert!(!watches.record(workspace_key().as_deref(), &[]));
         std::fs::create_dir_all(&root).unwrap();
-        assert!(watches.settled(PROBE_INTERVAL_MS - 1, |_| true).is_empty());
-        let start = PROBE_INTERVAL_MS;
-        assert!(watches.settled(start, |_| true).is_empty());
-        // File events from the new folder may extend the burst, never past its limit.
-        let settled = watches.settled(start + BURST_LIMIT_MS, |_| true);
-        assert_eq!(settled, [(Some("workspace".into()), root.clone())]);
-        assert!(!watches.record(Some("workspace"), &[]));
-        assert!(watches.record(Some("workspace"), &[skill("new")]));
-        assert!(!watches.record(Some("workspace"), &[skill("new")]));
-        watches.settled(start + BURST_LIMIT_MS, |_| false);
-        assert!(!watches.record(Some("workspace"), &[]));
+        assert!(settle(&mut watches, PROBE_INTERVAL_MS - 200).is_empty());
+        let settled = settle(&mut watches, PROBE_INTERVAL_MS);
+        assert_eq!(settled, [(workspace_key(), root.clone())]);
+        assert!(!watches.record(Some(WORKSPACE), &[]));
+        assert!(watches.record(Some(WORKSPACE), &[skill("new")]));
+        assert!(!watches.record(Some(WORKSPACE), &[skill("new")]));
+        watches.settled(PROBE_INTERVAL_MS, |_| false);
+        assert!(!watches.record(Some(WORKSPACE), &[]));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_change_between_the_first_listing_and_the_event_stream_is_still_read() {
+        let root = temp_folder();
+        std::fs::create_dir_all(&root).unwrap();
+        let mut watches = Watches::default();
+        // The caller listed the folder (empty), then the stream started.
+        watches.show("connection", WORKSPACE, &root, &[]);
+        let folders = watches.settled(0, |_| true);
+        assert!(folders.is_empty());
+        // No event ever arrives for the skill written in between, yet the
+        // catch-up read finds it.
+        let folders = watches.settled(QUIET_MS, |_| true);
+        assert_eq!(folders, [(workspace_key(), root.clone())]);
+        assert!(watches.record(Some(WORKSPACE), &[skill("early")]));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_burst_of_events_is_read_once_after_it_settles() {
+        let (root, mut watches, events) = injected();
+        for _ in 0..50 {
+            events.send(Ok(Event::default())).unwrap();
+        }
+        assert_eq!(
+            settle(&mut watches, 1_000),
+            [(workspace_key(), root.clone())]
+        );
+        assert!(settle(&mut watches, 2_000).is_empty());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_steady_stream_is_read_before_it_stops_and_errors_count_as_changes() {
+        let (root, mut watches, events) = injected();
+        let mut read_at = None;
+        // One event every 50 ms never leaves a quiet period of 75 ms.
+        for step in 0..40 {
+            let now = 1_000 + step * 50;
+            events.send(Err(notify::Error::generic("dropped"))).unwrap();
+            if !watches.settled(now, |_| true).is_empty() {
+                read_at = Some(now);
+                break;
+            }
+        }
+        let read_at = read_at.expect("the stream is read while it runs");
+        assert!(read_at - 1_000 >= BURST_LIMIT_MS && read_at - 1_000 < BURST_LIMIT_MS + 100);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_lost_event_stream_is_read_again_and_followed_again_on_the_probe() {
+        let (root, mut watches, events) = injected();
+        // The watcher died: the sender is gone, the receiver disconnected.
+        drop(events);
+        assert_eq!(
+            settle(&mut watches, 1_000),
+            [(workspace_key(), root.clone())]
+        );
+        assert!(watches.workspaces[WORKSPACE].0.events.is_none());
+        assert_eq!(
+            settle(&mut watches, 1_000 + PROBE_INTERVAL_MS),
+            [(workspace_key(), root.clone())]
+        );
+        assert!(watches.workspaces[WORKSPACE].0.events.is_some());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The one test that waits for the operating system: a skill written
+    /// after the folder is followed is announced. The system delivers events
+    /// late under load, so it keeps writing and waits for the condition.
+    #[test]
+    fn real_file_events_reach_the_watcher() {
+        let root = temp_folder();
+        std::fs::create_dir_all(&root).unwrap();
+        let mut watches = followed(&root, false);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+        let started = std::time::Instant::now();
+        let mut written = 0;
+        let mut found = false;
+        while !found && std::time::Instant::now() < deadline {
+            if started.elapsed().as_secs() / 3 >= written {
+                std::fs::create_dir_all(root.join(format!("skill{written}"))).unwrap();
+                written += 1;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            let now = 1_000 + started.elapsed().as_millis() as i64;
+            found = !watches.settled(now, |_| true).is_empty();
+        }
+        assert!(found, "no file event reached the watcher");
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

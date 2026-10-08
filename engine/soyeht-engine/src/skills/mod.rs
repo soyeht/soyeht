@@ -193,6 +193,12 @@ impl Core {
         home::prepare_user_home(&self.directory).map_err(errors::io)?;
         let user = self.user_skills();
         let listed = user.list()?;
+        // Debug builds started with `SOYEHT_TEST_SKILL_POLL` read skill folders on the
+        // two-second probe instead of by file events, which a loaded machine delivers late.
+        #[cfg(debug_assertions)]
+        if std::env::var_os("SOYEHT_TEST_SKILL_POLL").is_some() {
+            self.skill_watches.poll_only();
+        }
         self.skill_watches.follow_user(user.store.root(), &listed);
         Ok(())
     }

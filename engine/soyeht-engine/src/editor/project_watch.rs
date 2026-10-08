@@ -32,6 +32,7 @@ const BURST_LIMIT_MS: i64 = 500;
 const POLL_INTERVAL_MS: i64 = 1_000;
 
 type Folders = BTreeMap<String, Option<u64>>;
+type Dirty = BTreeMap<String, Option<Touched>>;
 
 /// Folders each connection shows, with the fingerprint last seen, and the
 /// event source of each watched workspace.
@@ -39,8 +40,8 @@ type Folders = BTreeMap<String, Option<u64>>;
 pub struct Watches {
     pub(super) folders: BTreeMap<(String, String), Folders>,
     sources: BTreeMap<String, Source>,
-    /// Workspace → folders an event touched; `None` means every folder.
-    dirty: BTreeMap<String, Option<BTreeSet<String>>>,
+    /// Workspace → what events touched; `None` means every folder.
+    dirty: Dirty,
     burst_started_ms: Option<i64>,
     last_event_ms: i64,
     poll_due_ms: i64,
@@ -48,14 +49,18 @@ pub struct Watches {
     reads: u64,
     #[cfg(test)]
     pub(super) force_polling: bool,
+    /// Folder reads made before each source started; tests assert that the
+    /// source is live before the first listing is fingerprinted.
+    #[cfg(test)]
+    pub(super) reads_at_source_start: BTreeMap<String, u64>,
 }
 
 enum Source {
     Events {
         root: PathBuf,
         events: Receiver<notify::Result<Event>>,
-        // Dropping the watcher stops the stream.
-        _watcher: RecommendedWatcher,
+        // Dropping the watcher stops the stream. Tests feed `events` directly.
+        _watcher: Option<RecommendedWatcher>,
     },
     Polling,
 }
@@ -68,12 +73,36 @@ impl Watches {
         }
         #[cfg(test)]
         if self.force_polling {
-            self.sources
-                .insert(workspace_id.to_owned(), Source::Polling);
+            self.insert_source(workspace_id, Source::Polling);
             return;
         }
         let source = event_source(root).unwrap_or(Source::Polling);
+        self.insert_source(workspace_id, source);
+    }
+
+    fn insert_source(&mut self, workspace_id: &str, source: Source) {
+        #[cfg(test)]
+        self.reads_at_source_start
+            .insert(workspace_id.to_owned(), self.reads);
         self.sources.insert(workspace_id.to_owned(), source);
+    }
+
+    /// Replaces the file-event stream of `workspace_id` with a channel the
+    /// test feeds, so event handling runs without the operating system.
+    #[cfg(test)]
+    pub(super) fn inject_events(
+        &mut self,
+        workspace_id: &str,
+        root: &Path,
+    ) -> mpsc::Sender<notify::Result<Event>> {
+        let (sender, events) = mpsc::channel();
+        let source = Source::Events {
+            root: root.to_owned(),
+            events,
+            _watcher: None,
+        };
+        self.insert_source(workspace_id, source);
+        sender
     }
 
     pub(super) fn record_read(&mut self) {
@@ -117,10 +146,10 @@ impl Watches {
                     Ok(Ok(event)) if !event.need_rescan() => {
                         arrived = true;
                         let entry = self.dirty.entry(workspace.clone());
-                        let folders = entry.or_insert_with(|| Some(BTreeSet::new()));
-                        if let Some(folders) = folders {
+                        let touched = entry.or_insert_with(|| Some(Touched::default()));
+                        if let Some(touched) = touched {
                             for path in &event.paths {
-                                touched_folders(root, path, folders);
+                                touched.add(root, path);
                             }
                         }
                     }
@@ -170,11 +199,7 @@ impl Watches {
     }
 
     /// The burst to read now, once events stopped or ran long enough.
-    fn take_settled(
-        &mut self,
-        now: i64,
-        polled: bool,
-    ) -> BTreeMap<String, Option<BTreeSet<String>>> {
+    fn take_settled(&mut self, now: i64, polled: bool) -> Dirty {
         let settled = self.burst_started_ms.is_some_and(|started| {
             now - self.last_event_ms >= QUIET_MS || now - started >= BURST_LIMIT_MS
         });
@@ -219,7 +244,7 @@ impl Core {
             let key = (connection.clone(), workspace_id.clone());
             let paths = self.project_watches.folders[&key]
                 .keys()
-                .filter(|path| touched.as_ref().is_none_or(|set| set.contains(*path)))
+                .filter(|path| touched.as_ref().is_none_or(|touched| touched.reaches(path)))
                 .cloned()
                 .collect::<Vec<_>>();
             let mut changed = Vec::new();
@@ -279,43 +304,70 @@ fn event_source(root: &Path) -> Option<Source> {
     Some(Source::Events {
         root: root.to_owned(),
         events,
-        _watcher: watcher,
+        _watcher: Some(watcher),
     })
 }
 
-/// The folders whose listing a change at `path` can alter: the folder that
-/// holds it, and the path itself when it is a watched folder that appeared,
-/// vanished or was replaced.
-fn touched_folders(root: &Path, path: &Path, folders: &mut BTreeSet<String>) {
-    let Ok(relative) = path.strip_prefix(root) else {
-        return;
-    };
-    let names = relative
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>();
-    if names.is_empty() {
-        folders.insert(String::new());
-        return;
+/// What file events touched in one workspace.
+#[derive(Default)]
+struct Touched {
+    /// Folders whose listing a change can alter: the folder that holds the
+    /// changed path, and the path itself when it is a watched folder that
+    /// appeared, vanished or was replaced.
+    folders: BTreeSet<String>,
+    /// The changed paths. The system reports a folder that was renamed or
+    /// removed, not what was inside it, so folders below these are touched too.
+    paths: BTreeSet<String>,
+}
+
+impl Touched {
+    fn add(&mut self, root: &Path, path: &Path) {
+        let Ok(relative) = path.strip_prefix(root) else {
+            return;
+        };
+        let names = relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>();
+        if names.is_empty() {
+            self.folders.insert(String::new());
+            return;
+        }
+        self.folders.insert(names[..names.len() - 1].join("/"));
+        let changed = names.join("/");
+        self.folders.insert(changed.clone());
+        self.paths.insert(changed);
     }
-    folders.insert(names[..names.len() - 1].join("/"));
-    folders.insert(names.join("/"));
+
+    fn reaches(&self, folder: &str) -> bool {
+        self.folders.contains(folder)
+            || self.paths.iter().any(|path| {
+                folder
+                    .strip_prefix(path.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+            })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::touched_folders;
-    use std::{collections::BTreeSet, path::Path};
+    use super::Touched;
+    use std::path::Path;
 
     #[test]
-    fn a_change_touches_its_parent_folder_and_itself() {
-        let mut folders = BTreeSet::new();
+    fn a_change_touches_its_parent_folder_itself_and_the_folders_below_it() {
+        let mut touched = Touched::default();
         let root = Path::new("/w");
-        touched_folders(root, Path::new("/w/src/new.rs"), &mut folders);
-        touched_folders(root, Path::new("/w/top.rs"), &mut folders);
-        touched_folders(root, Path::new("/elsewhere/x"), &mut folders);
-        touched_folders(root, root, &mut folders);
-        let expected = ["", "src", "src/new.rs", "top.rs"].map(String::from);
-        assert_eq!(folders, BTreeSet::from(expected));
+        touched.add(root, Path::new("/w/src/new.rs"));
+        touched.add(root, Path::new("/w/top.rs"));
+        touched.add(root, Path::new("/elsewhere/x"));
+        touched.add(root, root);
+        for reached in ["", "src", "src/new.rs", "top.rs", "src/new.rs/below"] {
+            assert!(touched.reaches(reached), "{reached}");
+        }
+        // A sibling that merely shares a name prefix is not below the path.
+        for untouched in ["other", "src/new.rsx", "tops.rs", "src/other"] {
+            assert!(!touched.reaches(untouched), "{untouched}");
+        }
     }
 }

@@ -77,6 +77,9 @@ impl Rig {
                 .arg(&self.path)
                 .env("PATH", test_path(&self.path))
                 .env("ZDOTDIR", &self.path)
+                // The engine runs in another process: it follows skill folders by
+                // reading them, not by file events a loaded machine delivers late.
+                .env("SOYEHT_TEST_SKILL_POLL", "1")
                 .stdout(Stdio::null())
                 .spawn()
                 .unwrap(),

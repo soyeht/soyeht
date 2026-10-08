@@ -45,17 +45,22 @@ impl Core {
             return Err(errors::invalid("Too many project folders to watch"));
         }
         let project = self.project_root(&request.workspace_id)?;
-        let mut folders = BTreeMap::new();
         for path in &request.paths {
             project.directory(path).map_err(project_error)?;
-            self.project_watches.record_read();
-            folders.insert(path.clone(), project.fingerprint(path));
         }
         let key = (connection.to_owned(), request.workspace_id.clone());
-        if folders.is_empty() {
+        if request.paths.is_empty() {
             self.project_watches.folders.remove(&key);
         } else {
+            // The event source goes live before the first listing is
+            // fingerprinted: a change after that fingerprint is then always
+            // an event, never lost between the two.
             self.start_project_source(&request.workspace_id)?;
+            let mut folders = BTreeMap::new();
+            for path in &request.paths {
+                self.project_watches.record_read();
+                folders.insert(path.clone(), project.fingerprint(path));
+            }
             self.project_watches.folders.insert(key, folders);
         }
         serde_json::to_value(ProjectTreeWatchResult {
