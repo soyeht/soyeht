@@ -42,7 +42,8 @@ impl Core {
         }
         if let Err(error) = self.ensure_language_server(file) {
             if let Ok(key) = Service::key(&file.workspace_id, &file.language) {
-                let _ = self.mark_language_unavailable(&key, &error.to_string());
+                let marked = self.mark_language_unavailable(&key, &error.to_string());
+                errors::log_if_failed("engine.lsp_mark_unavailable_failed", marked);
             }
             eprintln!(
                 "{}",
@@ -209,11 +210,14 @@ impl Core {
                 continue;
             }
             if let Err(error) = self.poll_language_server(&key) {
-                let _ = self.mark_language_unavailable(&key, &error.to_string());
-                let _ = self.fail_language_waiters(
+                let marked = self.mark_language_unavailable(&key, &error.to_string());
+                errors::log_if_failed("engine.lsp_mark_unavailable_failed", marked);
+                let failed = self.fail_language_waiters(
                     &key,
                     errors::harness_unavailable("Language server became unavailable"),
                 );
+                // A failure here can leave editor requests waiting: it must reach the log.
+                errors::log_if_failed("engine.lsp_fail_waiters_failed", failed);
                 eprintln!(
                     "{}",
                     json!({"event":"engine.lsp_failed","kind":errors::kind(&error)})
@@ -444,6 +448,7 @@ impl Core {
             .cloned()
             .collect();
         if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
+            // Best effort: the generation bump below makes any late output from it stale.
             let _ = self.pty_request(Request::Close { instance_id });
         }
         language_mut(&mut self.languages, key)?.restart(detail)?;
@@ -461,6 +466,7 @@ impl Core {
             .cloned()
             .collect();
         if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
+            // Best effort: the generation bump below makes any late output from it stale.
             let _ = self.pty_request(Request::Close { instance_id });
         }
         let server = language_mut(&mut self.languages, key)?;
@@ -469,6 +475,7 @@ impl Core {
         server.detail = Some(detail.chars().take(1024).collect());
         self.persist_language_server(key, Vec::new())?;
         for operation_key in pending {
+            // Best effort: an unconfirmed receipt is reconciled when the supervisor returns.
             let _ = self.pty_request(Request::ConfirmInput { operation_key });
         }
         Ok(())

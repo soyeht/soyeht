@@ -69,8 +69,14 @@ impl Notifier {
     }
 
     fn submit(&self, job: Job) {
-        if let Some(jobs) = &self.jobs {
-            let _ = jobs.send(job);
+        if let Some(jobs) = &self.jobs
+            && jobs.send(job).is_err()
+        {
+            // The delivery worker has stopped, so this alert is lost: say so once per alert.
+            eprintln!(
+                "{}",
+                json!({"event":"engine.push_dropped","reason":"worker_stopped"})
+            );
         }
     }
 }

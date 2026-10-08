@@ -401,7 +401,7 @@ impl ObservationRecorder {
 
 impl Drop for ObservationRecorder {
     fn drop(&mut self) {
-        let _ = self.stop_worker();
+        errors::log_if_failed("engine.observations_lost", self.stop_worker());
     }
 }
 

@@ -694,7 +694,7 @@ impl Core {
         let _ = self.pty_request(Request::Ack {
             instance_id: candidate.instance.instance_id.clone(),
             seq: self.agents[pane].state.acknowledged_offset,
-        });
+        }); // Flow control only: a missed ack keeps output retained until the next one.
         Ok(())
     }
 

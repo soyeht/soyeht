@@ -630,7 +630,7 @@ fn write_atomic(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
         Ok(())
     })();
     if result.is_err() {
-        let _ = fs::remove_file(&temporary);
+        let _ = fs::remove_file(&temporary); // Best effort: the write error is returned.
     }
     result
 }

@@ -3,6 +3,7 @@ import SoyehtProtocol
 
 public enum PaneLayoutPersistenceError: Error, Equatable, Sendable {
   case invalidTree
+  case unsupportedVersion(UInt32)
 }
 
 /// Workspace-scoped state. Viewport state such as scroll, rail visibility, and collapsed headers
@@ -18,14 +19,18 @@ public struct PaneLayoutState: Equatable, Sendable {
     self.mode = mode
   }
 
+  /// A layout that cannot be used falls back to the automatic layout. A new workspace's
+  /// unversioned layout is normal; a versioned one that fails is logged once.
   public init(workspaceLayout: JsonValue) {
-    guard let envelope = try? workspaceLayout.decoded(WorkspacePaneLayoutEnvelope.self),
-      envelope.version == 1 || envelope.version == Self.currentVersion
-    else {
-      self.init()
-      return
-    }
     do {
+      guard workspaceLayout["version"] != .null else {
+        self.init()
+        return
+      }
+      let envelope = try workspaceLayout.decoded(WorkspacePaneLayoutEnvelope.self)
+      guard envelope.version == 1 || envelope.version == Self.currentVersion else {
+        throw PaneLayoutPersistenceError.unsupportedVersion(envelope.version)
+      }
       self.init(
         tree: try envelope.tree.map {
           try PaneLayoutTree(
@@ -33,6 +38,8 @@ public struct PaneLayoutState: Equatable, Sendable {
         },
         mode: envelope.mode)
     } catch {
+      ClientDiagnostics.reportOnce(
+        "pane_layout_unusable", key: String(describing: workspaceLayout), error: error)
       self.init()
     }
   }
@@ -240,5 +247,27 @@ extension PaneLayoutAxis {
 extension WorkspacePaneLayoutAxis {
   fileprivate init(layoutAxis: PaneLayoutAxis) {
     self = layoutAxis == .horizontal ? .horizontal : .vertical
+  }
+}
+
+extension EngineClient {
+  /// The pane tree a device without its own layout engine shows: the reconciled presentation,
+  /// else the stored layout reconciled locally. Each failure is logged once per workspace.
+  public func presentedLayoutTree(
+    workspaceId: String, livePanes: [Pane], sizing: PaneLayoutSizingPolicy
+  ) -> PaneLayoutTree? {
+    let reconciled = ClientDiagnostics.attempt("pane_layout_present_failed", key: workspaceId) {
+      try paneLayouts.reconciledPresentation(
+        for: workspaceId, livePanes: livePanes, sizing: sizing)
+    }
+    if let reconciled { return reconciled.state.tree }
+    guard let workspace = workspaces.first(where: { $0.workspaceId == workspaceId }) else {
+      return nil
+    }
+    var state = paneLayoutState(for: workspace)
+    _ = ClientDiagnostics.attempt("pane_layout_reconcile_failed", key: workspaceId) {
+      try state.reconcile(livePanes: livePanes, sizing: sizing)
+    }
+    return state.tree
   }
 }

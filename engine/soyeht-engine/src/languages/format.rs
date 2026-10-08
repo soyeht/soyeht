@@ -184,6 +184,7 @@ impl Core {
             Ok(mutation) => mutation,
             Err(error) => {
                 if let Some(server) = self.languages.get_mut(key) {
+                    // The storage error returned below is the failure; this only clears it.
                     let _ = server.set_public_result(context, None);
                 }
                 return Err(errors::storage(error));

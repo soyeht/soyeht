@@ -169,7 +169,7 @@ private final class TaskTimer: DictationTimer {
 
   init(delay: Duration, fire: @escaping @MainActor () -> Void) {
     task = Task { @MainActor in
-      guard (try? await Task.sleep(for: delay)) != nil else { return }
+      do { try await Task.sleep(for: delay) } catch { return }
       fire()
     }
   }

@@ -108,7 +108,7 @@ impl FileSystemPort for SystemFiles {
             Ok(())
         })();
         if result.is_err() {
-            let _ = fs::remove_file(temporary);
+            let _ = fs::remove_file(temporary); // Best effort: the write error is returned.
         }
         result.map(|()| true)
     }

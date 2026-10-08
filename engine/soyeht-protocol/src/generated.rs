@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 7eec3db4c57c18f72ef66b2900ff07f8bde0f7341eb42cece66f9e04a3d8c96f). Do not edit.
+// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -766,6 +766,8 @@ pub struct DevicePairStartResult {
     pub expires_at: String,
     #[serde(rename = "uri")]
     pub uri: String,
+    #[serde(rename = "reachability", skip_serializing_if = "Option::is_none")]
+    pub reachability: Option<EngineReachability>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairDecideParams {
@@ -873,6 +875,24 @@ pub struct PairProveResult {
     pub status: String,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EngineReachabilityReason {
+    #[serde(rename = "tailnet_address_not_found")]
+    TailnetAddressNotFound,
+    #[serde(rename = "tailnet_lookup_failed")]
+    TailnetLookupFailed,
+    #[serde(rename = "tailnet_listen_failed")]
+    TailnetListenFailed,
+    #[serde(rename = "loopback_only")]
+    LoopbackOnly,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EngineReachability {
+    #[serde(rename = "remote")]
+    pub remote: bool,
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<EngineReachabilityReason>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EngineStatusParams {}
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EngineStatusResult {
@@ -884,6 +904,8 @@ pub struct EngineStatusResult {
     pub ptyd: PtydStatus,
     #[serde(rename = "db")]
     pub db: DbStatus,
+    #[serde(rename = "reachability", skip_serializing_if = "Option::is_none")]
+    pub reachability: Option<EngineReachability>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SettingsGetParams {
@@ -6976,6 +6998,8 @@ pub enum EventName {
     EngineUpdating,
     #[serde(rename = "engine.restarted")]
     EngineRestarted,
+    #[serde(rename = "engine.reachability_changed")]
+    EngineReachabilityChanged,
     #[serde(rename = "ptyd.reconnected")]
     PtydReconnected,
     #[serde(rename = "ptyd.lost")]
@@ -7107,6 +7131,7 @@ impl EventName {
             Self::PairResult => "pair.result",
             Self::EngineUpdating => "engine.updating",
             Self::EngineRestarted => "engine.restarted",
+            Self::EngineReachabilityChanged => "engine.reachability_changed",
             Self::PtydReconnected => "ptyd.reconnected",
             Self::PtydLost => "ptyd.lost",
             Self::PaneUpdated => "pane.updated",
@@ -7265,6 +7290,11 @@ pub const EVENTS: &[EventDescriptor] = &[
         name: EventName::EngineRestarted,
         params_type: "EngineRestartedEvent",
         durable: true,
+    },
+    EventDescriptor {
+        name: EventName::EngineReachabilityChanged,
+        params_type: "EngineReachability",
+        durable: false,
     },
     EventDescriptor {
         name: EventName::PtydReconnected,

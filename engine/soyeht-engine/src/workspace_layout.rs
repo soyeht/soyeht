@@ -135,6 +135,7 @@ pub fn fallback_diagnostic(workspace_id: &str, layout: &Value) -> Option<Value> 
     })
 }
 
+/// Diagnostics only: callers may ignore a failed write, which must not stop the engine.
 pub fn log_fallback_diagnostics<'a>(
     layouts: impl IntoIterator<Item = (&'a str, &'a Value)>,
     mut output: impl Write,

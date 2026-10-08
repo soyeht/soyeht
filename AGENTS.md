@@ -65,6 +65,10 @@ ADR when you change a boundary.
   `#[cfg(all(test, ...))]` items, and modules declared `#[cfg(test)] mod x;`,
   including their submodules. Clippy denies these calls through the workspace
   lints too.
+- Swallowed errors (`swallowed_errors`): Swift `try?` and Rust `.ok()` / `let _ =`
+  in production code may not grow. Log, propagate or surface the error instead, or
+  keep it with a one-line comment saying why ignoring it is correct.
+  `uv run python scripts/check_swallowed_errors.py` lists every counted site.
 - When a number improves, lower the baseline in the same PR:
   `uv run python scripts/check_quality.py --print-baseline > scripts/quality_baseline.json`.
   The check fails until you do.

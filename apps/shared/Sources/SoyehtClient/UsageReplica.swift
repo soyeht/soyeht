@@ -29,6 +29,25 @@ extension EngineClient {
     }
   }
 
+  /// Refreshes usage in the background: the rings keep their last reading, and a failed
+  /// refresh goes to the log instead of being dropped. Cancellation stays silent.
+  public func refreshUsageInBackground(
+    _ provider: UsageProvider? = nil, retryingRateLimit: Bool = false
+  ) async {
+    do {
+      if retryingRateLimit {
+        try await refreshUsageAfterRateLimitOnce(provider)
+      } else {
+        try await refreshUsage(provider)
+      }
+    } catch is CancellationError {
+    } catch {
+      clientLogger.notice(
+        "usage_refresh_failed provider=\(provider?.rawValue ?? "all", privacy: .public) error=\(String(describing: error), privacy: .public)"
+      )
+    }
+  }
+
   public func refreshUsageAfterRateLimitOnce(_ provider: UsageProvider? = nil) async throws {
     try await refreshUsageAfterRateLimitOnce(
       wait: { seconds in try await Task.sleep(for: .seconds(seconds)) },

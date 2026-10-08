@@ -93,7 +93,10 @@ import Foundation
     engine.inputNode.removeTap(onBus: 0)
     self.engine = nil
     #if os(iOS)
-      try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+      _ = ClientDiagnostics.attempt("dictation_audio_session_release_failed", key: "dictation") {
+        try AVAudioSession.sharedInstance().setActive(
+          false, options: .notifyOthersOnDeactivation)
+      }
     #endif
   }
 

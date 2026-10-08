@@ -41,6 +41,7 @@ pub fn spawn(config: &Spawn, directory: &Path, instance_id: &str) -> Result<Spaw
         Ok(output) => output,
         Err(error) => {
             terminate_group(child.id());
+            // Reap only: the group was just terminated; an error means it is already gone.
             let _ = child.wait();
             return Err(error);
         }

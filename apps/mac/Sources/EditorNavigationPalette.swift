@@ -214,7 +214,8 @@ struct EditorNavigationPalette: View {
         let pathMatches = try await search(workspaceId, scope: .path)
         let contentMatches = try await search(workspaceId, scope: .content)
         matches = Array((pathMatches + contentMatches).prefix(ProtocolLimits.editorSearchResults))
-        symbols = await matchingSymbols()
+        // File matches stay listed; a symbol failure shows in the status line.
+        symbols = try await matchingSymbols()
       case .commands, .line: return
       }
     } catch is CancellationError {
@@ -224,10 +225,9 @@ struct EditorNavigationPalette: View {
     }
   }
 
-  private func matchingSymbols() async -> [FileSymbol] {
-    guard let file = client.selectedEditorFile?.file,
-      let result = try? await client.editorSymbols(fileId: file.fileId, revision: file.revision)
-    else { return [] }
+  private func matchingSymbols() async throws -> [FileSymbol] {
+    guard let file = client.selectedEditorFile?.file else { return [] }
+    let result = try await client.editorSymbols(fileId: file.fileId, revision: file.revision)
     return result.items.filter { fuzzyContains($0.name, query) }
   }
 

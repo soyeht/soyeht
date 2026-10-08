@@ -71,8 +71,11 @@ impl RotatingFile {
         if self.keep == 0 {
             self.file.set_len(0)?;
         } else {
+            // Best effort: a missing oldest file is the normal case, and a real failure
+            // surfaces in the final rename that this rotation must complete.
             let _ = fs::remove_file(self.numbered(self.keep));
             for index in (1..self.keep).rev() {
+                // Best effort: a gap in the numbered files is normal.
                 let _ = fs::rename(self.numbered(index), self.numbered(index + 1));
             }
             fs::rename(&self.path, self.numbered(1))?;
@@ -166,6 +169,7 @@ pub fn capture_stderr(max_bytes: u64, keep: usize) -> io::Result<Option<StderrRo
     thread::Builder::new()
         .name("engine-log".into())
         .spawn(move || {
+            // Nowhere to report: stderr is this pipe. The sender only wakes a waiting drop.
             let _ = pump(reader, &mut log);
             let _ = done.send(());
         })?;
@@ -174,6 +178,8 @@ pub fn capture_stderr(max_bytes: u64, keep: usize) -> io::Result<Option<StderrRo
 
 impl Drop for StderrRotation {
     fn drop(&mut self) {
+        // Shutdown path: if stderr cannot be restored or the flush times out, the process
+        // is exiting and there is no better place to log it.
         let _ = redirect_stderr(&self.original);
         let _ = self.finished.recv_timeout(FLUSH_GRACE);
     }
@@ -199,6 +205,7 @@ fn descriptor_path(file: &File) -> Option<PathBuf> {
     if status < 0 {
         return None;
     }
+    // No NUL means no usable path; rotation is then off (the caller treats None as that).
     let path = CStr::from_bytes_until_nul(&buffer).ok()?;
     Some(PathBuf::from(std::ffi::OsStr::from_bytes(path.to_bytes())))
 }

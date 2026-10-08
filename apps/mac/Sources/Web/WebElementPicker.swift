@@ -93,7 +93,9 @@ private struct PickedMetadata: Decodable {
       let result = try await webView.callAsyncJavaScript(
         Self.removeScript, arguments: [:], in: nil, contentWorld: .page)
       _ = result as? Bool
-    } catch {}
+    } catch {
+      // Best effort, silent by design: a page that navigated or closed has no picker left.
+    }
   }
 
   private func poll() async throws {

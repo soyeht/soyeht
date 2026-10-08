@@ -89,6 +89,7 @@ fn wait_child(child: &mut Child, deadline: Instant) -> io::Result<std::process::
             return Ok(status);
         }
         if Instant::now() >= deadline {
+            // Best effort: the timeout below is what the caller reports.
             let _ = child.kill();
             let _ = child.wait();
             return Err(io::Error::new(

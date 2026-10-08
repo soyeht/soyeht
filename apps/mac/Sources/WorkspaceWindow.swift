@@ -602,10 +602,10 @@ struct WorkspaceWindow: View {
   private var pairingContent: some View {
     VStack(spacing: 20) {
       Text("Continue on iPhone").font(MacTheme.chrome(24, weight: .semibold))
-      Text(
-        "Open Soyeht Dev on iPhone and scan this code.\nBoth devices must be on the same tailnet."
-      )
-      .multilineTextAlignment(.center).foregroundStyle(MacTheme.secondary)
+      let guidance = client.pairingGuidance
+      Text(guidance.text)
+        .multilineTextAlignment(.center)
+        .foregroundStyle(guidance.isProblem ? MacTheme.danger : MacTheme.secondary)
       if let code = client.pairCode, let image = qr(code.uri) {
         Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
           .padding(MacTheme.Space.x16)

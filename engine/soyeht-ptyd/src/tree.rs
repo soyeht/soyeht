@@ -67,6 +67,7 @@ fn parent_links() -> Vec<(u32, u32)> {
     };
     entries
         .filter_map(|entry| {
+            // Processes exit during the scan; any entry that cannot be read is skipped.
             let pid: u32 = entry.ok()?.file_name().to_str()?.parse().ok()?;
             let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
             // The command name is parenthesized and may contain example.

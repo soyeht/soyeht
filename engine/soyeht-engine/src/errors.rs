@@ -280,6 +280,19 @@ fn writing_kind(error: &soyeht_writing::Error) -> ErrorKind {
     }
 }
 
+/// Logs a failure the caller cannot return as one structured line: the event and the
+/// bounded error kind, never message text.
+pub fn log_failure(event: &str, error: &Error) {
+    eprintln!("{}", serde_json::json!({"event":event,"kind":kind(error)}));
+}
+
+/// [`log_failure`] for a result whose only use is to be reported.
+pub fn log_if_failed(event: &str, result: Result<()>) {
+    if let Err(error) = result {
+        log_failure(event, &error);
+    }
+}
+
 /// The single translation from engine failures to the public protocol.
 pub fn kind(error: &Error) -> ErrorKind {
     match error {

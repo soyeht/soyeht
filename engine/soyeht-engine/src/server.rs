@@ -3,7 +3,7 @@ use crate::{
     core::Core,
     dispatch::Outcome,
     errors::{self, Error},
-    model,
+    model, network,
     outbox::{self, CloseReason, Outbox},
     transport, ui_attestation,
 };
@@ -15,7 +15,7 @@ use std::{
     collections::{BTreeSet, VecDeque},
     fs::{self, File, OpenOptions},
     io,
-    net::{IpAddr, SocketAddr},
+    net::SocketAddr,
     os::{
         fd::AsRawFd,
         unix::fs::{FileTypeExt, OpenOptionsExt, PermissionsExt},
@@ -82,15 +82,8 @@ fn local_peer_audit_token(stream: &UnixStream) -> Option<ui_attestation::PeerAud
 pub struct Config {
     pub directory: PathBuf,
     pub listen: Vec<SocketAddr>,
-}
-
-pub fn permitted_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(ip) => {
-            ip.is_loopback() || ip.octets()[0] == 100 && (64..128).contains(&ip.octets()[1])
-        }
-        IpAddr::V6(ip) => ip.is_loopback() || ip.segments()[..3] == [0xfd7a, 0x115c, 0xa1e0],
-    }
+    /// Also listen on every tailnet address on this port, following them as they come and go.
+    pub tailnet_port: Option<u16>,
 }
 
 fn singleton(directory: &Path) -> crate::errors::Result<File> {
@@ -112,7 +105,11 @@ fn singleton(directory: &Path) -> crate::errors::Result<File> {
 }
 
 pub async fn run(config: Config) -> crate::errors::Result<()> {
-    if config.listen.iter().any(|a| !permitted_address(a.ip())) {
+    if config
+        .listen
+        .iter()
+        .any(|a| !network::permitted_address(a.ip()))
+    {
         return Err(Error::ListenerAddressNotPermitted);
     }
     let _lock = singleton(&config.directory)?;
@@ -127,41 +124,31 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     let unix = UnixListener::bind(&socket)?;
     fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
-    let permits = Arc::new(Semaphore::new(128));
     let mut tasks = tokio::task::JoinSet::new();
+    lock_core(&core)?.reachability = network::fixed_reachability(&config.listen);
+    let accept = Accept {
+        core: Arc::clone(&core),
+        permits: Arc::new(Semaphore::new(128)),
+        catalog_tx: catalog_tx.clone(),
+    };
     for address in config.listen {
         let listener = TcpListener::bind(address).await?;
-        let address = listener.local_addr()?;
-        update_pair_address(&core, address)?;
-        let core = Arc::clone(&core);
-        let permits = Arc::clone(&permits);
-        let catalog_tx = catalog_tx.clone();
-        tasks.spawn(async move {
-            loop {
-                let (stream, _) = listener.accept().await?;
-                let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
-                    continue;
-                };
-                let core = Arc::clone(&core);
-                let catalog_tx = catalog_tx.clone();
-                tokio::spawn(async move {
-                    let _permit = permit;
-                    if let Ok(Ok((reader, writer))) =
-                        tokio::time::timeout(Duration::from_secs(5), transport::websocket(stream))
-                            .await
-                    {
-                        connection(core, catalog_tx, false, false, reader, writer).await;
-                    }
-                });
-            }
-            #[allow(unreachable_code)]
-            Ok::<(), Error>(())
-        });
+        update_pair_address(&core, listener.local_addr()?)?;
+        let serving = serve_tcp(listener, accept.clone());
+        tasks.spawn(async move { Ok::<(), Error>(serving.await?) });
+    }
+    if let Some(port) = config.tailnet_port {
+        let serve = accept.clone();
+        let serve = Box::new(move |listener| tokio::spawn(serve_tcp(listener, serve.clone())));
+        let tailnet = network::TailnetListeners::system(port, serve);
+        tasks.spawn(network::follow_tailnet(tailnet, Arc::clone(&core)).await?);
     }
     {
-        let core = Arc::clone(&core);
-        let permits = Arc::clone(&permits);
-        let catalog_tx = catalog_tx.clone();
+        let Accept {
+            core,
+            permits,
+            catalog_tx,
+        } = accept;
         tasks.spawn(async move {
             loop {
                 let (stream, _) = unix.accept().await?;
@@ -231,6 +218,33 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     Ok(())
 }
 
+/// What every accepted connection shares.
+#[derive(Clone)]
+struct Accept {
+    core: Shared,
+    permits: Arc<Semaphore>,
+    catalog_tx: mpsc::Sender<CatalogJob>,
+}
+
+async fn serve_tcp(listener: TcpListener, accept: Accept) -> io::Result<()> {
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let Ok(permit) = Arc::clone(&accept.permits).try_acquire_owned() else {
+            continue;
+        };
+        let (core, catalog_tx) = (Arc::clone(&accept.core), accept.catalog_tx.clone());
+        tokio::spawn(async move {
+            let _permit = permit;
+            let websocket = transport::websocket(stream);
+            if let Ok(Ok((reader, writer))) =
+                tokio::time::timeout(Duration::from_secs(5), websocket).await
+            {
+                connection(core, catalog_tx, false, false, reader, writer).await;
+            }
+        });
+    }
+}
+
 /// Starts the catalogue worker and the usage schedule; returns the catalogue queue.
 fn start_workers(core: &Shared) -> mpsc::Sender<CatalogJob> {
     let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
@@ -254,7 +268,7 @@ async fn connection(
         .and_then(|mut state| state.connect(local, signed_ui, outbox.clone()))
     {
         Ok(id) => id,
-        Err(_) => return,
+        Err(error) => return errors::log_failure("engine.connection_refused", &error),
     };
     let mut write_task = tokio::spawn(write_frames(receiver, writer));
     let reason = tokio::select! {
@@ -263,26 +277,11 @@ async fn connection(
     };
     outbox.close(reason);
     write_task.abort();
-    if let Ok(mut state) = core.lock() {
-        let web_result = state.disconnect_web_host(&id);
-        state.clients.remove(&id);
-        state.native_waiters.retain(|_, waiters| {
-            waiters.retain(|(connection, _)| connection != &id);
-            !waiters.is_empty()
-        });
-        state.language_waiters.retain(|_, waiters| {
-            waiters.retain(|(connection, _)| connection != &id);
-            !waiters.is_empty()
-        });
-        if let Err(error) = web_result {
-            eprintln!(
-                "{}",
-                serde_json::json!({
-                    "event":"engine.storage_or_supervisor_error",
-                    "kind":errors::kind(&error)
-                })
-            );
-        }
+    if let Err(error) = lock_core(&core).and_then(|mut state| state.disconnect(&id)) {
+        // A poisoned lock leaves the client and its waiters registered: say why.
+        let kind = errors::kind(&error);
+        let record = serde_json::json!({"event":"engine.disconnect_cleanup_failed","connectionId":id,"kind":kind});
+        eprintln!("{record}");
     }
     eprintln!("{}", connection_close_record(&id, local, reason));
 }
@@ -325,6 +324,7 @@ async fn write_frames(
             Err(_) => break CloseReason::WriteError,
         }
     };
+    // Bounded best effort; the reason below already says why the connection ended.
     let _ = tokio::time::timeout(Duration::from_secs(1), writer.close()).await;
     reason
 }
@@ -503,6 +503,7 @@ async fn send_outcome(
             let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
                 return Err(CloseReason::WorkerFailed);
             };
+            // Best effort: the connection closes as rejected whether or not the error page lands.
             let _ = outbox.write_page(frame).await;
             return Err(CloseReason::HandshakeRejected);
         }
@@ -555,7 +556,8 @@ async fn catalog_worker(core: Shared, mut rx: mpsc::Receiver<CatalogJob>) {
                 _ => continue,
             };
             if let Ok(frame) = frame {
-                let _ = recipient.outbox.send(frame);
+                // A refused send already closed that outbox with its own reason.
+                recipient.outbox.send(frame);
             }
         }
     }
@@ -1110,22 +1112,6 @@ mod tests {
         });
         assert!(operation_pane_id("usage.refresh", &usage).is_none());
     }
-    #[test]
-    fn listener_refuses_public_lan_and_wildcard_addresses() {
-        for ip in ["0.0.0.0", "::", "192.168.1.10", "8.8.8.8", "100.128.0.1"] {
-            assert!(!permitted_address(ip.parse().unwrap()));
-        }
-        for ip in [
-            "127.0.0.1",
-            "::1",
-            "100.64.0.1",
-            "100.127.255.254",
-            "fd7a:115c:a1e0::1",
-        ] {
-            assert!(permitted_address(ip.parse().unwrap()));
-        }
-    }
-
     #[test]
     fn connection_close_log_has_a_bounded_reason_and_no_transport_error_text() {
         let connection = uuid::Uuid::new_v4().to_string();

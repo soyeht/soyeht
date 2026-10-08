@@ -75,13 +75,13 @@ struct PhoneSettings: View {
   }
 
   private func refresh() {
-    Task { try? await client.refreshUsage(selectedProvider) }
+    Task { await client.refreshUsageInBackground(selectedProvider) }
   }
 
   private func refreshPeriodically() async {
     while !Task.isCancelled {
       do { try await Task.sleep(for: .seconds(300)) } catch { return }
-      try? await client.refreshUsage()
+      await client.refreshUsageInBackground()
     }
   }
 }

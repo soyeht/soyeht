@@ -3,6 +3,7 @@ use crate::{
     core::Core,
     errors::{self, Result},
     model,
+    network::TailnetUpdate,
     ports::{Clock, StorePort},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -170,6 +171,19 @@ impl Core {
         Ok(mutation.result)
     }
 
+    /// Records what a tailnet lookup changed and tells live clients when reachability moved.
+    /// Without a tailnet listener, pairing links fall back to the loopback address.
+    pub fn apply_tailnet(&mut self, update: TailnetUpdate, loopback: &str) -> Result<()> {
+        self.pair_address = update
+            .pair_address
+            .map_or_else(|| loopback.to_string(), |address| address.to_string());
+        if self.reachability == update.reachability {
+            return Ok(());
+        }
+        self.reachability = update.reachability;
+        self.transient_event("engine.reachability_changed", json!(self.reachability))
+    }
+
     fn send_pair_result(&self, connection: &str, pending: &Pending) -> Result<()> {
         let approved = pending.approved == Some(true);
         let mut result = json!({"requestId":pending.id,"approved":approved});
@@ -205,10 +219,13 @@ impl Core {
                 self.pair_address,
                 code
             );
-            return Ok(self.mutate(connection,method,params,|tx| {
+            let mut result = self.mutate(connection,method,params,|tx| {
                 tx.open_pair_window(&code, expires, now)?;
                 Ok((json!({"code":code,"expiresAt":expires_at.to_rfc3339_opts(SecondsFormat::Secs,true),"uri":uri}),vec![]))
-            })?.result);
+            })?.result;
+            // Live state, not part of the idempotent record: a replay sees today's reachability.
+            result["reachability"] = json!(self.reachability);
+            return Ok(result);
         }
         if method == "device.revoke" {
             let id = errors::param_str(params, "deviceId")?;
@@ -331,5 +348,84 @@ mod tests {
         );
         let error = active_pending(&store, &FixedClock(11_000), "request").unwrap_err();
         assert_eq!(errors::kind(&error), ErrorKind::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn tailnet_reachability_reaches_status_pairing_and_live_clients() {
+        use crate::{dispatch::Outcome, network, outbox};
+        use soyeht_protocol::{EngineReachabilityReason, frame::Frame};
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-reachability-{}", Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let mut core = Core::open(&directory).unwrap();
+        let (outbox, mut receiver) = outbox::channel();
+        let connection = core.connect(true, false, outbox).unwrap();
+        let _challenge = receiver.next().await.unwrap().unwrap();
+        let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
+            "client":"reachability-test","clientVersion":"1","protocolVersion":1}});
+        core.dispatch(&connection, hello).unwrap();
+        core.clients.get_mut(&connection).unwrap().events = true;
+        let call = |core: &mut Core, id: u32, method: &str| {
+            let params = json!({"idempotencyKey":Uuid::new_v4().to_string()});
+            let request = json!({"jsonrpc":"2.0","id":id,"method":method,"params":params});
+            match core.dispatch(&connection, request).unwrap() {
+                Outcome::Reply(result) => result,
+                _ => panic!("{method} did not reply"),
+            }
+        };
+        let loopback = core.pair_address.clone();
+
+        let missing = network::unreachable(EngineReachabilityReason::TailnetAddressNotFound);
+        let update = |reachability, pair_address| TailnetUpdate {
+            reachability,
+            pair_address,
+        };
+        core.apply_tailnet(update(missing.clone(), None), &loopback)
+            .unwrap();
+        let status = call(&mut core, 2, "engine.status");
+        assert_eq!(
+            status["reachability"],
+            json!({"remote":false,"reason":"tailnet_address_not_found"})
+        );
+        let pair = call(&mut core, 3, "device.pair.start");
+        assert_eq!(pair["reachability"]["remote"], false);
+        assert!(pair["uri"].as_str().unwrap().contains(&loopback));
+
+        let tailnet: std::net::SocketAddr = "100.64.0.9:7777".parse().unwrap();
+        core.apply_tailnet(update(network::reachable(), Some(tailnet)), &loopback)
+            .unwrap();
+        let mut announced = vec![];
+        while let Ok(Some(packet)) =
+            tokio::time::timeout(std::time::Duration::from_millis(50), receiver.next())
+                .await
+                .unwrap_or(Ok(None))
+        {
+            if let Frame::Json(bytes) = packet.frame {
+                let message: Value = serde_json::from_slice(&bytes).unwrap();
+                if message["method"] == "engine.reachability_changed" {
+                    announced.push(message["params"].clone());
+                }
+            }
+        }
+        assert_eq!(
+            announced,
+            [
+                json!({"remote":false,"reason":"tailnet_address_not_found"}),
+                json!({"remote":true})
+            ]
+        );
+        assert_eq!(
+            call(&mut core, 4, "engine.status")["reachability"]["remote"],
+            true
+        );
+        let pair = call(&mut core, 5, "device.pair.start");
+        assert!(
+            pair["uri"]
+                .as_str()
+                .unwrap()
+                .contains("address=100.64.0.9:7777")
+        );
+        drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

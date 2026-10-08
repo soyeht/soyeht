@@ -126,28 +126,28 @@ fn run_probe_command(
         .spawn()
         .map_err(|_| LaunchPathIssue::ProbeFailed)?;
     let Some(mut stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(LaunchPathIssue::ProbeFailed);
+        return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed));
     };
     if set_nonblocking(&stdout).is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(LaunchPathIssue::ProbeFailed);
+        return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed));
     }
     let deadline = Instant::now() + timeout;
     let mut bytes = Vec::new();
     let mut exited = None;
     let mut eof = false;
     while Instant::now() < deadline {
-        eof |= read_available(&mut stdout, &mut bytes).map_err(|_| LaunchPathIssue::ProbeFailed)?;
+        match read_available(&mut stdout, &mut bytes) {
+            Ok(done) => eof |= done,
+            Err(_) => return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed)),
+        }
         if bytes.len() > PATH_PROBE_BYTES {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(LaunchPathIssue::OutputTooLarge);
+            return Err(abandon(&mut child, LaunchPathIssue::OutputTooLarge));
         }
         if exited.is_none() {
-            exited = child.try_wait().map_err(|_| LaunchPathIssue::ProbeFailed)?;
+            match child.try_wait() {
+                Ok(status) => exited = status,
+                Err(_) => return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed)),
+            }
         }
         if eof && exited.is_some() {
             break;
@@ -155,14 +155,20 @@ fn run_probe_command(
         thread::sleep(Duration::from_millis(10));
     }
     if exited.is_none() || !eof {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(LaunchPathIssue::ProbeTimedOut);
+        return Err(abandon(&mut child, LaunchPathIssue::ProbeTimedOut));
     }
     if !exited.is_some_and(|status| status.success()) {
         return Err(LaunchPathIssue::ProbeFailed);
     }
     probe_output(&bytes).ok_or(LaunchPathIssue::InvalidOutput)
+}
+
+/// Stops a probe that already failed. Best effort: the returned issue already says why
+/// the probe failed, and a kill or reap error would add nothing to it.
+fn abandon(child: &mut std::process::Child, issue: LaunchPathIssue) -> LaunchPathIssue {
+    let _ = child.kill();
+    let _ = child.wait();
+    issue
 }
 
 fn run_probe(shell: &ShellProbe, timeout: Duration) -> Result<String, LaunchPathIssue> {
@@ -182,6 +188,7 @@ fn resolve_launch_path() -> LaunchPath {
 
 pub fn launch_path_resolution() -> LaunchPath {
     let cache = LAUNCH_PATH.get_or_init(|| RwLock::new(None));
+    // A poisoned cache only costs a fresh probe.
     if let Some(path) = cache.read().ok().and_then(|value| value.clone()) {
         return path;
     }

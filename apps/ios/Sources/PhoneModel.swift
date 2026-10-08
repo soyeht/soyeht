@@ -26,7 +26,18 @@ final class PhoneModel {
   }
   func pair(_ uri: String) {
     guard pairTask == nil else { return }
-    do { _ = try PairingLink(uri) } catch {
+    do {
+      let reachability = try PairingLink(uri).reachability
+      #if targetEnvironment(simulator)
+        _ = reachability  // The simulator shares the Mac's loopback.
+      #else
+        // On a device a loopback link names the phone itself: say why it cannot connect.
+        if let text = reachability.problemText {
+          problem = text
+          return
+        }
+      #endif
+    } catch {
       problem = error.localizedDescription
       return
     }
@@ -68,7 +79,8 @@ final class PhoneModel {
   func forgetMac() {
     do {
       try CredentialVault.forget()
-      // Best effort: a Mac this device no longer knows should stop sending alerts.
+      // Best effort, silent by design: a Mac this device no longer knows should stop
+      // sending alerts, and the forgotten Mac cannot be retried from here.
       if let forgotten = client {
         Task {
           if forgotten.connected { try? await forgotten.unregisterPush() }

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 7eec3db4c57c18f72ef66b2900ff07f8bde0f7341eb42cece66f9e04a3d8c96f). Do not edit.
+// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -395,6 +395,7 @@ export interface DevicePairStartResult {
   "code": string;
   "expiresAt": string;
   "uri": string;
+  "reachability"?: EngineReachability;
 }
 
 export interface DevicePairDecideParams {
@@ -470,6 +471,13 @@ export interface PairProveResult {
   "status": string;
 }
 
+export type EngineReachabilityReason = "tailnet_address_not_found" | "tailnet_lookup_failed" | "tailnet_listen_failed" | "loopback_only";
+
+export interface EngineReachability {
+  "remote": boolean;
+  "reason"?: EngineReachabilityReason;
+}
+
 export interface EngineStatusParams {
 
 }
@@ -479,6 +487,7 @@ export interface EngineStatusResult {
   "generation": number;
   "ptyd": PtydStatus;
   "db": DbStatus;
+  "reachability"?: EngineReachability;
 }
 
 export interface SettingsGetParams {
@@ -3520,6 +3529,7 @@ export interface Events {
   "pair.result": PairResultEvent;
   "engine.updating": EngineUpdatingEvent;
   "engine.restarted": EngineRestartedEvent;
+  "engine.reachability_changed": EngineReachability;
   "ptyd.reconnected": PtydReconnectedEvent;
   "ptyd.lost": PtydLostEvent;
   "pane.updated": PaneUpdatedEvent;
@@ -3600,6 +3610,7 @@ export const eventRegistry = {
   "pair.result": { paramsType: "PairResultEvent", durable: false },
   "engine.updating": { paramsType: "EngineUpdatingEvent", durable: true },
   "engine.restarted": { paramsType: "EngineRestartedEvent", durable: true },
+  "engine.reachability_changed": { paramsType: "EngineReachability", durable: false },
   "ptyd.reconnected": { paramsType: "PtydReconnectedEvent", durable: true },
   "ptyd.lost": { paramsType: "PtydLostEvent", durable: true },
   "pane.updated": { paramsType: "PaneUpdatedEvent", durable: true },

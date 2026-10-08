@@ -1047,7 +1047,10 @@
     "value": {
       "code": "example",
       "expiresAt": "2026-09-10T23:00:00Z",
-      "uri": "example"
+      "uri": "example",
+      "reachability": {
+        "remote": true
+      }
     }
   },
   {
@@ -1177,6 +1180,18 @@
     }
   },
   {
+    "name": "EngineReachabilityReason",
+    "type": "EngineReachabilityReason",
+    "value": "tailnet_lookup_failed"
+  },
+  {
+    "name": "EngineReachability",
+    "type": "EngineReachability",
+    "value": {
+      "remote": true
+    }
+  },
+  {
     "name": "EngineStatusParams",
     "type": "EngineStatusParams",
     "value": {}
@@ -1195,6 +1210,10 @@
       "db": {
         "id": "00000000-0000-4000-8000-000000000001",
         "schemaVersion": 1
+      },
+      "reachability": {
+        "remote": false,
+        "reason": "tailnet_address_not_found"
       }
     }
   },
@@ -2856,6 +2875,18 @@
         "eventId": "18446744073709551615",
         "at": "2026-09-10T23:00:00Z",
         "generation": 1
+      }
+    }
+  },
+  {
+    "name": "event:engine.reachability_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "engine.reachability_changed",
+      "params": {
+        "remote": false,
+        "reason": "tailnet_address_not_found"
       }
     }
   },

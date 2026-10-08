@@ -102,6 +102,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
             guard: Some(parent),
         }),
         Err(error) => {
+            // Reap only: the group was just terminated; an error means it is already gone.
             process::terminate_tree(child.id());
             let _ = child.wait();
             Err(error)
@@ -146,6 +147,7 @@ pub fn run(fd: i32) -> Result<()> {
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
+                // The supervisor may already be gone; the exit is final either way.
                 let _ = reply(&mut control, Reply::Exited(status.code().unwrap_or(-1)));
                 kill_own_group();
             }

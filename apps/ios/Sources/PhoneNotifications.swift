@@ -89,7 +89,12 @@ final class PhonePush {
     let center = UNUserNotificationCenter.current()
     var status = await center.notificationSettings().authorizationStatus
     if status == .notDetermined {
-      _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+      do {
+        _ = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+      } catch {
+        // The settings read below decides; the reason must still reach the log.
+        pushLogger.error("notification_authorization_failed error=\(error.localizedDescription)")
+      }
       status = await center.notificationSettings().authorizationStatus
     }
     guard Self.allowed(status) else { return }

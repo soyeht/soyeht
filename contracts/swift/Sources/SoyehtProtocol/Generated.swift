@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 7eec3db4c57c18f72ef66b2900ff07f8bde0f7341eb42cece66f9e04a3d8c96f). Do not edit.
+// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
 import Foundation
 
 
@@ -825,10 +825,12 @@ public struct DevicePairStartResult: Codable, Sendable {
     public var `code`: String
     public var `expiresAt`: String
     public var `uri`: String
-    public init(`code`: String, `expiresAt`: String, `uri`: String) {
+    public var `reachability`: EngineReachability?
+    public init(`code`: String, `expiresAt`: String, `uri`: String, `reachability`: EngineReachability? = nil) {
         self.`code` = `code`
         self.`expiresAt` = `expiresAt`
         self.`uri` = `uri`
+        self.`reachability` = `reachability`
     }
 }
 
@@ -965,6 +967,22 @@ public struct PairProveResult: Codable, Sendable {
     }
 }
 
+public enum EngineReachabilityReason: String, Codable, Sendable {
+    case `tailnet_address_not_found` = "tailnet_address_not_found"
+    case `tailnet_lookup_failed` = "tailnet_lookup_failed"
+    case `tailnet_listen_failed` = "tailnet_listen_failed"
+    case `loopback_only` = "loopback_only"
+}
+
+public struct EngineReachability: Codable, Sendable {
+    public var `remote`: Bool
+    public var `reason`: EngineReachabilityReason?
+    public init(`remote`: Bool, `reason`: EngineReachabilityReason? = nil) {
+        self.`remote` = `remote`
+        self.`reason` = `reason`
+    }
+}
+
 public struct EngineStatusParams: Codable, Sendable {
 
     public init() {
@@ -977,11 +995,13 @@ public struct EngineStatusResult: Codable, Sendable {
     public var `generation`: UInt32
     public var `ptyd`: PtydStatus
     public var `db`: DbStatus
-    public init(`version`: String, `generation`: UInt32, `ptyd`: PtydStatus, `db`: DbStatus) {
+    public var `reachability`: EngineReachability?
+    public init(`version`: String, `generation`: UInt32, `ptyd`: PtydStatus, `db`: DbStatus, `reachability`: EngineReachability? = nil) {
         self.`version` = `version`
         self.`generation` = `generation`
         self.`ptyd` = `ptyd`
         self.`db` = `db`
+        self.`reachability` = `reachability`
     }
 }
 
@@ -6648,6 +6668,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case pairResult = "pair.result"
     case engineUpdating = "engine.updating"
     case engineRestarted = "engine.restarted"
+    case engineReachabilityChanged = "engine.reachability_changed"
     case ptydReconnected = "ptyd.reconnected"
     case ptydLost = "ptyd.lost"
     case paneUpdated = "pane.updated"
@@ -6733,6 +6754,7 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .pairResult: EventDescriptor(paramsType: "PairResultEvent", durable: false),
     .engineUpdating: EventDescriptor(paramsType: "EngineUpdatingEvent", durable: true),
     .engineRestarted: EventDescriptor(paramsType: "EngineRestartedEvent", durable: true),
+    .engineReachabilityChanged: EventDescriptor(paramsType: "EngineReachability", durable: false),
     .ptydReconnected: EventDescriptor(paramsType: "PtydReconnectedEvent", durable: true),
     .ptydLost: EventDescriptor(paramsType: "PtydLostEvent", durable: true),
     .paneUpdated: EventDescriptor(paramsType: "PaneUpdatedEvent", durable: true),

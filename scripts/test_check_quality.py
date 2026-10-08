@@ -18,6 +18,7 @@ from quality_core import (
     JUSTIFICATIONS_NAME,
     MEASUREMENT_VERSION,
     PANIC_KEY,
+    SWALLOWED_KEY,
     QualityError,
     baseline_from_measurement,
     duplicate_measurement,
@@ -77,6 +78,9 @@ def empty_measurement() -> dict:
     return {
         "version": MEASUREMENT_VERSION,
         PANIC_KEY: 0,
+        SWALLOWED_KEY: dict.fromkeys(
+            ("swift_try_optional", "rust_ok", "rust_let_underscore"), 0
+        ),
         "duplication": {
             area: {"clones": 0, "duplicated_lines": 0, "percent": 0}
             for area in DUPLICATION_SCANS

@@ -80,7 +80,7 @@ public struct PhoneWritingLocalState: Codable, Equatable, Sendable {
   }
 
   public static func decoded(_ data: Data) -> Self? {
-    guard let state = try? JSONDecoder().decode(Self.self, from: data),
+    guard let state = ClientDiagnostics.decoded(Self.self, from: data, event: "phone_state_broken"),
       state.version == currentVersion
     else { return nil }
     return state

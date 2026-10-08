@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
 
+from check_swallowed_errors import measure as swallowed_errors
 from hardening_gate import engine_production_panics as count_engine_panics
 
 
@@ -51,6 +52,9 @@ IGNORED_FILES = {"generated.rs", "Generated.swift"}
 BASELINE_NAME = "scripts/quality_baseline.json"
 JUSTIFICATIONS_NAME = "scripts/quality_baseline_justifications.json"
 PANIC_KEY = "engine_production_panics"
+# try?, .ok() and let _ = in production code: each new one must log, propagate,
+# surface the error, or be justified like any other baseline raise.
+SWALLOWED_KEY = "swallowed_errors"
 # Absolute: production code returns errors; no baseline or reason can raise it.
 PANIC_CEILING = 0
 MEASUREMENT_VERSION = 3
@@ -305,6 +309,7 @@ def measure(repo: Path, jscpd: Path, machete: str) -> dict:
         "oversized_files": oversized,
         "loose_literals": literals,
         PANIC_KEY: engine_production_panics(repo),
+        SWALLOWED_KEY: swallowed_errors(repo),
     }
 
 
@@ -322,6 +327,7 @@ def baseline_from_measurement(measurement: dict) -> dict:
         "oversized_files": measurement["oversized_files"],
         "loose_literals": measurement["loose_literals"],
         PANIC_KEY: measurement[PANIC_KEY],
+        SWALLOWED_KEY: measurement[SWALLOWED_KEY],
     }
 
 
@@ -372,6 +378,18 @@ def differences(baseline: dict, actual: dict) -> list[Change]:
                 current,
                 f"literal {path} {kind}: baseline {previous}, actual {current}",
                 "; use a policy, token, font source or limits",
+            )
+    # A side recorded before this metric existed has nothing to compare.
+    if SWALLOWED_KEY in baseline and SWALLOWED_KEY in actual:
+        for metric in sorted(baseline[SWALLOWED_KEY].keys() | actual[SWALLOWED_KEY].keys()):
+            previous = baseline[SWALLOWED_KEY].get(metric, 0)
+            current = actual[SWALLOWED_KEY].get(metric, 0)
+            changes += compare(
+                f"{SWALLOWED_KEY}.{metric}",
+                previous,
+                current,
+                f"swallowed errors {metric}: baseline {previous}, actual {current}",
+                "; log, propagate or surface the error, or justify the ignore",
             )
     # Absolute ceiling, whatever the older side recorded.
     if PANIC_KEY in actual and actual[PANIC_KEY] > PANIC_CEILING:

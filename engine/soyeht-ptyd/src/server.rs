@@ -103,10 +103,25 @@ pub fn run(directory: &Path) -> Result<()> {
         let stream = incoming?;
         let state = Arc::clone(&state);
         thread::spawn(move || {
-            let _ = connection(stream, state);
+            if let Err(error) = connection(stream, state) {
+                let record = serde_json::json!({"event":"ptyd.connection_failed","error":error_label(&error)});
+                eprintln!("{record}");
+            }
         });
     }
     Ok(())
+}
+
+/// A bounded label for logs: the variant (and I/O kind), never message text or paths.
+fn error_label(error: &Error) -> String {
+    match error {
+        Error::Io(error) => format!("Io::{:?}", error.kind()),
+        other => format!("{other:?}")
+            .split(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or("Unknown")
+            .to_string(),
+    }
 }
 
 fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> Result<()> {
@@ -150,6 +165,7 @@ fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> Result<()> {
             return Err(error);
         }
         if let Some((_, old)) = state.active.take() {
+            // The superseded engine connection may already be closed; either way it ends here.
             let _ = old.shutdown(Shutdown::Both);
         }
         state.active = Some((connection_id.clone(), stream.try_clone()?));
@@ -290,6 +306,7 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
             .instances
             .remove(&instance.spawn.instance_key);
         let mut child = lock(&live.child, "child")?;
+        // Reap only: the group was just terminated; an error means it is already gone.
         terminate(&live, child.id());
         let _ = child.wait();
         return Err(failure);
@@ -322,6 +339,7 @@ fn execute_kill(state: &State, instance_id: &str) -> Result<Response> {
     };
     let mut child = lock(&live.child, "child")?;
     if child.try_wait()?.is_none() {
+        // Reap only: the group was just terminated; an error means it is already gone.
         terminate(live, child.id());
         let _ = child.wait();
     }
@@ -352,6 +370,7 @@ fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
         if let Some(live) = state.live.remove(instance_id) {
             let mut child = lock(&live.child, "child")?;
             if child.try_wait()?.is_none() {
+                // Reap only: the group was just terminated; an error means it is already gone.
                 terminate(&live, child.id());
                 let _ = child.wait();
             }
@@ -578,4 +597,25 @@ fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, k
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_failures_are_logged_by_variant_without_message_text() {
+        let io = Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "/private/path"));
+        assert_eq!(error_label(&io), "Io::BrokenPipe");
+        let remote = Error::Remote {
+            kind: "kind".into(),
+            message: "secret detail".into(),
+        };
+        assert_eq!(error_label(&remote), "Remote");
+        assert_eq!(error_label(&Error::PoisonedLock("state")), "PoisonedLock");
+        assert_eq!(
+            error_label(&Error::ConnectionSuperseded),
+            "ConnectionSuperseded"
+        );
+    }
 }

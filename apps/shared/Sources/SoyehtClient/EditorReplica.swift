@@ -517,6 +517,7 @@ extension EngineClient {
       } catch {
         editorWriteQueues[fileId] = nil
         problem = error.localizedDescription
+        // Best effort: the problem above is what the person sees; a reload retries later.
         try? await refreshEditorFile(fileId)
         return
       }

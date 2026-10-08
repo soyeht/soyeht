@@ -1414,6 +1414,9 @@
         },
         "uri": {
           "type": "string"
+        },
+        "reachability": {
+          "$ref": "#/$defs/EngineReachability"
         }
       },
       "required": [
@@ -1655,6 +1658,30 @@
       ],
       "additionalProperties": true
     },
+    "EngineReachabilityReason": {
+      "type": "string",
+      "enum": [
+        "tailnet_address_not_found",
+        "tailnet_lookup_failed",
+        "tailnet_listen_failed",
+        "loopback_only"
+      ]
+    },
+    "EngineReachability": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "type": "boolean"
+        },
+        "reason": {
+          "$ref": "#/$defs/EngineReachabilityReason"
+        }
+      },
+      "required": [
+        "remote"
+      ],
+      "additionalProperties": true
+    },
     "EngineStatusParams": {
       "type": "object",
       "properties": {},
@@ -1677,6 +1704,9 @@
         },
         "db": {
           "$ref": "#/$defs/DbStatus"
+        },
+        "reachability": {
+          "$ref": "#/$defs/EngineReachability"
         }
       },
       "required": [
@@ -13569,6 +13599,12 @@
         "$ref": "#/$defs/EngineRestartedEvent"
       },
       "durable": true
+    },
+    "engine.reachability_changed": {
+      "params": {
+        "$ref": "#/$defs/EngineReachability"
+      },
+      "durable": false
     },
     "ptyd.reconnected": {
       "params": {

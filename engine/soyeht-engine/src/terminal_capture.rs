@@ -352,8 +352,8 @@ impl Drop for TerminalCapture {
         #[cfg(test)]
         self.test_projection_gate.set_paused(false);
         self.sender.take();
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+        if let Some(Err(_)) = self.worker.take().map(|worker| worker.join()) {
+            eprintln!("{{\"event\":\"engine.terminal_capture_panicked\"}}");
         }
     }
 }

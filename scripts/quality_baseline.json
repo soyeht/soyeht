@@ -1,8 +1,8 @@
 {
   "duplication": {
     "engine": {
-      "clones": 411,
-      "duplicated_lines": 3659
+      "clones": 409,
+      "duplicated_lines": 3647
     },
     "ios": {
       "clones": 6,
@@ -233,14 +233,14 @@
     }
   },
   "oversized_files": {
-    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1501,
+    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1492,
     "apps/mac/Sources/PreferencesPanel.swift": 926,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
     "apps/mac/Sources/WorkspaceWindow.swift": 2860,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1029,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1006,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-cli/src/task_commands.rs": 862,
     "engine/soyeht-engine/src/agents/questions.rs": 1119,
@@ -249,7 +249,7 @@
     "engine/soyeht-engine/src/editor/service.rs": 1036,
     "engine/soyeht-engine/src/experiment_export.rs": 1216,
     "engine/soyeht-engine/src/pane_observations.rs": 1666,
-    "engine/soyeht-engine/src/server.rs": 1139,
+    "engine/soyeht-engine/src/server.rs": 1125,
     "engine/soyeht-engine/src/tasks/feedback.rs": 909,
     "engine/soyeht-engine/src/tasks/review.rs": 826,
     "engine/soyeht-engine/src/tasks/worktree.rs": 815,
@@ -261,6 +261,11 @@
     "engine/soyeht-store/src/editor.rs": 848,
     "engine/soyeht-store/tests/agents.rs": 1085,
     "engine/soyeht-store/tests/tasks.rs": 992
+  },
+  "swallowed_errors": {
+    "rust_let_underscore": 53,
+    "rust_ok": 110,
+    "swift_try_optional": 34
   },
   "version": 3
 }

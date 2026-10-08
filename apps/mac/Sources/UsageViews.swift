@@ -253,6 +253,6 @@ struct UsageSettingsDetail: View {
   }
 
   private func refresh() {
-    Task { try? await client.refreshUsage(selectedProvider) }
+    Task { await client.refreshUsageInBackground(selectedProvider) }
   }
 }

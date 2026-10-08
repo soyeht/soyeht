@@ -81,6 +81,21 @@ impl Core {
         );
         Ok(id)
     }
+    /// Forgets a closed connection and its waiters. The client is removed even when
+    /// detaching its web host fails; that failure is returned for the log.
+    pub fn disconnect(&mut self, id: &str) -> Result<()> {
+        let web_result = self.disconnect_web_host(id);
+        self.clients.remove(id);
+        self.native_waiters.retain(|_, waiters| {
+            waiters.retain(|(connection, _)| connection != id);
+            !waiters.is_empty()
+        });
+        self.language_waiters.retain(|_, waiters| {
+            waiters.retain(|(connection, _)| connection != id);
+            !waiters.is_empty()
+        });
+        web_result
+    }
     fn hello(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let hello: HelloParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid hello parameters"))?;
@@ -414,7 +429,7 @@ impl Core {
                 json!({})
             }
             "engine.status" => {
-                json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION}})
+                json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION},"reachability":self.reachability})
             }
             "settings.get" => {
                 let key = errors::param_str(params, "key")?;

@@ -1,6 +1,6 @@
 # ADR 0015 · Tailnet after login
 
-Status: accepted. Scope: slice 1.
+Status: superseded by ADR 0078. Scope: slice 1.
 
 At reboot, there is no guarantee that the tailnet interface appears before the
 engine's LaunchAgent. Querying it only once left the engine restricted to loopback

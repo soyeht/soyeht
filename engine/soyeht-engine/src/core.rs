@@ -55,7 +55,35 @@ pub struct Core {
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
+    /// Whether paired devices can reach this engine (tailnet listeners), ADR 0078.
+    pub reachability: soyeht_protocol::EngineReachability,
     pub push: crate::push::Notifier,
+}
+
+/// Removes export temporaries a crashed engine left behind and logs the outcome.
+fn log_stale_export_cleanup(directory: &Path) {
+    match crate::experiment_export::cleanup_stale_export_temporaries_on_start(directory) {
+        Ok((cleaned_files, cleaned_bytes)) if cleaned_files > 0 => {
+            eprintln!(
+                "{}",
+                json!({
+                    "event":"engine.experiment_export_temporary_cleanup",
+                    "files":cleaned_files,
+                    "bytes":cleaned_bytes.to_string()
+                })
+            );
+        }
+        Err(error) => {
+            eprintln!(
+                "{}",
+                json!({
+                    "event":"engine.experiment_export_temporary_cleanup_failed",
+                    "reason":error.to_string()
+                })
+            );
+        }
+        _ => (),
+    }
 }
 
 impl Core {
@@ -63,28 +91,7 @@ impl Core {
         // Resolve the user's interactive launch path before requests arrive so
         // catalogue reads and process launches share one environment snapshot.
         let _ = crate::agents::environment::launch_path();
-        match crate::experiment_export::cleanup_stale_export_temporaries_on_start(directory) {
-            Ok((cleaned_files, cleaned_bytes)) if cleaned_files > 0 => {
-                eprintln!(
-                    "{}",
-                    json!({
-                        "event":"engine.experiment_export_temporary_cleanup",
-                        "files":cleaned_files,
-                        "bytes":cleaned_bytes.to_string()
-                    })
-                );
-            }
-            Err(error) => {
-                eprintln!(
-                    "{}",
-                    json!({
-                        "event":"engine.experiment_export_temporary_cleanup_failed",
-                        "reason":error.to_string()
-                    })
-                );
-            }
-            _ => (),
-        }
+        log_stale_export_cleanup(directory);
         let mut store = Store::open(directory).map_err(errors::storage)?;
         let workspaces = store.workspaces().map_err(errors::storage)?;
         let _ = crate::workspace_layout::log_fallback_diagnostics(
@@ -131,6 +138,7 @@ impl Core {
             web_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
             pair_address: format!("127.0.0.1:{DEV_TCP_PORT}"),
+            reachability: crate::network::loopback_only(),
             push: crate::push::Notifier::disabled(),
         };
         for stored in model::panes(&core.store)? {
@@ -344,10 +352,14 @@ impl Core {
             Ok(response) => Ok(response),
             Err(Error::Supervisor(_)) => {
                 self.ptyd = None;
-                let _ = self.system_event(
+                // The caller still gets ptyd_unavailable; a lost event that cannot be
+                // recorded must at least reach the log.
+                if let Err(error) = self.system_event(
                     "ptyd.lost",
                     json!({"reason":"Supervisor connection closed"}),
-                );
+                ) {
+                    errors::log_failure("engine.ptyd_lost_unrecorded", &error);
+                }
                 Err(errors::ptyd_unavailable("Supervisor disconnected"))
             }
             Err(error) => Err(error),

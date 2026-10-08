@@ -19,6 +19,7 @@ from quality_core import (
     JUSTIFICATIONS_NAME,
     PANIC_KEY,
     QualityError,
+    SWALLOWED_KEY,
     SWIFT_LITERAL_PATTERNS,
     baseline_at,
     baseline_from_measurement,
@@ -119,6 +120,10 @@ def render(
         f"engine production unwrap/expect/panic!: {before[PANIC_KEY]} -> "
         f"{current[PANIC_KEY]}"
     )
+    for metric, value in current[SWALLOWED_KEY].items():
+        lines.append(
+            f"swallowed errors {metric}: {before[SWALLOWED_KEY][metric]} -> {value}"
+        )
     lines.append("cargo-machete: PASS")
     lines.append(f"Periphery: {periphery}")
     relaxations = baseline_relaxations(

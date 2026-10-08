@@ -40,20 +40,20 @@ async fn main() -> Result<()> {
         }
     }
     if !listen.is_empty() {
-        return server::run(Config { directory, listen }).await;
+        return server::run(Config {
+            directory,
+            listen,
+            tailnet_port: None,
+        })
+        .await;
     }
-    let addresses = soyeht_engine::network::tailnet_addresses().unwrap_or_default();
-    listen.push(SocketAddr::from(([127, 0, 0, 1], DEV_TCP_PORT)));
-    for ip in &addresses {
-        listen.push(SocketAddr::new(*ip, DEV_TCP_PORT));
-    }
-    tokio::select! {
-        result = server::run(Config { directory, listen }) => result,
-        _ = soyeht_engine::network::wait_for_address_change(addresses) => {
-            // The Dev service manager restarts only the engine. The supervisor
-            // and all live shells remain available for adoption.
-            eprintln!("{}", serde_json::json!({"event":"engine.network_changed"}));
-            Ok(())
-        }
-    }
+    // Local clients always have loopback. Tailnet listeners follow the interfaces
+    // inside the engine (ADR 0078): a missing address is logged, reported to clients
+    // and retried, and a late address starts listening without a restart.
+    server::run(Config {
+        directory,
+        listen: vec![SocketAddr::from(([127, 0, 0, 1], DEV_TCP_PORT))],
+        tailnet_port: Some(DEV_TCP_PORT),
+    })
+    .await
 }

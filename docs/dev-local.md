@@ -58,10 +58,12 @@ The installer creates only the `com.soyeht.next.dev.ptyd` and
 `com.soyeht.next.dev.engine` services. Executables, database and logs live in
 `~/Library/Application Support/Soyeht.next/dev/`. Service files live in
 `~/Library/LaunchAgents/`. The engine listens on loopback and tailnet addresses
-(IPv4 and IPv6), port 8291. If the tailnet becomes available later or changes
-address, the engine detects the change and exits; launchd restarts it with the
-current addresses. The supervisor stays alive, shells are adopted and clients
-reconnect. The query uses only local system interfaces, without calling another program.
+(IPv4 and IPv6), port 8291. Loopback is always on. The engine looks for tailnet
+addresses every two seconds and starts or stops their listeners in place, without
+a restart (ADR 0078). While no tailnet listener runs, the log has an
+`engine.tailnet_unreachable` event with the reason, `engine.status` and the pairing
+result carry `reachability`, and the Mac shows “Not reachable from your devices”.
+The query uses only local system interfaces, without calling another program.
 
 `pane create --shell --cwd PATH` opens the shell in that directory and creates
 the corresponding workspace when needed. The current directory is the default.

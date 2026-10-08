@@ -128,6 +128,7 @@ impl Writer {
             }
         }
     }
+    /// Best effort: the connection is over either way, and the close reason is already set.
     pub async fn close(&mut self) {
         match self {
             Self::Unix(writer) => {

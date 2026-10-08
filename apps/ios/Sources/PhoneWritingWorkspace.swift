@@ -266,17 +266,8 @@ struct PhoneWritingWorkspace: View {
   }
 
   private func layoutTree(livePanes: [Pane]) -> PaneLayoutTree? {
-    if let reconciliation = try? client.paneLayouts.reconciledPresentation(
-      for: workspaceId, livePanes: livePanes, sizing: PhoneWritingMetrics.sizing)
-    {
-      return reconciliation.state.tree
-    }
-    guard let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId }) else {
-      return nil
-    }
-    var state = client.paneLayoutState(for: workspace)
-    _ = try? state.reconcile(livePanes: livePanes, sizing: PhoneWritingMetrics.sizing)
-    return state.tree
+    client.presentedLayoutTree(
+      workspaceId: workspaceId, livePanes: livePanes, sizing: PhoneWritingMetrics.sizing)
   }
 
   private func apply(_ action: PhoneWritingStateAction, to plan: PhoneWritingLayoutPlan) {

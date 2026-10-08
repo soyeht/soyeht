@@ -27,7 +27,7 @@ public final class EngineClient {
   public private(set) var panes: [Pane] = []
   public private(set) var workspaces: [Workspace] = []
   public private(set) var devices: [Device] = []
-  public private(set) var pairRequests: [PairPrompt] = []
+  public internal(set) var pairRequests: [PairPrompt] = []
   public internal(set) var agentPanes: [String: AgentPaneView] = [:]
   public internal(set) var agentWebDrafts: [String: AgentWebAttachmentDraft] = [:]
   public internal(set) var harnesses: [HarnessInfo] = []
@@ -68,7 +68,9 @@ public final class EngineClient {
   public var gapText: String? {
     selectedPaneId.flatMap { terminalStreams.gapText(for: $0) }
   }
-  public private(set) var pairCode: DevicePairStartResult?
+  public internal(set) var pairCode: DevicePairStartResult?
+  /// Whether paired devices can reach the engine; `nil` until the engine says.
+  public internal(set) var reachability: EngineReachability?
   public private(set) var connectionActor: Actor?
   @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
   @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
@@ -568,8 +570,8 @@ public final class EngineClient {
       try applyEditorEvent(eventName, params)
     case .serversLocalChanged, .webNavigated, .webConsoleCounts, .webAgentDriving:
       try applyWebEvent(eventName, params)
-    case .settingsChanged:
-      try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
+    case .settingsChanged: try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
+    case .engineReachabilityChanged: try applyReachability(params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .paneConfigChanging, .paneConfigChanged:
       break
@@ -983,31 +985,6 @@ public final class EngineClient {
         resizeTasks.removeValue(forKey: pane)
         resizeGenerations.removeValue(forKey: pane)
       }
-    }
-  }
-  public func beginPairing() {
-    perform {
-      self.pairCode = try await self.mutation(
-        "device.pair.start",
-        DevicePairStartParams(idempotencyKey: UUID().uuidString)
-      ).decoded(DevicePairStartResult.self)
-    }
-  }
-  public func revokeDevice(_ id: String) {
-    perform {
-      _ = try await self.mutation(
-        "device.revoke", DeviceRevokeParams(deviceId: id, idempotencyKey: UUID().uuidString))
-    }
-  }
-  public func clearPairCode() { pairCode = nil }
-  public func decidePairing(_ request: PairPrompt, approve: Bool) {
-    perform {
-      _ = try await self.mutation(
-        "device.pair.decide",
-        DevicePairDecideParams(
-          requestId: request.requestId, approve: approve, idempotencyKey: UUID().uuidString))
-      self.pairRequests.removeAll { $0.requestId == request.requestId }
-      if approve { self.pairCode = nil }
     }
   }
   func perform(_ action: @escaping @MainActor () async throws -> Void) {

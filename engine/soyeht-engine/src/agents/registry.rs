@@ -314,6 +314,7 @@ fn write_custom_entries(
             .map_err(errors::io)
     })();
     if result.is_err() {
+        // Best-effort cleanup: the write error returned below is what the caller sees.
         let _ = fs::remove_file(&temporary);
     }
     result
