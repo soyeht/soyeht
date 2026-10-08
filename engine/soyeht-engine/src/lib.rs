@@ -3,6 +3,7 @@
 mod agent_capture;
 pub mod agents;
 pub mod auth;
+pub mod backoff;
 pub mod core;
 mod deferred;
 pub mod dispatch;
@@ -12,6 +13,7 @@ mod experiment_export;
 mod immutable_file;
 pub mod input;
 pub mod languages;
+pub mod log_rotation;
 pub mod model;
 pub mod network;
 pub mod outbox;

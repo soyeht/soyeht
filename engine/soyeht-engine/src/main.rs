@@ -2,6 +2,7 @@
 
 use soyeht_engine::{
     errors::{Error, Result},
+    log_rotation::{self, LOG_KEEP_ROTATED, LOG_MAX_BYTES},
     server::{self, Config},
 };
 use soyeht_protocol::profile::{DEV_DATA_DIRECTORY_FROM_HOME, DEV_TCP_PORT};
@@ -9,6 +10,17 @@ use std::{net::SocketAddr, path::PathBuf};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Bound the log the launch agent points stderr at; kept until `main` ends.
+    let _log_rotation = match log_rotation::capture_stderr(LOG_MAX_BYTES, LOG_KEEP_ROTATED) {
+        Ok(rotation) => rotation,
+        Err(error) => {
+            eprintln!(
+                "{}",
+                serde_json::json!({"event":"engine.log_rotation_unavailable","ioKind":format!("{:?}", error.kind())})
+            );
+            None
+        }
+    };
     let mut directory = PathBuf::from(std::env::var_os("HOME").ok_or(Error::HomeMissing)?)
         .join(DEV_DATA_DIRECTORY_FROM_HOME);
     let mut listen = vec![];

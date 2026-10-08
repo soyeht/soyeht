@@ -3,6 +3,8 @@
 pub(crate) mod agent_review;
 pub(crate) mod api;
 mod creation;
+#[cfg(test)]
+mod effect_backoff_tests;
 mod find;
 mod persistence;
 mod project_entries;
@@ -14,6 +16,7 @@ mod project_tree;
 mod project_watch;
 #[cfg(test)]
 mod project_watch_tests;
+mod schedule;
 mod search;
 mod service;
 mod tabs;
@@ -26,6 +29,7 @@ mod undo;
 
 pub(crate) use project_files::{ProjectFile, enumerate_project_files, language};
 pub use project_watch::Watches as ProjectWatches;
+pub(crate) use schedule::{Effect, Failure};
 pub use service::{FileSystemPort, Service, SystemFiles};
 pub(crate) use tabs::refresh_tabs;
 

@@ -1,6 +1,7 @@
 use super::creation::{create_contained_directories, validate_relative_creation_path};
 use super::project_files::ProjectFile;
-use crate::{errors, errors::Result};
+use super::schedule::{WATCH_INTERVAL_MS, save_backoff, watch_backoff};
+use crate::{backoff::Backoff, errors, errors::Result};
 use soyeht_editor::{
     AppliedStep, EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer,
 };
@@ -205,17 +206,19 @@ impl FileSystemPort for SystemFiles {
     }
 }
 
-struct OpenDocument {
-    file: EditorFile,
+pub(super) struct OpenDocument {
+    pub(super) file: EditorFile,
     syntax: Option<SyntaxDocument>,
     history: EditHistory,
-    save_due_ms: Option<i64>,
-    watch_due_ms: i64,
+    pub(super) save_due_ms: Option<i64>,
+    pub(super) watch_due_ms: i64,
+    pub(super) save_backoff: Backoff,
+    pub(super) watch_backoff: Backoff,
 }
 
 pub struct Service {
     files: Box<dyn FileSystemPort>,
-    open: BTreeMap<String, OpenDocument>,
+    pub(super) open: BTreeMap<String, OpenDocument>,
 }
 
 pub struct ResolvedPath {
@@ -237,8 +240,6 @@ enum HistoryChange {
     Replay(HistoryDirection),
 }
 
-const WATCH_INTERVAL_MS: i64 = 250;
-
 impl Service {
     pub fn new(files: Box<dyn FileSystemPort>) -> Self {
         Self {
@@ -258,6 +259,8 @@ impl Service {
                 history: EditHistory::default(),
                 save_due_ms,
                 watch_due_ms: 0,
+                save_backoff: save_backoff(),
+                watch_backoff: watch_backoff(),
             },
         );
     }
@@ -477,6 +480,8 @@ impl Service {
                 history: EditHistory::default(),
                 save_due_ms: None,
                 watch_due_ms: 0,
+                save_backoff: save_backoff(),
+                watch_backoff: watch_backoff(),
             },
         );
     }
@@ -661,34 +666,6 @@ impl Service {
         }
     }
 
-    pub fn due_saves(&self, now_ms: i64) -> Vec<String> {
-        self.open
-            .iter()
-            .filter(|(_, item)| item.save_due_ms.is_some_and(|due| due <= now_ms))
-            .map(|(file_id, _)| file_id.clone())
-            .collect()
-    }
-
-    pub fn due_watches(&self, now_ms: i64) -> Vec<String> {
-        self.open
-            .iter()
-            .filter(|(_, item)| item.file.watching && item.watch_due_ms <= now_ms)
-            .map(|(file_id, _)| file_id.clone())
-            .collect()
-    }
-
-    pub fn checked_watch(&mut self, file_id: &str, now_ms: i64) {
-        if let Some(item) = self.open.get_mut(file_id) {
-            item.watch_due_ms = now_ms.saturating_add(WATCH_INTERVAL_MS);
-        }
-    }
-
-    pub fn defer_save(&mut self, file_id: &str, now_ms: i64) {
-        if let Some(item) = self.open.get_mut(file_id) {
-            item.save_due_ms = Some(now_ms.saturating_add(autosave_ms()));
-        }
-    }
-
     pub fn viewport(
         &mut self,
         file_id: &str,
@@ -721,7 +698,7 @@ impl Service {
     }
 }
 
-fn autosave_ms() -> i64 {
+pub(super) fn autosave_ms() -> i64 {
     i64::try_from(soyeht_protocol::limits::EDITOR_AUTOSAVE_MS).unwrap_or(i64::MAX)
 }
 

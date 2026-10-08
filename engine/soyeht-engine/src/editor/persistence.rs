@@ -1,4 +1,4 @@
-use super::service::PreparedEdit;
+use super::{Effect, Failure, service::PreparedEdit};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -137,21 +137,58 @@ impl Core {
     }
 
     pub fn advance_editor(&mut self) -> Result<()> {
+        for record in self.advance_editor_effects() {
+            eprintln!("{record}");
+        }
+        Ok(())
+    }
+
+    /// Runs the autosaves and disk checks that are due and returns the log
+    /// records they produced. A failing effect backs off (see `schedule`), so
+    /// a file that stays unreadable is retried less and less often and logged
+    /// only at attempts 1, 2, 4, 8 and so on.
+    pub(super) fn advance_editor_effects(&mut self) -> Vec<Value> {
         let now = self.now_ms();
+        let mut records = Vec::new();
         if !pause_editor_autosave(&self.directory) {
             for file_id in self.editor.due_saves(now) {
-                if let Err(error) = self.advance_editor_save(&file_id, now) {
-                    self.editor.defer_save(&file_id, now);
-                    log_editor_failure("save", &file_id, &error);
-                }
+                let outcome = self.advance_editor_save(&file_id, now);
+                records.extend(self.settle_editor_effect(&file_id, Effect::Save, now, outcome));
             }
         }
         for file_id in self.editor.due_watches(now) {
-            if let Err(error) = self.advance_editor_watch(&file_id, now) {
-                log_editor_failure("watch", &file_id, &error);
+            let outcome = self.advance_editor_watch(&file_id, now);
+            records.extend(self.settle_editor_effect(&file_id, Effect::Watch, now, outcome));
+        }
+        records
+    }
+
+    fn settle_editor_effect(
+        &mut self,
+        file_id: &str,
+        effect: Effect,
+        now: i64,
+        outcome: Result<()>,
+    ) -> Option<Value> {
+        match outcome {
+            Ok(()) => self
+                .editor
+                .effect_succeeded(file_id, effect)
+                .map(|attempts| {
+                    json!({
+                        "event": "engine.editor_effect_recovered",
+                        "action": effect.name(),
+                        "fileId": file_id,
+                        "attempts": attempts,
+                    })
+                }),
+            Err(error) => {
+                let failure = self.editor.effect_failed(file_id, effect, now)?;
+                failure
+                    .report
+                    .then(|| failure_record(effect, file_id, &error, failure))
             }
         }
-        Ok(())
     }
 
     /// Runs a pending autosave now instead of waiting for its debounce; used
@@ -399,14 +436,19 @@ fn changed_lines(before: &str, after: &str) -> Vec<u32> {
         .collect()
 }
 
-fn log_editor_failure(action: &str, file_id: &str, error: &errors::Error) {
-    eprintln!(
-        "{}",
-        json!({
-            "event": "engine.editor_effect_failed",
-            "action": action,
-            "fileId": file_id,
-            "kind": errors::kind(error),
-        })
-    );
+fn failure_record(effect: Effect, file_id: &str, error: &errors::Error, failure: Failure) -> Value {
+    // Only the class of the failure: an error's text can carry paths.
+    let cause = match error {
+        errors::Error::Io(error) => Some(format!("io:{:?}", error.kind())),
+        _ => None,
+    };
+    json!({
+        "event": "engine.editor_effect_failed",
+        "action": effect.name(),
+        "fileId": file_id,
+        "kind": errors::kind(error),
+        "cause": cause,
+        "attempts": failure.attempts,
+        "retryInMs": failure.retry_in_ms,
+    })
 }
