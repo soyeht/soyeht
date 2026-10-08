@@ -2,12 +2,15 @@
 """Exercise web-pane routing and discovery under disposable launchd jobs."""
 import argparse
 import json
+import os
 import socket
 import time
 from pathlib import Path
 
 from e2e import ROOT, Services, receive, require, send
 from e2e_agents import request
+
+LOCAL_SERVER_WINDOW_SECONDS = 15
 
 
 def web_panes(client):
@@ -104,18 +107,53 @@ def acceptance_missing_host_fails_closed(caller, host, pane, results):
     results.append({"acceptance": 3, "name": "missing_web_host_fails_closed", "passed": True})
 
 
+def open_low_listener():
+    """Listen on the lowest free unprivileged loopback port.
+
+    The engine lists local servers sorted by port and capped at 50, so an
+    ephemeral port can fall past the cap on a host with many listeners. The
+    lowest free port above the privileged range sorts ahead of those listeners.
+    SO_REUSEADDR is left off so BSD never lets the bind coexist with another
+    process's wildcard listener on the same port.
+    """
+    for port in range(1024, 65536):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            listener.bind(("127.0.0.1", port))
+        except OSError:
+            listener.close()
+            continue
+        listener.listen()
+        return listener
+    raise OSError("no free unprivileged port for the local server acceptance")
+
+
+def wait_for_local_server(client, port, listed, message):
+    """Poll servers.local.list until this process's listener is (not) listed.
+
+    The engine rescans every 5s, and a scan under host load can come back
+    empty, so allow three rescan periods. Matching on pid as well as port keeps
+    another process that reuses the port from changing the verdict.
+    """
+    deadline = time.monotonic() + LOCAL_SERVER_WINDOW_SECONDS
+    while True:
+        servers = client.call("servers.local.list", {})["servers"]
+        require(len(servers) <= 50, "local server list exceeded its bound")
+        if any(server["port"] == port and server["pid"] == os.getpid()
+               for server in servers) == listed:
+            return
+        require(time.monotonic() < deadline, message)
+        time.sleep(1)
+
+
 def acceptance_local_server_changes(client, listener, results):
     port = listener.getsockname()[1]
     cursor = client.snapshot()[0]["cursor"]
     client.call("events.subscribe", {"since": cursor})
-    first = client.call("servers.local.list", {})["servers"]
-    require(len(first) <= 50, "local server list exceeded its bound")
-    require(any(server["port"] == port for server in first), "live local server was not discovered")
+    wait_for_local_server(client, port, True, "live local server was not discovered")
     listener.close()
-    time.sleep(5.1)
     client.pending.clear()
-    second = client.call("servers.local.list", {})["servers"]
-    require(not any(server["port"] == port for server in second), "closed local server remained listed")
+    wait_for_local_server(client, port, False, "closed local server remained listed")
     changes = [message for message in client.pending
                if message.get("method") == "servers.local.changed"]
     require(changes and len(changes[-1]["params"]["servers"]) <= 50,
@@ -145,10 +183,7 @@ def main():
     require(all((binaries / name).is_file() for name in
                 ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")),
             "build workspace binaries before running web acceptances")
-    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen()
+    listener = open_low_listener()
     services = Services(binaries)
     started, results, failure = time.monotonic(), [], None
     try:
