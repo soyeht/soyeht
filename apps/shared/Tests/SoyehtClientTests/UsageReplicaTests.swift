@@ -4,10 +4,6 @@ import Testing
 
 @testable import SoyehtClient
 
-#if os(macOS)
-  import Darwin
-#endif
-
 private func reading(
   _ provider: UsageProvider = .claude, state: UsageState = .ok, used: Double? = 0.4,
   secondaryUsed: Double? = nil, fetchedAt: String = "2026-09-12T12:00:00Z"
@@ -107,20 +103,34 @@ private final class RateLimitRetryProbe {
   }
 }
 
-@Test func claudeCacheStatesExplainHowClaudeCodeSavesAReading() {
-  let unpopulated = UsageReading(
-    provider: .claude, state: .unavailable, source: .claude_desktop_cache,
-    fetchedAt: "2026-09-23T12:00:00Z")
-  #expect(UsagePresentation(unpopulated).unavailableMessage.contains("/usage"))
-  let stale = UsageReading(
-    provider: .claude, state: .stale,
+@Test func aKeptReadingSaysWhyTheLatestRefreshFailed() {
+  let kept = UsageReading(
+    provider: .claude, state: .stale, unavailableReason: .rate_limited,
     secondary: UsageWindow(used: 0.3, resetsAt: "later", label: "Weekly"),
-    source: .claude_desktop_cache, fetchedAt: "2026-09-23T12:00:00Z")
-  #expect(UsagePresentation(stale).staleHint?.contains("/usage") == true)
+    source: .claude_oauth_endpoint, fetchedAt: "2026-09-23T12:00:00Z")
+  let presentation = UsagePresentation(kept)
+  #expect(presentation.emphasis == .lastKnown)
+  #expect(presentation.percentage == "30%")
+  #expect(
+    presentation.staleHint
+      == "Latest refresh: Claude is limiting usage requests; retrying later.")
   #expect(UsagePresentation(reading(.codex, state: .stale)).staleHint == nil)
+  #expect(UsagePresentation(reading(.codex, state: .ok)).staleHint == nil)
+  let signedOut = UsageReading(
+    provider: .cursor, state: .login_needed, unavailableReason: .login_needed,
+    source: .cursor_app_login, fetchedAt: "")
+  #expect(UsagePresentation(signedOut).unavailableMessage == "Sign in to Cursor in your terminal.")
   let generic = UsageReading(
     provider: .codex, state: .unavailable, source: .codex_app_server, fetchedAt: "")
   #expect(UsagePresentation(generic).unavailableMessage == "Usage is unavailable.")
+}
+
+@Test func everySourceNamesWhereTheReadingCameFrom() {
+  let sources: [UsageSource] = [
+    .claude_oauth_endpoint, .claude_cli_usage, .claude_web, .codex_access_token,
+    .codex_account_endpoint, .codex_app_server, .cursor_app_login, .cursor_browser_cookies,
+  ]
+  #expect(Set(sources.map(\.displayName)).count == sources.count)
 }
 
 @Test func usageUnavailableReasonIsTypedAndSafeForDisplay() {
@@ -276,30 +286,3 @@ private final class RateLimitRetryProbe {
   #expect(probe.calls == 2)
   #expect(probe.waits == [17])
 }
-
-#if os(macOS)
-  @MainActor @Test func claudeCacheObserverHandlesAtomicRenameInARealDirectory() async throws {
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("soyeht-usage-observer-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-    defer { try? FileManager.default.removeItem(at: directory) }
-
-    let cache = directory.appendingPathComponent(".claude.json")
-    let replacement = directory.appendingPathComponent("replacement.json")
-    try Data("{}".utf8).write(to: cache)
-    let observer = ClaudeUsageCacheObserver(cacheURL: cache)
-    var changes = 0
-    observer.start { changes += 1 }
-
-    try Data("{\"cachedUsageUtilization\":{}}".utf8).write(to: replacement)
-    let renamed = replacement.path.withCString { source in
-      cache.path.withCString { destination in Darwin.rename(source, destination) }
-    }
-    #expect(renamed == 0)
-    for _ in 0..<100 where changes == 0 {
-      try await Task.sleep(for: .milliseconds(20))
-    }
-    #expect(changes == 1)
-    observer.stop()
-  }
-#endif

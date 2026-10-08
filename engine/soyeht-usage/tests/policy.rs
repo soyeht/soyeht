@@ -1,151 +1,94 @@
-use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
-use soyeht_usage::{
-    AutomaticTrigger, ManualRefresh, Reading, RefreshPolicy, TransientFailure, Window,
-};
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-fn reading() -> Reading {
+use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
+use soyeht_usage::{ManualRefresh, Reading, RefreshPolicy, TransientFailure, Window};
+
+const CODEX: UsageProvider = UsageProvider::Codex;
+
+fn reading(resets_at: &str) -> Reading {
     Reading {
-        provider: UsageProvider::Claude,
+        provider: CODEX,
         state: UsageState::Ok,
         unavailable_reason: None,
         primary: Some(Window {
             used: 0.4,
-            resets_at: "later".into(),
-            label: "Current".into(),
+            resets_at: resets_at.into(),
+            label: "5-hour window".into(),
         }),
         secondary: None,
-        source: UsageSource::ClaudeCliUsage,
-        fetched_at: "now".into(),
+        source: UsageSource::CodexAppServer,
+        fetched_at: "then".into(),
         observed_at_sec: 1_000,
     }
 }
 
 #[test]
+fn every_provider_is_due_at_startup_and_then_every_five_minutes() {
+    let mut policy = RefreshPolicy::default();
+    assert!(policy.automatic_due(&CODEX, 1_000, None));
+    policy.record(&CODEX, 1_000, None);
+    assert!(!policy.automatic_due(&CODEX, 1_299, None));
+    assert!(policy.automatic_due(&CODEX, 1_300, None));
+}
+
+#[test]
+fn network_failures_retry_on_the_connectivity_ladder() {
+    let mut policy = RefreshPolicy::default();
+    let mut now = 1_000;
+    for wait in [15, 45, 120, 300, 300] {
+        policy.record(&CODEX, now, Some(&TransientFailure::Network));
+        assert!(!policy.automatic_due(&CODEX, now + wait - 1, None));
+        assert!(policy.automatic_due(&CODEX, now + wait, None));
+        now += wait;
+    }
+    policy.record(&CODEX, now, None);
+    assert!(!policy.automatic_due(&CODEX, now + 299, None));
+}
+
+#[test]
+fn a_window_that_resets_makes_the_provider_due_at_once() {
+    let mut policy = RefreshPolicy::default();
+    policy.record(&CODEX, 1_000, None);
+    let shown = reading("1970-01-01T00:20:00Z");
+    assert!(!policy.automatic_due(&CODEX, 1_199, Some(&shown)));
+    assert!(policy.automatic_due(&CODEX, 1_200, Some(&shown)));
+}
+
+#[test]
 fn manual_refresh_is_limited_per_provider_for_thirty_seconds() {
     let mut policy = RefreshPolicy::default();
+    assert_eq!(policy.manual(&CODEX, 100), ManualRefresh::Ready);
+    policy.record(&CODEX, 90, None);
     assert_eq!(
-        policy.manual(UsageProvider::Claude, 100),
-        ManualRefresh::Ready
+        policy.manual(&CODEX, 100),
+        ManualRefresh::Ready,
+        "background counted"
     );
-    policy.record(UsageProvider::Claude, 100, None);
+    policy.record_manual(&CODEX, 100);
     assert_eq!(
-        policy.manual(UsageProvider::Claude, 101),
+        policy.manual(&CODEX, 110),
         ManualRefresh::RateLimited {
-            retry_after_sec: 29
+            retry_after_sec: 20
         }
     );
     assert_eq!(
-        policy.manual(UsageProvider::Claude, 130),
+        policy.manual(&UsageProvider::Claude, 110),
         ManualRefresh::Ready
     );
+    assert_eq!(policy.manual(&CODEX, 130), ManualRefresh::Ready);
+}
+
+#[test]
+fn kept_and_restored_readings_are_last_known_with_their_values_and_age() {
+    let kept = reading("later")
+        .kept_after_failure(Some(soyeht_protocol::UsageUnavailableReason::NetworkError));
+    assert_eq!(kept.state, UsageState::Stale);
+    assert_eq!(kept.primary.as_ref().unwrap().used, 0.4);
+    assert_eq!(kept.fetched_at, "then");
     assert_eq!(
-        policy.manual(UsageProvider::Codex, 101),
-        ManualRefresh::Ready
+        reading("later").restored_from_store().state,
+        UsageState::Stale
     );
-}
-
-#[test]
-fn hover_requires_an_old_reading_and_never_queues_ticks() {
-    let mut policy = RefreshPolicy::default();
-    assert!(!policy.automatic_due(
-        UsageProvider::Claude,
-        AutomaticTrigger::Hover,
-        100,
-        Some(60)
-    ));
-    assert!(policy.automatic_due(
-        UsageProvider::Claude,
-        AutomaticTrigger::Hover,
-        100,
-        Some(61)
-    ));
-    policy.record(UsageProvider::Claude, 100, None);
-    assert!(!policy.automatic_due(
-        UsageProvider::Claude,
-        AutomaticTrigger::Hover,
-        129,
-        Some(90)
-    ));
-    assert!(policy.automatic_due(
-        UsageProvider::Claude,
-        AutomaticTrigger::Hover,
-        130,
-        Some(90)
-    ));
-}
-
-#[test]
-fn rail_refreshes_every_five_minutes_and_transient_backoff_caps_at_thirty() {
-    let mut policy = RefreshPolicy::default();
-    for (attempt, expected_wait) in [(100, 300), (400, 600), (1_000, 1_200), (2_200, 1_800)] {
-        policy.record(
-            UsageProvider::Claude,
-            attempt,
-            Some(&TransientFailure::Network),
-        );
-        assert!(!policy.automatic_due(
-            UsageProvider::Claude,
-            AutomaticTrigger::RailOpen,
-            attempt + expected_wait - 1,
-            None
-        ));
-        assert!(policy.automatic_due(
-            UsageProvider::Claude,
-            AutomaticTrigger::RailOpen,
-            attempt + expected_wait,
-            None
-        ));
-    }
-    policy.record(UsageProvider::Claude, 4_000, None);
-    assert!(policy.automatic_due(
-        UsageProvider::Claude,
-        AutomaticTrigger::RailOpen,
-        4_300,
-        None
-    ));
-}
-
-#[test]
-fn provider_retry_after_affects_automatic_refresh_but_not_the_manual_gate() {
-    let mut policy = RefreshPolicy::default();
-    policy.record(
-        UsageProvider::Cursor,
-        100,
-        Some(&TransientFailure::RateLimited {
-            retry_after_sec: 9_000,
-        }),
-    );
-    assert!(!policy.automatic_due(
-        UsageProvider::Cursor,
-        AutomaticTrigger::RailOpen,
-        1_899,
-        None
-    ));
-    assert!(policy.automatic_due(
-        UsageProvider::Cursor,
-        AutomaticTrigger::RailOpen,
-        1_900,
-        None
-    ));
-    assert_eq!(
-        policy.manual(UsageProvider::Cursor, 130),
-        ManualRefresh::Ready
-    );
-    policy.record(UsageProvider::Cursor, 2_000, None);
-    assert_eq!(
-        policy.manual(UsageProvider::Cursor, 2_001),
-        ManualRefresh::RateLimited {
-            retry_after_sec: 29
-        }
-    );
-}
-
-#[test]
-fn stored_and_old_readings_are_stale_without_losing_values() {
-    let reading = reading();
-    let restored = reading.restored_from_store();
-    assert_eq!(restored.state, UsageState::Stale);
-    assert_eq!(restored.primary, reading.primary);
-    assert_eq!(reading.for_display(1_900).state, UsageState::Ok);
-    assert_eq!(reading.for_display(1_901).state, UsageState::Stale);
+    assert_eq!(reading("later").for_display(1_900).state, UsageState::Ok);
+    assert_eq!(reading("later").for_display(1_901).state, UsageState::Stale);
 }

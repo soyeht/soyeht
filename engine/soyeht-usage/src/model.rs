@@ -1,8 +1,12 @@
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 
+/// The longest reset time or label the wire accepts.
+const MAX_TEXT: usize = 128;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Window {
     pub used: f64,
+    /// RFC 3339 in UTC, or empty when the provider did not say.
     pub resets_at: String,
     pub label: String,
 }
@@ -12,23 +16,18 @@ impl Window {
         used: f64,
         resets_at: impl Into<String>,
         label: impl Into<String>,
-        source: UsageSource,
-    ) -> crate::Result<Self> {
+    ) -> Option<Self> {
         let resets_at = resets_at.into();
         let label = label.into();
-        if !(0.0..=1.0).contains(&used)
-            || resets_at.is_empty()
-            || resets_at.len() > 128
-            || label.is_empty()
-            || label.len() > 128
-        {
-            return Err(crate::Error::InvalidWindow { source });
-        }
-        Ok(Self {
-            used,
-            resets_at,
-            label,
-        })
+        ((0.0..=1.0).contains(&used)
+            && resets_at.len() <= MAX_TEXT
+            && !label.is_empty()
+            && label.len() <= MAX_TEXT)
+            .then_some(Self {
+                used,
+                resets_at,
+                label,
+            })
     }
 }
 
@@ -36,6 +35,7 @@ impl Window {
 pub struct Reading {
     pub provider: UsageProvider,
     pub state: UsageState,
+    /// Why there is no reading, or, with a stale reading, why the latest refresh failed.
     pub unavailable_reason: Option<UsageUnavailableReason>,
     pub primary: Option<Window>,
     pub secondary: Option<Window>,
@@ -45,46 +45,11 @@ pub struct Reading {
 }
 
 impl Reading {
-    pub(crate) fn available(
-        provider: UsageProvider,
-        primary: Window,
-        secondary: Option<Window>,
-        source: UsageSource,
-        fetched_at: String,
-        observed_at_sec: u64,
-    ) -> Self {
-        Self {
-            provider,
-            state: UsageState::Ok,
-            unavailable_reason: None,
-            primary: Some(primary),
-            secondary,
-            source,
-            fetched_at,
-            observed_at_sec,
-        }
+    pub fn has_windows(&self) -> bool {
+        self.primary.is_some()
     }
 
-    pub(crate) fn unavailable(
-        provider: UsageProvider,
-        state: UsageState,
-        unavailable_reason: Option<UsageUnavailableReason>,
-        source: UsageSource,
-        fetched_at: String,
-        observed_at_sec: u64,
-    ) -> Self {
-        Self {
-            provider,
-            state,
-            unavailable_reason,
-            primary: None,
-            secondary: None,
-            source,
-            fetched_at,
-            observed_at_sec,
-        }
-    }
-
+    /// A reading older than the freshness window shows as last known.
     pub fn for_display(&self, now_sec: u64) -> Self {
         let mut reading = self.clone();
         if self.state == UsageState::Ok
@@ -96,11 +61,21 @@ impl Reading {
         reading
     }
 
+    /// A reading restored after a restart is last known until it is read again.
     pub fn restored_from_store(&self) -> Self {
         let mut reading = self.clone();
-        if reading.primary.is_some() {
+        if reading.has_windows() {
             reading.state = UsageState::Stale;
         }
+        reading
+    }
+
+    /// The last good reading kept, marked last known, after a refresh that failed with
+    /// `reason`. Its values, source and age stay those of the last success.
+    pub fn kept_after_failure(&self, reason: Option<UsageUnavailableReason>) -> Self {
+        let mut reading = self.clone();
+        reading.state = UsageState::Stale;
+        reading.unavailable_reason = reason;
         reading
     }
 }

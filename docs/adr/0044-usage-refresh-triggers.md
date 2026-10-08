@@ -1,7 +1,7 @@
 # ADR 0044 · Usage refresh triggers
 
 Date: 2026-09-12
-Status: accepted for slice 4
+Status: superseded by ADR 0077 (2026-10-03)
 
 ## Context
 

@@ -39,7 +39,7 @@ nothing: no ring, no placeholder.
 | State | Engine state | Arc | Percentage | Detail |
 | --- | --- | --- | --- | --- |
 | Current | `ok`, read in the last 15 minutes | band color, full strength | shown | `updated … ago` |
-| Last known | `stale`: older than 15 minutes, or restored after a restart and not read again | band color of the last reading, muted (45 % opacity) | last value, muted | `as of HH:mm` |
+| Last known | `stale`: older than 15 minutes, restored after a restart and not read again, or kept after a failed refresh | band color of the last reading, muted (45 % opacity) | last value, muted | `as of HH:mm`, and why the latest refresh failed |
 | No reading | `unavailable` (including not checked yet), `login_needed`, `no_access` | none; the whole ring is dimmed | "—" | the reason |
 
 A last-known ring never turns gray: it keeps the color band of its value so a
@@ -52,66 +52,72 @@ detail in Settings. A provider that needs login shows "sign in in your
 terminal" instead of numbers; Soyeht never asks for a password.
 
 ## 3. Where the numbers come from (engine, read-only)
-Readers are per provider and live in one registry in the engine; adding a
-provider means adding one reader. Every reader follows the same rules: it
-reads only what the provider's own tools already keep on this Mac, never
-stores provider credentials, never refreshes or rotates a token, and never
-sends a token anywhere except to that provider's own usage endpoint. Each
-reader has a **preferred source** and **fallbacks**, tried in order; the
-balloon shows which one answered. Verified sources are recorded in
-`docs/reports/`.
-- **Claude**: the `cachedUsageUtilization` entry already written in
-  `~/.claude.json` by Claude Code. The reader parses that key once and ignores
-  account identifiers and every unrelated key. Soyeht never launches `claude`
-  to obtain usage and never reads or reuses its OAuth credential.
-  *Absent vs malformed:* a JSON object without the key is an unpopulated cache
-  and shows ordinary "unavailable". Anything else that cannot be read is
-  "invalid data": a top-level value that is not an object, or a present key
-  with a missing, partial or mistyped `fetchedAtMs` or `utilization`.
-  *Tradeoff:* a missing key looks the same as Claude Code renaming the key. A
-  rename would therefore show "unavailable" indefinitely rather than "invalid
-  data", even after Claude Code has fetched usage. If the ring stays
-  unavailable on a Mac where Claude Code shows usage, check the key name first.
-  *When the entry exists:* Claude Code writes `cachedUsageUtilization` only
-  after it fetches the account's usage itself, which its `/usage` screen does;
-  ordinary turns, in the terminal or through the ACP registry adapter, do not
-  refresh it, and the install method (native, npm or the adapter's bundled
-  CLI) does not change where it lives. A Mac where `/usage` was never opened
-  shows "—" with that explanation, and an old entry shows as last known. The
-  file is Claude Code's whole configuration, so the reader bounds it at 32 MiB
-  rather than the 1 MiB protocol frame; a missing file reports "not found".
-  Each window (`five_hour`, `seven_day`) must be present; a `null` window, or
-  one whose `utilization` or `resets_at` is `null`, is a window Claude Code
-  reports as not running and is left out, so the other window still shows.
-- **Codex**: (1) a disposable `codex app-server` asked for
-  `account/rateLimits/read` (the same channel the harness already uses in
-  contract 04); (2) the access token in the Codex login file sent to the
-  account's usage endpoint.
-- **Cursor**: (1) the session token the Cursor app keeps in the login
-  keychain, sent to the account's usage endpoint (one macOS consent dialog;
-  if declined, "no access" until Settings re-enables it). The Cursor ACP
-  session reports no usage at all.
-- **Every other harness in the catalog** (Gemini CLI, Grok, OpenCode, Pi,
-  omp, fx, Copilot and the rest): the slice investigates whether the CLI or
-  its local files expose a subscription window. Where they do, a reader is
-  added under the same rules; where they do not, no ring is drawn. The
-  result of that investigation, provider by provider, goes to
-  `docs/reports/` before the rings ship.
-- Opening the rail reads Claude's passive cache once. While the rail remains
-  open, a file observer rereads it only when that file changes: no polling and
-  no hover refresh. A reader that must start a provider process runs only after
-  an explicit user refresh. Exponential backoff (up to 30 min) applies after a
-  429 or network error. The last reading is stored (contract 07) so rings show
-  a value right after restart, marked stale until refreshed.
+Amended on 2026-10-03 by the owner's decision recorded in ADR 0077, which
+supersedes ADR 0043 and ADR 0044 for usage readers. The readers follow
+CodexBar (github.com/steipete/CodexBar, MIT) source for source.
+
+The engine is the only reader; clients only display and may ask for a manual
+refresh. Each provider has one ordered chain of sources, one source per
+method behind one trait (`soyeht-usage`); a planner walks the chain until a
+source answers. The ring's detail names the source that answered.
+- **Claude**: (1) Claude Code's OAuth login, read from
+  `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR`) and, on macOS, the
+  `Claude Code-credentials` keychain item, sent to Anthropic's usage
+  endpoint; (2) a hidden `claude` session asked for `/usage` in a pseudo
+  terminal; (3) on macOS, the claude.ai `sessionKey` cookie from the user's
+  browsers, sent to claude.ai's usage API.
+- **Codex**: (1) a personal access token in `auth.json`; (2) the ChatGPT
+  login in `auth.json` (`$CODEX_HOME`, else `~/.codex`), both sent to the
+  ChatGPT usage endpoint; (3) a disposable `codex app-server` asked for
+  `account/rateLimits/read`.
+- **Cursor**: (1) the Cursor app's own login in its `state.vscdb`; (2) on
+  macOS, the cursor.com session cookie from the user's browsers; both sent
+  to cursor.com's usage summary.
+- **Every other harness**: no ring until a reader exists (unchanged).
+
+Rules every source keeps:
+- Read only. Soyeht never refreshes, rewrites or moves another
+  application's token, and never stores one. An expired login falls through
+  to the provider's own CLI or app server, which refreshes its own login.
+- Tokens and cookies travel only to their provider's endpoint and never
+  appear in a log, an error, a stored reading or the wire.
+- The macOS consent prompts for Claude Code's keychain item and for a
+  browser's cookie key are expected; a declined prompt shows "no access" and
+  is not asked again by the background for 6 hours.
+- The hidden CLI session runs in a scratch directory under the temporary
+  directory with tools and MCP servers off, ends within 24 s, and leaves no
+  scratch directory or session transcript behind. Claude Code records the
+  fixed scratch path once among its projects in `~/.claude.json`; Soyeht does
+  not edit that file.
+- Linux reads the same files and fallbacks; it has no keychain or browser
+  sources (as in CodexBar).
+
+Cadence (engine-owned, ADR 0077): every provider is read at engine start and
+then every 5 minutes; after a network failure the next tries come at 15 s,
+45 s, 2 min, then 5 min; a provider whose shown window has just reset is
+read at once. Background reads skip a source cooling down after a rate limit
+(`Retry-After`, else 5 min), a declined prompt (6 h) or a failed app-server
+launch (30 min), and reuse a CLI reading for 15 min; a click bypasses all of
+them. A failed refresh keeps the last good reading, marked last known, with
+the reason the latest refresh failed; the first failure after a current
+reading is not shown. The last reading is stored (contract 07) so rings show
+a value right after restart, marked stale until refreshed.
 
 ## 4. Engine and clients (contract 08)
 - `usage.list` → `{providers: [{provider, state: "ok"|"stale"|"login_needed"|
   "no_access"|"unavailable", primary?: {used, resetsAt, label}, secondary?:
   {used, resetsAt, label}, source, fetchedAt}]}`
 - `usage.refresh {provider?}` → same shape; rate-limited to one call per
-  provider per 30 s (error `RATE_LIMITED` with `retryAfterSec`).
-- Event `usage.changed {provider, ...}` after every successful or failed
-  refresh. iPhone reads the same method and shows the rings in Settings.
+  provider per 30 s (error `RATE_LIMITED` with `retryAfterSec`). It walks the
+  chains outside the engine lock, providers in parallel, and may take as long
+  as the slowest chain (a keychain prompt, a hidden CLI session).
+- `unavailableReason` says why there is no reading or, with a `stale`
+  reading, why the latest refresh failed: `not_checked`, `tool_not_found`,
+  `app_server_failed`, `invalid_response`, `rate_limited`, `network_error`,
+  `login_needed`, `no_access`, `source_failed`.
+- Event `usage.changed {provider, ...}` after every manual refresh and
+  every background refresh that changed what a ring shows. iPhone reads the
+  same method and shows the rings in Settings.
 
 ## 5. Out of v1
 Cost in currency, per-pane token counts (already delivered by the ACP

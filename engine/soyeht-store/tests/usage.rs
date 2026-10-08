@@ -102,6 +102,30 @@ fn invalid_source_state_window_and_timestamp_are_rejected_before_sql() {
 }
 
 #[test]
+fn every_chain_source_stores_and_a_window_may_lack_a_reset_time() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    let sources = [
+        (UsageProvider::Claude, UsageSource::ClaudeOauthEndpoint),
+        (UsageProvider::Claude, UsageSource::ClaudeCliUsage),
+        (UsageProvider::Claude, UsageSource::ClaudeWeb),
+        (UsageProvider::Codex, UsageSource::CodexAccessToken),
+        (UsageProvider::Codex, UsageSource::CodexAccountEndpoint),
+        (UsageProvider::Codex, UsageSource::CodexAppServer),
+        (UsageProvider::Cursor, UsageSource::CursorAppLogin),
+        (UsageProvider::Cursor, UsageSource::CursorBrowserCookies),
+    ];
+    for (index, (provider, source)) in sources.into_iter().enumerate() {
+        let mut item = reading(provider, source, 0.5);
+        if let Some(window) = item.primary.as_mut() {
+            window.resets_at.clear();
+        }
+        save(&mut store, &item, 100, &format!("source-{index}"));
+    }
+    assert_eq!(store.usage_readings().unwrap().len(), 3);
+}
+
+#[test]
 fn migration_from_populated_v10_preserves_existing_rows_and_adds_usage() {
     let profile = Profile::new();
     let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();

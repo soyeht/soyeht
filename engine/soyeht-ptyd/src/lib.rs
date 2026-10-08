@@ -6,6 +6,7 @@ pub use error::{Error, Result};
 mod pending;
 pub mod pipe_guard;
 mod process;
+pub mod pty;
 mod registry;
 pub mod retention;
 pub mod server;

@@ -88,13 +88,21 @@ fn validate(reading: &UsageReading, observed_at_unix_sec: i64) -> Result<()> {
             reading.source,
             UsageSource::ClaudeCliUsage
                 | UsageSource::ClaudeOauthEndpoint
+                | UsageSource::ClaudeWeb
                 | UsageSource::ClaudeDesktopCache
         ),
         UsageProvider::Codex => matches!(
             reading.source,
-            UsageSource::CodexAppServer | UsageSource::CodexAccountEndpoint
+            UsageSource::CodexAppServer
+                | UsageSource::CodexAccountEndpoint
+                | UsageSource::CodexAccessToken
         ),
-        UsageProvider::Cursor => matches!(reading.source, UsageSource::CursorCurrentPeriod),
+        UsageProvider::Cursor => matches!(
+            reading.source,
+            UsageSource::CursorAppLogin
+                | UsageSource::CursorBrowserCookies
+                | UsageSource::CursorCurrentPeriod
+        ),
     };
     let state_matches = match reading.state {
         UsageState::Ok | UsageState::Stale => reading.primary.is_some(),
@@ -119,7 +127,7 @@ fn validate(reading: &UsageReading, observed_at_unix_sec: i64) -> Result<()> {
 fn valid_window(window: &UsageWindow) -> bool {
     window.used.is_finite()
         && (0.0..=1.0).contains(&window.used)
-        && !window.resets_at.is_empty()
+        // Empty when the provider reported no reset time.
         && window.resets_at.len() <= 128
         && !window.label.is_empty()
         && window.label.len() <= 128

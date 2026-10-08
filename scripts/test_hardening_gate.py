@@ -62,6 +62,18 @@ class HardeningGateTests(unittest.TestCase):
         self.assertEqual(result.sql_sources, {"engine/soyeht-engine/src/live.rs"})
         self.assertEqual(result.sql_statements, 1)
 
+    def test_sql_exception_is_only_the_foreign_database_reader(self):
+        query = 'let q = "SELECT value FROM ItemTable";\n'
+        tree = MemoryTree({
+            "engine/soyeht-usage/Cargo.toml": "rusqlite = { version = \"0.40\" }\n",
+            "engine/soyeht-usage/src/foreign_db.rs": query,
+            "engine/soyeht-usage/src/planner.rs": query,
+            "engine/soyeht-engine/Cargo.toml": "rusqlite = { version = \"0.40\" }\n",
+        })
+        result = gate.metrics(tree)
+        self.assertEqual(result.sql_manifests, {"engine/soyeht-engine/Cargo.toml"})
+        self.assertEqual(result.sql_sources, {"engine/soyeht-usage/src/planner.rs"})
+
     def test_panic_check_excludes_cfg_test_modules_and_test_directories(self):
         tree = MemoryTree({
             "engine/soyeht-engine/src/live.rs": """

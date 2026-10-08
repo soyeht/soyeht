@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Exercise editor, language, and usage integrations under disposable launchd jobs."""
 import argparse
+import base64
 import json
 import os
 import plistlib
 import shutil
 import signal
+import sqlite3
 import subprocess
 import time
 from pathlib import Path
@@ -23,8 +25,17 @@ class EditorServices(AgentServices):
         (self.binaries / "rust-analyzer").chmod(0o700)
         readers = self.data / "usage-readers"
         readers.mkdir(mode=0o700)
-        # Keep this fixture beside the other readers in default_commands (sources.rs).
-        self.usage_cache = readers / "claude-cache.json"
+        # The fixture layout SystemHost reads in debug builds (engine usage/host.rs): home/
+        # stands in for the home directory, the scripts for curl, security and codex.
+        home = readers / "home"
+        self.claude_login = home / ".claude/.credentials.json"
+        self.claude_login.parent.mkdir(parents=True)
+        cursor_state = home / "Library/Application Support/Cursor/User/globalStorage/state.vscdb"
+        cursor_state.parent.mkdir(parents=True)
+        with sqlite3.connect(cursor_state) as database:
+            database.execute("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB)")
+            database.execute("INSERT INTO ItemTable VALUES (?, ?)",
+                             ("cursorAuth/accessToken", fake_jwt({"sub": "auth0|e2e", "exp": 4102444800})))
         self.usage_mode = readers / "mode.json"
         self.set_usage_modes(first="ok", second="ok", third="ok")
         self._write_reader(readers / "second-source", SECOND_SOURCE)
@@ -40,17 +51,13 @@ class EditorServices(AgentServices):
         self.usage_mode.write_text(json.dumps(current))
         if "first" in values:
             if values["first"] == "ok":
-                self.usage_cache.write_text(json.dumps({
-                    "cachedUsageUtilization": {
-                        "fetchedAtMs": int(time.time() * 1000),
-                        "utilization": {
-                            "five_hour": {"utilization": 25, "resets_at": "later"},
-                            "seven_day": {"utilization": 50, "resets_at": "next week"},
-                        },
-                    },
-                }))
+                self.claude_login.write_text(json.dumps({"claudeAiOauth": {
+                    "accessToken": "e2e-access-token",
+                    "expiresAt": 4102444800000,
+                    "scopes": ["user:inference", "user:profile"],
+                }}))
             else:
-                self.usage_cache.unlink(missing_ok=True)
+                self.claude_login.unlink(missing_ok=True)
 
     def _write_reader(self, path, source):
         path.write_text(source)
@@ -83,23 +90,32 @@ for line in sys.stdin:
 """
 
 KEYCHAIN_SOURCE = """#!/usr/bin/env python3
-import json, os, sys
-mode=json.load(open(os.environ["SOYEHT_TEST_USAGE_MODE"]))["third"]
-if mode == "login_needed": sys.exit(44)
-if "-w" in sys.argv:
- if mode == "no_access": sys.exit(36)
- print("test-token")
+import sys
+sys.exit(44)
 """
 
 HTTP_SOURCE = """#!/usr/bin/env python3
 import json, os, sys
 sys.stdin.read()
-mode=json.load(open(os.environ["SOYEHT_TEST_USAGE_MODE"]))["third"]
-if mode != "ok": sys.exit(1)
-print(json.dumps({"billingCycleEnd":"later","planUsage":{"totalPercentUsed":40}}))
-print("SOYEHT_STATUS:200")
+url=sys.argv[-1]
+modes=json.load(open(os.environ["SOYEHT_TEST_USAGE_MODE"]))
+status, body = 404, {}
+if url == "https://api.anthropic.com/api/oauth/usage":
+ status = 200 if modes["first"] == "ok" else 500
+ body = {"five_hour":{"utilization":25,"resets_at":"2026-10-03T21:00:00Z"},
+         "seven_day":{"utilization":50,"resets_at":"2026-10-08T15:00:00Z"}}
+if url == "https://cursor.com/api/usage-summary":
+ status = {"ok": 200, "login_needed": 401, "no_access": 403}[modes["third"]]
+ body = {"billingCycleEnd":"2026-10-20T00:00:00.000Z","individualUsage":{"plan":{"totalPercentUsed":40}}}
+print(json.dumps(body))
+print("SOYEHT_STATUS:%d" % status)
 print("SOYEHT_RETRY:")
 """
+
+
+def fake_jwt(claims):
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    return f"e2e.{payload}.signature"
 
 
 def create_repository(services):
@@ -227,17 +243,17 @@ def acceptance_usage(services, client, results):
     client = services.restart_engine()
     require(set(states(client.call("usage.list", {})["providers"]).values()) == {"stale"},
             "stored readings did not become stale after restart")
-    services.set_usage_modes(first="unavailable")
-    require(refresh_provider(client, "claude", "usage-unavailable")["state"] == "unavailable",
-            "unavailable state was not normalized")
-    client = services.restart_engine()
-    services.set_usage_modes(third="login_needed")
-    require(refresh_provider(client, "cursor", "usage-login")["state"] == "login_needed",
-            "login-needed state was not normalized")
-    client = services.restart_engine()
-    services.set_usage_modes(third="no_access")
-    require(refresh_provider(client, "cursor", "usage-access")["state"] == "no_access",
-            "no-access state was not normalized")
+    # A failed refresh keeps the last good reading as last known and names why it failed.
+    for provider, modes, reason in (
+        ("claude", {"first": "unavailable"}, "tool_not_found"),
+        ("cursor", {"third": "login_needed"}, "login_needed"),
+        ("cursor", {"third": "no_access"}, "no_access"),
+    ):
+        services.set_usage_modes(**modes)
+        kept = refresh_provider(client, provider, f"usage-{reason}")
+        require(kept["state"] == "stale" and kept.get("unavailableReason") == reason
+                and kept.get("primary"), f"{provider} did not keep its reading after {reason}")
+        client = services.restart_engine()
     results.append({"acceptance": 4, "name": "fake_usage_states_limit_and_restart", "passed": True})
 
 

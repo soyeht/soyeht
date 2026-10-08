@@ -104,26 +104,34 @@ public struct UsagePresentation: Sendable {
   }
 
   public var unavailableMessage: String {
-    switch reading.unavailableReason {
+    Self.message(for: reading.unavailableReason, provider: reading.provider)
+      ?? "Usage is unavailable."
+  }
+
+  /// Why a last-known reading was not replaced: the latest refresh failed for this reason.
+  public var staleHint: String? {
+    guard isStale,
+      let reason = Self.message(for: reading.unavailableReason, provider: reading.provider)
+    else { return nil }
+    return "Latest refresh: \(reason)"
+  }
+
+  private static func message(
+    for reason: UsageUnavailableReason?, provider: UsageProvider
+  ) -> String? {
+    switch reason {
     case .not_checked: "Usage has not been checked yet."
-    case .tool_not_found: "\(reading.provider.displayName) not found on this Mac."
-    case .app_server_failed: "\(reading.provider.displayName) app server could not provide usage."
+    case .tool_not_found: "\(provider.displayName) not found on this Mac."
+    case .app_server_failed: "\(provider.displayName) app server could not provide usage."
     case .invalid_response: "Usage reader returned invalid data."
-    case nil:
-      reading.source == .claude_desktop_cache
-        ? "Claude Code has not saved a usage reading on this Mac yet. \(Self.claudeCacheHint)"
-        : "Usage is unavailable."
+    case .rate_limited: "\(provider.displayName) is limiting usage requests; retrying later."
+    case .network_error: "\(provider.displayName) could not be reached."
+    case .login_needed: "Sign in to \(provider.displayName) in your terminal."
+    case .no_access: "Access to the \(provider.displayName) login was declined."
+    case .source_failed: "\(provider.displayName) could not provide usage."
+    case nil: nil
     }
   }
-
-  /// Why a reading can lag behind the provider, shown with a stale reading.
-  public var staleHint: String? {
-    guard isStale, reading.source == .claude_desktop_cache else { return nil }
-    return Self.claudeCacheHint
-  }
-
-  /// Claude Code writes the cache the reader parses only when it fetches usage itself.
-  static let claudeCacheHint = "Opening /usage in Claude Code saves a new one."
 
   public var percentage: String {
     guard let fraction else { return "—" }

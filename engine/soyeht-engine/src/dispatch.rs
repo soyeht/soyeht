@@ -21,7 +21,8 @@ pub enum Outcome {
         method: String,
         params: Value,
     },
-    WritingSectionList(crate::writing::PreparedWritingSectionList),
+    /// Finished outside the engine lock by `deferred::resolve`.
+    Deferred(crate::deferred::Deferred),
     Attachment {
         result: Value,
         reference: AttachmentRef,
@@ -359,7 +360,7 @@ impl Core {
                 self.skills_request(connection, method, params)?
             }
             "usage.list" => self.usage_list()?,
-            "usage.refresh" => self.usage_refresh(connection, params)?,
+            "usage.refresh" => return self.usage_refresh(connection, params),
             "servers.local.list" => self.local_servers_list()?,
             "web.open" => self.web_open(connection, params)?,
             "web.navigate" => return self.web_navigate(connection, request_id, params),
@@ -378,9 +379,7 @@ impl Core {
             "file.diagnostics" | "file.diff" => self.file_inspection(method, params)?,
             "writing.asset.read" => return self.writing_asset_read(params),
             "writing.section.list" => {
-                return self
-                    .prepare_writing_section_list(params)
-                    .map(Outcome::WritingSectionList);
+                return self.prepare_writing_section_list(params).map(Outcome::from);
             }
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
                 self.document_request(connection, method, params, writing_image)?

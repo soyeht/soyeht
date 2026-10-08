@@ -1,8 +1,8 @@
 {
   "duplication": {
     "engine": {
-      "clones": 417,
-      "duplicated_lines": 3724
+      "clones": 414,
+      "duplicated_lines": 3684
     },
     "ios": {
       "clones": 6,
@@ -165,9 +165,6 @@
     "engine/soyeht-engine/src/tasks/worktree.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-engine/src/usage/sources.rs": {
-      "rust_limits": 1
-    },
     "engine/soyeht-engine/src/vcs.rs": {
       "rust_limits": 1
     },
@@ -252,7 +249,7 @@
     "engine/soyeht-engine/src/editor/service.rs": 1059,
     "engine/soyeht-engine/src/experiment_export.rs": 1216,
     "engine/soyeht-engine/src/pane_observations.rs": 1666,
-    "engine/soyeht-engine/src/server.rs": 1172,
+    "engine/soyeht-engine/src/server.rs": 1139,
     "engine/soyeht-engine/src/tasks/feedback.rs": 909,
     "engine/soyeht-engine/src/tasks/review.rs": 826,
     "engine/soyeht-engine/src/tasks/worktree.rs": 815,

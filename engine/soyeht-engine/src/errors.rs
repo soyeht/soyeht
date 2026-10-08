@@ -43,7 +43,6 @@ pub enum Error {
     Editor(soyeht_editor::Error),
     Lsp(soyeht_lsp::Error),
     PaneState(soyeht_pane_state::Error),
-    Usage(soyeht_usage::Error),
     Vcs(soyeht_vcs::Error),
     Web(soyeht_web::Error),
     Writing(soyeht_writing::Error),
@@ -324,7 +323,6 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::Utf8(_)
         | Error::Address(_)
         | Error::Join(_)
-        | Error::Usage(_)
         | Error::PaneState(_)
         | Error::EngineStatePoisoned
         | Error::AlreadyRunning
@@ -431,7 +429,6 @@ fn message(error: &Error) -> String {
         Error::Editor(error) => error.to_string(),
         Error::Lsp(error) => error.to_string(),
         Error::PaneState(error) => error.to_string(),
-        Error::Usage(_) => "Usage operation failed".into(),
         Error::Vcs(error) => error.to_string(),
         Error::Web(error) => error.to_string(),
         Error::Writing(error) => error.to_string(),
@@ -498,7 +495,6 @@ impl std::error::Error for Error {
             Self::Acp(error) => Some(error),
             Self::Editor(error) => Some(error),
             Self::PaneState(error) => Some(error),
-            Self::Usage(error) => Some(error),
             Self::Vcs(error) => Some(error),
             Self::Web(error) => Some(error),
             Self::Supervisor(error) => Some(error),
@@ -527,12 +523,6 @@ impl From<io::Error> for Error {
 impl From<soyeht_acp::Error> for Error {
     fn from(error: soyeht_acp::Error) -> Self {
         Self::Acp(error)
-    }
-}
-
-impl From<soyeht_usage::Error> for Error {
-    fn from(error: soyeht_usage::Error) -> Self {
-        Self::Usage(error)
     }
 }
 

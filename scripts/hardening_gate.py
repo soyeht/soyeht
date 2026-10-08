@@ -19,6 +19,12 @@ from gate_base import BASE_BRANCH, resolve_base
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED_PARTS = {"generated.rs", "Generated.swift", "generated.ts", "schema.json"}
 SOURCE_SUFFIXES = {".rs", ".swift", ".py", ".ts"}
+# The one SQLite use outside soyeht-store: reading other applications' databases (the Cursor
+# app's state, browser cookie stores) read-only and immutable, never Soyeht's own data (ADR 0077).
+FOREIGN_DATABASE_READERS = frozenset({
+    "engine/soyeht-usage/Cargo.toml",
+    "engine/soyeht-usage/src/foreign_db.rs",
+})
 SQL = re.compile(
     r"(?is)\b(?:select\b.{0,400}\bfrom|insert(?:\s+or\s+\w+)?\s+into|"
     r"update\s+[\w.`\"']+\s+set|delete\s+from|create\s+table|alter\s+table|"
@@ -485,11 +491,13 @@ def metrics(tree: Tree) -> Metrics:
             source = tree.read(path)
         except (OSError, UnicodeError, subprocess.CalledProcessError):
             continue
-        if path.endswith("Cargo.toml") and path != "engine/soyeht-store/Cargo.toml":
+        sql_allowed = path in FOREIGN_DATABASE_READERS
+        if (path.endswith("Cargo.toml") and path != "engine/soyeht-store/Cargo.toml"
+                and not sql_allowed):
             if re.search(r"(?m)^\s*rusqlite(?:\.|\s*=)", source):
                 manifests.add(path)
         if is_engine_production_source(path):
-            if not path.startswith("engine/soyeht-store/"):
+            if not path.startswith("engine/soyeht-store/") and not sql_allowed:
                 _, strings = mask(source, keep_strings=True)
                 matches = sum(len(SQL.findall(value)) for value in strings)
                 if matches:

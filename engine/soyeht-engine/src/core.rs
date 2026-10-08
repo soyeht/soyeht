@@ -111,10 +111,7 @@ impl Core {
             clock: Arc::new(SystemClock),
             revision: Box::new(crate::tasks::revision::GitRevision),
             worktrees: Box::new(crate::tasks::worktree::CommandWorktree::default()),
-            usage: crate::usage::Service::restore(
-                usage_readings,
-                Box::new(crate::usage::SystemSources::default()),
-            ),
+            usage: crate::usage::system_service(usage_readings),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),

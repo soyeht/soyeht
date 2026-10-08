@@ -56,7 +56,6 @@ fn coalesce_catalog_jobs(
     recipients
 }
 
-const WRITING_SECTION_LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const CATALOG_QUEUE_CAPACITY: usize = 128;
 
 fn lock_core(shared: &Shared) -> crate::errors::Result<std::sync::MutexGuard<'_, Core>> {
@@ -118,8 +117,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     let _lock = singleton(&config.directory)?;
     let core = crate::push::share(Core::open(&config.directory)?, &config.directory);
-    let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
-    tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
+    let catalog_tx = start_workers(&core);
     let socket = config.directory.join(DEV_ENGINE_SOCKET);
     match fs::symlink_metadata(&socket) {
         Ok(m) if m.file_type().is_socket() => fs::remove_file(&socket)?,
@@ -231,6 +229,14 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     fs::remove_file(socket)?;
     Ok(())
+}
+
+/// Starts the catalogue worker and the usage schedule; returns the catalogue queue.
+fn start_workers(core: &Shared) -> mpsc::Sender<CatalogJob> {
+    let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
+    tokio::spawn(catalog_worker(Arc::clone(core), catalog_rx));
+    tokio::spawn(crate::usage::schedule(Arc::clone(core)));
+    catalog_tx
 }
 
 async fn connection(
@@ -411,7 +417,7 @@ async fn read_requests(
                 .dispatch(&connection, request)
         })
         .await;
-        let outcome = resolve_deferred_outcome(Arc::clone(&core), outcome).await;
+        let outcome = crate::deferred::resolve(Arc::clone(&core), outcome).await;
         let outcome = match outcome {
             Ok(Ok(Outcome::Catalog { method, params })) => {
                 let job = CatalogJob {
@@ -490,7 +496,7 @@ async fn send_outcome(
                 return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
             }
         }
-        Ok(Ok(Outcome::WritingSectionList(_))) | Ok(Ok(Outcome::Catalog { .. })) => {
+        Ok(Ok(Outcome::Deferred(_) | Outcome::Catalog { .. })) => {
             return Err(CloseReason::WorkerFailed);
         }
         Ok(Err(error)) if failed_handshake => {
@@ -595,45 +601,6 @@ async fn catalog_result(
         }
     }
     Err(errors::resync_required("Catalogue changed during refresh"))
-}
-
-async fn resolve_deferred_outcome(
-    core: Shared,
-    outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
-) -> std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError> {
-    let Ok(Ok(Outcome::WritingSectionList(prepared))) = outcome else {
-        return outcome;
-    };
-    let scanned = match spawn_blocking_with_timeout(
-        WRITING_SECTION_LIST_TIMEOUT,
-        move || prepared.scan(),
-        "Writing section listing timed out",
-    )
-    .await?
-    {
-        Ok(scanned) => scanned,
-        Err(error) => return Ok(Err(error)),
-    };
-    tokio::task::spawn_blocking(move || {
-        let core = core.lock().map_err(|_| Error::EngineStatePoisoned)?;
-        scanned.finish(&core).map(Outcome::Reply)
-    })
-    .await
-}
-
-async fn spawn_blocking_with_timeout<T, F>(
-    timeout: Duration,
-    operation: F,
-    timeout_message: &'static str,
-) -> std::result::Result<crate::errors::Result<T>, tokio::task::JoinError>
-where
-    T: Send + 'static,
-    F: FnOnce() -> crate::errors::Result<T> + Send + 'static,
-{
-    match tokio::time::timeout(timeout, tokio::task::spawn_blocking(operation)).await {
-        Ok(result) => result,
-        Err(_) => Ok(Err(errors::internal(timeout_message))),
-    }
 }
 
 fn send_attachment_response(
@@ -762,7 +729,7 @@ fn operation_status(
 ) -> (&'static str, Option<soyeht_protocol::ErrorKind>) {
     match outcome {
         Ok(Ok(Outcome::Reply(_))) => ("reply", None),
-        Ok(Ok(Outcome::WritingSectionList(_))) => ("worker_failed", None),
+        Ok(Ok(Outcome::Deferred(_))) => ("worker_failed", None),
         Ok(Ok(Outcome::Catalog { .. })) => ("worker_failed", None),
         Ok(Ok(Outcome::Attachment { .. })) => ("attachment", None),
         Ok(Ok(Outcome::Queued)) => ("queued", None),
@@ -951,7 +918,7 @@ mod tests {
 
     #[tokio::test]
     async fn blocking_request_timeout_returns_an_error_instead_of_waiting_forever() {
-        let result = spawn_blocking_with_timeout(
+        let result = crate::deferred::spawn_blocking_with_timeout(
             Duration::from_millis(5),
             || {
                 std::thread::sleep(Duration::from_millis(50));

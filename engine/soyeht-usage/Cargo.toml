@@ -7,9 +7,12 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64.workspace = true
 chrono.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json.workspace = true
 soyeht-protocol = { path = "../soyeht-protocol" }
+uuid.workspace = true
 
 [lints]
 workspace = true

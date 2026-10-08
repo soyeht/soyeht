@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
+// Generated from contracts/protocol.json (sha256 7eec3db4c57c18f72ef66b2900ff07f8bde0f7341eb42cece66f9e04a3d8c96f). Do not edit.
 import Foundation
 
 
@@ -4235,15 +4235,24 @@ public enum UsageUnavailableReason: String, Codable, Sendable {
     case `tool_not_found` = "tool_not_found"
     case `app_server_failed` = "app_server_failed"
     case `invalid_response` = "invalid_response"
+    case `rate_limited` = "rate_limited"
+    case `network_error` = "network_error"
+    case `login_needed` = "login_needed"
+    case `no_access` = "no_access"
+    case `source_failed` = "source_failed"
 }
 
 public enum UsageSource: String, Codable, Sendable {
     case `claude_cli_usage` = "claude_cli_usage"
     case `claude_oauth_endpoint` = "claude_oauth_endpoint"
     case `claude_desktop_cache` = "claude_desktop_cache"
+    case `claude_web` = "claude_web"
     case `codex_app_server` = "codex_app_server"
     case `codex_account_endpoint` = "codex_account_endpoint"
+    case `codex_access_token` = "codex_access_token"
     case `cursor_current_period` = "cursor_current_period"
+    case `cursor_app_login` = "cursor_app_login"
+    case `cursor_browser_cookies` = "cursor_browser_cookies"
 }
 
 public struct UsageWindow: Codable, Sendable {

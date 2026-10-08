@@ -1,0 +1,4 @@
+[
+  {"uuid": "0f0e0d0c-0000-4000-8000-00000000a001", "name": "API workspace", "capabilities": ["api"]},
+  {"uuid": "0f0e0d0c-0000-4000-8000-00000000c002", "name": "Personal", "capabilities": ["chat", "claude_max"]}
+]

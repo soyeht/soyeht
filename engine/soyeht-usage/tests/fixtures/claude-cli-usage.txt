@@ -1,0 +1,23 @@
+ ▐▛███▜▌   Claude Code v2.1.0
+▝▜█████▛▘  Opus · Claude Max
+  ▘▘ ▝▝    /private/var/folders/xx/T/soyeht-usage-claude
+
+> /usage
+
+ Settings:  Status   Config   Usage  (←/→ or tab to cycle)
+
+ Current session
+ █████████▌                                         19% used
+ Resets 9pm (America/Sao_Paulo)
+
+ Current week (all models)
+ ███████████████████▌                               39% used
+ Resets Oct 8 at 12pm (America/Sao_Paulo)
+
+ Current week (Sonnet only)
+ █▌                                                 3% used
+ Resets Oct 8 at 12pm (America/Sao_Paulo)
+
+ What's contributing to your limits usage?
+ Bash  71%
+ Esc to cancel

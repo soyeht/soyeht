@@ -4,6 +4,7 @@ mod agent_capture;
 pub mod agents;
 pub mod auth;
 pub mod core;
+mod deferred;
 pub mod dispatch;
 pub mod editor;
 pub mod errors;

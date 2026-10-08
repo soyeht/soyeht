@@ -1,203 +1,255 @@
-//! Subscription-usage composition, persistence and wire publication.
+//! Subscription usage: the readers' host, the background schedule, persistence and wire
+//! publication. The engine is the only component that reads usage; clients only display it.
 
-mod sources;
+#[cfg(target_os = "macos")]
+mod browser;
+mod host;
+mod process;
+mod service;
+mod terminal;
+#[cfg(test)]
+mod tests;
 
-pub use sources::SystemSources;
+pub use host::SystemHost;
+pub use service::{PreparedRefresh, Service};
 
 use crate::{
     core::Core,
     errors::{self, Result},
+    ports::StorePort,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
+use service::{Committed, ManualRefusal, RefreshBatch};
 use soyeht_protocol::{
-    UsageListResult, UsageProvider, UsageReading, UsageRefreshParams, UsageRefreshResult,
-    UsageSource, UsageState, UsageUnavailableReason, UsageWindow,
+    UsageListResult, UsageReading, UsageRefreshParams, UsageRefreshResult, UsageWindow,
 };
 use soyeht_store::usage::StoredUsageReading;
-use soyeht_usage::{
-    ManualRefresh, ReaderRegistry, Reading, RefreshOutcome, RefreshPolicy, UsageSourcePort, Window,
+use soyeht_usage::{Reading, Window};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
-pub struct Service {
-    registry: ReaderRegistry,
-    policy: RefreshPolicy,
-    readings: Vec<Reading>,
-    source: Box<dyn UsageSourcePort>,
+/// How often the background schedule looks for due providers.
+const SCHEDULE_TICK: Duration = Duration::from_secs(15);
+
+/// A manual `usage.refresh` whose sources are read after the engine lock is released.
+pub struct PreparedUsageRefresh {
+    connection: String,
+    params: Value,
+    refresh: PreparedRefresh,
 }
 
-#[derive(Debug)]
-pub struct RefreshBatch {
-    observed_at_sec: u64,
-    outcomes: Vec<RefreshOutcome>,
+impl PreparedUsageRefresh {
+    pub fn read(self) -> (FinishUsageRefresh, RefreshBatch) {
+        let batch = self.refresh.read();
+        (
+            FinishUsageRefresh {
+                connection: self.connection,
+                params: self.params,
+            },
+            batch,
+        )
+    }
 }
 
-impl Service {
-    pub fn restore(stored: Vec<StoredUsageReading>, source: Box<dyn UsageSourcePort>) -> Self {
-        let readings = stored
-            .into_iter()
-            .map(restored_reading)
-            .map(|reading| reading.restored_from_store())
-            .collect();
-        Self {
-            registry: ReaderRegistry::new(),
-            policy: RefreshPolicy::default(),
-            readings,
-            source,
-        }
-    }
-
-    pub fn list(&self, now_sec: u64) -> Vec<UsageReading> {
-        self.registry
-            .providers()
-            .into_iter()
-            .map(|provider| self.display_reading(provider, now_sec))
-            .map(|reading| wire_reading(&reading))
-            .collect()
-    }
-
-    pub fn read_refresh(
-        &mut self,
-        provider: Option<UsageProvider>,
-        now_sec: u64,
-        fetched_at: &str,
-    ) -> Result<RefreshBatch> {
-        let providers = provider.map_or_else(|| self.registry.providers(), |item| vec![item]);
-        if let Some(retry_after_sec) = self.longest_retry(&providers, now_sec) {
-            return Err(errors::rate_limited(
-                "Usage refresh is limited per provider",
-                retry_after_sec,
-            ));
-        }
-        let mut outcomes = Vec::with_capacity(providers.len());
-        for item in providers {
-            outcomes.push(
-                self.registry
-                    .refresh(item, self.source.as_mut(), fetched_at, now_sec)
-                    .map_err(errors::Error::Usage)?,
-            );
-        }
-        Ok(RefreshBatch {
-            observed_at_sec: now_sec,
-            outcomes,
-        })
-    }
-
-    pub fn commit(&mut self, batch: RefreshBatch) {
-        for outcome in batch.outcomes {
-            self.policy.record(
-                outcome.reading.provider.clone(),
-                batch.observed_at_sec,
-                outcome.transient.as_ref(),
-            );
-            replace_reading(&mut self.readings, outcome.reading);
-        }
-    }
-
-    fn longest_retry(&self, providers: &[UsageProvider], now_sec: u64) -> Option<u32> {
-        providers
-            .iter()
-            .filter_map(
-                |provider| match self.policy.manual(provider.clone(), now_sec) {
-                    ManualRefresh::Ready => None,
-                    ManualRefresh::RateLimited { retry_after_sec } => Some(retry_after_sec),
-                },
-            )
-            .max()
-    }
-
-    fn display_reading(&self, provider: UsageProvider, now_sec: u64) -> Reading {
-        self.readings
-            .iter()
-            .find(|reading| reading.provider == provider)
-            .map(|reading| reading.for_display(now_sec))
-            .unwrap_or_else(|| missing_reading(&self.registry, provider, now_sec))
-    }
+pub struct FinishUsageRefresh {
+    connection: String,
+    params: Value,
 }
 
 impl Core {
     pub fn usage_list(&self) -> Result<Value> {
         let now_sec = nonnegative_time(self.clock.now_unix());
         serde_json::to_value(UsageListResult {
-            providers: self.usage.list(now_sec),
+            providers: self
+                .usage
+                .providers()
+                .iter()
+                .map(|provider| wire_reading(&self.usage.shown(provider, now_sec)))
+                .collect(),
         })
         .map_err(|_| errors::internal("Usage list serialization failed"))
     }
 
-    pub fn usage_refresh(&mut self, connection: &str, params: &Value) -> Result<Value> {
+    /// `usage.refresh`: finishes outside the engine lock (see `deferred`).
+    pub(crate) fn usage_refresh(
+        &mut self,
+        connection: &str,
+        params: &Value,
+    ) -> Result<crate::dispatch::Outcome> {
+        self.usage_refresh_prepare(connection, params)
+            .map(crate::dispatch::Outcome::from)
+    }
+
+    /// Chooses the providers of a click, or refuses it under the per-provider limit.
+    pub(crate) fn usage_refresh_prepare(
+        &mut self,
+        connection: &str,
+        params: &Value,
+    ) -> Result<PreparedUsageRefresh> {
         let request: UsageRefreshParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid usage refresh parameters"))?;
-        let observed_at = self.clock.now_unix();
-        let batch = self.usage.read_refresh(
-            request.provider,
-            nonnegative_time(observed_at),
-            &self.clock.timestamp(),
-        )?;
-        let readings = batch
-            .outcomes
+        let now_sec = nonnegative_time(self.clock.now_unix());
+        let timestamp = self.clock.timestamp();
+        match self
+            .usage
+            .prepare_manual(request.provider, now_sec, &timestamp)
+        {
+            Ok(refresh) => Ok(PreparedUsageRefresh {
+                connection: connection.to_owned(),
+                params: params.clone(),
+                refresh,
+            }),
+            Err(ManualRefusal::RateLimited { retry_after_sec }) => Err(errors::rate_limited(
+                "Usage refresh is limited per provider",
+                retry_after_sec,
+            )),
+        }
+    }
+
+    /// Commits a click's readings, stores the fresh ones and publishes every provider.
+    pub(crate) fn usage_refresh_finish(
+        &mut self,
+        finish: FinishUsageRefresh,
+        batch: RefreshBatch,
+    ) -> Result<Value> {
+        let now_sec = nonnegative_time(self.clock.now_unix());
+        let committed = self.usage.commit(batch);
+        let readings: Vec<UsageReading> = committed
             .iter()
-            .map(|outcome| wire_reading(&outcome.reading.for_display(batch.observed_at_sec)))
-            .collect::<Vec<_>>();
+            .map(|item| wire_reading(&item.shown.for_display(now_sec)))
+            .collect();
         let result = serde_json::to_value(UsageRefreshResult {
             providers: readings.clone(),
         })
         .map_err(|_| errors::internal("Usage refresh serialization failed"))?;
-        let events = readings
-            .iter()
-            .map(|reading| Ok(("usage.changed".into(), serde_json::to_value(reading)?)))
-            .collect::<serde_json::Result<Vec<_>>>()
-            .map_err(|_| errors::internal("Usage event serialization failed"))?;
-        let stored = batch
-            .outcomes
-            .iter()
-            .filter(|outcome| outcome.reading.state == UsageState::Ok)
-            .map(|outcome| wire_reading(&outcome.reading))
-            .collect::<Vec<_>>();
-        let mutation = self.mutate(connection, "usage.refresh", params, |change| {
-            for reading in &stored {
-                change.save_usage_reading(reading, observed_at)?;
-            }
-            Ok((result, events))
-        })?;
-        self.usage.commit(batch);
+        let events = change_events(&readings)?;
+        let fresh = fresh_readings(&committed);
+        let mutation = self.mutate(
+            &finish.connection,
+            "usage.refresh",
+            &finish.params,
+            |change| {
+                for (reading, observed_at) in &fresh {
+                    change.save_usage_reading(reading, *observed_at)?;
+                }
+                Ok((result, events))
+            },
+        )?;
         Ok(mutation.result)
     }
+
+    /// The providers the background schedule reads now, if any.
+    pub(crate) fn usage_automatic_prepare(&mut self) -> Option<PreparedRefresh> {
+        let now_sec = nonnegative_time(self.clock.now_unix());
+        let timestamp = self.clock.timestamp();
+        self.usage.prepare_automatic(now_sec, &timestamp)
+    }
+
+    /// Commits a background refresh; only readings that changed are published.
+    pub(crate) fn usage_automatic_commit(&mut self, batch: RefreshBatch) -> Result<()> {
+        let now_sec = nonnegative_time(self.clock.now_unix());
+        let committed = self.usage.commit(batch);
+        let changed: Vec<UsageReading> = committed
+            .iter()
+            .filter(|item| item.changed || item.fresh)
+            .map(|item| wire_reading(&item.shown.for_display(now_sec)))
+            .collect();
+        let fresh = fresh_readings(&committed);
+        if changed.is_empty() && fresh.is_empty() {
+            return Ok(());
+        }
+        let events = change_events(&changed)?;
+        let mutation = StorePort::mutate(
+            &mut self.store,
+            "engine",
+            &uuid::Uuid::new_v4().to_string(),
+            "usage.schedule",
+            |change| {
+                for (reading, observed_at) in &fresh {
+                    change.save_usage_reading(reading, *observed_at)?;
+                }
+                Ok((json!({}), events))
+            },
+        )
+        .map_err(errors::storage)?;
+        self.publish(&mutation.events)
+    }
+}
+
+/// Reads due providers every few seconds, without holding the engine lock while reading.
+pub async fn schedule(core: Arc<Mutex<Core>>) -> Result<()> {
+    let mut ticks = tokio::time::interval(SCHEDULE_TICK);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        ticks.tick().await;
+        let prepared = {
+            let mut core = core
+                .lock()
+                .map_err(|_| errors::internal("Engine state lock poisoned"))?;
+            if !core.usage.schedules() {
+                return Ok(());
+            }
+            core.usage_automatic_prepare()
+        };
+        let Some(prepared) = prepared else {
+            continue;
+        };
+        let providers = prepared.providers().to_vec();
+        let batch = tokio::task::spawn_blocking(move || prepared.read()).await;
+        let mut core = core
+            .lock()
+            .map_err(|_| errors::internal("Engine state lock poisoned"))?;
+        match batch {
+            Ok(batch) => {
+                if let Err(error) = core.usage_automatic_commit(batch) {
+                    eprintln!(
+                        "{}",
+                        json!({"event": "engine.usage_schedule_error", "kind": errors::kind(&error)})
+                    );
+                }
+            }
+            Err(_) => core.usage.abandon(&providers),
+        }
+    }
+}
+
+fn change_events(readings: &[UsageReading]) -> Result<Vec<(String, Value)>> {
+    readings
+        .iter()
+        .map(|reading| Ok(("usage.changed".into(), serde_json::to_value(reading)?)))
+        .collect::<serde_json::Result<Vec<_>>>()
+        .map_err(|_| errors::internal("Usage event serialization failed"))
+}
+
+/// Fresh successes to store, with the time they were read.
+fn fresh_readings(committed: &[Committed]) -> Vec<(UsageReading, i64)> {
+    committed
+        .iter()
+        .filter(|item| item.fresh)
+        .map(|item| {
+            (
+                wire_reading(&item.shown),
+                i64::try_from(item.shown.observed_at_sec).unwrap_or(i64::MAX),
+            )
+        })
+        .collect()
 }
 
 fn nonnegative_time(value: i64) -> u64 {
     u64::try_from(value).unwrap_or(0)
 }
 
-fn replace_reading(readings: &mut Vec<Reading>, replacement: Reading) {
-    if let Some(index) = readings
-        .iter()
-        .position(|reading| reading.provider == replacement.provider)
-    {
-        readings[index] = replacement;
-    } else {
-        readings.push(replacement);
-    }
-}
-
-fn missing_reading(
-    registry: &ReaderRegistry,
-    provider: UsageProvider,
-    observed_at_sec: u64,
-) -> Reading {
-    let source = registry
-        .sources(provider.clone())
-        .into_iter()
-        .next()
-        .unwrap_or(UsageSource::ClaudeDesktopCache);
-    Reading {
-        provider,
-        state: UsageState::Unavailable,
-        unavailable_reason: Some(UsageUnavailableReason::NotChecked),
-        primary: None,
-        secondary: None,
-        source,
-        fetched_at: String::new(),
-        observed_at_sec,
-    }
+/// The engine's usage service over the real host, restored from the stored readings.
+pub fn system_service(stored: Vec<StoredUsageReading>) -> Service {
+    let host = SystemHost::from_environment();
+    let schedules = host.schedules();
+    Service::restore(
+        stored.into_iter().map(restored_reading).collect(),
+        Arc::new(host),
+        schedules,
+    )
 }
 
 fn restored_reading(stored: StoredUsageReading) -> Reading {
@@ -238,298 +290,5 @@ fn wire_window(window: &Window) -> UsageWindow {
         used: window.used,
         resets_at: window.resets_at.clone(),
         label: window.label.clone(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{dispatch::Outcome, errors, ports::testing::FixedClock};
-    use serde_json::json;
-    use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
-    use soyeht_usage::{SourceRead, UsageSourcePort};
-    use std::{collections::VecDeque, fs, sync::Arc};
-    use uuid::Uuid;
-
-    struct Scripted {
-        reads: VecDeque<SourceRead>,
-        calls: usize,
-    }
-
-    impl UsageSourcePort for Scripted {
-        fn read(&mut self, _provider: UsageProvider, _source: UsageSource) -> SourceRead {
-            self.calls += 1;
-            self.reads
-                .pop_front()
-                .unwrap_or(SourceRead::Unavailable(None))
-        }
-    }
-
-    fn payload(used: u32) -> SourceRead {
-        SourceRead::Payload(
-            format!(
-                "{{\"result\":{{\"rateLimits\":{{\"primary\":{{\"usedPercent\":{used},\"resetsAt\":1800000000}}}}}}}}"
-            )
-            .into_bytes(),
-        )
-    }
-
-    fn claude_cache_payload(fetched_at_ms: i64) -> SourceRead {
-        SourceRead::Payload(
-            format!(
-                "{{\"cachedUsageUtilization\":{{\"accountUuid\":\"secret-account\",\"fetchedAtMs\":{fetched_at_ms},\"utilization\":{{\"five_hour\":{{\"utilization\":10,\"resets_at\":\"later\"}},\"seven_day\":{{\"utilization\":20,\"resets_at\":\"later\"}}}}}}}}"
-            )
-            .into_bytes(),
-        )
-    }
-
-    fn service(reads: Vec<SourceRead>) -> Service {
-        Service::restore(
-            Vec::new(),
-            Box::new(Scripted {
-                reads: reads.into(),
-                calls: 0,
-            }),
-        )
-    }
-
-    #[test]
-    fn list_is_closed_to_registered_providers_and_missing_values_are_unavailable() {
-        let usage = service(Vec::new());
-        let listed = usage.list(100);
-        assert_eq!(listed.len(), 3);
-        assert_eq!(listed[0].provider, UsageProvider::Claude);
-        assert_eq!(listed[1].provider, UsageProvider::Codex);
-        assert_eq!(listed[2].provider, UsageProvider::Cursor);
-        assert!(
-            listed
-                .iter()
-                .all(|item| item.state == UsageState::Unavailable)
-        );
-        assert!(
-            listed
-                .iter()
-                .all(|item| item.unavailable_reason == Some(UsageUnavailableReason::NotChecked))
-        );
-    }
-
-    #[test]
-    fn unavailable_reason_reaches_list_without_a_free_form_error() {
-        let mut usage = service(vec![
-            SourceRead::Unavailable(Some(UsageUnavailableReason::ToolNotFound)),
-            SourceRead::Unavailable(None),
-        ]);
-        let batch = usage
-            .read_refresh(Some(UsageProvider::Codex), 100, "now")
-            .unwrap();
-        usage.commit(batch);
-        let reading = usage
-            .list(100)
-            .into_iter()
-            .find(|reading| reading.provider == UsageProvider::Codex)
-            .unwrap();
-        assert_eq!(
-            reading.unavailable_reason,
-            Some(UsageUnavailableReason::ToolNotFound)
-        );
-        let wire = serde_json::to_value(reading).unwrap();
-        assert_eq!(wire["unavailableReason"], "tool_not_found");
-        assert!(wire.get("message").is_none());
-    }
-
-    #[test]
-    fn batch_rate_limit_fails_before_any_source_and_uses_the_longest_wait() {
-        let mut usage = service(vec![SourceRead::Unavailable(None); 12]);
-        let first = usage
-            .read_refresh(Some(UsageProvider::Codex), 100, "now")
-            .unwrap();
-        usage.commit(first);
-        let error = usage.read_refresh(None, 101, "later").unwrap_err();
-        let wire = errors::wire(error);
-        assert_eq!(wire.data.kind, soyeht_protocol::ErrorKind::RateLimited);
-        assert_eq!(wire.data.retry_after_sec, Some(29));
-    }
-
-    #[test]
-    fn restored_success_is_immediately_stale_and_keeps_both_windows() {
-        let stored = StoredUsageReading {
-            reading: UsageReading {
-                provider: UsageProvider::Codex,
-                state: UsageState::Ok,
-                unavailable_reason: None,
-                primary: Some(UsageWindow {
-                    used: 0.4,
-                    resets_at: "later".into(),
-                    label: "Current".into(),
-                }),
-                secondary: Some(UsageWindow {
-                    used: 0.7,
-                    resets_at: "week".into(),
-                    label: "Weekly".into(),
-                }),
-                source: UsageSource::CodexAppServer,
-                fetched_at: "before".into(),
-            },
-            observed_at_unix_sec: 99,
-        };
-        let usage = Service::restore(
-            vec![stored],
-            Box::new(Scripted {
-                reads: VecDeque::new(),
-                calls: 0,
-            }),
-        );
-        let item = &usage.list(100)[1];
-        assert_eq!(item.state, UsageState::Stale);
-        assert_eq!(item.primary.as_ref().unwrap().used, 0.4);
-        assert_eq!(item.secondary.as_ref().unwrap().used, 0.7);
-    }
-
-    #[test]
-    fn old_claude_cache_is_published_stale_without_exposing_the_account() {
-        let directory = std::env::temp_dir().join(format!("sn-engine-cache-{}", Uuid::new_v4()));
-        fs::create_dir(&directory).unwrap();
-        let mut core = Core::open(&directory).unwrap();
-        core.clock = Arc::new(FixedClock(2_000_000));
-        core.usage = service(vec![claude_cache_payload(1_000_000)]);
-        let (outbox, _receiver) = crate::outbox::channel();
-        let connection = core.connect(true, false, outbox).unwrap();
-        core.dispatch(
-            &connection,
-            json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"client":"usage-test","clientVersion":"1","protocolVersion":1}}),
-        )
-        .unwrap();
-        let result = core
-            .usage_refresh(
-                &connection,
-                &json!({"provider":"claude","idempotencyKey":"cache-once"}),
-            )
-            .unwrap();
-        assert_eq!(result["providers"][0]["state"], "stale");
-        assert_eq!(result["providers"][0]["primary"]["used"], 0.1);
-        assert_eq!(result["providers"][0]["secondary"]["used"], 0.2);
-        assert_eq!(result["providers"][0]["source"], "claude_desktop_cache");
-        assert!(!result.to_string().contains("secret-account"));
-        let (_, events) = core.store.replay(0).unwrap();
-        assert!(
-            !serde_json::to_string(&events)
-                .unwrap()
-                .contains("secret-account")
-        );
-        drop(core);
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn successful_refresh_is_durable_published_and_idempotent() {
-        let directory = std::env::temp_dir().join(format!("sn-engine-usage-{}", Uuid::new_v4()));
-        fs::create_dir(&directory).unwrap();
-        let mut core = Core::open(&directory).unwrap();
-        core.clock = Arc::new(FixedClock(100_000));
-        core.usage = service(vec![payload(25)]);
-        let (outbox, _receiver) = crate::outbox::channel();
-        let connection = core.connect(true, false, outbox).unwrap();
-        core.dispatch(
-            &connection,
-            json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"client":"usage-test","clientVersion":"1","protocolVersion":1}}),
-        )
-        .unwrap();
-        core.dispatch(
-            &connection,
-            json!({"jsonrpc":"2.0","id":2,"method":"events.subscribe","params":{"since":"0"}}),
-        )
-        .unwrap();
-        let params = json!({"provider":"codex","idempotencyKey":"refresh-once"});
-        let call = |id| json!({"jsonrpc":"2.0","id":id,"method":"usage.refresh","params":params});
-        let Outcome::Reply(first) = core.dispatch(&connection, call(3)).unwrap() else {
-            panic!("usage refresh did not reply")
-        };
-        let Outcome::Reply(repeated) = core.dispatch(&connection, call(4)).unwrap() else {
-            panic!("repeated usage refresh did not reply")
-        };
-        assert_eq!(first["providers"][0]["primary"]["used"], 0.25);
-        assert_eq!(repeated, first);
-        let stored = core
-            .store
-            .usage_reading(&UsageProvider::Codex)
-            .unwrap()
-            .unwrap();
-        assert_eq!(stored.reading.primary.unwrap().used, 0.25);
-        let (_, events) = core.store.replay(0).unwrap();
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| event.method == "usage.changed")
-                .count(),
-            1
-        );
-        drop(core);
-        let restored = Core::open(&directory).unwrap();
-        assert_eq!(
-            restored.usage_list().unwrap()["providers"][1]["state"],
-            "stale"
-        );
-        drop(restored);
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn failed_refresh_is_published_without_replacing_the_last_durable_success() {
-        let directory = std::env::temp_dir().join(format!("sn-engine-failed-{}", Uuid::new_v4()));
-        fs::create_dir(&directory).unwrap();
-        let mut core = Core::open(&directory).unwrap();
-        core.clock = Arc::new(FixedClock(100_000));
-        core.usage = service(vec![
-            payload(40),
-            SourceRead::NetworkError,
-            SourceRead::Unavailable(None),
-        ]);
-        let (outbox, _receiver) = crate::outbox::channel();
-        let connection = core.connect(true, false, outbox).unwrap();
-        core.dispatch(
-            &connection,
-            json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{"client":"usage-test","clientVersion":"1","protocolVersion":1}}),
-        )
-        .unwrap();
-        core.usage_refresh(
-            &connection,
-            &json!({"provider":"codex","idempotencyKey":"successful"}),
-        )
-        .unwrap();
-        core.clock = Arc::new(FixedClock(131_000));
-        let failed = core
-            .usage_refresh(
-                &connection,
-                &json!({"provider":"codex","idempotencyKey":"failed"}),
-            )
-            .unwrap();
-        assert_eq!(failed["providers"][0]["state"], "unavailable");
-        assert_eq!(
-            core.usage_list().unwrap()["providers"][1]["state"],
-            "unavailable"
-        );
-        let stored = core
-            .store
-            .usage_reading(&UsageProvider::Codex)
-            .unwrap()
-            .unwrap();
-        assert_eq!(stored.reading.primary.unwrap().used, 0.4);
-        assert_eq!(
-            core.store
-                .replay(0)
-                .unwrap()
-                .1
-                .iter()
-                .filter(|event| event.method == "usage.changed")
-                .count(),
-            2
-        );
-        drop(core);
-        let restored = Core::open(&directory).unwrap();
-        let reading = &restored.usage_list().unwrap()["providers"][1];
-        assert_eq!(reading["state"], "stale");
-        assert_eq!(reading["primary"]["used"], 0.4);
-        drop(restored);
-        fs::remove_dir_all(directory).unwrap();
     }
 }

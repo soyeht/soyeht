@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
+// Generated from contracts/protocol.json (sha256 7eec3db4c57c18f72ef66b2900ff07f8bde0f7341eb42cece66f9e04a3d8c96f). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -3795,6 +3795,16 @@ pub enum UsageUnavailableReason {
     AppServerFailed,
     #[serde(rename = "invalid_response")]
     InvalidResponse,
+    #[serde(rename = "rate_limited")]
+    RateLimited,
+    #[serde(rename = "network_error")]
+    NetworkError,
+    #[serde(rename = "login_needed")]
+    LoginNeeded,
+    #[serde(rename = "no_access")]
+    NoAccess,
+    #[serde(rename = "source_failed")]
+    SourceFailed,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageSource {
@@ -3804,12 +3814,20 @@ pub enum UsageSource {
     ClaudeOauthEndpoint,
     #[serde(rename = "claude_desktop_cache")]
     ClaudeDesktopCache,
+    #[serde(rename = "claude_web")]
+    ClaudeWeb,
     #[serde(rename = "codex_app_server")]
     CodexAppServer,
     #[serde(rename = "codex_account_endpoint")]
     CodexAccountEndpoint,
+    #[serde(rename = "codex_access_token")]
+    CodexAccessToken,
     #[serde(rename = "cursor_current_period")]
     CursorCurrentPeriod,
+    #[serde(rename = "cursor_app_login")]
+    CursorAppLogin,
+    #[serde(rename = "cursor_browser_cookies")]
+    CursorBrowserCookies,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UsageWindow {

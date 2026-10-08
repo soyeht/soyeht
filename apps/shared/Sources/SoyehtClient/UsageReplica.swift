@@ -75,7 +75,9 @@ extension EngineClient {
   }
 
   private func requestUsageRefresh(_ provider: UsageProvider?) async throws -> UsageRefreshResult {
-    let timeout = provider == nil ? 35.0 : 12.0
+    // The engine walks each provider's fallback chain (network, keychain prompt, hidden CLI
+    // session) in parallel; a chain bounds its own waits well inside this.
+    let timeout = 150.0
     return try await mutation(
       "usage.refresh",
       UsageRefreshParams(provider: provider, idempotencyKey: UUID().uuidString),
@@ -145,11 +147,15 @@ extension UsageProvider {
 extension UsageSource {
   public var displayName: String {
     switch self {
-    case .claude_cli_usage: "Claude Code CLI"
-    case .claude_oauth_endpoint: "Claude account endpoint"
+    case .claude_oauth_endpoint: "Claude Code login (OAuth)"
+    case .claude_cli_usage: "Claude Code /usage"
+    case .claude_web: "claude.ai browser session"
     case .claude_desktop_cache: "Claude Code cache"
+    case .codex_access_token: "Codex access token"
+    case .codex_account_endpoint: "Codex login (ChatGPT)"
     case .codex_app_server: "Codex app server"
-    case .codex_account_endpoint: "Codex account endpoint"
+    case .cursor_app_login: "Cursor app login"
+    case .cursor_browser_cookies: "cursor.com browser session"
     case .cursor_current_period: "Cursor current period"
     }
   }

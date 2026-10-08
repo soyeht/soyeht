@@ -8,8 +8,6 @@ struct AppRail: View {
   let onSelect: (WorkspaceDestination) -> Void
   let onSettings: () -> Void
   let onUsageDetails: (UsageProvider) -> Void
-  @State private var claudeUsageObserver: ClaudeUsageCacheObserver?
-  @State private var claudeUsageRefreshTask: Task<Void, Never>?
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x6) {
@@ -42,34 +40,6 @@ struct AppRail: View {
     .frame(width: MacPaneLayoutMetrics.railWidth)
     .frame(maxHeight: .infinity)
     .accessibilityIdentifier("app-bar")
-    .onAppear(perform: startClaudeUsageCache)
-    .onDisappear(perform: stopClaudeUsageCache)
-    .onChange(of: client.connected) { _, connected in
-      if connected { refreshClaudeUsage() }
-    }
-  }
-
-  private func startClaudeUsageCache() {
-    guard claudeUsageObserver == nil else { return }
-    let observer = ClaudeUsageCacheObserver()
-    observer.start(onChange: refreshClaudeUsage)
-    claudeUsageObserver = observer
-    refreshClaudeUsage()
-  }
-
-  private func stopClaudeUsageCache() {
-    claudeUsageRefreshTask?.cancel()
-    claudeUsageRefreshTask = nil
-    claudeUsageObserver?.stop()
-    claudeUsageObserver = nil
-  }
-
-  private func refreshClaudeUsage() {
-    guard client.connected else { return }
-    claudeUsageRefreshTask?.cancel()
-    claudeUsageRefreshTask = Task {
-      try? await client.refreshUsageAfterRateLimitOnce(.claude)
-    }
   }
 
   private var items: [AppRailItem] {

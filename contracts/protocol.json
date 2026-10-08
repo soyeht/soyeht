@@ -7546,7 +7546,12 @@
         "not_checked",
         "tool_not_found",
         "app_server_failed",
-        "invalid_response"
+        "invalid_response",
+        "rate_limited",
+        "network_error",
+        "login_needed",
+        "no_access",
+        "source_failed"
       ]
     },
     "UsageSource": {
@@ -7555,9 +7560,13 @@
         "claude_cli_usage",
         "claude_oauth_endpoint",
         "claude_desktop_cache",
+        "claude_web",
         "codex_app_server",
         "codex_account_endpoint",
-        "cursor_current_period"
+        "codex_access_token",
+        "cursor_current_period",
+        "cursor_app_login",
+        "cursor_browser_cookies"
       ]
     },
     "UsageWindow": {
@@ -13957,8 +13966,7 @@
     "probeTimeoutSec": 10,
     "noSignalSec": 90,
     "usageRefreshMinIntervalSec": 30,
-    "usageHoverRefreshAfterSec": 60,
-    "usageOpenRefreshIntervalSec": 300,
+    "usageAutoRefreshIntervalSec": 300,
     "usageStaleAfterSec": 900,
     "usageMaxBackoffSec": 1800,
     "editorViewportLines": 2000,

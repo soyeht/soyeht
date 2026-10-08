@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 3f760eed77b03602e08aa7482de787a98addb8d3d270d0f1491250616957ef9a). Do not edit.
+// Generated from contracts/protocol.json (sha256 7eec3db4c57c18f72ef66b2900ff07f8bde0f7341eb42cece66f9e04a3d8c96f). Do not edit.
 export const limits = {
   "jsonBytes": 1048576,
   "terminalPayloadBytes": 65536,
@@ -32,8 +32,7 @@ export const limits = {
   "probeTimeoutSec": 10,
   "noSignalSec": 90,
   "usageRefreshMinIntervalSec": 30,
-  "usageHoverRefreshAfterSec": 60,
-  "usageOpenRefreshIntervalSec": 300,
+  "usageAutoRefreshIntervalSec": 300,
   "usageStaleAfterSec": 900,
   "usageMaxBackoffSec": 1800,
   "editorViewportLines": 2000,
