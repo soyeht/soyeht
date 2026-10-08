@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Dictate messages to your agents: Soyeht listens only while the composer's mic is on.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Turn what you say into text in the agent composer, on this device when it can.</string>
   <key>UTExportedTypeDeclarations</key>
   <array>
     <dict>

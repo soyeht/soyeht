@@ -115,14 +115,12 @@ public enum HarnessSwitchModel {
   }
 }
 
-/// What the harness control of an agent pane shows, on the Mac pane header and in the
-/// iPhone and iPad agent pane: the running harness named on a menu button.
+/// What the harness chip of an agent composer shows, on the Mac, iPhone and iPad: the running
+/// harness named on a menu button.
 public struct HarnessSwitchControl: Equatable, Sendable {
   public static let accessibilityLabel = "Switch harness"
   public static let accessibilityHint =
     "Restarts this pane on another harness and hands the conversation over"
-  /// The menu indicator after the name ("Claude ▾").
-  public static let symbol = "chevron.down"
 
   /// The running harness's short name, for example "Claude".
   public let title: String

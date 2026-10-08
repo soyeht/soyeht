@@ -3,7 +3,7 @@ import SoyehtProtocol
 import SwiftUI
 
 /// The agent list, model and effort choices shared by the new-agent sheet and the
-/// pane header's harness switch.
+/// composer's harness switch.
 struct AgentHarnessPicker: View {
   @Bindable var client: EngineClient
   @Binding var harness: String

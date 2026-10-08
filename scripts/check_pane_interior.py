@@ -18,11 +18,14 @@ from check_mac_view_colors import SYSTEM_COLOR, code_only
 
 # Whole files that draw only pane interiors.
 INTERIOR_FILES = (
+    "apps/shared/Sources/SoyehtClient/AgentComposer.swift",
+    "apps/shared/Sources/SoyehtClient/AgentComposerAttachmentViews.swift",
+    "apps/shared/Sources/SoyehtClient/AgentComposerControlViews.swift",
     "apps/shared/Sources/SoyehtClient/AgentConversation.swift",
     "apps/shared/Sources/SoyehtClient/AgentConversationCards.swift",
     "apps/shared/Sources/SoyehtClient/AgentConversationStyle.swift",
-    "apps/shared/Sources/SoyehtClient/AgentComposerAttachmentViews.swift",
     "apps/shared/Sources/SoyehtClient/AgentPermissionModeMenu.swift",
+    "apps/shared/Sources/SoyehtClient/AgentPaneTickerView.swift",
     "apps/shared/Sources/SoyehtClient/AgentSubagents.swift",
     "apps/shared/Sources/SoyehtClient/PermissionPresentationView.swift",
     "apps/shared/Sources/SoyehtClient/PaneInteriorControls.swift",

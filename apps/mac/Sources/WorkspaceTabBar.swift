@@ -7,7 +7,6 @@ import SwiftUI
 private enum WorkspaceTabBarGlyph {
   static let toggle: CGFloat = 15
   static let newPane: CGFloat = 14
-  static let tabFolder: CGFloat = 14
   static let tabClose: CGFloat = 9
   static let chevron: CGFloat = 11
 }
@@ -449,9 +448,6 @@ private struct WorkspaceTab: View {
     HStack(spacing: MacTheme.Space.x6) {
       Button(action: action) {
         HStack(spacing: MacTheme.Space.x8) {
-          Image(systemName: "folder")
-            .font(.system(size: WorkspaceTabBarGlyph.tabFolder, weight: .medium))
-            .foregroundStyle(selected ? MacTheme.accent : MacTheme.secondary)
           Text(name).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
             .foregroundStyle(selected ? MacTheme.accent : MacTheme.ink).lineLimit(1)
           if waitingCount > 0 {

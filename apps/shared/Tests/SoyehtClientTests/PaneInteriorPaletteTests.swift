@@ -141,6 +141,25 @@ func paneInteriorTextIsReadableInEveryPalette(theme: TerminalColorTheme) {
       return counts
     }
 
+    /// For each pixel row of two same-sized renders, whether the rows are identical.
+    static func rowsEqual(_ first: NSBitmapImageRep, _ second: NSBitmapImageRep) -> [Bool] {
+      guard let a = first.bitmapData, let b = second.bitmapData,
+        first.bytesPerRow == second.bytesPerRow, first.pixelsHigh == second.pixelsHigh
+      else { return [] }
+      return (0..<first.pixelsHigh).map { y in
+        memcmp(a + y * first.bytesPerRow, b + y * second.bytesPerRow, first.bytesPerRow) == 0
+      }
+    }
+
+    /// The first pixel row that differs from row 0, for example the top of a card on a plain
+    /// background.
+    static func firstRowUnlikeTheFirst(_ bitmap: NSBitmapImageRep) -> Int? {
+      guard let data = bitmap.bitmapData else { return nil }
+      return (1..<bitmap.pixelsHigh).first { y in
+        memcmp(data, data + y * bitmap.bytesPerRow, bitmap.bytesPerRow) != 0
+      }
+    }
+
     /// Share of pixels within 2/255 per channel of a palette hex value.
     static func share(of hex: String, in histogram: [UInt32: Int]) -> Double {
       guard let rgb = ThemeHexColorMath.rgb8(hex) else { return 0 }

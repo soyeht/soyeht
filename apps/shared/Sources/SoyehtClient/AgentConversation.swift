@@ -44,7 +44,7 @@ enum AgentElapsedText {
   }
 }
 
-extension AgentConversationView where ControlsAccessory == EmptyView {
+extension AgentConversationView where HarnessControl == EmptyView {
   public init(
     client: EngineClient, paneId: String, isVisible: Bool = true,
     showsConfiguration: Bool = true,
@@ -54,20 +54,21 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     self.init(
       client: client, paneId: paneId, isVisible: isVisible,
       showsConfiguration: showsConfiguration, style: style,
-      onExplicitRemoteAction: onExplicitRemoteAction, controlsAccessory: { EmptyView() })
+      onExplicitRemoteAction: onExplicitRemoteAction, harnessControl: { EmptyView() })
   }
 }
 
-/// `ControlsAccessory` sits next to the permission-mode menu in the composer; a host app uses
-/// it for pane controls it owns, such as the iPhone and iPad harness menu.
-@MainActor public struct AgentConversationView<ControlsAccessory: View>: View {
+/// `HarnessControl` is the composer's harness chip after "+": each host wraps
+/// `AgentHarnessChipLabel` in its own harness switch (a popover on the Mac, a menu on the
+/// iPhone and iPad).
+@MainActor public struct AgentConversationView<HarnessControl: View>: View {
   @Bindable private var client: EngineClient
   private let paneId: String
   private let isVisible: Bool
   private let showsConfiguration: Bool
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
-  private let controlsAccessory: ControlsAccessory
+  private let harnessControl: HarnessControl
   @State private var prompt = ""
   @State private var attachments: AgentComposerAttachments
   @State private var follow = AgentConversationFollow()
@@ -79,7 +80,7 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     showsConfiguration: Bool = true,
     style: AgentConversationStyle = .standard,
     onExplicitRemoteAction: @escaping () -> Void = {},
-    @ViewBuilder controlsAccessory: () -> ControlsAccessory
+    @ViewBuilder harnessControl: () -> HarnessControl
   ) {
     self.client = client
     self.paneId = paneId
@@ -89,15 +90,11 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     self.showsConfiguration = showsConfiguration
     self.style = style
     self.onExplicitRemoteAction = onExplicitRemoteAction
-    self.controlsAccessory = controlsAccessory()
+    self.harnessControl = harnessControl()
   }
 
   private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
   private var view: AgentPaneView { client.agentPanes[paneId] ?? AgentPaneView() }
-  private var isWorking: Bool {
-    guard let state = pane?.state else { return false }
-    return [.working, .waiting_for_you, .cancelling, .no_signal].contains(state)
-  }
   private var inset: CGFloat {
     style.canonicalLayout ? PaneInteriorMetrics.cardPadding : PaneInteriorMetrics.phoneInset
   }
@@ -127,7 +124,8 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
         .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
       }
       composer
-      if showsConfiguration, let options = pane?.agent?.options.filter({ !$0.isPermissionMode }),
+      if showsConfiguration,
+        let options = pane?.agent?.options.filter({ !AgentComposerControls.isComposerOption($0) }),
         !options.isEmpty
       {
         configuration(options)
@@ -337,77 +335,13 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     #endif
   }
 
-  /// The approved composer: one flat card holding the message field above a row with the
-  /// context ring, the "effort · mode ▾" chip, host controls and the send button.
   private var composer: some View {
-    VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
-      AgentComposerAttachmentRow(attachments: attachments, style: style)
-      // AppKit draws a plain field's own placeholder in the system color, so the placeholder
-      // is drawn here in the palette's secondary ink instead.
-      TextField("", text: $prompt, axis: .vertical)
-        .overlay(alignment: .topLeading) {
-          if prompt.isEmpty {
-            Text("Message the agent").foregroundStyle(style.secondary)
-              .allowsHitTesting(false).accessibilityHidden(true)
-          }
-        }
-        .accessibilityLabel("Message the agent")
-        .lineLimit(1...6).textFieldStyle(.plain).font(style.bodyFont)
-        .foregroundStyle(style.ink).focused($promptFocused)
-        .onSubmit { submit() }
-        .onKeyPress(.tab, phases: .down) { press in
-          guard press.modifiers.contains(.shift) else { return .ignored }
-          client.cyclePermissionMode(paneId)
-          return .handled
-        }
-        .slashCompletion(client: client, paneId: paneId, text: $prompt, style: style)
-        #if os(macOS)
-          .modifier(AgentComposerPaste(isFocused: promptFocused, attachments: attachments))
-        #endif
-      HStack(spacing: PaneInteriorMetrics.compactSpacing) {
-        AgentAttachButton(attachments: attachments, style: style)
-        if let usage = contextUsage {
-          AgentContextRing(used: usage.0, total: usage.1, style: style)
-        }
-        if let agent = pane?.agent, let modes = AgentPermissionModes(agent: agent) {
-          AgentPermissionModeMenu(
-            modes: modes, effort: AgentEffortLabel.text(agent.options),
-            enabled: agent.operation == nil && client.connected, style: style,
-            select: { client.setPermissionMode(paneId, to: $0) })
-        }
-        controlsAccessory
-        Spacer(minLength: 0)
-        if isWorking {
-          Button(role: .destructive) {
-            client.cancelAgent(paneId)
-          } label: {
-            Label("Cancel", systemImage: "stop.fill")
-          }
-          .buttonStyle(PanePillButtonStyle(.destructive, style: style))
-          .disabled(pane?.state == .cancelling)
-        }
-        sendButton
-      }
-      .font(style.controlFont)
-    }
-    .padding(.horizontal, PaneInteriorMetrics.cardPadding)
-    .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
-    .paneInteriorFill(style.canvas, radius: PaneInteriorMetrics.composerRadius)
+    AgentComposer(
+      client: client, paneId: paneId, style: style, prompt: $prompt, attachments: attachments,
+      focus: $promptFocused, harnessControl: harnessControl, connected: client.connected,
+      submit: submit
+    )
     .padding(.horizontal, inset).padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
-  }
-
-  /// On a paired device Return adds a line to the multi-line prompt, so Command-Return
-  /// sends from a hardware keyboard. The Mac keeps Return to send.
-  @ViewBuilder private var sendButton: some View {
-    let button = Button(action: submit) {
-      PaneSendButtonLabel(ink: style.ink, face: style.face, font: style.controlFont.weight(.bold))
-    }.buttonStyle(.plain).disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-      .accessibilityLabel("Send message")
-    #if os(iOS)
-      button.keyboardShortcut(.return, modifiers: .command)
-    #else
-      button
-    #endif
   }
 
   private func configuration(_ options: [ConfigOption]) -> some View {
@@ -439,14 +373,6 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
       .padding(.bottom, PaneInteriorMetrics.cardVerticalPadding)
   }
 
-  private var contextUsage: (Double, Double)? {
-    guard let usage = view.messages.reversed().compactMap(\.usage).first,
-      let used = Double(usage.totalTokens), let totalText = usage.contextSize,
-      let total = Double(totalText), total > 0
-    else { return nil }
-    return (min(max(used, 0), total), total)
-  }
-
   private func submit() {
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
@@ -471,15 +397,5 @@ extension AgentConversationView where ControlsAccessory == EmptyView {
     case "thought_level": "brain"
     default: "slider.horizontal.3"
     }
-  }
-}
-
-/// The reasoning effort the composer chip names before the permission mode ("High · …").
-enum AgentEffortLabel {
-  static func text(_ options: [ConfigOption]) -> String? {
-    guard let option = options.first(where: { ($0.category ?? $0.id) == "thought_level" }),
-      case .v0(let value) = option.currentValue
-    else { return nil }
-    return option.options.first { $0.value == value }?.name ?? value
   }
 }

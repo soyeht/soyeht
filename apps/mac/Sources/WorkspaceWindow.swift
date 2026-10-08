@@ -2146,8 +2146,7 @@ private struct PaneCard: View {
     let plan = MacPaneLayoutMetrics.paneHeader.plan(
       availableWidth: MacPaneLayoutMetrics.paneHeaderAvailableWidth(cardWidth: cardWidth),
       actionCount: headerActionCount,
-      hasSummary: pane.mode == .agent && agentSummary != nil,
-      hasStatus: pane.mode == .agent, hasHarnessControl: headerControls.harness != nil)
+      hasSummary: pane.mode == .agent, hasStatus: pane.mode == .agent)
     return headerContent(plan: plan)
       .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .medium))
       .foregroundStyle(MacTheme.secondary)
@@ -2175,24 +2174,24 @@ private struct PaneCard: View {
           .accessibilityLabel("Linked writing companion")
           .accessibilityIdentifier("writing-companion-link-\(pane.paneId)")
       }
-      if pane.mode == .agent, let summary = agentSummary {
-        if plan.actionPlacement == .inline {
-          agentSummaryLabel(summary)
-        } else if let maximumWidth = plan.summaryMaximumWidth {
-          agentSummaryLabel(summary).frame(maxWidth: maximumWidth, alignment: .leading)
-        }
+      if pane.mode == .agent,
+        plan.actionPlacement == .inline || plan.summaryMaximumWidth != nil
+      {
+        AgentPaneTickerView(
+          client: client, paneId: pane.paneId,
+          font: MacTheme.ui(MacTheme.TypeScale.control, weight: .medium),
+          timeFont: MacTheme.mono(MacTheme.TypeScale.small, weight: .medium),
+          color: MacTheme.secondary)
+      } else {
+        Spacer(minLength: MacTheme.Space.x2)
       }
-      Spacer(minLength: MacTheme.Space.x2)
       if pane.mode == .agent {
         Text(paneStatusText)
-          .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .semibold))
-          .foregroundStyle(MacTheme.secondary)
+          .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
+          .foregroundStyle(needsYou ? MacTheme.accent : MacTheme.secondary)
           .lineLimit(1).truncationMode(.tail)
           .frame(maxWidth: MacPaneLayoutMetrics.paneHeader.metrics.statusWidth)
-          .layoutPriority(2)
-      }
-      if let harness = headerControls.harness {
-        PaneHarnessControl(client: client, pane: pane, control: harness)
+          .fixedSize().layoutPriority(2)
       }
       if plan.actionPlacement == .inline {
         inlineHeaderActions
@@ -2202,10 +2201,10 @@ private struct PaneCard: View {
     }
   }
 
-  private func agentSummaryLabel(_ summary: String) -> some View {
-    Text(summary).font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))
-      .foregroundStyle(MacTheme.secondary).lineLimit(1).truncationMode(.tail)
-      .help(summary)
+  /// The agent asks for the person: the header's status word turns `accent`.
+  private var needsYou: Bool {
+    AgentHeaderStatus.needsYou(
+      state: pane.state, view: client.agentPanes[pane.paneId] ?? AgentPaneView())
   }
 
   @ViewBuilder private var inlineHeaderActions: some View {
@@ -2250,15 +2249,8 @@ private struct PaneCard: View {
     .accessibilityIdentifier("pane-header-actions-\(pane.paneId)")
   }
 
-  /// The harness control and icon actions this header shows (`PaneHeaderControls`).
-  private var headerControls: PaneHeaderControls {
-    let harness = pane.agent.map {
-      HarnessSwitchModel.control(
-        current: $0.harness, switchState: client.agentPanes[pane.paneId]?.harnessSwitch,
-        harnesses: client.harnesses, paneName: pane.name)
-    }
-    return PaneHeaderControls(mode: pane.mode, harness: harness)
-  }
+  /// The icon actions this header shows (`PaneHeaderControls`).
+  private var headerControls: PaneHeaderControls { PaneHeaderControls(mode: pane.mode) }
 
   private func perform(_ action: PaneHeaderAction) {
     switch action {
@@ -2381,7 +2373,12 @@ private struct PaneCard: View {
         AgentConversationView(
           client: client, paneId: pane.paneId, isVisible: isVisible,
           showsConfiguration: false,
-          style: MacTheme.agentConversation)
+          style: MacTheme.agentConversation,
+          harnessControl: {
+            if let agent = pane.agent {
+              PaneHarnessControl(client: client, pane: pane, agent: agent)
+            }
+          })
       }.padding(
         EdgeInsets(
           top: PaneLayoutContentMetrics.agentBodyTopInset, leading: 4, bottom: 0,
@@ -2415,7 +2412,7 @@ private struct PaneCard: View {
   private var stateColor: Color {
     switch pane.state {
     case .working, .idle: MacTheme.success
-    case .waiting_for_you: MacTheme.warning
+    case .waiting_for_you: MacTheme.accent
     case .no_signal: MacTheme.warning
     case .dead, .unknown: MacTheme.muted
     default: MacTheme.secondary
@@ -2434,16 +2431,6 @@ private struct PaneCard: View {
     case .neutral: MacTheme.face
     case .warning: MacTheme.well
     }
-  }
-
-  private var agentSummary: String? {
-    guard let agent = pane.agent else { return nil }
-    let values = agent.options.compactMap { option -> String? in
-      guard option.category == "model" || option.category == "thought_level" else { return nil }
-      if case .v0(let value) = option.currentValue { return value }
-      return nil
-    }
-    return ([agent.harness] + values).joined(separator: " · ")
   }
 
   private func setExperimentCapture(on: Bool) {

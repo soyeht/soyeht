@@ -40,13 +40,31 @@ into view; scrolled away by hand, the active tab stays pinned at the edge it
 left from. "+N" lists the workspaces whose tabs are hidden. The rules live in
 `WorkspaceTabStripPolicy` (apps/shared).
 
-An agent pane's header names its harness on a menu button ("Claude ▾",
-accessibility label "Switch harness"). It opens the switch popover: installed
-harnesses first, then model and effort, then the button that restarts the
-conversation on the chosen harness. The loop and lead controls use a timer
-icon, and every header icon has a tooltip and an accessibility label from
-`PaneHeaderControls` (apps/shared). The iPhone and iPad agent pane shows the
-same harness name and switch menu.
+An agent pane's composer follows the approved design (`DCzvR` in
+design/soyeht-desktop.pen): the message line, then one row of "+" (attach),
+the harness chip ("Claude ▾", accessibility label "Switch harness"), the
+model, effort and permission menus, the context ring, the mic and send. The
+harness chip opens the switch popover: installed harnesses first, then model
+and effort, then the button that restarts the conversation on the chosen
+harness. Model, effort and permission come from the pane's ACP options and
+show only when the harness advertises them (`AgentComposerControls`,
+apps/shared). While the agent runs, send becomes stop, the placeholder reads
+"Queue a message for …" and Return queues. The mic dictates with Apple's
+Speech framework, on the device when possible; the microphone and speech
+recognition prompts appear on its first tap. The iPhone and iPad show the same
+composer; on a narrow width the chips scroll sideways. The context ring shows for every
+agent session: an empty track and a dash until the harness reports its context use (ACP
+`usage_update`, sent after a turn), then the share in use. Menu items carry a title only; a
+choice's description is its tooltip. The model chip uses the catalogue's model name
+(`model.list`) when the client has it.
+
+The agent pane's header shows the state dot, the name, one ticker line with
+what is happening (plan step, latest tool calls, session title and the running
+turn's time) and the status word. The ticker rolls left when it does not fit,
+pauses under the pointer and rotates entries instead with Reduce Motion. Its
+content comes from an `AgentTickerSource` in the environment, the ACP source
+today. The loop and lead controls use a timer icon, and every header icon has a
+tooltip and an accessibility label from `PaneHeaderControls` (apps/shared).
 
 An agent pane is created from the same new-pane sheet by selecting agent mode,
 an installed harness, its advertised model and effort, a permission mode and a

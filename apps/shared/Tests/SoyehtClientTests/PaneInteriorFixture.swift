@@ -4,7 +4,8 @@ import SoyehtProtocol
 @testable import SoyehtClient
 
 /// The conversation of the approved Codex frame ("Interior da pane · APROVADO"): a peer
-/// message, a reply, two tool rows, a pending permission and the "High · …" composer chip.
+/// message, a reply, two tool rows, a pending permission and the composer's effort and
+/// permission menus.
 @MainActor enum PaneInteriorFixture {
   static let paneId = "pane-codex"
 
@@ -73,8 +74,9 @@ import SoyehtProtocol
       complete: true, agentMessage: agentMessage)
   }
 
-  private static func tool(
-    _ id: String, kind: String, title: String, status: ToolStatus
+  /// A tool call row, shared by the conversation, composer and ticker fixtures.
+  nonisolated static func tool(
+    _ id: String, kind: String? = nil, title: String, status: ToolStatus
   ) -> TranscriptMessage {
     TranscriptMessage(
       localId: id, generation: 1, seq: id, role: .assistant, kind: .tool, text: "",

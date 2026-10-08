@@ -86,8 +86,7 @@ import SoyehtProtocol
           * metric(
             font(named: MacTheme.monoFamily, size: MacTheme.TypeScale.micro), character: "0"
           ).characterWidth),
-      actionWidth: PaneLayoutContentMetrics.genericPaneHeaderActionWidth,
-      harnessControlWidth: PaneLayoutContentMetrics.genericPaneHeaderHarnessControlWidth))
+      actionWidth: PaneLayoutContentMetrics.genericPaneHeaderActionWidth))
 
   static func paneHeaderAvailableWidth(cardWidth: CGFloat) -> Double {
     max(

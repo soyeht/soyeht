@@ -308,33 +308,3 @@ private enum AgentAttachmentMetrics {
   static let labelWidth: CGFloat = 72
   static let previewHeight: CGFloat = 96
 }
-
-/// Context use as a thin ring: a `border` track and the used share in accent, then warning
-/// and danger as the context fills.
-struct AgentContextRing: View {
-  let used: Double
-  let total: Double
-  let style: AgentConversationStyle
-  private static let lineWidth: CGFloat = 3
-  private static let diameter: CGFloat = 20
-  private var fraction: Double { used / total }
-  private var color: Color {
-    fraction > 0.9 ? style.danger : fraction > 0.75 ? style.warning : style.accent
-  }
-
-  var body: some View {
-    Menu {
-      Text("\(Int(used)) of \(Int(total)) context tokens")
-    } label: {
-      ZStack {
-        Circle().stroke(style.border, lineWidth: Self.lineWidth)
-        Circle().trim(from: 0, to: fraction).stroke(
-          color, style: StrokeStyle(lineWidth: Self.lineWidth, lineCap: .round)
-        )
-        .rotationEffect(.degrees(-90))
-      }.frame(width: Self.diameter, height: Self.diameter)
-    }
-    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-    .accessibilityLabel("Context use \(Int(fraction * 100)) percent")
-  }
-}

@@ -42,15 +42,12 @@ public enum PaneHeaderAction: String, CaseIterable, Sendable {
   }
 }
 
-/// The controls a pane header exposes, in order.
+/// The icon actions a pane header exposes, in order. An agent pane's harness switch lives in
+/// its composer ("Claude ▾"), not in the header.
 public struct PaneHeaderControls: Equatable, Sendable {
-  /// The harness menu button of an agent pane, always visible beside the actions.
-  public let harness: HarnessSwitchControl?
   public let actions: [PaneHeaderAction]
 
-  public init(mode: PaneMode, harness: HarnessSwitchControl?) {
-    let isAgent = mode == .agent
-    self.harness = isAgent ? harness : nil
-    actions = (isAgent ? [.loop] : []) + [.tasks, .splitColumns, .splitRows, .close]
+  public init(mode: PaneMode) {
+    actions = (mode == .agent ? [.loop] : []) + [.tasks, .splitColumns, .splitRows, .close]
   }
 }

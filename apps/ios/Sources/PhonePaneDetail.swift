@@ -36,9 +36,10 @@ private struct PhonePane: View {
         if pane.mode == .web {
           PhoneWebPane(client: client, pane: pane)
         } else if pane.mode == .agent {
-          AgentConversationView(client: client, paneId: paneId) {
-            PhoneHarnessMenu(client: client, paneId: paneId)
-          }
+          PhoneAgentTicker(client: client, pane: pane)
+          AgentConversationView(
+            client: client, paneId: paneId,
+            harnessControl: { PhoneHarnessMenu(client: client, paneId: paneId) })
         } else {
           HStack {
             Text(pane.phrase)
@@ -61,6 +62,33 @@ private struct PhonePane: View {
       .navigationTitle(client.panes.first(where: { $0.paneId == paneId })?.name ?? "Pane")
       .navigationBarTitleDisplayMode(.inline)
       .onAppear { client.select(paneId) }
+  }
+}
+
+/// The agent pane's "what is happening" line under the navigation title, as in the Mac
+/// pane header: the rolling ticker and the status word, `accent` when the agent needs you.
+private struct PhoneAgentTicker: View {
+  let client: EngineClient
+  let pane: Pane
+
+  var body: some View {
+    let needsYou = AgentHeaderStatus.needsYou(
+      state: pane.state, view: client.agentPanes[pane.paneId] ?? AgentPaneView())
+    HStack(spacing: PaneInteriorMetrics.compactSpacing) {
+      AgentPaneTickerView(
+        client: client, paneId: pane.paneId, font: .caption.weight(.medium),
+        timeFont: .caption2.monospaced().weight(.medium), color: PhonePalette.secondary)
+      Text(
+        AgentPaneStatusPresentation.title(
+          state: pane.state, needsAuthentication: pane.agent?.authMethods.isEmpty == false,
+          hasSession: pane.agent?.sessionId != nil)
+      )
+      .font(.caption2.weight(.semibold))
+      .foregroundStyle(needsYou ? PhonePalette.accent : PhonePalette.secondary)
+      .lineLimit(1).fixedSize()
+    }
+    .padding(.horizontal, PaneInteriorMetrics.phoneInset)
+    .padding(.vertical, PaneInteriorMetrics.tightSpacing)
   }
 }
 

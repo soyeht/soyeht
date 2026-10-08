@@ -2,13 +2,12 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-/// The agent pane's harness menu, next to the permission-mode menu. Like the Mac pane
-/// header it names the harness the pane runs ("Claude ▾") and restarts the pane on another
+/// The composer's harness chip on the iPhone and iPad, after "+". Like the Mac composer
+/// it names the harness the pane runs ("Claude ▾") and restarts the pane on another
 /// one; the engine hands the conversation over to the new session.
 struct PhoneHarnessMenu: View {
   let client: EngineClient
   let paneId: String
-  @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var target: HarnessInfo?
   @State private var requested: String?
   @State private var failure: String?
@@ -24,8 +23,8 @@ struct PhoneHarnessMenu: View {
         label(current: current)
       }
       .menuStyle(.button)
-      .buttonStyle(.bordered)
-      .tint(PhonePalette.secondary)
+      .buttonStyle(.plain)
+      .menuIndicator(.hidden)
       .disabled(!client.canSwitchAgentHarness(paneId) || requested != nil)
       .accessibilityLabel(HarnessSwitchControl.accessibilityLabel)
       .accessibilityValue(control(current: current).title)
@@ -94,14 +93,10 @@ struct PhoneHarnessMenu: View {
     .accessibilityIdentifier("agent-harness-\(item.id)")
   }
 
+  /// The composer's harness chip: logo, name and chevron, as on the Mac.
   private func label(current: String) -> some View {
-    let control = control(current: current)
-    return HStack(spacing: 5) {
-      if control.busy { ProgressView().controlSize(.mini) }
-      Text(control.title).lineLimit(1).truncationMode(.tail)
-      Image(systemName: HarnessSwitchControl.symbol).imageScale(.small)
-    }
-    .frame(maxWidth: sizeClass == .regular ? nil : 120)
+    AgentHarnessChipLabel(
+      control: control(current: current), harnessId: current, style: .standard)
   }
 
   /// The running harness, or the one the pane is switching to.

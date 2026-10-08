@@ -1,43 +1,31 @@
 import SwiftUI
 
-/// Compact menu of the harness's own permission modes in the agent composer. The flat
-/// label reads "High · Accept Edits ▾": the reasoning effort, when the harness reports one,
-/// then the confirmed mode, or a spinner and the requested mode while the harness has not
-/// confirmed it yet. A mode that approves everything is drawn in `warning`.
+/// The composer's permission ("rédeas") menu: a shield, the harness's name for the confirmed
+/// mode (or a spinner and the requested one while the harness has not confirmed it) and a
+/// chevron. A mode that approves everything is drawn in `warning`.
 struct AgentPermissionModeMenu: View {
   let modes: AgentPermissionModes
-  var effort: String? = nil
   let enabled: Bool
   let style: AgentConversationStyle
   let select: (String) -> Void
 
   var body: some View {
     Menu {
-      ForEach(modes.modes) { mode in
-        Button {
-          select(mode.id)
-        } label: {
-          PermissionModeItem(mode: mode, current: mode.id == modes.current)
-        }
-        .disabled(mode.id == modes.current)
-      }
+      AgentPermissionModeItems(modes: modes, select: select)
     } label: {
-      HStack(spacing: PaneInteriorMetrics.tightSpacing) {
+      AgentComposerChip(title: title, emphasized: false, style: style) {
         if modes.pending != nil {
           ProgressView().controlSize(.mini)
-        } else if fullAccess {
-          Image(systemName: "exclamationmark.shield")
+        } else {
+          Image(systemName: fullAccess ? "exclamationmark.shield" : "shield")
+            .font(.system(size: AgentComposerMetrics.shieldSize - 2, weight: .medium))
+            .foregroundStyle(fullAccess ? style.warning : style.secondary)
+            .frame(
+              width: AgentComposerMetrics.shieldSize, height: AgentComposerMetrics.shieldSize)
         }
-        Text(label).lineLimit(1).truncationMode(.tail)
       }
-      .font(style.monoSmallFont.weight(.semibold))
-      .foregroundStyle(fullAccess ? style.warning : style.ink)
-      .contentShape(Rectangle())
     }
-    .menuStyle(.button)
-    .buttonStyle(.plain)
-    .menuIndicator(.hidden)
-    .fixedSize()
+    .composerMenuStyle()
     .disabled(!enabled || modes.pending != nil)
     .accessibilityLabel("Permission mode")
     .accessibilityValue(accessibilityValue)
@@ -49,10 +37,6 @@ struct AgentPermissionModeMenu: View {
 
   private var title: String {
     (modes.pendingMode ?? modes.currentMode)?.name ?? modes.pending ?? modes.current ?? "Mode"
-  }
-
-  private var label: String {
-    ([effort, title].compactMap { $0 }.joined(separator: " · ")) + " ▾"
   }
 
   private var accessibilityValue: String {
@@ -79,6 +63,7 @@ public struct PermissionModeChoices: View {
       } label: {
         PermissionModeItem(mode: mode, current: mode.id == selection)
       }
+      .help(mode.detail ?? "")
     }
   }
 
@@ -90,8 +75,27 @@ public struct PermissionModeChoices: View {
   }
 }
 
-/// One menu item: the harness's name for the mode, its description as a
-/// subtitle, and a warning mark on modes that approve everything.
+/// The items of the composer's permission menu.
+struct AgentPermissionModeItems: View {
+  let modes: AgentPermissionModes
+  let select: (String) -> Void
+
+  var body: some View {
+    ForEach(modes.modes) { mode in
+      Button {
+        select(mode.id)
+      } label: {
+        PermissionModeItem(mode: mode, current: mode.id == modes.current)
+      }
+      .help(mode.detail ?? "")
+      .disabled(mode.id == modes.current)
+    }
+  }
+}
+
+/// One menu item: the harness's name for the mode and a warning mark on modes that approve
+/// everything. The description is the item's tooltip, never a subtitle: AppKit raised an
+/// exception building a title-and-subtitle item while SwiftUI refreshed the open menu.
 private struct PermissionModeItem: View {
   let mode: AgentPermissionMode
   let current: Bool
@@ -104,6 +108,5 @@ private struct PermissionModeItem: View {
     } else {
       Text(mode.name)
     }
-    if let detail = mode.detail { Text(detail) }
   }
 }

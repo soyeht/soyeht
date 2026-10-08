@@ -114,20 +114,16 @@ import Testing
   #expect(HarnessSwitchModel.isSwitching(client.agentPanes["pane"]?.harnessSwitch))
 }
 
-@Test func agentPaneHeaderExposesASwitchHarnessControlNamedAfterTheRunningHarness() throws {
+@Test func agentComposerHarnessControlIsNamedAfterTheRunningHarness() {
   let claude = switchHarness(id: "registry.claude-acp", name: "Claude Agent", state: .ready)
   let codex = switchHarness(id: "registry.codex-acp", name: "Codex", state: .ready)
-  let harness = HarnessSwitchModel.control(
+  let control = HarnessSwitchModel.control(
     current: claude.id, switchState: nil, harnesses: [claude, codex], paneName: "Reviewer")
 
-  let header = PaneHeaderControls(mode: .agent, harness: harness)
-
-  let control = try #require(header.harness)
   #expect(control.title == "Claude")
   #expect(!control.busy)
   #expect(HarnessSwitchControl.accessibilityLabel == "Switch harness")
   #expect(control.help == "Switch harness (running Claude)")
-  #expect(HarnessSwitchControl.symbol == "chevron.down")
 }
 
 @Test func harnessControlNamesTheTargetWhileASwitchRuns() {
@@ -190,8 +186,7 @@ import Testing
 }
 
 @Test func paneHeaderIconsAreNamedAndLoopNoLongerLooksLikeSwitching() {
-  let agent = PaneHeaderControls(
-    mode: .agent, harness: HarnessSwitchControl(title: "Claude", busy: false))
+  let agent = PaneHeaderControls(mode: .agent)
   #expect(agent.actions == [.loop, .tasks, .splitColumns, .splitRows, .close])
   for action in PaneHeaderAction.allCases {
     #expect(!action.title.isEmpty)
@@ -200,9 +195,7 @@ import Testing
   #expect(!PaneHeaderAction.loop.systemImage.contains("arrow"))
   #expect(PaneHeaderAction.loop.systemImage != "repeat")
 
-  let terminal = PaneHeaderControls(
-    mode: .terminal, harness: HarnessSwitchControl(title: "Claude", busy: false))
-  #expect(terminal.harness == nil)
+  let terminal = PaneHeaderControls(mode: .terminal)
   #expect(terminal.actions == [.tasks, .splitColumns, .splitRows, .close])
 }
 

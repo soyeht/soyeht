@@ -115,8 +115,11 @@ struct AgentAttachButton: View {
   }
 
   private var icon: some View {
-    Image(systemName: "plus").font(style.controlFont.weight(.bold))
+    Image(systemName: "plus")
+      .font(.system(size: AgentComposerMetrics.iconSize - 2, weight: .medium))
       .foregroundStyle(style.secondary)
+      .frame(width: AgentComposerMetrics.controlHeight, height: AgentComposerMetrics.controlHeight)
+      .contentShape(Circle())
       .accessibilityLabel("Attach files")
   }
 

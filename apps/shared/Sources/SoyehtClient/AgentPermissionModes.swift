@@ -4,6 +4,18 @@ import SoyehtProtocol
 extension ConfigOption {
   /// The harness's own permission-mode selector (ADR 0070).
   public var isPermissionMode: Bool { category == "mode" || id == "mode" }
+
+  /// A selectable option's chosen value, and the one `operation` is still applying to it.
+  func selection(operation: ConfigOperation?) -> (current: String?, pending: String?)? {
+    guard type == .select, !options.isEmpty else { return nil }
+    var current: String?
+    if case .v0(let value) = currentValue { current = value }
+    var pending: String?
+    if let operation, operation.configId == id, case .v0(let value) = operation.value {
+      pending = value
+    }
+    return (current, pending)
+  }
 }
 
 /// One permission mode exactly as the harness announced it.
@@ -27,8 +39,8 @@ public struct AgentPermissionModes: Equatable, Sendable {
   public let pending: String?
 
   public init?(options: [ConfigOption], operation: ConfigOperation? = nil) {
-    guard let option = options.first(where: \.isPermissionMode), option.type == .select,
-      !option.options.isEmpty
+    guard let option = options.first(where: \.isPermissionMode),
+      let selection = option.selection(operation: operation)
     else { return nil }
     configId = option.id
     modes = option.options.map {
@@ -36,12 +48,8 @@ public struct AgentPermissionModes: Equatable, Sendable {
         id: $0.value, name: $0.name, detail: $0.description,
         fullAccess: $0.kind == Self.fullAccessKind)
     }
-    if case .v0(let value) = option.currentValue { current = value } else { current = nil }
-    if let operation, operation.configId == option.id, case .v0(let value) = operation.value {
-      pending = value
-    } else {
-      pending = nil
-    }
+    current = selection.current
+    pending = selection.pending
   }
 
   public init?(agent: AgentSession) {

@@ -26,6 +26,10 @@
 	<string>Apache-2.0</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the QR shown by Soyeht Dev on the Mac to pair this iPhone or iPad.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Dictate messages to your agents: Soyeht listens only while the composer's mic is on.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Turn what you say into text in the agent composer, on this device when it can.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to your Mac over the tailnet to read pane screens.</string>
 	<!-- HTTP and WebSocket use tailnet encryption. The parser only accepts tailnet and loopback addresses. Contract 06. -->
