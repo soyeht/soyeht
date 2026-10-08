@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -308,6 +309,106 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
         }))
         self.assertEqual((base.ignored_tests, head.ignored_tests), (0, 1))
         self.assertTrue(gate.check_verification(base, head, False))
+
+
+LARGE_FILE_FUNCTIONS = 1_000
+LARGE_FILE_CPU_SECONDS = 2.0
+
+
+def large_sources():
+    """Four files of about 20k lines each, dense with functions, literals and comments."""
+    rust = "".join(
+        f"/// doc {n}\n"
+        f"pub fn item_{n}<'a>(value: &'a str) -> Result<&'a str, Error> {{\n"
+        f"    // comment {n}\n"
+        f"    let text = \"literal {n}\"; let c = '{{'; /* block */\n"
+        + "    work(value);\n" * 12
+        + "    Ok(value)\n}\n"
+        for n in range(LARGE_FILE_FUNCTIONS)
+    )
+    swift = "".join(
+        f"func item{n}(value: String) -> String {{\n"
+        f"    // comment {n}\n"
+        f"    let text = \"literal {n}\"\n" + "    work(value)\n" * 13 + "    return text\n}\n"
+        for n in range(LARGE_FILE_FUNCTIONS)
+    )
+    typescript = "".join(
+        f"function item{n}(value: string): string {{\n"
+        f"  // comment {n}\n"
+        f"  const text = 'literal {n}';\n" + "  work(value);\n" * 13 + "  return text;\n}\n"
+        for n in range(LARGE_FILE_FUNCTIONS)
+    )
+    python = "".join(
+        f"def item_{n}(value):\n    # comment {n}\n    text = 'literal {n}'\n"
+        + "    work(value)\n" * 13
+        + "    return text\n\n"
+        for n in range(LARGE_FILE_FUNCTIONS)
+    )
+    return {
+        "engine/big/src/lib.rs": rust,
+        "apps/big/Big.swift": swift,
+        "tools/big/index.ts": typescript,
+        "scripts/big.py": python,
+    }
+
+
+class HardeningScanSpeedTests(unittest.TestCase):
+    def test_scanning_large_files_is_linear(self):
+        sources = large_sources()
+        for source in sources.values():
+            self.assertGreaterEqual(source.count("\n"), 15_000)
+        started = time.process_time()
+        result = gate.metrics(MemoryTree(sources))
+        elapsed = time.process_time() - started
+        counts = {path: 0 for path in sources}
+        for function in result.functions:
+            counts[function.path] += 1
+        self.assertEqual(counts, {path: LARGE_FILE_FUNCTIONS for path in sources})
+        self.assertLess(
+            elapsed, LARGE_FILE_CPU_SECONDS, f"scanning large files took {elapsed:.1f}s of CPU"
+        )
+
+    def test_mask_keeps_offsets_and_blanks_comments_and_literals(self):
+        text = "a // c\nb /* x\ny */ \"s\\\"t\" r#\"q\"# 'x' <'a>\n"
+        clean, strings = gate.mask(text, lifetimes=True)
+        self.assertEqual(len(clean), len(text))
+        self.assertEqual(clean.count("\n"), text.count("\n"))
+        self.assertEqual(clean.split(), ["a", "b", "<'a>"])
+        self.assertEqual(strings, ['s\\"t', "q"])
+
+    def test_brace_pairs_matches_nested_and_ignores_unmatched_braces(self):
+        self.assertEqual(gate.brace_pairs("{ { } } }"), {0: 6, 2: 4})
+        self.assertEqual(gate.brace_pairs("{ {"), {})
+
+
+class CommitTreeTests(unittest.TestCase):
+    def test_commit_tree_reads_every_file_like_git_show(self):
+        with tempfile.TemporaryDirectory() as root:
+            git(root, "init", "--quiet", "--initial-branch=main")
+            files = {
+                "src/a.rs": "fn a() {}\n",
+                "src/copy of a.rs": "fn a() {}\n",
+                "empty.txt": "",
+                "notes/ünïcode.md": "café\n",
+            }
+            for name, content in files.items():
+                target = Path(root) / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            (Path(root) / "blob.bin").write_bytes(bytes(range(256)))
+            git(root, "add", "--all")
+            git(root, "commit", "--quiet", "--message", "files")
+            revision = git(root, "rev-parse", "HEAD")
+            with patch.object(gate, "ROOT", Path(root)):
+                tree = gate.CommitTree(revision)
+                self.assertEqual(tree.paths(), sorted([*files, "blob.bin"]))
+                for name in tree.paths():
+                    expected = subprocess.check_output(
+                        ["git", "show", f"{revision}:{name}"], cwd=root
+                    ).decode(errors="replace")
+                    self.assertEqual(tree.read(name), expected, name)
+                with self.assertRaises(OSError):
+                    tree.read("missing.rs")
 
 
 class HardeningBaseTests(unittest.TestCase):

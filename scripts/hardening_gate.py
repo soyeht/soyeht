@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import argparse
 import ast
+import functools
 import json
 import re
 import subprocess
 import sys
+from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -59,15 +61,49 @@ class WorkingTree:
 
 
 class CommitTree:
+    """A commit's files, all read through one `git cat-file --batch` process."""
+
     def __init__(self, revision: str):
         self.revision = revision
+        self._blob_ids: dict[str, str | None] | None = None
+        self._contents: dict[str, bytes] | None = None
+
+    def _listing(self) -> dict[str, str | None]:
+        """Path to blob id; an entry that is not a blob (a submodule) maps to None."""
+        if self._blob_ids is None:
+            self._blob_ids = {}
+            for item in git("ls-tree", "-rz", self.revision).split(b"\0"):
+                if item:
+                    header, _, name = item.partition(b"\t")
+                    _, kind, blob_id = header.decode().split()
+                    self._blob_ids[name.decode()] = blob_id if kind == "blob" else None
+        return self._blob_ids
 
     def paths(self) -> list[str]:
-        raw = git("ls-tree", "-rz", "--name-only", self.revision)
-        return sorted(item.decode() for item in raw.split(b"\0") if item)
+        return sorted(self._listing())
+
+    def _load(self) -> dict[str, bytes]:
+        blob_ids = self._listing()
+        wanted = sorted({blob_id for blob_id in blob_ids.values() if blob_id})
+        request = "".join(f"{blob_id}\n" for blob_id in wanted).encode()
+        raw = git("cat-file", "--batch", stdin=request)
+        by_id: dict[str, bytes] = {}
+        cursor = 0
+        for _ in wanted:
+            end = raw.index(b"\n", cursor)
+            blob_id, kind, size = raw[cursor:end].decode().split()
+            if kind != "blob":
+                raise OSError(f"{blob_id} is {kind}, not a blob")
+            by_id[blob_id] = raw[end + 1:end + 1 + int(size)]
+            cursor = end + 1 + int(size) + 1
+        return {path: by_id[blob_id] for path, blob_id in blob_ids.items() if blob_id}
 
     def read(self, path: str) -> str:
-        return git("show", f"{self.revision}:{path}").decode(errors="replace")
+        if self._contents is None:
+            self._contents = self._load()
+        if path not in self._contents:
+            raise OSError(f"{path} is not a file in {self.revision}")
+        return self._contents[path].decode(errors="replace")
 
 
 @dataclass(frozen=True)
@@ -91,126 +127,135 @@ class Metrics:
     ignored_tests: int
 
 
-def git(*arguments: str) -> bytes:
-    return subprocess.check_output(["git", *arguments], cwd=ROOT)
-
-
-def line_number(text: str, offset: int) -> int:
-    return text.count("\n", 0, offset) + 1
+def git(*arguments: str, stdin: bytes | None = None) -> bytes:
+    return subprocess.check_output(["git", *arguments], cwd=ROOT, input=stdin)
 
 
 LIFETIME = re.compile(r"'[A-Za-z_]\w*(?![\w'])")
+# The next place `mask` has to look at; the text between two tokens is plain code.
+MASK_TOKEN = re.compile(r"//|/\*|(?:br|cr|r)(#*)\"|[bc]?\"|'")
+BLOCK_COMMENT_EDGE = re.compile(r"/\*|\*/")
+STRING_BODY = re.compile(r'[^"\\]*(?:\\.[^"\\]*)*', re.DOTALL)
+NOT_NEWLINE = re.compile(r"[^\n]")
+NEWLINE = re.compile(r"\n")
+BRACE = re.compile(r"[{}]")
 
 
+def blanked(text: str) -> str:
+    """The text with every character but the newlines replaced by a space."""
+    return " " * len(text) if "\n" not in text else NOT_NEWLINE.sub(" ", text)
+
+
+def block_comment_end(text: str, start: int) -> int:
+    """The offset after the nestable block comment that opens at `start`."""
+    depth = 1
+    cursor = start + 2
+    while depth:
+        edge = BLOCK_COMMENT_EDGE.search(text, cursor)
+        if edge is None:
+            return len(text)
+        depth += 1 if edge.group() == "/*" else -1
+        cursor = edge.end()
+    return cursor
+
+
+def character_literal_end(text: str, start: int) -> int | None:
+    """The offset after the short `'x'` literal that opens at `start`, or None."""
+    escaped = False
+    for closing in range(start + 1, min(len(text), start + 8)):
+        character = text[closing]
+        if character == "'" and not escaped:
+            return closing + 1
+        escaped = character == "\\" and not escaped
+    return None
+
+
+@functools.lru_cache(maxsize=8)
 def mask(
     text: str, *, keep_strings: bool = False, lifetimes: bool = False
 ) -> tuple[str, list[str]]:
     """Blank comments and literals while preserving offsets and newlines.
 
     With `lifetimes`, a Rust `'a` is kept as code instead of opening a character literal.
+    One pass jumps from token to token, so the cost is linear in the text. One file is masked
+    by several counters in a row, so the result is cached; callers must not modify it.
     """
-    output = list(text)
+    pieces: list[str] = []
     strings: list[str] = []
+    copied = 0
     index = 0
     size = len(text)
 
     def blank(start: int, end: int) -> None:
-        for position in range(start, end):
-            if output[position] != "\n":
-                output[position] = " "
+        nonlocal copied
+        pieces.append(text[copied:start])
+        pieces.append(blanked(text[start:end]))
+        copied = end
 
-    while index < size:
-        if text.startswith("//", index):
+    while (token := MASK_TOKEN.search(text, index)) is not None:
+        index = token.start()
+        opening = token.group()
+        if opening == "//":
             end = text.find("\n", index)
             end = size if end < 0 else end
             blank(index, end)
             index = end
-            continue
-        if text.startswith("/*", index):
-            start = index
-            index += 2
-            depth = 1
-            while index < size and depth:
-                if text.startswith("/*", index):
-                    depth += 1
-                    index += 2
-                elif text.startswith("*/", index):
-                    depth -= 1
-                    index += 2
-                else:
-                    index += 1
-            blank(start, index)
-            continue
-
-        raw = re.match(r"(?:br|cr|r)(#+)?\"", text[index:])
-        if raw:
-            start = index
-            hashes = raw.group(1) or ""
-            content_start = index + raw.end()
-            terminator = '"' + hashes
-            end_at = text.find(terminator, content_start)
-            index = size if end_at < 0 else end_at + len(terminator)
-            strings.append(text[content_start:end_at if end_at >= 0 else size])
-            if not keep_strings:
-                blank(start, index)
-            continue
-
-        prefix = 1 if index + 1 < size and text[index] in "bc" and text[index + 1] == '"' else 0
-        if text[index + prefix:index + prefix + 1] == '"':
-            start = index
-            index += prefix + 1
-            content_start = index
-            escaped = False
-            while index < size:
-                character = text[index]
-                if character == '"' and not escaped:
-                    break
-                if character == "\\" and not escaped:
-                    escaped = True
-                else:
-                    escaped = False
+        elif opening == "/*":
+            end = block_comment_end(text, index)
+            blank(index, end)
+            index = end
+        elif opening == "'":
+            lifetime = LIFETIME.match(text, index) if lifetimes else None
+            literal_end = None if lifetime else character_literal_end(text, index)
+            if lifetime:
+                index = lifetime.end()
+            elif literal_end is None:
                 index += 1
-            strings.append(text[content_start:index])
-            index = min(size, index + 1)
-            if not keep_strings:
-                blank(start, index)
-            continue
-
-        lifetime = LIFETIME.match(text, index) if lifetimes else None
-        if lifetime:
-            index = lifetime.end()
-            continue
-        if text[index] == "'":
-            closing = index + 1
-            escaped = False
-            while closing < min(size, index + 8):
-                character = text[closing]
-                if character == "'" and not escaped:
-                    blank(index, closing + 1)
-                    index = closing + 1
-                    break
-                if character == "\\" and not escaped:
-                    escaped = True
-                else:
-                    escaped = False
-                closing += 1
             else:
-                index += 1
-            continue
-        index += 1
-    return "".join(output), strings
+                blank(index, literal_end)
+                index = literal_end
+        else:
+            content_start = token.end()
+            if token.group(1) is not None:
+                terminator = '"' + token.group(1)
+                end_at = text.find(terminator, content_start)
+                content_end = size if end_at < 0 else end_at
+                end = size if end_at < 0 else end_at + len(terminator)
+            else:
+                content_end = STRING_BODY.match(text, content_start).end()
+                closed = content_end < size and text[content_end] == '"'
+                content_end = content_end if closed else size
+                end = content_end + 1 if closed else size
+            strings.append(text[content_start:content_end])
+            if not keep_strings:
+                blank(index, end)
+            index = end
+    pieces.append(text[copied:])
+    return "".join(pieces), strings
 
 
-def matching_brace(source: str, opening: int) -> int | None:
-    depth = 0
-    for index in range(opening, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return index
-    return None
+def brace_pairs(source: str) -> dict[int, int]:
+    """Map the offset of every `{` to the offset of its matching `}`, in one pass.
+
+    An unmatched `{` has no entry.
+    """
+    pairs: dict[int, int] = {}
+    opened: list[int] = []
+    for found in BRACE.finditer(source):
+        if found.group() == "{":
+            opened.append(found.start())
+        elif opened:
+            pairs[opened.pop()] = found.start()
+    return pairs
+
+
+@functools.lru_cache(maxsize=8)
+def parse_python(source: str) -> ast.Module | None:
+    """The syntax tree of a Python source, or None when it does not parse."""
+    try:
+        return ast.parse(source)
+    except SyntaxError:
+        return None
 
 
 def is_engine_production_source(path: str) -> bool:
@@ -244,21 +289,24 @@ def child_module_paths(path: str, name: str) -> tuple[str, str]:
     return ((directory / f"{name}.rs").as_posix(), (directory / name / "mod.rs").as_posix())
 
 
-def test_module_files(sources: dict[str, str]) -> set[str]:
-    """Files compiled only for tests: `#[cfg(test)] mod x;` and their submodules."""
+def test_module_files(masked: dict[str, str]) -> set[str]:
+    """Files compiled only for tests: `#[cfg(test)] mod x;` and their submodules.
+
+    `masked` maps repository paths to source already passed through `mask`.
+    """
     pending = [
         candidate
-        for path, source in sources.items()
-        for found in TEST_MODULE_FILE.finditer(mask(source)[0])
+        for path, clean in masked.items()
+        for found in TEST_MODULE_FILE.finditer(clean)
         for candidate in child_module_paths(path, found.group(1))
     ]
     test_files: set[str] = set()
     while pending:
         path = pending.pop()
-        if path not in sources or path in test_files:
+        if path not in masked or path in test_files:
             continue
         test_files.add(path)
-        for found in ANY_MODULE_FILE.finditer(mask(sources[path])[0]):
+        for found in ANY_MODULE_FILE.finditer(masked[path]):
             pending.extend(child_module_paths(path, found.group(1)))
     return test_files
 
@@ -270,21 +318,25 @@ def engine_production_panics(sources: dict[str, str]) -> int:
     inline `#[cfg(test)]` items and test modules kept in their own files are
     excluded.
     """
-    production = {
-        path: source for path, source in sources.items() if is_engine_production_source(path)
+    masked = {
+        path: mask(source)[0]
+        for path, source in sources.items()
+        if is_engine_production_source(path)
     }
-    excluded = test_module_files(production)
+    excluded = test_module_files(masked)
     return sum(
-        len(PANIC_CALL.findall(without_cfg_test(source)))
-        for path, source in production.items()
+        len(PANIC_CALL.findall(without_cfg_test(clean)))
+        for path, clean in masked.items()
         if path not in excluded
     )
 
 
-def without_cfg_test(source: str) -> str:
-    clean, _ = mask(source)
-    output = list(clean)
-    for found in list(CFG_TEST_ATTRIBUTE.finditer(clean)):
+def without_cfg_test(clean: str) -> str:
+    """Blank every `#[cfg(test)]` item that has a body; `clean` is already masked."""
+    pairs = brace_pairs(clean)
+    pieces: list[str] = []
+    copied = 0
+    for found in CFG_TEST_ATTRIBUTE.finditer(clean):
         opening = clean.find("{", found.end())
         if opening < 0:
             continue
@@ -292,13 +344,15 @@ def without_cfg_test(source: str) -> str:
         if declaration >= 0:
             # `mod x;` or `use ...;`: a module file is handled by test_module_files.
             continue
-        closing = matching_brace(clean, opening)
-        if closing is None:
+        closing = pairs.get(opening)
+        if closing is None or closing < copied:
             continue
-        for index in range(found.start(), closing + 1):
-            if output[index] != "\n":
-                output[index] = " "
-    return "".join(output)
+        start = max(found.start(), copied)
+        pieces.append(clean[copied:start])
+        pieces.append(blanked(clean[start:closing + 1]))
+        copied = closing + 1
+    pieces.append(clean[copied:])
+    return "".join(pieces)
 
 
 SWIFT_CONTINUES_AFTER_LINE = re.compile(r"\s*(?:\{|->|,|&|where\b|throws\b|rethrows\b|async\b)")
@@ -333,6 +387,11 @@ def swift_line_continues(clean: str, newline: int) -> bool:
     return bool(SWIFT_CONTINUES_BEFORE_LINE.search(clean[line_start:newline].rstrip()))
 
 
+# The characters `body_opening` has to look at; everything between them is skipped.
+SIGNATURE_STOP = re.compile(r"[(\[)\]{};]")
+SWIFT_SIGNATURE_STOP = re.compile(r"[(\[)\]{};\n]")
+
+
 def body_opening(clean: str, start: int, *, swift: bool) -> int | None:
     """Find the `{` that opens the body of the declaration signature at `start`.
 
@@ -342,9 +401,9 @@ def body_opening(clean: str, start: int, *, swift: bool) -> int | None:
     that does not continue the signature (a protocol requirement).
     """
     depth = 0
-    cursor = skip_generic_parameters(clean, start)
-    while cursor < len(clean):
-        character = clean[cursor]
+    stops = SWIFT_SIGNATURE_STOP if swift else SIGNATURE_STOP
+    for found in stops.finditer(clean, skip_generic_parameters(clean, start)):
+        character = found.group()
         if character in "([":
             depth += 1
         elif character in ")]":
@@ -353,18 +412,23 @@ def body_opening(clean: str, start: int, *, swift: bool) -> int | None:
                 return None
         elif depth == 0:
             if character == "{":
-                return cursor
+                return found.start()
             if character in ";}":
                 return None
-            if swift and character == "\n" and not swift_line_continues(clean, cursor):
+            if character == "\n" and not swift_line_continues(clean, found.start()):
                 return None
-        cursor += 1
     return None
 
 
 def brace_functions(path: str, source: str, pattern: re.Pattern[str]) -> list[Function]:
     clean, _ = mask(source, lifetimes=pattern is RUST_FUNCTION)
     swift = pattern is SWIFT_FUNCTION
+    pairs = brace_pairs(clean)
+    newlines = [found.start() for found in NEWLINE.finditer(clean)]
+
+    def line_number(offset: int) -> int:
+        return bisect_left(newlines, offset) + 1
+
     functions = []
     for found in pattern.finditer(clean):
         # `init(` and `deinit {` end on the opening delimiter; a name ends before it.
@@ -372,21 +436,20 @@ def brace_functions(path: str, source: str, pattern: re.Pattern[str]) -> list[Fu
         opening = body_opening(clean, start, swift=swift)
         if opening is None:
             continue
-        closing = matching_brace(clean, opening)
+        closing = pairs.get(opening)
         if closing is None:
             continue
         name = next((group for group in found.groups() if group), "anonymous")
         if name in {"if", "else", "for", "while", "switch", "catch"}:
             continue
-        first = line_number(clean, found.start())
-        functions.append(Function(path, name, first, line_number(clean, closing) - first + 1))
+        first = line_number(found.start())
+        functions.append(Function(path, name, first, line_number(closing) - first + 1))
     return functions
 
 
 def python_functions(path: str, source: str) -> list[Function]:
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
+    tree = parse_python(source)
+    if tree is None:
         return []
     result = []
     for node in ast.walk(tree):
@@ -417,9 +480,8 @@ def count_tests(path: str, source: str) -> int:
         clean, _ = mask(source)
         return len(re.findall(r"(?m)^\s*@Test(?:\s|\()", clean))
     if suffix == ".py":
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
+        tree = parse_python(source)
+        if tree is None:
             return 0
         return sum(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
@@ -461,9 +523,8 @@ def count_gate_steps(source: str) -> int:
 
 
 def count_acceptances(source: str) -> int:
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
+    tree = parse_python(source)
+    if tree is None:
         return 0
     count = 0
     for node in ast.walk(tree):
