@@ -3,6 +3,7 @@
 use super::{
     apply_complete, apply_review_return,
     drift::{DriftDecision, DriftFinding, evaluate_review, parse_findings, reviewer_prompt},
+    review_request::ReviewRequest,
     revision::RevisionSnapshot,
 };
 use crate::{
@@ -84,27 +85,17 @@ impl Core {
         &mut self,
         connection: &str,
         raw: &Value,
-        current: Task,
-        updated: Task,
-        actor: String,
-        reason: String,
+        request: ReviewRequest,
+        revision: RevisionSnapshot,
     ) -> Result<Value> {
-        let existing: Option<TaskReviewRecord<ReviewCheckpoint>> = self
-            .store
-            .task_review(
-                &current.workspace_id,
-                &current.task_id,
-                current.current_attempt,
-            )
-            .map_err(errors::storage)?;
-        if existing
-            .as_ref()
-            .is_some_and(|item| item.stage != ReviewStage::Resolved)
-        {
-            return Err(errors::transition_refused("Task review is already active"));
-        }
-        let repository = review_repository(self, &current)?;
-        let revision = self.revision.inspect(&repository)?;
+        let ReviewRequest {
+            current,
+            updated,
+            actor,
+            reason,
+            repository: _,
+        } = request;
+        let existing = self.inactive_task_review(&current)?;
         let prepared = prepare_reviewer(self, &current, revision)?;
         let movement = TaskMove {
             actor,

@@ -6,6 +6,7 @@
 //! link cannot carry an operation out of the workspace. The final component is
 //! never followed: renaming or deleting a link acts on the link itself.
 
+use super::project_files::is_save_temporary;
 use soyeht_protocol::{ProjectEntry, ProjectEntryKind};
 use std::{
     collections::{BTreeSet, hash_map::DefaultHasher},
@@ -19,6 +20,15 @@ use std::{
 
 /// Entries the panel never shows, as Zed's default `file_scan_exclusions`.
 const EXCLUDED_NAMES: &[&str] = &[".git", ".hg", ".svn", ".DS_Store"];
+
+/// Entries the panel never shows or accepts: repository metadata and the
+/// engine's own atomic-save temporary files.
+pub(super) fn is_excluded(name: &OsStr) -> bool {
+    is_save_temporary(name)
+        || name
+            .to_str()
+            .is_some_and(|name| EXCLUDED_NAMES.contains(&name))
+}
 
 pub(crate) struct ProjectRoot {
     root: PathBuf,
@@ -78,7 +88,7 @@ impl ProjectRoot {
             let item = item?;
             let name = item.file_name();
             let Some(text) = name.to_str() else { continue };
-            if EXCLUDED_NAMES.contains(&text) {
+            if is_excluded(&name) {
                 continue;
             }
             let ignored = !visible.contains(&name);
@@ -187,6 +197,9 @@ impl ProjectRoot {
         let mut names = BTreeSet::new();
         for item in fs::read_dir(directory).ok()? {
             let item = item.ok()?;
+            if is_excluded(&item.file_name()) {
+                continue;
+            }
             names.insert((item.file_name(), item.file_type().ok()?.is_dir()));
         }
         let mut hasher = DefaultHasher::new();
@@ -255,11 +268,8 @@ fn names(relative: &str, allow_root: bool) -> io::Result<Vec<&OsStr>> {
         let Component::Normal(name) = component else {
             return Err(invalid("project path must stay inside the workspace"));
         };
-        if name
-            .to_str()
-            .is_some_and(|name| EXCLUDED_NAMES.contains(&name))
-        {
-            return Err(invalid("project path names repository metadata"));
+        if is_excluded(name) {
+            return Err(invalid("project path names engine or repository metadata"));
         }
         names.push(name);
     }

@@ -21,8 +21,8 @@ pub enum Outcome {
         method: String,
         params: Value,
     },
-    /// Finished outside the engine lock by `deferred::resolve`.
-    Deferred(crate::deferred::Deferred),
+    /// Blocking work to run off the Core lock before the reply (ADR 0079).
+    Offload(crate::offload::Offload),
     Attachment {
         result: Value,
         reference: AttachmentRef,
@@ -376,7 +376,7 @@ impl Core {
             }
             "usage.list" => self.usage_list()?,
             "usage.refresh" => return self.usage_refresh(connection, params),
-            "servers.local.list" => self.local_servers_list()?,
+            "servers.local.list" => return self.local_servers_list(),
             "web.open" => self.web_open(connection, params)?,
             "web.navigate" => return self.web_navigate(connection, request_id, params),
             "web.close" => self.web_close(connection, params)?,
@@ -391,29 +391,22 @@ impl Core {
                 return self.language_request(connection, request_id, method, params);
             }
             "file.format" => return self.language_format(connection, request_id, params),
-            "file.diagnostics" | "file.diff" => self.file_inspection(method, params)?,
+            "file.diagnostics" => self.file_diagnostics(params)?,
+            "file.diff" => return self.file_diff(params),
             "writing.asset.read" => return self.writing_asset_read(params),
-            "writing.section.list" => {
-                return self.prepare_writing_section_list(params).map(Outcome::from);
-            }
+            "writing.section.list" => return self.writing_section_list(params),
+            "file.search" => return self.file_search(connection, params),
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
                 self.document_request(connection, method, params, writing_image)?
             }
-            "task.dispatch" => self.task_dispatch(connection, params)?,
+            "task.dispatch" => return self.task_dispatch(connection, params),
             "task.next" => self.task_next(connection, params)?,
-            "task.worktree.clean" => self.task_worktree_clean(connection, params)?,
+            "task.worktree.clean" => return self.task_worktree_clean(connection, params),
             "loop.set" => self.loop_set(connection, params)?,
-            "task.create"
-            | "task.update"
-            | "task.comment"
-            | "task.subitem.add"
-            | "task.subitem.done"
-            | "task.block"
-            | "task.release"
-            | "task.request_review"
-            | "task.complete"
-            | "task.unblock"
-            | "task.move" => self.task_author(connection, method, params)?,
+            "task.request_review" => return self.task_request_review(connection, params),
+            "task.create" | "task.update" | "task.comment" | "task.subitem.add"
+            | "task.subitem.done" | "task.block" | "task.release" | "task.complete"
+            | "task.unblock" | "task.move" => return self.task_author(connection, method, params),
             "pane.stream.subscribe" => {
                 self.subscribe_stream(connection, request_id, params)?;
                 return Ok(Outcome::Queued);
@@ -480,6 +473,15 @@ impl Core {
             .find(|(name, _)| name == section)
             .map(|(_, value)| value)
             .ok_or_else(|| errors::internal(format!("Snapshot has no {section} section")))
+    }
+
+    /// `dispatch`, with any offloaded work run on this thread.
+    #[cfg(test)]
+    pub(crate) fn dispatch_inline(&mut self, connection: &str, request: Value) -> Result<Outcome> {
+        match self.dispatch(connection, request)? {
+            Outcome::Offload(offload) => offload.run_inline(self),
+            outcome => Ok(outcome),
+        }
     }
 
     pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {

@@ -15,7 +15,10 @@ pub use service::{PreparedRefresh, Service};
 
 use crate::{
     core::Core,
+    core_lock::{self, Shared},
+    dispatch::Outcome,
     errors::{self, Result},
+    offload::Offload,
     ports::StorePort,
 };
 use serde_json::{Value, json};
@@ -25,13 +28,12 @@ use soyeht_protocol::{
 };
 use soyeht_store::usage::StoredUsageReading;
 use soyeht_usage::{Reading, Window};
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 /// How often the background schedule looks for due providers.
 const SCHEDULE_TICK: Duration = Duration::from_secs(15);
+/// Each source chain bounds its own waits; this bounds a whole click.
+const REFRESH_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A manual `usage.refresh` whose sources are read after the engine lock is released.
 pub struct PreparedUsageRefresh {
@@ -72,14 +74,24 @@ impl Core {
         .map_err(|_| errors::internal("Usage list serialization failed"))
     }
 
-    /// `usage.refresh`: finishes outside the engine lock (see `deferred`).
-    pub(crate) fn usage_refresh(
-        &mut self,
-        connection: &str,
-        params: &Value,
-    ) -> Result<crate::dispatch::Outcome> {
-        self.usage_refresh_prepare(connection, params)
-            .map(crate::dispatch::Outcome::from)
+    /// `usage.refresh`: chooses the providers under the Core lock, reads their
+    /// sources off it, and commits under it (ADR 0079). A late or failed read
+    /// releases its providers.
+    pub(crate) fn usage_refresh(&mut self, connection: &str, params: &Value) -> Result<Outcome> {
+        let prepared = self.usage_refresh_prepare(connection, params)?;
+        let providers = prepared.refresh.providers().to_vec();
+        Ok(Outcome::Offload(Offload::new(
+            "Usage refresh timed out",
+            REFRESH_TIMEOUT,
+            move || Ok(prepared.read()),
+            move |core, read| match read {
+                Ok((finish, batch)) => core.usage_refresh_finish(finish, batch).map(Outcome::Reply),
+                Err(error) => {
+                    core.usage.abandon(&providers);
+                    Err(error)
+                }
+            },
+        )))
     }
 
     /// Chooses the providers of a click, or refuses it under the per-provider limit.
@@ -178,40 +190,43 @@ impl Core {
     }
 }
 
-/// Reads due providers every few seconds, without holding the engine lock while reading.
-pub async fn schedule(core: Arc<Mutex<Core>>) -> Result<()> {
+/// Reads due providers every few seconds. The Core lock is taken only to
+/// choose and to commit, never while reading (ADR 0079).
+pub async fn schedule(core: Shared) -> Result<()> {
     let mut ticks = tokio::time::interval(SCHEDULE_TICK);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         ticks.tick().await;
-        let prepared = {
-            let mut core = core
-                .lock()
-                .map_err(|_| errors::internal("Engine state lock poisoned"))?;
-            if !core.usage.schedules() {
-                return Ok(());
-            }
-            core.usage_automatic_prepare()
+        let prepared = core_lock::with(&core, "usage_schedule", |core| {
+            Ok(core
+                .usage
+                .schedules()
+                .then(|| core.usage_automatic_prepare()))
+        })
+        .await?;
+        let Some(prepared) = prepared else {
+            return Ok(());
         };
         let Some(prepared) = prepared else {
             continue;
         };
         let providers = prepared.providers().to_vec();
         let batch = tokio::task::spawn_blocking(move || prepared.read()).await;
-        let mut core = core
-            .lock()
-            .map_err(|_| errors::internal("Engine state lock poisoned"))?;
-        match batch {
-            Ok(batch) => {
-                if let Err(error) = core.usage_automatic_commit(batch) {
-                    eprintln!(
-                        "{}",
-                        json!({"event": "engine.usage_schedule_error", "kind": errors::kind(&error)})
-                    );
+        core_lock::with(&core, "usage_schedule", move |core| {
+            match batch {
+                Ok(batch) => {
+                    if let Err(error) = core.usage_automatic_commit(batch) {
+                        eprintln!(
+                            "{}",
+                            json!({"event": "engine.usage_schedule_error", "kind": errors::kind(&error)})
+                        );
+                    }
                 }
+                Err(_) => core.usage.abandon(&providers),
             }
-            Err(_) => core.usage.abandon(&providers),
-        }
+            Ok(())
+        })
+        .await?;
     }
 }
 

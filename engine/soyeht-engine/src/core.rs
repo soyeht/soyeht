@@ -1,8 +1,10 @@
 use crate::{
     errors::{self, Error, Result},
     model::{self, Connected, RunningPane, StoredPane},
+    offload::SharedPort,
     ports::{Clock, StorePort, SupervisorPort, SystemClock, call_supervisor},
     screen::Screen,
+    tasks::{revision::GitRevision, worktree::CommandWorktree},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -32,8 +34,9 @@ pub struct Core {
     pub(crate) catalog_epoch: u64,
     pub ptyd: Option<Box<dyn SupervisorPort>>,
     pub clock: Arc<dyn Clock>,
-    pub revision: Box<dyn crate::tasks::revision::RevisionPort>,
-    pub worktrees: Box<dyn crate::tasks::worktree::WorktreePort>,
+    pub revision: SharedPort<dyn crate::tasks::revision::RevisionPort>,
+    pub worktrees: SharedPort<dyn crate::tasks::worktree::WorktreePort>,
+    pub(crate) background: crate::offload::Background,
     pub usage: crate::usage::Service,
     pub web: crate::web::Service,
     pub vcs: soyeht_vcs::Service,
@@ -116,8 +119,9 @@ impl Core {
             catalog_epoch: 0,
             ptyd: None,
             clock: Arc::new(SystemClock),
-            revision: Box::new(crate::tasks::revision::GitRevision),
-            worktrees: Box::new(crate::tasks::worktree::CommandWorktree::default()),
+            revision: SharedPort::new(Box::new(GitRevision)),
+            worktrees: SharedPort::new(Box::new(CommandWorktree::default())),
+            background: Default::default(),
             usage: crate::usage::system_service(usage_readings),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
@@ -602,18 +606,40 @@ impl Core {
         self.publish(&change.events)
     }
 
+    /// One engine tick, under the Core lock. Blocking work never runs here
+    /// (ADR 0079). A failing subsystem is reported under its own name and
+    /// never stops the terminal drain or the subsystems after it.
     pub fn poll_output(&mut self) -> Result<()> {
-        self.advance_editor()?;
-        self.advance_project_tree()?;
-        self.advance_skills()?;
-        self.advance_local_servers()?;
-        self.advance_web_commands()?;
+        self.apply_background();
+        self.isolated("editor", Self::advance_editor);
+        self.isolated("project_tree", Self::advance_project_tree);
+        self.isolated("skills", Self::advance_skills);
+        self.isolated("local_servers", Self::advance_local_servers);
+        self.isolated("web_commands", Self::advance_web_commands);
         if self.ptyd.is_none() {
             self.connect_supervisor()?;
         }
-        self.advance_harness_switches()?;
-        self.cleanup_retired_agent_processes()?;
-        self.reconcile_experiment_captures()?;
+        self.isolated("harness_switches", Self::advance_harness_switches);
+        self.isolated("retired_agents", Self::cleanup_retired_agent_processes);
+        self.isolated("experiment_captures", Self::reconcile_experiment_captures);
+        let drained = self.drain_panes();
+        self.advance_language_servers();
+        self.isolated("task_reviews", Self::advance_task_reviews);
+        self.isolated("task_feedback", Self::advance_task_feedback);
+        self.isolated("task_blocking", Self::advance_task_blocking);
+        self.isolated("task_dispatches", Self::advance_task_dispatches);
+        self.isolated("task_loops", Self::advance_task_loops);
+        drained
+    }
+
+    fn isolated(&mut self, subsystem: &'static str, step: fn(&mut Self) -> Result<()>) {
+        let result = step(self);
+        self.background.report(subsystem, &result);
+    }
+
+    /// Moves new terminal and agent output from the supervisor into each
+    /// pane's screen. This is the terminal path.
+    fn drain_panes(&mut self) -> Result<()> {
         let ids: Vec<_> = self
             .panes
             .iter()
@@ -697,12 +723,7 @@ impl Core {
                 self.save_runtime(&id, dead)?;
             }
         }
-        self.advance_language_servers();
-        self.advance_task_reviews()?;
-        self.advance_task_feedback()?;
-        self.advance_task_blocking()?;
-        self.advance_task_dispatches()?;
-        self.advance_task_loops()
+        Ok(())
     }
 
     pub fn now_ms(&self) -> i64 {

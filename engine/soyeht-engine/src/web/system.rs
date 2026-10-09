@@ -2,15 +2,13 @@ use crate::ports::{PortScanObservation, PortScanPort};
 use soyeht_protocol::limits;
 use soyeht_web::LocalServerScan;
 use std::{
-    io::{self, Read},
+    io,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
-    thread,
-    time::{Duration, Instant},
+    process::Command,
+    time::Duration,
 };
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(5);
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 pub struct SystemPortScan {
     program: PathBuf,
@@ -52,70 +50,32 @@ impl PortScanPort for SystemPortScan {
     }
 }
 
+/// Runs `lsof` off the Core lock with its deadline and byte budget.
 fn run_lsof(program: &Path, arguments: &[&str]) -> io::Result<Vec<u8>> {
-    let mut child = Command::new(program)
-        .args(arguments)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::BrokenPipe,
-            "port scanner stdout is unavailable",
-        )
+    let mut command = Command::new(program);
+    command.args(arguments);
+    let output = soyeht_process::run(
+        command,
+        soyeht_process::Limits::new(SCAN_TIMEOUT, limits::PORT_SCAN_BYTES),
+    )
+    .map_err(|error| match error {
+        soyeht_process::Error::Spawn { source, .. } => source,
+        soyeht_process::Error::TimedOut { .. } => {
+            io::Error::new(io::ErrorKind::TimedOut, "port scanner timed out")
+        }
+        soyeht_process::Error::OutputTooLarge { .. } => io::Error::new(
+            io::ErrorKind::InvalidData,
+            "port scanner output exceeds its byte budget",
+        ),
+        other => io::Error::other(other.to_string()),
     })?;
-    let reader = thread::spawn(move || read_bounded(stdout));
-    let status = wait_child(&mut child, Instant::now() + SCAN_TIMEOUT)?;
-    let output = reader.join().map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::BrokenPipe,
-            "port scanner output worker failed",
-        )
-    })??;
-    if status.success() || output.is_empty() {
-        Ok(output)
+    if output.success() || output.stdout.is_empty() {
+        Ok(output.stdout)
     } else {
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "port scanner failed",
         ))
-    }
-}
-
-fn wait_child(child: &mut Child, deadline: Instant) -> io::Result<std::process::ExitStatus> {
-    loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok(status);
-        }
-        if Instant::now() >= deadline {
-            // Best effort: the timeout below is what the caller reports.
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "port scanner timed out",
-            ));
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
-}
-
-fn read_bounded(mut reader: impl Read) -> io::Result<Vec<u8>> {
-    let mut output = Vec::new();
-    let mut chunk = [0_u8; 8192];
-    loop {
-        let count = reader.read(&mut chunk)?;
-        if count == 0 {
-            return Ok(output);
-        }
-        if output.len().saturating_add(count) > limits::PORT_SCAN_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "port scanner output exceeds its byte budget",
-            ));
-        }
-        output.extend_from_slice(&chunk[..count]);
     }
 }
 

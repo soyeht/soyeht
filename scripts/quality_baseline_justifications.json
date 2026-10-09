@@ -1,0 +1,6 @@
+{
+  "swallowed_errors.rust_let_underscore": {
+    "value": 54,
+    "reason": "soyeht-process kill_group (kill and wait on a child that is being torn down after a timeout; kill fails only when the child already exited and wait only when it was already reaped, and the caller reports the timeout either way) and read_in_background (sender.send fails only once collect stopped waiting at its deadline and dropped the receiver, so no one is left to read the result) ignore errors that carry nothing to act on. Three such sites are added; two in web/system.rs were removed when its lsof call moved to soyeht-process."
+  }
+}

@@ -13,14 +13,20 @@ pub use system::SystemPortScan;
 
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
-    ports::PortScanPort,
+    offload::{Offload, SharedPort},
+    ports::{PortScanObservation, PortScanPort},
 };
 use serde_json::Value;
 use soyeht_protocol::{LocalServer, ServersLocalListResult};
 use soyeht_web::LocalServerScan;
+use std::time::Duration;
 
 const REFRESH_INTERVAL_MS: i64 = 5_000;
+const SCAN_JOB: &str = "local_servers";
+/// Two bounded `lsof` runs, plus a wait behind a scan already running.
+const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) fn handles_host_update(method: &str) -> bool {
     matches!(method, "web.host.navigated" | "web.host.console_counts")
@@ -29,7 +35,7 @@ pub(crate) fn handles_host_update(method: &str) -> bool {
 pub(crate) use commands::handles as handles_command;
 
 pub struct Service {
-    scan: Box<dyn PortScanPort>,
+    scan: SharedPort<dyn PortScanPort>,
     servers: Vec<LocalServer>,
     next_refresh_ms: i64,
 }
@@ -42,22 +48,23 @@ pub struct Refresh {
 impl Service {
     pub fn new(scan: Box<dyn PortScanPort>) -> Self {
         Self {
-            scan,
+            scan: SharedPort::new(scan),
             servers: Vec::new(),
             next_refresh_ms: 0,
         }
     }
 
-    pub fn refresh_if_due(&mut self, now_ms: i64) -> Result<Option<Refresh>> {
+    /// Claims the refresh due at `now_ms`, if any, and hands out the scanner
+    /// to run off the Core lock.
+    fn claim_refresh(&mut self, now_ms: i64) -> Option<SharedPort<dyn PortScanPort>> {
         if now_ms < self.next_refresh_ms {
-            return Ok(None);
+            return None;
         }
-        self.refresh(now_ms).map(Some)
+        self.next_refresh_ms = now_ms.saturating_add(REFRESH_INTERVAL_MS);
+        Some(self.scan.clone())
     }
 
-    pub fn refresh(&mut self, now_ms: i64) -> Result<Refresh> {
-        self.next_refresh_ms = now_ms.saturating_add(REFRESH_INTERVAL_MS);
-        let observation = self.scan.scan().map_err(errors::io)?;
+    fn finish(&mut self, observation: PortScanObservation) -> Result<Refresh> {
         let servers =
             LocalServerScan::parse_lsof(&observation.listeners, &observation.directories, &[])?
                 .into_servers();
@@ -71,27 +78,56 @@ impl Service {
     }
 }
 
+/// Runs `lsof`; called off the Core lock.
+fn scan(scanner: &SharedPort<dyn PortScanPort>) -> Result<PortScanObservation> {
+    scanner.with(|port| port.scan().map_err(errors::io))
+}
+
 impl Core {
-    pub fn local_servers_list(&mut self) -> Result<Value> {
-        let now_ms = self.now_ms();
-        if let Some(refresh) = self.web.refresh_if_due(now_ms)? {
-            self.publish_local_server_change(&refresh)?;
+    /// Answers from the cache, or scans off the lock first when a refresh is due.
+    pub fn local_servers_list(&mut self) -> Result<Outcome> {
+        let Some(scanner) = self.claim_local_server_scan() else {
+            return self.cached_local_servers().map(Outcome::Reply);
+        };
+        Ok(Outcome::Offload(Offload::new(
+            "Local server scan timed out",
+            LIST_TIMEOUT,
+            move || scan(&scanner),
+            |core, observation| {
+                core.record_local_servers(observation?)?;
+                core.cached_local_servers().map(Outcome::Reply)
+            },
+        )))
+    }
+
+    pub(crate) fn advance_local_servers(&mut self) -> Result<()> {
+        let Some(scanner) = self.claim_local_server_scan() else {
+            return Ok(());
+        };
+        self.spawn_background(
+            SCAN_JOB.into(),
+            move || scan(&scanner),
+            |core, observation| core.record_local_servers(observation?),
+        )
+    }
+
+    fn claim_local_server_scan(&mut self) -> Option<SharedPort<dyn PortScanPort>> {
+        if self.background.is_active(SCAN_JOB) {
+            return None;
         }
+        let now_ms = self.now_ms();
+        self.web.claim_refresh(now_ms)
+    }
+
+    fn cached_local_servers(&self) -> Result<Value> {
         serde_json::to_value(ServersLocalListResult {
             servers: self.web.servers().to_vec(),
         })
         .map_err(|_| errors::internal("Local server list serialization failed"))
     }
 
-    pub(crate) fn advance_local_servers(&mut self) -> Result<()> {
-        let now_ms = self.now_ms();
-        if let Some(refresh) = self.web.refresh_if_due(now_ms)? {
-            self.publish_local_server_change(&refresh)?;
-        }
-        Ok(())
-    }
-
-    fn publish_local_server_change(&mut self, refresh: &Refresh) -> Result<()> {
+    fn record_local_servers(&mut self, observation: PortScanObservation) -> Result<()> {
+        let refresh = self.web.finish(observation)?;
         if refresh.changed {
             self.transient_event(
                 "servers.local.changed",
@@ -145,12 +181,17 @@ mod tests {
             .into(),
             calls: 0,
         }));
-        let first = service.refresh_if_due(100).unwrap().unwrap();
+        let mut refresh_if_due = |now_ms| {
+            service
+                .claim_refresh(now_ms)
+                .map(|scanner| service.finish(scan(&scanner).unwrap()).unwrap())
+        };
+        let first = refresh_if_due(100).unwrap();
         assert!(first.changed);
         assert_eq!(first.servers[0].command, "node");
-        assert!(service.refresh_if_due(5_099).unwrap().is_none());
-        assert!(!service.refresh_if_due(5_100).unwrap().unwrap().changed);
-        assert!(service.refresh_if_due(10_100).unwrap().unwrap().changed);
+        assert!(refresh_if_due(5_099).is_none());
+        assert!(!refresh_if_due(5_100).unwrap().changed);
+        assert!(refresh_if_due(10_100).unwrap().changed);
         assert_eq!(service.servers()[0].command, "python");
     }
 
@@ -160,6 +201,7 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         let mut core = Core::open(&directory).unwrap();
         core.clock = Arc::new(FixedClock(100));
+        core.background = crate::offload::Background::inline();
         core.web = Service::new(Box::new(ScriptedScan {
             observations: [
                 observation("node"),
@@ -178,11 +220,11 @@ mod tests {
         .unwrap();
         let request =
             |id| json!({"jsonrpc":"2.0","id":id,"method":"servers.local.list","params":{}});
-        let Outcome::Reply(first) = core.dispatch(&connection, request(2)).unwrap() else {
+        let Outcome::Reply(first) = core.dispatch_inline(&connection, request(2)).unwrap() else {
             panic!("local server list did not reply")
         };
         assert_eq!(first["servers"][0]["command"], "node");
-        let Outcome::Reply(cached) = core.dispatch(&connection, request(3)).unwrap() else {
+        let Outcome::Reply(cached) = core.dispatch_inline(&connection, request(3)).unwrap() else {
             panic!("cached local server list did not reply")
         };
         assert_eq!(cached, first);

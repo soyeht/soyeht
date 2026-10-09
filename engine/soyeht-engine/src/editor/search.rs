@@ -1,8 +1,11 @@
 use super::persistence::{next_revision, stored_version};
+use super::project_reader::ProjectReader;
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     model,
+    offload::Offload,
     ports::StorePort,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -14,8 +17,14 @@ use soyeht_protocol::{
 use soyeht_store::editor::{
     EditorFile, ProjectReplacement, ProjectReplacementItem, StoredFileVersion, document,
 };
-use std::path::Path;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use uuid::Uuid;
+
+/// A search walks and reads the whole project, off the Core lock.
+const SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct ReplacementPlan {
     journal: ProjectReplacement,
@@ -23,24 +32,39 @@ struct ReplacementPlan {
 }
 
 impl Core {
-    pub fn file_search(&mut self, connection: &str, params: &Value) -> Result<Value> {
+    /// A plain search walks and reads the project off the Core lock (ADR
+    /// 0079); a replacement plans and writes under it.
+    pub fn file_search(&mut self, connection: &str, params: &Value) -> Result<Outcome> {
         let request: FileSearchParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid file search parameters"))?;
         if request.replacement.is_some() {
-            return self.replace_project(connection, params, request);
+            return self
+                .replace_project(connection, params, request)
+                .map(Outcome::Reply);
         }
-        let workspace = model::workspace(&self.store, &request.workspace_id)?;
-        let files = self.editor.project_files(Path::new(&workspace.path))?;
-        let items = match request.scope.clone().unwrap_or(FileSearchScope::Content) {
-            FileSearchScope::Content => self.search_project_content(&request, &files)?,
-            FileSearchScope::Path => search_project_paths(&request, &files)?,
-        };
-        let result = search_result(items, 0)?;
-        Ok(self
-            .mutate(connection, "file.search", params, |_| {
-                Ok((result, Vec::new()))
-            })?
-            .result)
+        let root = PathBuf::from(model::workspace(&self.store, &request.workspace_id)?.path);
+        let reader = self.editor.project_reader(&request.workspace_id);
+        let connection = connection.to_owned();
+        let params = params.clone();
+        Ok(Outcome::Offload(Offload::new(
+            "File search timed out",
+            SEARCH_TIMEOUT,
+            move || {
+                let files = reader.project_files(&root)?;
+                let items = match request.scope.clone().unwrap_or(FileSearchScope::Content) {
+                    FileSearchScope::Content => search_project_content(&request, &reader, &files)?,
+                    FileSearchScope::Path => search_project_paths(&request, &files)?,
+                };
+                search_result(items, 0)
+            },
+            move |core, result| {
+                let result = result?;
+                let mutation = core.mutate(&connection, "file.search", &params, |_| {
+                    Ok((result, Vec::new()))
+                })?;
+                Ok(Outcome::Reply(mutation.result))
+            },
+        )))
     }
 
     fn replace_project(
@@ -394,31 +418,31 @@ impl Core {
         ));
         Ok((client.scope.clone(), fingerprint))
     }
+}
 
-    fn search_project_content(
-        &self,
-        request: &FileSearchParams,
-        files: &[super::ProjectFile],
-    ) -> Result<Vec<FileSearchMatch>> {
-        let mut items = Vec::new();
-        let matcher = soyeht_editor::ContentMatcher::new(&request.query, request.case_sensitive)?;
-        for file in files {
-            if items.len() >= search_limit(request) {
-                break;
-            }
-            let Some(text) = self.editor.project_text(&request.workspace_id, file)? else {
-                continue;
-            };
-            let search = matcher.search(&text, None, search_limit(request) - items.len())?;
-            items.extend(search.matches.into_iter().map(|found| FileSearchMatch {
-                workspace_id: request.workspace_id.clone(),
-                path: file.relative.clone(),
-                range: found.range,
-                preview: found.preview,
-            }));
+fn search_project_content(
+    request: &FileSearchParams,
+    reader: &ProjectReader,
+    files: &[super::ProjectFile],
+) -> Result<Vec<FileSearchMatch>> {
+    let mut items = Vec::new();
+    let matcher = soyeht_editor::ContentMatcher::new(&request.query, request.case_sensitive)?;
+    for file in files {
+        if items.len() >= search_limit(request) {
+            break;
         }
-        Ok(items)
+        let Some(text) = reader.text(file)? else {
+            continue;
+        };
+        let search = matcher.search(&text, None, search_limit(request) - items.len())?;
+        items.extend(search.matches.into_iter().map(|found| FileSearchMatch {
+            workspace_id: request.workspace_id.clone(),
+            path: file.relative.clone(),
+            range: found.range,
+            preview: found.preview,
+        }));
     }
+    Ok(items)
 }
 
 fn detached_file(

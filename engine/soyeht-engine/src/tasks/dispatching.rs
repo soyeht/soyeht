@@ -1,11 +1,17 @@
 //! Durable routing from task reservation to an agent pane.
 
-use super::{api::parameters, looping, worktree};
+use super::{
+    api::parameters,
+    looping,
+    worktree::{self, PreparedWorktree, WorktreePort},
+};
 use crate::{
     agents::{Changes, Running, state::State},
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     model::{self, RunningPane, StoredPane},
+    offload::{Offload, SharedPort},
     panes::persist_new_pane,
     ports::StorePort,
     screen::Screen,
@@ -19,8 +25,29 @@ use soyeht_store::{
     database::Change,
     tasks::{DispatchCheckpoint, TaskReservation},
 };
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use uuid::Uuid;
+
+/// A `wt list` and a `wt switch`, plus a wait behind other `wt` users.
+const WORKTREE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// A reserved dispatch whose worktree `wt` creates off the Core lock.
+struct WorktreeRequest {
+    repository: PathBuf,
+    branch: String,
+    reserved: DispatchCheckpoint,
+    worktrees: SharedPort<dyn WorktreePort>,
+}
+
+impl WorktreeRequest {
+    fn prepare(&self) -> Result<PreparedWorktree> {
+        self.worktrees
+            .with(|port| port.prepare(&self.repository, &self.branch))
+    }
+}
 
 pub(crate) struct TaskDispatchChange {
     current: Task,
@@ -40,12 +67,11 @@ impl TaskDispatchChange {
 }
 
 impl Core {
-    pub(crate) fn task_dispatch(&mut self, connection: &str, raw: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "task.dispatch", raw)? {
-            self.advance_task_dispatches()?;
-            return Ok(result);
-        }
+    pub(crate) fn task_dispatch(&mut self, connection: &str, raw: &Value) -> Result<Outcome> {
         let params: TaskDispatchParams = parameters(raw)?;
+        if let Some(result) = self.repeated_mutation(connection, "task.dispatch", raw)? {
+            return self.continue_dispatch(&params.workspace_id, &params.task_id, result);
+        }
         let actor = self.task_actor(connection)?;
         require_dispatch_role(&actor)?;
         self.require_person_for_full_access(
@@ -59,8 +85,34 @@ impl Core {
         let actor_name = self.actor_name(&actor)?;
         let result =
             self.reserve_selected(connection, raw, current, preset, pane_id, actor_name)?;
-        self.advance_task_dispatches()?;
-        Ok(result)
+        self.continue_dispatch(&params.workspace_id, &params.task_id, result)
+    }
+
+    /// Creates this task's worktree off the Core lock when it still needs
+    /// one (ADR 0079), then advances the dispatches under the lock and
+    /// answers with `result`. A failure reaches the caller, as before.
+    fn continue_dispatch(
+        &mut self,
+        workspace: &str,
+        task_id: &str,
+        result: Value,
+    ) -> Result<Outcome> {
+        let Some(request) = self.worktree_request(workspace, task_id)? else {
+            self.advance_task_dispatches()?;
+            return Ok(Outcome::Reply(result));
+        };
+        let (workspace, task_id) = (workspace.to_owned(), task_id.to_owned());
+        let reserved = request.reserved.clone();
+        Ok(Outcome::Offload(Offload::new(
+            "Task worktree creation timed out",
+            WORKTREE_TIMEOUT,
+            move || request.prepare(),
+            move |core, prepared| {
+                core.record_worktree(&workspace, &task_id, reserved, prepared?)?;
+                core.advance_task_dispatches()?;
+                Ok(Outcome::Reply(result))
+            },
+        )))
     }
 
     pub(crate) fn task_next(&mut self, connection: &str, raw: &Value) -> Result<Value> {
@@ -210,19 +262,8 @@ impl Core {
             .pane_id
             .clone()
             .ok_or_else(|| errors::internal("Dispatch checkpoint has no pane"))?;
-        let repository = PathBuf::from(model::workspace(&self.store, workspace)?.path);
         if checkpoint.stage == "reserved" {
-            let branch = checkpoint
-                .branch
-                .as_deref()
-                .ok_or_else(|| errors::internal("Dispatch checkpoint has no branch"))?;
-            let prepared = self.worktrees.prepare(&repository, branch)?;
-            checkpoint.stage = "worktree_created".into();
-            checkpoint.worktree_path = Some(prepared.path);
-            checkpoint.branch = Some(prepared.branch);
-            self.store
-                .record_dispatch_checkpoint(workspace, task_id, &checkpoint)
-                .map_err(errors::storage)?;
+            return self.prepare_dispatch_worktree(workspace, task_id);
         }
         if checkpoint.stage == "worktree_created" {
             if !self.ensure_task_pane(&task, &pane_id, &checkpoint)? {
@@ -237,6 +278,73 @@ impl Core {
             self.accept_task_prompt(task, checkpoint)?;
         }
         Ok(())
+    }
+
+    /// Creates the task's worktree off the Core lock (ADR 0079), records it,
+    /// and continues the dispatch under the lock on a later tick.
+    fn prepare_dispatch_worktree(&mut self, workspace: &str, task_id: &str) -> Result<()> {
+        let Some(request) = self.worktree_request(workspace, task_id)? else {
+            return Ok(());
+        };
+        let (workspace, task_id) = (workspace.to_owned(), task_id.to_owned());
+        let reserved = request.reserved.clone();
+        self.spawn_background(
+            format!("task_dispatch:{workspace}:{task_id}"),
+            move || request.prepare(),
+            move |core, prepared| match core
+                .record_worktree(&workspace, &task_id, reserved, prepared?)?
+            {
+                Some(checkpoint) => core.advance_task_dispatch(&workspace, &task_id, checkpoint),
+                None => Ok(()),
+            },
+        )
+    }
+
+    /// The worktree a dispatch still waits for, if its checkpoint is reserved.
+    fn worktree_request(&self, workspace: &str, task_id: &str) -> Result<Option<WorktreeRequest>> {
+        let Some(reserved) = self
+            .store
+            .dispatch_checkpoint(workspace, task_id)
+            .map_err(errors::storage)?
+            .filter(|checkpoint| checkpoint.stage == "reserved")
+        else {
+            return Ok(None);
+        };
+        let branch = reserved
+            .branch
+            .clone()
+            .ok_or_else(|| errors::internal("Dispatch checkpoint has no branch"))?;
+        Ok(Some(WorktreeRequest {
+            repository: PathBuf::from(model::workspace(&self.store, workspace)?.path),
+            branch,
+            reserved,
+            worktrees: self.worktrees.clone(),
+        }))
+    }
+
+    /// Records a created worktree unless the dispatch moved on meanwhile.
+    fn record_worktree(
+        &mut self,
+        workspace: &str,
+        task_id: &str,
+        reserved: DispatchCheckpoint,
+        prepared: PreparedWorktree,
+    ) -> Result<Option<DispatchCheckpoint>> {
+        let current = self
+            .store
+            .dispatch_checkpoint(workspace, task_id)
+            .map_err(errors::storage)?;
+        if current.as_ref() != Some(&reserved) {
+            return Ok(None);
+        }
+        let mut checkpoint = reserved;
+        checkpoint.stage = "worktree_created".into();
+        checkpoint.worktree_path = Some(prepared.path);
+        checkpoint.branch = Some(prepared.branch);
+        self.store
+            .record_dispatch_checkpoint(workspace, task_id, &checkpoint)
+            .map_err(errors::storage)?;
+        Ok(Some(checkpoint))
     }
 }
 

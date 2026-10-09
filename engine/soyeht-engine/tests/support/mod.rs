@@ -70,6 +70,10 @@ impl Rig {
         rig.start();
         rig
     }
+    /// Where the engine looks for fake usage sources (debug builds only).
+    pub fn usage_readers(&self) -> PathBuf {
+        self.path.join("usage-readers")
+    }
     pub fn start(&mut self) {
         self.engine = Some(
             Command::new(env!("CARGO_BIN_EXE_soyeht-engine"))
@@ -77,6 +81,8 @@ impl Rig {
                 .arg(&self.path)
                 .env("PATH", test_path(&self.path))
                 .env("ZDOTDIR", &self.path)
+                // Usage sources read only the rig's fakes, never the machine's.
+                .env("SOYEHT_TEST_USAGE_READER_DIR", self.usage_readers())
                 // The engine runs in another process: it follows skill folders by
                 // reading them, not by file events a loaded machine delivers late.
                 .env("SOYEHT_TEST_SKILL_POLL", "1")
@@ -527,6 +533,10 @@ impl Client {
             .collect::<Vec<_>>();
         assert_eq!(parts.len(), result["parts"].as_u64().unwrap() as usize);
         (result, parts)
+    }
+    /// Whether the pane's agent has a session, so its process is running.
+    pub fn agent_started(&mut self, pane: &str) -> bool {
+        self.pane(pane)["agent"]["sessionId"].is_string()
     }
     pub fn pane(&mut self, id: &str) -> Value {
         self.snapshot()

@@ -6,16 +6,21 @@ mod creation;
 #[cfg(test)]
 mod effect_backoff_tests;
 mod find;
+#[cfg(test)]
+mod keystroke_tests;
 mod persistence;
 mod project_entries;
 mod project_files;
 mod project_paths;
+mod project_reader;
 #[cfg(test)]
 mod project_tests;
 mod project_tree;
 mod project_watch;
 #[cfg(test)]
 mod project_watch_tests;
+#[cfg(test)]
+mod save_temporary_tests;
 mod schedule;
 mod search;
 mod service;
@@ -78,7 +83,6 @@ impl Core {
             "file.history" => self.file_history(params),
             "file.revert" => self.file_revert(connection, params),
             "file.undo" | "file.redo" => self.file_undo(connection, method, params),
-            "file.search" => self.file_search(connection, params),
             "file.find" => self.file_find(params),
             "file.replace" => self.file_replace(connection, params),
             "project.tree.list" => self.project_tree_list(params),

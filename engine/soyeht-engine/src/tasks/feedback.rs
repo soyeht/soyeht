@@ -5,9 +5,7 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::StorePort,
-    tasks::{
-        PhraseFacts, phrase, review::review_repository, review_badge, revision::RevisionSnapshot,
-    },
+    tasks::{PhraseFacts, phrase, review_badge, revision::RevisionSnapshot},
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
@@ -146,7 +144,7 @@ impl Core {
             }
             self.task_revision_due
                 .insert(key, now.saturating_add(REVISION_POLL_INTERVAL_MS));
-            if let Err(error) = self.advance_one_task_feedback(task)
+            if let Err(error) = self.inspect_task_revision(task)
                 && first_error.is_none()
             {
                 first_error = Some(error);
@@ -155,16 +153,15 @@ impl Core {
         first_error.map_or(Ok(()), Err)
     }
 
-    fn advance_one_task_feedback(&mut self, task: Task) -> Result<()> {
-        let repository = review_repository(self, &task)?;
-        let revision = self.revision.inspect(&repository)?;
+    /// Decides and delivers one task's feedback for the revision git read.
+    pub(super) fn feedback(&mut self, task: Task, revision: &RevisionSnapshot) -> Result<()> {
         let prior = self
             .store
             .feedback_state(&task.workspace_id, &task.task_id)
             .map_err(errors::storage)?;
         let pane = task.owner_pane_id.clone();
         let facts = self.feedback_pane_facts(pane.as_deref())?;
-        let decision = evaluate(&task, &revision, prior.as_ref(), &facts)?;
+        let decision = evaluate(&task, revision, prior.as_ref(), &facts)?;
         let attention = self.feedback_attention(&decision, pane.as_deref())?;
         if let Some(pane) = pane
             .as_ref()
@@ -842,7 +839,8 @@ mod tests {
         core.clock = Arc::new(FixedClock(10_000));
         let mut revision = ScriptedRevisionPort::default();
         revision.script(repository.to_string_lossy().as_ref(), revisions);
-        core.revision = Box::new(revision);
+        core.revision = crate::offload::SharedPort::new(Box::new(revision));
+        core.background = crate::offload::Background::inline();
         core
     }
 

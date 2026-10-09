@@ -3,13 +3,18 @@
 use crate::errors::{self, Result};
 use serde::Deserialize;
 use serde_json::Value;
-use soyeht_protocol::{
-    Comment, Role, Subitem, Task, TaskExecutor, TaskWorktreeCleanParams, TaskWorktreeCleanResult,
-};
+use soyeht_process::{Limits, Output};
+use soyeht_protocol::{Comment, Subitem, Task, TaskExecutor};
 use soyeht_store::{database::Store, tasks::DispatchCheckpoint};
-use std::{path::Path, process::Command};
+use std::{path::Path, process::Command, time::Duration};
 
 const OUTPUT_LIMIT: usize = 1_048_576;
+/// `wt list` reads every worktree's status.
+const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+/// `wt switch` checks out a whole tree; `wt remove` deletes one.
+const CHANGE_TIMEOUT: Duration = Duration::from_secs(120);
+/// `lsof +D` walks the worktree.
+const PROCESS_SCAN_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreparedWorktree {
@@ -23,6 +28,8 @@ pub struct CleanOutcome {
     pub reason: Option<String>,
 }
 
+/// Runs `wt`, git and `lsof`. The engine calls it only off the Core lock
+/// (ADR 0079).
 pub trait WorktreePort: Send {
     fn prepare(&mut self, repository: &Path, branch: &str) -> Result<PreparedWorktree>;
     fn clean(&mut self, repository: &Path, worktree: &Path, branch: &str) -> Result<CleanOutcome>;
@@ -46,24 +53,24 @@ impl CommandWorktree {
         Self { executable }
     }
 
-    fn run(&self, repository: &Path, args: &[&str]) -> Result<std::process::Output> {
+    fn run(&self, repository: &Path, args: &[&str]) -> Result<Output> {
         validate_target(repository, args.last().copied().unwrap_or_default())?;
-        Command::new(&self.executable)
-            .arg("-C")
-            .arg(repository)
-            .args(args)
-            .output()
-            .map_err(|error| errors::worktree_unavailable(error.to_string()))
+        self.wt(repository, args, CHANGE_TIMEOUT)
+    }
+
+    fn wt(&self, repository: &Path, args: &[&str], timeout: Duration) -> Result<Output> {
+        let mut command = Command::new(&self.executable);
+        command.arg("-C").arg(repository).args(args);
+        bounded_command(command, timeout)
     }
 
     fn list(&self, repository: &Path, branch: &str) -> Result<(Value, BranchLocation)> {
         validate_target(repository, branch)?;
-        let output = Command::new(&self.executable)
-            .arg("-C")
-            .arg(repository)
-            .args(["list", "--format=json", "--branches"])
-            .output()
-            .map_err(|error| errors::worktree_unavailable(error.to_string()))?;
+        let output = self.wt(
+            repository,
+            &["list", "--format=json", "--branches"],
+            LIST_TIMEOUT,
+        )?;
         let value = checked_json(output)?;
         let location = find_branch(&value, branch).unwrap_or(BranchLocation::Missing);
         Ok((value, location))
@@ -171,14 +178,14 @@ fn validate_target(repository: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
-fn checked_json(output: std::process::Output) -> Result<Value> {
+fn bounded_command(command: Command, timeout: Duration) -> Result<Output> {
+    soyeht_process::run(command, Limits::new(timeout, OUTPUT_LIMIT))
+        .map_err(|error| errors::worktree_unavailable(error.to_string()))
+}
+
+fn checked_json(output: Output) -> Result<Value> {
     if !output.status.success() {
         return Err(errors::worktree_unavailable(bounded_reason(&output.stderr)));
-    }
-    if output.stdout.len() > OUTPUT_LIMIT {
-        return Err(errors::worktree_unavailable(
-            "Worktree response is too large",
-        ));
     }
     serde_json::from_slice(&output.stdout)
         .map_err(|_| errors::worktree_unavailable("Invalid worktree response"))
@@ -276,11 +283,9 @@ fn head_reachable(listing: &Value, target: &Value, branch: &str) -> bool {
 }
 
 fn process_uses(worktree: &Path) -> Result<bool> {
-    let output = Command::new("lsof")
-        .args(["-a", "-d", "cwd", "-Fp", "+D"])
-        .arg(worktree)
-        .output()
-        .map_err(|error| errors::worktree_unavailable(error.to_string()))?;
+    let mut command = Command::new("lsof");
+    command.args(["-a", "-d", "cwd", "-Fp", "+D"]).arg(worktree);
+    let output = bounded_command(command, PROCESS_SCAN_TIMEOUT)?;
     if output.stdout.contains(&b'p') {
         return Ok(true);
     }
@@ -320,55 +325,6 @@ fn checked_prepared(path: String, branch: &str) -> Result<PreparedWorktree> {
         path,
         branch: branch.into(),
     })
-}
-
-impl crate::core::Core {
-    pub(crate) fn task_worktree_clean(&mut self, connection: &str, raw: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "task.worktree.clean", raw)? {
-            return Ok(result);
-        }
-        let params: TaskWorktreeCleanParams = crate::tasks::api::parameters(raw)?;
-        let actor = self.task_actor(connection)?;
-        if !matches!(actor.role, Role::HumanLocal | Role::HumanDevice) {
-            return Err(errors::forbidden_role("Worktree cleanup requires a person"));
-        }
-        let task = crate::tasks::api::task(&self.store, &params.workspace_id, &params.task_id)?;
-        let Some(worktree) = task.worktree else {
-            return self.persist_clean_result(
-                connection,
-                raw,
-                CleanOutcome {
-                    cleaned: false,
-                    reason: Some("Task has no worktree".into()),
-                },
-            );
-        };
-        let repository = crate::model::workspace(&self.store, &params.workspace_id)?.path;
-        let outcome = self.worktrees.clean(
-            Path::new(&repository),
-            Path::new(&worktree.path),
-            &worktree.branch,
-        )?;
-        self.persist_clean_result(connection, raw, outcome)
-    }
-
-    fn persist_clean_result(
-        &mut self,
-        connection: &str,
-        raw: &Value,
-        outcome: CleanOutcome,
-    ) -> Result<Value> {
-        let result = serde_json::to_value(TaskWorktreeCleanResult {
-            cleaned: outcome.cleaned,
-            reason: outcome.reason,
-        })
-        .map_err(|_| errors::internal("Worktree cleanup result serialization failed"))?;
-        let stored = result.clone();
-        let mutation = self.mutate(connection, "task.worktree.clean", raw, move |_| {
-            Ok((stored, Vec::new()))
-        })?;
-        Ok(mutation.result)
-    }
 }
 
 pub trait DispatchJournal {

@@ -1,22 +1,34 @@
 use crate::{Blame, CommandPort, Diff, Error, Result, diff};
-use std::path::{Component, Path, PathBuf};
+use std::{
+    path::{Component, Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
+/// Clones share one command port, so a clone can inspect on a worker thread.
+#[derive(Clone)]
 pub struct Service {
-    commands: Box<dyn CommandPort>,
+    commands: Arc<Mutex<Box<dyn CommandPort>>>,
 }
 
 impl Service {
     pub fn new(commands: Box<dyn CommandPort>) -> Self {
-        Self { commands }
+        Self {
+            commands: Arc::new(Mutex::new(commands)),
+        }
     }
 
-    pub fn inspect(&mut self, workspace: &Path, path: &Path, current: &str) -> Result<Diff> {
-        let root = self.commands.repository_root(workspace)?;
+    /// Runs git, so the engine calls it off its Core lock.
+    pub fn inspect(&self, workspace: &Path, path: &Path, current: &str) -> Result<Diff> {
+        let mut commands = self
+            .commands
+            .lock()
+            .map_err(|_| Error::CommandUnavailable)?;
+        let root = commands.repository_root(workspace)?;
         let path = repository_path(&root, workspace, path)?;
-        let Some(baseline) = self.commands.head_file(&root, &path)? else {
+        let Some(baseline) = commands.head_file(&root, &path)? else {
             return diff::build(current, "", vec![]);
         };
-        let blame = parse_blame(&self.commands.blame(&root, &path)?)?;
+        let blame = parse_blame(&commands.blame(&root, &path)?)?;
         diff::build(current, &baseline, blame)
     }
 
@@ -180,7 +192,7 @@ mod tests {
             blame: blame_fixture(),
             calls: VecDeque::new(),
         };
-        let mut service = Service::new(Box::new(commands));
+        let service = Service::new(Box::new(commands));
         let result = service
             .inspect(&workspace, Path::new("src/lib.rs"), "one\nchanged\n")
             .unwrap();
@@ -209,7 +221,7 @@ mod tests {
                 "baseline",
             ],
         );
-        let mut service = Service::new(Box::new(SystemGit));
+        let service = Service::new(Box::new(SystemGit));
         let result = service
             .inspect(
                 &root,
@@ -235,7 +247,7 @@ mod tests {
         let root = temporary("untracked");
         fs::create_dir_all(&root).unwrap();
         command(&root, &["init", "-q"]);
-        let mut service = Service::new(Box::new(SystemGit));
+        let service = Service::new(Box::new(SystemGit));
         let result = service
             .inspect(&root, Path::new("new.rs"), "new\n")
             .unwrap();

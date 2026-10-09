@@ -2,9 +2,27 @@
 
 use soyeht_protocol::EditorLanguage;
 use std::{
+    ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
 };
+use uuid::Uuid;
+
+/// Prefix of the file an atomic save writes next to its target before the
+/// rename. It exists only mid-save and belongs to the engine, not the project.
+const SAVE_TEMPORARY_PREFIX: &str = ".soyeht-save-";
+
+/// A fresh name for an atomic save's temporary file.
+pub(super) fn save_temporary_name() -> String {
+    format!("{SAVE_TEMPORARY_PREFIX}{}", Uuid::new_v4())
+}
+
+/// True for the engine's own atomic-save temporary files, which no search,
+/// listing or file event may ever show.
+pub(super) fn is_save_temporary(name: &OsStr) -> bool {
+    name.to_str()
+        .is_some_and(|name| name.starts_with(SAVE_TEMPORARY_PREFIX))
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectFile {
@@ -35,7 +53,9 @@ pub(crate) fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile
         .standard_filters(true)
         .hidden(false)
         .follow_links(false)
-        .filter_entry(|entry| !is_source_metadata(entry.path()));
+        .filter_entry(|entry| {
+            !is_source_metadata(entry.path()) && !is_save_temporary(entry.file_name())
+        });
     let mut files = Vec::new();
     for entry in builder.build() {
         let entry = entry.map_err(walk_error)?;

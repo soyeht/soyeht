@@ -3,15 +3,20 @@
 use crate::{errors, errors::Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use soyeht_process::Output;
 use soyeht_protocol::{TaskCheckState, TaskReviewState};
 use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Command,
+    time::Duration,
 };
 
 const OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
+/// A hung git (a held index lock, a stalled network mount) is killed after
+/// this long and reported as `worktree_unavailable`.
+const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -41,6 +46,7 @@ pub struct RevisionSnapshot {
     pub changed_surfaces: Vec<ChangedSurface>,
 }
 
+/// Runs git. The engine calls it only off the Core lock (ADR 0079).
 pub trait RevisionPort: Send {
     fn inspect(&mut self, repository: &Path) -> Result<RevisionSnapshot>;
 }
@@ -81,23 +87,22 @@ fn canonical_repository(repository: &Path) -> Result<PathBuf> {
 }
 
 fn git(repository: &Path, args: &[&str]) -> Result<Output> {
-    Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(repository)
         .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .output()
-        .map_err(|error| errors::worktree_unavailable(error.to_string()))
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    soyeht_process::run(
+        command,
+        soyeht_process::Limits::new(GIT_TIMEOUT, OUTPUT_LIMIT),
+    )
+    .map_err(|error| errors::worktree_unavailable(error.to_string()))
 }
 
 fn bytes(output: Output) -> Result<Vec<u8>> {
     if !output.status.success() {
         return Err(errors::worktree_unavailable(bounded(&output.stderr)));
-    }
-    if output.stdout.len() > OUTPUT_LIMIT {
-        return Err(errors::worktree_unavailable(
-            "Revision output exceeds 4 MiB",
-        ));
     }
     Ok(output.stdout)
 }
@@ -363,6 +368,33 @@ fn quoted_object_name(line: &str) -> Option<String> {
     tail.trim_start()
         .starts_with(": {")
         .then(|| name.to_owned())
+}
+
+impl crate::core::Core {
+    /// Runs git for one task off the Core lock (ADR 0079). The feedback is
+    /// decided under the lock against the task as it is then.
+    pub(super) fn inspect_task_revision(&mut self, task: soyeht_protocol::Task) -> Result<()> {
+        let repository = super::review::review_repository(self, &task)?;
+        let revision = self.revision.clone();
+        let (workspace, task_id) = (task.workspace_id, task.task_id);
+        self.spawn_background(
+            format!("task_feedback:{workspace}:{task_id}"),
+            move || revision.with(|port| port.inspect(&repository)),
+            move |core, revision| {
+                let revision = revision?;
+                let task = core
+                    .store
+                    .tasks_with_pull_requests()
+                    .map_err(errors::storage)?
+                    .into_iter()
+                    .find(|task| task.workspace_id == workspace && task.task_id == task_id);
+                match task {
+                    Some(task) => core.feedback(task, &revision),
+                    None => Ok(()),
+                }
+            },
+        )
+    }
 }
 
 #[cfg(test)]

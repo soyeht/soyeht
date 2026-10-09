@@ -1,13 +1,15 @@
 use crate::{Error, Result};
+use soyeht_process::Output;
 use std::{
     ffi::{OsStr, OsString},
-    io::Read,
     path::{Component, Path, PathBuf},
-    process::{Command, ExitStatus, Stdio},
-    thread,
+    process::Command,
+    time::Duration,
 };
 
 const COMMAND_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+/// A hung git (a stuck lock, a network filesystem) is killed after this long.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub trait CommandPort: Send {
     fn repository_root(&mut self, workspace: &Path) -> Result<PathBuf>;
@@ -114,7 +116,7 @@ fn validate_relative(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn run<I, S>(repository: &Path, arguments: I) -> Result<Captured>
+fn run<I, S>(repository: &Path, arguments: I) -> Result<Output>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -127,56 +129,37 @@ where
         .ok_or(Error::CommandFailed)
 }
 
-fn run_allow_failure<I, S>(repository: &Path, arguments: I) -> Result<Captured>
+fn run_allow_failure<I, S>(repository: &Path, arguments: I) -> Result<Output>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut child = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("--no-pager")
         .arg("-C")
         .arg(repository)
         .args(arguments)
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_LITERAL_PATHSPECS", "1")
-        .env("GIT_PAGER", "cat")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|_| Error::CommandUnavailable)?;
-    let stdout = child.stdout.take().ok_or(Error::CommandUnavailable)?;
-    let stderr = child.stderr.take().ok_or(Error::CommandUnavailable)?;
-    let stdout = thread::spawn(move || read_limited(stdout, COMMAND_OUTPUT_BYTES));
-    let stderr = thread::spawn(move || read_limited(stderr, 4096));
-    let status = child.wait().map_err(|_| Error::CommandFailed)?;
-    let stdout = stdout.join().map_err(|_| Error::CommandFailed)??;
-    let stderr = stderr.join().map_err(|_| Error::CommandFailed)??;
-    Ok(Captured {
-        status,
-        stdout,
-        _stderr: stderr,
+        .env("GIT_PAGER", "cat");
+    soyeht_process::run(
+        command,
+        soyeht_process::Limits::new(COMMAND_TIMEOUT, COMMAND_OUTPUT_BYTES),
+    )
+    .map_err(|error| match error {
+        soyeht_process::Error::Spawn { .. } | soyeht_process::Error::UnderLock { .. } => {
+            Error::CommandUnavailable
+        }
+        soyeht_process::Error::TimedOut { .. } => Error::TimedOut,
+        soyeht_process::Error::OutputTooLarge { .. } => Error::OutputTooLarge,
+        soyeht_process::Error::Wait { .. } | soyeht_process::Error::Read { .. } => {
+            Error::CommandFailed
+        }
     })
 }
 
-fn read_limited(mut reader: impl Read, limit: usize) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    reader
-        .by_ref()
-        .take(limit.saturating_add(1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| Error::CommandFailed)?;
-    (bytes.len() <= limit)
-        .then_some(bytes)
-        .ok_or(Error::OutputTooLarge)
-}
-
-struct Captured {
-    status: ExitStatus,
-    stdout: Vec<u8>,
-    _stderr: Vec<u8>,
-}
-
-fn text(output: Captured) -> Result<String> {
+fn text(output: Output) -> Result<String> {
     String::from_utf8(output.stdout).map_err(|_| Error::InvalidUtf8)
 }
 

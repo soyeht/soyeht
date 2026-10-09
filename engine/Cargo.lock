@@ -1342,6 +1342,7 @@ dependencies = [
  "soyeht-editor",
  "soyeht-lsp",
  "soyeht-pane-state",
+ "soyeht-process",
  "soyeht-protocol",
  "soyeht-ptyd",
  "soyeht-skills",
@@ -1389,6 +1390,13 @@ dependencies = [
  "serde_json",
  "sha2",
  "soyeht-protocol",
+]
+
+[[package]]
+name = "soyeht-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -1454,6 +1462,7 @@ version = "0.1.0"
 dependencies = [
  "sha2",
  "similar",
+ "soyeht-process",
 ]
 
 [[package]]

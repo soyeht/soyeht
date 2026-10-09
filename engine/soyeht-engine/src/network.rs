@@ -1,6 +1,6 @@
 use crate::{
-    core::Core,
-    errors::{Error, Result},
+    core_lock::{self, Shared},
+    errors::Result,
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{EngineReachability, EngineReachabilityReason};
@@ -9,7 +9,6 @@ use std::{
     ffi::CStr,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -296,18 +295,15 @@ impl TailnetListeners {
 /// pairing link are already right, and returns the task that keeps following the tailnet.
 pub(crate) async fn follow_tailnet(
     mut tailnet: TailnetListeners,
-    core: Arc<Mutex<Core>>,
+    core: Shared,
 ) -> Result<impl Future<Output = Result<()>> + Send + use<>> {
-    let loopback = lock(&core)?.pair_address.clone();
-    let apply = move |update| lock(&core)?.apply_tailnet(update, &loopback);
+    // In memory only and held for an instant, so an async task may take it directly.
+    let loopback = core_lock::lock(&core, "tailnet")?.pair_address.clone();
+    let apply = move |update| core_lock::lock(&core, "tailnet")?.apply_tailnet(update, &loopback);
     if let Some(update) = tailnet.refresh().await {
         apply(update)?;
     }
     Ok(tailnet.run(apply))
-}
-
-fn lock(core: &Mutex<Core>) -> Result<MutexGuard<'_, Core>> {
-    core.lock().map_err(|_| Error::EngineStatePoisoned)
 }
 
 impl Drop for TailnetListeners {
@@ -342,7 +338,10 @@ fn io_kind(error: &io::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::VecDeque;
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex},
+    };
 
     type Script = Arc<Mutex<VecDeque<io::Result<Vec<IpAddr>>>>>;
 

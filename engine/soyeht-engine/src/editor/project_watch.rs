@@ -11,6 +11,7 @@
 //! falls back to reading its watched folders once a second. With events and no
 //! changes on disk, the engine touches no folder at all.
 
+use super::project_files::is_save_temporary;
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -325,6 +326,12 @@ impl Touched {
         let Ok(relative) = path.strip_prefix(root) else {
             return;
         };
+        if relative
+            .components()
+            .any(|part| is_save_temporary(part.as_os_str()))
+        {
+            return;
+        }
         let names = relative
             .components()
             .map(|component| component.as_os_str().to_string_lossy())

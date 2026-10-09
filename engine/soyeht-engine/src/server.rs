@@ -1,6 +1,7 @@
 use crate::{
     agents::catalog::prepare_catalog,
     core::Core,
+    core_lock::{self, Shared},
     dispatch::Outcome,
     errors::{self, Error},
     model, network,
@@ -21,15 +22,13 @@ use std::{
         unix::fs::{FileTypeExt, OpenOptionsExt, PermissionsExt},
     },
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{
     net::{TcpListener, UnixListener, UnixStream},
     sync::{Semaphore, mpsc},
 };
-
-type Shared = Arc<Mutex<Core>>;
 
 struct CatalogJob {
     method: String,
@@ -58,16 +57,14 @@ fn coalesce_catalog_jobs(
 
 const CATALOG_QUEUE_CAPACITY: usize = 128;
 
-fn lock_core(shared: &Shared) -> crate::errors::Result<std::sync::MutexGuard<'_, Core>> {
-    shared.lock().map_err(|_| Error::EngineStatePoisoned)
-}
-
-fn update_pair_address(shared: &Shared, address: SocketAddr) -> crate::errors::Result<()> {
-    let mut state = lock_core(shared)?;
-    if !address.ip().is_loopback() || state.pair_address.starts_with("127.") {
-        state.pair_address = address.to_string();
-    }
-    Ok(())
+async fn update_pair_address(shared: &Shared, address: SocketAddr) -> crate::errors::Result<()> {
+    core_lock::with(shared, "pair_address", move |state| {
+        if !address.ip().is_loopback() || state.pair_address.starts_with("127.") {
+            state.pair_address = address.to_string();
+        }
+        Ok(())
+    })
+    .await
 }
 
 fn local_peer_audit_token(stream: &UnixStream) -> Option<ui_attestation::PeerAuditToken> {
@@ -114,7 +111,8 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     let _lock = singleton(&config.directory)?;
     let core = crate::push::share(Core::open(&config.directory)?, &config.directory);
-    let catalog_tx = start_workers(&core);
+    let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
+    tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
     let socket = config.directory.join(DEV_ENGINE_SOCKET);
     match fs::symlink_metadata(&socket) {
         Ok(m) if m.file_type().is_socket() => fs::remove_file(&socket)?,
@@ -125,7 +123,12 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     let unix = UnixListener::bind(&socket)?;
     fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
     let mut tasks = tokio::task::JoinSet::new();
-    lock_core(&core)?.reachability = network::fixed_reachability(&config.listen);
+    let reachability = network::fixed_reachability(&config.listen);
+    core_lock::with(&core, "reachability", move |state| {
+        state.reachability = reachability;
+        Ok(())
+    })
+    .await?;
     let accept = Accept {
         core: Arc::clone(&core),
         permits: Arc::new(Semaphore::new(128)),
@@ -133,7 +136,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     };
     for address in config.listen {
         let listener = TcpListener::bind(address).await?;
-        update_pair_address(&core, listener.local_addr()?)?;
+        update_pair_address(&core, listener.local_addr()?).await?;
         let serving = serve_tcp(listener, accept.clone());
         tasks.spawn(async move { Ok::<(), Error>(serving.await?) });
     }
@@ -175,31 +178,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
             Ok::<(), Error>(())
         });
     }
-    {
-        let core = Arc::clone(&core);
-        tasks.spawn(async move {
-            let mut ticks=tokio::time::interval(Duration::from_millis(10));
-            ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            let mut prune=0u32;let mut previous_error=None;
-            loop {
-                ticks.tick().await;
-                let core=Arc::clone(&core);
-                let result=tokio::task::spawn_blocking(move || {
-                    let mut core=core.lock().map_err(|_| crate::errors::internal("Engine state lock poisoned"))?;
-                    let output=core.poll_output();let streams=core.pump_streams();
-                    if prune==0 {core.store.prune().map_err(crate::errors::storage)?;}
-                    output.and(streams)
-                }).await?;
-                prune=(prune+1)%6000;
-                let error=result.err().map(|error| errors::kind(&error));
-                if error!=previous_error {
-                    if let Some(kind)=&error {eprintln!("{}",serde_json::json!({"event":"engine.storage_or_supervisor_error","kind":kind}));}
-                    previous_error=error;
-                }
-            }
-            #[allow(unreachable_code)] Ok::<(),Error>(())
-        });
-    }
+    tasks.spawn(crate::tick::run(Arc::clone(&core)));
     println!(
         "{}",
         serde_json::json!({"event":"engine.ready","socket":socket,"version":env!("CARGO_PKG_VERSION")})
@@ -211,9 +190,13 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         result=tasks.join_next()=>{if let Some(result)=result {result??;}},
     }
     tasks.abort_all();
-    for client in lock_core(&core)?.clients.values() {
-        client.outbox.close(CloseReason::ServerShutdown);
-    }
+    core_lock::with(&core, "shutdown", |state| {
+        for client in state.clients.values() {
+            client.outbox.close(CloseReason::ServerShutdown);
+        }
+        Ok(())
+    })
+    .await?;
     fs::remove_file(socket)?;
     Ok(())
 }
@@ -245,14 +228,6 @@ async fn serve_tcp(listener: TcpListener, accept: Accept) -> io::Result<()> {
     }
 }
 
-/// Starts the catalogue worker and the usage schedule; returns the catalogue queue.
-fn start_workers(core: &Shared) -> mpsc::Sender<CatalogJob> {
-    let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
-    tokio::spawn(catalog_worker(Arc::clone(core), catalog_rx));
-    tokio::spawn(crate::usage::schedule(Arc::clone(core)));
-    catalog_tx
-}
-
 async fn connection(
     core: Shared,
     catalog_tx: mpsc::Sender<CatalogJob>,
@@ -262,10 +237,11 @@ async fn connection(
     writer: transport::Writer,
 ) {
     let (outbox, receiver) = outbox::channel();
-    let id = match core
-        .lock()
-        .map_err(|_| Error::EngineStatePoisoned)
-        .and_then(|mut state| state.connect(local, signed_ui, outbox.clone()))
+    let connected = outbox.clone();
+    let id = match core_lock::with(&core, "connect", move |state| {
+        state.connect(local, signed_ui, connected)
+    })
+    .await
     {
         Ok(id) => id,
         Err(error) => return errors::log_failure("engine.connection_refused", &error),
@@ -277,7 +253,12 @@ async fn connection(
     };
     outbox.close(reason);
     write_task.abort();
-    if let Err(error) = lock_core(&core).and_then(|mut state| state.disconnect(&id)) {
+    let departed = id.clone();
+    if let Err(error) = core_lock::with(&core, "disconnect", move |state| {
+        state.disconnect(&departed)
+    })
+    .await
+    {
         // A poisoned lock leaves the client and its waiters registered: say why.
         let kind = errors::kind(&error);
         let record = serde_json::json!({"event":"engine.disconnect_cleanup_failed","connectionId":id,"kind":kind});
@@ -329,36 +310,6 @@ async fn write_frames(
     reason
 }
 
-async fn next_frame(
-    core: &Shared,
-    id: &str,
-    reader: &mut transport::Reader,
-) -> Result<Frame, CloseReason> {
-    let wait = {
-        let core = core.lock().map_err(|_| CloseReason::WorkerFailed)?;
-        let client = core.clients.get(id).ok_or(CloseReason::WorkerFailed)?;
-        if client.actor.is_some() {
-            None
-        } else if client.pair_request.is_some() {
-            Some(Duration::from_secs(600))
-        } else {
-            Some(Duration::from_secs(5))
-        }
-    };
-    let result = if let Some(wait) = wait {
-        tokio::time::timeout(wait, reader.next())
-            .await
-            .map_err(|_| CloseReason::HandshakeTimeout)?
-    } else {
-        reader.next().await
-    };
-    match result {
-        Ok(Some(frame)) => Ok(frame),
-        Ok(None) => Err(CloseReason::PeerClosed),
-        Err(_) => Err(CloseReason::ReadError),
-    }
-}
-
 async fn read_requests(
     core: Shared,
     catalog_tx: &mpsc::Sender<CatalogJob>,
@@ -366,14 +317,16 @@ async fn read_requests(
     outbox: &Outbox,
     reader: &mut transport::Reader,
 ) -> CloseReason {
+    let mut authenticated = false;
     loop {
-        let frame = match next_frame(&core, id, reader).await {
+        let frame = match crate::frames::next_frame(&core, id, reader, &mut authenticated).await {
             Ok(Frame::Json(bytes)) => bytes,
             Ok(Frame::Attachment { header, bytes }) => {
-                let accepted = core
-                    .lock()
-                    .map_err(|_| Error::EngineStatePoisoned)
-                    .and_then(|mut state| state.attachment_chunk(id, header, &bytes));
+                let connection = id.to_owned();
+                let accepted = core_lock::with(&core, "attachment", move |state| {
+                    state.attachment_chunk(&connection, header, &bytes)
+                })
+                .await;
                 if accepted.is_err() {
                     return CloseReason::InvalidFrame;
                 }
@@ -386,40 +339,29 @@ async fn read_requests(
             return CloseReason::InvalidJson;
         };
         if request.get("method").is_none() {
-            let accepted = core
-                .lock()
-                .map_err(|_| Error::EngineStatePoisoned)
-                .and_then(|mut state| state.web_host_response(id, request));
+            let connection = id.to_owned();
+            let accepted = core_lock::with(&core, "web_host_response", move |state| {
+                state.web_host_response(&connection, request)
+            })
+            .await;
             if accepted.is_err() {
                 return CloseReason::InvalidFrame;
             }
             continue;
         }
-        let method = request["method"]
-            .as_str()
-            .and_then(|name| {
-                soyeht_protocol::METHODS
-                    .iter()
-                    .find(|entry| entry.0 == name)
-                    .map(|entry| entry.0)
-            })
-            .unwrap_or("unknown");
+        let method = request["method"].as_str().map_or("unknown", logged_method);
         let pane_id = operation_pane_id(method, &request).map(str::to_owned);
         let operation = OperationTimer::start(id, method, pane_id);
         let request_id = request["id"].clone();
         let failed_handshake = request["method"] == "hello";
-        let shared = Arc::clone(&core);
         let connection = id.to_owned();
-        let outcome = tokio::task::spawn_blocking(move || {
-            shared
-                .lock()
-                .map_err(|_| Error::EngineStatePoisoned)?
-                .dispatch(&connection, request)
+        let outcome = core_lock::with(&core, "dispatch", move |state| {
+            state.dispatch(&connection, request)
         })
         .await;
-        let outcome = crate::deferred::resolve(Arc::clone(&core), outcome).await;
+        let outcome = resolve_offload(&core, outcome).await;
         let outcome = match outcome {
-            Ok(Ok(Outcome::Catalog { method, params })) => {
+            Ok(Outcome::Catalog { method, params }) => {
                 let job = CatalogJob {
                     method,
                     params,
@@ -462,10 +404,10 @@ async fn send_outcome(
     outbox: &Outbox,
     request_id: Value,
     failed_handshake: bool,
-    outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+    outcome: crate::errors::Result<Outcome>,
 ) -> Result<(), CloseReason> {
     match outcome {
-        Ok(Ok(Outcome::Reply(result))) => {
+        Ok(Outcome::Reply(result)) => {
             let Ok(frame) = model::response(request_id, result) else {
                 return Err(CloseReason::WorkerFailed);
             };
@@ -473,15 +415,15 @@ async fn send_outcome(
                 return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
             }
         }
-        Ok(Ok(Outcome::Attachment {
+        Ok(Outcome::Attachment {
             result,
             reference,
             bytes,
-        })) => {
+        }) => {
             send_attachment_response(outbox, request_id, result, &reference, &bytes)?;
         }
-        Ok(Ok(Outcome::Queued)) => (),
-        Ok(Ok(Outcome::Snapshot { parts, result })) => {
+        Ok(Outcome::Queued) => (),
+        Ok(Outcome::Snapshot { parts, result }) => {
             for part in parts {
                 if outbox.write_page(part).await.is_err() {
                     return Err(outbox
@@ -496,10 +438,10 @@ async fn send_outcome(
                 return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
             }
         }
-        Ok(Ok(Outcome::Deferred(_) | Outcome::Catalog { .. })) => {
+        Ok(Outcome::Offload(_)) | Ok(Outcome::Catalog { .. }) | Err(Error::Join(_)) => {
             return Err(CloseReason::WorkerFailed);
         }
-        Ok(Err(error)) if failed_handshake => {
+        Err(error) if failed_handshake => {
             let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
                 return Err(CloseReason::WorkerFailed);
             };
@@ -507,7 +449,7 @@ async fn send_outcome(
             let _ = outbox.write_page(frame).await;
             return Err(CloseReason::HandshakeRejected);
         }
-        Ok(Err(error)) => {
+        Err(error) => {
             let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
                 return Err(CloseReason::WorkerFailed);
             };
@@ -515,7 +457,6 @@ async fn send_outcome(
                 return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
             }
         }
-        Err(_) => return Err(CloseReason::WorkerFailed),
     }
     Ok(())
 }
@@ -571,15 +512,16 @@ async fn catalog_result(
     // A custom-harness mutation may land while the filesystem scan runs. Retry
     // against the newer catalogue rather than publishing that stale snapshot.
     for _ in 0..3 {
-        let (directory, session_harnesses, epoch) = {
-            let state = lock_core(&core)?;
-            let ids: BTreeSet<_> = state
-                .agents
-                .values()
-                .map(|agent| agent.state.launch.id.clone())
-                .collect();
-            (state.directory.clone(), ids, state.catalog_epoch)
-        };
+        let (directory, session_harnesses, epoch) =
+            core_lock::with(&core, "catalog_snapshot", |state| {
+                let ids: BTreeSet<_> = state
+                    .agents
+                    .values()
+                    .map(|agent| agent.state.launch.id.clone())
+                    .collect();
+                Ok((state.directory.clone(), ids, state.catalog_epoch))
+            })
+            .await?;
         let worker_method = method.to_owned();
         let worker_params = params.clone();
         let prepared = tokio::task::spawn_blocking(move || {
@@ -587,10 +529,13 @@ async fn catalog_result(
         })
         .await
         .map_err(Error::Join)?;
-        let state = lock_core(&core)?;
-        if state.catalog_epoch == epoch {
+        let (method, params) = (method.to_owned(), params.clone());
+        let finalized = core_lock::with(&core, "catalog_finalize", move |state| {
+            if state.catalog_epoch != epoch {
+                return Ok(None);
+            }
             let finalize_started = Instant::now();
-            let result = state.agent_catalog_prepared(prepared?, params);
+            let result = state.agent_catalog_prepared(prepared?, &params);
             eprintln!(
                 "{}",
                 serde_json::json!({
@@ -599,10 +544,32 @@ async fn catalog_result(
                     "durationMs":finalize_started.elapsed().as_millis()
                 })
             );
-            return result;
+            result.map(Some)
+        })
+        .await?;
+        if let Some(result) = finalized {
+            return Ok(result);
         }
     }
     Err(errors::resync_required("Catalogue changed during refresh"))
+}
+
+/// Runs an offloaded request's work on a blocking thread with no lock, then
+/// applies its result under the Core lock (ADR 0079). Late or failed work is
+/// answered with the request's timeout error; its result is discarded.
+async fn resolve_offload(
+    core: &Shared,
+    outcome: crate::errors::Result<Outcome>,
+) -> crate::errors::Result<Outcome> {
+    let Ok(Outcome::Offload(offload)) = outcome else {
+        return outcome;
+    };
+    let (timeout, work, expire) = offload.into_parts();
+    let apply = match tokio::time::timeout(timeout, tokio::task::spawn_blocking(work)).await {
+        Ok(Ok(apply)) => apply,
+        Ok(Err(_)) | Err(_) => expire,
+    };
+    core_lock::with(core, "offload_apply", apply).await
 }
 
 fn send_attachment_response(
@@ -682,10 +649,7 @@ impl OperationTimer {
         )
     }
 
-    fn finish(
-        self,
-        outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
-    ) {
+    fn finish(self, outcome: &crate::errors::Result<Outcome>) {
         let (status, kind) = operation_status(outcome);
         self.finish_status(status, kind.as_ref());
     }
@@ -727,17 +691,17 @@ impl OperationTimer {
 }
 
 fn operation_status(
-    outcome: &std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError>,
+    outcome: &crate::errors::Result<Outcome>,
 ) -> (&'static str, Option<soyeht_protocol::ErrorKind>) {
     match outcome {
-        Ok(Ok(Outcome::Reply(_))) => ("reply", None),
-        Ok(Ok(Outcome::Deferred(_))) => ("worker_failed", None),
-        Ok(Ok(Outcome::Catalog { .. })) => ("worker_failed", None),
-        Ok(Ok(Outcome::Attachment { .. })) => ("attachment", None),
-        Ok(Ok(Outcome::Queued)) => ("queued", None),
-        Ok(Ok(Outcome::Snapshot { .. })) => ("snapshot", None),
-        Ok(Err(error)) => ("error", Some(errors::kind(error))),
-        Err(_) => ("worker_failed", None),
+        Ok(Outcome::Reply(_)) => ("reply", None),
+        Ok(Outcome::Offload(_) | Outcome::Catalog { .. }) | Err(Error::Join(_)) => {
+            ("worker_failed", None)
+        }
+        Ok(Outcome::Attachment { .. }) => ("attachment", None),
+        Ok(Outcome::Queued) => ("queued", None),
+        Ok(Outcome::Snapshot { .. }) => ("snapshot", None),
+        Err(error) => ("error", Some(errors::kind(error))),
     }
 }
 
@@ -872,7 +836,7 @@ mod tests {
                 }),
             )
             .unwrap();
-        let core = Arc::new(Mutex::new(state));
+        let core = Arc::new(std::sync::Mutex::new(state));
         let (catalog_tx, mut catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
         // Keep the receiver alive without running the catalogue worker.
         let (server, mut client) = UnixStream::pair().unwrap();
@@ -919,21 +883,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn blocking_request_timeout_returns_an_error_instead_of_waiting_forever() {
-        let result = crate::deferred::spawn_blocking_with_timeout(
+    async fn offloaded_request_timeout_returns_an_error_instead_of_waiting_forever() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-offload-timeout-{}", uuid::Uuid::new_v4()));
+        let core = Arc::new(std::sync::Mutex::new(Core::open(&directory).unwrap()));
+        let offload = crate::offload::Offload::new(
+            "bounded work timed out",
             Duration::from_millis(5),
             || {
                 std::thread::sleep(Duration::from_millis(50));
                 Ok(())
             },
-            "bounded work timed out",
-        )
-        .await
-        .unwrap();
+            |_, result| result.map(|()| Outcome::Queued),
+        );
+        let result = resolve_offload(&core, Ok(Outcome::Offload(offload))).await;
         assert!(matches!(
             result,
             Err(Error::Internal(message)) if message == "bounded work timed out"
         ));
+        drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     fn timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
@@ -1026,8 +995,7 @@ mod tests {
             |record| completed_records.push(record),
         );
         let completed_id = completed.operation_id.clone();
-        let outcome: std::result::Result<crate::errors::Result<Outcome>, tokio::task::JoinError> =
-            Ok(Ok(Outcome::Reply(serde_json::json!({}))));
+        let outcome: crate::errors::Result<Outcome> = Ok(Outcome::Reply(serde_json::json!({})));
         let (status, kind) = operation_status(&outcome);
         completed.finish_with(
             status,

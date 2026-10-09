@@ -1,5 +1,5 @@
 use super::documents::{public_document, require_revision};
-use crate::{core::Core, errors, errors::Result};
+use crate::{core::Core, dispatch::Outcome, errors, errors::Result, offload::Offload};
 use serde_json::Value;
 use soyeht_protocol::{
     ScreenplayScene, WritingKind, WritingSectionListParams, WritingSectionListResult,
@@ -9,20 +9,23 @@ use soyeht_writing::SectionEntryInput;
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
-pub struct PreparedWritingSectionList {
+const SECTION_LIST_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct PreparedWritingSectionList {
     request: WritingSectionListParams,
     workspace_root: PathBuf,
 }
 
-pub struct ScannedWritingSectionList {
+struct ScannedWritingSectionList {
     request: WritingSectionListParams,
     files: Vec<crate::editor::ProjectFile>,
 }
 
 impl PreparedWritingSectionList {
-    pub(crate) fn scan(self) -> Result<ScannedWritingSectionList> {
+    fn scan(self) -> Result<ScannedWritingSectionList> {
         let workspace_root = fs::canonicalize(&self.workspace_root).map_err(errors::io)?;
         let folder = soyeht_writing::folder_for(&self.request.section);
         let section_root = match fs::canonicalize(workspace_root.join(folder)) {
@@ -53,7 +56,7 @@ impl PreparedWritingSectionList {
 }
 
 impl ScannedWritingSectionList {
-    pub(crate) fn finish(self, core: &Core) -> Result<Value> {
+    fn finish(self, core: &Core) -> Result<Value> {
         let mut inputs = Vec::new();
         for file in self.files {
             let opened = core
@@ -88,20 +91,24 @@ impl ScannedWritingSectionList {
 }
 
 impl Core {
-    pub(crate) fn prepare_writing_section_list(
-        &self,
-        params: &Value,
-    ) -> Result<PreparedWritingSectionList> {
+    /// Walks the section folder off the Core lock, then pages it under it.
+    pub(crate) fn writing_section_list(&self, params: &Value) -> Result<Outcome> {
         let request: WritingSectionListParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid writing section list parameters"))?;
         if request.limit == 0 || request.limit as usize > limits::WRITING_SECTION_ENTRIES {
             return Err(errors::invalid("Invalid writing section page limit"));
         }
         let workspace = crate::model::workspace(&self.store, &request.workspace_id)?;
-        Ok(PreparedWritingSectionList {
+        let prepared = PreparedWritingSectionList {
             request,
             workspace_root: workspace.path.into(),
-        })
+        };
+        Ok(Outcome::Offload(Offload::new(
+            "Writing section listing timed out",
+            SECTION_LIST_TIMEOUT,
+            move || prepared.scan(),
+            |core, scanned| scanned?.finish(core).map(Outcome::Reply),
+        )))
     }
 
     pub(super) fn writing_structure(&self, connection: &str, params: &Value) -> Result<Value> {

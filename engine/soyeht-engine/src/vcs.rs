@@ -1,26 +1,26 @@
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     model,
+    offload::Offload,
 };
 use serde_json::Value;
 use soyeht_protocol::{
     DiffHunk, DiffLine, DiffLineKind, FileBlame, FileDiffParams, FileDiffResult,
 };
-use std::path::Path;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 const RESULT_HEADROOM: usize = 512;
+/// Three git commands, each with its own deadline in soyeht-vcs.
+const DIFF_TIMEOUT: Duration = Duration::from_secs(120);
 
 impl Core {
-    pub fn file_inspection(&mut self, method: &str, params: &Value) -> Result<Value> {
-        match method {
-            "file.diagnostics" => self.file_diagnostics(params),
-            "file.diff" => self.file_diff(params),
-            _ => Err(errors::internal("Unknown file inspection method")),
-        }
-    }
-
-    pub fn file_diff(&mut self, params: &Value) -> Result<Value> {
+    /// Reads the buffer under the Core lock and runs git off it (ADR 0079).
+    pub fn file_diff(&mut self, params: &Value) -> Result<Outcome> {
         let request: FileDiffParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid file diff parameters"))?;
         let revision = request
@@ -35,33 +35,42 @@ impl Core {
         let resolved = self
             .editor
             .resolve(Path::new(&workspace.path), &file.relative_path)?;
-        let current = file.draft_text.as_ref().unwrap_or(&file.disk_text);
-        let diff = self.vcs.inspect(
-            Path::new(&workspace.path),
-            Path::new(&resolved.relative),
-            current,
-        )?;
-        let result = FileDiffResult {
-            file_id: file.file_id,
-            revision: file.revision.to_string(),
-            hunks: diff
-                .hunks
-                .into_iter()
-                .map(|hunk| wire_hunk(hunk, None))
-                .collect(),
-            blame: diff.blame.into_iter().map(wire_blame).collect(),
-        };
-        let value = serde_json::to_value(result)
-            .map_err(|_| errors::internal("File diff serialization failed"))?;
-        if errors::json_bytes(&value)?.len()
-            > soyeht_protocol::limits::JSON_BYTES.saturating_sub(RESULT_HEADROOM)
-        {
-            return Err(errors::internal(
-                "File diff exceeds the response byte budget",
-            ));
-        }
-        Ok(value)
+        let current = file.draft_text.clone().unwrap_or(file.disk_text);
+        let vcs = self.vcs.clone();
+        let workspace = PathBuf::from(workspace.path);
+        let relative = PathBuf::from(resolved.relative);
+        let file_id = file.file_id;
+        let revision = file.revision.to_string();
+        Ok(Outcome::Offload(Offload::new(
+            "File diff timed out",
+            DIFF_TIMEOUT,
+            move || Ok(vcs.inspect(&workspace, &relative, &current)?),
+            move |_, diff| diff_result(file_id, revision, diff?).map(Outcome::Reply),
+        )))
     }
+}
+
+fn diff_result(file_id: String, revision: String, diff: soyeht_vcs::Diff) -> Result<Value> {
+    let result = FileDiffResult {
+        file_id,
+        revision,
+        hunks: diff
+            .hunks
+            .into_iter()
+            .map(|hunk| wire_hunk(hunk, None))
+            .collect(),
+        blame: diff.blame.into_iter().map(wire_blame).collect(),
+    };
+    let value = serde_json::to_value(result)
+        .map_err(|_| errors::internal("File diff serialization failed"))?;
+    if errors::json_bytes(&value)?.len()
+        > soyeht_protocol::limits::JSON_BYTES.saturating_sub(RESULT_HEADROOM)
+    {
+        return Err(errors::internal(
+            "File diff exceeds the response byte budget",
+        ));
+    }
+    Ok(value)
 }
 
 pub(crate) fn wire_hunk(

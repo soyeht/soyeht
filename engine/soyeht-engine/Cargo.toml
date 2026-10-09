@@ -11,6 +11,7 @@ soyeht-acp = { path = "../soyeht-acp" }
 soyeht-editor = { path = "../soyeht-editor" }
 soyeht-lsp = { path = "../soyeht-lsp" }
 soyeht-pane-state = { path = "../soyeht-pane-state" }
+soyeht-process = { path = "../soyeht-process" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 soyeht-ptyd = { path = "../soyeht-ptyd" }
 soyeht-skills = { path = "../soyeht-skills" }

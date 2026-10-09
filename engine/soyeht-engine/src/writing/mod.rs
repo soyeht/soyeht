@@ -8,8 +8,6 @@ mod formatting;
 mod structure;
 mod variants;
 
-pub use structure::PreparedWritingSectionList;
-
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
 

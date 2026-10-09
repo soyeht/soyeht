@@ -11,10 +11,12 @@ mod movement;
 mod phrase;
 pub mod ports;
 mod review;
+mod review_request;
 pub mod revision;
 pub(crate) mod roles;
 mod rules;
 pub mod worktree;
+mod worktree_clean;
 
 pub(crate) use lifecycle::TaskOwnerLoss;
 pub(crate) use movement::TaskHumanMove;

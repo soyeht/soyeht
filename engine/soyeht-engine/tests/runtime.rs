@@ -7380,7 +7380,7 @@ fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch(
             "task.show",
             json!({"workspaceId":workspace,"taskId":task["taskId"]}),
         );
-        if shown["task"]["worktree"]["path"].is_string() {
+        if shown["task"]["worktree"]["path"].is_string() && client.agent_started(pane) {
             break shown;
         }
         assert!(Instant::now() < deadline, "worktree was not prepared");

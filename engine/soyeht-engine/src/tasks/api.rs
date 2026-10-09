@@ -4,6 +4,7 @@ use super::{
 };
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     model,
 };
@@ -50,18 +51,28 @@ impl Core {
         }
     }
 
-    pub fn task_author(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
+    pub fn task_author(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Outcome> {
+        if method == "task.create" {
+            return self.task_create(connection, params, parameters(params)?);
+        }
+        self.task_edit(connection, method, params)
+            .map(Outcome::Reply)
+    }
+
+    fn task_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         match method {
-            "task.create" => self.task_create(connection, params, parameters(params)?),
             "task.update" => self.task_update(connection, params, parameters(params)?),
             "task.comment" => self.task_comment(connection, params, parameters(params)?),
             "task.subitem.add" => self.task_subitem_add(connection, params, parameters(params)?),
             "task.subitem.done" => self.task_subitem_done(connection, params, parameters(params)?),
-            "task.block"
-            | "task.release"
-            | "task.request_review"
-            | "task.complete"
-            | "task.unblock" => self.task_lifecycle(connection, method, params),
+            "task.block" | "task.release" | "task.complete" | "task.unblock" => {
+                self.task_lifecycle(connection, method, params)
+            }
             "task.move" => self.task_move(connection, params, parameters(params)?),
             _ => Err(errors::invalid("Unknown task authoring method")),
         }
@@ -212,7 +223,7 @@ impl Core {
         connection: &str,
         raw: &Value,
         params: TaskCreateParams,
-    ) -> Result<Value> {
+    ) -> Result<Outcome> {
         let actor = self.task_actor(connection)?;
         if !matches!(
             actor.role,
@@ -257,7 +268,7 @@ impl Core {
             ))
         })?;
         if !should_dispatch {
-            return Ok(mutation.result);
+            return Ok(Outcome::Reply(mutation.result));
         }
         self.dispatch_created_task(connection, &create_key, mutation.result)
     }
@@ -267,7 +278,7 @@ impl Core {
         connection: &str,
         create_key: &str,
         result: Value,
-    ) -> Result<Value> {
+    ) -> Result<Outcome> {
         let created: TaskCreateResult = serde_json::from_value(result)
             .map_err(|_| errors::internal("Stored task creation result is invalid"))?;
         let preset = created.task.executor.clone().unwrap_or(TaskExecutor {
@@ -286,14 +297,16 @@ impl Core {
         };
         let raw = serde_json::to_value(request)
             .map_err(|_| errors::internal("Task dispatch parameters could not be encoded"))?;
-        let dispatched: TaskDispatchResult =
-            serde_json::from_value(self.task_dispatch(connection, &raw)?)
-                .map_err(|_| errors::internal("Stored task dispatch result is invalid"))?;
-        serde_json::to_value(TaskCreateResult {
-            task: dispatched.task,
-            pane_id: Some(dispatched.pane_id),
-        })
-        .map_err(|_| errors::internal("Task creation result could not be encoded"))
+        self.task_dispatch(connection, &raw)?
+            .map_reply(|dispatched| {
+                let dispatched: TaskDispatchResult = serde_json::from_value(dispatched)
+                    .map_err(|_| errors::internal("Stored task dispatch result is invalid"))?;
+                serde_json::to_value(TaskCreateResult {
+                    task: dispatched.task,
+                    pane_id: Some(dispatched.pane_id),
+                })
+                .map_err(|_| errors::internal("Task creation result could not be encoded"))
+            })
     }
 
     fn task_update(

@@ -1,6 +1,6 @@
 use super::{
     api::{parameters, task},
-    apply_block, apply_owner_loss, apply_release, apply_request_review,
+    apply_block, apply_owner_loss, apply_release,
     blocking::{RETRY_DELAY_MS, attention},
 };
 use crate::{
@@ -10,8 +10,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, Attempt, AttemptResult, BlockingKind, Comment, Role, Task, TaskBlockParams,
-    TaskCompleteParams, TaskMove, TaskReleaseParams, TaskRequestReviewParams, TaskState,
-    TaskUnblockParams,
+    TaskCompleteParams, TaskMove, TaskReleaseParams, TaskState, TaskUnblockParams,
 };
 use soyeht_store::{
     agents,
@@ -136,16 +135,13 @@ impl Core {
         match method {
             "task.block" => self.task_block(connection, params, parameters(params)?),
             "task.release" => self.task_release(connection, params, parameters(params)?),
-            "task.request_review" => {
-                self.task_request_review(connection, params, parameters(params)?)
-            }
             "task.complete" => self.task_complete(connection, params, parameters(params)?),
             "task.unblock" => self.task_unblock(connection, params, parameters(params)?),
             _ => Err(errors::invalid("Unknown task lifecycle method")),
         }
     }
 
-    fn executor_task(
+    pub(super) fn executor_task(
         &self,
         connection: &str,
         raw: &Value,
@@ -270,24 +266,6 @@ impl Core {
             )),
             (_, None) => Ok(()),
         }
-    }
-
-    fn task_request_review(
-        &mut self,
-        connection: &str,
-        raw: &Value,
-        params: TaskRequestReviewParams,
-    ) -> Result<Value> {
-        let (actor, current) =
-            self.executor_task(connection, raw, &params.workspace_id, &params.task_id)?;
-        let subitems = self
-            .store
-            .task_subitems(&params.workspace_id, &params.task_id)
-            .map_err(errors::storage)?;
-        let updated = apply_request_review(&current, &subitems)?;
-        let actor = self.actor_name(&actor)?;
-        let reason = params.reason.unwrap_or_else(|| "review requested".into());
-        self.begin_task_review(connection, raw, current, updated, actor, reason)
     }
 
     fn task_complete(

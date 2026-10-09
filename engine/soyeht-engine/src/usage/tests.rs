@@ -9,6 +9,7 @@ use std::{
     collections::VecDeque,
     fs,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 use uuid::Uuid;
 

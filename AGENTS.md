@@ -12,8 +12,10 @@ Each layer depends only on the layers listed above it.
    `profiles.json` (installed profile values). This is the only place where wire
    values are defined.
 2. `engine/soyeht-protocol`: generated wire models, limits and framing. It has no
-   Soyeht dependencies.
-3. Engine building blocks, each depending only on `soyeht-protocol`:
+   Soyeht dependencies. `engine/soyeht-process`, the bounded runner for every
+   external command the engine starts, has none either (ADR 0079).
+3. Engine building blocks, each depending only on `soyeht-protocol`, and on
+   `soyeht-process` where they run a command:
    - `soyeht-ptyd`: the process supervisor that holds pseudoterminals.
    - `soyeht-acp`: the ACP v1 adaptation. Process ownership and durable effects
      belong to the engine.
@@ -21,7 +23,7 @@ Each layer depends only on the layers listed above it.
      (`hardening_gate.py check-no-sql-outside-store`).
    - Pure, bounded domain crates: `soyeht-editor`, `soyeht-writing`,
      `soyeht-web`, `soyeht-pane-state`, `soyeht-usage`, `soyeht-lsp`, and
-     `soyeht-vcs` (which has no Soyeht dependencies).
+     `soyeht-vcs` (whose only Soyeht dependency is `soyeht-process`).
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
    and WebSocket API. The `soyeht-cli` binary uses protocol, ptyd and store;
@@ -83,6 +85,16 @@ ADR when you change a boundary.
 over 200 lines grows, when an existing long function grows, or when tests,
 acceptances or gate steps drop. A drop needs a `Verification change:` line in the
 PR body.
+
+## The Core lock
+
+The engine holds all state behind one Core lock, which the terminal output path
+also takes. Never hold it across blocking IO: an external command, a network
+request or a directory walk (ADR 0079). Copy the inputs under the lock, run the
+work through `Outcome::Offload` (a request) or `Core::spawn_background` (engine
+work), and apply the result under the lock. Run every external command through
+`soyeht_process::run`, which has a deadline and refuses to start under the lock.
+`tests/blocking_io_rule.rs` and `tests/core_lock.rs` enforce this.
 
 ## How to add an STT engine
 

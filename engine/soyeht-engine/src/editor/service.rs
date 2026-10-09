@@ -1,6 +1,9 @@
 use super::creation::{create_contained_directories, validate_relative_creation_path};
-use super::project_files::ProjectFile;
 use super::schedule::{WATCH_INTERVAL_MS, save_backoff, watch_backoff};
+use super::{
+    project_files::{ProjectFile, save_temporary_name},
+    project_reader::{ProjectReader, disk_text, list_project_files},
+};
 use crate::{backoff::Backoff, errors, errors::Result};
 use soyeht_editor::{
     AppliedStep, EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer,
@@ -12,10 +15,11 @@ use std::{
     fs,
     io::{self, Write},
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
-use uuid::Uuid;
 
-pub trait FileSystemPort: Send {
+/// Shared with project searches that run off the Core lock (ADR 0079).
+pub trait FileSystemPort: Send + Sync {
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>>;
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String>;
@@ -93,7 +97,7 @@ impl FileSystemPort for SystemFiles {
         let parent = path.parent().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "file has no parent directory")
         })?;
-        let temporary = parent.join(format!(".soyeht-save-{}", Uuid::new_v4()));
+        let temporary = parent.join(save_temporary_name());
         let permissions = fs::metadata(path)?.permissions();
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -217,7 +221,7 @@ pub(super) struct OpenDocument {
 }
 
 pub struct Service {
-    files: Box<dyn FileSystemPort>,
+    files: Arc<dyn FileSystemPort>,
     pub(super) open: BTreeMap<String, OpenDocument>,
 }
 
@@ -243,7 +247,7 @@ enum HistoryChange {
 impl Service {
     pub fn new(files: Box<dyn FileSystemPort>) -> Self {
         Self {
-            files,
+            files: Arc::from(files),
             open: BTreeMap::new(),
         }
     }
@@ -350,11 +354,28 @@ impl Service {
     }
 
     pub fn project_files(&self, workspace_root: &Path) -> Result<Vec<ProjectFile>> {
-        let root = self
-            .files
-            .canonicalize(workspace_root)
-            .map_err(errors::io)?;
-        self.files.project_files(&root).map_err(errors::io)
+        list_project_files(&*self.files, workspace_root)
+    }
+
+    /// A reader for one workspace's files that a search uses off the lock.
+    pub fn project_reader(&self, workspace_id: &str) -> ProjectReader {
+        let open = self
+            .open
+            .values()
+            .filter(|open| open.file.workspace_id == workspace_id)
+            .map(|open| {
+                let text = open
+                    .file
+                    .draft_text
+                    .as_ref()
+                    .unwrap_or(&open.file.disk_text);
+                (open.file.relative_path.clone(), text.clone())
+            })
+            .collect();
+        ProjectReader {
+            files: Arc::clone(&self.files),
+            open,
+        }
     }
 
     pub fn creation_target_exists(&self, workspace_root: &Path, relative: &str) -> Result<bool> {
@@ -411,38 +432,8 @@ impl Service {
             })
     }
 
-    pub fn project_text(&self, workspace_id: &str, file: &ProjectFile) -> Result<Option<String>> {
-        if let Some(open) = self.open.values().find(|open| {
-            open.file.workspace_id == workspace_id && open.file.relative_path == file.relative
-        }) {
-            return Ok(Some(
-                open.file
-                    .draft_text
-                    .clone()
-                    .unwrap_or_else(|| open.file.disk_text.clone()),
-            ));
-        }
-        match self.files.read_text(
-            &file.canonical,
-            soyeht_protocol::limits::EDITOR_HISTORY_BYTES,
-        ) {
-            Ok(text) => Ok(Some(text)),
-            Err(error) if error.kind() == io::ErrorKind::InvalidData => Ok(None),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(errors::io(error)),
-        }
-    }
-
     pub fn project_disk_text(&self, file: &ProjectFile) -> Result<Option<String>> {
-        match self.files.read_text(
-            &file.canonical,
-            soyeht_protocol::limits::EDITOR_HISTORY_BYTES,
-        ) {
-            Ok(text) => Ok(Some(text)),
-            Err(error) if error.kind() == io::ErrorKind::InvalidData => Ok(None),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(errors::io(error)),
-        }
+        disk_text(&*self.files, file)
     }
 
     pub fn current_disk(&self, workspace_root: &Path, file: &EditorFile) -> Result<String> {
@@ -773,6 +764,7 @@ mod tests {
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
+    use uuid::Uuid;
 
     #[derive(Default)]
     struct FakeFiles {
