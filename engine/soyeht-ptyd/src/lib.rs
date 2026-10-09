@@ -10,5 +10,6 @@ pub mod pty;
 mod registry;
 pub mod retention;
 pub mod server;
+pub mod shell;
 mod tree;
 pub mod wire;

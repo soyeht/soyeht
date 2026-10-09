@@ -245,12 +245,16 @@ pub fn signed_ui_peer(token: PeerAuditToken) -> bool {
     macos::signed_ui(token)
 }
 
+/// Only macOS can attest which signed program is on the other end of a local
+/// connection. Elsewhere the token carries no identity: the caller has already
+/// proved the peer runs as the engine's own user, the connection is accepted,
+/// and no peer is ever treated as a signed UI.
 #[cfg(not(target_os = "macos"))]
 pub struct PeerAuditToken;
 
 #[cfg(not(target_os = "macos"))]
 pub fn peer_audit_token(_: &tokio::net::UnixStream) -> Option<PeerAuditToken> {
-    None
+    Some(PeerAuditToken)
 }
 
 #[cfg(not(target_os = "macos"))]

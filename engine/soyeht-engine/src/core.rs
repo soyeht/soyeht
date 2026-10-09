@@ -535,7 +535,7 @@ impl Core {
             argv: launch
                 .as_ref()
                 .map(|l| l.argv.clone())
-                .unwrap_or_else(|| vec!["/bin/zsh".into(), "-l".into()]),
+                .unwrap_or_else(soyeht_ptyd::shell::default_login_shell),
             env: launch.map(|l| l.env).unwrap_or_default(),
             cols: pane.pane.cols as u16,
             rows: pane.pane.rows as u16,

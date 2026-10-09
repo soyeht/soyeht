@@ -288,7 +288,7 @@ mod tests {
         let started = Instant::now();
         assert_eq!(
             run_probe_command(
-                Path::new("/bin/zsh"),
+                Path::new("/bin/bash"),
                 "printf '\\036%s\\037' \"$PATH\"; sleep 1 &",
                 Duration::from_millis(100)
             ),
@@ -320,6 +320,12 @@ mod tests {
         let recipe = PathBuf::from("/tmp/recipe-bin");
         let directories = candidate_directories(std::slice::from_ref(&recipe));
         assert_eq!(directories.last(), Some(&recipe));
-        assert!(!directories.iter().any(|path| path.ends_with(".grok/bin")));
+        let inherited: Vec<_> = std::env::split_paths(&launch_path()).collect();
+        assert!(
+            directories
+                .iter()
+                .all(|path| path == &recipe || inherited.contains(path)),
+            "no fallback directory is invented beyond the launch path and the recipe"
+        );
     }
 }

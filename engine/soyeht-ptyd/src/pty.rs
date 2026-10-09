@@ -25,7 +25,7 @@ pub fn open(rows: u16, cols: u16) -> io::Result<(File, File)> {
             &mut slave,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &mut size,
+            &raw mut size,
         )
     } == -1
     {
@@ -54,7 +54,7 @@ pub fn control_from_stdin(command: &mut Command) {
             if libc::setsid() == -1 {
                 return Err(io::Error::last_os_error());
             }
-            if libc::ioctl(0, libc::TIOCSCTTY.into(), 0) == -1 {
+            if libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
                 return Err(io::Error::last_os_error());
             }
             Ok(())

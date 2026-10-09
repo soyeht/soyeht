@@ -33,9 +33,11 @@ pub fn permitted_address(address: IpAddr) -> bool {
 }
 
 fn is_tailnet_interface(name: &str, address: IpAddr) -> bool {
-    let tunnel = name
-        .strip_prefix("utun")
-        .is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()));
+    // macOS names the tailnet tunnel `utunN`; Linux's tailscaled names it `tailscale0`.
+    let tunnel = name == "tailscale0"
+        || name
+            .strip_prefix("utun")
+            .is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()));
     tunnel && !address.is_loopback() && permitted_address(address)
 }
 
@@ -538,6 +540,14 @@ mod tests {
             "100.80.1.2".parse().unwrap()
         ));
         assert!(is_tailnet_interface("utun7", "100.80.1.2".parse().unwrap()));
+        assert!(is_tailnet_interface(
+            "tailscale0",
+            "100.80.1.2".parse().unwrap()
+        ));
+        assert!(!is_tailnet_interface(
+            "tailscale1",
+            "100.80.1.2".parse().unwrap()
+        ));
         assert!(is_tailnet_interface(
             "utun7",
             "fd7a:115c:a1e0::2".parse().unwrap()

@@ -210,7 +210,18 @@ fn descriptor_path(file: &File) -> Option<PathBuf> {
     Some(PathBuf::from(std::ffi::OsStr::from_bytes(path.to_bytes())))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn descriptor_path(file: &File) -> Option<PathBuf> {
+    match fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            eprintln!("log rotation is off: cannot name the log file: {error}");
+            None
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn descriptor_path(_: &File) -> Option<PathBuf> {
     None
 }
@@ -331,7 +342,7 @@ mod tests {
         drop(rotation);
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn stderr_flood_is_bounded_end_to_end() {
         let directory = directory();
