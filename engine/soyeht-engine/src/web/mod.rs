@@ -80,7 +80,7 @@ impl Service {
 
 /// Runs `lsof`; called off the Core lock.
 fn scan(scanner: &SharedPort<dyn PortScanPort>) -> Result<PortScanObservation> {
-    scanner.with(|port| port.scan().map_err(errors::io))
+    scanner.with(|port| port.scan().map_err(errors::Error::from))
 }
 
 impl Core {
@@ -142,11 +142,13 @@ impl Core {
 mod tests {
     use super::*;
     use crate::{
-        dispatch::Outcome, outbox, ports::PortScanObservation, ports::testing::FixedClock,
+        dispatch::Outcome,
+        outbox,
+        ports::{PortScanError, PortScanObservation, testing::FixedClock},
     };
     use serde_json::json;
     use soyeht_protocol::frame::Frame;
-    use std::{collections::VecDeque, fs, io, sync::Arc};
+    use std::{collections::VecDeque, fs, sync::Arc};
     use uuid::Uuid;
 
     struct ScriptedScan {
@@ -155,11 +157,12 @@ mod tests {
     }
 
     impl PortScanPort for ScriptedScan {
-        fn scan(&mut self) -> io::Result<PortScanObservation> {
+        fn scan(&mut self) -> std::result::Result<PortScanObservation, PortScanError> {
             self.calls += 1;
-            self.observations
-                .pop_front()
-                .ok_or_else(|| io::Error::from(io::ErrorKind::UnexpectedEof))
+            self.observations.pop_front().ok_or(PortScanError::Failed {
+                code: Some(2),
+                detail: "script exhausted".into(),
+            })
         }
     }
 

@@ -153,9 +153,9 @@ where
         }
         soyeht_process::Error::TimedOut { .. } => Error::TimedOut,
         soyeht_process::Error::OutputTooLarge { .. } => Error::OutputTooLarge,
-        soyeht_process::Error::Wait { .. } | soyeht_process::Error::Read { .. } => {
-            Error::CommandFailed
-        }
+        soyeht_process::Error::Wait { .. }
+        | soyeht_process::Error::Read { .. }
+        | soyeht_process::Error::Write { .. } => Error::CommandFailed,
     })
 }
 

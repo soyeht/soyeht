@@ -264,7 +264,7 @@
   },
   "swallowed_errors": {
     "rust_let_underscore": 54,
-    "rust_ok": 110,
+    "rust_ok": 106,
     "swift_try_optional": 34
   },
   "version": 3

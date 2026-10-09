@@ -45,6 +45,7 @@ pub enum Error {
     PaneState(soyeht_pane_state::Error),
     Vcs(soyeht_vcs::Error),
     Web(soyeht_web::Error),
+    PortScan(crate::ports::PortScanError),
     Writing(soyeht_writing::Error),
     Supervisor(soyeht_ptyd::Error),
     Protocol(soyeht_protocol::Error),
@@ -317,6 +318,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::Editor(error) => editor_kind(error),
         Error::Vcs(error) => vcs_kind(error),
         Error::Web(error) => web_kind(error),
+        Error::PortScan(_) => ErrorKind::InternalError,
         Error::Writing(error) => writing_kind(error),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
@@ -444,6 +446,7 @@ fn message(error: &Error) -> String {
         Error::PaneState(error) => error.to_string(),
         Error::Vcs(error) => error.to_string(),
         Error::Web(error) => error.to_string(),
+        Error::PortScan(error) => error.to_string(),
         Error::Writing(error) => error.to_string(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
         Error::Supervisor(_) => "Supervisor unavailable".into(),
@@ -510,6 +513,7 @@ impl std::error::Error for Error {
             Self::PaneState(error) => Some(error),
             Self::Vcs(error) => Some(error),
             Self::Web(error) => Some(error),
+            Self::PortScan(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
             Self::WebSocket(error) => Some(error),
@@ -554,6 +558,12 @@ impl From<soyeht_vcs::Error> for Error {
 impl From<soyeht_web::Error> for Error {
     fn from(error: soyeht_web::Error) -> Self {
         Self::Web(error)
+    }
+}
+
+impl From<crate::ports::PortScanError> for Error {
+    fn from(error: crate::ports::PortScanError) -> Self {
+        Self::PortScan(error)
     }
 }
 

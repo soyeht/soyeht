@@ -1,7 +1,8 @@
 //! Bounded child processes for the usage host: `curl` for HTTPS, `security` for the macOS
 //! keychain and newline-delimited JSON-RPC for the Codex app server.
 //!
-//! Every process gets a deadline and a bounded output. Credentials reach `curl` on standard
+//! `curl` and `security` run through `soyeht_process`, with a deadline and a bounded output;
+//! the JSON-RPC child is interactive and keeps its own deadline. Credentials reach `curl` on standard
 //! input as configuration, never on its command line, and no response body or error text is
 //! logged.
 
@@ -16,7 +17,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
 pub(super) const CURL: &str = "/usr/bin/curl";
 pub(super) const SECURITY: &str = "/usr/bin/security";
 /// A keychain read can wait on the user's answer to the macOS prompt.
@@ -25,82 +25,32 @@ const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(60);
 const KEYCHAIN_ITEM_NOT_FOUND: i32 = 44;
 const STATUS_MARKER: &[u8] = b"\nSOYEHT_STATUS:";
 
-pub(super) struct Output {
-    pub code: Option<i32>,
-    pub bytes: Vec<u8>,
-}
-
-/// Runs `program` with `input` on standard input, returning its standard output, or `None`
-/// when it cannot start, outgrows the bound or misses the deadline.
-pub(super) fn run_bounded(
+/// Runs `program` with `input` on standard input through the bounded runner: a deadline, the
+/// usage output budget and no child left behind.
+///
+/// The failure is returned unchanged for the caller to name its own outcome. Nothing here
+/// logs it: `curl` and `security` handle credentials, and the usage host reports only
+/// whether a source was denied or unreachable, never why.
+fn run_bounded(
     program: &Path,
     args: &[&str],
-    input: Option<&[u8]>,
+    input: Option<Vec<u8>>,
     timeout: Duration,
-) -> Option<Output> {
+) -> soyeht_process::Result<soyeht_process::Output> {
     let mut command = Command::new(program);
-    command
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        });
-    let mut child = command.spawn().ok()?;
-    if let Some(bytes) = input {
-        let written = child
-            .stdin
-            .take()
-            .is_some_and(|mut stdin| stdin.write_all(bytes).is_ok());
-        if !written {
-            stop_child(&mut child);
-            return None;
-        }
+    command.args(args);
+    let limits = soyeht_process::Limits::new(timeout, limits::JSON_BYTES);
+    match input {
+        Some(input) => soyeht_process::run_with_input(command, input, limits),
+        None => soyeht_process::run(command, limits),
     }
-    let Some(stdout) = child.stdout.take() else {
-        stop_child(&mut child);
-        return None;
-    };
-    let reader = thread::spawn(move || read_bounded(stdout));
-    let code = wait_child(&mut child, Instant::now() + timeout)?;
-    let bytes = reader.join().ok()??;
-    Some(Output { code, bytes })
 }
 
 pub(super) fn stop_child(child: &mut Child) {
+    // Best effort: kill fails only when the child already exited, which is the goal, and
+    // wait only reaps it. The callers report the failed exchange, not this teardown.
     let _ = child.kill();
     let _ = child.wait();
-}
-
-fn read_bounded(mut reader: impl Read) -> Option<Vec<u8>> {
-    let mut output = Vec::new();
-    let mut chunk = [0_u8; 8192];
-    loop {
-        let count = reader.read(&mut chunk).ok()?;
-        if count == 0 {
-            return Some(output);
-        }
-        if output.len().saturating_add(count) > limits::JSON_BYTES {
-            return None;
-        }
-        output.extend_from_slice(&chunk[..count]);
-    }
-}
-
-/// The exit code, `Some(None)` for a signal, or `None` past the deadline.
-fn wait_child(child: &mut Child, deadline: Instant) -> Option<Option<i32>> {
-    loop {
-        if let Some(status) = child.try_wait().ok()? {
-            return Some(status.code());
-        }
-        if Instant::now() >= deadline {
-            stop_child(child);
-            return None;
-        }
-        thread::sleep(POLL_INTERVAL);
-    }
 }
 
 /// A generic password from the login keychain through `/usr/bin/security`. The first read of
@@ -115,12 +65,13 @@ pub(super) fn keychain_password(
         args.extend(["-a", account]);
     }
     args.push("-w");
-    let Some(output) = run_bounded(program, &args, None, KEYCHAIN_TIMEOUT) else {
+    // A keychain that did not answer in time, or at all, is a read the person did not allow.
+    let Ok(output) = run_bounded(program, &args, None, KEYCHAIN_TIMEOUT) else {
         return SecretRead::Denied;
     };
-    match output.code {
+    match output.status.code() {
         Some(0) => {
-            let text = String::from_utf8(output.bytes).unwrap_or_default();
+            let text = String::from_utf8(output.stdout).unwrap_or_default();
             let secret = Secret::new(text.trim_end_matches(['\r', '\n']));
             if secret.expose().is_empty() {
                 SecretRead::Missing
@@ -179,9 +130,10 @@ pub(super) fn http(program: &Path, request: &HttpRequest) -> HttpResult {
     }
     args.push(&request.url);
     let timeout = request.timeout + Duration::from_secs(5);
-    match run_bounded(program, &args, Some(&config), timeout) {
-        Some(output) if output.code == Some(0) => parse_http_output(output.bytes),
-        _ => HttpResult::TransportFailed,
+    match run_bounded(program, &args, Some(config), timeout) {
+        Ok(output) if output.status.code() == Some(0) => parse_http_output(output.stdout),
+        // Any other exit, and every failure to run curl, is a transport failure.
+        Ok(_) | Err(_) => HttpResult::TransportFailed,
     }
 }
 

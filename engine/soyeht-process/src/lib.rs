@@ -12,7 +12,7 @@
 use std::{
     cell::Cell,
     fmt,
-    io::{self, Read},
+    io::{self, Read, Write},
     marker::PhantomData,
     os::unix::process::CommandExt,
     process::{Child, Command, ExitStatus, Stdio},
@@ -91,6 +91,11 @@ pub enum Error {
     OutputTooLarge {
         program: String,
     },
+    /// The input could not be delivered to the command's standard input.
+    Write {
+        program: String,
+        source: io::Error,
+    },
     UnderLock {
         program: String,
         holder: &'static str,
@@ -122,6 +127,9 @@ impl fmt::Display for Error {
             ),
             Self::OutputTooLarge { program } => {
                 write!(formatter, "{program} output exceeds its byte budget")
+            }
+            Self::Write { program, source } => {
+                write!(formatter, "{program} input could not be written: {source}")
             }
             Self::UnderLock { program, holder } => write!(
                 formatter,
@@ -161,13 +169,29 @@ impl Drop for Forbidden {
 }
 
 /// Runs `command` with no standard input, within `limits`.
-pub fn run(mut command: Command, limits: Limits) -> Result<Output> {
+pub fn run(command: Command, limits: Limits) -> Result<Output> {
+    execute(command, None, limits)
+}
+
+/// Runs `command` with `input` on its standard input, within `limits`.
+///
+/// The input is written from its own thread and then closed, so a command that
+/// answers before it reads everything cannot stall the caller.
+pub fn run_with_input(command: Command, input: Vec<u8>, limits: Limits) -> Result<Output> {
+    execute(command, Some(input), limits)
+}
+
+fn execute(mut command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<Output> {
     let program = command.get_program().to_string_lossy().into_owned();
     if let Some(holder) = forbidden() {
         return Err(Error::UnderLock { program, holder });
     }
     command
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
@@ -175,6 +199,7 @@ pub fn run(mut command: Command, limits: Limits) -> Result<Output> {
         program: program.clone(),
         source,
     })?;
+    let written = input.map(|input| write_in_background(&mut child, input));
     let pipes = Pipes::start(&mut child, limits);
     let exited = match wait_until(&mut child, Instant::now() + limits.timeout) {
         Ok(exited) => exited,
@@ -202,11 +227,44 @@ pub fn run(mut command: Command, limits: Limits) -> Result<Output> {
     let (Some(stdout), Some(stderr)) = (collected.stdout, collected.stderr) else {
         return Err(Error::OutputTooLarge { program });
     };
+    if let Some(written) = written {
+        input_delivered(written, Instant::now() + PIPE_GRACE)
+            .map_err(|source| Error::Write { program, source })?;
+    }
     Ok(Output {
         status,
         stdout,
         stderr,
     })
+}
+
+/// Starts the thread that writes `input` to the child and closes its standard input.
+fn write_in_background(child: &mut Child, input: Vec<u8>) -> thread::JoinHandle<io::Result<()>> {
+    let stdin = child.stdin.take();
+    thread::spawn(move || match stdin {
+        Some(mut stdin) => stdin.write_all(&input),
+        None => Err(io::Error::from(io::ErrorKind::NotConnected)),
+    })
+}
+
+/// Whether the input reached the command. A command that exited without reading it
+/// all closes the pipe, which its exit status reports instead. A writer still blocked
+/// at `deadline` is held by a process that left the group, and is abandoned.
+fn input_delivered(
+    writer: thread::JoinHandle<io::Result<()>>,
+    deadline: Instant,
+) -> io::Result<()> {
+    while !writer.is_finished() {
+        if Instant::now() >= deadline {
+            return Ok(());
+        }
+        thread::sleep(FIRST_POLL);
+    }
+    match writer.join() {
+        Ok(Err(error)) if error.kind() != io::ErrorKind::BrokenPipe => Err(error),
+        Ok(_) => Ok(()),
+        Err(_) => Err(io::Error::other("input writer panicked")),
+    }
 }
 
 fn wait_until(child: &mut Child, deadline: Instant) -> io::Result<Option<ExitStatus>> {
@@ -410,6 +468,38 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, Error::OutputTooLarge { .. }), "{error}");
+    }
+
+    #[test]
+    fn input_reaches_the_command_and_a_command_that_ignores_it_is_not_stalled() {
+        let echoed = run_with_input(
+            Command::new("/bin/cat"),
+            b"config".to_vec(),
+            Limits::new(Duration::from_secs(10), 64),
+        )
+        .unwrap();
+        assert_eq!(echoed.stdout, b"config");
+        // Larger than a pipe buffer, and never read: the writer must not hold the call.
+        let started = Instant::now();
+        let ignored = run_with_input(
+            shell("exit 0"),
+            vec![b'x'; 1 << 20],
+            Limits::new(Duration::from_secs(10), 64),
+        )
+        .unwrap();
+        assert!(ignored.success());
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn a_command_that_never_reads_its_input_times_out_instead_of_hanging() {
+        let error = run_with_input(
+            shell("sleep 30"),
+            vec![b'x'; 1 << 20],
+            Limits::new(Duration::from_millis(300), 64),
+        )
+        .unwrap_err();
+        assert!(error.timed_out(), "{error}");
     }
 
     #[test]

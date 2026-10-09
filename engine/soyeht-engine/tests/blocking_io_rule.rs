@@ -29,8 +29,9 @@ const DIRECT_PROCESS_FILES: &[(&str, &str)] = &[
     ),
     (
         "soyeht-engine/src/usage/process.rs",
-        "usage sources need standard input (curl config, JSON-RPC); they run only from \
-         PreparedRefresh::read, off the lock, each with its own deadline",
+        "the Codex JSON-RPC conversation writes and reads one long-lived child; curl and \
+         security go through soyeht_process::run_with_input. It runs only from \
+         PreparedRefresh::read, off the lock, with its own deadline",
     ),
     (
         "soyeht-engine/src/usage/terminal.rs",

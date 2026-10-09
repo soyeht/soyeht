@@ -20,7 +20,6 @@ use soyeht_store::{
     database::{Change, Mutation, Result as StoreResult, Store},
     domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
-use std::io;
 
 pub trait Clock: Send + Sync {
     fn now_ms(&self) -> i64;
@@ -57,8 +56,52 @@ pub struct PortScanObservation {
     pub directories: Vec<u8>,
 }
 
+/// Why a port scan produced no observation. An empty listener list is a real
+/// observation (nothing listens), never one of these.
+#[derive(Debug)]
+pub enum PortScanError {
+    /// The scanner did not run to completion: it did not start, timed out, outgrew
+    /// its byte budget or could not be read.
+    Process(soyeht_process::Error),
+    /// The scanner ran and exited with a failure its output does not explain away.
+    Failed { code: Option<i32>, detail: String },
+    /// The scanner's output could not be read as a listener table.
+    Unreadable(soyeht_web::Error),
+}
+
+impl std::fmt::Display for PortScanError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Process(error) => write!(formatter, "port scanner did not finish: {error}"),
+            Self::Failed {
+                code: Some(code),
+                detail,
+            } => {
+                write!(
+                    formatter,
+                    "port scanner exited with status {code}: {detail}"
+                )
+            }
+            Self::Failed { code: None, detail } => {
+                write!(formatter, "port scanner was stopped by a signal: {detail}")
+            }
+            Self::Unreadable(error) => write!(formatter, "port scanner output unreadable: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for PortScanError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Process(error) => Some(error),
+            Self::Unreadable(error) => Some(error),
+            Self::Failed { .. } => None,
+        }
+    }
+}
+
 pub trait PortScanPort: Send {
-    fn scan(&mut self) -> io::Result<PortScanObservation>;
+    fn scan(&mut self) -> Result<PortScanObservation, PortScanError>;
 }
 
 impl SupervisorPort for SupervisorClient {
@@ -417,7 +460,7 @@ pub(crate) mod testing {
     pub struct EmptyPortScan;
 
     impl PortScanPort for EmptyPortScan {
-        fn scan(&mut self) -> std::io::Result<PortScanObservation> {
+        fn scan(&mut self) -> Result<PortScanObservation, PortScanError> {
             Ok(PortScanObservation {
                 listeners: Vec::new(),
                 directories: Vec::new(),
