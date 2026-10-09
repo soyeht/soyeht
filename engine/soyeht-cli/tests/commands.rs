@@ -432,6 +432,16 @@ fn client_reconnects_after_engine_restart() {
             .stdout(Stdio::null())
             .spawn()
             .unwrap();
+    // Wait on a separate connection so a slow engine start on a busy host does not
+    // exhaust the client's reconnect budget; `client` still has to reconnect itself.
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while soyeht_cli::Client::connect(&rig.path).is_err() {
+        assert!(
+            Instant::now() < deadline,
+            "restarted engine never accepted a connection"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
     let after: soyeht_protocol::EngineStatusResult = client
         .request("engine.status", serde_json::json!({}))
         .unwrap();

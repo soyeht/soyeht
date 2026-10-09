@@ -225,6 +225,12 @@ class Services:
 
     def stop_engine(self):
         subprocess.run(["launchctl", "bootout", self.target("engine")], check=True)
+        # bootout can return before launchd forgets the label; a busy host shows the
+        # old service to the next start's "already exists" check.
+        deadline = time.monotonic() + 20
+        while subprocess.run(["launchctl", "print", self.target("engine")], capture_output=True).returncode == 0:
+            require(time.monotonic() < deadline, "launchd did not remove the stopped engine")
+            time.sleep(0.05)
 
     def client(self, name="acceptance", capabilities=None):
         deadline = time.monotonic() + 20
