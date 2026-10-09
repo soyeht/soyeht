@@ -531,7 +531,9 @@ extension EngineClient {
     repeat {
       let page = try await request(
         "harness.list",
-        .encoded(HarnessListParams(cursor: cursor, limit: 64, rescan: cursor == nil ? rescan : nil))
+        .encoded(
+          HarnessListParams(cursor: cursor, limit: 64, rescan: cursor == nil ? rescan : nil)),
+        timeoutSeconds: Self.catalogueTimeoutSeconds
       )
       .decoded(HarnessListResult.self)
       items.append(contentsOf: page.items)
@@ -545,7 +547,7 @@ extension EngineClient {
   }
 
   public func refreshHarnesses(rescan: Bool = false) {
-    perform { try await self.loadHarnesses(rescan: rescan) }
+    performBackground(.harnesses) { try await self.loadHarnesses(rescan: rescan) }
   }
 
   private func loadCustomHarnesses() async throws {
@@ -555,7 +557,7 @@ extension EngineClient {
   }
 
   public func refreshCustomHarnesses() {
-    perform { try await self.loadCustomHarnesses() }
+    performBackground(.customHarnesses) { try await self.loadCustomHarnesses() }
   }
 
   private func refreshAfterCustomHarnessMutation() async throws {
@@ -590,7 +592,7 @@ extension EngineClient {
   }
 
   public func refreshCatalogue(harness: String, paneId: String? = nil) {
-    perform {
+    performBackground(.catalogue(harness: harness)) {
       self.modelRefreshGenerations[harness, default: 0] &+= 1
       let generation = self.modelRefreshGenerations[harness, default: 0]
       self.agentCatalogueLoadCounts[harness, default: 0] += 1
@@ -611,7 +613,8 @@ extension EngineClient {
           "model.list",
           .encoded(
             ModelListParams(
-              harness: harness, paneId: paneId, cursor: cursor, limit: 64))
+              harness: harness, paneId: paneId, cursor: cursor, limit: 64)),
+          timeoutSeconds: Self.catalogueTimeoutSeconds
         )
         .decoded(ModelListResult.self)
         models.append(contentsOf: page.items)

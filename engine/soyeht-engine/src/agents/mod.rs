@@ -7,6 +7,7 @@ pub mod configuration;
 pub mod continuation;
 pub mod custom;
 pub mod delivery;
+mod digest;
 pub mod driver;
 pub mod effects;
 pub mod environment;

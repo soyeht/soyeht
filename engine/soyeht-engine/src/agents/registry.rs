@@ -1,3 +1,4 @@
+use super::digest::executable_digest;
 use crate::errors::{self, Result};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -441,43 +442,35 @@ pub(crate) fn locally_installed(entry: &RegistryEntry, previous_success: bool) -
         .any(|command| resolve_executable(command, directories.clone()).is_some())
 }
 
-fn digest_executable(path: &Path) -> Result<String> {
-    let mut file = File::open(path).map_err(errors::io)?;
-    let mut digest = Sha256::new();
-    let mut buffer = [0; 65536];
-    loop {
-        let count = file.read(&mut buffer).map_err(errors::io)?;
-        if count == 0 {
-            break;
-        }
-        digest.update(&buffer[..count]);
-    }
-    Ok(format!("{:x}", digest.finalize()))
-}
-
 pub(crate) fn prepare_entry(entry: RegistryEntry) -> Result<(HarnessLaunch, String)> {
     let launch = resolve_entry(entry)
         .ok_or_else(|| errors::harness_unavailable("Harness executable is unavailable"))?;
-    let digest = digest_executable(Path::new(&launch.command))?;
+    let digest = executable_digest(Path::new(&launch.command))?;
     Ok((launch, digest))
 }
 
-pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
-    let entry = catalogue_entries(directory)?
+fn configured_entry(directory: &Path, id: &str) -> Result<RegistryEntry> {
+    catalogue_entries(directory)?
         .into_iter()
         .find(|entry| entry.launch.id == id)
-        .ok_or_else(|| errors::harness_unavailable("Harness is not configured in this profile"))?;
-    prepare_entry(entry)
+        .ok_or_else(|| errors::harness_unavailable("Harness is not configured in this profile"))
+}
+
+/// The launch a harness would start with, without reading its executable.
+pub(crate) fn resolve(directory: &Path, id: &str) -> Result<HarnessLaunch> {
+    resolve_entry(configured_entry(directory, id)?)
+        .ok_or_else(|| errors::harness_unavailable("Harness executable is unavailable"))
+}
+
+pub fn prepare(directory: &Path, id: &str) -> Result<(HarnessLaunch, String)> {
+    prepare_entry(configured_entry(directory, id)?)
 }
 
 pub(crate) fn prepare_local_terminal(
     directory: &Path,
     id: &str,
 ) -> Result<(HarnessLaunch, PathBuf)> {
-    let entry = catalogue_entries(directory)?
-        .into_iter()
-        .find(|entry| entry.launch.id == id)
-        .ok_or_else(|| errors::harness_unavailable("Harness is not configured in this profile"))?;
+    let entry = configured_entry(directory, id)?;
     let directories = super::environment::candidate_directories(&entry.recipe_directories);
     let command = entry
         .local_commands
@@ -490,21 +483,21 @@ pub(crate) fn prepare_local_terminal(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use std::{fs, os::unix::fs::PermissionsExt};
     use uuid::Uuid;
 
-    struct Fixture(PathBuf);
+    pub(in crate::agents) struct Fixture(pub(in crate::agents) PathBuf);
 
     impl Fixture {
-        fn new() -> Self {
+        pub(in crate::agents) fn new() -> Self {
             let path = std::env::temp_dir().join(format!("soyeht-harness-path-{}", Uuid::new_v4()));
             fs::create_dir_all(&path).unwrap();
             Self(path)
         }
 
-        fn executable(&self, name: &str) -> PathBuf {
+        pub(in crate::agents) fn executable(&self, name: &str) -> PathBuf {
             let path = self.0.join(name);
             fs::write(&path, b"#!/bin/sh\nexit 0\n").unwrap();
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();

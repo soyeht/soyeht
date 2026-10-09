@@ -5,8 +5,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 407,
-      "duplicated_lines": 3620
+      "clones": 406,
+      "duplicated_lines": 3615
     },
     "ios": {
       "clones": 6,
@@ -235,13 +235,13 @@
   },
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1492,
-    "apps/mac/Sources/PreferencesPanel.swift": 904,
+    "apps/mac/Sources/PreferencesPanel.swift": 881,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
     "apps/mac/Sources/WorkspaceWindow.swift": 2771,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,
     "apps/mac/Sources/WritingScreenplayPane.swift": 1299,
     "apps/mac/Sources/WritingTextPane.swift": 1132,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 1001,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 998,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-cli/src/task_commands.rs": 862,
     "engine/soyeht-engine/src/agents/questions.rs": 1119,

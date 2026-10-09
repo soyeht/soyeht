@@ -56,6 +56,7 @@ public final class EngineClient {
   public private(set) var credentialRejected = false
   public private(set) var connectionText = "Connecting to the Dev profile…"
   public var problem: String?
+  var backgroundLoads: [BackgroundLoad: BackgroundLoadRecord] = [:]
   public private(set) var selectedPaneId: String?
   @ObservationIgnored public lazy var paneLayouts = PaneLayoutController {
     [weak self] workspaceId, state in
@@ -120,10 +121,6 @@ public final class EngineClient {
   public var pairedDevice: Bool { credential != nil }
   /// Stable namespace for device-local presentation state. It is not a credential or token.
   public var engineId: String? { credential?.engineId }
-  public var harnessesLoading: Bool { harnessLoadCount > 0 }
-  public func agentCatalogueLoading(_ harness: String) -> Bool {
-    agentCatalogueLoadCounts[harness, default: 0] > 0
-  }
 
   private struct Pending {
     var method: String

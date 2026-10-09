@@ -61,7 +61,16 @@ struct PhoneHarnessMenu: View {
       Text(HarnessSwitchModel.handoverExplanation)
     }
     if layout.isEmpty {
-      Text(client.harnessesLoading ? "Loading agents…" : "No other agents")
+      if client.harnessListStalled {
+        Text(BackgroundLoad.harnesses.failureText)
+        Button {
+          client.refreshHarnesses()
+        } label: {
+          Label("Try again", systemImage: "arrow.clockwise")
+        }
+      } else {
+        Text(client.harnessesLoading ? "Loading agents…" : "No other agents")
+      }
     }
     ForEach(layout.sections, id: \.group) { section in
       Section(section.group.title) {

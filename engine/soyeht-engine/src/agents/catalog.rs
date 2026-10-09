@@ -242,8 +242,13 @@ pub(crate) fn prepare_catalog(
     }
     let prepared = if params["paneId"].as_str().is_some() {
         None
-    } else {
+    } else if session_harnesses.contains(harness) {
         Some(registry::prepare(&directory, harness)?)
+    } else {
+        // Only a live session can have probed models, so with none there is
+        // nothing to match and no reason to read the executable to hash it.
+        registry::resolve(&directory, harness)?;
+        None
     };
     eprintln!(
         "{}",
@@ -364,12 +369,12 @@ impl Core {
                 .ok_or_else(|| errors::not_found("Agent pane not found for this harness"))?;
             Some(state)
         } else {
-            let (launch, digest) = prepared
-                .ok_or_else(|| errors::internal("Model catalogue launch was not prepared"))?;
-            self.agents
-                .values()
-                .filter(|a| a.state.launch == launch && a.state.binary_digest == digest)
-                .max_by_key(|a| a.state.last_update_ms)
+            prepared.and_then(|(launch, digest)| {
+                self.agents
+                    .values()
+                    .filter(|a| a.state.launch == launch && a.state.binary_digest == digest)
+                    .max_by_key(|a| a.state.last_update_ms)
+            })
         };
         let options = known
             .map(|a| a.state.options.values.clone())
@@ -517,6 +522,73 @@ mod tests {
             ),
             ErrorKind::ResyncRequired
         );
+    }
+
+    #[test]
+    fn model_list_reads_an_executable_only_for_a_harness_with_a_live_session() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-model-list-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        // Executable but unreadable: resolving it works, hashing it cannot.
+        let executable = directory.join("agent");
+        std::fs::write(&executable, b"#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o111)).unwrap();
+        let launch = soyeht_protocol::HarnessLaunch {
+            id: "slow-disk".into(),
+            name: "Slow disk".into(),
+            command: executable.to_str().unwrap().into(),
+            args: vec![],
+            version: "1".into(),
+            environment: None,
+        };
+        registry::create_custom(&directory, launch).unwrap();
+        let params = json!({"harness":"slow-disk"});
+
+        let idle = prepare_catalog(directory.clone(), "model.list", &params, BTreeSet::new());
+        assert!(matches!(
+            idle.unwrap(),
+            PreparedCatalog::Model { prepared: None, .. }
+        ));
+
+        let with_session = BTreeSet::from(["slow-disk".to_owned()]);
+        let can_read = std::fs::File::open(&executable).is_ok();
+        let live = prepare_catalog(directory.clone(), "model.list", &params, with_session);
+        if can_read {
+            // Privileged runs (root) read a mode 0o111 file, so the unreadable-file
+            // failure cannot be produced here. Say so instead of passing silently.
+            eprintln!("skipped: this user reads mode 0o111 files, so hashing cannot fail");
+            assert!(live.is_ok(), "a readable executable is hashed");
+        } else {
+            assert!(live.is_err(), "an unreadable executable cannot be hashed");
+        }
+
+        let unknown = prepare_catalog(
+            directory.clone(),
+            "model.list",
+            &json!({"harness":"nope"}),
+            BTreeSet::new(),
+        );
+        assert!(unknown.is_err());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn model_list_for_an_idle_harness_is_not_probed_and_empty() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-model-idle-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let core = Core::open(&directory).unwrap();
+        let params = json!({"harness":"registry.claude-acp"});
+        let prepared = PreparedCatalog::Model {
+            harness: "registry.claude-acp".into(),
+            prepared: None,
+        };
+        let listed = core.agent_catalog_prepared(prepared, &params).unwrap();
+        assert_eq!(listed["source"], "not_probed");
+        assert_eq!(listed["items"], json!([]));
+        drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

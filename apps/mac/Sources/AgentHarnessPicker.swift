@@ -30,12 +30,13 @@ struct AgentHarnessPicker: View {
   private var contentState: HarnessPickerContentState {
     HarnessPickerModel.contentState(
       harnesses: client.harnesses.filter { $0.id != excludingHarness }, query: query,
-      loading: client.harnessesLoading)
+      loading: client.harnessesLoading, failed: client.loadFailure(.harnesses) != nil)
   }
 
   private var modelContentState: ModelPickerContentState {
     HarnessPickerModel.modelContentState(
-      catalogue: catalogue, loading: client.agentCatalogueLoading(harness))
+      catalogue: catalogue, loading: client.agentCatalogueLoading(harness),
+      failed: client.loadFailure(.catalogue(harness: harness)) != nil)
   }
 
   private var selected: HarnessInfo? { client.harnesses.first { $0.id == harness } }
@@ -74,6 +75,12 @@ struct AgentHarnessPicker: View {
         }
         .frame(maxWidth: .infinity, minHeight: 220)
         .accessibilityIdentifier("agent-picker-loading")
+      } else if contentState == .failed {
+        HarnessLoadStateRow(
+          state: .failed(BackgroundLoad.harnesses.failureText), surface: .pane,
+          detail: client.loadFailure(.harnesses), retry: { client.refreshHarnesses() }
+        )
+        .frame(maxWidth: .infinity, minHeight: 220, alignment: .top)
       } else if contentState == .emptyCatalogue {
         ContentUnavailableView(
           "No agents available", systemImage: "cpu",
@@ -188,6 +195,12 @@ struct AgentHarnessPicker: View {
         .paneWell(radius: MacTheme.Radius.compact)
         .accessibilityIdentifier("model-picker-loading")
       } else {
+        if modelContentState == .failed {
+          HarnessLoadStateRow(
+            state: .failed(BackgroundLoad.catalogue(harness: harness).failureText),
+            surface: .pane, detail: client.loadFailure(.catalogue(harness: harness)),
+            retry: { client.refreshCatalogue(harness: harness) })
+        }
         Menu {
           Button("Agent default") { model = "" }
           ForEach(catalogue?.models ?? [], id: \.id) { item in

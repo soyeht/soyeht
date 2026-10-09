@@ -101,7 +101,7 @@ extension EngineClient {
   }
 
   public func refreshDefaultPermissionModes() {
-    perform {
+    performBackground(.defaultPermissionModes) {
       for harness in self.harnesses {
         let result = try await self.request(
           "settings.get",

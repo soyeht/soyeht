@@ -412,9 +412,7 @@ private struct PreferencesHarnesses: View {
               makeDefault: { makeDefault(harness.id) },
               edit: edit, remove: { pendingRemoval = $0 })
           }
-          if client.harnesses.isEmpty {
-            EmptyHarnessRow(connected: client.connected)
-          }
+          HarnessListLoadRows(client: client)
           Text("RAW TERMINAL")
             .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
             .tracking(1)
@@ -560,9 +558,7 @@ private struct HarnessPreferenceRow: View {
         .accessibilityLabel("Manage \(harness.name)")
       }
     }
-    .padding(.horizontal, MacTheme.Space.x16)
-    .frame(height: 58)
-    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+    .preferenceRowSurface()
   }
 
   private var identity: some View {
@@ -805,23 +801,6 @@ private struct CustomHarnessEditor: View {
   }
 }
 
-private struct EmptyHarnessRow: View {
-  let connected: Bool
-
-  var body: some View {
-    HStack(spacing: MacTheme.Space.x10) {
-      ProgressView().controlSize(.small)
-      Text(connected ? "Loading harnesses…" : "Waiting for the engine…")
-        .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-        .foregroundStyle(MacTheme.secondary)
-      Spacer()
-    }
-    .padding(.horizontal, MacTheme.Space.x16)
-    .frame(height: 58)
-    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
-  }
-}
-
 private struct RawTerminalPreferenceRow: View {
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -839,9 +818,7 @@ private struct RawTerminalPreferenceRow: View {
         .foregroundStyle(MacTheme.secondary)
       PreferenceToggle(isOn: true)
     }
-    .padding(.horizontal, MacTheme.Space.x16)
-    .frame(height: 58)
-    .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
+    .preferenceRowSurface()
   }
 
   private var shell: String { ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh" }

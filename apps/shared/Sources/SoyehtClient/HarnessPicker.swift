@@ -49,6 +49,7 @@ public struct HarnessPickerLayout: Sendable {
 
 public enum HarnessPickerContentState: Sendable, Equatable {
   case loading
+  case failed
   case emptyCatalogue
   case noMatches
   case results
@@ -56,6 +57,7 @@ public enum HarnessPickerContentState: Sendable, Equatable {
 
 public enum ModelPickerContentState: Sendable, Equatable {
   case loading
+  case failed
   case unavailable
   case empty
   case results
@@ -65,17 +67,19 @@ public enum HarnessPickerModel {
   public static let preferredHarnessKey = "harness.preferredId"
 
   public static func contentState(
-    harnesses: [HarnessInfo], query: String, loading: Bool
+    harnesses: [HarnessInfo], query: String, loading: Bool, failed: Bool = false
   ) -> HarnessPickerContentState {
     if loading && harnesses.isEmpty { return .loading }
+    if failed && harnesses.isEmpty { return .failed }
     if harnesses.isEmpty { return .emptyCatalogue }
     return layout(harnesses, query: query).isEmpty ? .noMatches : .results
   }
 
   public static func modelContentState(
-    catalogue: AgentCatalogue?, loading: Bool
+    catalogue: AgentCatalogue?, loading: Bool, failed: Bool = false
   ) -> ModelPickerContentState {
     if loading && catalogue == nil { return .loading }
+    if failed && catalogue == nil { return .failed }
     guard let catalogue else { return .unavailable }
     return catalogue.models.isEmpty ? .empty : .results
   }
