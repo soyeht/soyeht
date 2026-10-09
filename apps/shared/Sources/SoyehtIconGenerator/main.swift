@@ -111,7 +111,9 @@ private func writeContents(_ images: [[String: String]]?, to directory: URL) thr
 /// Recreates an icon set inside its asset catalogue, so a size that is no longer generated
 /// cannot linger.
 private func freshSet(at directory: URL) throws {
-  try? FileManager.default.removeItem(at: directory)
+  if FileManager.default.fileExists(atPath: directory.path) {
+    try FileManager.default.removeItem(at: directory)
+  }
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   try writeContents(nil, to: directory.deletingLastPathComponent())
 }
