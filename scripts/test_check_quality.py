@@ -493,6 +493,7 @@ class GateFixture:
         (self.crate / "src/lib.rs").write_text(REPEATED_RUST)
         for area, relative in (
             ("shared", "apps/shared/Sources/SoyehtClient/Item.swift"),
+            ("dictation", "apps/dictation/Sources/SoyehtDictation/Item.swift"),
             ("ios", "apps/ios/Sources/Item.swift"),
         ):
             source = root / relative

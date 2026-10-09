@@ -74,8 +74,9 @@ uv run python -m unittest discover -s scripts -p 'test_check_mac_identifier_text
 uv run python scripts/check_mac_identifier_text.py
 uv run python -m unittest discover -s scripts -p 'test_check_mac_view_colors.py'
 uv run python scripts/check_mac_view_colors.py
-swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/mac/Sources apps/ios/Sources
+swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/dictation/Sources apps/dictation/Tests apps/mac/Sources apps/ios/Sources
 swift test --package-path apps/shared
+swift test --package-path apps/dictation
 bash scripts/check_mac.sh
 uv run python -m unittest discover -s scripts -p 'test_check_editor_performance.py'
 uv run python scripts/check_editor_performance.py

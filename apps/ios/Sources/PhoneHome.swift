@@ -25,6 +25,10 @@ struct PhoneHome: View {
   var body: some View {
     root
       .tint(PhonePalette.accent)
+      .onChange(of: DictationEngineStore.shared.installPrompt) { _, prompt in
+        // The dictation shortcut found one engine installed: open the install step.
+        if prompt != nil { showingSettings = true }
+      }
       .sheet(isPresented: $showingSettings) {
         if let client = model.client {
           PhoneSettings(client: client)

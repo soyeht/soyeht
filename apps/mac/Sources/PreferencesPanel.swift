@@ -13,6 +13,7 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
   case links
   case editor
   case skills
+  case dictation
 
   var id: Self { self }
 
@@ -28,6 +29,7 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
     case .editor: "Shortcuts"
     case .links: "Links"
     case .skills: "Skills"
+    case .dictation: "Dictation"
     }
   }
 
@@ -43,15 +45,12 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
     case .editor: "keyboard"
     case .links: "link"
     case .skills: "wand.and.stars"
+    case .dictation: "mic"
     }
   }
 
-  var hasDetail: Bool {
-    switch self {
-    case .general, .appearance, .harnesses, .usage, .editor, .links, .skills: true
-    case .engine, .phone, .tasks: false
-    }
-  }
+  /// The sections still without a detail page are the placeholders.
+  var hasDetail: Bool { ![.engine, .phone, .tasks].contains(self) }
 }
 
 struct PreferencesPanel: View {
@@ -83,6 +82,10 @@ struct PreferencesPanel: View {
       .foregroundStyle(MacTheme.ink)
       .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
       .onAppear { refreshCatalogues() }
+      .dictationInstallPrompt {
+        section = .dictation
+        compactSection = .dictation
+      }
       .onChange(of: client.harnesses.map(\.id)) { _, _ in refreshCatalogues() }
     }
   }
@@ -177,6 +180,7 @@ struct PreferencesPanel: View {
     case .editor: EditorInputPreferencesPanel()
     case .links: WebLinkPreferencesPanel()
     case .skills: SkillsPreferencesPanel(client: client)
+    case .dictation: DictationPreferencesPanel()
     case .engine, .phone, .tasks: EmptyView()
     }
   }
@@ -187,32 +191,6 @@ struct PreferencesPanel: View {
     for harness in client.harnesses where harness.available {
       client.refreshCatalogue(harness: harness.id)
     }
-  }
-}
-
-private struct GeneralPreferencesPanel: View {
-  @Environment(AgentAttentionNotifications.self) private var notifications
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
-      Text("Agent attention")
-        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
-      Toggle(
-        "System alerts and Dock badges when agents need input",
-        isOn: Binding(
-          get: { notifications.enabled },
-          set: { enabled in Task { await notifications.setEnabled(enabled) } })
-      )
-      .tint(MacTheme.accent)
-      .accessibilityIdentifier("agent-attention-notifications")
-      Text(
-        "Off by default. Tabs and the app bar still show requests; Dock badges depend on macOS notification settings."
-      )
-      .font(MacTheme.chrome(MacTheme.TypeScale.caption))
-      .foregroundStyle(MacTheme.secondary)
-    }
-    .frame(maxWidth: .infinity, alignment: .topLeading)
-    .padding(MacTheme.Space.x14)
   }
 }
 

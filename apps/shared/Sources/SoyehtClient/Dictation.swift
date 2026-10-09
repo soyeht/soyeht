@@ -1,6 +1,26 @@
 import Foundation
 import Observation
 
+/// One dictation: the engine to listen with, the options it starts with, and what the mic shows.
+public struct DictationSession {
+  public let recognizer: SpeechRecognizing
+  public let options: SpeechSessionOptions
+  /// Short name of the engine, shown above the mic while it listens.
+  public let badge: String?
+  /// Why another engine listens than the one chosen, when that is the case.
+  public let note: String?
+
+  public init(
+    recognizer: SpeechRecognizing, options: SpeechSessionOptions = SpeechSessionOptions(),
+    badge: String? = nil, note: String? = nil
+  ) {
+    self.recognizer = recognizer
+    self.options = options
+    self.badge = badge
+    self.note = note
+  }
+}
+
 /// Voice dictation into the composer: tap the mic to listen, tap again (or stay silent) to
 /// stop, and the transcript is inserted where the cursor is.
 ///
@@ -26,20 +46,32 @@ import Observation
   /// Receives the transcript to insert into the composer.
   @ObservationIgnored public var onTranscript: (String) -> Void = { _ in }
 
-  @ObservationIgnored private let makeRecognizer: @MainActor () -> SpeechRecognizing
+  /// The engine's short name and the reason it was chosen, from the session that is running.
+  public private(set) var badge: String?
+  public private(set) var note: String?
+
+  @ObservationIgnored private let makeSession: @MainActor () -> DictationSession
   @ObservationIgnored private let schedule: DictationScheduler
   @ObservationIgnored private var recognizer: SpeechRecognizing?
   @ObservationIgnored private var timer: DictationTimer?
   @ObservationIgnored private var session = 0
 
-  /// `makeRecognizer` runs on the first tap, never earlier, so rendering the composer never
-  /// touches the Speech framework or the privacy prompts.
+  /// `makeSession` runs on each tap that starts a dictation, never earlier, so rendering the
+  /// composer never touches the Speech framework or the privacy prompts, and a change of engine
+  /// takes effect on the next dictation.
   public init(
+    makeSession: @escaping @MainActor () -> DictationSession,
+    schedule: @escaping DictationScheduler = DictationController.taskScheduler
+  ) {
+    self.makeSession = makeSession
+    self.schedule = schedule
+  }
+
+  public convenience init(
     makeRecognizer: @escaping @MainActor () -> SpeechRecognizing,
     schedule: @escaping DictationScheduler = DictationController.taskScheduler
   ) {
-    self.makeRecognizer = makeRecognizer
-    self.schedule = schedule
+    self.init(makeSession: { DictationSession(recognizer: makeRecognizer()) }, schedule: schedule)
   }
 
   public var isRecording: Bool {
@@ -81,21 +113,27 @@ import Observation
     session += 1
     let current = session
     state = .authorizing
-    let recognizer = self.recognizer ?? makeRecognizer()
+    self.recognizer?.cancel()
+    let dictation = makeSession()
+    let recognizer = dictation.recognizer
     self.recognizer = recognizer
+    badge = dictation.badge
+    note = dictation.note
     Task { @MainActor in
       let access = await recognizer.authorize()
       guard current == self.session, self.state == .authorizing else { return }
       switch access {
-      case .authorized: self.listen(recognizer, session: current)
+      case .authorized: self.listen(recognizer, dictation.options, session: current)
       case .denied(let reason), .unavailable(let reason): self.state = .failed(reason)
       }
     }
   }
 
-  private func listen(_ recognizer: SpeechRecognizing, session current: Int) {
+  private func listen(
+    _ recognizer: SpeechRecognizing, _ options: SpeechSessionOptions, session current: Int
+  ) {
     do {
-      try recognizer.start { [weak self] event in
+      try recognizer.start(options) { [weak self] event in
         guard let self, current == self.session else { return }
         self.receive(event)
       }

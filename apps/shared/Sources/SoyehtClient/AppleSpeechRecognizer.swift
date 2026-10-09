@@ -5,58 +5,50 @@ import Foundation
 /// Dictation through Apple's Speech framework, on the device when the recognizer supports
 /// it. The microphone and speech recognition prompts appear on the first tap of the mic.
 @MainActor public final class AppleSpeechRecognizer: SpeechRecognizing {
-  private let locale: Locale
-  private var engine: AVAudioEngine?
+  private let capture = MicrophoneCapture()
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
 
-  public init(locale: Locale = .current) {
-    self.locale = locale
-  }
+  public init() {}
 
   public func authorize() async -> DictationAuthorization {
     let speech = await SystemCallback.value { SFSpeechRecognizer.requestAuthorization($0) }
     guard speech == .authorized else {
       return .denied("Allow speech recognition for Soyeht in System Settings to dictate.")
     }
-    guard await Self.microphoneAccess() else {
-      return .denied("Allow the microphone for Soyeht in System Settings to dictate.")
-    }
-    guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
+    let microphone = await MicrophoneCapture.authorization()
+    guard microphone == .authorized else { return microphone }
+    guard Self.recognizer(for: nil)?.isAvailable == true else {
       return .unavailable("Dictation is not available for this language right now.")
     }
     return .authorized
   }
 
-  public func start(onEvent: @escaping @MainActor (SpeechEvent) -> Void) throws {
+  public func start(
+    _ options: SpeechSessionOptions, onEvent: @escaping @MainActor (SpeechEvent) -> Void
+  ) throws {
     cancel()
-    guard let recognizer = SFSpeechRecognizer(locale: locale) else {
+    guard let recognizer = Self.recognizer(for: options.language) else {
       throw DictationError.unavailable
     }
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
     if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
-    #if os(iOS)
-      let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.record, mode: .measurement, options: .duckOthers)
-      try session.setActive(true, options: .notifyOthersOnDeactivation)
-    #endif
-    let engine = AVAudioEngine()
-    let input = engine.inputNode
-    let format = input.outputFormat(forBus: 0)
-    input.installTap(onBus: 0, bufferSize: 1_024, format: format, block: Self.feed(request))
-    engine.prepare()
-    try engine.start()
-    self.engine = engine
+    try capture.start(Self.feed(request))
     self.request = request
     task = recognizer.recognitionTask(with: request, resultHandler: Self.report(to: onEvent))
+  }
+
+  /// A recognizer for the tag, or for the device's language when there is no tag.
+  private static func recognizer(for language: String?) -> SFSpeechRecognizer? {
+    SFSpeechRecognizer(locale: language.map(Locale.init(identifier:)) ?? .current)
   }
 
   /// The audio tap runs on the audio thread, so it is built outside the main actor.
   nonisolated static func feed(
     _ request: SFSpeechAudioBufferRecognitionRequest
-  ) -> AVAudioNodeTapBlock {
-    { buffer, _ in request.append(buffer) }
+  ) -> MicrophoneCapture.Sink {
+    { buffer in request.append(buffer) }
   }
 
   /// Results arrive on the recognizer's queue and hop to the main actor.
@@ -76,40 +68,15 @@ import Foundation
   }
 
   public func finish() {
-    stopAudio()
+    capture.stop()
     request?.endAudio()
   }
 
   public func cancel() {
-    stopAudio()
+    capture.stop()
     task?.cancel()
     task = nil
     request = nil
-  }
-
-  private func stopAudio() {
-    guard let engine else { return }
-    engine.stop()
-    engine.inputNode.removeTap(onBus: 0)
-    self.engine = nil
-    #if os(iOS)
-      _ = ClientDiagnostics.attempt("dictation_audio_session_release_failed", key: "dictation") {
-        try AVAudioSession.sharedInstance().setActive(
-          false, options: .notifyOthersOnDeactivation)
-      }
-    #endif
-  }
-
-  private static func microphoneAccess() async -> Bool {
-    #if os(iOS)
-      await SystemCallback.value {
-        AVAudioApplication.requestRecordPermission(completionHandler: $0)
-      }
-    #else
-      await SystemCallback.value {
-        AVCaptureDevice.requestAccess(for: .audio, completionHandler: $0)
-      }
-    #endif
   }
 }
 
@@ -117,4 +84,18 @@ enum DictationError: LocalizedError {
   case unavailable
 
   var errorDescription: String? { "Dictation is not available on this device." }
+}
+
+extension DictationEngine {
+  /// Apple's Speech framework: no download, every device, the fallback of the catalogue.
+  public static let apple = DictationEngine(
+    id: "apple", name: "Apple Speech", badge: "Apple",
+    summary: "Built in. Works everywhere, on this device when the language allows it.",
+    platforms: Set(DictationPlatform.allCases),
+    languages: [.system]
+      + [
+        "pt-BR", "pt-PT", "en-US", "en-GB", "es-ES", "es-MX", "fr-FR", "de-DE", "it-IT",
+        "ja-JP", "zh-CN", "zh-TW",
+      ].map(DictationLanguage.init(tag:)),
+    make: { AppleSpeechRecognizer() })
 }

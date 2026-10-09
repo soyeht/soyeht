@@ -1,5 +1,9 @@
 {
   "duplication": {
+    "dictation": {
+      "clones": 0,
+      "duplicated_lines": 0
+    },
     "engine": {
       "clones": 409,
       "duplicated_lines": 3647
@@ -234,7 +238,7 @@
   },
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1492,
-    "apps/mac/Sources/PreferencesPanel.swift": 926,
+    "apps/mac/Sources/PreferencesPanel.swift": 904,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1322,
     "apps/mac/Sources/WorkspaceWindow.swift": 2858,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,

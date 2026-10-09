@@ -18,7 +18,7 @@ fi
 xcodebuild -project apps/ios/SoyehtPhone.xcodeproj -scheme SoyehtPhone \
     -configuration Debug -destination "$DESTINATION" \
     -derivedDataPath .cache/ios-derived -clonedSourcePackagesDirPath .cache/apple-packages \
-    -skipPackagePluginValidation SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG \
+    -skipPackagePluginValidation \
     "SOYEHT_PACKAGES=$ROOT/.cache/apple-packages" "${SIGNING[@]}" build
 
 # The generic destination builds the one binary iPhone and iPad share. Fail if the built

@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import SoyehtClient
+import SoyehtDictation
 import SoyehtProtocol
 import SwiftUI
 import UserNotifications
@@ -21,6 +22,7 @@ struct SoyehtMacApp: App {
     webHost = host
     _client = State(initialValue: client)
     MacTheme.registerFonts()
+    DictationEngineStore.shared.install(DictationCatalogue.registry)
   }
 
   var body: some Scene {
@@ -81,6 +83,8 @@ struct SoyehtMacApp: App {
             set: { editorInputPreferences.setSoftWrap($0) })
         )
         .keyboardShortcut(Self.keyboardShortcut(.softWrap))
+        Button("Switch Dictation Engine", action: Self.switchDictationEngine)
+          .keyboardShortcut(DictationShortcut.key, modifiers: DictationShortcut.modifiers)
         Divider()
         workspaceViewCommand("Agents", destination: .agents, key: "1")
         workspaceViewCommand("Editor", destination: .editor, key: "2")
@@ -113,6 +117,14 @@ struct SoyehtMacApp: App {
       .environment(editorInputPreferences)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
+  }
+
+  /// Cycles the installed engines. With only one installed, the install step of another opens
+  /// in Preferences; nothing downloads.
+  private static func switchDictationEngine() {
+    if DictationEngineStore.shared.cycle() == .needsInstall {
+      NotificationCenter.default.post(name: .showSoyehtPreferences, object: nil)
+    }
   }
 
   private static func keyboardShortcut(_ shortcut: EditorShortcut) -> KeyboardShortcut {

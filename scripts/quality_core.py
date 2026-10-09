@@ -25,6 +25,7 @@ FILE_LIMIT = 800
 AREAS = {
     "engine": ("engine", "rust", ".rs"),
     "shared": ("apps/shared", "swift", ".swift"),
+    "dictation": ("apps/dictation", "swift", ".swift"),
     "mac": ("apps/mac/Sources", "swift", ".swift"),
     "ios": ("apps/ios/Sources", "swift", ".swift"),
 }
@@ -33,7 +34,10 @@ DUPLICATION_SCANS = {
         name: ((relative_dir,), language)
         for name, (relative_dir, language, _) in AREAS.items()
     },
-    "swift_all": (("apps/shared", "apps/mac/Sources", "apps/ios/Sources"), "swift"),
+    "swift_all": (
+        ("apps/shared", "apps/dictation", "apps/mac/Sources", "apps/ios/Sources"),
+        "swift",
+    ),
 }
 SWIFT_LITERAL_PATTERNS = {
     "padding": re.compile(r"\.padding\(\s*(?:\.[A-Za-z]+\s*,\s*)?\d+(?:\.\d+)?\s*\)"),
@@ -345,7 +349,8 @@ def differences(baseline: dict, actual: dict) -> list[Change]:
     for area in DUPLICATION_SCANS:
         for metric in ("clones", "duplicated_lines"):
             current = actual["duplication"][area][metric]
-            previous = baseline["duplication"][area][metric]
+            # An area added after the older baseline was written had nothing to hold yet.
+            previous = baseline["duplication"].get(area, {}).get(metric, 0)
             changes += compare(
                 f"duplication.{area}.{metric}",
                 previous,

@@ -30,6 +30,9 @@ Each layer depends only on the layers listed above it.
 5. `apps/shared` (`SoyehtClient`): the shared Swift client. It holds the engine
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it.
+   `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
+   dictation engines that need third-party dependencies, and the catalogue of
+   engines (ADR 0083).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling.
 
@@ -80,6 +83,23 @@ ADR when you change a boundary.
 over 200 lines grows, when an existing long function grows, or when tests,
 acceptances or gate steps drop. A drop needs a `Verification change:` line in the
 PR body.
+
+## How to add an STT engine
+
+Dictation engines are a catalogue (ADR 0083). A new engine is one file and one entry:
+
+1. Add one file to `apps/dictation/Sources/SoyehtDictation/` with a `SpeechRecognizing`
+   implementation and its `DictationEngine` descriptor (id, names, platforms, languages,
+   `usesVocabulary`, `model` when it needs an install, `availability`, `make`). Reuse
+   `MicrophoneCapture`, `AudioResampler`, `SystemCallback` and the installer of
+   `DictationModelStore`; write no permission request, install state or vocabulary store.
+   An engine with a model is opt-in: nothing downloads before the person presses Install.
+2. List the descriptor in `DictationCatalogue.registry`.
+3. Add tests with a fake engine.
+
+Do not edit the composer, Preferences or `DictationController` to add an engine: they are
+generated from the registry. System callbacks and audio taps are `@Sendable` and never
+inherit the main actor.
 
 ## Design
 

@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 import Speech
 import Testing
@@ -37,7 +37,7 @@ import Testing
   let tap = AppleSpeechRecognizer.feed(request)
   await withCheckedContinuation { continuation in
     DispatchQueue.global(qos: .userInteractive).async {
-      tap(buffer, AVAudioTime(sampleTime: 0, atRate: 16_000))
+      tap(buffer)
       continuation.resume()
     }
   }

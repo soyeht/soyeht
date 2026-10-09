@@ -13,7 +13,7 @@
 		};
 		"244210E48437B6556980A702" = {
 			"buildConfigurationList" = "76F8DEC3DFE0BDB465198890";
-			"packageReferences" = ( "BC4A71180870F7945155FBB0", );
+			"packageReferences" = ( "BC4A71180870F7945155FBB0", "DB0000000000000000000A01", );
 			"targets" = ( "34A04005BCAF206EEC990BD9", );
 			"developmentRegion" = "en";
 			"knownRegions" = ( "en", "Base", );
@@ -46,7 +46,7 @@
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"PRODUCT_NAME" = "Soyeht Dev";
-				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "18.0";
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"INFOPLIST_FILE" = "Info.plist";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
@@ -71,7 +71,7 @@
 		"E2AA269EB967A8853A258BFA" = {
 			"isa" = "PBXFrameworksBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ( "06A61DF042AD775E8BDD2766", );
+			"files" = ( "06A61DF042AD775E8BDD2766", "DB0000000000000000000A03", );
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
 		"2D49EBE4C1EF4247FC7BA12F" = {
@@ -105,7 +105,7 @@
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"PRODUCT_NAME" = "Soyeht Dev";
-				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "18.0";
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"INFOPLIST_FILE" = "Info.plist";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
@@ -148,6 +148,18 @@
 			"lastKnownFileType" = "folder";
 			"sourceTree" = "<group>";
 		};
+		"DB0000000000000000000A01" = {
+			"isa" = "XCLocalSwiftPackageReference";
+			"relativePath" = "../dictation";
+		};
+		"DB0000000000000000000A02" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "SoyehtDictation";
+		};
+		"DB0000000000000000000A03" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "DB0000000000000000000A02";
+		};
 		"BC4A71180870F7945155FBB0" = {
 			"isa" = "XCLocalSwiftPackageReference";
 			"relativePath" = "../shared";
@@ -182,7 +194,7 @@
 			"productType" = "com.apple.product-type.application";
 			"productReference" = "A8792157CB4F27FB949C035F";
 			"buildConfigurationList" = "175AB01246347EE3CB3AD67C";
-			"packageProductDependencies" = ( "F26350DAFE3F19AABFD69AC4", );
+			"packageProductDependencies" = ( "F26350DAFE3F19AABFD69AC4", "DB0000000000000000000A02", );
 			"productName" = "Soyeht Dev";
 			"isa" = "PBXNativeTarget";
 			"buildPhases" = ( "878A52FC5FF6A57D50B7B870", "E2AA269EB967A8853A258BFA", "41D311A605520FC7B8B9A980", "CC1D3B0234846714B0AEDA6C", );

@@ -245,11 +245,15 @@ struct AgentComposerIconButton: View {
   }
 }
 
-/// The mic: tap to dictate, tap again to stop; the transcript lands at the cursor.
+/// The mic: tap to dictate, tap again to stop; the transcript lands at the cursor. The name of
+/// the engine that listens shows above it while it listens, and for a moment after the
+/// keyboard switches engine.
 struct AgentDictationButton: View {
   let dictation: DictationController
   let style: AgentConversationStyle
+  var engines = DictationEngineStore.shared
   @State private var showsFailure = false
+  @State private var showsSwitch = false
 
   var body: some View {
     AgentComposerIconButton(
@@ -259,13 +263,46 @@ struct AgentDictationButton: View {
     .disabled(dictation.state == .authorizing)
     .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
     .accessibilityValue(dictation.isRecording ? "Recording" : "")
+    .accessibilityHint(dictation.note ?? "")
     .accessibilityIdentifier("agent-dictation")
+    .overlay(alignment: .top) { badge }
     .onChange(of: dictation.failure) { _, failure in showsFailure = failure != nil }
     .popover(isPresented: $showsFailure) {
       Text(dictation.failure ?? "").font(style.captionFont).foregroundStyle(style.ink)
         .padding(PaneInteriorMetrics.cardPadding).frame(maxWidth: 280)
         .presentationCompactAdaptation(.popover)
     }
+    .task(id: engines.switchedAt) { await flashSwitch() }
+    .background { engineShortcut }
+  }
+
+  @ViewBuilder private var badge: some View {
+    if let name = badgeName {
+      Text(name).font(style.captionFont).foregroundStyle(style.secondary)
+        .fixedSize().offset(y: -AgentComposerMetrics.controlHeight / 2 - 4)
+        .allowsHitTesting(false).accessibilityHidden(true)
+    }
+  }
+
+  private var badgeName: String? {
+    if dictation.isBusy { return dictation.badge }
+    return showsSwitch ? engines.selected.badge : nil
+  }
+
+  private func flashSwitch() async {
+    guard engines.switchedAt != nil else { return }
+    showsSwitch = true
+    do { try await Task.sleep(for: .seconds(2)) } catch { return }
+    showsSwitch = false
+  }
+
+  /// A hardware keyboard on an iPad switches the engine here; the Mac does it from its menu.
+  @ViewBuilder private var engineShortcut: some View {
+    #if os(iOS)
+      Button("Switch dictation engine") { engines.cycle() }
+        .keyboardShortcut(DictationShortcut.key, modifiers: DictationShortcut.modifiers)
+        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+    #endif
   }
 }
 

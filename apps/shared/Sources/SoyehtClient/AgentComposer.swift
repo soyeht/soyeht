@@ -20,7 +20,9 @@ struct AgentComposer<HarnessControl: View>: View {
   /// The engine connection; menus and send wait for it.
   let connected: Bool
   let submit: () -> Void
-  @State private var dictation = DictationController(makeRecognizer: Self.recognizer)
+  @State private var dictation = DictationController(makeSession: {
+    DictationEngineStore.shared.session()
+  })
   @State private var caret = AgentComposerCaret()
   @State private var slash = SlashCompletionState()
 
@@ -146,10 +148,6 @@ struct AgentComposer<HarnessControl: View>: View {
     prompt = result.text
     caret.place(at: result.cursor, in: result.text)
     focus.wrappedValue = true
-  }
-
-  @MainActor private static func recognizer() -> SpeechRecognizing {
-    AppleSpeechRecognizer()
   }
 }
 

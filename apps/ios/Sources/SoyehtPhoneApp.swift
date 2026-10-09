@@ -1,4 +1,5 @@
 import SoyehtClient
+import SoyehtDictation
 import SwiftUI
 
 @main @MainActor
@@ -7,6 +8,11 @@ struct SoyehtPhoneApp: App {
   @State private var themeStore = SoyehtThemeStore.shared
   @Environment(\.scenePhase) private var phase
   private var model: PhoneModel { delegate.model }
+
+  init() {
+    DictationEngineStore.shared.install(DictationCatalogue.registry)
+  }
+
   var body: some Scene {
     WindowGroup {
       PhoneHome(model: model)

@@ -5,7 +5,7 @@ manifest dated 2026-09-03. Do not change the global default toolchain to build.
 
 Xcode 26.6, build 17F113; Swift 6.3.3. CI: `macos-26` runner and
 `DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer`.
-Applications require macOS 14 or iOS 17; the iOS build uses the Xcode SDK,
+Applications require macOS 15 or iOS 18 (ADR 0083); the iOS build uses the Xcode SDK,
 without distribution signing. Simulators belonging to other projects are not altered.
 
 Generator: Python 3.11 or later, standard library only.

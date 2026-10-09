@@ -122,7 +122,10 @@ def run_vm_measurement() -> dict:
         "-configuration", "Release", "-destination", "platform=macOS,arch=arm64",
         "-derivedDataPath", str(derived), "-clonedSourcePackagesDirPath", str(packages),
         "-skipPackagePluginValidation", "-parallel-testing-enabled", "NO",
-        "ONLY_ACTIVE_ARCH=YES", "SWIFT_ACTIVE_COMPILATION_CONDITIONS=SOYEHT_PERFORMANCE_METER",
+        "ONLY_ACTIVE_ARCH=YES",
+        # `$(inherited)` keeps the conditions the packages set for themselves; replacing them
+        # breaks swift-crypto, which the dictation engine's dependencies pull in.
+        "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) SOYEHT_PERFORMANCE_METER",
         "CODE_SIGN_STYLE=Automatic", f"SOYEHT_APP_BUNDLE_ID={METER_BUNDLE_ID}",
     ]
     environment = os.environ.copy()

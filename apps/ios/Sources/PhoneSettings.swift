@@ -6,6 +6,7 @@ struct PhoneSettings: View {
   @Bindable var client: EngineClient
   @Environment(\.dismiss) private var dismiss
   @State private var selectedProvider: UsageProvider?
+  @State private var scrolledTo: String?
 
   var body: some View {
     NavigationStack {
@@ -23,9 +24,12 @@ struct PhoneSettings: View {
             rings
             if let reading = selectedReading { PhoneUsageDetail(reading: reading) }
           }
+          dictation.id(Self.dictationSection)
         }
+        .scrollTargetLayout()
         .padding(20)
       }
+      .scrollPosition(id: $scrolledTo)
       .background(PhonePalette.canvas)
       .foregroundStyle(PhonePalette.ink)
       .navigationTitle("Settings")
@@ -41,11 +45,27 @@ struct PhoneSettings: View {
           .accessibilityIdentifier("usage-refresh")
         }
       }
-      .onAppear { chooseProvider() }
+      .onAppear {
+        chooseProvider()
+        // The shortcut sent the person here to install an engine.
+        if DictationEngineStore.shared.installPrompt != nil { scrolledTo = Self.dictationSection }
+      }
       .onChange(of: client.usageReadings.map(\.provider)) { _, _ in chooseProvider() }
       .task { await refreshPeriodically() }
     }
     .tint(PhonePalette.accent)
+  }
+
+  private static let dictationSection = "dictation"
+
+  private var dictation: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Dictation").font(.title2.bold())
+      Text(DictationPreferencesView.summary)
+        .font(.subheadline)
+        .foregroundStyle(PhonePalette.secondary)
+      DictationPreferencesView(store: .shared, style: .standard)
+    }
   }
 
   private var rings: some View {

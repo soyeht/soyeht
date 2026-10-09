@@ -9,6 +9,7 @@ import Testing
   var finished = 0
   var cancelled = 0
   var startError: Error?
+  private(set) var startedWith: SpeechSessionOptions?
   private(set) var emit: (@MainActor (SpeechEvent) -> Void)?
 
   func authorize() async -> DictationAuthorization {
@@ -16,8 +17,11 @@ import Testing
     return access
   }
 
-  func start(onEvent: @escaping @MainActor (SpeechEvent) -> Void) throws {
+  func start(
+    _ options: SpeechSessionOptions, onEvent: @escaping @MainActor (SpeechEvent) -> Void
+  ) throws {
     if let startError { throw startError }
+    startedWith = options
     emit = onEvent
   }
 
