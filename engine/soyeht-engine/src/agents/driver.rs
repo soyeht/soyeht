@@ -1,4 +1,7 @@
-use super::{Changes, native_error, questions, responses, state::Phase, transcript, updates};
+use super::{
+    Changes, native_error, purpose::Purpose, questions, responses, state::Phase, transcript,
+    updates,
+};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -419,6 +422,9 @@ impl Core {
 
     pub fn poll_agent(&mut self, pane: &str) -> Result<()> {
         if self.agents[pane].state.phase == Phase::Faulted {
+            // A sign-in can finish after its agent stopped; the person's
+            // completed sign-in must still bring the agent back.
+            self.poll_agent_authentication(pane)?;
             return self.close_agent_processes(pane);
         }
         inject_per_pane_poll_failure(self, pane)?;
@@ -669,7 +675,7 @@ impl Core {
             &mut changes,
             "session/prompt",
             payload,
-            &prompt.prompt_id,
+            &Purpose::identified(&prompt.prompt_id),
             self.now_ms(),
         )?;
         saved.pane.state = PaneState::Working;

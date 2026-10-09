@@ -55,7 +55,8 @@ loads, renders, scripts, screenshots, or stores a page.
 The client handshake gains an optional generated capability list. The Mac app
 advertises `web_host`; CLI, MCP, phone, and older clients do not. At most one
 live local-human connection may hold that capability in v1. A second claim is
-rejected until the first connection closes. This avoids selecting a host by a
+rejected with `web_host_unavailable` until the first connection closes; the
+client then connects without the claim instead of retrying it. This avoids selecting a host by a
 free-form client-name string.
 
 The live host connection owns every web pane for that engine. On reconnect it

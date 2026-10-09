@@ -48,6 +48,29 @@ fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
     Ok(())
 }
 
+/// A client that reconnects with stale credentials leaves no other trace than
+/// its refused handshakes. The record names the client it declared (only when
+/// that is a plain label) and the engine's own fixed reason, never a credential.
+fn refused_handshake_record(connection: &str, params: &Value, error: &errors::Error) -> Value {
+    let client = params["client"].as_str().filter(|name| {
+        (1..=32).contains(&name.len())
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    });
+    json!({
+        "event": "engine.handshake_refused",
+        "connectionId": connection,
+        "client": client,
+        "kind": errors::kind(error),
+        "reason": error.to_string(),
+    })
+}
+
+fn log_refused_handshake(connection: &str, params: &Value, error: &errors::Error) {
+    eprintln!("{}", refused_handshake_record(connection, params, error));
+}
+
 fn uses_native_rpc_result(method: &str) -> bool {
     matches!(method, "pane.config.set" | "pane.harness.switch")
 }
@@ -188,16 +211,7 @@ impl Core {
             pane_id,
         };
         if wants_web_host {
-            if actor.role != Role::HumanLocal {
-                return Err(errors::unauthorized(
-                    "Web host capability requires a local human connection",
-                ));
-            }
-            if self.clients.iter().any(|(id, client)| {
-                id != connection && client.web_host && !client.outbox.is_closed()
-            }) {
-                return Err(errors::unauthorized("A web host is already connected"));
-            }
+            self.claim_web_host(connection, &actor.role)?;
         }
         let client = errors::invariant(
             self.clients.get_mut(connection),
@@ -215,6 +229,25 @@ impl Core {
             db_id: self.store.db_id.clone(),
         })
         .map_err(|_| errors::internal("Welcome response serialization failed"))
+    }
+
+    /// Only a local human connection may host the browser, and only one at a time.
+    fn claim_web_host(&self, connection: &str, role: &Role) -> Result<()> {
+        if *role != Role::HumanLocal {
+            return Err(errors::unauthorized(
+                "Web host capability requires a local human connection",
+            ));
+        }
+        let taken = self
+            .clients
+            .iter()
+            .any(|(id, client)| id != connection && client.web_host && !client.outbox.is_closed());
+        if taken {
+            return Err(errors::web_host_unavailable(
+                "A web host is already connected",
+            ));
+        }
+        Ok(())
     }
 
     fn agent_identity(&self, candidate: &str) -> Result<(Role, String)> {
@@ -357,7 +390,9 @@ impl Core {
             "pane.input" => self.pane_input(connection, params)?,
             "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
             "pane.role.set" => self.pane_role_set(connection, params)?,
-            "pane.auth.start" => self.agent_auth_start(connection, params)?,
+            "pane.auth.start" | "pane.auth.cancel" | "pane.auth.logout" => {
+                self.agent_auth(connection, method, params)?
+            }
             method if method.starts_with("harness.custom.") => {
                 self.agent_custom_harness(connection, method, params)?
             }
@@ -407,19 +442,8 @@ impl Core {
             "task.create" | "task.update" | "task.comment" | "task.subitem.add"
             | "task.subitem.done" | "task.block" | "task.release" | "task.complete"
             | "task.unblock" | "task.move" => return self.task_author(connection, method, params),
-            "pane.stream.subscribe" => {
-                self.subscribe_stream(connection, request_id, params)?;
-                return Ok(Outcome::Queued);
-            }
-            "pane.stream.unsubscribe" => {
-                let pane_id = errors::param_str(params, "paneId")?;
-                errors::invariant(
-                    self.clients.get_mut(connection),
-                    "Stream connection disappeared",
-                )?
-                .streams
-                .remove(pane_id);
-                json!({})
+            "pane.stream.subscribe" | "pane.stream.unsubscribe" => {
+                return self.stream_request(connection, request_id, method, params);
             }
             "engine.status" => {
                 json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION},"reachability":self.reachability})
@@ -495,7 +519,10 @@ impl Core {
         soyeht_protocol::validate::parameters(method, &params)
             .map_err(|error| errors::invalid(error.to_string()))?;
         if method == "hello" {
-            return self.hello(connection, &params).map(Outcome::Reply);
+            return self
+                .hello(connection, &params)
+                .map(Outcome::Reply)
+                .inspect_err(|error| log_refused_handshake(connection, &params, error));
         }
         if method.starts_with("pair.") {
             return self
@@ -662,5 +689,41 @@ mod experiment_consent_tests {
             soyeht_protocol::ErrorKind::ForbiddenRole
         );
         assert!(requires_signed_ui("pane.focus", false).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_refused_handshake_names_a_plain_client_and_never_a_credential() {
+        let params = json!({
+            "client": "soyeht-mcp",
+            "binding": "secret-binding",
+            "deviceToken": "secret-token",
+            "proof": "secret-proof",
+        });
+        let record = refused_handshake_record(
+            "connection",
+            &params,
+            &errors::unauthorized("Unknown agent binding"),
+        );
+        assert_eq!(record["client"], "soyeht-mcp");
+        assert_eq!(record["kind"], "unauthorized");
+        assert_eq!(record["reason"], "Unknown agent binding");
+        assert!(!record.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn a_client_label_that_is_not_plain_is_not_logged() {
+        for label in ["", "has space", "path/like", "x".repeat(33).as_str()] {
+            let record = refused_handshake_record(
+                "connection",
+                &json!({"client": label}),
+                &errors::unauthorized("Unknown or revoked device"),
+            );
+            assert!(record["client"].is_null(), "{label}");
+        }
     }
 }

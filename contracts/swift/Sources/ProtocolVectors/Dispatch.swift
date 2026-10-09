@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
+// Generated from contracts/protocol.json (sha256 86163c4943d4c00eb533814aa70563128fb1b344f92106e72c189d8eadc08963). Do not edit.
 import Foundation
 import SoyehtProtocol
 
@@ -169,6 +169,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PermissionPresentation": return try codec(SoyehtProtocol.PermissionPresentation.self, data)
         case "PermissionRequest": return try codec(SoyehtProtocol.PermissionRequest.self, data)
         case "ElicitationRequest": return try codec(SoyehtProtocol.ElicitationRequest.self, data)
+        case "AgentLoginPhase": return try codec(SoyehtProtocol.AgentLoginPhase.self, data)
+        case "AgentLoginProgress": return try codec(SoyehtProtocol.AgentLoginProgress.self, data)
         case "AgentHarnessSwitch": return try codec(SoyehtProtocol.AgentHarnessSwitch.self, data)
         case "AgentSession": return try codec(SoyehtProtocol.AgentSession.self, data)
         case "AgentCommand": return try codec(SoyehtProtocol.AgentCommand.self, data)
@@ -228,6 +230,10 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "PaneHarnessSwitchFailedEvent": return try codec(SoyehtProtocol.PaneHarnessSwitchFailedEvent.self, data)
         case "PaneAuthStartParams": return try codec(SoyehtProtocol.PaneAuthStartParams.self, data)
         case "PaneAuthStartResult": return try codec(SoyehtProtocol.PaneAuthStartResult.self, data)
+        case "PaneAuthCancelParams": return try codec(SoyehtProtocol.PaneAuthCancelParams.self, data)
+        case "PaneAuthCancelResult": return try codec(SoyehtProtocol.PaneAuthCancelResult.self, data)
+        case "PaneAuthLogoutParams": return try codec(SoyehtProtocol.PaneAuthLogoutParams.self, data)
+        case "PaneAuthLogoutResult": return try codec(SoyehtProtocol.PaneAuthLogoutResult.self, data)
         case "PaneTranscriptParams": return try codec(SoyehtProtocol.PaneTranscriptParams.self, data)
         case "PaneTranscriptResult": return try codec(SoyehtProtocol.PaneTranscriptResult.self, data)
         case "PaneDraftParams": return try codec(SoyehtProtocol.PaneDraftParams.self, data)

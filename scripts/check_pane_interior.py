@@ -25,12 +25,15 @@ INTERIOR_FILES = (
     "apps/shared/Sources/SoyehtClient/AgentConversationCards.swift",
     "apps/shared/Sources/SoyehtClient/AgentConversationStyle.swift",
     "apps/shared/Sources/SoyehtClient/AgentPermissionModeMenu.swift",
+    "apps/shared/Sources/SoyehtClient/AgentAccountPanel.swift",
+    "apps/shared/Sources/SoyehtClient/AgentSignInCard.swift",
     "apps/shared/Sources/SoyehtClient/AgentPaneTickerView.swift",
     "apps/shared/Sources/SoyehtClient/AgentSubagents.swift",
     "apps/shared/Sources/SoyehtClient/PermissionPresentationView.swift",
     "apps/shared/Sources/SoyehtClient/PaneInteriorControls.swift",
     "apps/shared/Sources/SoyehtClient/SlashCompletionList.swift",
     "apps/mac/Sources/AgentHarnessPicker.swift",
+    "apps/mac/Sources/AgentHarnessSwitchPicker.swift",
     "apps/mac/Sources/PaneHarnessControl.swift",
     "apps/mac/Sources/EditorFindBar.swift",
     "apps/mac/Sources/EditorHistoryViews.swift",
@@ -48,7 +51,6 @@ INTERIOR_TYPES = {
     "apps/mac/Sources/WorkspaceWindow.swift": (
         "PaneCard",
         "NewPaneSheet",
-        "AgentHarnessSwitchPicker",
     ),
 }
 

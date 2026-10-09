@@ -1,5 +1,7 @@
 use super::{
-    Changes, registry, responses,
+    Changes,
+    purpose::Purpose,
+    registry, responses,
     state::{Phase, State},
 };
 use crate::{
@@ -80,13 +82,15 @@ fn verified_terminal_auth_argv(
 }
 
 fn auth_pane_created(
-    agent_id: &str,
-    child_id: &str,
-    pane: &soyeht_protocol::Pane,
+    agent: &soyeht_protocol::Pane,
+    child: &soyeht_protocol::Pane,
 ) -> (Value, Vec<(String, Value)>) {
     (
-        json!({"paneId":agent_id,"terminalPaneId":child_id}),
-        vec![("pane.created".into(), json!({"pane":pane}))],
+        json!({"paneId":agent.pane_id,"terminalPaneId":child.pane_id}),
+        vec![
+            ("pane.created".into(), json!({"pane":child})),
+            ("pane.updated".into(), json!({"pane":agent})),
+        ],
     )
 }
 
@@ -97,17 +101,71 @@ fn embedded_auth(state: &mut super::state::State, method_id: &str, now_ms: i64) 
         &mut changes,
         "authenticate",
         json!({"methodId":method_id}),
-        "auth",
+        &Purpose::Authenticate,
         now_ms,
     )?;
     Ok(changes)
 }
 
+/// The terminal pane that runs a sign-in beside its agent, and the process it spawns.
+fn login_terminal(
+    agent: &soyeht_protocol::Pane,
+    state: &State,
+    argv: Vec<String>,
+    method_env: std::collections::BTreeMap<String, String>,
+) -> (StoredPane, Spawn) {
+    let mut pane = agent.clone();
+    pane.pane_id = Uuid::new_v4().to_string();
+    pane.agent = None;
+    pane.name = format!("Sign in — {}", state.launch.name);
+    pane.mode = PaneMode::Terminal;
+    pane.state = PaneState::Starting;
+    pane.source = StateSource::None;
+    pane.confidence = 0.0;
+    pane.phrase = "Starting sign-in terminal".into();
+    pane.generation = 1;
+    pane.pid = None;
+    pane.stream_id = Some(Uuid::new_v4().to_string());
+    pane.record = false;
+    let child = StoredPane {
+        pane,
+        closed: false,
+        instance_key: Uuid::new_v4().to_string(),
+        instance_id: None,
+        supervisor_id: None,
+        sequence_base: 0,
+    };
+    let mut environment =
+        super::environment::launch_environment_with(state.launch.environment.as_deref());
+    environment.extend(method_env);
+    let launch = Spawn {
+        instance_key: child.instance_key.clone(),
+        generation: 1,
+        kind: ProcessKind::Pty,
+        cwd: child.pane.cwd.clone(),
+        argv,
+        env: environment,
+        cols: child.pane.cols as u16,
+        rows: child.pane.rows as u16,
+    };
+    (child, launch)
+}
+
 impl Core {
+    /// `pane.auth.start`, `pane.auth.cancel` and `pane.auth.logout`.
+    pub fn agent_auth(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
+        match method {
+            "pane.auth.cancel" => self.agent_auth_cancel(connection, params),
+            "pane.auth.logout" => self.agent_auth_logout(connection, params),
+            _ => self.agent_auth_start(connection, params),
+        }
+    }
+
     pub fn agent_auth_start(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let id = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(id)?;
-        if !state.auth_required && state.phase != Phase::NeedsLogin {
+        let relogin = state.is_signed_in();
+        if !state.auth_required && state.phase != Phase::NeedsLogin && !relogin {
             return Err(errors::invalid("Sign-in is not required for this pane"));
         }
         if let Some(pane) = state.login_pane_id.as_ref().filter(|pane| {
@@ -126,8 +184,16 @@ impl Core {
                 )?
                 .result);
         }
-        if state.client.pending.values().any(|c| c.context == "auth") {
+        if state
+            .client
+            .pending
+            .values()
+            .any(|c| Purpose::parse(&c.context) == Purpose::Authenticate)
+        {
             return Err(errors::pane_busy("Sign-in is already pending"));
+        }
+        if relogin {
+            state.account_busy()?;
         }
         let methods = &state
             .initialized
@@ -137,13 +203,15 @@ impl Core {
         let method = methods
             .iter()
             .find(|m| {
-                params["authMethodId"]
-                    .as_str()
-                    .is_none_or(|id| m.public.id == id)
+                // A working session is only ever re-signed in through a terminal.
+                (!relogin || m.kind == AuthKind::Terminal)
+                    && params["authMethodId"]
+                        .as_str()
+                        .is_none_or(|id| m.public.id == id)
             })
             .cloned()
             .ok_or_else(|| errors::invalid("Authentication method is not offered"))?;
-        if method.kind == AuthKind::Agent {
+        if method.kind == AuthKind::Agent && !relogin {
             let changes = embedded_auth(&mut state, &method.public.id, self.now_ms())?;
             return Ok(self
                 .commit_agent(
@@ -162,52 +230,25 @@ impl Core {
         // runner and pinned package. Refuse a stale or replaced launch before
         // creating a terminal pane or spawning any process.
         let argv = verified_terminal_auth_argv(&self.directory, &state, method.args.clone())?;
-        let child_id = Uuid::new_v4().to_string();
-        let mut pane = self.panes[id].stored.pane.clone();
-        pane.pane_id = child_id.clone();
-        pane.agent = None;
-        pane.name = format!("Sign in — {}", state.launch.name);
-        pane.mode = PaneMode::Terminal;
-        pane.state = PaneState::Starting;
-        pane.source = StateSource::None;
-        pane.confidence = 0.0;
-        pane.phrase = "Starting sign-in terminal".into();
-        pane.generation = 1;
-        pane.pid = None;
-        pane.stream_id = Some(Uuid::new_v4().to_string());
-        pane.record = false;
-        let child = StoredPane {
-            pane,
-            closed: false,
-            instance_key: Uuid::new_v4().to_string(),
-            instance_id: None,
-            supervisor_id: None,
-            sequence_base: 0,
-        };
-        let mut environment =
-            super::environment::launch_environment_with(state.launch.environment.as_deref());
-        environment.extend(method.env);
-        let launch = Spawn {
-            instance_key: child.instance_key.clone(),
-            generation: 1,
-            kind: ProcessKind::Pty,
-            cwd: child.pane.cwd.clone(),
-            argv,
-            env: environment,
-            cols: child.pane.cols as u16,
-            rows: child.pane.rows as u16,
-        };
+        let (child, launch) = login_terminal(&self.panes[id].stored.pane, &state, argv, method.env);
+        let child_id = child.pane.pane_id.clone();
         let screen = Screen::open(&self.directory.join("sessions").join(&child_id), false)?;
         state.login_pane_id = Some(child_id.clone());
-        let generation = self.panes[id].stored.pane.generation;
+        state.relogin = relogin;
+        // The agent pane publishes the running sign-in with the terminal's creation.
+        let mut saved = self.panes[id].stored.clone();
+        saved.pane.agent = Some(state.public(self.now_ms()));
+        let generation = saved.pane.generation;
         let mutation = self.mutate(connection, "pane.auth.start", params, |tx| {
             tx.insert_pane(&child)?;
             tx.insert_pane_launch(&child_id, &launch)?;
+            crate::core::write_pane(tx, &saved)?;
             soyeht_store::agents::save_runtime(tx, id, generation, &state)?;
-            Ok(auth_pane_created(id, &child_id, &child.pane))
+            Ok(auth_pane_created(&saved.pane, &child.pane))
         })?;
         if !mutation.repeated {
             self.replace_agent_state(id, state)?;
+            errors::invariant(self.panes.get_mut(id), "Agent pane disappeared")?.stored = saved;
             self.panes.insert(
                 child_id.clone(),
                 RunningPane {
@@ -245,15 +286,32 @@ impl Core {
         if !child.closed && child.pane.state != PaneState::Dead {
             return Ok(());
         }
+        if state.relogin && (state.active.is_some() || state.operation.is_some()) {
+            // The restart that picks up the new account waits for the turn.
+            return Ok(());
+        }
         let Response::Instances(instances) = self.pty_request(Request::List)? else {
             return Err(errors::ptyd_unavailable("Invalid sign-in process registry"));
         };
-        let exited_cleanly = !child.closed
-            && instances
-                .iter()
-                .find(|i| i.spawn.instance_key == child.instance_key)
-                .is_some_and(|i| i.exit_code == Some(0));
+        let exit_code = instances
+            .iter()
+            .find(|i| i.spawn.instance_key == child.instance_key)
+            .and_then(|i| i.exit_code);
+        let exited_cleanly = !child.closed && exit_code == Some(0);
+        // The only durable account of why a sign-in process ended.
+        eprintln!(
+            "{}",
+            json!({
+                "event": "engine.sign_in_ended",
+                "paneId": id,
+                "terminalPaneId": child_id,
+                "closedByPerson": child.closed,
+                "processLost": child.pane.phrase == SIGN_IN_PROCESS_LOST,
+                "exitCode": exit_code,
+            })
+        );
         state.login_pane_id = None;
+        let relogin = std::mem::take(&mut state.relogin);
         state.last_update_ms = self.now_ms();
         let mut changes = Changes::default();
         if exited_cleanly {
@@ -262,13 +320,15 @@ impl Core {
             state.phase = Phase::RestartAfterProbe;
             changes.clear_failed_probes = true;
         } else {
-            state.auth_required = true;
-            state.phase = Phase::NeedsLogin;
-            changes.events.push(auth_finished(
-                id,
-                false,
-                "Sign-in failed or was interrupted. Review its terminal, then sign in again.",
-            ));
+            if !relogin {
+                state.auth_required = true;
+                if state.phase != Phase::Faulted {
+                    state.phase = Phase::NeedsLogin;
+                }
+            }
+            changes
+                .events
+                .push(auth_finished(id, false, unfinished_reason(&child)));
         }
         self.commit_agent(
             self.panes[id].stored.clone(),
@@ -321,7 +381,21 @@ impl Core {
     }
 }
 
-fn auth_finished(id: &str, ok: bool, reason: &str) -> (String, Value) {
+/// The phrase of a sign-in terminal whose process the supervisor no longer has.
+pub(crate) const SIGN_IN_PROCESS_LOST: &str = "Sign-in process was lost";
+
+/// What the person is told when a sign-in ends without signing in.
+fn unfinished_reason(terminal: &StoredPane) -> &'static str {
+    if terminal.closed {
+        "The sign-in terminal was closed before sign-in finished. Sign in again."
+    } else if terminal.pane.phrase == SIGN_IN_PROCESS_LOST {
+        "Sign-in stopped because Soyeht's background services restarted. Sign in again."
+    } else {
+        "Sign-in failed or was interrupted. Review its terminal, then sign in again."
+    }
+}
+
+pub(super) fn auth_finished(id: &str, ok: bool, reason: &str) -> (String, Value) {
     (
         "pane.auth_finished".into(),
         json!({"paneId":id,"ok":ok,"reason":reason}),

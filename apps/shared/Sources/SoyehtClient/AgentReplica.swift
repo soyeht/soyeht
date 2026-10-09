@@ -25,6 +25,8 @@ public struct AgentPaneView: Sendable {
   public var hasOlderMessages: Bool { nextTranscriptCursor != nil }
   public var notice: String?
   public var authMethods: [AuthMethod] = []
+  /// Why the last sign-in did not finish; cleared when the next one starts or succeeds.
+  public var signInFailure: String?
   public var harnessSwitch: AgentHarnessSwitchView?
 
   public init() {}
@@ -339,11 +341,10 @@ extension EngineClient {
       refreshHarnesses()
     case .paneAuthFinished:
       let event = try params.decoded(PaneAuthFinishedEvent.self)
-      if event.ok {
-        agentPanes[event.paneId, default: AgentPaneView()].authMethods = []
-      } else {
-        agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
-      }
+      var view = agentPanes[event.paneId, default: AgentPaneView()]
+      if event.ok { view.authMethods = [] }
+      view.signInFailure = event.ok ? nil : event.reason
+      agentPanes[event.paneId] = view
       refreshHarnesses()
     case .paneConfigFailed:
       let event = try params.decoded(PaneConfigFailedEvent.self)
@@ -779,17 +780,6 @@ extension EngineClient {
       _ = try await self.mutation(
         "pane.queue.resume",
         PaneQueueResumeParams(paneId: paneId, idempotencyKey: UUID().uuidString))
-    }
-  }
-
-  public func startAgentAuthentication(_ paneId: String, methodId: String?) {
-    perform {
-      let result = try await self.mutation(
-        "pane.auth.start",
-        PaneAuthStartParams(
-          paneId: paneId, authMethodId: methodId, idempotencyKey: UUID().uuidString)
-      ).decoded(PaneAuthStartResult.self)
-      if let terminal = result.terminalPaneId { self.select(terminal) }
     }
   }
 }

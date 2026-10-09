@@ -1,5 +1,6 @@
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     model::{self, Subscription},
 };
@@ -9,7 +10,29 @@ use soyeht_store::segments::Record;
 use std::sync::{Arc, atomic::AtomicBool};
 
 impl Core {
-    pub fn subscribe_stream(&mut self, connection: &str, id: Value, params: &Value) -> Result<()> {
+    /// Routes `pane.stream.subscribe` and `pane.stream.unsubscribe`.
+    pub fn stream_request(
+        &mut self,
+        connection: &str,
+        request_id: Value,
+        method: &str,
+        params: &Value,
+    ) -> Result<Outcome> {
+        if method == "pane.stream.subscribe" {
+            self.subscribe_stream(connection, request_id, params)?;
+            return Ok(Outcome::Queued);
+        }
+        let pane_id = errors::param_str(params, "paneId")?;
+        errors::invariant(
+            self.clients.get_mut(connection),
+            "Stream connection disappeared",
+        )?
+        .streams
+        .remove(pane_id);
+        Ok(Outcome::Reply(json!({})))
+    }
+
+    fn subscribe_stream(&mut self, connection: &str, id: Value, params: &Value) -> Result<()> {
         let pane_id = errors::param_str(params, "paneId")?;
         let running = self
             .panes

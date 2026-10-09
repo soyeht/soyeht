@@ -198,7 +198,9 @@ answered by any permission mode),
 `pane.switch_harness {harness, model?, effort?}` → `{switchId}`,
 `loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`,
 `pane.role.set {role: "chief"|"worker"}`,
-`pane.auth.start` → opens login (contract 04 §7); event `pane.auth_finished`,
+`pane.auth.start` → opens login or, on a signed-in pane, an account switch (contract 04 §7);
+`pane.auth.cancel` stops a running sign-in; `pane.auth.logout` signs out an agent that supports it;
+event `pane.auth_finished`,
 `pane.transcript {before?, limit}` → normalized messages with `role,
 localId, generation, seq, complete`,
 `pane.stream.subscribe {paneId, from: "tail" | {streamId, offset}}` /
@@ -280,7 +282,7 @@ executable schema carry no state cursor and never enter replay.
   `pane.harness_switch_failed {switchId, from, to, reason, restored: bool}`
 - `pane.session_lost {reason, recovery: resumed|new_session|needs_login}`.
   Slice 4 adds `new_session_with_package` together with continuation packages.
-- `pane.needs_login`, `pane.auth_finished {ok}`
+- `pane.needs_login`, `pane.auth_finished {ok, reason}`
 - `loop.tick {paneId, round, of}`, `loop.stopped {paneId, reason}`
 - `task.created`, `task.moved {actor, from, to, reason}`, `task.claimed
   {paneId, attempt}`, `task.released {reason, attempt}`, `task.commented`,

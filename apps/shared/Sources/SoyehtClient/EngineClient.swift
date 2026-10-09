@@ -114,6 +114,7 @@ public final class EngineClient {
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
+  @ObservationIgnored private var webHostRefused = false
   /// True for a paired iPhone or iPad. A paired device is a full remote control of the Mac;
   /// this only selects its transport, handshake and background behavior, never fewer powers.
   public var pairedDevice: Bool { credential != nil }
@@ -173,23 +174,30 @@ public final class EngineClient {
   public func start() {
     guard lifecycle == nil else { return }
     lifecycle = Task { [weak self] in
+      var backoff = ReconnectBackoff()
       while !Task.isCancelled {
         guard let self else { return }
-        do { try await self.session() } catch {
+        do {
+          try await self.session()
+          backoff.reset()
+        } catch {
           self.connectionText = error.localizedDescription
-          if case ClientFailure.remote(let kind, _, _) = error,
-            self.pairedDevice
+          if case ClientFailure.remote(let kind, _, _) = error {
+            // Another Mac app already hosts the browser: connect without claiming it.
+            if kind == ErrorKind.web_host_unavailable.rawValue { self.webHostRefused = true }
+            if self.pairedDevice
               && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
                 .contains(kind)
-          {
-            self.credentialRejected = true
-            self.disconnect()
-            return
+            {
+              self.credentialRejected = true
+              self.disconnect()
+              return
+            }
           }
         }
         if Task.isCancelled { break }
         self.disconnect()
-        do { try await Task.sleep(for: .seconds(1)) } catch { break }
+        do { try await Task.sleep(for: backoff.next()) } catch { break }
       }
     }
   }
@@ -281,7 +289,7 @@ public final class EngineClient {
     } else {
       hello = HelloParams(
         client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1,
-        capabilities: webHost == nil ? nil : [.web_host])
+        capabilities: webHost == nil || webHostRefused ? nil : [.web_host])
     }
     let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
     guard welcome.role == (pairedDevice ? .human_device : .human_local),
@@ -989,18 +997,5 @@ public final class EngineClient {
   }
   func perform(_ action: @escaping @MainActor () async throws -> Void) {
     Task { do { try await action() } catch { self.problem = error.localizedDescription } }
-  }
-}
-
-private func responseAttachmentReference(
-  method: String, result: JsonValue
-) throws -> AttachmentRef? {
-  switch method {
-  case "writing.asset.read", "web.screenshot":
-    return try result["image"].decoded(AttachmentRef.self)
-  case "web.snapshot" where result["screenshot"] != .null:
-    return try result["screenshot"].decoded(AttachmentRef.self)
-  default:
-    return nil
   }
 }

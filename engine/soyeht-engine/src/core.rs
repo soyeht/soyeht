@@ -488,11 +488,19 @@ impl Core {
             return self.save_runtime(id, stopped);
         }
         let auth_launch = StorePort::has_pane_launch(&self.store, id).map_err(errors::storage)?;
+        if auth_launch && saved.pane.state == PaneState::Dead {
+            // Already reported lost; a sign-in terminal is never started again by recovery.
+            return Ok(());
+        }
         if auth_launch && saved.instance_id.is_some() {
+            // The pane keeps its output for review but no longer names a process the
+            // supervisor does not have, which would fail every output poll after it.
             let mut stopped = saved;
             stopped.pane.pid = None;
+            stopped.instance_id = None;
+            stopped.supervisor_id = None;
             stopped.pane.state = PaneState::Dead;
-            stopped.pane.phrase = "Sign-in process was lost".into();
+            stopped.pane.phrase = crate::agents::authentication::SIGN_IN_PROCESS_LOST.into();
             return self.save_runtime(id, stopped);
         }
         if saved.instance_id.is_some() {

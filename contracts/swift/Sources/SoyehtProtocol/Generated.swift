@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
+// Generated from contracts/protocol.json (sha256 86163c4943d4c00eb533814aa70563128fb1b344f92106e72c189d8eadc08963). Do not edit.
 import Foundation
 
 
@@ -1745,6 +1745,21 @@ public struct ElicitationRequest: Codable, Sendable {
     }
 }
 
+public enum AgentLoginPhase: String, Codable, Sendable {
+    case `waiting` = "waiting"
+    case `verifying` = "verifying"
+    case `signing_out` = "signing_out"
+}
+
+public struct AgentLoginProgress: Codable, Sendable {
+    public var `phase`: AgentLoginPhase
+    public var `terminalPaneId`: Id?
+    public init(`phase`: AgentLoginPhase, `terminalPaneId`: Id? = nil) {
+        self.`phase` = `phase`
+        self.`terminalPaneId` = `terminalPaneId`
+    }
+}
+
 public struct AgentHarnessSwitch: Codable, Sendable {
     public var `fromHarness`: Id
     public var `toHarness`: Id
@@ -1769,7 +1784,10 @@ public struct AgentSession: Codable, Sendable {
     public var `queuePaused`: Bool?
     public var `role`: AgentPaneRole
     public var `harnessSwitch`: AgentHarnessSwitch?
-    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `silentSince`: String? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil) {
+    public var `login`: AgentLoginProgress?
+    public var `reauthMethods`: [AuthMethod]?
+    public var `canSignOut`: Bool?
+    public init(`harness`: Id, `version`: String, `fingerprint`: String, `sessionId`: Id? = nil, `options`: [ConfigOption], `authMethods`: [AuthMethod], `operation`: ConfigOperation? = nil, `queue`: [QueuedPromptSummary], `draft`: Bool, `activePromptId`: Id? = nil, `silentSince`: String? = nil, `queuePaused`: Bool? = nil, `role`: AgentPaneRole, `harnessSwitch`: AgentHarnessSwitch? = nil, `login`: AgentLoginProgress? = nil, `reauthMethods`: [AuthMethod]? = nil, `canSignOut`: Bool? = nil) {
         self.`harness` = `harness`
         self.`version` = `version`
         self.`fingerprint` = `fingerprint`
@@ -1784,6 +1802,9 @@ public struct AgentSession: Codable, Sendable {
         self.`queuePaused` = `queuePaused`
         self.`role` = `role`
         self.`harnessSwitch` = `harnessSwitch`
+        self.`login` = `login`
+        self.`reauthMethods` = `reauthMethods`
+        self.`canSignOut` = `canSignOut`
     }
 }
 
@@ -2496,6 +2517,38 @@ public struct PaneAuthStartResult: Codable, Sendable {
     public init(`paneId`: Id, `terminalPaneId`: Id? = nil) {
         self.`paneId` = `paneId`
         self.`terminalPaneId` = `terminalPaneId`
+    }
+}
+
+public struct PaneAuthCancelParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneAuthCancelResult: Codable, Sendable {
+    public var `paneId`: Id
+    public init(`paneId`: Id) {
+        self.`paneId` = `paneId`
+    }
+}
+
+public struct PaneAuthLogoutParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `idempotencyKey`: Id
+    public init(`paneId`: Id, `idempotencyKey`: Id) {
+        self.`paneId` = `paneId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct PaneAuthLogoutResult: Codable, Sendable {
+    public var `paneId`: Id
+    public init(`paneId`: Id) {
+        self.`paneId` = `paneId`
     }
 }
 

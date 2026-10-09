@@ -37,3 +37,17 @@ struct ResponseAttachmentAssembly {
     bytes.removeAll(keepingCapacity: false)
   }
 }
+
+/// The attachment a response carries after its JSON, by the method that returns one.
+func responseAttachmentReference(
+  method: String, result: JsonValue
+) throws -> AttachmentRef? {
+  switch method {
+  case "writing.asset.read", "web.screenshot":
+    return try result["image"].decoded(AttachmentRef.self)
+  case "web.snapshot" where result["screenshot"] != .null:
+    return try result["screenshot"].decoded(AttachmentRef.self)
+  default:
+    return nil
+  }
+}

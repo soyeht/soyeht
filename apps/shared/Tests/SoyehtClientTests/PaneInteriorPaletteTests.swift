@@ -141,6 +141,22 @@ func paneInteriorTextIsReadableInEveryPalette(theme: TerminalColorTheme) {
       return counts
     }
 
+    /// Renders one design shot, expects no white pixel, and writes the PNG into
+    /// `SOYEHT_DESIGN_SHOTS_DIR` when it is set. Returns the pixel counts for more checks.
+    static func shot(
+      _ name: String, _ view: some View, size: CGSize, theme: TerminalColorTheme
+    ) throws -> [UInt32: Int] {
+      let image = try #require(Self.bitmap(view, size: size))
+      let pixels = histogram(image)
+      #expect(share(of: "#FFFFFF", in: pixels) == 0, "\(theme) \(name)")
+      if let directory = ProcessInfo.processInfo.environment["SOYEHT_DESIGN_SHOTS_DIR"] {
+        let url = URL(fileURLWithPath: directory).appendingPathComponent(
+          "\(name)-\(theme.rawValue).png")
+        try image.representation(using: .png, properties: [:])?.write(to: url)
+      }
+      return pixels
+    }
+
     /// For each pixel row of two same-sized renders, whether the rows are identical.
     static func rowsEqual(_ first: NSBitmapImageRep, _ second: NSBitmapImageRep) -> [Bool] {
       guard let a = first.bitmapData, let b = second.bitmapData,

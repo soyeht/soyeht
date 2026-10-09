@@ -738,7 +738,7 @@ mod tests {
         let Err(duplicate) = duplicate else {
             panic!("second web host should be rejected")
         };
-        assert_eq!(errors::kind(&duplicate), ErrorKind::Unauthorized);
+        assert_eq!(errors::kind(&duplicate), ErrorKind::WebHostUnavailable);
         let (sender, mut receiver) = outbox::channel();
         let remote = core.connect(false, false, sender).unwrap();
         let _ = next_json(&mut receiver).await;

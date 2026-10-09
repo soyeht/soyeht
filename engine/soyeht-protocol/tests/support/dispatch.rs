@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
+// Generated from contracts/protocol.json (sha256 86163c4943d4c00eb533814aa70563128fb1b344f92106e72c189d8eadc08963). Do not edit.
 fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
     match name {
         "JsonValue" => roundtrip::<JsonValue>(value),
@@ -166,6 +166,8 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PermissionPresentation" => roundtrip::<PermissionPresentation>(value),
         "PermissionRequest" => roundtrip::<PermissionRequest>(value),
         "ElicitationRequest" => roundtrip::<ElicitationRequest>(value),
+        "AgentLoginPhase" => roundtrip::<AgentLoginPhase>(value),
+        "AgentLoginProgress" => roundtrip::<AgentLoginProgress>(value),
         "AgentHarnessSwitch" => roundtrip::<AgentHarnessSwitch>(value),
         "AgentSession" => roundtrip::<AgentSession>(value),
         "AgentCommand" => roundtrip::<AgentCommand>(value),
@@ -225,6 +227,10 @@ fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {
         "PaneHarnessSwitchFailedEvent" => roundtrip::<PaneHarnessSwitchFailedEvent>(value),
         "PaneAuthStartParams" => roundtrip::<PaneAuthStartParams>(value),
         "PaneAuthStartResult" => roundtrip::<PaneAuthStartResult>(value),
+        "PaneAuthCancelParams" => roundtrip::<PaneAuthCancelParams>(value),
+        "PaneAuthCancelResult" => roundtrip::<PaneAuthCancelResult>(value),
+        "PaneAuthLogoutParams" => roundtrip::<PaneAuthLogoutParams>(value),
+        "PaneAuthLogoutResult" => roundtrip::<PaneAuthLogoutResult>(value),
         "PaneTranscriptParams" => roundtrip::<PaneTranscriptParams>(value),
         "PaneTranscriptResult" => roundtrip::<PaneTranscriptResult>(value),
         "PaneDraftParams" => roundtrip::<PaneDraftParams>(value),

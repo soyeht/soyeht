@@ -95,6 +95,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
 
   private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
   private var view: AgentPaneView { client.agentPanes[paneId] ?? AgentPaneView() }
+  private var signIn: AgentSignInState {
+    AgentSignInState(
+      agent: pane?.agent, authMethods: view.authMethods, failure: view.signInFailure)
+  }
   private var inset: CGFloat {
     style.canonicalLayout ? PaneInteriorMetrics.cardPadding : PaneInteriorMetrics.phoneInset
   }
@@ -105,7 +109,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
       if let silentSince = pane?.agent?.silentSince {
         noOutput(since: silentSince, state: pane?.state)
       }
-      if !view.authMethods.isEmpty { authentication }
+      if signIn != .hidden {
+        AgentSignInCard(
+          client: client, paneId: paneId, state: signIn, style: style, inset: inset)
+      }
       if let permission = view.permission {
         AgentPermissionCard(client: client, request: permission, style: style)
           .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
@@ -285,44 +292,6 @@ extension AgentConversationView where HarnessControl == EmptyView {
       .padding(.bottom, PaneInteriorMetrics.rowSpacing)
       .accessibilityIdentifier("agent-no-output")
     }
-  }
-
-  private var authentication: some View {
-    VStack(alignment: .leading, spacing: PaneInteriorMetrics.rowSpacing) {
-      Label("Sign in to continue", systemImage: "person.badge.key")
-        .font(style.headingFont).foregroundStyle(style.warning)
-      #if os(macOS)
-        if view.authMethods.contains(where: \.terminal) {
-          Text("Choose a method to open its sign-in terminal. Enter credentials there.")
-            .font(style.captionFont).foregroundStyle(style.secondary)
-        }
-        ForEach(view.authMethods, id: \.id) { method in
-          Button {
-            client.startAgentAuthentication(paneId, methodId: method.id)
-          } label: {
-            HStack {
-              VStack(alignment: .leading, spacing: 3) {
-                Text(method.name).fontWeight(.semibold)
-                if let detail = method.description {
-                  Text(detail).font(style.captionFont).foregroundStyle(style.secondary)
-                }
-              }
-              Spacer()
-              Image(systemName: method.terminal ? "terminal" : "arrow.right.circle")
-            }
-            .padding(PaneInteriorMetrics.rowSpacing)
-            .paneInteriorFill(style.well, radius: PaneInteriorMetrics.wellRadius)
-            .contentShape(Rectangle())
-          }.buttonStyle(.plain)
-        }
-      #else
-        Text("Finish sign-in on the Mac, then return here.")
-          .font(style.captionFont).foregroundStyle(style.secondary)
-      #endif
-    }
-    .padding(PaneInteriorMetrics.cardPadding)
-    .paneInteriorFill(style.canvas)
-    .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
   }
 
   @ViewBuilder private var unavailableSteer: some View {

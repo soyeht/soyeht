@@ -80,6 +80,29 @@ struct PhoneHarnessMenu: View {
     } label: {
       Label("Check agents again", systemImage: "arrow.clockwise")
     }
+    if let pane = client.panes.first(where: { $0.paneId == paneId }),
+      let actions = AgentAccountActions(
+        agent: pane.agent, paneState: pane.state, connected: client.connected)
+    {
+      accountSection(actions)
+    }
+  }
+
+  /// The shared account items in a native menu; the Mac shows the same items in a popover.
+  /// The sign-in itself finishes in the browser on the Mac.
+  @ViewBuilder private func accountSection(_ actions: AgentAccountActions) -> some View {
+    Section(AgentAccountActions.sectionTitle) {
+      Text(AgentAccountActions.explanation)
+      ForEach(actions.items) { item in
+        Button(role: item.isDestructive ? .destructive : nil) {
+          client.run(item, paneId: paneId)
+        } label: {
+          Label(item.title, systemImage: item.systemImage)
+        }
+        .disabled(!actions.isEnabled)
+        .accessibilityIdentifier(item.accessibilityIdentifier)
+      }
+    }
   }
 
   private func harnessButton(_ item: HarnessInfo) -> some View {

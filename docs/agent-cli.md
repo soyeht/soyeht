@@ -55,13 +55,18 @@ soyeht --profile dev pane queue-resume PANE_ID
 soyeht --profile dev pane transcript PANE_ID --limit 100
 soyeht --profile dev pane transcript PANE_ID --before CURSOR --limit 100
 soyeht --profile dev pane auth PANE_ID AUTH_METHOD_ID
+soyeht --profile dev pane auth-cancel PANE_ID
+soyeht --profile dev pane logout PANE_ID
 ```
 
 Cancellation pauses the waiting queue. Sending another prompt keeps that pause;
 resume explicitly when ready. Queue and catalog pages expose `nextCursor`, passed
 back with `--cursor`. Transcript pages expose `nextCursor`, passed with `--before`
 to read older messages. Sign-in method IDs come from the harness catalog. A
-terminal sign-in method opens a separate visible terminal pane.
+terminal sign-in method opens a separate visible terminal pane. On a pane that is
+already signed in, `pane auth` signs in again as another account and restarts the
+session with its history; `pane auth-cancel` stops a running sign-in and closes its
+terminal; `pane logout` asks an agent that supports it to forget its account.
 
 Editor commands use the workspace-relative path only when opening a file. Every
 later operation uses the opaque file ID and a revision where the operation must

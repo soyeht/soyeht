@@ -76,6 +76,7 @@ impl Runtime {
         let directory = self.settings.directory.to_string_lossy();
         self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
             "agentCapabilities":{"loadSession":self.settings.load!="unsupported",
+                "auth":if self.settings.logout { json!({"logout":{}}) } else { json!({}) },
                 "sessionCapabilities":{"additionalDirectories":{}},
                 "promptCapabilities":self.settings.prompt_capabilities.iter()
                     .map(|flag|(flag.clone(),json!(true))).collect::<serde_json::Map<_,_>>()},
@@ -393,6 +394,11 @@ impl Runtime {
             self.initialize(id, &params);
             return;
         }
+        if method == "logout" && self.settings.logout {
+            let _ = std::fs::remove_file(self.settings.directory.join("login.ok"));
+            self.answer(id, json!({}));
+            return;
+        }
         if !self.settings.logged_in() {
             self.error(id, -32000, "Authentication required");
             return;
@@ -407,10 +413,63 @@ impl Runtime {
         }
     }
 }
+/// A fixture nobody released stops at its deadline instead of outliving its test.
+fn wait_or_exit(deadline: std::time::Instant) {
+    if std::time::Instant::now() >= deadline {
+        std::process::exit(1);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(20));
+}
+
+/// Stores the account the sign-in chose (`login.account`, or a default).
+fn save_sign_in(settings: &Settings) -> Result<()> {
+    let account = std::fs::read_to_string(settings.directory.join("login.account"))
+        .unwrap_or_else(|_| "signed in".into());
+    std::fs::write(settings.directory.join("login.ok"), account)?;
+    Ok(())
+}
+
+/// Behaves like a browser login: it owns a localhost listener until the
+/// redirect arrives and reports success only after that request.
+fn listen_for_callback(settings: &Settings) -> Result<()> {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    listener.set_nonblocking(true)?;
+    std::fs::write(
+        settings.directory.join("login.port"),
+        listener.local_addr()?.port().to_string(),
+    )?;
+    println!("Test sign-in listening.");
+    let deadline = std::time::Instant::now() + FIXTURE_RELEASE_TIMEOUT;
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                stream.set_nonblocking(false)?;
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request)?;
+                stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                )?;
+                save_sign_in(settings)?;
+                println!("Test sign-in complete.");
+                return Ok(());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                wait_or_exit(deadline);
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let settings = Settings::parse()?;
     if settings.login {
         std::fs::create_dir_all(&settings.directory)?;
+        if settings.directory.join("login.listen").exists() {
+            return listen_for_callback(&settings);
+        }
         let failed = settings.directory.join("login.fail").exists();
         // A real login CLI can exit 0 after its browser flow is cancelled.
         let cancelled = settings.directory.join("login.cancel").exists();
@@ -419,10 +478,7 @@ fn main() -> Result<()> {
             std::fs::write(settings.directory.join("login.started"), b"started")?;
             let deadline = std::time::Instant::now() + FIXTURE_RELEASE_TIMEOUT;
             while !settings.directory.join("login.release").exists() {
-                if std::time::Instant::now() >= deadline {
-                    std::process::exit(1);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(20));
+                wait_or_exit(deadline);
             }
         }
         if failed {
@@ -433,7 +489,7 @@ fn main() -> Result<()> {
             println!("Test sign-in cancelled.");
             return Ok(());
         }
-        std::fs::write(settings.directory.join("login.ok"), b"signed in\n")?;
+        save_sign_in(&settings)?;
         println!("Test sign-in complete.");
         return Ok(());
     }

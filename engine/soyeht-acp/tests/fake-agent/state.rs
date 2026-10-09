@@ -10,6 +10,8 @@ pub struct Settings {
     pub version: String,
     pub require_login: bool,
     pub login: bool,
+    /// Advertises and serves the ACP `logout` request.
+    pub logout: bool,
     pub initialize_padding_bytes: usize,
     /// Replays each user prompt trimmed and split into chunks of this many
     /// bytes under one messageId, as real adapters do for long prompts.
@@ -29,6 +31,7 @@ impl Settings {
         let mut version = "1".to_owned();
         let mut require_login = false;
         let mut login = false;
+        let mut logout = false;
         let mut initialize_padding_bytes = 0;
         let mut replay_user_chunk_bytes = None;
         let mut modes = "config".to_owned();
@@ -41,6 +44,7 @@ impl Settings {
                 "--version-label" => version = args.next().ok_or(Error::MissingVersionLabel)?,
                 "--require-login" => require_login = true,
                 "--login" => login = true,
+                "--logout" => logout = true,
                 "--modes" => {
                     modes = args
                         .next()
@@ -105,6 +109,7 @@ impl Settings {
             version,
             require_login,
             login,
+            logout,
             initialize_padding_bytes,
             replay_user_chunk_bytes,
             modes,

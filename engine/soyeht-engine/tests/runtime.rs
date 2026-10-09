@@ -3126,15 +3126,8 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     assert_eq!(models["source"], "native_session");
     assert_eq!(models["items"].as_array().unwrap().len(), 5);
     let _: soyeht_protocol::ModelListResult = serde_json::from_value(models).unwrap();
-    let repeated = client.request(
-        "pane.auth.start",
-        json!({"paneId":pane,"authMethodId":"login","idempotencyKey":"auth-after-ready"}),
-    );
-    assert_eq!(repeated["error"]["data"]["kind"], "invalid_params");
-    assert_eq!(
-        repeated["error"]["message"],
-        "Sign-in is not required for this pane"
-    );
+    // A signed-in pane offers the same sign-in as an account switch.
+    assert_eq!(resumed["agent"]["reauthMethods"][0]["id"], "login");
 }
 
 #[derive(Clone, Copy, Debug)]

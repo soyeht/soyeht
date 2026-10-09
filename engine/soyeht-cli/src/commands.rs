@@ -16,6 +16,7 @@ pane create --shell|--agent HARNESS|--editor FILE [--cwd PATH] [--model MODEL] [
 pane list | pane close ID | pane prompt ID TEXT | pane cancel ID\n\
 pane permission ID allow|deny [--request REQUEST_ID]\n\
 pane config ID KEY VALUE | pane mode ID MODE | pane auth ID METHOD\n\
+pane auth-cancel ID | pane logout ID\n\
 pane transcript ID [--before CURSOR] [--limit COUNT]\n\
 pane queue ID [--cursor CURSOR] | pane queue-resume ID | pane queue-remove ID PROMPT_ID\n\
 harness list [--cursor CURSOR] | model list HARNESS [--pane ID] [--cursor CURSOR]\n\
@@ -119,6 +120,16 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
             client,
             "pane.auth.start",
             json!({"paneId":id,"authMethodId":method,"idempotencyKey":key}),
+        ),
+        ["pane", "auth-cancel", id] => rpc::<PaneAuthCancelResult>(
+            client,
+            "pane.auth.cancel",
+            json!({"paneId":id,"idempotencyKey":key}),
+        ),
+        ["pane", "logout", id] => rpc::<PaneAuthLogoutResult>(
+            client,
+            "pane.auth.logout",
+            json!({"paneId":id,"idempotencyKey":key}),
         ),
         ["pane", "transcript", id, rest @ ..] => {
             let mut params = options(rest, &[("--before", "before"), ("--limit", "limit")])?;

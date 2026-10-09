@@ -2995,6 +2995,29 @@
       ],
       "additionalProperties": true
     },
+    "AgentLoginPhase": {
+      "type": "string",
+      "enum": [
+        "waiting",
+        "verifying",
+        "signing_out"
+      ]
+    },
+    "AgentLoginProgress": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "$ref": "#/$defs/AgentLoginPhase"
+        },
+        "terminalPaneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "phase"
+      ],
+      "additionalProperties": true
+    },
     "AgentHarnessSwitch": {
       "type": "object",
       "properties": {
@@ -3064,6 +3087,18 @@
         },
         "harnessSwitch": {
           "$ref": "#/$defs/AgentHarnessSwitch"
+        },
+        "login": {
+          "$ref": "#/$defs/AgentLoginProgress"
+        },
+        "reauthMethods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthMethod"
+          }
+        },
+        "canSignOut": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -4402,6 +4437,62 @@
           "$ref": "#/$defs/Id"
         },
         "terminalPaneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneAuthCancelParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneAuthCancelResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "PaneAuthLogoutParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "paneId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "PaneAuthLogoutResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
           "$ref": "#/$defs/Id"
         }
       },
@@ -12680,6 +12771,24 @@
       },
       "result": {
         "$ref": "#/$defs/PaneAuthStartResult"
+      },
+      "mutation": true
+    },
+    "pane.auth.cancel": {
+      "params": {
+        "$ref": "#/$defs/PaneAuthCancelParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneAuthCancelResult"
+      },
+      "mutation": true
+    },
+    "pane.auth.logout": {
+      "params": {
+        "$ref": "#/$defs/PaneAuthLogoutParams"
+      },
+      "result": {
+        "$ref": "#/$defs/PaneAuthLogoutResult"
       },
       "mutation": true
     },

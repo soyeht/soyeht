@@ -1,5 +1,6 @@
 use super::{
     Changes, native_error,
+    purpose::{ProbeStep, Purpose},
     state::{Phase, State},
     transcript,
 };
@@ -32,7 +33,7 @@ pub fn call(
     changes: &mut Changes,
     method: &str,
     params: Value,
-    context: &str,
+    purpose: &Purpose,
     now_ms: i64,
 ) -> Result<()> {
     if method == "session/prompt" {
@@ -42,7 +43,7 @@ pub fn call(
     changes.outgoing.push(
         state
             .client
-            .request(method, params, context, now_ms as u64)
+            .request(method, params, &purpose.context(), now_ms as u64)
             .map_err(native_error)?,
     );
     Ok(())
@@ -90,7 +91,7 @@ fn open(
                 state,
                 client::load_session_with_mcp(&saved.pane.cwd, &id, &servers),
             )?,
-            "load",
+            &Purpose::Load,
             runtime.now_ms,
         )
     } else {
@@ -108,7 +109,7 @@ fn open(
                 state,
                 client::new_session_with_mcp(&saved.pane.cwd, &servers),
             )?,
-            "open",
+            &Purpose::Open,
             runtime.now_ms,
         )
     }
@@ -318,7 +319,7 @@ fn initialize_response(
         changes,
         "session/new",
         client::new_session(&saved.pane.cwd),
-        "probe:new",
+        &Purpose::Probe(ProbeStep::New),
         runtime.now_ms,
     )
 }
@@ -340,7 +341,7 @@ fn probe_new_response(
                 changes,
                 "session/list",
                 json!({}),
-                "probe:list",
+                &Purpose::Probe(ProbeStep::List),
                 now_ms,
             )
         }
@@ -361,8 +362,11 @@ fn probe_response(
     now_ms: i64,
     timestamp: &str,
 ) -> Result<()> {
+    let Purpose::Probe(step) = Purpose::parse(&request.context) else {
+        return Err(errors::internal("Unknown probe response"));
+    };
     let mut classified = session::probe_result(result.as_ref());
-    if request.context == "probe:config"
+    if step == ProbeStep::Config
         && let Ok(value) = &result
     {
         let confirmed = request.params["configId"]
@@ -387,24 +391,24 @@ fn probe_response(
         .probe_session_id
         .clone()
         .ok_or_else(|| errors::internal("Probe has no disposable session"))?;
-    match request.context.as_str() {
-        "probe:list" => {
+    match step {
+        ProbeStep::List => {
             state.phase = Phase::ProbeLoad;
             call(
                 state,
                 changes,
                 "session/load",
                 client::load_session(&saved.pane.cwd, &id),
-                "probe:load",
+                &Purpose::Probe(ProbeStep::Load),
                 now_ms,
             )
         }
-        "probe:load" => probe_configuration(state, changes, &id, now_ms, timestamp),
-        "probe:config" => {
+        ProbeStep::Load => probe_configuration(state, changes, &id, now_ms, timestamp),
+        ProbeStep::Config => {
             state.phase = Phase::RestartAfterProbe;
             Ok(())
         }
-        _ => Err(errors::internal("Unknown probe response")),
+        ProbeStep::New => Err(errors::internal("Unknown probe response")),
     }
 }
 
@@ -430,7 +434,14 @@ fn probe_configuration(
             .request(session_id, &option.id, &option.current_value)
             .map_err(native_error)?
             .ok_or_else(|| errors::internal("A native option has no native request"))?;
-        call(state, changes, method, params, "probe:config", now_ms)
+        call(
+            state,
+            changes,
+            method,
+            params,
+            &Purpose::Probe(ProbeStep::Config),
+            now_ms,
+        )
     } else {
         // No advertised option supplies valid probe parameters. This is
         // inconclusive, never evidence of a missing method.
@@ -449,17 +460,17 @@ fn session_response(
     runtime: &Runtime<'_>,
     state: &mut State,
     saved: &mut StoredPane,
-    context: &str,
+    purpose: &Purpose,
     changes: &mut Changes,
     result: NativeResult,
 ) -> Result<()> {
     match result {
-        Ok(value) => session_opened(store, state, saved, context, changes, &value),
+        Ok(value) => session_opened(store, state, saved, purpose, changes, &value),
         Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
             needs_login(state, saved, changes);
             Ok(())
         }
-        Err(error) if context == "load" && matches!(error.code, -32601 | -32002) => {
+        Err(error) if *purpose == Purpose::Load && matches!(error.code, -32601 | -32002) => {
             session_lost(store, runtime, state, saved, changes, error.message)
         }
         Err(error) => Err(errors::harness_unavailable(error.message)),
@@ -470,11 +481,11 @@ fn session_opened(
     store: &impl StorePort,
     state: &mut State,
     saved: &mut StoredPane,
-    context: &str,
+    purpose: &Purpose,
     changes: &mut Changes,
     value: &Value,
 ) -> Result<()> {
-    if context == "open" {
+    if *purpose == Purpose::Open {
         let id = session::session_id(value).map_err(native_error)?;
         if id.chars().count() > 128 {
             return Err(errors::invalid(
@@ -483,7 +494,7 @@ fn session_opened(
         }
         state.session_id = Some(id);
     }
-    if context == "load" {
+    if *purpose == Purpose::Load {
         changes.replay_messages = true;
         super::updates::finish_replayed_user(
             store,
@@ -496,7 +507,10 @@ fn session_opened(
         changes.publish_replay = true;
         state.replay_role = None;
     }
-    if value.get("configOptions").is_some() || value.get("modes").is_some() || context == "open" {
+    if value.get("configOptions").is_some()
+        || value.get("modes").is_some()
+        || *purpose == Purpose::Open
+    {
         super::configuration::open_session(
             state,
             Options::from_response(value).map_err(native_error)?,
@@ -661,37 +675,41 @@ pub fn response(
     changes: &mut Changes,
 ) -> Result<()> {
     let (request, result) = state.client.response(message).map_err(native_error)?;
-    if request.context == "auth" {
-        auth_response(state, saved, changes, result);
-        return Ok(());
-    }
-    if request.context == "initialize" {
-        return initialize_response(store, runtime, state, saved, changes, result);
-    }
-    if request.context == "probe:new" {
-        return probe_new_response(state, saved, changes, result, runtime.now_ms);
-    }
-    if request.context.starts_with("probe:") {
-        return probe_response(
-            state,
-            saved,
-            &request,
-            changes,
-            result,
-            runtime.now_ms,
-            runtime.timestamp,
-        );
-    }
-    if request.context == "open" || request.context == "load" {
-        return session_response(
-            store,
-            runtime,
-            state,
-            saved,
-            &request.context,
-            changes,
-            result,
-        );
+    match Purpose::parse(&request.context) {
+        Purpose::Authenticate => {
+            auth_response(state, saved, changes, result);
+            return Ok(());
+        }
+        Purpose::Logout => {
+            super::account::logout_response(
+                state,
+                saved,
+                changes,
+                result.map(|_| ()).map_err(|error| error.message),
+            );
+            return Ok(());
+        }
+        Purpose::Initialize => {
+            return initialize_response(store, runtime, state, saved, changes, result);
+        }
+        Purpose::Probe(ProbeStep::New) => {
+            return probe_new_response(state, saved, changes, result, runtime.now_ms);
+        }
+        Purpose::Probe(_) => {
+            return probe_response(
+                state,
+                saved,
+                &request,
+                changes,
+                result,
+                runtime.now_ms,
+                runtime.timestamp,
+            );
+        }
+        purpose @ (Purpose::Open | Purpose::Load) => {
+            return session_response(store, runtime, state, saved, &purpose, changes, result);
+        }
+        Purpose::Identified(_) => {}
     }
     if request.method == "session/prompt" {
         return prompt_response(

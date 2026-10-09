@@ -1,3 +1,4 @@
+pub mod account;
 pub mod attachments;
 pub mod authentication;
 pub mod catalog;
@@ -22,6 +23,7 @@ pub mod opening;
 pub mod orphans;
 pub mod peer;
 pub mod pending;
+pub mod purpose;
 pub mod questions;
 pub mod recovery;
 pub mod registry;

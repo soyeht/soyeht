@@ -3236,6 +3236,19 @@
     }
   },
   {
+    "name": "AgentLoginPhase",
+    "type": "AgentLoginPhase",
+    "value": "waiting"
+  },
+  {
+    "name": "AgentLoginProgress",
+    "type": "AgentLoginProgress",
+    "value": {
+      "phase": "waiting",
+      "terminalPaneId": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
     "name": "AgentHarnessSwitch",
     "type": "AgentHarnessSwitch",
     "value": {
@@ -3271,6 +3284,18 @@
           "terminal": true
         }
       ],
+      "login": {
+        "phase": "waiting",
+        "terminalPaneId": "00000000-0000-4000-8000-000000000002"
+      },
+      "reauthMethods": [
+        {
+          "id": "login",
+          "name": "Sign in",
+          "terminal": true
+        }
+      ],
+      "canSignOut": true,
       "role": "worker",
       "queue": [
         {
@@ -3698,6 +3723,36 @@
   {
     "name": "PaneAuthStartResult",
     "type": "PaneAuthStartResult",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneAuthCancelParams",
+    "type": "PaneAuthCancelParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneAuthCancelResult",
+    "type": "PaneAuthCancelResult",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneAuthLogoutParams",
+    "type": "PaneAuthLogoutParams",
+    "value": {
+      "paneId": "00000000-0000-4000-8000-000000000001",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "PaneAuthLogoutResult",
+    "type": "PaneAuthLogoutResult",
     "value": {
       "paneId": "00000000-0000-4000-8000-000000000001"
     }
@@ -4577,6 +4632,54 @@
   },
   {
     "name": "response:pane.auth.start",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "paneId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pane.auth.cancel",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.auth.cancel",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.auth.cancel",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "paneId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "request:pane.auth.logout",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "pane.auth.logout",
+      "params": {
+        "paneId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:pane.auth.logout",
     "type": "SuccessEnvelope",
     "value": {
       "jsonrpc": "2.0",

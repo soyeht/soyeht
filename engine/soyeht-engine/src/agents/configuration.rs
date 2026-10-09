@@ -1,4 +1,7 @@
-use super::{Changes, native_error, pending::UserOperation, responses, state::State, transcript};
+use super::{
+    Changes, native_error, pending::UserOperation, purpose::Purpose, responses, state::State,
+    transcript,
+};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -256,7 +259,14 @@ pub fn begin(
         "pane.config_changing".into(),
         json!({"paneId":pane,"configId":config,"value":value,"operationId":id}),
     ));
-    responses::call(state, changes, method, params, &id, now_ms)?;
+    responses::call(
+        state,
+        changes,
+        method,
+        params,
+        &Purpose::identified(&id),
+        now_ms,
+    )?;
     Ok(Some(id))
 }
 

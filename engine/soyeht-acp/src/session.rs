@@ -31,6 +31,9 @@ pub struct Initialization {
     /// The agent accepts ACP `additionalDirectories` on session requests.
     #[serde(default)]
     pub additional_directories: bool,
+    /// The agent accepts the ACP `logout` request and clears its credentials.
+    #[serde(default)]
+    pub logout: bool,
 }
 
 impl Initialization {
@@ -134,6 +137,7 @@ impl Initialization {
             additional_directories:
                 value["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"]
                     .is_object(),
+            logout: value["agentCapabilities"]["auth"]["logout"].is_object(),
         })
     }
 }
@@ -322,6 +326,19 @@ mod tests {
             a,
             fingerprint("digest", "7", &json!({"a":2,"b":2})).unwrap()
         );
+    }
+
+    #[test]
+    fn sign_out_is_offered_only_when_the_agent_advertises_logout() {
+        let plain = json!({"protocolVersion":1,"agentCapabilities":{"auth":{}}});
+        assert!(!Initialization::parse(&plain).unwrap().logout);
+        assert!(
+            !Initialization::parse(&json!({"protocolVersion":1}))
+                .unwrap()
+                .logout
+        );
+        let advertised = json!({"protocolVersion":1,"agentCapabilities":{"auth":{"logout":{}}}});
+        assert!(Initialization::parse(&advertised).unwrap().logout);
     }
 
     #[test]

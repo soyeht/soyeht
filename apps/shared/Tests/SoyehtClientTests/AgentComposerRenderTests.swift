@@ -29,19 +29,12 @@
       ("header-claude", AnyView(ComposerShot.header(.claudeIdle, style)), ComposerShot.headerSize),
     ]
     for (name, view, size) in shots {
-      let bitmap = try #require(PaneInteriorRendering.bitmap(view, size: size))
-      let pixels = PaneInteriorRendering.histogram(bitmap)
-      #expect(PaneInteriorRendering.share(of: "#FFFFFF", in: pixels) == 0, "\(theme) \(name)")
+      let pixels = try PaneInteriorRendering.shot(name, view, size: size, theme: theme)
       if name.hasPrefix("composer") {
         #expect(
           PaneInteriorRendering.share(of: palette.canvas, in: pixels) > 0.5, "\(theme) \(name)")
         #expect(
           PaneInteriorRendering.share(of: palette.ink, in: pixels) > 0.008, "\(theme) \(name)")
-      }
-      if let directory = ProcessInfo.processInfo.environment["SOYEHT_DESIGN_SHOTS_DIR"] {
-        let url = URL(fileURLWithPath: directory)
-          .appendingPathComponent("\(name)-\(theme.rawValue).png")
-        try bitmap.representation(using: .png, properties: [:])?.write(to: url)
       }
     }
   }

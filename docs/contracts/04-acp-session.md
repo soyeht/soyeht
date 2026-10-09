@@ -165,6 +165,35 @@ relaunched agent opens a session. If the command fails, is interrupted, or exits
 while the agent still requires sign-in, the terminal and its output stay open for
 review and `pane.auth_finished {ok: false, reason}` says what happened.
 
+The login terminal is a plain supervisor-owned process. Only three things end it:
+the person finishes it, the person cancels it (`pane.auth.cancel`, which closes
+the terminal and its process) or closes its terminal, or the supervisor itself
+stops. A second `pane.auth.start` while it runs returns the same terminal. The
+agent process dying during a login does not end the login: when the login exits
+0 the agent is restarted, whatever state it was in. The agent pane publishes the
+state in `agent.login {phase: waiting|verifying|signing_out, terminalPaneId?}`
+so every client shows a running sign-in, a sign-in being checked and a sign-out
+in progress. Every ending of a sign-in without a sign-in says why in
+`pane.auth_finished.reason`: failed or interrupted, terminal closed, cancelled,
+or lost because the supervisor restarted. The engine writes an
+`engine.sign_in_ended` log record with the exit code and cause.
+
+### Switching account and signing out
+
+A pane that is signed in offers the same flow as an account switch:
+`agent.reauthMethods` lists the terminal methods and `pane.auth.start` accepts
+them. The running session is untouched while the person is in the browser. A
+successful login restarts the agent, which reopens the same session with
+`session/load`, so the history stays and the new account is used. A failed,
+cancelled or lost switch leaves the session and its account as they were. The
+engine refuses a switch or sign-out while a turn or configuration change runs
+(`pane_busy`).
+
+An agent that advertises `agentCapabilities.auth.logout` also gets
+`agent.canSignOut` and `pane.auth.logout`: the engine sends ACP `logout`, then
+restarts the agent, which reports that it needs a sign-in and offers the methods
+again. The session id is kept for the next sign-in.
+
 ## 8. Derived pane state (input to contract 05)
 
 `working` = between prompt acceptance and `idle`. From prompt acceptance until the

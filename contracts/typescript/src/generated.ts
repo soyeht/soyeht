@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
+// Generated from contracts/protocol.json (sha256 86163c4943d4c00eb533814aa70563128fb1b344f92106e72c189d8eadc08963). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -853,6 +853,13 @@ export interface ElicitationRequest {
   "expiresAt": string;
 }
 
+export type AgentLoginPhase = "waiting" | "verifying" | "signing_out";
+
+export interface AgentLoginProgress {
+  "phase": AgentLoginPhase;
+  "terminalPaneId"?: Id;
+}
+
 export interface AgentHarnessSwitch {
   "fromHarness": Id;
   "toHarness": Id;
@@ -873,6 +880,9 @@ export interface AgentSession {
   "queuePaused"?: boolean;
   "role": AgentPaneRole;
   "harnessSwitch"?: AgentHarnessSwitch;
+  "login"?: AgentLoginProgress;
+  "reauthMethods"?: Array<AuthMethod>;
+  "canSignOut"?: boolean;
 }
 
 export interface AgentCommand {
@@ -1252,6 +1262,24 @@ export interface PaneAuthStartParams {
 export interface PaneAuthStartResult {
   "paneId": Id;
   "terminalPaneId"?: Id;
+}
+
+export interface PaneAuthCancelParams {
+  "paneId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface PaneAuthCancelResult {
+  "paneId": Id;
+}
+
+export interface PaneAuthLogoutParams {
+  "paneId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface PaneAuthLogoutResult {
+  "paneId": Id;
 }
 
 export interface PaneTranscriptParams {
@@ -3409,6 +3437,8 @@ export interface Methods {
   "pane.config.set": { params: PaneConfigSetParams; result: PaneConfigSetResult };
   "pane.harness.switch": { params: PaneHarnessSwitchParams; result: PaneHarnessSwitchResult };
   "pane.auth.start": { params: PaneAuthStartParams; result: PaneAuthStartResult };
+  "pane.auth.cancel": { params: PaneAuthCancelParams; result: PaneAuthCancelResult };
+  "pane.auth.logout": { params: PaneAuthLogoutParams; result: PaneAuthLogoutResult };
   "pane.transcript": { params: PaneTranscriptParams; result: PaneTranscriptResult };
   "pane.draft": { params: PaneDraftParams; result: PaneDraftResult };
   "harness.list": { params: HarnessListParams; result: HarnessListResult };

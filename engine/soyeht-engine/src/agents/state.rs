@@ -157,6 +157,10 @@ pub struct State {
     /// restarted agent opens a session, and is kept for review if it does not.
     #[serde(default)]
     pub unconfirmed_login_pane_id: Option<String>,
+    /// The sign-in terminal replaces the account of a working session, so a
+    /// failed or cancelled attempt leaves the session usable.
+    #[serde(default)]
+    pub(crate) relogin: bool,
     pub has_finished_turn: bool,
     pub permission_rules: BTreeMap<String, bool>,
     pub terminals: BTreeMap<String, super::terminals::Terminal>,
@@ -227,6 +231,7 @@ impl State {
             probe_started_ms: None,
             login_pane_id: None,
             unconfirmed_login_pane_id: None,
+            relogin: false,
             has_finished_turn: false,
             permission_rules: BTreeMap::new(),
             terminals: BTreeMap::new(),
@@ -284,6 +289,7 @@ impl State {
     }
 
     pub fn public(&self, now_ms: i64) -> AgentSession {
+        let account = self.account_view();
         AgentSession {
             role: if self.mcp_role == Role::Chief {
                 AgentPaneRole::Chief
@@ -340,6 +346,9 @@ impl State {
                     from_harness: checkpoint.from_harness.clone(),
                     to_harness: checkpoint.to_harness.clone(),
                 }),
+            login: account.login,
+            reauth_methods: account.reauth_methods,
+            can_sign_out: account.can_sign_out,
         }
     }
 
@@ -576,10 +585,10 @@ fn prompt_priority(item: &PromptItem) -> u8 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use soyeht_protocol::ErrorKind;
-    fn state() -> State {
+    pub(crate) fn state() -> State {
         State::new(
             HarnessLaunch {
                 id: "test".into(),
@@ -640,37 +649,6 @@ mod tests {
                 .enqueue("🌍".repeat(16385), PromptOrigin::Human, "now".into())
                 .is_err()
         );
-    }
-
-    #[test]
-    fn public_state_keeps_authentication_choices_across_snapshot_reconnection() {
-        let mut state = state();
-        state.phase = Phase::NeedsLogin;
-        state.initialized = Some(
-            Initialization::parse(&serde_json::json!({
-                "protocolVersion": 1,
-                "authMethods": [{"id": "login", "name": "Sign in", "type": "terminal"}]
-            }))
-            .unwrap(),
-        );
-        let public = state.public(0);
-        assert_eq!(public.auth_methods.len(), 1);
-        assert_eq!(public.auth_methods[0].id, "login");
-        assert!(public.auth_methods[0].terminal);
-    }
-
-    #[test]
-    fn public_state_hides_advertised_authentication_until_the_agent_requires_it() {
-        let mut state = state();
-        state.phase = Phase::Ready;
-        state.initialized = Some(
-            Initialization::parse(&serde_json::json!({
-                "protocolVersion": 1,
-                "authMethods": [{"id": "login", "name": "Sign in", "type": "terminal"}]
-            }))
-            .unwrap(),
-        );
-        assert!(state.public(0).auth_methods.is_empty());
     }
 
     #[test]

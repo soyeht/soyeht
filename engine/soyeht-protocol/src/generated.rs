@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 d6891a3c81a2156f40abe908acf3ba38515aef4ba018bdfcee5dc6d208543145). Do not edit.
+// Generated from contracts/protocol.json (sha256 86163c4943d4c00eb533814aa70563128fb1b344f92106e72c189d8eadc08963). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -1573,6 +1573,22 @@ pub struct ElicitationRequest {
     pub expires_at: String,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AgentLoginPhase {
+    #[serde(rename = "waiting")]
+    Waiting,
+    #[serde(rename = "verifying")]
+    Verifying,
+    #[serde(rename = "signing_out")]
+    SigningOut,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgentLoginProgress {
+    #[serde(rename = "phase")]
+    pub phase: AgentLoginPhase,
+    #[serde(rename = "terminalPaneId", skip_serializing_if = "Option::is_none")]
+    pub terminal_pane_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentHarnessSwitch {
     #[serde(rename = "fromHarness")]
     pub from_harness: Id,
@@ -1609,6 +1625,12 @@ pub struct AgentSession {
     pub role: AgentPaneRole,
     #[serde(rename = "harnessSwitch", skip_serializing_if = "Option::is_none")]
     pub harness_switch: Option<AgentHarnessSwitch>,
+    #[serde(rename = "login", skip_serializing_if = "Option::is_none")]
+    pub login: Option<AgentLoginProgress>,
+    #[serde(rename = "reauthMethods", skip_serializing_if = "Option::is_none")]
+    pub reauth_methods: Option<Vec<AuthMethod>>,
+    #[serde(rename = "canSignOut", skip_serializing_if = "Option::is_none")]
+    pub can_sign_out: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentCommand {
@@ -2230,6 +2252,30 @@ pub struct PaneAuthStartResult {
     pub pane_id: Id,
     #[serde(rename = "terminalPaneId", skip_serializing_if = "Option::is_none")]
     pub terminal_pane_id: Option<Id>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneAuthCancelParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneAuthCancelResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneAuthLogoutParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaneAuthLogoutResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaneTranscriptParams {
@@ -6105,6 +6151,10 @@ pub enum Request {
     PaneHarnessSwitch(PaneHarnessSwitchParams),
     #[serde(rename = "pane.auth.start")]
     PaneAuthStart(PaneAuthStartParams),
+    #[serde(rename = "pane.auth.cancel")]
+    PaneAuthCancel(PaneAuthCancelParams),
+    #[serde(rename = "pane.auth.logout")]
+    PaneAuthLogout(PaneAuthLogoutParams),
     #[serde(rename = "pane.transcript")]
     PaneTranscript(PaneTranscriptParams),
     #[serde(rename = "pane.draft")]
@@ -6500,6 +6550,18 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "pane.auth.start",
         "PaneAuthStartParams",
         "PaneAuthStartResult",
+        true,
+    ),
+    (
+        "pane.auth.cancel",
+        "PaneAuthCancelParams",
+        "PaneAuthCancelResult",
+        true,
+    ),
+    (
+        "pane.auth.logout",
+        "PaneAuthLogoutParams",
+        "PaneAuthLogoutResult",
         true,
     ),
     (
@@ -6923,6 +6985,8 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.config.set", "paneId"),
     ("pane.harness.switch", "paneId"),
     ("pane.auth.start", "paneId"),
+    ("pane.auth.cancel", "paneId"),
+    ("pane.auth.logout", "paneId"),
     ("pane.transcript", "paneId"),
     ("pane.draft", "paneId"),
     ("pane.commands.list", "paneId"),
