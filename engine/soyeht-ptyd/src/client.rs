@@ -2,20 +2,20 @@ use crate::{
     Error, Result,
     wire::{Request, Response, VERSION},
 };
+use soyeht_platform::local::{Stream, connect};
 use soyeht_protocol::frame::{read_json, write_json};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
 pub struct Client {
-    stream: UnixStream,
+    stream: Stream,
     pub supervisor_id: String,
     pub supervisor_generation: u32,
 }
 
 impl Client {
     pub fn connect(socket: &Path, engine_generation: u64) -> Result<Self> {
-        let stream = UnixStream::connect(socket)?;
+        let stream = connect(socket)?;
         stream.set_read_timeout(Some(Duration::from_secs(5)))?;
         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
         let mut client = Self {

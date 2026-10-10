@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 base64.workspace = true
+soyeht-platform = { path = "../soyeht-platform" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 soyeht-skills = { path = "../soyeht-skills" }
 serde.workspace = true

@@ -22,9 +22,8 @@ pub struct SystemGit;
 
 impl CommandPort for SystemGit {
     fn repository_root(&mut self, workspace: &Path) -> Result<PathBuf> {
-        let workspace = workspace
-            .canonicalize()
-            .map_err(|_| Error::InvalidRepository)?;
+        let workspace =
+            soyeht_platform::fs::canonicalize(workspace).map_err(|_| Error::InvalidRepository)?;
         let output = run(
             &workspace,
             [
@@ -33,8 +32,7 @@ impl CommandPort for SystemGit {
             ],
         )?;
         let root = text(output)?.trim().to_owned();
-        let root = PathBuf::from(root)
-            .canonicalize()
+        let root = soyeht_platform::fs::canonicalize(Path::new(&root))
             .map_err(|_| Error::InvalidRepository)?;
         workspace
             .starts_with(&root)

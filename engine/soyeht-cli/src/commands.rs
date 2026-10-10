@@ -281,11 +281,12 @@ fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
         &[("--cwd", "cwd")][..]
     };
     let mut params = options(rest, allowed)?;
-    let cwd = params["cwd"]
-        .as_str()
-        .map(PathBuf::from)
-        .map_or_else(std::env::current_dir, Ok)?
-        .canonicalize()?;
+    let cwd = soyeht_platform::fs::canonicalize(
+        &params["cwd"]
+            .as_str()
+            .map(PathBuf::from)
+            .map_or_else(std::env::current_dir, Ok)?,
+    )?;
     let path = cwd
         .to_str()
         .ok_or_else(|| invalid("Directory must be valid UTF-8"))?;

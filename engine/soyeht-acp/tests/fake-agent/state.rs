@@ -1,6 +1,25 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
+
+/// Restricts a state file or folder to its owner on systems that have permission modes; the
+/// fake agent's state lives in a temporary folder that is private to the account elsewhere.
+fn private(path: &Path, mode: u32) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+        Ok(())
+    }
+}
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -219,15 +238,20 @@ impl Session {
     }
     pub fn save(&self, settings: &Settings) -> Result<()> {
         fs::create_dir_all(&settings.directory)?;
-        fs::set_permissions(&settings.directory, fs::Permissions::from_mode(0o700))?;
+        private(&settings.directory, 0o700)?;
         let temporary = settings.directory.join(format!("{}.tmp", self.id));
         fs::write(&temporary, serde_json::to_vec(self)?)?;
-        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
-        fs::File::open(&temporary)?.sync_all()?;
+        private(&temporary, 0o600)?;
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary)?
+            .sync_all()?;
         fs::rename(
             temporary,
             settings.directory.join(format!("{}.json", self.id)),
         )?;
+        // A folder cannot be opened for flushing on Windows, whose file system journals renames.
+        #[cfg(unix)]
         fs::File::open(&settings.directory)?.sync_all()?;
         Ok(())
     }

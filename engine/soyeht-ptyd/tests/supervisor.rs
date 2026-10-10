@@ -1,126 +1,18 @@
+#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_ptyd::{client::Client, wire::*};
-use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
-// Positive asynchronous assertions may use the full failure budget; passing
-// runs stop as soon as the expected signal arrives.
-const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
-
-struct Daemon {
-    child: Child,
-    directory: PathBuf,
-}
-
-impl Daemon {
-    fn start() -> (Self, Client) {
-        let directory = PathBuf::from("/tmp").join(format!("soyeht-next-test-{}", Uuid::new_v4()));
-        fs::create_dir_all(&directory).unwrap();
-        let child = Self::launch(&directory);
-        let daemon = Self { child, directory };
-        let client = daemon.connect(1);
-        (daemon, client)
-    }
-
-    fn launch(directory: &PathBuf) -> Child {
-        Command::new(env!("CARGO_BIN_EXE_soyeht-ptyd"))
-            .arg("--data-dir")
-            .arg(directory)
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .unwrap()
-    }
-
-    fn connect(&self, generation: u64) -> Client {
-        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        loop {
-            match Client::connect(&self.directory.join("ptyd.sock"), generation) {
-                Ok(client) => return client,
-                Err(error) => {
-                    assert!(Instant::now() < deadline, "connect: {error}");
-                    thread::sleep(Duration::from_millis(10));
-                }
-            }
-        }
-    }
-
-    fn shell(&self) -> Spawn {
-        Spawn {
-            instance_key: Uuid::new_v4().to_string(),
-            generation: 1,
-            kind: ProcessKind::Pty,
-            cwd: self.directory.to_string_lossy().into_owned(),
-            argv: vec!["/bin/sh".into()],
-            env: BTreeMap::from([("PS1".into(), String::new())]),
-            cols: 80,
-            rows: 24,
-        }
-    }
-}
-
-impl Drop for Daemon {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = fs::remove_dir_all(&self.directory);
-    }
-}
-
-fn spawn(client: &mut Client, config: Spawn) -> Instance {
-    match client.request(Request::Spawn(config)).unwrap() {
-        Response::Instance(instance) => instance,
-        response => panic!("spawn failed: {response:?}"),
-    }
-}
-
-fn input(client: &mut Client, id: &str, text: &str) {
-    assert!(
-        matches!(client.request(Request::Input { instance_id: id.into(), bytes: STANDARD.encode(text), operation_key:Uuid::new_v4().to_string(), fingerprint:"test".into() }).unwrap(), Response::Accepted { bytes } if bytes == text.len())
-    );
-}
-
-fn wait_text(client: &mut Client, id: &str, from: &mut u64, needle: &str) -> String {
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    let mut all = Vec::new();
-    loop {
-        let Response::Output(output) = client
-            .request(Request::Drain {
-                instance_id: id.into(),
-                from_seq: *from,
-            })
-            .unwrap()
-        else {
-            panic!("expected output");
-        };
-        assert!(output.gap.is_none());
-        *from = output.next_seq;
-        all.extend(STANDARD.decode(output.bytes).unwrap());
-        let text = String::from_utf8_lossy(&all).into_owned();
-        if text.contains(needle) {
-            return text;
-        }
-        if all.len() > 512 {
-            all.drain(..all.len() - 512);
-        }
-        assert!(
-            Instant::now() < deadline,
-            "missing {needle:?}, received {} bytes",
-            text.len()
-        );
-        if output.next_seq == output.end_seq {
-            thread::sleep(Duration::from_millis(10));
-        }
-    }
-}
+mod support;
+use support::*;
 
 #[test]
 fn reconnect_adopts_the_same_shell_and_spawn_and_close_are_idempotent() {
@@ -147,28 +39,11 @@ fn reconnect_adopts_the_same_shell_and_spawn_and_close_are_idempotent() {
     let mut client = daemon.connect(2);
     let adopted = spawn(&mut client, config.clone());
     assert_eq!(adopted.pid, instance.pid);
-    assert!(matches!(
-        client
-            .request(Request::Resize {
-                instance_id: instance.instance_id.clone(),
-                cols: 92,
-                rows: 31
-            })
-            .unwrap(),
-        Response::Ok
-    ));
+    resize(&mut client, &instance, 92, 31);
     input(&mut client, &instance.instance_id, "stty size\n");
     wait_text(&mut client, &instance.instance_id, &mut offset, "31 92");
-    for _ in 0..2 {
-        assert!(matches!(
-            client
-                .request(Request::Close {
-                    instance_id: instance.instance_id.clone()
-                })
-                .unwrap(),
-            Response::Ok
-        ));
-    }
+    close(&mut client, &instance);
+    close(&mut client, &instance);
     let closed = spawn(&mut client, config);
     assert!(closed.closed);
     assert_eq!(closed.instance_id, instance.instance_id);
@@ -204,80 +79,9 @@ fn killing_a_command_preserves_its_output_until_explicit_release() {
         "printf retained-output; sleep 30".into(),
     ];
     let instance = spawn(&mut client, config);
-    wait_text(
-        &mut client,
-        &instance.instance_id,
-        &mut 0,
-        "retained-output",
-    );
-    for _ in 0..2 {
-        assert!(matches!(
-            client
-                .request(Request::Kill {
-                    instance_id: instance.instance_id.clone()
-                })
-                .unwrap(),
-            Response::Ok
-        ));
-    }
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let Response::Output(output) = client
-            .request(Request::Drain {
-                instance_id: instance.instance_id.clone(),
-                from_seq: 0,
-            })
-            .unwrap()
-        else {
-            panic!("retained output required");
-        };
-        assert_eq!(STANDARD.decode(output.bytes).unwrap(), b"retained-output");
-        if output.exited {
-            break;
-        }
-        assert!(Instant::now() < deadline);
-        thread::sleep(Duration::from_millis(10));
-    }
-    close(&mut client, &instance);
-    assert!(matches!(
-        client
-            .request(Request::Drain {
-                instance_id: instance.instance_id,
-                from_seq: 0
-            })
-            .unwrap(),
-        Response::Error { .. }
-    ));
-}
-
-#[test]
-fn generation_fencing_and_registry_survive_daemon_restart() {
-    let (mut daemon, mut old) = Daemon::start();
-    let config = daemon.shell();
-    let instance = spawn(&mut old, config.clone());
-    let supervisor_id = old.supervisor_id.clone();
-    assert!(Client::connect(&daemon.directory.join("ptyd.sock"), 0).is_err());
-    assert!(Client::connect(&daemon.directory.join("ptyd.sock"), 1).is_err());
-    let mut newer = daemon.connect(2);
-    assert!(old.request(Request::List).is_err());
-    assert!(matches!(
-        newer
-            .request(Request::Close {
-                instance_id: instance.instance_id.clone()
-            })
-            .unwrap(),
-        Response::Ok
-    ));
-    drop(newer);
-    daemon.child.kill().unwrap();
-    daemon.child.wait().unwrap();
-    daemon.child = Daemon::launch(&daemon.directory);
-    let mut newer = daemon.connect(3);
-    assert_ne!(supervisor_id, newer.supervisor_id);
-    let closed = spawn(&mut newer, config);
-    assert!(closed.closed);
-    assert_eq!(closed.instance_id, instance.instance_id);
-    assert!(Client::connect(&daemon.directory.join("ptyd.sock"), 2).is_err());
+    kill_and_release(&mut client, instance, |bytes| {
+        assert_eq!(bytes, b"retained-output");
+    });
 }
 
 #[test]
@@ -336,18 +140,6 @@ fn output_overflow_is_explicit_and_does_not_block_the_child() {
         Response::Ok
     ));
     close(&mut client, &instance);
-}
-
-#[test]
-fn second_supervisor_cannot_replace_the_live_socket() {
-    let (daemon, mut client) = Daemon::start();
-    let mut second = Daemon::launch(&daemon.directory);
-    let status = second.wait().unwrap();
-    assert!(!status.success());
-    assert!(matches!(
-        client.request(Request::List).unwrap(),
-        Response::Instances(_)
-    ));
 }
 
 #[test]
@@ -603,23 +395,7 @@ fn pipe_guard_preserves_native_exit_code_and_reports_spawn_failure() {
     config.kind = ProcessKind::PipesAcp;
     config.argv = vec!["/bin/sh".into(), "-c".into(), "exit 7".into()];
     let instance = spawn(&mut client, config.clone());
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let Response::Instances(instances) = client.request(Request::List).unwrap() else {
-            panic!("expected list");
-        };
-        if let Some(code) = instances
-            .iter()
-            .find(|item| item.instance_id == instance.instance_id)
-            .unwrap()
-            .exit_code
-        {
-            assert_eq!(code, 7);
-            break;
-        }
-        assert!(Instant::now() < deadline);
-        thread::sleep(Duration::from_millis(10));
-    }
+    assert_eq!(exit_code(&mut client, &instance), Some(7));
     config.instance_key = Uuid::new_v4().to_string();
     config.argv = vec![
         daemon
@@ -632,15 +408,6 @@ fn pipe_guard_preserves_native_exit_code_and_reports_spawn_failure() {
         client.request(Request::Spawn(config)).unwrap(),
         Response::Error { .. }
     ));
-}
-
-fn is_running(pid: u32) -> bool {
-    let status = Command::new("ps")
-        .args(["-o", "stat=", "-p", &pid.to_string()])
-        .output()
-        .unwrap();
-    let status = String::from_utf8(status.stdout).unwrap();
-    !status.trim().is_empty() && !status.trim().starts_with('Z')
 }
 
 /// An adapter whose child starts its own session, as a shell tool does. The
@@ -665,30 +432,6 @@ fn adapter_with_escaped_child(daemon: &Daemon, kind: ProcessKind) -> (Spawn, Pat
     (config, marker)
 }
 
-fn wait_for_pid(marker: &PathBuf) -> u32 {
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        if let Ok(text) = fs::read_to_string(marker)
-            && let Ok(pid) = text.trim().parse()
-        {
-            return pid;
-        }
-        assert!(Instant::now() < deadline, "the escaped child never started");
-        thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn close(client: &mut Client, instance: &Instance) {
-    assert!(matches!(
-        client
-            .request(Request::Close {
-                instance_id: instance.instance_id.clone()
-            })
-            .unwrap(),
-        Response::Ok
-    ));
-}
-
 #[test]
 fn closing_an_agent_adapter_ends_children_that_left_its_process_group() {
     let (daemon, mut client) = Daemon::start();
@@ -699,14 +442,8 @@ fn closing_an_agent_adapter_ends_children_that_left_its_process_group() {
 
     close(&mut client, &instance);
 
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while is_running(escaped) || is_running(instance.pid) {
-        assert!(
-            Instant::now() < deadline,
-            "a child of the closed adapter survived"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until_ended(escaped);
+    wait_until_ended(instance.pid);
 }
 
 #[test]
@@ -718,11 +455,7 @@ fn closing_a_terminal_keeps_the_group_only_rule() {
 
     close(&mut client, &instance);
 
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while is_running(instance.pid) {
-        assert!(Instant::now() < deadline, "the terminal process survived");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until_ended(instance.pid);
     // A daemon the user detached from a terminal is not the supervisor's to end.
     assert!(is_running(escaped));
     let _ = Command::new("kill").arg(escaped.to_string()).status();

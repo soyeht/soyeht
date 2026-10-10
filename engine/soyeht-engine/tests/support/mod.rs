@@ -3,6 +3,7 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
+use soyeht_platform::local::{Stream, connect};
 use soyeht_protocol::frame::Frame;
 use soyeht_ptyd::{
     client::Client as PtyClient,
@@ -11,8 +12,7 @@ use soyeht_ptyd::{
 use soyeht_store::test_support::DatabaseProbe;
 use std::{
     fs,
-    os::unix::{fs::PermissionsExt, fs::symlink, net::UnixStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Mutex, MutexGuard},
     thread,
@@ -48,12 +48,11 @@ pub struct Rig {
 impl Rig {
     pub fn new() -> Self {
         let runtime_slot = runtime_rig_slot();
-        let path = std::env::temp_dir().join(format!("sn-{}", Uuid::new_v4()));
+        let path = rig_root().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         install_fake_worktrunk(&path);
         install_fake_lsp(&path);
-        let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"));
-        let ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
+        let ptyd = Command::new(sibling_binary("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&path)
             .env("PATH", test_path(&path))
@@ -91,7 +90,7 @@ impl Rig {
                 .unwrap(),
         );
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        while UnixStream::connect(self.path.join("engine.sock")).is_err() {
+        while connect(&self.path.join("engine.sock")).is_err() {
             assert!(Instant::now() < deadline, "engine ready timeout");
             thread::sleep(Duration::from_millis(10));
         }
@@ -103,62 +102,64 @@ impl Rig {
     pub fn install_fake_harness_with(&self, arguments: &[&str]) {
         let mut args = vec![json!("--state-dir"), json!(self.path.join("native"))];
         args.extend(arguments.iter().map(|argument| json!(argument)));
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+        self.write_harnesses(&json!([{
+            "id":"test-agent","name":"Test agent","command":sibling_binary("soyeht-fake-acp"),
+            "args":args,"version":"test"
+        }]));
+    }
+    /// Replaces the profile's custom harness registry.
+    pub fn write_harnesses(&self, entries: &Value) {
         fs::write(
             self.path.join("harnesses.json"),
-            serde_json::to_vec(&json!([{
-                "id":"test-agent","name":"Test agent","command":binary,
-                "args":args,"version":"test"
-            }]))
-            .unwrap(),
+            serde_json::to_vec(entries).unwrap(),
         )
         .unwrap();
     }
+    /// An `npx` that starts the fake agent, which the registry's package runner launches.
+    #[cfg(unix)]
     pub fn install_fake_claude_runner(&self) {
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
-        let executable = self.path.join("bin/npx");
-        fs::write(
-            &executable,
-            format!(
+        let binary = sibling_binary("soyeht-fake-acp");
+        write_script(
+            &self.path.join("bin/npx"),
+            &format!(
                 "#!/bin/sh\nexec '{}' --state-dir '{}'\n",
                 binary.display(),
                 self.path.join("claude-native").display()
             ),
-        )
-        .unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+        );
+    }
+    /// A program named `name` on the engine's search path that exists but is never run.
+    pub fn install_stub_executable(&self, name: &str) {
+        let bin = self.path.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        #[cfg(unix)]
+        write_script(&bin.join(name), "#!/bin/sh\nexit 0\n");
+        #[cfg(windows)]
+        fs::write(bin.join(format!("{name}.exe")), "MZ").unwrap();
     }
     pub fn install_switch_harnesses(&self) {
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
-        fs::write(
-            self.path.join("harnesses.json"),
-            serde_json::to_vec(&json!([
-                {
-                    "id":"test-agent","name":"Test agent","command":binary,
-                    "args":["--state-dir",self.path.join("native")],"version":"test"
-                },
-                {
-                    "id":"next-agent","name":"Next agent","command":binary,
-                    "args":["--state-dir",self.path.join("next-native"),
-                        "--initialize-padding-bytes","65000"],"version":"test"
-                },
-                {
-                    "id":"chunked-agent","name":"Chunked Agent","command":binary,
-                    "args":["--state-dir",self.path.join("chunked-native"),
-                        "--replay-user-chunk-bytes","64"],"version":"test"
-                },
-                {
-                    "id":"broken-agent","name":"Broken agent","command":binary,
-                    "args":["--state-dir",self.path.join("broken-native"),"--require-login"],
-                    "version":"test"
-                }
-            ]))
-            .unwrap(),
-        )
-        .unwrap();
+        let binary = sibling_binary("soyeht-fake-acp");
+        self.write_harnesses(&json!([
+            {
+                "id":"test-agent","name":"Test agent","command":binary,
+                "args":["--state-dir",self.path.join("native")],"version":"test"
+            },
+            {
+                "id":"next-agent","name":"Next agent","command":binary,
+                "args":["--state-dir",self.path.join("next-native"),
+                    "--initialize-padding-bytes","65000"],"version":"test"
+            },
+            {
+                "id":"chunked-agent","name":"Chunked Agent","command":binary,
+                "args":["--state-dir",self.path.join("chunked-native"),
+                    "--replay-user-chunk-bytes","64"],"version":"test"
+            },
+            {
+                "id":"broken-agent","name":"Broken agent","command":binary,
+                "args":["--state-dir",self.path.join("broken-native"),"--require-login"],
+                "version":"test"
+            }
+        ]));
     }
     pub fn open_agent(&self, client: Client, workspace: &Value) -> (Client, String) {
         self.open_agent_announcing(client, workspace, "config")
@@ -183,8 +184,15 @@ impl Rig {
             .unwrap()
             .to_owned();
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        while !client.pane(&pane)["agent"]["sessionId"].is_string() {
-            assert!(Instant::now() < deadline, "agent session did not open");
+        loop {
+            let view = client.pane(&pane);
+            if view["agent"]["sessionId"].is_string() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "agent session did not open: {view}"
+            );
             thread::sleep(Duration::from_millis(20));
         }
         (client, pane)
@@ -243,8 +251,7 @@ impl Rig {
         self.ptyd.kill().unwrap();
         self.ptyd.wait().unwrap();
         let _ = fs::remove_file(self.path.join("ptyd.sock"));
-        let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"));
-        self.ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
+        self.ptyd = Command::new(sibling_binary("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&self.path)
             .env("PATH", test_path(&self.path))
@@ -253,7 +260,7 @@ impl Rig {
             .spawn()
             .unwrap();
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        while UnixStream::connect(self.path.join("ptyd.sock")).is_err() {
+        while connect(&self.path.join("ptyd.sock")).is_err() {
             assert!(Instant::now() < deadline, "ptyd ready timeout");
             thread::sleep(Duration::from_millis(10));
         }
@@ -266,6 +273,41 @@ impl Rig {
     }
 }
 
+/// A binary built next to the engine, by name; Windows adds the `.exe`.
+pub fn sibling_binary(name: &str) -> PathBuf {
+    soyeht_platform::testing::sibling_binary(env!("CARGO_BIN_EXE_soyeht-engine"), name)
+}
+
+/// Whether a terminal printed `text`: exactly it on Unix, while a Windows console frames what a
+/// program prints with its own sequences.
+pub fn printed(output: &[u8], text: &[u8]) -> bool {
+    if cfg!(windows) {
+        output.windows(text.len()).any(|part| part == text)
+    } else {
+        output == text
+    }
+}
+
+/// Writes an executable shell script.
+#[cfg(unix)]
+pub fn write_script(path: &Path, body: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::write(path, body).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Where rigs live. Windows reports the temporary folder by its 8.3 short name, while the engine
+/// names the same files by their long ones; only the long form compares equal in assertions.
+/// Unix keeps the plain folder: a socket path has a short limit.
+fn rig_root() -> PathBuf {
+    let temp = std::env::temp_dir();
+    if cfg!(windows) {
+        soyeht_platform::fs::canonicalize(&temp).unwrap()
+    } else {
+        temp
+    }
+}
+
 pub fn test_path(root: &std::path::Path) -> std::ffi::OsString {
     std::env::join_paths(
         std::iter::once(root.join("bin")).chain(std::env::split_paths(
@@ -275,61 +317,24 @@ pub fn test_path(root: &std::path::Path) -> std::ffi::OsString {
     .unwrap()
 }
 
-pub fn install_fake_lsp(root: &std::path::Path) {
+/// Makes `binary` available on the engine's search path as `name`: a link where the system
+/// allows one without privilege, a copy (with the `.exe` Windows needs) elsewhere.
+fn install_fake(root: &Path, binary: &str, name: &str) {
     let bin = root.join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let binary =
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-lsp");
-    symlink(binary, bin.join("rust-analyzer")).unwrap();
+    let binary = sibling_binary(binary);
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(binary, bin.join(name)).unwrap();
+    #[cfg(windows)]
+    fs::copy(binary, bin.join(format!("{name}.exe"))).unwrap();
 }
 
-pub fn install_fake_worktrunk(root: &std::path::Path) {
-    let bin = root.join("bin");
-    fs::create_dir_all(&bin).unwrap();
-    let executable = bin.join("wt");
-    fs::write(
-        &executable,
-        r#"#!/bin/sh
-repository="$2"
-command="$3"
-if [ "$command" = "list" ]; then
-  printf '{"schema":2,"items":['
-  separator=""
-  for path in "$repository"/.test-worktrees/*; do
-    [ -d "$path" ] || continue
-    branch=$(cat "$path/.soyeht-test-branch")
-    modified=false
-    [ -e "$path/.dirty" ] && modified=true
-    integration=',"default_branch":{"integration":{"reason":"ancestor"}}'
-    [ -e "$path/.unreachable" ] && integration=""
-    printf '%s{"branch":"%s","head":{"sha":"abc"},"worktree":{"path":"%s","changes":{"staged":false,"modified":%s,"untracked":false,"renamed":false,"deleted":false}}%s}' "$separator" "$branch" "$path" "$modified" "$integration"
-    separator=,
-  done
-  printf ']}\n'
-  exit 0
-fi
-branch=""
-for argument in "$@"; do branch="$argument"; done
-safe_branch=$(printf '%s' "$branch" | tr '/' '-')
-path="$repository/.test-worktrees/$safe_branch"
-if [ "$command" = "switch" ]; then
-  mkdir -p "$path"
-  printf '%s' "$branch" > "$path/.soyeht-test-branch"
-  printf '{"path":"%s","branch":"%s"}\n' "$path" "$branch"
-  exit 0
-fi
-if [ "$command" = "remove" ]; then
-  rm -rf "$path"
-  printf '{"kind":"worktree","branch":"%s","path":"%s","branch_outcome":"not_attempted"}\n' "$branch" "$path"
-  exit 0
-fi
-exit 2
-"#,
-    )
-    .unwrap();
-    let mut permissions = fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(executable, permissions).unwrap();
+pub fn install_fake_lsp(root: &Path) {
+    install_fake(root, "soyeht-fake-lsp", "rust-analyzer");
+}
+
+pub fn install_fake_worktrunk(root: &Path) {
+    install_fake(root, "soyeht-fake-worktrunk", "wt");
 }
 
 impl Drop for Rig {
@@ -354,7 +359,7 @@ impl Drop for Rig {
 }
 
 pub struct Client {
-    pub socket: UnixStream,
+    pub socket: Stream,
     pub next: u64,
     pub messages: Vec<Frame>,
 }
@@ -462,7 +467,7 @@ impl Client {
         Self::new_named(path, "runtime-test", capabilities)
     }
     pub fn new_named(path: PathBuf, name: &str, capabilities: Value) -> Self {
-        let socket = UnixStream::connect(path).unwrap();
+        let socket = connect(&path).unwrap();
         socket
             .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
             .unwrap();

@@ -14,6 +14,7 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// `wt switch` checks out a whole tree; `wt remove` deletes one.
 const CHANGE_TIMEOUT: Duration = Duration::from_secs(120);
 /// `lsof +D` walks the worktree.
+#[cfg(unix)]
 const PROCESS_SCAN_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,7 +49,7 @@ impl Default for CommandWorktree {
 }
 
 impl CommandWorktree {
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     fn using(executable: String) -> Self {
         Self { executable }
     }
@@ -282,6 +283,16 @@ fn head_reachable(listing: &Value, target: &Value, branch: &str) -> bool {
     })
 }
 
+/// Windows has no way to ask which processes sit in a folder, so a cleanup there stops with a
+/// clear answer instead of removing a folder a process may be using.
+#[cfg(windows)]
+fn process_uses(_worktree: &Path) -> Result<bool> {
+    Err(errors::worktree_unavailable(
+        "Finding the processes that use a worktree is not supported on Windows",
+    ))
+}
+
+#[cfg(unix)]
 fn process_uses(worktree: &Path) -> Result<bool> {
     let mut command = Command::new("lsof");
     command.args(["-a", "-d", "cwd", "-Fp", "+D"]).arg(worktree);
@@ -522,7 +533,6 @@ mod tests {
     use std::{
         collections::BTreeMap,
         fs,
-        os::unix::fs::PermissionsExt,
         path::{Path, PathBuf},
     };
 
@@ -704,6 +714,7 @@ mod tests {
         assert_eq!(journal.writes, ["pane_opened", "prompt_accepted"]);
     }
 
+    #[cfg(unix)]
     #[test]
     fn command_adapter_uses_machine_output_and_never_deletes_the_branch() {
         let directory = TestDirectory::new();
@@ -723,7 +734,7 @@ mod tests {
         );
         fs::write(&executable, script).unwrap();
         let mut permissions = fs::metadata(&executable).unwrap().permissions();
-        permissions.set_mode(0o755);
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
         fs::set_permissions(&executable, permissions).unwrap();
         let mut adapter = CommandWorktree::using(executable.to_string_lossy().into());
         let prepared = adapter.prepare(directory.path(), "task/ws-9").unwrap();

@@ -2,15 +2,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
+use soyeht_platform::local::connect;
 use soyeht_protocol::frame::Frame;
-use std::os::unix::net::UnixStream;
 
 mod support;
 use support::*;
 
 /// Sends a `hello` with `params` over a fresh local connection and returns the answer.
 fn hello_with(rig: &Rig, params: Value) -> Value {
-    let mut socket = UnixStream::connect(rig.path.join("engine.sock")).unwrap();
+    let mut socket = connect(&rig.path.join("engine.sock")).unwrap();
     socket
         .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
         .unwrap();

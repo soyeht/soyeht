@@ -11,6 +11,7 @@ name = "soyeht"
 path = "src/main.rs"
 
 [dependencies]
+soyeht-platform = { path = "../soyeht-platform" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 serde.workspace = true
 serde_json.workspace = true
@@ -20,5 +21,6 @@ uuid.workspace = true
 workspace = true
 
 [dev-dependencies]
+soyeht-platform = { path = "../soyeht-platform", features = ["test-support"] }
 soyeht-ptyd = { path = "../soyeht-ptyd" }
 soyeht-store = { path = "../soyeht-store", features = ["test-support"] }

@@ -7,6 +7,9 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+soyeht-platform = { path = "../soyeht-platform" }
+
+[target.'cfg(unix)'.dev-dependencies]
 libc.workspace = true
 
 [lints]

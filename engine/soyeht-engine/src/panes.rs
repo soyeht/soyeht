@@ -107,17 +107,13 @@ impl Core {
         if !Path::new(requested_cwd).is_absolute() || !Path::new(requested_cwd).is_dir() {
             return Err(errors::invalid("Pane directory must exist and be absolute"));
         }
-        let canonical;
-        let cwd = if agent_mode {
-            canonical = Path::new(requested_cwd)
-                .canonicalize()
-                .map_err(errors::io)?;
-            canonical
-                .to_str()
-                .ok_or_else(|| errors::invalid("Working directory must be UTF-8"))?
-        } else {
-            requested_cwd
-        };
+        // Always the platform's canonical form: a client may send any spelling of the folder,
+        // including the extended `\\?\C:\...` one that `cmd.exe` cannot start in.
+        let canonical =
+            soyeht_platform::fs::canonicalize(Path::new(requested_cwd)).map_err(errors::io)?;
+        let cwd = canonical
+            .to_str()
+            .ok_or_else(|| errors::invalid("Working directory must be UTF-8"))?;
         let name = match (params["name"].as_str(), agent) {
             (Some(name), _) => name.to_owned(),
             (None, Some(state)) => self.default_agent_name(

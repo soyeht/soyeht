@@ -20,14 +20,16 @@ pub fn declaration(
     state: &State,
     saved: &StoredPane,
 ) -> Result<StdioMcpServer> {
-    let executable = sibling_executable()?;
+    let executable = sibling_executable("soyeht-mcp")?;
     declaration_with_executable(store, data_directory, &executable, state, saved)
 }
 
-fn sibling_executable() -> Result<PathBuf> {
+/// The program called `name` that is built and installed next to the engine; Windows adds `.exe`.
+pub(super) fn sibling_executable(name: &str) -> Result<PathBuf> {
     Ok(std::env::current_exe()
         .map_err(errors::io)?
-        .with_file_name("soyeht-mcp"))
+        .with_file_name(name)
+        .with_extension(std::env::consts::EXE_EXTENSION))
 }
 
 fn declaration_with_executable(
@@ -138,6 +140,17 @@ mod tests {
         (MemoryTaskStore::default(), state, saved)
     }
 
+    fn declare(store: &MemoryTaskStore, state: &State, saved: &PaneRecord) -> StdioMcpServer {
+        declaration_with_executable(
+            store,
+            &crate::test_paths::rooted("/tmp/data"),
+            &crate::test_paths::rooted("/opt/soyeht/bin/soyeht-mcp"),
+            state,
+            saved,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn declaration_keeps_the_secret_out_of_argv_and_binds_the_active_attempt() {
         let (mut store, state, saved) = fixture();
@@ -149,17 +162,13 @@ mod tests {
             .tasks
             .insert((task.workspace_id.clone(), task.task_id.clone()), task);
 
-        let declaration = declaration_with_executable(
-            &store,
-            Path::new("/tmp/data"),
-            Path::new("/opt/soyeht/bin/soyeht-mcp"),
-            &state,
-            &saved,
-        )
-        .unwrap();
+        let declaration = declare(&store, &state, &saved);
 
         assert_eq!(declaration.name, SERVER_NAME);
-        assert_eq!(declaration.command, "/opt/soyeht/bin/soyeht-mcp");
+        assert_eq!(
+            declaration.command,
+            crate::test_paths::rooted_text("/opt/soyeht/bin/soyeht-mcp")
+        );
         assert_eq!(declaration.env[0].name, BINDING_ENV);
         assert_eq!(declaration.env[0].value, state.binding.expose());
         assert!(
@@ -185,14 +194,7 @@ mod tests {
     #[test]
     fn declaration_without_an_active_task_has_only_the_pane_identity() {
         let (store, state, saved) = fixture();
-        let declaration = declaration_with_executable(
-            &store,
-            Path::new("/tmp/data"),
-            Path::new("/opt/soyeht/bin/soyeht-mcp"),
-            &state,
-            &saved,
-        )
-        .unwrap();
+        let declaration = declare(&store, &state, &saved);
         assert!(!declaration.args.iter().any(|arg| arg == "--task-id"));
         assert!(!declaration.args.iter().any(|arg| arg == "--attempt"));
     }

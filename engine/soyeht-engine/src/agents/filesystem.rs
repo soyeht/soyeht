@@ -1,40 +1,39 @@
-//! Descriptor-relative text access. No component of an agent-supplied path
-//! follows a symlink. Atomic replacement never truncates another hard link.
+//! Text access for agents. No component of an agent-supplied path follows a symlink. Atomic
+//! replacement never truncates another hard link.
 use crate::errors::{self, Error, Result};
 use soyeht_protocol::limits;
 use std::{
-    ffi::CString,
     fs::File,
     io::{self, Read, Write},
-    os::fd::{AsRawFd, FromRawFd},
     path::{Component, Path},
 };
 use uuid::Uuid;
 
+#[cfg(unix)]
+#[path = "filesystem/unix.rs"]
+mod system;
+#[cfg(windows)]
+#[path = "filesystem/windows.rs"]
+mod system;
+
+use system::{Attributes, Directory, Name};
+
+/// A finished temporary file, ready to take the place of `target`.
+struct Replacement<'a> {
+    directory: &'a Directory,
+    temporary: &'a Name,
+    file: &'a File,
+    attributes: &'a Attributes,
+    target: &'a Name,
+}
+
 fn invalid(message: &'static str) -> Error {
     errors::invalid(message)
 }
-fn name(text: &std::ffi::OsStr) -> Result<CString> {
-    use std::os::unix::ffi::OsStrExt;
-    CString::new(text.as_bytes()).map_err(|_| invalid("invalid path component"))
-}
-fn child(parent: &File, name: &CString, flags: i32, mode: libc::mode_t) -> Result<File> {
-    // SAFETY: parent owns a live directory descriptor and name is terminated.
-    let fd = unsafe {
-        libc::openat(
-            parent.as_raw_fd(),
-            name.as_ptr(),
-            flags | libc::O_CLOEXEC | libc::O_NOFOLLOW,
-            mode as libc::c_uint,
-        )
-    };
-    if fd < 0 {
-        return Err(io::Error::last_os_error().into());
-    }
-    // SAFETY: openat returned a new owned descriptor.
-    Ok(unsafe { File::from_raw_fd(fd) })
-}
-fn parent(root: &Path, path: &Path) -> Result<(File, CString)> {
+
+/// The directory holding `path` (every folder below `root` opened without following a link)
+/// and the file's name in it.
+fn parent(root: &Path, path: &Path) -> Result<(Directory, Name)> {
     if !root.is_absolute() || !path.is_absolute() {
         return Err(invalid("absolute paths are required"));
     }
@@ -51,27 +50,13 @@ fn parent(root: &Path, path: &Path) -> Result<(File, CString)> {
     {
         return Err(invalid("parent traversal is not allowed"));
     }
-    let mut directory = File::open("/")?;
-    for part in root.components().chain(parts) {
-        match part {
-            Component::RootDir => (),
-            Component::Normal(part) => {
-                directory = child(
-                    &directory,
-                    &name(part)?,
-                    libc::O_RDONLY | libc::O_DIRECTORY,
-                    0,
-                )?
-            }
-            _ => return Err(invalid("worktree path must be canonical")),
-        }
-    }
-    Ok((directory, name(leaf)?))
+    let directory = system::open_directory(root.components().chain(parts))?;
+    Ok((directory, system::name(leaf)?))
 }
 
 pub fn read(root: &Path, path: &Path) -> Result<String> {
     let (directory, leaf) = parent(root, path)?;
-    let file = child(&directory, &leaf, libc::O_RDONLY | libc::O_NONBLOCK, 0)?;
+    let file = system::open_file(&directory, &leaf)?;
     if !file.metadata()?.is_file() {
         return Err(invalid("text access requires a regular file"));
     }
@@ -88,7 +73,7 @@ pub fn permits_edit(root: &Path, path: &Path) -> bool {
     let Ok((directory, leaf)) = parent(root, path) else {
         return false;
     };
-    match child(&directory, &leaf, libc::O_RDONLY | libc::O_NONBLOCK, 0) {
+    match system::open_file(&directory, &leaf) {
         Ok(file) => file.metadata().is_ok_and(|m| m.is_file()),
         Err(Error::Io(error)) => error.kind() == io::ErrorKind::NotFound,
         Err(_) => false,
@@ -106,50 +91,32 @@ pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) 
         return Err(invalid("text content exceeds 1 MiB"));
     }
     let (directory, leaf) = parent(root, path)?;
-    let mode = match child(&directory, &leaf, libc::O_RDONLY | libc::O_NONBLOCK, 0) {
+    let attributes = match system::open_file(&directory, &leaf) {
         Ok(file) => {
-            use std::os::unix::fs::PermissionsExt;
-            let metadata = file.metadata()?;
-            if !metadata.is_file() {
+            if !file.metadata()?.is_file() {
                 return Err(invalid("text access requires a regular file"));
             }
-            metadata.permissions().mode() & 0o777
+            system::attributes(&file)?
         }
-        Err(Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => 0o600,
+        Err(Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
+            system::new_attributes()
+        }
         Err(error) => return Err(error),
     };
-    let temporary = CString::new(format!(".soyeht-write-{operation}"))
-        .map_err(|_| invalid("invalid temporary file name"))?;
-    let mut file = child(
-        &directory,
-        &temporary,
-        libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
-        0o600,
-    )?;
+    let temporary = system::name(format!(".soyeht-write-{operation}").as_ref())?;
+    let mut file = system::create_exclusive(&directory, &temporary)?;
     let result = (|| {
         file.write_all(content.as_bytes())?;
-        // SAFETY: file owns a live descriptor; only ordinary permission bits survive.
-        if unsafe { libc::fchmod(file.as_raw_fd(), mode as libc::mode_t) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        file.sync_all()?;
-        // SAFETY: both names are terminated and both directory descriptors live.
-        if unsafe {
-            libc::renameat(
-                directory.as_raw_fd(),
-                temporary.as_ptr(),
-                directory.as_raw_fd(),
-                leaf.as_ptr(),
-            )
-        } != 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        directory.sync_all()
+        system::replace(&Replacement {
+            directory: &directory,
+            temporary: &temporary,
+            file: &file,
+            attributes: &attributes,
+            target: &leaf,
+        })
     })();
     if result.is_err() {
-        // SAFETY: cleanup names only this invocation's exclusive temporary file.
-        let _ = unsafe { libc::unlinkat(directory.as_raw_fd(), temporary.as_ptr(), 0) };
+        system::discard(&directory, &temporary);
     }
     Ok(result?)
 }
@@ -157,53 +124,92 @@ pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        os::unix::fs::{PermissionsExt, symlink},
-        path::PathBuf,
-    };
+    use std::{fs, path::PathBuf};
     struct Directory(PathBuf);
     impl Drop for Directory {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
-    #[test]
-    fn outside_parent_symlink_and_final_symlink_are_rejected_without_changing_the_target() {
+
+    fn fixture() -> (Directory, PathBuf, PathBuf) {
         let fixture = Directory(std::env::temp_dir().join(format!("sn-files-{}", Uuid::new_v4())));
         fs::create_dir_all(fixture.0.join("work")).unwrap();
-        let base = fixture.0.canonicalize().unwrap();
+        let base = soyeht_platform::fs::canonicalize(&fixture.0).unwrap();
         let root = base.join("work");
         let outside = base.join("outside");
         fs::write(&outside, "private").unwrap();
-        symlink(&base, root.join("link")).unwrap();
-        symlink(&outside, root.join("file-link")).unwrap();
-        for path in [
-            &outside,
-            &root.join("../outside"),
-            &root.join("link/outside"),
-            &root.join("file-link"),
-        ] {
-            assert!(read(&root, path).is_err());
-            assert!(write(&root, path, "changed").is_err());
+        (fixture, root, outside)
+    }
+
+    /// Neither reading nor writing any of `paths` may succeed.
+    fn assert_refused(root: &Path, paths: &[&Path]) {
+        for path in paths {
+            assert!(read(root, path).is_err());
+            assert!(write(root, path, "changed").is_err());
         }
-        assert_eq!(fs::read_to_string(&outside).unwrap(), "private");
-        let file = root.join("run.sh");
-        fs::hard_link(&outside, &file).unwrap();
-        fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
-        write(&root, &file, "new").unwrap();
-        assert_eq!(read(&root, &file).unwrap(), "new");
-        assert_eq!(fs::read_to_string(&outside).unwrap(), "private");
-        assert_eq!(
-            fs::metadata(&file).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
-        assert!(!fs::read_dir(&root).unwrap().any(|entry| {
+    }
+
+    fn assert_no_temporary_left(root: &Path) {
+        assert!(!fs::read_dir(root).unwrap().any(|entry| {
             entry
                 .unwrap()
                 .file_name()
                 .to_string_lossy()
                 .starts_with(".soyeht-write-")
         }));
+    }
+
+    #[test]
+    fn parent_traversal_and_paths_outside_the_root_are_rejected_without_changing_the_target() {
+        let (_fixture, root, outside) = fixture();
+        assert_refused(&root, &[&outside, &root.join("../outside")]);
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "private");
+    }
+
+    #[test]
+    fn a_new_file_is_created_and_replaced_atomically() {
+        let (_fixture, root, _) = fixture();
+        let file = root.join("note.txt");
+        write(&root, &file, "first").unwrap();
+        assert_eq!(read(&root, &file).unwrap(), "first");
+        write(&root, &file, "second").unwrap();
+        assert_eq!(read(&root, &file).unwrap(), "second");
+        assert!(permits_edit(&root, &file));
+        assert!(permits_edit(&root, &root.join("missing.txt")));
+        assert_no_temporary_left(&root);
+    }
+
+    #[test]
+    fn symlinks_and_hard_links_never_change_the_target() {
+        use soyeht_platform::fs::symlink;
+        let (_fixture, root, outside) = fixture();
+        let base = outside.parent().unwrap();
+        symlink(base, root.join("link")).unwrap();
+        symlink(&outside, root.join("file-link")).unwrap();
+        assert_refused(
+            &root,
+            &[&root.join("link/outside"), &root.join("file-link")],
+        );
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "private");
+        let file = root.join("run.sh");
+        fs::hard_link(&outside, &file).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        write(&root, &file, "new").unwrap();
+        assert_eq!(read(&root, &file).unwrap(), "new");
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "private");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+        assert_no_temporary_left(&root);
     }
 }

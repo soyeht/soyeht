@@ -1,0 +1,241 @@
+//! Owner-only files and directories, and opens that never follow a link.
+//!
+//! On Unix "owner-only" is mode 0700 for a directory and 0600 for a file. On Windows it is a
+//! protected ACL that grants access to the current user and the system only; a file created
+//! inside such a directory inherits it.
+
+use std::{
+    fs::{File, OpenOptions},
+    io,
+    path::Path,
+};
+
+#[cfg(any(windows, test))]
+mod sddl;
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
+#[cfg(unix)]
+use unix as system;
+#[cfg(windows)]
+use windows as system;
+
+/// Makes the directory at `path` owner-only, for its children too.
+pub fn set_private_dir(path: &Path) -> io::Result<()> {
+    system::set_private(path, true)
+}
+
+/// Makes the file at `path` owner-only.
+pub fn set_private_file(path: &Path) -> io::Result<()> {
+    system::set_private(path, false)
+}
+
+/// Renames `from` to `to`, failing with [`io::ErrorKind::AlreadyExists`] instead of replacing
+/// an entry that is already there. The check and the rename are one step, so a concurrent
+/// creation of `to` is never overwritten.
+pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    system::rename_no_replace(from, to)
+}
+
+/// Creates the directory at `path`, owner-only. Its parent must exist.
+pub fn create_private_dir(path: &Path) -> io::Result<()> {
+    system::create_private_dir(path)
+}
+
+/// Whether nobody but the owner (and, on Windows, the system and administrators) can reach the
+/// directory at `path`. A link is judged as itself.
+pub fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
+    system::dir_is_owner_only(path)
+}
+
+/// Whether nobody but the owner (and, on Windows, the system and administrators) can reach
+/// the open file.
+pub fn file_is_owner_only(file: &File) -> io::Result<bool> {
+    system::file_is_owner_only(file)
+}
+
+/// Flushes a directory's entries to disk after a rename into it. Windows has no directory
+/// flush; its file system journals renames, so there it does nothing.
+pub fn sync_directory(path: &Path) -> io::Result<()> {
+    system::sync_directory(path)
+}
+
+/// Creates a symbolic link at `link` pointing at `target`. Windows makes a directory link when
+/// `target` is a directory and a file link otherwise, and the account needs the right to create
+/// symbolic links (Developer Mode, or an elevated process).
+pub fn symlink(target: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<()> {
+    system::symlink(target.as_ref(), link.as_ref())
+}
+
+/// The canonical form of `path`, as [`std::fs::canonicalize`] gives it, written the way a
+/// person and a client read it: Windows' extended `\\?\C:\...` form becomes `C:\...`.
+pub fn canonicalize(path: &Path) -> io::Result<std::path::PathBuf> {
+    let canonical = std::fs::canonicalize(path)?;
+    Ok(system::readable(canonical))
+}
+
+/// Why a process could not become the only one holding a lock.
+#[derive(Debug)]
+pub enum LockError {
+    /// Another process holds it.
+    Held,
+    Io(io::Error),
+}
+
+impl From<io::Error> for LockError {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+/// Makes this process the only one running for `directory`: creates the owner-only directory
+/// and takes an exclusive lock on `name` inside it. The lock lasts as long as the returned file
+/// stays open, and the system drops it if the process ends.
+pub fn lock_singleton(directory: &Path, name: &str) -> Result<File, LockError> {
+    std::fs::create_dir_all(directory)?;
+    set_private_dir(directory)?;
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .owner_only()
+        .open_no_follow(&directory.join(name))?;
+    if system::try_lock(&lock)? {
+        Ok(lock)
+    } else {
+        Err(LockError::Held)
+    }
+}
+
+/// Points the directory link `path` at `target`, replacing a link that points elsewhere and
+/// creating missing parents. A relative `target` is read from the folder holding `path`, as a
+/// symbolic link reads it.
+///
+/// Unix makes a symbolic link. Windows makes a symbolic link when the account may create one
+/// and a directory junction otherwise; a junction needs an existing target, which is created
+/// empty when missing.
+pub fn replace_dir_link(path: &Path, target: &Path) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    system::replace_dir_link(path, target)
+}
+
+/// Opens that are owner-only when they create and refuse a link at the last component.
+pub trait OpenOptionsPrivateExt {
+    /// A file this open creates is owner-only (mode 0600). On Windows the file takes the ACL of
+    /// its directory, which is owner-only when the directory came from [`set_private_dir`].
+    fn owner_only(&mut self) -> &mut Self;
+
+    /// Opens `path`, failing instead of following a symbolic link or junction at its last
+    /// component.
+    fn open_no_follow(&self, path: &Path) -> io::Result<File>;
+}
+
+impl OpenOptionsPrivateExt for OpenOptions {
+    fn owner_only(&mut self) -> &mut Self {
+        system::owner_only(self)
+    }
+
+    fn open_no_follow(&self, path: &Path) -> io::Result<File> {
+        system::open_no_follow(self, path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-platform-fs-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        directory
+    }
+
+    #[test]
+    fn private_directories_are_created_and_files_open_without_following_links() {
+        let directory = scratch("private");
+        std::fs::create_dir_all(directory.join("a/b")).unwrap();
+        set_private_dir(&directory).unwrap();
+        let file = directory.join("a/b/file");
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .owner_only()
+            .open_no_follow(&file)
+            .unwrap();
+        set_private_file(&file).unwrap();
+        sync_directory(&directory.join("a/b")).unwrap();
+        OpenOptions::new().read(true).open_no_follow(&file).unwrap();
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    /// A private folder holding a private file, both checked.
+    fn private_file(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let directory = scratch(name);
+        std::fs::create_dir_all(&directory).unwrap();
+        set_private_dir(&directory).unwrap();
+        assert!(dir_is_owner_only(&directory).unwrap());
+        let file = directory.join("file");
+        std::fs::write(&file, "x").unwrap();
+        set_private_file(&file).unwrap();
+        assert!(file_is_owner_only(&File::open(&file).unwrap()).unwrap());
+        (directory, file)
+    }
+
+    #[test]
+    fn what_set_private_makes_passes_the_owner_only_check() {
+        let (directory, _) = private_file("owner-only");
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_null_access_list_fails_the_owner_only_check() {
+        let (directory, file) = private_file("null-dacl");
+        system::set_access_list(&file, "D:NO_ACCESS_CONTROL").unwrap();
+        assert!(!file_is_owner_only(&File::open(&file).unwrap()).unwrap());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_to_a_name_the_command_interpreter_would_expand_reaches_that_folder() {
+        let directory = scratch("junction");
+        let target = directory.join("100%PATH%&(x)^y");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("inside"), "found").unwrap();
+        let link = directory.join("link");
+        system::junction(&link, &target).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read_to_string(link.join("inside")).unwrap(),
+            "found"
+        );
+        std::fs::remove_dir(&link).unwrap();
+        assert!(target.join("inside").is_file());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symbolic_link_is_refused() {
+        let directory = scratch("link");
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = directory.join("target");
+        std::fs::write(&target, "x").unwrap();
+        let link = directory.join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(OpenOptions::new().read(true).open_no_follow(&link).is_err());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+}

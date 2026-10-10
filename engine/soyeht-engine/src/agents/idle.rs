@@ -315,7 +315,7 @@ pub(super) mod tests {
         core.replace_agent_state("agent-1", changed).unwrap();
         assert!(!core.agents["agent-1"].is_settled(core.now_ms()));
         assert!(core.agents["agent-0"].is_settled(core.now_ms()));
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[test]
@@ -335,7 +335,7 @@ pub(super) mod tests {
             core.poll_output().unwrap();
         }
         assert!(!core.agents["agent-0"].is_settled(core.now_ms()));
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[test]
@@ -353,7 +353,7 @@ pub(super) mod tests {
                 supervisor_id: "idle-supervisor".into(),
             });
         assert_eq!(core.panes_with_retired_processes(), ["agent-1"]);
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[test]

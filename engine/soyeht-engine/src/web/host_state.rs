@@ -243,8 +243,7 @@ mod tests {
             Some("Local app")
         );
         assert_eq!(restored.panes[&pane].stored.pane.generation, 2);
-        drop(restored);
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(restored, root);
     }
 
     #[tokio::test]
@@ -290,6 +289,6 @@ mod tests {
                 .iter()
                 .all(|event| event.method != "web.console_counts")
         );
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 }

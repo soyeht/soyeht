@@ -190,6 +190,19 @@ fn missing_terminal_turn(runtime: &Runtime, session: &str, cancelled: &AtomicBoo
     output
 }
 
+#[cfg(unix)]
+const SHELL: &str = "/bin/sh";
+#[cfg(unix)]
+const SHELL_FLAG: &str = "-c";
+#[cfg(unix)]
+const PRINT_TEST_TEXT: &str = "printf fake-terminal";
+#[cfg(windows)]
+const SHELL: &str = "cmd.exe";
+#[cfg(windows)]
+const SHELL_FLAG: &str = "/c";
+#[cfg(windows)]
+const PRINT_TEST_TEXT: &str = "<nul set /p =fake-terminal";
+
 fn tools_turn(runtime: &Runtime, session: &str, cancelled: &AtomicBool) -> String {
     let cwd = runtime.sessions.lock().unwrap()[session].cwd.clone();
     let path = std::path::Path::new(&cwd).join("fake-acp-note.txt");
@@ -213,7 +226,7 @@ fn tools_turn(runtime: &Runtime, session: &str, cancelled: &AtomicBool) -> Strin
         runtime,
         session,
         "terminal/create",
-        json!({"command":"/bin/sh","args":["-c","printf fake-terminal"],"cwd":cwd,"outputByteLimit":4096}),
+        json!({"command":SHELL,"args":[SHELL_FLAG,PRINT_TEST_TEXT],"cwd":cwd,"outputByteLimit":4096}),
         cancelled,
         false,
     );

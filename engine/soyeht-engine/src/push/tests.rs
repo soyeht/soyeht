@@ -92,7 +92,7 @@ impl Rig {
     fn new(responses: Vec<ApnsResponse>) -> Self {
         let root = std::env::temp_dir().join(format!("sn-push-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join(apns::CONFIG_DIRECTORY)).unwrap();
-        apns::tests::install(&root, 0o600);
+        apns::tests::install(&root, false);
         let mut core = Core::open(&root).unwrap();
         core.clock = Arc::new(FixedClock(NOW_MS));
         let (sent_tx, sent) = mpsc::unbounded_channel();

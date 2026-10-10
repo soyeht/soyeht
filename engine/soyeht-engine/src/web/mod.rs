@@ -36,6 +36,8 @@ pub(crate) use commands::handles as handles_command;
 
 pub struct Service {
     scan: SharedPort<dyn PortScanPort>,
+    /// Read once, so asking never waits behind a scan that holds the port.
+    unavailable: Option<&'static str>,
     servers: Vec<LocalServer>,
     next_refresh_ms: i64,
 }
@@ -48,6 +50,7 @@ pub struct Refresh {
 impl Service {
     pub fn new(scan: Box<dyn PortScanPort>) -> Self {
         Self {
+            unavailable: scan.unavailable(),
             scan: SharedPort::new(scan),
             servers: Vec::new(),
             next_refresh_ms: 0,
@@ -73,6 +76,11 @@ impl Service {
         Ok(Refresh { servers, changed })
     }
 
+    /// Why local servers cannot be listed on this system, if they cannot.
+    pub fn unavailable(&self) -> Option<&'static str> {
+        self.unavailable
+    }
+
     pub fn servers(&self) -> &[LocalServer] {
         &self.servers
     }
@@ -86,6 +94,9 @@ fn scan(scanner: &SharedPort<dyn PortScanPort>) -> Result<PortScanObservation> {
 impl Core {
     /// Answers from the cache, or scans off the lock first when a refresh is due.
     pub fn local_servers_list(&mut self) -> Result<Outcome> {
+        if let Some(reason) = self.web.unavailable() {
+            return Err(errors::platform_unsupported(reason));
+        }
         let Some(scanner) = self.claim_local_server_scan() else {
             return self.cached_local_servers().map(Outcome::Reply);
         };
@@ -112,7 +123,8 @@ impl Core {
     }
 
     fn claim_local_server_scan(&mut self) -> Option<SharedPort<dyn PortScanPort>> {
-        if self.background.is_active(SCAN_JOB) {
+        // A system that cannot list servers is not scanned at all.
+        if self.web.unavailable().is_some() || self.background.is_active(SCAN_JOB) {
             return None;
         }
         let now_ms = self.now_ms();
@@ -239,6 +251,48 @@ mod tests {
         core.advance_local_servers().unwrap();
         assert_eq!(durable_server_event_count(&mut core), 0);
         assert_eq!(core.web.servers()[0].command, "python");
+        drop(core);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    struct UnavailableScan {
+        calls: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl PortScanPort for UnavailableScan {
+        fn unavailable(&self) -> Option<&'static str> {
+            Some("fixture system cannot list servers")
+        }
+
+        fn scan(&mut self) -> std::result::Result<PortScanObservation, PortScanError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(PortScanError::Unsupported(
+                "fixture system cannot list servers",
+            ))
+        }
+    }
+
+    #[test]
+    fn a_system_that_cannot_list_servers_is_never_scanned_and_answers_with_a_typed_error() {
+        let directory = std::env::temp_dir().join(format!("soyeht-web-none-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let mut core = Core::open(&directory).unwrap();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        core.web = Service::new(Box::new(UnavailableScan {
+            calls: Arc::clone(&calls),
+        }));
+        // The poller schedules nothing: no error, and the scan is never called.
+        core.advance_local_servers().unwrap();
+        core.advance_local_servers().unwrap();
+        let Err(error) = core.local_servers_list() else {
+            panic!("a system that cannot list servers answered the list")
+        };
+        assert_eq!(
+            errors::kind(&error),
+            soyeht_protocol::ErrorKind::PlatformUnsupported
+        );
+        assert!(error.to_string().contains("cannot list servers"));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
         drop(core);
         fs::remove_dir_all(directory).unwrap();
     }

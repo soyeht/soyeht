@@ -13,12 +13,12 @@ use ring::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use soyeht_platform::fs::file_is_owner_only;
 use soyeht_protocol::PushEnvironment;
 use std::{
     collections::HashMap,
     future::Future,
     io,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -117,8 +117,8 @@ impl Credentials {
             return Err(ConfigProblem::Invalid);
         }
         let key_path = directory.join(&config.key_path);
-        let metadata = std::fs::metadata(&key_path).map_err(|_| ConfigProblem::KeyUnreadable)?;
-        if metadata.permissions().mode() & 0o077 != 0 {
+        let key_file = std::fs::File::open(&key_path).map_err(|_| ConfigProblem::KeyUnreadable)?;
+        if !file_is_owner_only(&key_file).map_err(|_| ConfigProblem::KeyUnreadable)? {
             return Err(ConfigProblem::KeyExposed);
         }
         let text = std::fs::read_to_string(&key_path).map_err(|_| ConfigProblem::KeyUnreadable)?;
@@ -351,8 +351,9 @@ pub(crate) mod tests {
         path
     }
 
-    /// Writes a fresh P-256 key in the `.p8` PEM format and a config naming it.
-    pub(crate) fn install(data: &Path, mode: u32) {
+    /// Writes a fresh P-256 key in the `.p8` PEM format and a config naming it. The key is
+    /// readable by everyone when `exposed`, and by its owner only otherwise.
+    pub(crate) fn install(data: &Path, exposed: bool) {
         let der =
             EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &SystemRandom::new())
                 .unwrap();
@@ -360,11 +361,10 @@ pub(crate) mod tests {
         let pem = format!("-----BEGIN PRIVATE KEY-----\n{encoded}\n-----END PRIVATE KEY-----\n");
         let push = data.join(CONFIG_DIRECTORY);
         std::fs::write(push.join("AuthKey_TEST.p8"), pem).unwrap();
-        std::fs::set_permissions(
-            push.join("AuthKey_TEST.p8"),
-            std::fs::Permissions::from_mode(mode),
-        )
-        .unwrap();
+        soyeht_platform::fs::set_private_file(&push.join("AuthKey_TEST.p8")).unwrap();
+        if exposed {
+            soyeht_platform::testing::expose_to_everyone(&push.join("AuthKey_TEST.p8")).unwrap();
+        }
         std::fs::write(
             push.join(CONFIG_FILE),
             json!({"keyId":"KEY1234567","teamId":"TEAM123456","keyPath":"AuthKey_TEST.p8","topic":"com.example.app"})
@@ -382,7 +382,7 @@ pub(crate) mod tests {
     fn absent_or_exposed_credentials_keep_push_off() {
         let data = directory();
         assert_eq!(Credentials::load(&data).err(), Some(ConfigProblem::Missing));
-        install(&data, 0o644);
+        install(&data, true);
         assert_eq!(
             Credentials::load(&data).err(),
             Some(ConfigProblem::KeyExposed)
@@ -395,7 +395,7 @@ pub(crate) mod tests {
     #[test]
     fn provider_token_is_an_es256_jwt_reused_until_it_ages() {
         let data = directory();
-        install(&data, 0o600);
+        install(&data, false);
         let credentials = Credentials::load(&data).unwrap();
         let public = credentials.key.public_key().as_ref().to_vec();
         let mut provider = ProviderToken::new(credentials);

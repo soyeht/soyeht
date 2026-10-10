@@ -13,7 +13,7 @@ use soyeht_protocol::{
     FilePositionParams, FileReferencesResult, FileSymbol, FileSymbolsParams, FileSymbolsResult,
 };
 use soyeht_store::editor::EditorFile;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const WAITER_LIMIT: usize = 128;
 const RESULT_HEADROOM: usize = 1024;
@@ -279,7 +279,7 @@ impl Core {
         workspace: &soyeht_protocol::Workspace,
         location: soyeht_lsp::Location,
     ) -> Result<Option<FileLocation>> {
-        let Some(path) = file_uri_path(&location.uri) else {
+        let Some(path) = super::uri::uri_to_path(&location.uri) else {
             return Ok(None);
         };
         let root = Path::new(&workspace.path);
@@ -336,62 +336,4 @@ fn push_bounded<T: Serialize>(items: &mut Vec<T>, item: T, bytes: &mut usize) ->
     *bytes = bytes.saturating_add(size);
     items.push(item);
     Ok(true)
-}
-
-fn file_uri_path(uri: &str) -> Option<PathBuf> {
-    let encoded = uri.strip_prefix("file://")?;
-    if !encoded.starts_with('/') || encoded.contains(['?', '#']) {
-        return None;
-    }
-    let bytes = percent_decode(encoded.as_bytes())?;
-    let text = String::from_utf8(bytes).ok()?;
-    (!text.contains('\0')).then(|| PathBuf::from(text))
-}
-
-fn percent_decode(input: &[u8]) -> Option<Vec<u8>> {
-    let mut output = Vec::with_capacity(input.len());
-    let mut index = 0;
-    while index < input.len() {
-        if input[index] != b'%' {
-            output.push(input[index]);
-            index += 1;
-            continue;
-        }
-        let high = *input.get(index + 1)?;
-        let low = *input.get(index + 2)?;
-        output.push(hex(high)?.checked_mul(16)?.checked_add(hex(low)?)?);
-        index += 3;
-    }
-    Some(output)
-}
-
-fn hex(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn file_uri_decoder_is_strict_and_utf8_aware() {
-        assert_eq!(
-            file_uri_path("file:///tmp/a%20b/%C3%A9.rs"),
-            Some(PathBuf::from("/tmp/a b/é.rs"))
-        );
-        for invalid in [
-            "https:///tmp/main.rs",
-            "file://host/tmp/main.rs",
-            "file:///tmp/%ZZ.rs",
-            "file:///tmp/%00.rs",
-            "file:///tmp/a.rs?query",
-        ] {
-            assert_eq!(file_uri_path(invalid), None);
-        }
-    }
 }

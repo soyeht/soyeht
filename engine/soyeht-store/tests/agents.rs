@@ -517,7 +517,7 @@ fn prompt_with_attachment() -> PromptItem {
             bytes: "4".into(),
             attachment_id: None,
             data: None,
-            path: Some("/data/prompt-attachments/abc/element.png".into()),
+            path: Some(std::env::temp_dir().display().to_string()),
             thumbnail: Some("iVBORw==".into()),
         }]),
         agent_message: None,

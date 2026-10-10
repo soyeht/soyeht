@@ -95,10 +95,13 @@ mod tests {
         let directory =
             std::env::temp_dir().join(format!("soyeht-core-lock-{}", uuid::Uuid::new_v4()));
         let shared = Arc::new(Mutex::new(Core::open(&directory).unwrap()));
+        // The test executable lists its tests and ends: a command on every system.
         let command = || {
+            let mut list = std::process::Command::new(std::env::current_exe().unwrap());
+            list.arg("--list");
             soyeht_process::run(
-                std::process::Command::new("/usr/bin/true"),
-                soyeht_process::Limits::new(Duration::from_secs(10), 64),
+                list,
+                soyeht_process::Limits::new(Duration::from_secs(10), 1 << 20),
             )
         };
         {

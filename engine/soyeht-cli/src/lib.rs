@@ -5,6 +5,7 @@ pub use error::{Error, Result};
 
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
+use soyeht_platform::local::{Stream, connect};
 use soyeht_protocol::{
     StateSnapshotPartEvent, Welcome,
     frame::{read_json, write_json},
@@ -14,13 +15,12 @@ use soyeht_protocol::{
 };
 use std::{
     io,
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 pub struct Client {
-    socket: UnixStream,
+    socket: Stream,
     next: u64,
     directory: PathBuf,
     binding: Option<String>,
@@ -46,7 +46,7 @@ impl Client {
         binding: Option<&str>,
         client_name: &'static str,
     ) -> Result<Self> {
-        let socket = UnixStream::connect(directory.join(DEV_ENGINE_SOCKET))?;
+        let socket = connect(&directory.join(DEV_ENGINE_SOCKET))?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
         let mut client = Self {

@@ -1,23 +1,22 @@
 use crate::{
-    Error, Result, pending::Pending, process, registry::Registry, retention::Retention, wire::*,
+    Error, Result, child::Child, io::Output, pending::Pending, pipe_guard::Guard, process,
+    pty::Resizer, registry::Registry, retention::Retention, wire::*,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use soyeht_platform::{
+    fs::{LockError, lock_singleton},
+    local::{BindError, Listener, Stream},
+};
 use soyeht_protocol::{
     frame::{read_json, write_json},
     limits,
     profile::DEV_PTYD_SOCKET,
 };
 use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
+use std::fs::File;
 use std::io::{self, Read, Write};
 use std::net::Shutdown;
-use std::os::fd::AsRawFd;
-use std::os::unix::{
-    fs::{FileTypeExt, OpenOptionsExt, PermissionsExt},
-    net::{UnixListener, UnixStream},
-};
 use std::path::{Path, PathBuf};
-use std::process::Child;
 use std::sync::{
     Arc, Mutex, MutexGuard,
     atomic::{AtomicBool, Ordering},
@@ -28,9 +27,10 @@ use uuid::Uuid;
 
 struct Live {
     master: Mutex<File>,
+    resizer: Option<Resizer>,
     child: Mutex<Child>,
     output: Mutex<OutputState>,
-    guard: Option<Mutex<UnixStream>>,
+    guard: Option<Mutex<Guard>>,
     exited: AtomicBool,
     read_done: AtomicBool,
 }
@@ -45,7 +45,7 @@ struct State {
     supervisor_id: String,
     registry: Registry,
     live: BTreeMap<String, Arc<Live>>,
-    active: Option<(String, UnixStream)>,
+    active: Option<(String, Stream)>,
     inputs: BTreeMap<String, (String, String, usize)>,
 }
 
@@ -60,36 +60,25 @@ fn lock<'a, T>(mutex: &'a Mutex<T>, resource: &'static str) -> Result<MutexGuard
     mutex.lock().map_err(|_| Error::PoisonedLock(resource))
 }
 
-fn send(stream: &mut UnixStream, response: &Response) -> Result<()> {
+fn send(stream: &mut Stream, response: &Response) -> Result<()> {
     write_json(stream, response)?;
     Ok(())
 }
 
 pub fn run(directory: &Path) -> Result<()> {
-    fs::create_dir_all(directory)?;
-    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
-    let lock = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(directory.join("ptyd.lock"))?;
-    // SAFETY: lock is a live owned file, kept open for the server's lifetime.
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(Error::AlreadyRunning);
-    }
-    let socket = directory.join(DEV_PTYD_SOCKET);
-    match fs::symlink_metadata(&socket) {
-        Ok(metadata) if metadata.file_type().is_socket() => fs::remove_file(&socket)?,
-        Ok(_) => return Err(Error::SocketPathNotSocket),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => (),
-        Err(e) => return Err(e.into()),
-    }
+    let _lock = match lock_singleton(directory, "ptyd.lock") {
+        Ok(lock) => lock,
+        Err(LockError::Held) => return Err(Error::AlreadyRunning),
+        Err(LockError::Io(error)) => return Err(error.into()),
+    };
+    let endpoint = directory.join(DEV_PTYD_SOCKET);
+    let listener = match Listener::bind(&endpoint) {
+        Ok(listener) => listener,
+        Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
+        Err(BindError::Io(error)) => return Err(error.into()),
+    };
+    let _endpoint = EndpointFile(endpoint);
     let registry = Registry::load(directory)?;
-    let listener = UnixListener::bind(&socket)?;
-    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
     let state = Arc::new(Mutex::new(State {
         directory: directory.to_owned(),
         supervisor_id: Uuid::new_v4().to_string(),
@@ -112,6 +101,24 @@ pub fn run(directory: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The endpoint this supervisor listens on; it is removed when the supervisor stops, as the
+/// engine removes its own. A supervisor that is killed cannot run this, and the next one
+/// replaces the file it left.
+struct EndpointFile(PathBuf);
+
+impl Drop for EndpointFile {
+    fn drop(&mut self) {
+        match std::fs::remove_file(&self.0) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => eprintln!(
+                "{{\"event\":\"ptyd.endpoint_not_removed\",\"error\":\"{:?}\"}}",
+                error.kind()
+            ),
+        }
+    }
+}
+
 /// A bounded label for logs: the variant (and I/O kind), never message text or paths.
 fn error_label(error: &Error) -> String {
     match error {
@@ -124,7 +131,7 @@ fn error_label(error: &Error) -> String {
     }
 }
 
-fn connection(mut stream: UnixStream, shared: Arc<Mutex<State>>) -> Result<()> {
+fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     let Some(request) = read_json::<Request>(&mut stream)? else {
@@ -266,6 +273,7 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         input,
         output: reader,
         pid,
+        resizer,
         guard,
     } = match process::spawn(&config, &state.directory, &instance_id) {
         Ok(spawned) => spawned,
@@ -287,6 +295,7 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
     };
     let live = Arc::new(Live {
         master: Mutex::new(input),
+        resizer,
         child: Mutex::new(child),
         output: Mutex::new(OutputState {
             retention: Retention::new(limits::PTY_RETENTION_BYTES)?,
@@ -306,9 +315,8 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
             .instances
             .remove(&instance.spawn.instance_key);
         let mut child = lock(&live.child, "child")?;
-        // Reap only: the group was just terminated; an error means it is already gone.
-        terminate(&live, child.id());
-        let _ = child.wait();
+        terminate(&live, &child);
+        reap(&mut child);
         return Err(failure);
     }
     state
@@ -325,11 +333,29 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
 
 /// Ends an instance's process. A guarded process is an agent adapter or a
 /// language server, whose whole process tree must go with it.
-fn terminate(live: &Live, pid: u32) {
+fn terminate(live: &Live, child: &Child) {
     if live.guard.is_some() {
-        process::terminate_tree(pid);
+        child.kill_tree();
     } else {
-        process::terminate_group(pid);
+        child.kill_group();
+    }
+}
+
+/// How long a kill waits for the child to be gone while holding its lock.
+const REAP_LIMIT: Duration = Duration::from_secs(2);
+
+/// Collects the exit of a child that was just terminated. The wait is bounded because the
+/// caller holds the child's lock, which the exit watcher and every other request need; a child
+/// that outlasts the limit is collected by the watcher when it does end.
+fn reap(child: &mut Child) {
+    match child.wait_within(REAP_LIMIT) {
+        Ok(Some(_)) => {}
+        Ok(None) => eprintln!("{{\"event\":\"ptyd.child_still_running_after_kill\"}}"),
+        // The child could not be queried; the watcher reports it.
+        Err(error) => eprintln!(
+            "{{\"event\":\"ptyd.child_wait_failed\",\"error\":\"{:?}\"}}",
+            error.kind()
+        ),
     }
 }
 
@@ -339,9 +365,8 @@ fn execute_kill(state: &State, instance_id: &str) -> Result<Response> {
     };
     let mut child = lock(&live.child, "child")?;
     if child.try_wait()?.is_none() {
-        // Reap only: the group was just terminated; an error means it is already gone.
-        terminate(live, child.id());
-        let _ = child.wait();
+        terminate(live, &child);
+        reap(&mut child);
     }
     // Keep the live output and registry entry until Close. ACP kill stops a
     // command but leaves its output available to the caller.
@@ -370,9 +395,8 @@ fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
         if let Some(live) = state.live.remove(instance_id) {
             let mut child = lock(&live.child, "child")?;
             if child.try_wait()?.is_none() {
-                // Reap only: the group was just terminated; an error means it is already gone.
-                terminate(&live, child.id());
-                let _ = child.wait();
+                terminate(&live, &child);
+                reap(&mut child);
             }
             live.exited.store(true, Ordering::Release);
         }
@@ -481,11 +505,10 @@ fn execute_resize(state: &State, instance_id: &str, cols: u16, rows: u16) -> Res
     let Some(live) = state.live.get(instance_id) else {
         return Ok(error("not_found", "process not found"));
     };
-    if live.guard.is_some() {
+    let Some(resizer) = &live.resizer else {
         return Ok(error("wrong_process_kind", "terminal PTY required"));
-    }
-    let master = lock(&live.master, "master")?;
-    process::resize(&master, cols, rows)?;
+    };
+    resizer.resize(cols, rows)?;
     Ok(Response::Ok)
 }
 
@@ -516,7 +539,7 @@ fn execute_ack(state: &State, instance_id: &str, seq: u64) -> Result<Response> {
     )
 }
 
-fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, key: String) {
+fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>, key: String) {
     let reading = Arc::clone(&live);
     thread::spawn(move || {
         let mut bytes = [0; 16384];
@@ -538,16 +561,7 @@ fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, k
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    let mut descriptor = libc::pollfd {
-                        fd: reader.as_raw_fd(),
-                        events: libc::POLLIN,
-                        revents: 0,
-                    };
-                    // SAFETY: reader owns this descriptor throughout poll; the
-                    // one-element array stays valid until the call returns.
-                    let ready = unsafe { libc::poll(&mut descriptor, 1, 1000) };
-                    if ready < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted
-                    {
+                    if reader.wait_readable(Duration::from_secs(1)).is_err() {
                         break;
                     }
                 }
@@ -574,7 +588,7 @@ fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, k
                             eprintln!("{{\"event\":\"ptyd.guard_lock_poisoned\"}}");
                             return None;
                         };
-                        crate::pipe_guard::exit_code(&mut control)
+                        control.exit_code()
                     });
                     let code = guarded_code.unwrap_or_else(|| status.code().unwrap_or(-1));
                     let Ok(mut state) = shared.lock() else {
@@ -602,6 +616,16 @@ fn start_readers(mut reader: File, live: Arc<Live>, shared: Arc<Mutex<State>>, k
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_endpoint_file_is_removed_when_the_supervisor_stops() {
+        let path = std::env::temp_dir().join(format!("soyeht-endpoint-{}", std::process::id()));
+        std::fs::write(&path, "endpoint").unwrap();
+        drop(EndpointFile(path.clone()));
+        assert!(!path.exists());
+        // Removing a file that is already gone is not an error.
+        drop(EndpointFile(path));
+    }
 
     #[test]
     fn connection_failures_are_logged_by_variant_without_message_text() {

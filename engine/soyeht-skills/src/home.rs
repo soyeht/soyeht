@@ -14,9 +14,9 @@
 
 use crate::{MANIFEST, render};
 use sha2::{Digest, Sha256};
+use soyeht_platform::fs::replace_dir_link;
 use std::{
     fs, io,
-    os::unix::fs::symlink,
     path::{Path, PathBuf},
 };
 
@@ -62,7 +62,7 @@ pub fn prepare_user_home(data_directory: &Path) -> io::Result<()> {
     let store = user_store(data_directory);
     let created = !store.exists();
     fs::create_dir_all(&store)?;
-    link(&claude_skills(&home), &PathBuf::from("../.agents/skills"))?;
+    replace_dir_link(&claude_skills(&home), Path::new("../.agents/skills"))?;
     if created {
         let guide = store.join(GUIDE);
         fs::create_dir_all(&guide)?;
@@ -84,22 +84,8 @@ pub fn workspace_bridge(data_directory: &Path, cwd: &Path) -> io::Result<Option<
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
-    link(&target, &store)?;
+    replace_dir_link(&target, &store)?;
     Ok(Some(bridge))
-}
-
-/// Points `path` at `target`, replacing a link that points elsewhere.
-fn link(path: &Path, target: &Path) -> io::Result<()> {
-    match fs::read_link(path) {
-        Ok(current) if current == target => return Ok(()),
-        Ok(_) => fs::remove_file(path)?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    symlink(target, path)
 }
 
 fn guide_text(store: &Path) -> String {

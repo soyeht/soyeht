@@ -9,7 +9,6 @@ use std::{
     fs,
     io::{Read, Write},
     net::TcpStream,
-    path::PathBuf,
     thread,
     time::{Duration, Instant},
 };
@@ -28,8 +27,7 @@ struct Agent {
 /// the next browser login chooses `account-b`.
 fn agent(signed_in: bool, can_sign_out: bool) -> Agent {
     let rig = Rig::new();
-    let binary =
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    let binary = sibling_binary("soyeht-fake-acp");
     let mut arguments = vec![
         "--state-dir".to_owned(),
         rig.path.join("native").to_string_lossy().into_owned(),
@@ -145,9 +143,22 @@ fn listener_is_open(port: u16) -> bool {
 /// engine connection, so the process is addressed by its pid instead.
 fn kill_pane_process(client: &mut Client, pane: &str) {
     let pid = client.pane(pane)["pid"].as_i64().unwrap();
-    let pid = i32::try_from(pid).unwrap();
+    end_process(i32::try_from(pid).unwrap());
+}
+
+#[cfg(unix)]
+fn end_process(pid: i32) {
     // SAFETY: the pid is the live process the supervisor reported for this pane.
     assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
+}
+
+#[cfg(windows)]
+fn end_process(pid: i32) {
+    let ended = std::process::Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .output()
+        .unwrap();
+    assert!(ended.status.success(), "{ended:?}");
 }
 
 fn session_id(client: &mut Client, pane: &str) -> Value {

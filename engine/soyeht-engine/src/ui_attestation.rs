@@ -253,7 +253,9 @@ pub fn signed_ui_peer(token: PeerAuditToken) -> bool {
 pub struct PeerAuditToken;
 
 #[cfg(not(target_os = "macos"))]
-pub fn peer_audit_token(_: &tokio::net::UnixStream) -> Option<PeerAuditToken> {
+pub fn peer_audit_token(
+    _: &soyeht_platform::local::asynchronous::Stream,
+) -> Option<PeerAuditToken> {
     Some(PeerAuditToken)
 }
 

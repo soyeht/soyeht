@@ -47,6 +47,8 @@ impl Host for SystemHost {
     fn platform(&self) -> Platform {
         if cfg!(target_os = "macos") {
             Platform::MacOs
+        } else if cfg!(windows) {
+            Platform::Windows
         } else {
             Platform::Linux
         }
@@ -63,15 +65,13 @@ impl Host for SystemHost {
         if let Some(home) = self.fixture("home") {
             return Some(home);
         }
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .filter(|home| home.is_absolute())
+        std::env::home_dir().filter(|home| home.is_absolute())
     }
 
     /// The canonical temporary directory: Claude Code names a project after its real path.
     fn temp_dir(&self) -> PathBuf {
         let temp = std::env::temp_dir();
-        temp.canonicalize().unwrap_or(temp)
+        soyeht_platform::fs::canonicalize(&temp).unwrap_or(temp)
     }
 
     fn read_file(&self, path: &Path, max_bytes: u64) -> FileRead {

@@ -12,7 +12,7 @@ use crate::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use soyeht_protocol::{PaneState, Role};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub(crate) const CLAUDE_HARNESS_ID: &str = "registry.claude-acp";
 const HOOK_CLIENT: &str = "soyeht-hook";
@@ -75,7 +75,7 @@ pub(crate) fn terminal_hook_settings(
     data_directory: &Path,
     binding: &super::state::Binding,
 ) -> Result<Value> {
-    let executable = sibling_cli()?;
+    let executable = super::mcp::sibling_executable("soyeht")?;
     let handler = json!({
         "type":"command",
         "command":path_text(&executable)?,
@@ -97,12 +97,6 @@ pub(crate) fn terminal_hook_settings(
             "Stop":group(&handler)
         }
     }))
-}
-
-fn sibling_cli() -> Result<PathBuf> {
-    Ok(std::env::current_exe()
-        .map_err(errors::io)?
-        .with_file_name("soyeht"))
 }
 
 fn path_text(path: &Path) -> Result<String> {

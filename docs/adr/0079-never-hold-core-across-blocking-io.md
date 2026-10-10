@@ -70,8 +70,10 @@ Core lock is held. The editor's file port is `Arc<dyn FileSystemPort>`, and
 
 **Every external command has a deadline.** The new `soyeht-process` crate
 has one runner, `soyeht_process::run(command, Limits)`. It sets a deadline
-and a byte budget. A late command is killed with its whole process group, so
-descendants do not keep the pipes open. The caller gets
+and a byte budget. A late command is killed with its whole process group (a
+job object on Windows, ADR 0086), so descendants do not keep the pipes open.
+Both ways of ending "a process and what it started" are in `soyeht-platform`
+(`process`), and `soyeht-ptyd` uses the same code for its children. The caller gets
 `Error::TimedOut` ("git timed out after 30000 ms and was killed"), which the
 engine reports as the subsystem's error, for example `worktree_unavailable`.
 git (revision, `soyeht-vcs`), `wt`, `lsof +D` and the local-server `lsof` use
@@ -106,13 +108,15 @@ named constants.
 - `tests/blocking_io_rule.rs` scans every crate that runs inside the engine.
   It fails when shipped code runs a process without `soyeht_process::run`.
   Three files are allowlisted, each with its reason:
-  - the login-shell probe in `Core::open`, which runs before the Core is
-    shared;
+  - the login-shell probe (`agents/environment/probe.rs`), which runs in
+    `Core::open` before the Core is shared;
   - the usage host's process runner (`usage/process.rs`) and hidden terminal
-    (`usage/terminal.rs`). The usage sources need standard input (a curl
-    config, JSON-RPC) and a pseudoterminal, which `soyeht_process::run` does
-    not offer. They run only from `PreparedRefresh::read`, off the lock, each
-    with its own deadline.
+    (`usage/terminal.rs`). `curl` and `security` go through
+    `soyeht_process::run_with_input` (the credentials reach `curl` on standard
+    input). What remains outside the runner is the Codex JSON-RPC child, which
+    is a conversation with one long-lived process, and the pseudoterminal.
+    They run only from `PreparedRefresh::read`, off the lock, each with its own
+    deadline.
 
   The usage refresh itself follows the rule. `usage.refresh` is an `Offload`
   whose apply releases its providers when the read is late, and the usage

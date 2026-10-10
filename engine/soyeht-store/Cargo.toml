@@ -17,7 +17,7 @@ serde_json.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 crc32fast.workspace = true
-libc.workspace = true
+soyeht-platform = { path = "../soyeht-platform" }
 
 [lints]
 workspace = true

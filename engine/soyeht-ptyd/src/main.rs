@@ -10,6 +10,7 @@ fn main() -> Result<()> {
         println!("{}", soyeht_ptyd::wire::VERSION);
         return Ok(());
     }
+    #[cfg(unix)]
     if let [flag, fd] = args.as_slice()
         && flag == "--pipe-guard"
     {
@@ -18,7 +19,8 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let directory = match args.as_slice() {
-        [] => PathBuf::from(env::var("HOME").map_err(|_| Error::HomeMissing)?)
+        [] => env::home_dir()
+            .ok_or(Error::HomeMissing)?
             .join(DEV_DATA_DIRECTORY_FROM_HOME),
         [flag, path] if flag == "--data-dir" => PathBuf::from(path),
         _ => return Err(Error::InvalidArguments),

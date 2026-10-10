@@ -67,6 +67,8 @@ pub enum PortScanError {
     Failed { code: Option<i32>, detail: String },
     /// The scanner's output could not be read as a listener table.
     Unreadable(soyeht_web::Error),
+    /// This system has no way to list local servers (see [`PortScanPort::unavailable`]).
+    Unsupported(&'static str),
 }
 
 impl std::fmt::Display for PortScanError {
@@ -86,6 +88,7 @@ impl std::fmt::Display for PortScanError {
                 write!(formatter, "port scanner was stopped by a signal: {detail}")
             }
             Self::Unreadable(error) => write!(formatter, "port scanner output unreadable: {error}"),
+            Self::Unsupported(reason) => formatter.write_str(reason),
         }
     }
 }
@@ -95,12 +98,18 @@ impl std::error::Error for PortScanError {
         match self {
             Self::Process(error) => Some(error),
             Self::Unreadable(error) => Some(error),
-            Self::Failed { .. } => None,
+            Self::Failed { .. } | Self::Unsupported(_) => None,
         }
     }
 }
 
 pub trait PortScanPort: Send {
+    /// Why this system cannot list local servers; `None` where it can. A system that cannot is
+    /// never scanned, and asking for the list is answered with `platform_unsupported`.
+    fn unavailable(&self) -> Option<&'static str> {
+        None
+    }
+
     fn scan(&mut self) -> Result<PortScanObservation, PortScanError>;
 }
 

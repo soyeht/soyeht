@@ -232,7 +232,7 @@ fn host_file(attachment: PromptAttachment) -> Result<PreparedAttachment> {
     if !path.is_absolute() {
         return Err(unreadable());
     }
-    let canonical = path.canonicalize().map_err(|_| unreadable())?;
+    let canonical = soyeht_platform::fs::canonicalize(path).map_err(|_| unreadable())?;
     let metadata = fs::metadata(&canonical).map_err(|_| unreadable())?;
     if !metadata.is_file() || fs::File::open(&canonical).is_err() {
         return Err(unreadable());
@@ -324,12 +324,17 @@ mod tests {
 
     #[test]
     fn sizes_are_checked_against_the_declaration_and_both_limits() {
-        let staging = Path::new("/staging");
+        let staging = crate::test_paths::rooted("/staging");
+        let staging = staging.as_path();
         let image = attachment(PromptAttachmentKind::Image, "image/png");
         let item = staged(image.clone(), b"abc".to_vec(), staging, 3).unwrap();
         let path = item.attachment.path.unwrap();
-        assert!(path.starts_with("/staging/ba7816bf"));
-        assert!(path.ends_with("/shot.png"));
+        assert!(path.starts_with(&format!(
+            "{}{}ba7816bf",
+            staging.display(),
+            std::path::MAIN_SEPARATOR
+        )));
+        assert!(path.ends_with(&format!("{}shot.png", std::path::MAIN_SEPARATOR)));
         assert!(item.attachment.data.is_none());
         assert!(staged(image.clone(), b"ab".to_vec(), staging, 2).is_err());
         let total = staged(

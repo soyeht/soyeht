@@ -4,13 +4,13 @@
 //! rendered with a VT100 emulator for the source's driver, and afterwards the process group is
 //! stopped, the scratch directory removed and the session transcript deleted.
 
+use soyeht_ptyd::{child::Child, io::Output, pty::Session};
 use soyeht_usage::host::{TerminalDriver, TerminalRequest, TerminalRun, TerminalStep};
 use std::{
     fs::{self, File},
     io::{self, Read, Write},
-    os::fd::AsRawFd,
     path::Path,
-    process::{Child, Command, Stdio},
+    process::Command,
     thread,
     time::{Duration, Instant},
 };
@@ -19,6 +19,8 @@ const ROWS: u16 = 50;
 const COLUMNS: u16 = 160;
 const POLL: Duration = Duration::from_millis(60);
 const STOP_GRACE: Duration = Duration::from_secs(1);
+const REMOVE_ATTEMPTS: u32 = 20;
+const REMOVE_PAUSE: Duration = Duration::from_millis(50);
 /// The screen's cursor-position query and the answer CodexBar gives it.
 const CURSOR_QUERY: &[u8] = b"\x1b[6n";
 const CURSOR_ANSWER: &[u8] = b"\x1b[1;1R";
@@ -47,11 +49,22 @@ pub(super) fn run(
         return TerminalRun::Incomplete;
     }
     let outcome = match spawn(program, path_env, request) {
-        Ok((mut child, master)) => {
-            let outcome = drive(&master, request.timeout, driver);
+        Ok(mut session) => {
+            let outcome = drive(
+                &mut session.input,
+                &mut session.output,
+                request.timeout,
+                driver,
+            );
+            let Session {
+                mut child,
+                input,
+                output,
+                resizer,
+            } = session;
             // Close the terminal first: a process exiting with unread output waits for the
             // terminal to drain, so it would never finish while the master stays open.
-            drop(master);
+            drop((input, output, resizer));
             stop(&mut child);
             outcome
         }
@@ -63,7 +76,7 @@ pub(super) fn run(
 
 fn prepare(request: &TerminalRequest) -> io::Result<()> {
     if request.workdir.exists() {
-        fs::remove_dir_all(&request.workdir)?;
+        remove_dir(&request.workdir)?;
     }
     fs::create_dir_all(&request.workdir)?;
     for (relative, contents) in &request.files {
@@ -86,7 +99,7 @@ fn prepare(request: &TerminalRequest) -> io::Result<()> {
 /// Removes the scratch directory and this session's transcript, and the transcript's directory
 /// when nothing else is left in it.
 fn cleanup(request: &TerminalRequest) {
-    let _ = fs::remove_dir_all(&request.workdir);
+    let _ = remove_dir(&request.workdir);
     if let Some(transcript) = &request.transcript {
         let _ = fs::remove_file(transcript);
         if let Some(parent) = transcript.parent() {
@@ -95,19 +108,41 @@ fn cleanup(request: &TerminalRequest) {
     }
 }
 
-fn spawn(program: &Path, path_env: &str, request: &TerminalRequest) -> io::Result<(Child, File)> {
-    let (master, slave) = soyeht_ptyd::pty::open(ROWS, COLUMNS)?;
+/// Removes a scratch directory. On Windows a stopped session's processes can still hold a
+/// file or the directory itself for a moment after their job reports empty, so a refusal is
+/// retried for about a second. A directory that is already gone is done.
+fn remove_dir(directory: &Path) -> io::Result<()> {
+    let attempts = if cfg!(windows) { REMOVE_ATTEMPTS } else { 1 };
+    let mut result = Ok(());
+    for attempt in 0..attempts {
+        if attempt > 0 {
+            thread::sleep(REMOVE_PAUSE);
+        }
+        result = fs::remove_dir_all(directory);
+        match &result {
+            Ok(()) => break,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => {}
+        }
+    }
+    result
+}
+
+fn spawn(program: &Path, path_env: &str, request: &TerminalRequest) -> io::Result<Session> {
     let mut command = Command::new(program);
     command
         .args(&request.args)
         .current_dir(&request.workdir)
         .env_clear()
         .env("PATH", path_env)
-        .env("TERM", "xterm-256color")
-        .stdin(Stdio::from(slave.try_clone()?))
-        .stdout(Stdio::from(slave.try_clone()?))
-        .stderr(Stdio::from(slave));
+        .env("TERM", "xterm-256color");
     for name in INHERITED {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    #[cfg(windows)]
+    for name in soyeht_ptyd::SYSTEM_ENVIRONMENT {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
         }
@@ -115,34 +150,26 @@ fn spawn(program: &Path, path_env: &str, request: &TerminalRequest) -> io::Resul
     for (name, value) in &request.env {
         command.env(name, value);
     }
-    soyeht_ptyd::pty::control_from_stdin(&mut command);
-    let child = command.spawn()?;
-    // SAFETY: the master descriptor is open; F_GETFL/F_SETFL only change its status flags.
-    unsafe {
-        let flags = libc::fcntl(master.as_raw_fd(), libc::F_GETFL);
-        if flags == -1
-            || libc::fcntl(master.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) == -1
-        {
-            return Err(io::Error::last_os_error());
-        }
-    }
-    Ok((child, master))
+    soyeht_ptyd::pty::spawn(command, ROWS, COLUMNS)
 }
 
-fn drive(master: &File, timeout: Duration, driver: &mut dyn TerminalDriver) -> TerminalRun {
+fn drive(
+    keyboard: &mut File,
+    terminal: &mut Output,
+    timeout: Duration,
+    driver: &mut dyn TerminalDriver,
+) -> TerminalRun {
     let started = Instant::now();
     let mut parser = vt100::Parser::new(ROWS, COLUMNS, 0);
-    let mut input = master;
-    let mut output = master;
     let mut chunk = [0_u8; 8192];
     while started.elapsed() < timeout {
         loop {
-            match input.read(&mut chunk) {
+            match terminal.read(&mut chunk) {
                 Ok(0) => return TerminalRun::Incomplete,
                 Ok(count) => {
                     let bytes = &chunk[..count];
                     if bytes.windows(CURSOR_QUERY.len()).any(|w| w == CURSOR_QUERY)
-                        && output.write_all(CURSOR_ANSWER).is_err()
+                        && keyboard.write_all(CURSOR_ANSWER).is_err()
                     {
                         return TerminalRun::Incomplete;
                     }
@@ -158,7 +185,7 @@ fn drive(master: &File, timeout: Duration, driver: &mut dyn TerminalDriver) -> T
         match driver.step(&screen, started.elapsed()) {
             TerminalStep::Done => return TerminalRun::Finished(screen),
             TerminalStep::Send(bytes) => {
-                if output.write_all(&bytes).is_err() {
+                if keyboard.write_all(&bytes).is_err() {
                     return TerminalRun::Incomplete;
                 }
             }
@@ -169,15 +196,9 @@ fn drive(master: &File, timeout: Duration, driver: &mut dyn TerminalDriver) -> T
     TerminalRun::Incomplete
 }
 
-/// Stops the whole process group: TERM, a short grace, then KILL.
+/// Stops the whole process group: a request to stop, a short grace, then the kill.
 fn stop(child: &mut Child) {
-    let Ok(group) = i32::try_from(child.id()) else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return;
-    };
-    // SAFETY: the child called setsid, so its pid names a process group owned by this run.
-    unsafe { libc::kill(-group, libc::SIGTERM) };
+    child.request_stop();
     let deadline = Instant::now() + STOP_GRACE;
     while Instant::now() < deadline {
         if matches!(child.try_wait(), Ok(Some(_))) {
@@ -185,8 +206,7 @@ fn stop(child: &mut Child) {
         }
         thread::sleep(POLL);
     }
-    // SAFETY: as above; KILL reaches any process the CLI left in its group.
-    unsafe { libc::kill(-group, libc::SIGKILL) };
+    child.kill_group();
     let _ = child.wait();
 }
 
@@ -205,11 +225,42 @@ mod tests {
             if screen.contains("PANEL 42%") {
                 return TerminalStep::Done;
             }
-            if !self.sent {
+            // Keys typed before the program is reading may be discarded; wait for its prompt.
+            if !self.sent && screen.contains("READY") {
                 self.sent = true;
-                return TerminalStep::Send(b"go\n".to_vec());
+                return TerminalStep::Send(b"go\r\n".to_vec());
             }
             TerminalStep::Wait
+        }
+    }
+
+    /// Waits for a line, prints the panel, then stays alive for 30 seconds.
+    #[cfg(unix)]
+    const SCRIPT: &str = "test -f marker.json || exit 3; printf 'READY\\n'; read line; printf 'PANEL 42%%\\n'; sleep 30";
+    #[cfg(windows)]
+    const SCRIPT: &str = "(if not exist marker.json exit 3) & echo READY & set /p line= & echo PANEL 42% & ping -n 30 127.0.0.1 > nul";
+
+    fn shell_name() -> &'static str {
+        if cfg!(windows) { "cmd.exe" } else { "sh" }
+    }
+
+    fn shell_flag() -> &'static str {
+        if cfg!(windows) { "/c" } else { "-c" }
+    }
+
+    fn shell_path() -> &'static str {
+        if cfg!(windows) {
+            r"C:\Windows\System32\cmd.exe"
+        } else {
+            "/bin/sh"
+        }
+    }
+
+    fn path_env() -> &'static str {
+        if cfg!(windows) {
+            r"C:\Windows\System32"
+        } else {
+            "/usr/bin:/bin"
         }
     }
 
@@ -222,11 +273,8 @@ mod tests {
         let transcript = transcript_dir.join("session.jsonl");
         fs::write(&transcript, b"{}").unwrap();
         let request = TerminalRequest {
-            program: "sh".into(),
-            args: vec![
-                "-c".into(),
-                "test -f marker.json || exit 3; read line; printf 'PANEL 42%%\\n'; sleep 30".into(),
-            ],
+            program: shell_name().into(),
+            args: vec![shell_flag().into(), SCRIPT.into()],
             env: Vec::new(),
             workdir: workdir.clone(),
             files: vec![("marker.json".into(), b"{}".to_vec())],
@@ -235,12 +283,15 @@ mod tests {
         };
         let started = Instant::now();
         let outcome = run(
-            &PathBuf::from("/bin/sh"),
-            "/usr/bin:/bin",
+            &PathBuf::from(shell_path()),
+            path_env(),
             &request,
             &mut Script { sent: false },
         );
-        assert!(matches!(outcome, TerminalRun::Finished(screen) if screen.contains("PANEL 42%")));
+        assert!(
+            matches!(&outcome, TerminalRun::Finished(screen) if screen.contains("PANEL 42%")),
+            "{outcome:?}"
+        );
         assert!(
             started.elapsed() < Duration::from_secs(8),
             "the session was not stopped"

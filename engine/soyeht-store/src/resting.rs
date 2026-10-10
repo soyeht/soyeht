@@ -116,6 +116,7 @@ mod tests {
             "a write wakes the poll"
         );
         assert_eq!(store.next_loop_tick_ms().unwrap(), None);
+        drop(store);
         fs::remove_dir_all(root).unwrap();
     }
 }

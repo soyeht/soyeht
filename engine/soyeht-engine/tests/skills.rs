@@ -32,7 +32,7 @@ fn item<'a>(listing: &'a Value, name: &str) -> &'a Value {
 }
 
 fn user_store(rig: &Rig) -> PathBuf {
-    rig.path.join("skills/.agents/skills")
+    rig.path.join("skills").join(".agents").join("skills")
 }
 
 #[test]
@@ -72,7 +72,14 @@ fn skills_are_created_edited_validated_watched_and_deleted() {
     assert_eq!(created["skill"]["scope"], "workspace");
     assert_eq!(
         created["skill"]["path"],
-        json!(rig.path.join(".agents/skills/review").display().to_string())
+        json!(
+            rig.path
+                .join(".agents")
+                .join("skills")
+                .join("review")
+                .display()
+                .to_string()
+        )
     );
     client.wait_for_notification("skills.changed", |event| event["workspaceId"] == workspace);
 

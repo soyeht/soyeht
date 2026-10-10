@@ -524,6 +524,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn model_list_reads_an_executable_only_for_a_harness_with_a_live_session() {
         use std::os::unix::fs::PermissionsExt;

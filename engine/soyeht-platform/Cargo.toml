@@ -1,0 +1,47 @@
+[package]
+name = "soyeht-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Async (tokio) flavour of the local endpoint.
+tokio = ["dep:tokio"]
+# Helpers for tests: denying and exposing files.
+test-support = []
+
+[dependencies]
+tokio = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+getrandom.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+getrandom.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

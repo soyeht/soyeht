@@ -35,6 +35,7 @@ pub enum Error {
     WebHostUnavailable(String),
     WritingKindRefused(String),
     AttachmentLimitExceeded(String),
+    PlatformUnsupported(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -106,6 +107,7 @@ constructor!(worktree_unavailable, WorktreeUnavailable);
 constructor!(web_host_unavailable, WebHostUnavailable);
 constructor!(writing_kind_refused, WritingKindRefused);
 constructor!(attachment_limit_exceeded, AttachmentLimitExceeded);
+constructor!(platform_unsupported, PlatformUnsupported);
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -318,6 +320,9 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::Editor(error) => editor_kind(error),
         Error::Vcs(error) => vcs_kind(error),
         Error::Web(error) => web_kind(error),
+        Error::PortScan(crate::ports::PortScanError::Unsupported(_)) => {
+            ErrorKind::PlatformUnsupported
+        }
         Error::PortScan(_) => ErrorKind::InternalError,
         Error::Writing(error) => writing_kind(error),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
@@ -332,6 +337,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::WebHostUnavailable(_) => ErrorKind::WebHostUnavailable,
         Error::WritingKindRefused(_) => ErrorKind::WritingKindRefused,
         Error::AttachmentLimitExceeded(_) => ErrorKind::AttachmentLimitExceeded,
+        Error::PlatformUnsupported(_) => ErrorKind::PlatformUnsupported,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -355,7 +361,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::WeakPublicKey => ErrorKind::InvalidParams,
         Error::SnapshotTooLarge(_) => ErrorKind::SnapshotTooLarge,
         Error::Storage(error) => store_kind(error),
-        Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => ErrorKind::DiskFull,
+        Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => ErrorKind::DiskFull,
         Error::Io(_) => ErrorKind::InternalError,
         Error::Supervisor(error) => supervisor_kind(error),
     }
@@ -383,7 +389,7 @@ pub fn agent_poll_failure_is_global(error: &Error) -> bool {
         | Error::StaleEngineGeneration(_)
         | Error::Supervisor(_)
         | Error::EngineStatePoisoned => true,
-        Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => true,
+        Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => true,
         _ => false,
     }
 }
@@ -428,6 +434,7 @@ fn message(error: &Error) -> String {
         | Error::WebHostUnavailable(message)
         | Error::WritingKindRefused(message)
         | Error::AttachmentLimitExceeded(message)
+        | Error::PlatformUnsupported(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),
@@ -438,7 +445,7 @@ fn message(error: &Error) -> String {
         Error::Storage(soyeht_store::Error::DiskFull) => "Storage is full".into(),
         Error::Storage(error) if store_kind(error) == ErrorKind::InvalidParams => error.to_string(),
         Error::Storage(_) => "Storage operation failed".into(),
-        Error::Io(error) if error.raw_os_error() == Some(libc::ENOSPC) => "Storage is full".into(),
+        Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => "Storage is full".into(),
         Error::Io(_) => "I/O operation failed".into(),
         Error::Acp(error) => error.to_string(),
         Error::Editor(error) => error.to_string(),
@@ -654,8 +661,8 @@ mod tests {
         assert!(agent_poll_failure_is_global(&Error::Storage(
             soyeht_store::Error::IdempotencyConflict
         )));
-        assert!(agent_poll_failure_is_global(&Error::Io(
-            io::Error::from_raw_os_error(libc::ENOSPC)
-        )));
+        assert!(agent_poll_failure_is_global(&Error::Io(io::Error::from(
+            io::ErrorKind::StorageFull
+        ))));
     }
 }

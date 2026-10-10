@@ -222,7 +222,7 @@ pub fn replayed_attachment(content: &Value) -> Option<PromptAttachment> {
             let path = local_path(uri);
             let name = path
                 .as_deref()
-                .and_then(|path| path.rsplit('/').next())
+                .and_then(|path| std::path::Path::new(path).file_name()?.to_str())
                 .unwrap_or(uri)
                 .to_owned();
             let size = resource["text"]
@@ -248,7 +248,10 @@ mod tests {
     fn file<'a>(kind: &'a PromptAttachmentKind, mime: &'a str, path: &'a str) -> PromptFile<'a> {
         PromptFile {
             kind,
-            name: path.rsplit('/').next().unwrap(),
+            name: std::path::Path::new(path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap(),
             mime_type: mime,
             path,
             size: 5,
@@ -268,6 +271,25 @@ mod tests {
         audio: true,
         embedded_context: true,
     };
+
+    /// An absolute path for fixtures; on Windows a drive letter is what makes a path absolute.
+    fn tmp(name: &str) -> &'static str {
+        let path = if cfg!(windows) {
+            format!(r"C:\tmp\{name}")
+        } else {
+            format!("/tmp/{name}")
+        };
+        Box::leak(path.into_boxed_str())
+    }
+
+    /// The file URI of [`tmp`]; `name` is already percent-encoded.
+    fn tmp_uri(name: &str) -> String {
+        if cfg!(windows) {
+            format!("file:///C:/tmp/{name}")
+        } else {
+            format!("file:///tmp/{name}")
+        }
+    }
 
     #[test]
     fn capabilities_follow_the_initialize_response_and_default_to_false() {
@@ -297,18 +319,18 @@ mod tests {
         let other = PromptAttachmentKind::File;
         let files = [
             (
-                file(&image, "image/png", "/tmp/a b.png"),
+                file(&image, "image/png", tmp("a b.png")),
                 Some(&b"PNG!!"[..]),
             ),
             (
-                file(&audio, "audio/wav", "/tmp/voice.wav"),
+                file(&audio, "audio/wav", tmp("voice.wav")),
                 Some(&b"RIFF!"[..]),
             ),
             (
-                file(&text, "text/markdown", "/tmp/notes.md"),
+                file(&text, "text/markdown", tmp("notes.md")),
                 Some(&b"# Hi\n"[..]),
             ),
-            (file(&other, "application/pdf", "/tmp/report.pdf"), None),
+            (file(&other, "application/pdf", tmp("report.pdf")), None),
         ];
         let value = prompt_with_files("s", "Look", &files, ALL).unwrap();
         let blocks = value["prompt"].as_array().unwrap();
@@ -318,10 +340,10 @@ mod tests {
         assert_eq!(blocks[2]["type"], "audio");
         assert_eq!(blocks[3]["type"], "resource");
         assert_eq!(blocks[3]["resource"]["text"], "# Hi\n");
-        assert_eq!(blocks[3]["resource"]["uri"], "file:///tmp/notes.md");
+        assert_eq!(blocks[3]["resource"]["uri"], tmp_uri("notes.md"));
         assert_eq!(
             blocks[4],
-            json!({"type":"resource_link","uri":"file:///tmp/report.pdf","name":"report.pdf",
+            json!({"type":"resource_link","uri":tmp_uri("report.pdf"),"name":"report.pdf",
                 "mimeType":"application/pdf","size":5})
         );
         assert_eq!(
@@ -331,7 +353,7 @@ mod tests {
 
         let linked = prompt_with_files("s", "Look", &files, PromptCapabilities::default()).unwrap();
         assert_eq!(types(&linked), ["resource_link"; 4]);
-        assert_eq!(linked["prompt"][1]["uri"], "file:///tmp/a%20b.png");
+        assert_eq!(linked["prompt"][1]["uri"], tmp_uri("a%20b.png"));
         assert_eq!(linked["prompt"][1]["type"], "resource_link");
     }
 
@@ -339,22 +361,22 @@ mod tests {
     fn unsupported_images_binary_text_and_missing_contents_are_linked() {
         let image = PromptAttachmentKind::Image;
         let text = PromptAttachmentKind::Text;
-        let heic = file(&image, "image/heic", "/tmp/photo.heic");
+        let heic = file(&image, "image/heic", tmp("photo.heic"));
         assert_eq!(heic.preferred(ALL), Delivery::Link);
         assert!(!heic.needs_contents(ALL));
         let files = [
             (heic, Some(&b"heic"[..])),
             (
-                file(&text, "text/plain", "/tmp/binary.txt"),
+                file(&text, "text/plain", tmp("binary.txt")),
                 Some(&[0xff, 0xfe][..]),
             ),
-            (file(&image, "image/png", "/tmp/unread.png"), None),
+            (file(&image, "image/png", tmp("unread.png")), None),
         ];
         let value = prompt_with_files("s", "Look", &files, ALL).unwrap();
         assert_eq!(types(&value), ["resource_link"; 3]);
         let relative = PromptFile {
             path: "relative.png",
-            ..file(&image, "image/png", "/tmp/x.png")
+            ..file(&image, "image/png", tmp("x.png"))
         };
         assert!(prompt_with_files("s", "Look", &[(relative, None)], ALL).is_err());
     }
@@ -363,9 +385,9 @@ mod tests {
     fn inlining_stops_at_the_one_message_budget_and_links_the_rest() {
         let image = PromptAttachmentKind::Image;
         let large = vec![7u8; limits::ACP_MESSAGE_BYTES / 2];
-        let mut big = file(&image, "image/png", "/tmp/one.png");
+        let mut big = file(&image, "image/png", tmp("one.png"));
         big.size = large.len() as u64;
-        let mut second = file(&image, "image/png", "/tmp/two.png");
+        let mut second = file(&image, "image/png", tmp("two.png"));
         second.size = large.len() as u64;
         assert!(big.needs_contents(ALL));
         let files = [
@@ -390,13 +412,13 @@ mod tests {
         assert_eq!(image.kind, PromptAttachmentKind::Image);
         assert_eq!(image.bytes, "5");
         let link = replayed_attachment(&json!({"type":"resource_link",
-            "uri":"file:///tmp/a%20b.pdf","name":"a b.pdf","mimeType":"application/pdf",
+            "uri":tmp_uri("a%20b.pdf"),"name":"a b.pdf","mimeType":"application/pdf",
             "size":9}))
         .unwrap();
-        assert_eq!(link.path.as_deref(), Some("/tmp/a b.pdf"));
+        assert_eq!(link.path.as_deref(), Some(tmp("a b.pdf")));
         assert_eq!(link.kind, PromptAttachmentKind::File);
         let embedded = replayed_attachment(&json!({"type":"resource","resource":{
-            "uri":"file:///tmp/notes.md","text":"# Hi"}}))
+            "uri":tmp_uri("notes.md"),"text":"# Hi"}}))
         .unwrap();
         assert_eq!(embedded.name, "notes.md");
         assert_eq!(embedded.bytes, "4");

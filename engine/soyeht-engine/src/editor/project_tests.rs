@@ -188,7 +188,7 @@ async fn create_and_delete_stay_in_the_workspace_and_close_deleted_tabs() {
     let workspace_id = fixture.workspace_id.clone();
     let outside = fixture.root.join("outside");
     fs::create_dir_all(&outside).unwrap();
-    std::os::unix::fs::symlink(&outside, fixture.project().join("escape")).unwrap();
+    soyeht_platform::fs::symlink(&outside, fixture.project().join("escape")).unwrap();
 
     let created = fixture.call(
         "project.entry.create",

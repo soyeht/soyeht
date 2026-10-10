@@ -24,7 +24,7 @@ const ENGINE_CRATES: &[&str] = &[
 /// Files allowed to run a child process directly, and why that is safe.
 const DIRECT_PROCESS_FILES: &[(&str, &str)] = &[
     (
-        "soyeht-engine/src/agents/environment.rs",
+        "soyeht-engine/src/agents/environment/probe.rs",
         "probes the login shell once in Core::open, before the Core is shared",
     ),
     (
@@ -96,11 +96,12 @@ fn every_engine_command_runs_through_the_bounded_runner() {
         let mut files = Vec::new();
         rust_files(&root.join(krate).join("src"), &mut files);
         for file in files {
+            // Forward slashes on every system, as the allowlist spells them.
             let relative = file
                 .strip_prefix(&root)
                 .unwrap()
                 .to_string_lossy()
-                .into_owned();
+                .replace('\\', "/");
             let source = fs::read_to_string(&file).unwrap();
             let shipped = shipped(&source);
             if DIRECT_PROCESS_FILES

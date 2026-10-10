@@ -4,7 +4,7 @@ use soyeht_protocol::EditorLanguage;
 use std::{
     ffi::OsStr,
     fs, io,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 use uuid::Uuid;
 
@@ -32,6 +32,30 @@ pub struct ProjectFile {
     pub modified_ms: i64,
 }
 
+/// A path below a root as the wire names it: its normal components joined with `/`, on every
+/// system. `None` when the path is empty, is not UTF-8 or has a component that is not a name.
+pub(crate) fn wire_path(relative: &Path) -> Option<String> {
+    let names = relative
+        .components()
+        .map(|component| match component {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!names.is_empty()).then(|| names.join("/"))
+}
+
+/// [`wire_path`], or an error that says why the path has no wire form.
+pub(crate) fn checked_wire_path(relative: &Path) -> crate::errors::Result<String> {
+    wire_path(relative).ok_or_else(|| {
+        if relative.to_str().is_none() {
+            crate::errors::invalid("File path must be UTF-8")
+        } else {
+            crate::errors::invalid("File path must name a file inside the workspace")
+        }
+    })
+}
+
 /// The closed editor language of a path; unknown extensions are plain text.
 pub fn language(path: &Path) -> EditorLanguage {
     match path.extension().and_then(|value| value.to_str()) {
@@ -47,7 +71,7 @@ pub fn language(path: &Path) -> EditorLanguage {
 }
 
 pub(crate) fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile>> {
-    let root = fs::canonicalize(root)?;
+    let root = soyeht_platform::fs::canonicalize(root)?;
     let mut builder = ignore::WalkBuilder::new(&root);
     builder
         .standard_filters(true)
@@ -65,16 +89,11 @@ pub(crate) fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile
         if !kind.is_file() || kind.is_symlink() {
             continue;
         }
-        let canonical = fs::canonicalize(entry.path())?;
+        let canonical = soyeht_platform::fs::canonicalize(entry.path())?;
         if !canonical.starts_with(&root) {
             continue;
         }
-        let relative = canonical
-            .strip_prefix(&root)
-            .ok()
-            .and_then(Path::to_str)
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned);
+        let relative = canonical.strip_prefix(&root).ok().and_then(wire_path);
         if let Some(relative) = relative {
             let metadata = fs::metadata(&canonical)?;
             let modified_ms = metadata
@@ -115,6 +134,16 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
+    fn a_path_with_a_parent_component_is_not_called_non_utf8() {
+        let error = checked_wire_path(Path::new("a/../b"))
+            .unwrap_err()
+            .to_string();
+        assert!(!error.contains("UTF-8"), "{error}");
+        assert!(error.contains("inside the workspace"), "{error}");
+        assert_eq!(checked_wire_path(Path::new("a/b.rs")).unwrap(), "a/b.rs");
+    }
+
+    #[test]
     fn project_enumeration_honors_ignores_and_never_follows_metadata_or_symlinks() {
         let root = std::env::temp_dir().join(format!("sn-files-{}", Uuid::new_v4()));
         let outside = std::env::temp_dir().join(format!("sn-outside-{}", Uuid::new_v4()));
@@ -129,7 +158,7 @@ mod tests {
         fs::write(root.join(".git/secret"), "hidden").unwrap();
         fs::write(root.join(".svn/secret"), "hidden").unwrap();
         fs::write(&outside, "outside").unwrap();
-        std::os::unix::fs::symlink(&outside, root.join("src/link.txt")).unwrap();
+        soyeht_platform::fs::symlink(&outside, root.join("src/link.txt")).unwrap();
 
         let files = enumerate_project_files(&root).unwrap();
         let paths = files

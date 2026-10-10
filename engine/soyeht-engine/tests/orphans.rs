@@ -35,7 +35,15 @@ fn an_agent_process_no_pane_owns_is_closed_when_the_engine_reconciles() {
         generation: 1,
         kind: ProcessKind::PipesAcp,
         cwd: rig.path.to_string_lossy().into_owned(),
-        argv: vec!["/bin/sh".into(), "-c".into(), "sleep 300".into()],
+        argv: if cfg!(windows) {
+            vec![
+                "cmd.exe".into(),
+                "/c".into(),
+                "ping -n 300 127.0.0.1 > nul".into(),
+            ]
+        } else {
+            vec!["/bin/sh".into(), "-c".into(), "sleep 300".into()]
+        },
         env: BTreeMap::new(),
         cols: 80,
         rows: 24,

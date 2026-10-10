@@ -585,27 +585,13 @@ fn required_instance(server: &Server) -> Result<String> {
 }
 
 fn root_uri(root: &Path) -> Result<String> {
-    let text = root
-        .to_str()
-        .ok_or_else(|| errors::invalid("Workspace path must be UTF-8"))?;
-    Ok(format!("file://{}", percent_encode(text.as_bytes())))
+    super::uri::path_to_uri(root)
+        .ok_or_else(|| errors::invalid("Workspace path must be an absolute UTF-8 path"))
 }
 
 pub(crate) fn file_uri(root: &Path, relative: &str) -> Result<String> {
     let path = root.join(relative);
     root_uri(&path)
-}
-
-fn percent_encode(bytes: &[u8]) -> String {
-    let mut result = String::new();
-    for byte in bytes {
-        if byte.is_ascii_alphanumeric() || matches!(*byte, b'/' | b'-' | b'_' | b'.' | b'~') {
-            result.push(char::from(*byte));
-        } else {
-            result.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    result
 }
 
 #[cfg(test)]

@@ -3,6 +3,11 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use soyeht_platform::{
+    fs::symlink,
+    local::{Stream, connect},
+    testing::{allow_owner, deny_everyone},
+};
 use soyeht_protocol::{Task, frame::Frame};
 use soyeht_ptyd::{
     client::Client as PtyClient,
@@ -16,7 +21,6 @@ use soyeht_store::{
 use std::{
     fs,
     io::Write,
-    os::unix::{fs::PermissionsExt, fs::symlink, net::UnixStream},
     path::PathBuf,
     process::{Command, Stdio},
     thread,
@@ -129,7 +133,7 @@ fn writing_section_listing_ignores_protected_workspace_siblings() {
     let protected = rig.path.join("Pictures/Photos Library.photoslibrary");
     fs::create_dir_all(&protected).unwrap();
     fs::write(protected.join("private.md"), "private\n").unwrap();
-    fs::set_permissions(&protected, fs::Permissions::from_mode(0o000)).unwrap();
+    deny_everyone(&protected).unwrap();
 
     let mut client = rig.client();
     let workspace = client.call(
@@ -143,7 +147,7 @@ fn writing_section_listing_ignores_protected_workspace_siblings() {
         "writing.section.list",
         json!({"workspaceId":workspace,"section":"texts","limit":50}),
     );
-    fs::set_permissions(&protected, fs::Permissions::from_mode(0o700)).unwrap();
+    allow_owner(&protected).unwrap();
 
     assert!(listed.get("error").is_none(), "{listed}");
     assert_eq!(listed["result"]["entries"].as_array().unwrap().len(), 1);
@@ -1004,8 +1008,8 @@ fn runtime_rig_slot_keeps_owner_failure_visible_and_recovers_the_queue() {
     drop(runtime_rig_slot());
 }
 
-fn binding_hello(path: &std::path::Path, binding: &str) -> (UnixStream, Value) {
-    let mut socket = UnixStream::connect(path).unwrap();
+fn binding_hello(path: &std::path::Path, binding: &str) -> (Stream, Value) {
+    let mut socket = connect(path).unwrap();
     let challenge = Frame::read_from(&mut socket).unwrap().unwrap();
     assert!(matches!(challenge, Frame::Json(_)));
     Frame::Json(
@@ -1250,7 +1254,7 @@ fn held_agent_message_follows_the_sent_draft_as_its_own_attributed_turn() {
     assert_eq!(users[1]["agentMessage"]["name"], sender_name);
 }
 
-fn binding_request(socket: &mut UnixStream, id: u64, method: &str, params: Value) -> Value {
+fn binding_request(socket: &mut Stream, id: u64, method: &str, params: Value) -> Value {
     Frame::Json(
         serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
             .unwrap(),
@@ -1289,7 +1293,7 @@ fn reserve_task(rig: &Rig, workspace: &str, pane: &str, key: &str) -> Task {
 struct TaskLifecycleRig {
     rig: Rig,
     human: Client,
-    executor: UnixStream,
+    executor: Stream,
     workspace: String,
     pane: String,
     repository: PathBuf,
@@ -3037,8 +3041,7 @@ fn wait_for_silent_prompt_receipt(rig: &Rig, pane: &str, session: &str) {
 #[test]
 fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     let rig = Rig::new();
-    let binary =
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    let binary = sibling_binary("soyeht-fake-acp");
     fs::write(rig.path.join("harnesses.json"),serde_json::to_vec(&json!([{"id":"auth-test","name":"Auth test","command":binary,"args":["--state-dir",rig.path.join("native"),"--require-login"],"version":"test"}])).unwrap()).unwrap();
     let mut client = rig.client();
     let registry = client.call("harness.list", json!({}));
@@ -3165,8 +3168,7 @@ fn sign_in_that_is_not_confirmed_keeps_its_terminal_and_the_agent_signed_out() {
         SignInEnding::ExitedWithoutSigningIn,
     ] {
         let rig = Rig::new();
-        let binary =
-            PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+        let binary = sibling_binary("soyeht-fake-acp");
         fs::write(
             rig.path.join("harnesses.json"),
             serde_json::to_vec(&json!([{
@@ -3469,9 +3471,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
         false
     );
 
-    let installed_after_start = rig.path.join("bin/amp-acp");
-    fs::write(&installed_after_start, "#!/bin/sh\nexit 0\n").unwrap();
-    fs::set_permissions(&installed_after_start, fs::Permissions::from_mode(0o700)).unwrap();
+    rig.install_stub_executable("amp-acp");
 
     let registry = client.call("harness.list", json!({"limit":64,"rescan":true}));
     let items = registry["items"].as_array().unwrap();
@@ -3503,8 +3503,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
 #[test]
 fn custom_harness_management_is_atomic_idempotent_and_protects_bound_panes() {
     let mut rig = Rig::new();
-    let binary =
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    let binary = sibling_binary("soyeht-fake-acp");
     let mut client = rig.client();
     let launch = json!({
         "id":"custom-managed",
@@ -3596,8 +3595,7 @@ fn custom_harness_management_is_atomic_idempotent_and_protects_bound_panes() {
 }
 
 fn start_agent_case(rig: &Rig) -> (Client, String, Value) {
-    let binary =
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    let binary = sibling_binary("soyeht-fake-acp");
     fs::write(rig.path.join("harnesses.json"), serde_json::to_vec(&json!([{
         "id":"test-agent","name":"Test agent","command":binary,"args":["--state-dir",rig.path.join("native")],"version":"test"
     }])).unwrap()).unwrap();
@@ -3643,10 +3641,7 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
     let args = server["args"].as_array().unwrap();
     assert_eq!(
         server["command"],
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine"))
-            .with_file_name("soyeht-mcp")
-            .to_string_lossy()
-            .as_ref()
+        sibling_binary("soyeht-mcp").to_string_lossy().as_ref()
     );
     assert!(
         args.windows(2)
@@ -3728,14 +3723,12 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
     let before = client.wait_state(&pane, "idle");
     rig.ptyd.kill().unwrap();
     rig.ptyd.wait().unwrap();
-    rig.ptyd = Command::new(
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-ptyd"),
-    )
-    .arg("--data-dir")
-    .arg(&rig.path)
-    .stdout(Stdio::null())
-    .spawn()
-    .unwrap();
+    rig.ptyd = Command::new(sibling_binary("soyeht-ptyd"))
+        .arg("--data-dir")
+        .arg(&rig.path)
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let restored = loop {
         let view = client.pane(&pane);
@@ -4404,14 +4397,12 @@ fn restart_supervisor_and_assert_load(
 ) {
     rig.ptyd.kill().unwrap();
     rig.ptyd.wait().unwrap();
-    rig.ptyd = Command::new(
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-ptyd"),
-    )
-    .arg("--data-dir")
-    .arg(&rig.path)
-    .stdout(Stdio::null())
-    .spawn()
-    .unwrap();
+    rig.ptyd = Command::new(sibling_binary("soyeht-ptyd"))
+        .arg("--data-dir")
+        .arg(&rig.path)
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
         let view = client.pane(pane);
@@ -4700,8 +4691,7 @@ fn a_refused_mode_leaves_the_queue_running_in_the_agents_mode() {
 fn a_mode_the_next_harness_lacks_is_not_restored_on_the_way_back() {
     let rig = Rig::new();
     let (mut client, pane) = rig.agent();
-    let binary =
-        PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht-fake-acp");
+    let binary = sibling_binary("soyeht-fake-acp");
     fs::write(
         rig.path.join("harnesses.json"),
         serde_json::to_vec(&json!([
@@ -4767,7 +4757,7 @@ fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
                 && item["terminal"]["bytes"].as_str().is_some_and(|bytes| {
                     STANDARD
                         .decode(bytes)
-                        .is_ok_and(|bytes| bytes == b"fake-terminal")
+                        .is_ok_and(|bytes| printed(&bytes, b"fake-terminal"))
                 })
         });
         if client.pane(pane)["state"] == "idle" && has_terminal {
@@ -5755,8 +5745,7 @@ fn project_replacement_never_overwrites_unexpected_disk_content() {
     stage_interrupted_replacement(&rig, &workspace, &params, before, "safe\n");
     {
         let store = Store::open(&rig.path).unwrap();
-        // SAFETY: geteuid has no arguments or memory preconditions.
-        let uid = unsafe { libc::geteuid() };
+        let uid = soyeht_platform::user::id().unwrap();
         assert!(
             store
                 .file_replacement(&format!("local:{uid}:runtime-test"), "race-replace")
@@ -5792,8 +5781,7 @@ fn stage_interrupted_replacement(
     let fingerprint = STANDARD.encode(soyeht_engine::auth::token_hash(
         &json!(["file.search", params]).to_string(),
     ));
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    let uid = unsafe { libc::geteuid() };
+    let uid = soyeht_platform::user::id().unwrap();
     let item = ProjectReplacementItem {
         ordinal: 0,
         file_id: file_id.clone(),
@@ -6376,6 +6364,7 @@ fn backpressured_subscriber_survives_an_answer_from_a_second_subscriber() {
     }));
 }
 
+#[cfg(unix)]
 #[test]
 fn reconnect_replays_screen_and_duplicate_input_is_not_typed_twice() {
     let rig = Rig::new();
@@ -6620,6 +6609,7 @@ fn persisted_agent_capture_records_real_protocol_transitions_as_labels() {
     assert!(!rows.iter().any(|row| row["kind"] == "observation"));
 }
 
+#[cfg(unix)]
 fn open_claude_hook_session(rig: &mut Rig, client: &mut Client) -> (String, String, u64) {
     let workspace = client.call(
         "workspace.create",
@@ -6670,8 +6660,9 @@ fn open_claude_hook_session(rig: &mut Rig, client: &mut Client) -> (String, Stri
     (pane, capability, generation)
 }
 
+#[cfg(unix)]
 fn run_claude_hook_command(rig: &Rig, capability: &str) {
-    let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht-engine")).with_file_name("soyeht");
+    let binary = sibling_binary("soyeht");
     let mut command = Command::new(binary)
         .arg("--data-dir")
         .arg(&rig.path)
@@ -6700,6 +6691,7 @@ fn run_claude_hook_command(rig: &Rig, capability: &str) {
     );
 }
 
+#[cfg(unix)]
 fn wait_for_terminal_text(client: &mut Client, pane: &str, expected: &str) {
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
@@ -6723,16 +6715,15 @@ fn wait_for_terminal_text(client: &mut Client, pane: &str, expected: &str) {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn managed_terminal_hook_and_screen_observation_share_one_recording() {
     let mut rig = Rig::new();
     let terminal = rig.path.join("managed-terminal");
-    fs::write(
+    write_script(
         &terminal,
         "#!/bin/sh\nprintf 'terminal-ready\\n'\nwhile IFS= read -r line; do printf 'screen:%s\\n' \"$line\"; done\n",
-    )
-    .unwrap();
-    fs::set_permissions(&terminal, fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let mut client = rig.client();
     let workspace = client.call(
         "workspace.create",
@@ -6807,6 +6798,7 @@ fn managed_terminal_hook_and_screen_observation_share_one_recording() {
     }
 }
 
+#[cfg(unix)]
 fn wait_for_stamped_hook_label(rig: &Rig, pane: &str, generation: u64, capability: &str) {
     let root = rig.path.join("experiments/pane-state");
     let expected_digest = format!("{:x}", Sha256::digest(capability.as_bytes()));
@@ -6832,6 +6824,7 @@ fn wait_for_stamped_hook_label(rig: &Rig, pane: &str, generation: u64, capabilit
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn claude_session_hook_records_only_engine_stamped_labels_on_its_private_channel() {
     let mut rig = Rig::new();
@@ -7259,6 +7252,7 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
         .unwrap()["text"]
         .as_str()
         .unwrap();
+    let text = text.replace('\\', "/");
     for expected in [
         "Build dispatch",
         "Wire the route",
@@ -7279,6 +7273,7 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
     assert_eq!(second["error"]["data"]["kind"], "task_has_owner");
 }
 
+#[cfg(unix)]
 #[test]
 fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     let rig = Rig::new();
@@ -7338,6 +7333,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     assert_eq!(worktrees, 1);
 }
 
+#[cfg(unix)]
 #[test]
 fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch() {
     let rig = Rig::new();
@@ -8576,6 +8572,7 @@ fn refused_move_enters_attention_and_a_valid_move_clears_it() {
     assert!(lifecycle.human.section("attention").is_empty());
 }
 
+#[cfg(unix)]
 #[test]
 fn supervisor_overflow_during_engine_outage_produces_an_explicit_replay_gap() {
     let mut rig = Rig::new();

@@ -1,9 +1,9 @@
 use crate::{Error, Result, wire::Instance};
 use serde::{Deserialize, Serialize};
+use soyeht_platform::fs::{OpenOptionsPrivateExt, sync_directory};
 use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 #[derive(Serialize, Deserialize)]
@@ -49,13 +49,12 @@ impl Registry {
             .write(true)
             .create(true)
             .truncate(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&temporary)?;
+            .owner_only()
+            .open_no_follow(&temporary)?;
         file.write_all(&serde_json::to_vec(self)?)?;
         file.sync_all()?;
         fs::rename(temporary, directory.join("ptyd-registry.json"))?;
-        File::open(directory)?.sync_all()?;
+        sync_directory(directory)?;
         Ok(())
     }
 }

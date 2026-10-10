@@ -56,9 +56,8 @@ fn repository_path(repository: &Path, workspace: &Path, file: &Path) -> Result<P
     {
         return Err(Error::InvalidPath);
     }
-    let workspace = workspace
-        .canonicalize()
-        .map_err(|_| Error::InvalidRepository)?;
+    let workspace =
+        soyeht_platform::fs::canonicalize(workspace).map_err(|_| Error::InvalidRepository)?;
     let prefix = workspace
         .strip_prefix(repository)
         .map_err(|_| Error::InvalidRepository)?;
@@ -185,7 +184,7 @@ mod tests {
         let root = temporary("fake");
         let workspace = root.join("nested");
         fs::create_dir_all(&workspace).unwrap();
-        let canonical_root = root.canonicalize().unwrap();
+        let canonical_root = soyeht_platform::fs::canonicalize(&root).unwrap();
         let commands = FakeCommands {
             root: canonical_root,
             baseline: Some("one\ntwo\n".into()),

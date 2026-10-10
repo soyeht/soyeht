@@ -2,7 +2,7 @@ use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::os::unix::fs::PermissionsExt;
+use soyeht_platform::fs::{set_private_dir, set_private_file, sync_directory};
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
@@ -321,26 +321,30 @@ fn drop_legacy_prompt_attachments(tx: &Transaction<'_>) -> Result<()> {
 fn backup_before_migration(connection: &Connection, directory: &Path) -> Result<()> {
     let backups = directory.join("backups");
     fs::create_dir_all(&backups)?;
-    fs::set_permissions(&backups, fs::Permissions::from_mode(0o700))?;
+    set_private_dir(&backups)?;
     let backup = backups.join(format!("before-v{SCHEMA_VERSION}-{}.db", Uuid::new_v4()));
     connection.backup("main", &backup, None)?;
-    fs::set_permissions(&backup, fs::Permissions::from_mode(0o600))?;
-    fs::File::open(backup)?.sync_all()?;
-    fs::File::open(backups)?.sync_all()?;
+    set_private_file(&backup)?;
+    // Flushing needs a handle that can write; Windows refuses a read-only one.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(backup)?
+        .sync_all()?;
+    sync_directory(&backups)?;
     Ok(())
 }
 
 impl Store {
     pub fn open(directory: &Path) -> Result<Self> {
         fs::create_dir_all(directory)?;
-        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+        set_private_dir(directory)?;
         let path = directory.join("soyeht.db");
         if fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
             return Err(Error::DatabasePathIsSymlink);
         }
         let existed = path.exists();
         let mut connection = Connection::open(&path)?;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+        set_private_file(&path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         let version: u32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if version > SCHEMA_VERSION {

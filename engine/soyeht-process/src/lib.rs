@@ -1,25 +1,35 @@
 //! Bounded external commands.
 //!
 //! Every command the engine runs goes through [`run`]. It has a deadline and a
-//! byte budget, and a command that misses its deadline is killed with its whole
-//! process group and reported as [`Error::TimedOut`].
+//! byte budget, and a command that misses its deadline is killed with everything it started
+//! (its process group on Unix, its job object on Windows) and reported as
+//! [`Error::TimedOut`].
 //!
 //! A thread that holds the engine's Core lock marks itself with [`forbid`].
 //! [`run`] refuses to start a command on a marked thread, so a slow command can
 //! never stall the terminal path behind that lock (ADR 0079).
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+#[cfg(unix)]
+#[path = "system/unix.rs"]
+mod system;
+#[cfg(windows)]
+#[path = "system/windows.rs"]
+mod system;
+
 use std::{
     cell::Cell,
     fmt,
+    fs::File,
     io::{self, Read, Write},
     marker::PhantomData,
-    os::unix::process::CommandExt,
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Command, ExitStatus},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
     time::{Duration, Instant},
 };
+
+use system::Running;
 
 /// How long the pipes may stay open after the command exits or is killed.
 /// A descendant that left the process group can hold them; it is abandoned.
@@ -181,35 +191,36 @@ pub fn run_with_input(command: Command, input: Vec<u8>, limits: Limits) -> Resul
     execute(command, Some(input), limits)
 }
 
-fn execute(mut command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<Output> {
+/// The pipes of a running command. The input exists only when the caller has input to send.
+pub(crate) struct Streams {
+    pub(crate) input: Option<File>,
+    pub(crate) output: Option<File>,
+    pub(crate) error: Option<File>,
+}
+
+fn execute(command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<Output> {
     let program = command.get_program().to_string_lossy().into_owned();
     if let Some(holder) = forbidden() {
         return Err(Error::UnderLock { program, holder });
     }
-    command
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0);
-    let mut child = command.spawn().map_err(|source| Error::Spawn {
+    let mut running = Running::spawn(command, input.is_some()).map_err(|source| Error::Spawn {
         program: program.clone(),
         source,
     })?;
-    let written = input.map(|input| write_in_background(&mut child, input));
-    let pipes = Pipes::start(&mut child, limits);
-    let exited = match wait_until(&mut child, Instant::now() + limits.timeout) {
+    let streams = running.take_streams();
+    let written = input.map(|input| write_in_background(streams.input, input));
+    let pipes = Pipes::start((streams.output, streams.error), limits);
+    let exited = match wait_until(&mut running, Instant::now() + limits.timeout) {
         Ok(exited) => exited,
         Err(source) => {
-            kill_group(&mut child);
+            running.kill();
             return Err(Error::Wait { program, source });
         }
     };
     if exited.is_none() {
-        kill_group(&mut child);
+        running.kill();
+    } else {
+        running.release();
     }
     let collected = pipes
         .collect(Instant::now() + PIPE_GRACE)
@@ -238,9 +249,8 @@ fn execute(mut command: Command, input: Option<Vec<u8>>, limits: Limits) -> Resu
     })
 }
 
-/// Starts the thread that writes `input` to the child and closes its standard input.
-fn write_in_background(child: &mut Child, input: Vec<u8>) -> thread::JoinHandle<io::Result<()>> {
-    let stdin = child.stdin.take();
+/// Starts the thread that writes `input` to the command and closes its standard input.
+fn write_in_background(stdin: Option<File>, input: Vec<u8>) -> thread::JoinHandle<io::Result<()>> {
     thread::spawn(move || match stdin {
         Some(mut stdin) => stdin.write_all(&input),
         None => Err(io::Error::from(io::ErrorKind::NotConnected)),
@@ -267,7 +277,7 @@ fn input_delivered(
     }
 }
 
-fn wait_until(child: &mut Child, deadline: Instant) -> io::Result<Option<ExitStatus>> {
+fn wait_until(child: &mut Running, deadline: Instant) -> io::Result<Option<ExitStatus>> {
     let mut pause = FIRST_POLL;
     loop {
         if let Some(status) = child.try_wait()? {
@@ -280,20 +290,6 @@ fn wait_until(child: &mut Child, deadline: Instant) -> io::Result<Option<ExitSta
         thread::sleep(pause.min(deadline - now));
         pause = (pause * 2).min(LONGEST_POLL);
     }
-}
-
-fn kill_group(child: &mut Child) {
-    if let Ok(group) = libc::pid_t::try_from(child.id()) {
-        // SAFETY: killpg only sends a signal. The child is not reaped yet, so
-        // its pid still names the process group it leads (process_group(0)).
-        unsafe {
-            libc::killpg(group, libc::SIGKILL);
-        }
-    }
-    // Best effort: the caller reports the timeout, whatever happens to the child here.
-    // kill fails only when the child already exited, which is the goal.
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 #[derive(Clone, Copy)]
@@ -314,14 +310,14 @@ struct Pipes {
 }
 
 impl Pipes {
-    fn start(child: &mut Child, limits: Limits) -> Self {
+    fn start((stdout, stderr): (Option<File>, Option<File>), limits: Limits) -> Self {
         let (sender, receiver) = mpsc::channel();
         let mut open = 0;
-        if let Some(stdout) = child.stdout.take() {
+        if let Some(stdout) = stdout {
             read_in_background(stdout, Stream::Stdout, limits.stdout_bytes, &sender);
             open += 1;
         }
-        if let Some(stderr) = child.stderr.take() {
+        if let Some(stderr) = stderr {
             read_in_background(stderr, Stream::Stderr, limits.stderr_bytes, &sender);
             open += 1;
         }
@@ -392,34 +388,112 @@ fn read_bounded(mut reader: impl Read, limit: usize) -> io::Result<Option<Vec<u8
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+    };
 
-    fn shell(script: &str) -> Command {
-        let mut command = Command::new("/bin/sh");
-        command.arg("-c").arg(script);
+    /// The test executable doubles as the helper program the tests run, so they behave the
+    /// same on every system: `HELPER_MODE` selects what the helper does (see [`helper`]).
+    const HELPER_MODE: &str = "SOYEHT_PROCESS_TEST_HELPER";
+
+    fn helper_command(mode: &str) -> Command {
+        let mut command = Command::new(env::current_exe().unwrap());
+        command
+            .args(["--exact", "tests::helper", "--nocapture"])
+            .env(HELPER_MODE, mode);
         command
     }
 
-    fn scratch(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("soyeht-process-{label}-{}", std::process::id()))
+    /// Does nothing in a normal test run. As a helper it plays the program that a test runs.
+    #[test]
+    fn helper() {
+        let Ok(mode) = env::var(HELPER_MODE) else {
+            return;
+        };
+        let (mode, argument) = mode.split_once(':').unwrap_or((&mode, ""));
+        match mode {
+            "emit" => {
+                print!("out");
+                eprint!("err");
+                std::process::exit(3);
+            }
+            "flood" => {
+                print!("{}", "x".repeat(100_000));
+            }
+            // Starts a sleeping descendant, records its pid, and waits for it.
+            "hang" => {
+                let mut descendant = helper_command("sleep").spawn().unwrap();
+                fs::write(argument, descendant.id().to_string()).unwrap();
+                descendant.wait().unwrap();
+            }
+            "sleep" => thread::sleep(Duration::from_secs(30)),
+            // Leaves a sleeping background process behind and ends at once.
+            "detach" => {
+                let descendant = helper_command("sleep").spawn().unwrap();
+                fs::write(argument, descendant.id().to_string()).unwrap();
+                // Only its pid matters: the test ends it.
+                std::mem::forget(descendant);
+            }
+            // Writes what arrives on standard input back to standard output.
+            "echo" => {
+                let mut input = Vec::new();
+                io::stdin().read_to_end(&mut input).unwrap();
+                io::stdout().write_all(&input).unwrap();
+            }
+            _ => {}
+        }
     }
 
-    fn alive(pid: libc::pid_t) -> bool {
+    fn scratch(label: &str) -> PathBuf {
+        env::temp_dir().join(format!("soyeht-process-{label}-{}", std::process::id()))
+    }
+
+    #[cfg(unix)]
+    fn alive(pid: u32) -> bool {
         // SAFETY: signal 0 only checks that the process exists.
-        unsafe { libc::kill(pid, 0) == 0 }
+        unsafe { libc::kill(pid.try_into().unwrap(), 0) == 0 }
+    }
+
+    #[cfg(windows)]
+    fn alive(pid: u32) -> bool {
+        let listing = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&listing.stdout).contains(&format!("\"{pid}\""))
+    }
+
+    #[cfg(unix)]
+    fn end_process(pid: u32) {
+        // SAFETY: the pid is a sleeping helper this test started and still owns.
+        unsafe { libc::kill(pid.try_into().unwrap(), libc::SIGKILL) };
+    }
+
+    #[cfg(windows)]
+    fn end_process(pid: u32) {
+        Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .output()
+            .unwrap();
+    }
+
+    fn read_pid(file: &Path) -> u32 {
+        fs::read_to_string(file).unwrap().trim().parse().unwrap()
     }
 
     #[test]
     fn a_command_returns_its_status_and_both_streams() {
         let output = run(
-            shell("printf out; printf err >&2; exit 3"),
-            Limits::new(Duration::from_secs(10), 64),
+            helper_command("emit"),
+            Limits::new(Duration::from_secs(30), 8192),
         )
         .unwrap();
         assert_eq!(output.status.code(), Some(3));
         assert!(!output.success());
-        assert_eq!(output.stdout, b"out");
-        assert_eq!(output.stderr_text(), "err");
+        // The test harness prints its own lines around the helper's.
+        assert!(String::from_utf8_lossy(&output.stdout).contains("out"));
+        assert!(output.stderr_text().contains("err"));
     }
 
     #[test]
@@ -427,28 +501,22 @@ mod tests {
         let pidfile = scratch("hung");
         let _ = fs::remove_file(&pidfile);
         let started = Instant::now();
+        // Long enough for a loaded host to start the helper and its descendant.
         let error = run(
-            shell(&format!(
-                "sleep 30 & echo $! > '{}'; wait",
-                pidfile.display()
-            )),
-            Limits::new(Duration::from_millis(300), 64),
+            helper_command(&format!("hang:{}", pidfile.display())),
+            Limits::new(Duration::from_secs(5), 8192),
         )
         .unwrap_err();
         let elapsed = started.elapsed();
         assert!(error.timed_out(), "{error}");
         assert!(
-            error.to_string().contains("timed out after 300 ms"),
+            error.to_string().contains("timed out after 5000 ms"),
             "{error}"
         );
         // The deadline plus the pipe grace bounds the call, far below the
         // 30 s the descendant would have slept.
-        assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
-        let descendant: libc::pid_t = fs::read_to_string(&pidfile)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
+        assert!(elapsed < Duration::from_secs(20), "{elapsed:?}");
+        let descendant = read_pid(&pidfile);
         let deadline = Instant::now() + Duration::from_secs(10);
         while alive(descendant) {
             assert!(
@@ -461,10 +529,40 @@ mod tests {
     }
 
     #[test]
+    fn a_command_that_finishes_leaves_its_background_process_running() {
+        let pidfile = scratch("detached");
+        let _ = fs::remove_file(&pidfile);
+        let mut running = Running::spawn(
+            helper_command(&format!("detach:{}", pidfile.display())),
+            false,
+        )
+        .unwrap();
+        // The pipes stay open so the helper never fails writing to them.
+        let _streams = running.take_streams();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while running.try_wait().unwrap().is_none() {
+            assert!(Instant::now() < deadline, "the helper did not finish");
+            thread::sleep(Duration::from_millis(10));
+        }
+        running.release();
+        drop(running);
+        // Dropping the last handle would end the job's processes if it were not released.
+        thread::sleep(Duration::from_millis(500));
+        let descendant = read_pid(&pidfile);
+        let survived = alive(descendant);
+        end_process(descendant);
+        fs::remove_file(pidfile).unwrap();
+        assert!(
+            survived,
+            "the background process was ended with the command"
+        );
+    }
+
+    #[test]
     fn output_over_budget_is_drained_and_reported() {
         let error = run(
-            shell("head -c 100000 /dev/zero"),
-            Limits::new(Duration::from_secs(10), 1024),
+            helper_command("flood"),
+            Limits::new(Duration::from_secs(30), 1024),
         )
         .unwrap_err();
         assert!(matches!(error, Error::OutputTooLarge { .. }), "{error}");
@@ -473,30 +571,30 @@ mod tests {
     #[test]
     fn input_reaches_the_command_and_a_command_that_ignores_it_is_not_stalled() {
         let echoed = run_with_input(
-            Command::new("/bin/cat"),
+            helper_command("echo"),
             b"config".to_vec(),
-            Limits::new(Duration::from_secs(10), 64),
+            Limits::new(Duration::from_secs(30), 8192),
         )
         .unwrap();
-        assert_eq!(echoed.stdout, b"config");
+        assert!(String::from_utf8_lossy(&echoed.stdout).contains("config"));
         // Larger than a pipe buffer, and never read: the writer must not hold the call.
         let started = Instant::now();
         let ignored = run_with_input(
-            shell("exit 0"),
+            helper_command("quiet"),
             vec![b'x'; 1 << 20],
-            Limits::new(Duration::from_secs(10), 64),
+            Limits::new(Duration::from_secs(30), 8192),
         )
         .unwrap();
         assert!(ignored.success());
-        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_secs(20));
     }
 
     #[test]
     fn a_command_that_never_reads_its_input_times_out_instead_of_hanging() {
         let error = run_with_input(
-            shell("sleep 30"),
+            helper_command("sleep"),
             vec![b'x'; 1 << 20],
-            Limits::new(Duration::from_millis(300), 64),
+            Limits::new(Duration::from_secs(2), 8192),
         )
         .unwrap_err();
         assert!(error.timed_out(), "{error}");
@@ -507,7 +605,11 @@ mod tests {
         {
             let _held = forbid("Core");
             assert_eq!(forbidden(), Some("Core"));
-            let error = run(shell("true"), Limits::new(Duration::from_secs(10), 64)).unwrap_err();
+            let error = run(
+                helper_command("quiet"),
+                Limits::new(Duration::from_secs(30), 8192),
+            )
+            .unwrap_err();
             assert!(
                 matches!(error, Error::UnderLock { holder: "Core", .. }),
                 "{error}"
@@ -515,9 +617,12 @@ mod tests {
         }
         assert_eq!(forbidden(), None);
         assert!(
-            run(shell("true"), Limits::new(Duration::from_secs(10), 64))
-                .unwrap()
-                .success()
+            run(
+                helper_command("quiet"),
+                Limits::new(Duration::from_secs(30), 8192)
+            )
+            .unwrap()
+            .success()
         );
     }
 }

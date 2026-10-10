@@ -9,24 +9,27 @@ use crate::{
     transport, ui_attestation,
 };
 use serde_json::Value;
+use soyeht_platform::{
+    fs::{LockError, lock_singleton},
+    local::{
+        BindError,
+        asynchronous::{Listener, Stream, same_user},
+    },
+};
 use soyeht_protocol::{
     AttachmentRef, attachment::attachment_frames, frame::Frame, profile::DEV_ENGINE_SOCKET,
 };
 use std::{
     collections::{BTreeSet, VecDeque},
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io,
     net::SocketAddr,
-    os::{
-        fd::AsRawFd,
-        unix::fs::{FileTypeExt, OpenOptionsExt, PermissionsExt},
-    },
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{
-    net::{TcpListener, UnixListener, UnixStream},
+    net::TcpListener,
     sync::{Semaphore, mpsc},
 };
 
@@ -67,10 +70,8 @@ async fn update_pair_address(shared: &Shared, address: SocketAddr) -> crate::err
     .await
 }
 
-fn local_peer_audit_token(stream: &UnixStream) -> Option<ui_attestation::PeerAuditToken> {
-    let credential = stream.peer_cred().ok()?;
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    if credential.uid() != unsafe { libc::geteuid() } {
+fn local_peer_audit_token(stream: &Stream) -> Option<ui_attestation::PeerAuditToken> {
+    if !same_user(stream) {
         return None;
     }
     ui_attestation::peer_audit_token(stream)
@@ -84,21 +85,11 @@ pub struct Config {
 }
 
 fn singleton(directory: &Path) -> crate::errors::Result<File> {
-    fs::create_dir_all(directory)?;
-    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
-    let lock = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(directory.join("engine.lock"))?;
-    // SAFETY: lock owns a live descriptor retained throughout run().
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(Error::AlreadyRunning);
+    match lock_singleton(directory, "engine.lock") {
+        Ok(lock) => Ok(lock),
+        Err(LockError::Held) => Err(Error::AlreadyRunning),
+        Err(LockError::Io(error)) => Err(error.into()),
     }
-    Ok(lock)
 }
 
 pub async fn run(config: Config) -> crate::errors::Result<()> {
@@ -114,14 +105,11 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
     tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
     let socket = config.directory.join(DEV_ENGINE_SOCKET);
-    match fs::symlink_metadata(&socket) {
-        Ok(m) if m.file_type().is_socket() => fs::remove_file(&socket)?,
-        Ok(_) => return Err(Error::SocketPathNotSocket),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => (),
-        Err(e) => return Err(e.into()),
-    }
-    let unix = UnixListener::bind(&socket)?;
-    fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))?;
+    let mut unix = match Listener::bind(&socket) {
+        Ok(listener) => listener,
+        Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
+        Err(BindError::Io(error)) => return Err(error.into()),
+    };
     let mut tasks = tokio::task::JoinSet::new();
     let reachability = network::fixed_reachability(&config.listen);
     core_lock::with(&core, "reachability", move |state| {
@@ -154,7 +142,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         } = accept;
         tasks.spawn(async move {
             loop {
-                let (stream, _) = unix.accept().await?;
+                let stream = unix.accept().await?;
                 let Some(peer_audit_token) = local_peer_audit_token(&stream) else {
                     continue;
                 };
@@ -170,7 +158,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
                     })
                     .await
                     .unwrap_or(false);
-                    let (reader, writer) = transport::unix(stream);
+                    let (reader, writer) = transport::local(stream);
                     connection(core, catalog_tx, true, signed_ui, reader, writer).await;
                 });
             }
@@ -183,10 +171,9 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         "{}",
         serde_json::json!({"event":"engine.ready","socket":socket,"version":env!("CARGO_PKG_VERSION")})
     );
-    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let requested = soyeht_platform::shutdown::requested()?;
     tokio::select! {
-        _=tokio::signal::ctrl_c()=>(),
-        _=terminate.recv()=>(),
+        () = requested => (),
         result=tasks.join_next()=>{if let Some(result)=result {result??;}},
     }
     tasks.abort_all();
@@ -839,8 +826,8 @@ mod tests {
         let core = Arc::new(std::sync::Mutex::new(state));
         let (catalog_tx, mut catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
         // Keep the receiver alive without running the catalogue worker.
-        let (server, mut client) = UnixStream::pair().unwrap();
-        let (mut reader, _) = transport::unix(server);
+        let (server, mut client) = soyeht_platform::local::asynchronous::pair().unwrap();
+        let (mut reader, _) = transport::local(server);
         let task = tokio::spawn({
             let core = Arc::clone(&core);
             let connection = connection.clone();
@@ -878,8 +865,9 @@ mod tests {
         .unwrap();
         assert!(response["result"]["generation"].is_number());
         task.abort();
-        drop(core);
-        std::fs::remove_dir_all(directory).unwrap();
+        // The aborted task still owns a handle to the core until it has been dropped.
+        let _ = task.await;
+        crate::test_paths::remove_after(core, directory);
     }
 
     #[tokio::test]

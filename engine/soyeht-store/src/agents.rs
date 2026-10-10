@@ -176,7 +176,7 @@ fn validate_prompt_attachments(item: &PromptItem) -> Result<()> {
                 || !attachment
                     .path
                     .as_deref()
-                    .is_some_and(|path| path.starts_with('/'))
+                    .is_some_and(|path| std::path::Path::new(path).is_absolute())
         })
     {
         return Err(Error::InvalidQueuedPrompt);

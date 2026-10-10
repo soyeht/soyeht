@@ -4,11 +4,16 @@ use std::path::{Path, PathBuf};
 
 /// The shell a new terminal pane starts, as an argument vector.
 ///
-/// macOS always starts the system `zsh` as a login shell. Other systems start the person's
-/// `$SHELL` when it names an existing absolute path, then `bash`, then the POSIX `sh`.
+/// macOS always starts the system `zsh` as a login shell. Windows starts the command
+/// interpreter named by `COMSPEC` (`cmd.exe` when unset), which has no login mode. Other
+/// systems start the person's `$SHELL` when it names an existing absolute path, then `bash`,
+/// then the POSIX `sh`, always as a login shell.
 pub fn default_login_shell() -> Vec<String> {
     if cfg!(target_os = "macos") {
         return vec!["/bin/zsh".into(), "-l".into()];
+    }
+    if cfg!(windows) {
+        return vec![std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())];
     }
     let chosen = std::env::var_os("SHELL")
         .map(PathBuf::from)
@@ -29,13 +34,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_default_shell_is_a_login_shell_that_exists() {
+    fn the_default_shell_exists_and_is_a_login_shell_where_the_system_has_one() {
         let command = default_login_shell();
-        assert_eq!(command.last().map(String::as_str), Some("-l"));
-        assert!(Path::new(&command[0]).is_absolute());
+        assert!(!command.is_empty());
         if cfg!(target_os = "macos") {
             assert_eq!(command, ["/bin/zsh", "-l"]);
+        } else if cfg!(windows) {
+            assert_eq!(command.len(), 1);
         } else {
+            assert_eq!(command.last().map(String::as_str), Some("-l"));
             assert!(Path::new(&command[0]).is_file());
         }
     }

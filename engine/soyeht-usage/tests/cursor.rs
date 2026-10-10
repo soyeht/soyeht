@@ -90,7 +90,8 @@ fn rejected_app_login_falls_back_to_browser_cookies_on_macos() {
 #[test]
 fn linux_uses_the_xdg_app_login_and_never_a_browser() {
     let mut host = FakeHost::new(Platform::Linux);
-    host.env = vec![("XDG_CONFIG_HOME".into(), "/xdg".into())];
+    let config = std::env::temp_dir().join("xdg");
+    host.env = vec![("XDG_CONFIG_HOME".into(), config.to_str().unwrap().into())];
     let host = Arc::new(host);
     let reading = Planner::new(host.clone())
         .refresh(&UsageProvider::Cursor, Trigger::Automatic, NOW, "now")
@@ -99,7 +100,11 @@ fn linux_uses_the_xdg_app_login_and_never_a_browser() {
     assert_eq!(
         host.calls(),
         vec![Call::StateDb(
-            Path::new("/xdg/Cursor/User/globalStorage/state.vscdb").to_owned()
+            config
+                .join("Cursor")
+                .join("User")
+                .join("globalStorage")
+                .join("state.vscdb")
         )]
     );
 }

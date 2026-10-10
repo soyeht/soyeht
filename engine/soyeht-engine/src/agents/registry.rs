@@ -2,12 +2,12 @@ use super::digest::executable_digest;
 use crate::errors::{self, Result};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use soyeht_platform::fs::{OpenOptionsPrivateExt, sync_directory};
 use soyeht_protocol::{HarnessEnvironmentVariable, HarnessLaunch, HarnessSource, limits};
 use std::{
     collections::BTreeSet,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Component, Path, PathBuf},
 };
 use uuid::Uuid;
@@ -153,7 +153,7 @@ pub(crate) fn builtin_entries() -> Result<Vec<RegistryEntry>> {
     {
         return Err(errors::internal("Embedded ACP registry identity changed"));
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = std::env::home_dir();
     let mut seen = BTreeSet::new();
     snapshot
         .agents
@@ -223,8 +223,7 @@ fn custom_bytes(directory: &Path) -> Result<Option<Vec<u8>>> {
     }
     let file = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
+        .open_no_follow(&path)
         .map_err(errors::io)?;
     if !file.metadata().map_err(errors::io)?.is_file() {
         return Err(errors::invalid("Harness registry must be a regular file"));
@@ -299,7 +298,7 @@ fn write_custom_entries(
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .mode(0o600)
+            .owner_only()
             .open(&temporary)
             .map_err(errors::io)?;
         file.write_all(&bytes).map_err(errors::io)?;
@@ -310,9 +309,7 @@ fn write_custom_entries(
             ));
         }
         fs::rename(&temporary, directory.join("harnesses.json")).map_err(errors::io)?;
-        File::open(directory)
-            .and_then(|parent| parent.sync_all())
-            .map_err(errors::io)
+        sync_directory(directory).map_err(errors::io)
     })();
     if result.is_err() {
         // Best-effort cleanup: the write error returned below is what the caller sees.
@@ -396,17 +393,50 @@ fn resolve_executable(
     } else if path.components().count() == 1 {
         directories
             .into_iter()
-            .map(|directory| directory.join(command))
+            .flat_map(|directory| executable_names(command).map(move |name| directory.join(name)))
             .collect()
     } else {
         vec![]
     };
     candidates
         .into_iter()
-        .filter_map(|path| path.canonicalize().ok())
-        .find(|path| {
-            path.metadata()
-                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .filter_map(|path| soyeht_platform::fs::canonicalize(&path).ok())
+        .find(|path| is_executable(path))
+}
+
+/// The file names a command can have in a directory: as typed on Unix, and with the extensions
+/// Windows runs when none is typed.
+#[cfg(unix)]
+fn executable_names(command: &str) -> impl Iterator<Item = String> {
+    std::iter::once(command.to_owned())
+}
+
+#[cfg(windows)]
+fn executable_names(command: &str) -> impl Iterator<Item = String> {
+    let typed = Path::new(command).extension().is_some();
+    std::iter::once(command.to_owned()).chain(
+        ["exe", "cmd", "bat", "com"]
+            .into_iter()
+            .filter(move |_| !typed)
+            .map(move |extension| format!("{command}.{extension}")),
+    )
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+/// Windows runs a file by its extension, not by a permission bit.
+#[cfg(windows)]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
+        && path.extension().is_some_and(|extension| {
+            ["exe", "cmd", "bat", "com"]
+                .iter()
+                .any(|known| extension.eq_ignore_ascii_case(known))
         })
 }
 
@@ -485,7 +515,7 @@ pub(crate) fn prepare_local_terminal(
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::fs;
     use uuid::Uuid;
 
     pub(in crate::agents) struct Fixture(pub(in crate::agents) PathBuf);
@@ -497,10 +527,20 @@ pub(super) mod tests {
             Self(path)
         }
 
+        #[cfg(unix)]
         pub(in crate::agents) fn executable(&self, name: &str) -> PathBuf {
+            use std::os::unix::fs::PermissionsExt;
             let path = self.0.join(name);
             fs::write(&path, b"#!/bin/sh\nexit 0\n").unwrap();
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            path
+        }
+
+        /// Windows runs a file by its extension, so the fixture is an `.exe` that is never run.
+        #[cfg(windows)]
+        fn executable(&self, name: &str) -> PathBuf {
+            let path = self.0.join(format!("{name}.exe"));
+            fs::write(&path, b"MZ").unwrap();
             path
         }
     }
@@ -602,7 +642,8 @@ pub(super) mod tests {
     fn executable_resolution_uses_order_and_rejects_relative_paths() {
         let first = Fixture::new();
         let second = Fixture::new();
-        let expected = first.executable("ordered-agent").canonicalize().unwrap();
+        let expected =
+            soyeht_platform::fs::canonicalize(&first.executable("ordered-agent")).unwrap();
         let _later = second.executable("ordered-agent");
         assert_eq!(
             resolve_executable("ordered-agent", [first.0.clone(), second.0.clone()]),
@@ -631,14 +672,18 @@ pub(super) mod tests {
             custom_launches(&fixture.0).unwrap(),
             std::slice::from_ref(&launch)
         );
-        assert_eq!(
-            fs::metadata(fixture.0.join("harnesses.json"))
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(fixture.0.join("harnesses.json"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
         assert!(
             create_custom(
                 &fixture.0,
@@ -677,7 +722,7 @@ pub(super) mod tests {
         let outside = Fixture::new();
         let target = outside.0.join("registry.json");
         fs::write(&target, b"[]").unwrap();
-        std::os::unix::fs::symlink(&target, fixture.0.join("harnesses.json")).unwrap();
+        soyeht_platform::fs::symlink(&target, fixture.0.join("harnesses.json")).unwrap();
         assert!(custom_launches(&fixture.0).is_err());
         assert_eq!(fs::read(target).unwrap(), b"[]");
     }

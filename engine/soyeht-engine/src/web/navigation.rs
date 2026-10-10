@@ -290,7 +290,7 @@ mod tests {
         );
         assert_eq!(closed["paneId"], second);
         assert!(core.panes[&second].stored.closed);
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -315,7 +315,7 @@ mod tests {
             };
             assert_eq!(errors::kind(&error), kind);
         }
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -372,6 +372,6 @@ mod tests {
         assert_eq!(completed["result"], json!({"paneId":pane,"accepted":true}));
         let immediate = reply(&mut core, &caller, request(5, "web.navigate", parameters));
         assert_eq!(immediate, completed["result"]);
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 }

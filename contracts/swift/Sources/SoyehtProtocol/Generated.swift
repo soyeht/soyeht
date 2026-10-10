@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 86163c4943d4c00eb533814aa70563128fb1b344f92106e72c189d8eadc08963). Do not edit.
+// Generated from contracts/protocol.json (sha256 3b9418e6880c0c4dea9aa069d8370e94d190b00d89e06c6698c06894899e4c9c). Do not edit.
 import Foundation
 
 
@@ -101,6 +101,7 @@ public enum ErrorKind: String, Codable, Sendable {
     case `writing_section_refused` = "writing_section_refused"
     case `harness_switch_failed` = "harness_switch_failed"
     case `attachment_limit_exceeded` = "attachment_limit_exceeded"
+    case `platform_unsupported` = "platform_unsupported"
 }
 
 public struct RpcError: Codable, Sendable {

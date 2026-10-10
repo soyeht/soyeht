@@ -162,8 +162,7 @@ impl Core {
             (role, None, Some(pane.clone()), format!("agent:{pane}"))
         } else if local {
             // The listener has already verified the connecting operating-system uid.
-            // SAFETY: geteuid has no arguments or memory preconditions.
-            let uid = unsafe { libc::geteuid() };
+            let uid = soyeht_platform::user::id()?;
             (
                 Role::HumanLocal,
                 None,

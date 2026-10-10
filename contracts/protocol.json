@@ -124,7 +124,8 @@
         "writing_scene_not_found",
         "writing_section_refused",
         "harness_switch_failed",
-        "attachment_limit_exceeded"
+        "attachment_limit_exceeded",
+        "platform_unsupported"
       ]
     },
     "RpcError": {
@@ -14249,6 +14250,7 @@
     "writing_scene_not_found": -32033,
     "writing_section_refused": -32034,
     "harness_switch_failed": -32035,
-    "attachment_limit_exceeded": -32036
+    "attachment_limit_exceeded": -32036,
+    "platform_unsupported": -32037
   }
 }

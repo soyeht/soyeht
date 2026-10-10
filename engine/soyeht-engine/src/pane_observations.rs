@@ -6,20 +6,21 @@ use soyeht_pane_state::{
     ObservationPaneKind, RecordedRow, ReplayedSegment, SegmentEnd, SegmentMetadata, decode_segment,
     encode_row, segment_schema_version,
 };
+use soyeht_platform::fs::{
+    OpenOptionsPrivateExt, create_private_dir, dir_is_owner_only, file_is_owner_only,
+    sync_directory,
+};
 use std::{
     collections::VecDeque,
     ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
-const DIRECTORY_MODE: u32 = 0o700;
-const FILE_MODE: u32 = 0o600;
 const SEGMENT_SUFFIX: &str = ".jsonl";
 pub const OBSERVATION_QUEUE_CAPACITY: usize = 32;
 const OBSERVATION_WRITE_BATCH: usize = 8;
@@ -686,10 +687,7 @@ impl SegmentStore {
             .back_mut()
             .ok_or_else(|| errors::internal("Observation segment is missing"))?;
         let path = self.directory.join(segment_filename(segment.number));
-        let mut file = OpenOptions::new()
-            .append(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)?;
+        let mut file = OpenOptions::new().append(true).open_no_follow(&path)?;
         validate_private_file(&file)?;
         let actual = usize::try_from(file.metadata()?.len())
             .map_err(|_| errors::internal("Observation segment size is invalid"))?;
@@ -709,10 +707,7 @@ impl SegmentStore {
             .back()
             .ok_or_else(|| errors::internal("Observation segment is missing"))?;
         let path = self.directory.join(segment_filename(segment.number));
-        let file = OpenOptions::new()
-            .append(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)?;
+        let file = OpenOptions::new().append(true).open_no_follow(&path)?;
         validate_private_file(&file)?;
         let actual = usize::try_from(file.metadata()?.len())
             .map_err(|_| errors::internal("Observation segment size is invalid"))?;
@@ -732,7 +727,7 @@ impl SegmentStore {
                 .pop_front()
                 .ok_or_else(|| errors::internal("Observation retention lost its segment"))?;
             fs::remove_file(self.directory.join(segment_filename(oldest.number)))?;
-            File::open(&self.directory)?.sync_all()?;
+            sync_directory(&self.directory)?;
         }
         Ok(())
     }
@@ -832,9 +827,9 @@ pub fn delete_pane(root: &Path, pane_id: &str) -> Result<DeletionReceipt> {
     for path in files {
         fs::remove_file(path)?;
     }
-    File::open(&directory)?.sync_all()?;
+    sync_directory(&directory)?;
     fs::remove_dir(&directory)?;
-    File::open(root)?.sync_all()?;
+    sync_directory(root)?;
     Ok(receipt)
 }
 
@@ -923,10 +918,7 @@ fn read_segment(directory: &Path, number: u64) -> Result<ReplayedSegment> {
 
 fn read_segment_entry(directory: &Path, number: u64) -> Result<SegmentRead> {
     let path = directory.join(segment_filename(number));
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
+    let mut file = OpenOptions::new().read(true).open_no_follow(&path)?;
     validate_private_file(&file)?;
     let mut bytes = Vec::new();
     Read::by_ref(&mut file)
@@ -989,12 +981,11 @@ fn create_segment_file(directory: &Path, number: u64, header: &[u8]) -> Result<(
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(FILE_MODE)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
+        .owner_only()
+        .open_no_follow(&path)?;
     file.write_all(header)?;
     file.sync_all()?;
-    File::open(directory)?.sync_all()?;
+    sync_directory(directory)?;
     Ok(())
 }
 
@@ -1002,7 +993,7 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(_) => validate_private_directory(path),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::DirBuilder::new().mode(DIRECTORY_MODE).create(path)?;
+            create_private_dir(path)?;
             validate_private_directory(path)
         }
         Err(error) => Err(error.into()),
@@ -1011,10 +1002,7 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
 
 fn validate_private_directory(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path)?;
-    if metadata.file_type().is_symlink()
-        || !metadata.is_dir()
-        || metadata.permissions().mode() & 0o077 != 0
-    {
+    if metadata.file_type().is_symlink() || !metadata.is_dir() || !dir_is_owner_only(path)? {
         return Err(errors::internal(
             "Observation directory is not private and symlink-free",
         ));
@@ -1024,7 +1012,7 @@ fn validate_private_directory(path: &Path) -> Result<()> {
 
 fn validate_private_file(file: &File) -> Result<()> {
     let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
+    if !metadata.is_file() || !file_is_owner_only(file)? {
         return Err(errors::internal(
             "Observation segment is not a private regular file",
         ));
@@ -1088,8 +1076,8 @@ mod tests {
     use soyeht_pane_state::{
         MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame, ObservationReason,
     };
+    use soyeht_platform::fs::symlink;
     use soyeht_protocol::{PaneState, StateSource};
-    use std::os::unix::fs::symlink;
     use std::sync::mpsc;
     use uuid::Uuid;
 
@@ -1102,10 +1090,7 @@ mod tests {
         fn new() -> Self {
             let directory =
                 std::env::temp_dir().join(format!("sn-observations-{}", Uuid::new_v4()));
-            fs::DirBuilder::new()
-                .mode(DIRECTORY_MODE)
-                .create(&directory)
-                .unwrap();
+            create_private_dir(&directory).unwrap();
             let root = directory.join("raw-terminal");
             Self { directory, root }
         }
@@ -1598,15 +1583,21 @@ mod tests {
         .unwrap();
         store.append(observation(0, false)).unwrap();
         let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
-        assert_eq!(
-            fs::metadata(&fixture.root).unwrap().permissions().mode() & 0o777,
-            DIRECTORY_MODE
-        );
+        assert!(dir_is_owner_only(&fixture.root).unwrap());
         let segment = validated_segment_files(&pane_directory).unwrap().remove(0);
-        assert_eq!(
-            fs::metadata(&segment).unwrap().permissions().mode() & 0o777,
-            FILE_MODE
-        );
+        assert!(file_is_owner_only(&File::open(&segment).unwrap()).unwrap());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&fixture.root).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(&segment).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
         let outside = fixture.directory.join("outside");
         fs::write(&outside, "private").unwrap();
         symlink(&outside, pane_directory.join("0000000000000001.jsonl")).unwrap();

@@ -47,7 +47,7 @@ pub(crate) fn publish(target: &Path, bytes: &[u8]) -> io::Result<()> {
     })();
     let _ = fs::remove_file(&temporary);
     published?;
-    fs::File::open(parent)?.sync_all()
+    soyeht_platform::fs::sync_directory(parent)
 }
 
 fn verify_existing(target: &Path, bytes: &[u8]) -> io::Result<()> {

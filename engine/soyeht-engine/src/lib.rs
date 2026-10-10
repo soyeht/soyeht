@@ -33,6 +33,8 @@ pub mod tasks;
 mod terminal_capture;
 mod terminal_harness;
 pub mod terminal_projection;
+#[cfg(test)]
+mod test_paths;
 mod tick;
 pub mod transport;
 pub mod ui_attestation;

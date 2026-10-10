@@ -81,8 +81,7 @@ fn canonical_repository(repository: &Path) -> Result<PathBuf> {
             "Review repository must be absolute",
         ));
     }
-    repository
-        .canonicalize()
+    soyeht_platform::fs::canonicalize(repository)
         .map_err(|error| errors::worktree_unavailable(error.to_string()))
 }
 

@@ -52,6 +52,7 @@ impl fmt::Debug for Secret {
 pub enum Platform {
     MacOs,
     Linux,
+    Windows,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

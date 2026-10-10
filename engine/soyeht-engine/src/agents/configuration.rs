@@ -414,6 +414,6 @@ mod full_access_tests {
             core.require_person_for_full_access(&Role::Chief, [Some("read-only"), None])
                 .is_ok()
         );
-        std::fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 }

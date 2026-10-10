@@ -40,7 +40,7 @@ pub struct SystemFiles;
 
 impl FileSystemPort for SystemFiles {
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
-        path.canonicalize()
+        soyeht_platform::fs::canonicalize(path)
     }
 
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>> {
@@ -108,7 +108,7 @@ impl FileSystemPort for SystemFiles {
             file.sync_all()?;
             fs::set_permissions(&temporary, permissions)?;
             fs::rename(&temporary, path)?;
-            fs::File::open(parent)?.sync_all()?;
+            soyeht_platform::fs::sync_directory(parent)?;
             Ok(())
         })();
         if result.is_err() {
@@ -118,7 +118,7 @@ impl FileSystemPort for SystemFiles {
     }
 
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool> {
-        let root = root.canonicalize()?;
+        let root = soyeht_platform::fs::canonicalize(root)?;
         validate_relative_creation_path(relative)?;
         let target = root.join(relative);
         match fs::symlink_metadata(&target) {
@@ -129,7 +129,7 @@ impl FileSystemPort for SystemFiles {
                         "document target cannot be a symbolic link",
                     ));
                 }
-                let canonical = target.canonicalize()?;
+                let canonical = soyeht_platform::fs::canonicalize(&target)?;
                 if !canonical.starts_with(&root) {
                     return Err(io::Error::new(
                         io::ErrorKind::PermissionDenied,
@@ -144,7 +144,7 @@ impl FileSystemPort for SystemFiles {
     }
 
     fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf> {
-        let root = root.canonicalize()?;
+        let root = soyeht_platform::fs::canonicalize(root)?;
         validate_relative_creation_path(relative)?;
         let parent = create_contained_directories(&root, relative)?;
         let filename = relative.file_name().ok_or_else(|| {
@@ -168,8 +168,8 @@ impl FileSystemPort for SystemFiles {
             }
             Err(error) => return Err(error),
         }
-        fs::File::open(&parent)?.sync_all()?;
-        let canonical = target.canonicalize()?;
+        soyeht_platform::fs::sync_directory(&parent)?;
+        let canonical = soyeht_platform::fs::canonicalize(&target)?;
         if !canonical.starts_with(&root) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -191,7 +191,7 @@ impl FileSystemPort for SystemFiles {
                 "writing image is outside the byte budget",
             ));
         }
-        let root = root.canonicalize()?;
+        let root = soyeht_platform::fs::canonicalize(root)?;
         validate_relative_creation_path(relative)?;
         let parent = create_contained_directories(&root, relative)?;
         let filename = relative.file_name().ok_or_else(|| {
@@ -199,7 +199,7 @@ impl FileSystemPort for SystemFiles {
         })?;
         let target = parent.join(filename);
         crate::immutable_file::publish(&target, bytes)?;
-        let canonical = target.canonicalize()?;
+        let canonical = soyeht_platform::fs::canonicalize(&target)?;
         if !canonical.starts_with(&root) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -699,10 +699,8 @@ fn contained_path(root: &Path, target: PathBuf) -> Result<ResolvedPath> {
     }
     let relative = target
         .strip_prefix(root)
-        .map_err(|_| errors::invalid("File path escapes the workspace"))?
-        .to_str()
-        .ok_or_else(|| errors::invalid("File path must be UTF-8"))?
-        .to_owned();
+        .map_err(|_| errors::invalid("File path escapes the workspace"))
+        .and_then(super::checked_wire_path)?;
     Ok(ResolvedPath {
         canonical: target,
         relative,
@@ -759,12 +757,12 @@ fn changed_lines(applied: &[soyeht_editor::AppliedEdit]) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
     use uuid::Uuid;
+    use {super::*, crate::test_paths::rooted};
 
     #[derive(Default)]
     struct FakeFiles {
@@ -895,7 +893,7 @@ mod tests {
 
     #[test]
     fn resolver_rejects_absolute_parent_and_symlink_escape_before_opening() {
-        let root = PathBuf::from("/repo");
+        let root = rooted("/repo");
         let mut files = FakeFiles::default();
         files.canonical.insert(root.clone(), root.clone());
         files
@@ -903,7 +901,7 @@ mod tests {
             .insert(root.join("src/main.rs"), root.join("src/main.rs"));
         files
             .canonical
-            .insert(root.join("link.rs"), PathBuf::from("/outside/secret.rs"));
+            .insert(root.join("link.rs"), rooted("/outside/secret.rs"));
         let service = Service::new(Box::new(files));
 
         let resolved = service.resolve(&root, "src/main.rs").unwrap();
@@ -918,7 +916,7 @@ mod tests {
         assert!(service.resolve(&root, "link.rs").is_err());
         assert!(
             service
-                .resolve_absolute(&root, &PathBuf::from("/outside/secret.rs"))
+                .resolve_absolute(&root, &rooted("/outside/secret.rs"))
                 .is_err()
         );
         assert!(
@@ -930,12 +928,12 @@ mod tests {
 
     #[test]
     fn conditional_write_re_resolves_and_rejects_a_swapped_symlink_target() {
-        let root = PathBuf::from("/repo");
+        let root = rooted("/repo");
         let wrote = Arc::new(AtomicBool::new(false));
         let service = Service::new(Box::new(SwappingFiles {
             root: root.clone(),
             target: root.join("note.txt"),
-            outside: PathBuf::from("/outside/secret.txt"),
+            outside: rooted("/outside/secret.txt"),
             target_resolutions: AtomicUsize::new(0),
             wrote: wrote.clone(),
         }));
@@ -971,7 +969,8 @@ mod tests {
 
         assert!(!files.creation_target_exists(&root, relative).unwrap());
         let canonical = files.create_empty_text(&root, relative).unwrap();
-        assert_eq!(canonical, root.join(relative).canonicalize().unwrap());
+        let expected = soyeht_platform::fs::canonicalize(&root.join(relative)).unwrap();
+        assert_eq!(canonical, expected);
         assert_eq!(fs::read(&canonical).unwrap(), Vec::<u8>::new());
         assert!(files.creation_target_exists(&root, relative).unwrap());
         assert_eq!(files.create_empty_text(&root, relative).unwrap(), canonical);
@@ -982,7 +981,7 @@ mod tests {
             io::ErrorKind::AlreadyExists
         );
         fs::create_dir(root.join("Writing/Screenplays")).unwrap();
-        std::os::unix::fs::symlink(&outside, root.join("Writing/Screenplays/linked")).unwrap();
+        soyeht_platform::fs::symlink(&outside, root.join("Writing/Screenplays/linked")).unwrap();
         assert!(
             files
                 .create_empty_text(

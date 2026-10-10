@@ -7,6 +7,7 @@
 //! never followed: renaming or deleting a link acts on the link itself.
 
 use super::project_files::is_save_temporary;
+use soyeht_platform::fs::rename_no_replace;
 use soyeht_protocol::{ProjectEntry, ProjectEntryKind};
 use std::{
     collections::{BTreeSet, hash_map::DefaultHasher},
@@ -14,7 +15,6 @@ use std::{
     fs,
     hash::{Hash, Hasher},
     io,
-    os::unix::fs::MetadataExt,
     path::{Component, Path, PathBuf},
 };
 
@@ -43,7 +43,7 @@ pub(crate) struct Listing {
 impl ProjectRoot {
     pub fn open(workspace: &Path) -> io::Result<Self> {
         Ok(Self {
-            root: workspace.canonicalize()?,
+            root: soyeht_platform::fs::canonicalize(workspace)?,
         })
     }
 
@@ -156,10 +156,7 @@ impl ProjectRoot {
             return Err(invalid("a folder cannot move inside itself"));
         }
         match fs::symlink_metadata(&target) {
-            Ok(existing)
-                if existing.dev() == source_metadata.dev()
-                    && existing.ino() == source_metadata.ino() =>
-            {
+            Ok(_) if same_entry(&source, &target) => {
                 // A case-only rename on a case-insensitive volume names the same entry.
                 fs::rename(&source, &target)
             }
@@ -168,7 +165,7 @@ impl ProjectRoot {
                 "an entry with that name already exists",
             )),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                rename_exclusive(&source, &target)
+                rename_no_replace(&source, &target)
             }
             Err(error) => Err(error),
         }
@@ -208,7 +205,7 @@ impl ProjectRoot {
     }
 
     fn contained(&self, path: &Path) -> io::Result<PathBuf> {
-        let canonical = path.canonicalize()?;
+        let canonical = soyeht_platform::fs::canonicalize(path)?;
         if !canonical.starts_with(&self.root) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -239,7 +236,7 @@ impl ProjectRoot {
         for name in names(relative, true)? {
             let next = current.join(name);
             match fs::create_dir(&next) {
-                Ok(()) => fs::File::open(&current)?.sync_all()?,
+                Ok(()) => soyeht_platform::fs::sync_directory(&current)?,
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
                 Err(error) => return Err(error),
             }
@@ -325,52 +322,23 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message.to_owned())
 }
 
-#[cfg(target_os = "macos")]
-fn rename_exclusive(from: &Path, to: &Path) -> io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-    let from = CString::new(from.as_os_str().as_bytes())?;
-    let to = CString::new(to.as_os_str().as_bytes())?;
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
-    let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
+/// Whether both paths name the same entry, as a case-only rename on a case-insensitive volume
+/// does.
+#[cfg(unix)]
+fn same_entry(left: &Path, right: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (fs::symlink_metadata(left), fs::symlink_metadata(right)) {
+        (Ok(left), Ok(right)) => left.dev() == right.dev() && left.ino() == right.ino(),
+        _ => false,
     }
 }
 
-#[cfg(target_os = "linux")]
-fn rename_exclusive(from: &Path, to: &Path) -> io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-    let from = CString::new(from.as_os_str().as_bytes())?;
-    let to = CString::new(to.as_os_str().as_bytes())?;
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call,
-    // and AT_FDCWD resolves them as ordinary paths.
-    let status = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            from.as_ptr(),
-            libc::AT_FDCWD,
-            to.as_ptr(),
-            libc::RENAME_NOREPLACE,
-        )
-    };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn rename_exclusive(from: &Path, to: &Path) -> io::Result<()> {
-    if fs::symlink_metadata(to).is_ok() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "an entry with that name already exists",
-        ));
-    }
-    fs::rename(from, to)
+#[cfg(windows)]
+fn same_entry(left: &Path, right: &Path) -> bool {
+    matches!(
+        (soyeht_platform::fs::canonicalize(left), soyeht_platform::fs::canonicalize(right)),
+        (Ok(left), Ok(right)) if left == right
+    )
 }
 
 #[cfg(test)]
@@ -398,10 +366,10 @@ mod tests {
             fs::write(root.join("debug.log"), "noise").unwrap();
             fs::create_dir_all(root.join("target")).unwrap();
             fs::write(outside.join("secret.txt"), "secret").unwrap();
-            std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
-            std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("secret-link"))
+            soyeht_platform::fs::symlink(&outside, root.join("escape")).unwrap();
+            soyeht_platform::fs::symlink(outside.join("secret.txt"), root.join("secret-link"))
                 .unwrap();
-            std::os::unix::fs::symlink(root.join("src"), root.join("src-link")).unwrap();
+            soyeht_platform::fs::symlink(root.join("src"), root.join("src-link")).unwrap();
             Self {
                 base,
                 root,

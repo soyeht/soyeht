@@ -9,8 +9,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 405,
-      "duplicated_lines": 3611
+      "clones": 402,
+      "duplicated_lines": 3589
     },
     "ios": {
       "clones": 6,
@@ -134,9 +134,6 @@
     "engine/soyeht-engine/src/agents/catalog.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-engine/src/agents/environment.rs": {
-      "rust_limits": 1
-    },
     "engine/soyeht-engine/src/agents/failures.rs": {
       "rust_limits": 1
     },
@@ -183,9 +180,6 @@
       "rust_limits": 5
     },
     "engine/soyeht-pane-state/src/model.rs": {
-      "rust_limits": 2
-    },
-    "engine/soyeht-ptyd/tests/supervisor.rs": {
       "rust_limits": 2
     },
     "engine/soyeht-store/src/agents.rs": {
@@ -245,24 +239,24 @@
     "engine/soyeht-engine/src/agents/questions.rs": 1119,
     "engine/soyeht-engine/src/agents/state.rs": 862,
     "engine/soyeht-engine/src/agents/switching.rs": 1063,
-    "engine/soyeht-engine/src/editor/service.rs": 1028,
-    "engine/soyeht-engine/src/experiment_export.rs": 1216,
-    "engine/soyeht-engine/src/pane_observations.rs": 1666,
-    "engine/soyeht-engine/src/server.rs": 1093,
+    "engine/soyeht-engine/src/editor/service.rs": 1027,
+    "engine/soyeht-engine/src/experiment_export.rs": 1194,
+    "engine/soyeht-engine/src/pane_observations.rs": 1657,
+    "engine/soyeht-engine/src/server.rs": 1081,
     "engine/soyeht-engine/src/tasks/feedback.rs": 907,
     "engine/soyeht-engine/src/tasks/review.rs": 817,
-    "engine/soyeht-engine/src/terminal_capture.rs": 1573,
+    "engine/soyeht-engine/src/terminal_capture.rs": 1565,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1115,
-    "engine/soyeht-engine/tests/runtime.rs": 8675,
+    "engine/soyeht-engine/tests/runtime.rs": 8672,
     "engine/soyeht-mcp/src/tools.rs": 1189,
     "engine/soyeht-store/src/editor.rs": 848,
     "engine/soyeht-store/tests/agents.rs": 1085,
     "engine/soyeht-store/tests/tasks.rs": 992
   },
   "swallowed_errors": {
-    "rust_let_underscore": 54,
-    "rust_ok": 106,
+    "rust_let_underscore": 49,
+    "rust_ok": 104,
     "swift_try_optional": 34
   },
   "version": 3

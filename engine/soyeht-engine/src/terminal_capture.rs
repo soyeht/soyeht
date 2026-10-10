@@ -729,7 +729,7 @@ mod tests {
     use soyeht_pane_state::RecordedRow;
     use soyeht_protocol::{Pane, PaneState, StateSource};
     use soyeht_ptyd::wire::{Output, Response};
-    use std::{collections::VecDeque, fs, os::unix::fs::PermissionsExt, time::Instant};
+    use std::{collections::VecDeque, fs, time::Instant};
     use uuid::Uuid;
 
     const CADENCE_RUNS: usize = 10;
@@ -741,14 +741,6 @@ mod tests {
     const CADENCE_WARMUP_DRAIN: Duration = Duration::from_millis(60);
     const FRAME_DENSE_INTERVAL: Duration = Duration::from_millis(5);
     const FRAME_DENSE_OBSERVATIONS: usize = 400;
-
-    fn load_average() -> Option<[f64; 3]> {
-        let mut averages = [0.0; 3];
-        // SAFETY: `averages` remains alive and writable for the call, and the
-        // supplied element count exactly matches the three-element buffer.
-        let count = unsafe { libc::getloadavg(averages.as_mut_ptr(), averages.len() as i32) };
-        (count == averages.len() as i32).then_some(averages)
-    }
 
     fn log_cadence_attempt(
         attempt: usize,
@@ -882,7 +874,7 @@ mod tests {
     fn terminal_observation_and_hook_label_share_one_attributable_stream() {
         let directory = std::env::temp_dir().join(format!("sn-terminal-label-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        soyeht_platform::fs::set_private_dir(&directory).unwrap();
         let harness = HarnessIdentity::known("test.terminal", None).unwrap();
         let build = EngineBuild {
             package_version: "0.1.0".into(),
@@ -966,7 +958,7 @@ mod tests {
                 failure: Some(format!("Experiment capture stopped: {reason}")),
             })
         );
-        fs::remove_dir_all(directory).unwrap();
+        crate::test_paths::remove_after(core, directory);
     }
 
     #[test]
@@ -991,10 +983,10 @@ mod tests {
 
         let exports = core.observation_root().unwrap().join("exports");
         fs::create_dir(&exports).unwrap();
-        fs::set_permissions(&exports, fs::Permissions::from_mode(0o700)).unwrap();
+        soyeht_platform::fs::set_private_dir(&exports).unwrap();
         let export = exports.join("export-preserved.jsonl");
         fs::write(&export, b"raw terminal export\n").unwrap();
-        fs::set_permissions(&export, fs::Permissions::from_mode(0o600)).unwrap();
+        soyeht_platform::fs::set_private_file(&export).unwrap();
 
         let (sender, _receiver) = outbox::channel();
         let connection = core.connect(true, true, sender).unwrap();
@@ -1026,7 +1018,7 @@ mod tests {
         assert_eq!(result["nothingRemained"], true);
         assert_eq!(result["exportsPath"], exports.to_str().unwrap());
         assert_eq!(fs::read(&export).unwrap(), b"raw terminal export\n");
-        fs::remove_dir_all(directory).unwrap();
+        crate::test_paths::remove_after(core, directory);
     }
 
     #[test]
@@ -1049,7 +1041,7 @@ mod tests {
     fn projection_worker_records_byte_gap_then_continues_in_a_fresh_epoch() {
         let directory = std::env::temp_dir().join(format!("sn-byte-gap-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        soyeht_platform::fs::set_private_dir(&directory).unwrap();
         let build = EngineBuild {
             package_version: "0.1.0".into(),
             executable_sha256: "a".repeat(64),
@@ -1321,7 +1313,7 @@ mod tests {
     fn frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage() {
         let directory = std::env::temp_dir().join(format!("sn-headroom-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        soyeht_platform::fs::set_private_dir(&directory).unwrap();
         let build = EngineBuild {
             package_version: "0.1.0".into(),
             executable_sha256: "b".repeat(64),
@@ -1410,7 +1402,7 @@ mod tests {
         attempt: usize,
     ) -> (Vec<u128>, Vec<u128>) {
         fs::create_dir(directory).unwrap();
-        let load_average_before = load_average();
+        let load_average_before = soyeht_platform::testing::load_average();
         let fixture_bytes = chunks.iter().skip(2).map(Vec::len).sum::<usize>();
         assert_eq!(fixture_bytes, CADENCE_FIXTURE_BYTES);
         let mut off = cadence_core(&directory.join("off"), chunks, false);
@@ -1465,7 +1457,7 @@ mod tests {
         log_cadence_attempt(
             attempt,
             load_average_before,
-            load_average(),
+            soyeht_platform::testing::load_average(),
             &off_micros,
             &on_micros,
         );

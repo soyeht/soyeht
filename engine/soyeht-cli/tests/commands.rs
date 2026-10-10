@@ -15,6 +15,11 @@ use std::{
 };
 use uuid::Uuid;
 
+/// A binary built next to the `soyeht` one under test.
+fn sibling_binary(name: &str) -> PathBuf {
+    soyeht_platform::testing::sibling_binary(env!("CARGO_BIN_EXE_soyeht"), name)
+}
+
 // Positive asynchronous assertions may use the full failure budget; passing
 // runs stop as soon as the expected signal arrives.
 const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -26,17 +31,22 @@ struct Rig {
 }
 impl Rig {
     fn start() -> Self {
-        let path = PathBuf::from("/tmp").join(format!("sn-cli-{}", Uuid::new_v4()));
+        // A Unix socket path is limited to about a hundred bytes; the temporary folder of macOS is long.
+        let root = if cfg!(unix) {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        };
+        let path = root.join(format!("sn-cli-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
-        let path = path.canonicalize().unwrap();
-        let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht"));
-        let ptyd = Command::new(binary.with_file_name("soyeht-ptyd"))
+        let path = soyeht_platform::fs::canonicalize(&path).unwrap();
+        let ptyd = Command::new(sibling_binary("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&path)
             .stdout(Stdio::null())
             .spawn()
             .expect("build workspace binaries first");
-        let engine = Command::new(binary.with_file_name("soyeht-engine"))
+        let engine = Command::new(sibling_binary("soyeht-engine"))
             .args(["--listen", "127.0.0.1:0", "--data-dir"])
             .arg(&path)
             .stdout(Stdio::null())
@@ -74,7 +84,7 @@ impl Rig {
             .unwrap();
         assert!(
             output.status.success(),
-            "{}",
+            "{args:?}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         serde_json::from_slice(&output.stdout).unwrap()
@@ -425,13 +435,12 @@ fn client_reconnects_after_engine_restart() {
         .unwrap();
     rig.engine.kill().unwrap();
     rig.engine.wait().unwrap();
-    rig.engine =
-        Command::new(PathBuf::from(env!("CARGO_BIN_EXE_soyeht")).with_file_name("soyeht-engine"))
-            .args(["--listen", "127.0.0.1:0", "--data-dir"])
-            .arg(&rig.path)
-            .stdout(Stdio::null())
-            .spawn()
-            .unwrap();
+    rig.engine = Command::new(sibling_binary("soyeht-engine"))
+        .args(["--listen", "127.0.0.1:0", "--data-dir"])
+        .arg(&rig.path)
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
     // Wait on a separate connection so a slow engine start on a busy host does not
     // exhaust the client's reconnect budget; `client` still has to reconnect itself.
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
@@ -452,7 +461,7 @@ fn client_reconnects_after_engine_restart() {
 #[test]
 fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
     let rig = Rig::start();
-    let binary = PathBuf::from(env!("CARGO_BIN_EXE_soyeht")).with_file_name("soyeht-fake-acp");
+    let binary = sibling_binary("soyeht-fake-acp");
     fs::write(
         rig.path.join("harnesses.json"),
         serde_json::to_vec(&serde_json::json!([{

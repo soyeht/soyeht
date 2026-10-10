@@ -83,10 +83,13 @@ impl Source for BrowserSource {
 }
 
 /// `~/Library/Application Support/Cursor/...` on macOS; `$XDG_CONFIG_HOME/Cursor/...`, else
-/// `~/.config/Cursor/...`, on Linux.
+/// `~/.config/Cursor/...`, on Linux; `%APPDATA%\Cursor\...` on Windows.
 fn state_database(host: &dyn Host) -> Option<PathBuf> {
     let root = match host.platform() {
         Platform::MacOs => host.home()?.join("Library/Application Support"),
+        Platform::Windows => env_dir(host, "APPDATA")
+            .filter(|path| path.is_absolute())
+            .or_else(|| host.home().map(|home| home.join("AppData/Roaming")))?,
         Platform::Linux => env_dir(host, "XDG_CONFIG_HOME")
             .filter(|path| path.is_absolute())
             .or_else(|| host.home().map(|home| home.join(".config")))?,

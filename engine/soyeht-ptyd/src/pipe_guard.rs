@@ -1,186 +1,36 @@
-//! A private child whose control socket binds a pipe process group to ptyd.
-//! EOF is not a sufficient lifetime contract for a native process's stdin.
-use crate::{
-    Error, Result,
-    process::{self, Spawned},
-    wire::Spawn,
+//! What keeps a pipe process (an agent adapter or a language server) from outliving the
+//! supervisor, and what ends everything it started.
+//!
+//! On Unix a guardian process leads the process group and watches a control socket. On Windows
+//! the process runs in a job that the system ends when the supervisor's last handle to it
+//! closes.
+
+use soyeht_platform::fs::{OpenOptionsPrivateExt, set_private_dir};
+use std::{
+    fs::{File, OpenOptions},
+    path::Path,
 };
-use serde::{Deserialize, Serialize};
-use soyeht_protocol::frame::{read_json, write_json};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read};
-use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
-use std::os::unix::{
-    fs::{OpenOptionsExt, PermissionsExt},
-    net::UnixStream,
-    process::CommandExt,
-};
-use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::Duration;
 
-#[derive(Serialize, Deserialize)]
-enum Reply {
-    Started(u32),
-    Exited(i32),
-    Failed(String),
-}
+#[cfg(unix)]
+#[path = "pipe_guard/unix.rs"]
+mod system;
+#[cfg(windows)]
+#[path = "pipe_guard/windows.rs"]
+mod system;
 
-fn reply(control: &mut UnixStream, message: Reply) -> Result<()> {
-    write_json(control, &message)?;
-    Ok(())
-}
+#[cfg(unix)]
+pub use system::run;
+pub(crate) use system::{Guard, spawn};
 
-pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawned> {
-    // Validate before starting any child; this is also used by the native child.
-    let _ = process::command(config)?;
+/// The private file a pipe process's standard error goes to: it can name paths and tokens, so
+/// it is owner-only and never shared with the engine's log.
+fn open_diagnostic_log(directory: &Path, id: &str) -> std::io::Result<File> {
     let logs = directory.join("harness-logs");
-    fs::create_dir_all(&logs)?;
-    fs::set_permissions(&logs, fs::Permissions::from_mode(0o700))?;
-    let stderr = OpenOptions::new()
+    std::fs::create_dir_all(&logs)?;
+    set_private_dir(&logs)?;
+    OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(logs.join(format!("{id}.stderr.log")))?;
-    let (mut parent, child_socket) = UnixStream::pair()?;
-    parent.set_read_timeout(Some(Duration::from_secs(5)))?;
-    parent.set_write_timeout(Some(Duration::from_secs(5)))?;
-    // SAFETY: duplicate into a range not used by Command's stdio setup. The
-    // owned duplicate is CLOEXEC except in the specific guardian child.
-    let fd = unsafe { libc::fcntl(child_socket.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 64) };
-    if fd == -1 {
-        return Err(io::Error::last_os_error().into());
-    }
-    // SAFETY: fcntl returned a new descriptor owned exclusively here.
-    let inherited = unsafe { File::from_raw_fd(fd) };
-    let mut command = Command::new(std::env::current_exe()?);
-    command
-        .args(["--pipe-guard", &fd.to_string()])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(stderr);
-    // SAFETY: only async-signal-safe calls; the descriptor is kept alive through spawn.
-    unsafe {
-        command.pre_exec(move || {
-            if libc::setsid() == -1 || libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-    let mut child = command.spawn()?;
-    drop(inherited);
-    drop(child_socket);
-    let setup: Result<(u32, File, File)> = (|| {
-        write_json(&mut parent, config)?;
-        let Some(reply) = read_json::<Reply>(&mut parent)? else {
-            return Err(Error::MissingGuardianResponse);
-        };
-        let pid = match reply {
-            Reply::Started(pid) => pid,
-            Reply::Failed(message) => return Err(Error::GuardianFailed(message)),
-            _ => return Err(Error::InvalidGuardianResponse),
-        };
-        // SAFETY: ownership moves from ChildStdin/ChildStdout into File once.
-        let child_input = child.stdin.take().ok_or(Error::GuardianStdinMissing)?;
-        // SAFETY: ownership moves from ChildStdin into File once.
-        let input = unsafe { File::from_raw_fd(child_input.into_raw_fd()) };
-        let child_output = child.stdout.take().ok_or(Error::GuardianStdoutMissing)?;
-        // SAFETY: stdout is a distinct owned descriptor moved into File once.
-        let output = unsafe { File::from_raw_fd(child_output.into_raw_fd()) };
-        process::nonblocking(&input)?;
-        process::nonblocking(&output)?;
-        Ok((pid, input, output))
-    })();
-    match setup {
-        Ok((pid, input, output)) => Ok(Spawned {
-            child,
-            input,
-            output,
-            pid,
-            guard: Some(parent),
-        }),
-        Err(error) => {
-            // Reap only: the group was just terminated; an error means it is already gone.
-            process::terminate_tree(child.id());
-            let _ = child.wait();
-            Err(error)
-        }
-    }
-}
-
-/// Only the private executable mode uses this inherited descriptor.
-pub fn run(fd: i32) -> Result<()> {
-    if fd < 64 {
-        return Err(Error::InvalidGuardianDescriptor);
-    }
-    // SAFETY: identity-only system calls. The private mode must never address
-    // a terminal's or a caller's process group when invoked outside spawn.
-    if unsafe { libc::getpgrp() != libc::getpid() || libc::getsid(0) != libc::getpid() } {
-        return Err(Error::GuardianNotSessionLeader);
-    }
-    // SAFETY: the parent gives this process ownership of the inherited socket.
-    let mut control = unsafe { UnixStream::from_raw_fd(fd) };
-    // SAFETY: prevent the harness or descendants from holding ptyd's liveness FD.
-    if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-        return Err(io::Error::last_os_error().into());
-    }
-    let Some(config) = read_json::<Spawn>(&mut control)? else {
-        return Ok(());
-    };
-    if config.argv.is_empty() {
-        return Err(Error::EmptyCommand);
-    }
-    control.set_read_timeout(Some(Duration::from_millis(20)))?;
-    control.set_write_timeout(Some(Duration::from_secs(1)))?;
-    let mut child = match process::command(&config)?.spawn() {
-        Ok(child) => child,
-        Err(error) => {
-            reply(&mut control, Reply::Failed(error.to_string()))?;
-            return Ok(());
-        }
-    };
-    if reply(&mut control, Reply::Started(child.id())).is_err() {
-        kill_own_group();
-    }
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                // The supervisor may already be gone; the exit is final either way.
-                let _ = reply(&mut control, Reply::Exited(status.code().unwrap_or(-1)));
-                kill_own_group();
-            }
-            Err(_) => kill_own_group(),
-            Ok(None) => (),
-        }
-        match control.read(&mut [0u8; 1]) {
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::WouldBlock
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::Interrupted
-                ) => {}
-            // This channel carries no commands after spawn. EOF or unexpected
-            // bytes close the whole group, including children ignoring stdin EOF.
-            _ => kill_own_group(),
-        }
-    }
-}
-
-fn kill_own_group() -> ! {
-    // SAFETY: the guardian is the live leader created by setsid, so this group
-    // cannot have been recycled. No stored PID or other service is addressed.
-    unsafe {
-        libc::kill(-libc::getpgrp(), libc::SIGKILL);
-        libc::_exit(1);
-    }
-}
-
-pub(crate) fn exit_code(control: &mut UnixStream) -> Option<i32> {
-    match read_json::<Reply>(control).ok()?? {
-        Reply::Exited(code) => Some(code),
-        _ => None,
-    }
+        .owner_only()
+        .open_no_follow(&logs.join(format!("{id}.stderr.log")))
 }

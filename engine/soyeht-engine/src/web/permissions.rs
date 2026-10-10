@@ -851,7 +851,7 @@ mod tests {
         assert_eq!(stopped["params"]["on"], false);
         assert!(stopped["params"].get("domain").is_none());
         assert_eq!(next_json(&mut caller_rx).await["result"]["completed"], true);
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -917,7 +917,7 @@ mod tests {
             granted["params"]["args"][INTERNAL_ACCESS_KEY]["session"],
             "granted"
         );
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -965,7 +965,7 @@ mod tests {
             panic!("evaluation retry should use the durable mutation receipt")
         };
         assert_eq!(repeated["value"], "Example");
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -1009,7 +1009,7 @@ mod tests {
             },
         );
         assert!(denied.is_err_and(|error| errors::kind(&error) == ErrorKind::Unauthorized));
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -1039,7 +1039,7 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -1083,7 +1083,7 @@ mod tests {
                 .result
                 .is_some()
         );
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -1110,6 +1110,6 @@ mod tests {
             ),
         );
         assert!(command.is_err_and(|error| errors::kind(&error) == ErrorKind::ForbiddenRole));
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 }

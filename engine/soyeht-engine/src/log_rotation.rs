@@ -9,8 +9,7 @@
 
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
-    os::fd::{AsFd, AsRawFd},
+    io::{self, PipeWriter, Read, Write},
     path::{Path, PathBuf},
     sync::mpsc,
     thread,
@@ -142,10 +141,18 @@ fn bounded_lines(lines: &[u8]) -> Vec<u8> {
     bounded
 }
 
+#[cfg(unix)]
+#[path = "log_rotation/unix.rs"]
+mod system;
+#[cfg(windows)]
+#[path = "log_rotation/windows.rs"]
+mod system;
+
 /// Keeps stderr on the pipe while alive. Dropping it puts the original file
 /// back on stderr and waits briefly for the copy thread to drain the pipe.
 pub struct StderrRotation {
-    original: std::os::fd::OwnedFd,
+    original: system::Original,
+    writer: Option<PipeWriter>,
     finished: mpsc::Receiver<()>,
 }
 
@@ -153,18 +160,17 @@ pub struct StderrRotation {
 /// Returns `None` when it is not (a terminal or a pipe needs no bound) or when
 /// the platform cannot name the file behind a descriptor.
 pub fn capture_stderr(max_bytes: u64, keep: usize) -> io::Result<Option<StderrRotation>> {
-    let original = io::stderr().as_fd().try_clone_to_owned()?;
+    let original = system::current_stderr()?;
     let target = File::from(original.try_clone()?);
     if !target.metadata()?.is_file() {
         return Ok(None);
     }
-    let Some(path) = descriptor_path(&target) else {
+    let Some(path) = system::descriptor_path(&target) else {
         return Ok(None);
     };
     let mut log = RotatingFile::open(&path, max_bytes, keep)?;
     let (reader, writer) = io::pipe()?;
-    redirect_stderr(&writer)?;
-    drop(writer);
+    system::redirect_stderr(&writer)?;
     let (done, finished) = mpsc::channel();
     thread::Builder::new()
         .name("engine-log".into())
@@ -173,57 +179,22 @@ pub fn capture_stderr(max_bytes: u64, keep: usize) -> io::Result<Option<StderrRo
             let _ = pump(reader, &mut log);
             let _ = done.send(());
         })?;
-    Ok(Some(StderrRotation { original, finished }))
+    Ok(Some(StderrRotation {
+        original,
+        writer: Some(writer),
+        finished,
+    }))
 }
 
 impl Drop for StderrRotation {
     fn drop(&mut self) {
         // Shutdown path: if stderr cannot be restored or the flush times out, the process
         // is exiting and there is no better place to log it.
-        let _ = redirect_stderr(&self.original);
+        let _ = system::restore_stderr(&self.original);
+        // With stderr restored, this is the last writer: closing it ends the pipe.
+        drop(self.writer.take());
         let _ = self.finished.recv_timeout(FLUSH_GRACE);
     }
-}
-
-fn redirect_stderr(target: &impl AsFd) -> io::Result<()> {
-    // SAFETY: both descriptors are open for the whole call; `dup2` replaces
-    // descriptor 2 atomically and leaves `target` untouched.
-    let result = unsafe { libc::dup2(target.as_fd().as_raw_fd(), libc::STDERR_FILENO) };
-    if result < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn descriptor_path(file: &File) -> Option<PathBuf> {
-    use std::{ffi::CStr, os::unix::ffi::OsStrExt};
-    let mut buffer = [0_u8; libc::PATH_MAX as usize];
-    // SAFETY: `F_GETPATH` writes a NUL-terminated path of at most `PATH_MAX`
-    // bytes into `buffer`, which has exactly that size, for an open descriptor.
-    let status = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buffer.as_mut_ptr()) };
-    if status < 0 {
-        return None;
-    }
-    // No NUL means no usable path; rotation is then off (the caller treats None as that).
-    let path = CStr::from_bytes_until_nul(&buffer).ok()?;
-    Some(PathBuf::from(std::ffi::OsStr::from_bytes(path.to_bytes())))
-}
-
-#[cfg(target_os = "linux")]
-fn descriptor_path(file: &File) -> Option<PathBuf> {
-    match fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())) {
-        Ok(path) => Some(path),
-        Err(error) => {
-            eprintln!("log rotation is off: cannot name the log file: {error}");
-            None
-        }
-    }
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn descriptor_path(_: &File) -> Option<PathBuf> {
-    None
 }
 
 #[cfg(test)]

@@ -36,7 +36,7 @@ pub fn new_document_path(
         return Err(Error::InvalidSectionPath);
     }
     let kind = kind_for(section);
-    let mut path = Path::new(folder_for(section)).to_path_buf();
+    let mut path = folder_for(section).to_owned();
     if let Some(folder) = relative_folder.filter(|folder| !folder.is_empty()) {
         let nested = Path::new(folder);
         if folder.len() > 2048
@@ -47,14 +47,16 @@ pub fn new_document_path(
         {
             return Err(Error::InvalidSectionPath);
         }
-        path.push(nested);
+        for part in nested.components() {
+            path.push('/');
+            path.push_str(part.as_os_str().to_str().ok_or(Error::InvalidSectionPath)?);
+        }
     }
     let extension = match kind {
         WritingKind::Text | WritingKind::Presentation => "md",
         WritingKind::Screenplay => "fountain",
     };
-    path.push(format!("{}.{}", filename_stem(title)?, extension));
-    let path = path.to_str().ok_or(Error::InvalidSectionPath)?.to_owned();
+    path.push_str(&format!("/{}.{}", filename_stem(title)?, extension));
     validate_path(&path, folder_for(section), &kind)?;
     Ok(path)
 }

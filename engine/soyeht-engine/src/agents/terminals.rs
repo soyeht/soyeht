@@ -63,8 +63,7 @@ impl Terminal {
         if !path.is_absolute() {
             return Err(effects::failure("Terminal directory must be absolute"));
         }
-        let canonical = path
-            .canonicalize()
+        let canonical = soyeht_platform::fs::canonicalize(path)
             .map_err(|error| effects::failure(error.to_string()))?;
         if !canonical.is_dir() {
             return Err(effects::failure("Terminal directory does not exist"));

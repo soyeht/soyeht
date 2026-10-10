@@ -715,7 +715,7 @@ mod tests {
             disconnected["error"]["data"]["kind"],
             "web_host_unavailable"
         );
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -755,7 +755,7 @@ mod tests {
             panic!("remote web host should be rejected")
         };
         assert_eq!(errors::kind(&rejected), ErrorKind::Unauthorized);
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -872,7 +872,7 @@ mod tests {
             panic!("completed mutation should use its durable receipt")
         };
         assert_eq!(repeated, clicked["result"]);
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[tokio::test]
@@ -951,6 +951,6 @@ mod tests {
         assert_eq!(response["id"], 4);
         assert_eq!(response["result"]["image"], reference);
 
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 }

@@ -6,20 +6,18 @@ use serde_json::{Value, json};
 use soyeht_protocol::{EngineReachability, EngineReachabilityReason};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    ffi::CStr,
     io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     time::Duration,
 };
 use tokio::{net::TcpListener, task::JoinHandle};
 
-struct Interfaces(*mut libc::ifaddrs);
-impl Drop for Interfaces {
-    fn drop(&mut self) {
-        // SAFETY: this list was allocated by getifaddrs and is freed once.
-        unsafe { libc::freeifaddrs(self.0) };
-    }
-}
+#[cfg(unix)]
+#[path = "network/unix.rs"]
+mod system;
+#[cfg(windows)]
+#[path = "network/windows.rs"]
+mod system;
 
 /// Listeners may bind loopback and tailnet ranges only: never LAN, public or wildcard.
 pub fn permitted_address(address: IpAddr) -> bool {
@@ -32,8 +30,10 @@ pub fn permitted_address(address: IpAddr) -> bool {
 }
 
 fn is_tailnet_interface(name: &str, address: IpAddr) -> bool {
-    // macOS names the tailnet tunnel `utunN`; Linux's tailscaled names it `tailscale0`.
+    // macOS names the tailnet tunnel `utunN`, Linux's tailscaled names it `tailscale0`, and the
+    // Windows adapter is called `Tailscale`.
     let tunnel = name == "tailscale0"
+        || name.eq_ignore_ascii_case("tailscale")
         || name
             .strip_prefix("utun")
             .is_some_and(|suffix| !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()));
@@ -41,46 +41,13 @@ fn is_tailnet_interface(name: &str, address: IpAddr) -> bool {
 }
 
 pub fn tailnet_addresses() -> io::Result<Vec<IpAddr>> {
-    let mut first = std::ptr::null_mut();
-    // SAFETY: first points to writable storage for the allocated list pointer.
-    if unsafe { libc::getifaddrs(&mut first) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let list = Interfaces(first);
-    let mut current = list.0;
-    let mut addresses = BTreeSet::new();
-    while !current.is_null() {
-        // SAFETY: current belongs to the live getifaddrs list until list drops.
-        let interface = unsafe { &*current };
-        current = interface.ifa_next;
-        if interface.ifa_addr.is_null()
-            || interface.ifa_name.is_null()
-            || interface.ifa_flags & libc::IFF_UP as u32 == 0
-        {
-            continue;
-        }
-        // SAFETY: getifaddrs supplies a nul-terminated interface name.
-        let name = unsafe { CStr::from_ptr(interface.ifa_name) }.to_string_lossy();
-        // SAFETY: a non-null address contains sockaddr and its declared family.
-        let family = unsafe { (*interface.ifa_addr).sa_family } as i32;
-        let address = match family {
-            libc::AF_INET => {
-                // SAFETY: AF_INET addresses are sockaddr_in values.
-                let raw = unsafe { &*interface.ifa_addr.cast::<libc::sockaddr_in>() };
-                IpAddr::V4(Ipv4Addr::from(raw.sin_addr.s_addr.to_ne_bytes()))
-            }
-            libc::AF_INET6 => {
-                // SAFETY: AF_INET6 addresses are sockaddr_in6 values.
-                let raw = unsafe { &*interface.ifa_addr.cast::<libc::sockaddr_in6>() };
-                IpAddr::V6(Ipv6Addr::from(raw.sin6_addr.s6_addr))
-            }
-            _ => continue,
-        };
-        if is_tailnet_interface(&name, address) {
-            addresses.insert(address);
-        }
-    }
-    Ok(addresses.into_iter().collect())
+    Ok(system::interface_addresses()?
+        .into_iter()
+        .filter(|(name, address)| is_tailnet_interface(name, *address))
+        .map(|(_, address)| address)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
 }
 
 /// How often the engine looks for tailnet addresses (ADR 0078).

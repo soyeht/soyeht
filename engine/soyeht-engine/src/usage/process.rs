@@ -17,7 +17,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(unix)]
 pub(super) const CURL: &str = "/usr/bin/curl";
+/// Windows ships `curl.exe` in its system folder, which is on the search path.
+#[cfg(windows)]
+pub(super) const CURL: &str = "curl.exe";
 pub(super) const SECURITY: &str = "/usr/bin/security";
 /// A keychain read can wait on the user's answer to the macOS prompt.
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(60);

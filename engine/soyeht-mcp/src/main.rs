@@ -116,9 +116,11 @@ mod tests {
 
     #[test]
     fn parser_requires_complete_unique_pane_identity() {
+        let data = std::env::temp_dir().join("data");
+        let data = data.to_str().unwrap();
         let valid = [
             "--data-dir",
-            "/tmp/data",
+            data,
             "--workspace-id",
             "workspace",
             "--pane-id",

@@ -1,5 +1,6 @@
 use crate::{Error, Result};
 use serde_json::{Value, json};
+use soyeht_platform::local::{Stream, connect};
 use soyeht_protocol::{
     AttachmentRef, Role, Welcome,
     attachment::AttachmentAssembler,
@@ -7,7 +8,6 @@ use soyeht_protocol::{
     handshake, limits,
 };
 use std::{
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -43,7 +43,7 @@ impl EngineResponse {
 pub struct Client {
     socket_path: PathBuf,
     binding: String,
-    socket: UnixStream,
+    socket: Stream,
     next_id: u64,
     role: Role,
 }
@@ -198,8 +198,8 @@ impl EnginePort for Client {
     }
 }
 
-fn open(socket: &Path) -> Result<UnixStream> {
-    let stream = UnixStream::connect(socket)?;
+fn open(socket: &Path) -> Result<Stream> {
+    let stream = connect(socket)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
     Ok(stream)
@@ -215,21 +215,32 @@ fn reconnectable(error: &Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soyeht_platform::local::Listener;
     use soyeht_protocol::{
         attachment::attachment_header,
         frame::{Frame, read_json, write_json},
         profile::DEV_ENGINE_SOCKET,
     };
-    use std::{os::unix::net::UnixListener, thread};
+    use std::thread;
+
+    /// Where the endpoints of these tests live. A Unix socket path is short-limited, and the
+    /// temporary folder of macOS is too long for one.
+    fn scratch() -> PathBuf {
+        if cfg!(unix) {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        }
+    }
 
     #[test]
     fn framed_engine_connection_proves_the_binding_and_preserves_remote_errors() {
-        let directory = std::path::Path::new("/tmp").join(format!("mcp-{}", uuid::Uuid::new_v4()));
+        let directory = scratch().join(format!("mcp-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let socket = directory.join(DEV_ENGINE_SOCKET);
-        let listener = UnixListener::bind(&socket).unwrap();
+        let listener = Listener::bind(&socket).unwrap();
         let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let mut stream = listener.accept().unwrap();
             write_json(&mut stream, &json!({"jsonrpc":"2.0","method":"auth.challenge","params":{"eventId":"0","at":"now","nonce":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","engineId":"engine"}})).unwrap();
             let hello: Value = read_json(&mut stream).unwrap().unwrap();
             assert_eq!(hello["params"]["binding"], "secret");
@@ -252,11 +263,10 @@ mod tests {
 
     #[test]
     fn request_reconnects_after_engine_restart_and_reuses_idempotency_key() {
-        let directory =
-            std::path::Path::new("/tmp").join(format!("mcp-restart-{}", uuid::Uuid::new_v4()));
+        let directory = scratch().join(format!("mcp-restart-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let socket = directory.join(DEV_ENGINE_SOCKET);
-        let listener = UnixListener::bind(&socket).unwrap();
+        let listener = Listener::bind(&socket).unwrap();
         let server = thread::spawn(move || {
             let mut first = accept_client(&listener);
             let original: Value = read_json(&mut first).unwrap().unwrap();
@@ -288,11 +298,10 @@ mod tests {
 
     #[test]
     fn screenshot_bytes_are_committed_only_by_the_matching_response_reference() {
-        let directory =
-            std::path::Path::new("/tmp").join(format!("mcp-image-{}", uuid::Uuid::new_v4()));
+        let directory = scratch().join(format!("mcp-image-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let socket = directory.join(DEV_ENGINE_SOCKET);
-        let listener = UnixListener::bind(&socket).unwrap();
+        let listener = Listener::bind(&socket).unwrap();
         let server = thread::spawn(move || {
             let mut stream = accept_client(&listener);
             let request: Value = read_json(&mut stream).unwrap().unwrap();
@@ -324,8 +333,8 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
-    fn accept_client(listener: &UnixListener) -> UnixStream {
-        let (mut stream, _) = listener.accept().unwrap();
+    fn accept_client(listener: &Listener) -> Stream {
+        let mut stream = listener.accept().unwrap();
         write_json(
             &mut stream,
             &json!({

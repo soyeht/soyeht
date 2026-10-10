@@ -40,7 +40,7 @@ R20 applied here). Clients: new Swift app (Mac and iPhone), TypeScript app
 ## 2. Transport, authentication and roles (R10, R11)
 | Client | Path | Identity proof |
 |---|---|---|
-| Mac (Swift), Linux/Windows (TS), CLI | Unix socket at `<data>/engine.sock`; directory 0700, socket 0600; on Windows, named pipe with user ACL | same OS user + `hello` |
+| Mac (Swift), Linux/Windows (TS), CLI | Unix socket at `<data>/engine.sock`; directory 0700, socket 0600; on Windows, the loopback endpoint described in §2.5 | same OS user + `hello` |
 | MCP server (one per agent pane) | same local socket | `hello` with `binding` issued by the engine when creating the pane (short secret + paneId); without a valid `binding`, becomes a “local human” client without a role |
 | iPhone | plaintext WebSocket on the Soyeht port at Tailscale addresses (contract 06) | `deviceToken` issued during pairing (§2.2) |
 
@@ -132,6 +132,34 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
 | `device.*`, `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
+
+**2.5 The local endpoint on Windows (ADR 0086).** Windows has no Unix socket in the
+standard library, so `<data>/engine.sock` (and `ptyd.sock`) is a small file that only
+the account can read, not a socket. Its one line is
+`soyeht-local-2 <port> <secret>`: a loopback TCP port on `127.0.0.1` and a random
+32-byte secret in 64 lowercase hexadecimal digits. The secret never crosses the
+connection. Both sides prove they know it, in this order, within 2 s in all:
+
+1. the client sends a random 32-byte nonce `cn`;
+2. the listener answers with its own 32-byte nonce `sn` and
+   `HMAC-SHA256(secret, "soyeht-local-2 server" || cn || sn)`;
+3. the client checks that proof (in constant time) and refuses the endpoint, sending
+   nothing more, when it is wrong; otherwise it sends
+   `HMAC-SHA256(secret, "soyeht-local-2 client" || cn || sn)`;
+4. the listener checks that proof and drops the connection when it is wrong.
+
+After that the stream carries the same frames, handshake and roles as the Unix socket,
+and a connection counts as the same OS user (it could read the file). Because the client
+verifies the listener, a process that merely listens on the port named by a stale file
+learns nothing and cannot pass for the engine. The listening socket is bound with
+`SO_EXCLUSIVEADDRUSE`, so no other process can share its port. At most 256 connections
+may be mid-exchange; at the limit the oldest is dropped to make room for the newest, so
+connections that never answer cannot keep a client out (a flood needs to open 256 new
+connections inside the few milliseconds one good exchange takes to do so, and costs the
+good client at worst one retry). A listener that stops, or a supervisor that exits, removes
+its file; the file of one that was killed is replaced by the next start, and is harmless
+meanwhile because no client trusts a listener that cannot prove the secret. The file is
+replaced by a new secret and port every time the engine starts.
 
 ## 3. State snapshot and events without loss (R05)
 - **State change and event originate in the same database transaction.** Every
@@ -340,7 +368,9 @@ executable schema carry no state cursor and never enter replay.
 `pane_busy`, `task_has_owner`, `transition_refused {reason}`,
 `stale_version`, `idempotency_conflict`, `harness_unavailable`,
 `needs_login`, `cursor_too_old`, `resync_required`, `slow_consumer`,
-`protocol_version_unsupported`, `disk_full`, `ptyd_unavailable`.
+`protocol_version_unsupported`, `disk_full`, `ptyd_unavailable`,
+`platform_unsupported` (the operating system the engine runs on cannot do what was
+asked: for example, `servers.local.list` on Windows; the message says what).
 
 ## 8. Limits (R20) — single table, overrides every other mention
 | Item | Limit |

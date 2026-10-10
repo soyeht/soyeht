@@ -13,32 +13,46 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::Read,
-    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 /// What identifies an executable's bytes without reading them. A write changes the
-/// modification time and the change time (which user space cannot set), and a
-/// replacement changes the inode, so an unchanged stamp means unchanged content.
+/// modification time and, on Unix, the change time (which user space cannot set), and a
+/// replacement changes the file's identity, so an unchanged stamp means unchanged content.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct FileStamp {
-    device: u64,
-    inode: u64,
+    /// Unix: device and inode. Windows: the creation time, which a replacement renews.
+    identity: (u64, u64),
     length: u64,
     modified: (i64, i64),
     changed: (i64, i64),
 }
 
 impl FileStamp {
+    #[cfg(unix)]
     fn of(metadata: &fs::Metadata) -> Self {
+        use std::os::unix::fs::MetadataExt;
         Self {
-            device: metadata.dev(),
-            inode: metadata.ino(),
+            identity: (metadata.dev(), metadata.ino()),
             length: metadata.size(),
             modified: (metadata.mtime(), metadata.mtime_nsec()),
             changed: (metadata.ctime(), metadata.ctime_nsec()),
+        }
+    }
+
+    /// Windows keeps no change time that user space cannot set, so the modification time
+    /// stands for both.
+    #[cfg(windows)]
+    fn of(metadata: &fs::Metadata) -> Self {
+        use std::os::windows::fs::MetadataExt;
+        let modified = unix_time(metadata.last_write_time());
+        Self {
+            identity: (0, metadata.creation_time()),
+            length: metadata.file_size(),
+            modified,
+            changed: modified,
         }
     }
 
@@ -47,6 +61,20 @@ impl FileStamp {
     fn settled(&self, now: i64) -> bool {
         now.saturating_sub(self.modified.0.max(self.changed.0)) > RACY_WINDOW_SECONDS
     }
+}
+
+/// A Windows file time (100 ns ticks since 1601) as seconds and nanoseconds since the Unix epoch.
+#[cfg(windows)]
+fn unix_time(ticks: u64) -> (i64, i64) {
+    const TICKS_PER_SECOND: i64 = 10_000_000;
+    const TICKS_AT_UNIX_EPOCH: i64 = 116_444_736_000_000_000;
+    let since = i64::try_from(ticks)
+        .unwrap_or(i64::MAX)
+        .saturating_sub(TICKS_AT_UNIX_EPOCH);
+    (
+        since.div_euclid(TICKS_PER_SECOND),
+        since.rem_euclid(TICKS_PER_SECOND) * 100,
+    )
 }
 
 type DigestCache = Mutex<HashMap<PathBuf, (FileStamp, String)>>;
@@ -118,11 +146,12 @@ fn hash_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-#[cfg(test)]
+// The fixtures write shell scripts, which run only where there is a shell.
+#[cfg(all(test, unix))]
 mod tests {
     use super::super::registry::tests::Fixture;
     use super::*;
-    use std::cell::Cell;
+    use std::{cell::Cell, os::unix::fs::MetadataExt};
 
     /// A clock far past any file time a test creates: every stamp counts as settled.
     const LONG_AFTER: i64 = 1 << 40;

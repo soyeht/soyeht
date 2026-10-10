@@ -35,7 +35,7 @@ pub(super) fn create_contained_directories(root: &Path, relative: &Path) -> io::
         };
         let next = current.join(component);
         match fs::create_dir(&next) {
-            Ok(()) => fs::File::open(&current)?.sync_all()?,
+            Ok(()) => soyeht_platform::fs::sync_directory(&current)?,
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),
         }
@@ -46,7 +46,7 @@ pub(super) fn create_contained_directories(root: &Path, relative: &Path) -> io::
                 "document folder is not a regular directory",
             ));
         }
-        current = next.canonicalize()?;
+        current = soyeht_platform::fs::canonicalize(&next)?;
         if !current.starts_with(root) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,

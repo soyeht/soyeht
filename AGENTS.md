@@ -15,11 +15,15 @@ Each layer depends only on the layers listed above it.
 2. `engine/soyeht-protocol`: generated wire models, limits and framing, plus the
    transport-agnostic rules every client shares: the greeting and `hello`
    validation (`handshake`) and snapshot page assembly (`snapshot`). It has no
-   Soyeht dependencies and no IO or async runtime. `engine/soyeht-process`, the
-   bounded runner for every external command the engine starts, has none either
-   (ADR 0079).
-3. Engine building blocks, each depending only on `soyeht-protocol`, and on
-   `soyeht-process` where they run a command:
+   Soyeht dependencies and no IO or async runtime.
+   `engine/soyeht-platform` sits at the same level: the operating-system seams
+   (the local endpoint, owner-only files, process launch and termination, the user's
+   identity). It has no Soyeht dependencies, and code that differs between macOS, Linux
+   and Windows for these concerns lives only there (ADR 0086).
+   `engine/soyeht-process`, the bounded runner for every external command the engine
+   starts, depends on nothing but `soyeht-platform` (ADR 0079).
+3. Engine building blocks, each depending only on `soyeht-protocol` and
+   `soyeht-platform`, and on `soyeht-process` where they run a command:
    - `soyeht-ptyd`: the process supervisor that holds pseudoterminals.
    - `soyeht-acp`: the ACP v1 adaptation. Process ownership and durable effects
      belong to the engine.
@@ -27,12 +31,13 @@ Each layer depends only on the layers listed above it.
      (`hardening_gate.py check-no-sql-outside-store`).
    - Pure, bounded domain crates: `soyeht-editor`, `soyeht-writing`,
      `soyeht-web`, `soyeht-pane-state`, `soyeht-usage`, `soyeht-lsp`, and
-     `soyeht-vcs` (whose only Soyeht dependency is `soyeht-process`).
+     `soyeht-vcs` (whose only Soyeht dependencies are `soyeht-platform`, for
+     canonical paths, and `soyeht-process`).
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
-   and WebSocket API. The `soyeht-cli` binary uses protocol, ptyd and store;
-   the `soyeht-mcp` binary uses protocol and skills. Neither depends on the
-   engine crate.
+   and WebSocket API. The `soyeht-cli` binary uses protocol, platform, ptyd and
+   store; the `soyeht-mcp` binary uses protocol, platform and skills. Neither
+   depends on the engine crate.
 5. `apps/shared` (`SoyehtClient`): the shared Swift client. It holds the engine
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it.
@@ -63,6 +68,9 @@ ADR when you change a boundary.
   `limits.rs` and `ProtocolLimits`.
 - One rule, one place. Before you add a helper, a constant or a policy, search
   for an existing one and reuse or extend it.
+- Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard
+  `canonicalize` gives Windows' `\\?\C:\...` form, which `cmd.exe` and `git` read differently;
+  `engine/soyeht-platform/tests/canonical_paths.rs` fails on any other use.
 
 ## No duplication and no god files
 
@@ -150,6 +158,11 @@ inherit the main actor.
   if it cannot be resolved, so run `git fetch origin main` first. Pass
   `--base FULL_OID` to override it.
 - Rust: `export PATH="$HOME/.cargo/bin:$PATH"; (cd engine && cargo build --workspace)`.
+- Linux and Windows engine checks (not gate steps): `scripts/check_engine_linux.sh` and
+  `scripts/check_engine_windows.ps1`, or `scripts/vmpal_check_engine.sh` from a Mac
+  (`docs/platforms.md`). New platform-specific code goes behind `soyeht-platform`
+  or a `cfg` module with the same public shape on every system; where a feature
+  cannot exist on a system it returns a typed `Unsupported` error.
 
 ## Repository hygiene
 

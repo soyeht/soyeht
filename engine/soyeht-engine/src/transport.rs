@@ -3,6 +3,7 @@ use futures_util::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
+use soyeht_platform::local::asynchronous::{OwnedReadHalf, OwnedWriteHalf, Stream};
 use soyeht_protocol::{
     frame::{Frame, validate_length},
     limits,
@@ -10,10 +11,7 @@ use soyeht_protocol::{
 use std::io;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{
-        TcpStream, UnixStream,
-        unix::{OwnedReadHalf, OwnedWriteHalf},
-    },
+    net::TcpStream,
 };
 use tokio_tungstenite::{
     WebSocketStream, accept_async_with_config,
@@ -23,17 +21,17 @@ use tokio_tungstenite::{
 type WebSocket = WebSocketStream<TcpStream>;
 
 pub enum Reader {
-    Unix(OwnedReadHalf),
+    Local(OwnedReadHalf),
     Web(SplitStream<WebSocket>),
 }
 pub enum Writer {
-    Unix(OwnedWriteHalf),
+    Local(OwnedWriteHalf),
     Web(SplitSink<WebSocket, Message>),
 }
 
-pub fn unix(stream: UnixStream) -> (Reader, Writer) {
+pub fn local(stream: Stream) -> (Reader, Writer) {
     let (read, write) = stream.into_split();
-    (Reader::Unix(read), Writer::Unix(write))
+    (Reader::Local(read), Writer::Local(write))
 }
 
 pub async fn websocket(stream: TcpStream) -> Result<(Reader, Writer)> {
@@ -49,7 +47,7 @@ pub async fn websocket(stream: TcpStream) -> Result<(Reader, Writer)> {
 impl Reader {
     pub async fn next(&mut self) -> Result<Option<Frame>> {
         match self {
-            Self::Unix(reader) => {
+            Self::Local(reader) => {
                 let kind = match reader.read_u8().await {
                     Ok(kind) => kind,
                     Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
@@ -93,7 +91,7 @@ impl Reader {
 impl Writer {
     pub async fn write(&mut self, frame: &Frame) -> Result<()> {
         match self {
-            Self::Unix(writer) => {
+            Self::Local(writer) => {
                 let mut wire = Vec::new();
                 frame.write_to(&mut wire)?;
                 writer.write_all(&wire).await?;
@@ -118,7 +116,7 @@ impl Writer {
     }
     pub async fn flush(&mut self) -> Result<()> {
         match self {
-            Self::Unix(writer) => {
+            Self::Local(writer) => {
                 writer.flush().await?;
                 Ok(())
             }
@@ -131,7 +129,7 @@ impl Writer {
     /// Best effort: the connection is over either way, and the close reason is already set.
     pub async fn close(&mut self) {
         match self {
-            Self::Unix(writer) => {
+            Self::Local(writer) => {
                 let _ = writer.shutdown().await;
             }
             Self::Web(writer) => {

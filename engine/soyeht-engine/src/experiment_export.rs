@@ -10,20 +10,21 @@ use soyeht_pane_state::{
     DATASET_SCHEMA_VERSION, DatasetRow, EngineBuild, HarnessIdentity, ObservationPaneKind,
     RecordedRow, encode_row,
 };
+use soyeht_platform::fs::{
+    OpenOptionsPrivateExt, create_private_dir, dir_is_owner_only, file_is_owner_only,
+    sync_directory,
+};
 use soyeht_protocol::limits;
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsStr,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
 use uuid::Uuid;
 
-const DIRECTORY_MODE: u32 = 0o700;
-const FILE_MODE: u32 = 0o600;
 const EXPORT_FORMAT_VERSION: u32 = 1;
 const EXPORT_METHOD: &str = "pane.experiment.export";
 const STALE_EXPORT_TEMP_AGE: Duration = Duration::from_secs(24 * 60 * 60);
@@ -451,7 +452,7 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
         Ok(metadata)
             if !metadata.file_type().is_symlink()
                 && metadata.is_dir()
-                && metadata.permissions().mode() & 0o077 == 0 =>
+                && dir_is_owner_only(path)? =>
         {
             Ok(())
         }
@@ -459,12 +460,11 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
             "Experiment export directory is not private",
         )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::DirBuilder::new().mode(DIRECTORY_MODE).create(path)?;
-            File::open(
+            create_private_dir(path)?;
+            sync_directory(
                 path.parent()
                     .ok_or_else(|| errors::internal("Export root is missing"))?,
-            )?
-            .sync_all()?;
+            )?;
             Ok(())
         }
         Err(error) => Err(error.into()),
@@ -533,9 +533,7 @@ fn cleanup_stale_export_temporaries(
         receipt.bytes = next_bytes;
     }
     if receipt.files > 0 {
-        File::open(directory)
-            .map_err(|error| temporary_cleanup_error(receipt, error.into()))?
-            .sync_all()
+        sync_directory(directory)
             .map_err(|error| temporary_cleanup_error(receipt, error.into()))?;
     }
     Ok(receipt)
@@ -586,12 +584,9 @@ fn temporary_cleanup_error(
 }
 
 fn existing_export_matches(path: &Path, bytes: &[u8]) -> Result<bool> {
-    let mut existing = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
+    let mut existing = OpenOptions::new().read(true).open_no_follow(path)?;
     let metadata = existing.metadata()?;
-    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
+    if !metadata.is_file() || !file_is_owner_only(&existing)? {
         return Err(errors::internal(
             "Existing experiment export is not private",
         ));
@@ -618,15 +613,14 @@ fn write_atomic(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(FILE_MODE)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(&temporary)?;
+        .owner_only()
+        .open_no_follow(&temporary)?;
     let result = (|| -> Result<()> {
         file.write_all(bytes)?;
         file.sync_all()?;
         fs::hard_link(&temporary, path)?;
         fs::remove_file(&temporary)?;
-        File::open(directory)?.sync_all()?;
+        sync_directory(directory)?;
         Ok(())
     })();
     if result.is_err() {
@@ -651,10 +645,7 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let profile = std::env::temp_dir().join(format!("sn-export-{}", Uuid::new_v4()));
-            fs::DirBuilder::new()
-                .mode(DIRECTORY_MODE)
-                .create(&profile)
-                .unwrap();
+            create_private_dir(&profile).unwrap();
             Self { profile }
         }
     }
@@ -709,7 +700,7 @@ mod tests {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .mode(FILE_MODE)
+            .owner_only()
             .open(path)
             .unwrap();
         file.write_all(bytes).unwrap();
@@ -718,10 +709,7 @@ mod tests {
 
     fn write_schema_only_segment(root: &Path, pane_id: &str, number: u64, schema_version: u32) {
         let directory = root.join(format!("pane-{:x}", Sha256::digest(pane_id.as_bytes())));
-        fs::DirBuilder::new()
-            .mode(DIRECTORY_MODE)
-            .create(&directory)
-            .unwrap();
+        create_private_dir(&directory).unwrap();
         write_private(
             &directory.join(format!("{number:016x}.jsonl")),
             format!("{{\"kind\":\"metadata\",\"schemaVersion\":{schema_version}}}\n").as_bytes(),
@@ -796,7 +784,7 @@ mod tests {
         let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
         write_private(&temporary, b"abandoned raw terminal");
         let old = SystemTime::now() - STALE_EXPORT_TEMP_AGE - Duration::from_secs(1);
-        File::options()
+        fs::File::options()
             .write(true)
             .open(&temporary)
             .unwrap()
@@ -814,10 +802,7 @@ mod tests {
         let exports = experiment_root(&fixture.profile).unwrap().join("exports");
         ensure_private_directory(&exports).unwrap();
         let invalid = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
-        fs::DirBuilder::new()
-            .mode(DIRECTORY_MODE)
-            .create(&invalid)
-            .unwrap();
+        create_private_dir(&invalid).unwrap();
 
         let core = Core::open(&fixture.profile);
 
@@ -970,14 +955,7 @@ mod tests {
         assert_eq!(first_receipt.rows, 4);
         assert_eq!(first_receipt.actual_from_ms, Some(150));
         assert_eq!(first_receipt.actual_to_ms, Some(200));
-        assert_eq!(
-            fs::metadata(&first_receipt.path)
-                .unwrap()
-                .permissions()
-                .mode()
-                & 0o077,
-            0
-        );
+        assert!(file_is_owner_only(&fs::File::open(&first_receipt.path).unwrap()).unwrap());
         let text = fs::read_to_string(&first_receipt.path).unwrap();
         assert!(text.ends_with('\n'));
         let rows: Vec<Value> = text
@@ -1111,7 +1089,7 @@ mod tests {
 
     #[test]
     fn export_refuses_symlink_destination_without_changing_its_target() {
-        use std::os::unix::fs::symlink;
+        use soyeht_platform::fs::symlink;
 
         let fixture = Fixture::new();
         let root = experiment_root(&fixture.profile).unwrap();

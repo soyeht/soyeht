@@ -1,9 +1,9 @@
 use crate::{Error, Result};
+use soyeht_platform::fs::{OpenOptionsPrivateExt, sync_directory};
 use soyeht_protocol::limits;
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 const MAGIC: &[u8; 8] = b"SOYPT001";
@@ -80,13 +80,12 @@ impl Log {
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(path)?;
+                .open_no_follow(&path)?;
             let length = file.metadata()?.len();
             if length < MAGIC.len() as u64 && index + 1 == numbers.len() {
                 drop(file);
                 fs::remove_file(directory.join(filename(*number)))?;
-                File::open(directory)?.sync_all()?;
+                sync_directory(directory)?;
                 log.recovered_truncated_tail = true;
                 break;
             }
@@ -163,11 +162,11 @@ impl Log {
             let mut file = OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .mode(0o600)
+                .owner_only()
                 .open(path)?;
             file.write_all(MAGIC)?;
             file.sync_all()?;
-            File::open(&self.directory)?.sync_all()?;
+            sync_directory(&self.directory)?;
             self.segments.push_back(Segment {
                 number,
                 size: MAGIC.len() as u64,
@@ -176,8 +175,7 @@ impl Log {
         let segment = self.segments.back_mut().ok_or(Error::SegmentIndexMissing)?;
         let mut file = OpenOptions::new()
             .write(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(self.directory.join(filename(segment.number)))?;
+            .open_no_follow(&self.directory.join(filename(segment.number)))?;
         file.set_len(segment.size)?;
         file.seek(SeekFrom::Start(segment.size))?;
         file.write_all(&encoded)?;
@@ -198,7 +196,7 @@ impl Log {
                 .ok_or(Error::SegmentIndexMissing)?
                 .number;
             fs::remove_file(self.directory.join(filename(oldest_number)))?;
-            File::open(&self.directory)?.sync_all()?;
+            sync_directory(&self.directory)?;
             let oldest = self
                 .segments
                 .pop_front()

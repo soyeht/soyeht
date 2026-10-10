@@ -101,10 +101,12 @@ fn each_attachment_reaches_the_agent_in_the_richest_form_it_advertised() {
     assert_eq!(blocks[1]["resource"]["mimeType"], "text/markdown");
     assert_eq!(blocks[2]["type"], "resource_link");
     assert_eq!(blocks[2]["name"], "report.pdf");
-    let canonical = report.canonicalize().unwrap();
+    let canonical = soyeht_platform::fs::canonicalize(&report).unwrap();
+    // A Windows drive path is `file:///C:/...`: the drive follows the slash.
+    let text = canonical.to_str().unwrap().replace('\\', "/");
     assert_eq!(
         blocks[2]["uri"],
-        format!("file://{}", canonical.to_str().unwrap())
+        format!("file://{}{text}", if cfg!(windows) { "/" } else { "" })
     );
 
     let transcript = wait_for_user_message(&mut client, &pane, "report-blocks");
@@ -122,6 +124,7 @@ fn each_attachment_reaches_the_agent_in_the_richest_form_it_advertised() {
             .all(|item| item.get("data").is_none() && item.get("attachmentId").is_none())
     );
     let image = staged_path(&attachments[0]);
+    let image = image.replace('\\', "/");
     assert!(image.contains("/prompt-attachments/") && image.ends_with("/screen shot.png"));
     assert_eq!(fs::read(&image).unwrap(), PNG);
     assert_eq!(

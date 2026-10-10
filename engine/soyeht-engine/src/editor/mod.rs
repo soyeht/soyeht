@@ -32,7 +32,7 @@ mod test_support;
 mod trash;
 mod undo;
 
-pub(crate) use project_files::{ProjectFile, enumerate_project_files, language};
+pub(crate) use project_files::{ProjectFile, checked_wire_path, enumerate_project_files, language};
 pub use project_watch::Watches as ProjectWatches;
 pub(crate) use schedule::{Effect, Failure};
 pub use service::{FileSystemPort, Service, SystemFiles};

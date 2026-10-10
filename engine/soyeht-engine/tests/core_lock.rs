@@ -1,4 +1,7 @@
 //! Terminal output keeps flowing while a slow external source blocks (ADR 0079).
+//! The fixture is a POSIX shell script that sleeps, so the check runs where there is a
+//! shell; the lock rule itself is the same on every system.
+#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 mod support;

@@ -1,28 +1,52 @@
 use crate::ports::{PortScanError, PortScanObservation, PortScanPort};
-use soyeht_protocol::limits;
-use soyeht_web::LocalServerScan;
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-    time::Duration,
+use std::{path::PathBuf, time::Duration};
+#[cfg(unix)]
+use {
+    soyeht_protocol::limits,
+    soyeht_web::LocalServerScan,
+    std::{path::Path, process::Command},
 };
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct SystemPortScan {
+    // Windows has no program to run: its scan reports that listing is unavailable.
+    #[cfg_attr(windows, allow(dead_code))]
     program: PathBuf,
+    #[cfg_attr(windows, allow(dead_code))]
     timeout: Duration,
 }
 
 impl Default for SystemPortScan {
     fn default() -> Self {
         Self {
-            program: "/usr/sbin/lsof".into(),
+            program: if cfg!(target_os = "macos") {
+                "/usr/sbin/lsof".into()
+            } else {
+                "lsof".into()
+            },
             timeout: SCAN_TIMEOUT,
         }
     }
 }
 
+/// Windows has no `lsof`, and the working directory of another process is not readable
+/// through a supported interface, so the listing of local servers is not available.
+#[cfg(windows)]
+impl PortScanPort for SystemPortScan {
+    fn unavailable(&self) -> Option<&'static str> {
+        Some(UNAVAILABLE)
+    }
+
+    fn scan(&mut self) -> Result<PortScanObservation, PortScanError> {
+        Err(PortScanError::Unsupported(UNAVAILABLE))
+    }
+}
+
+#[cfg(windows)]
+const UNAVAILABLE: &str = "Listing local servers is not available on Windows";
+
+#[cfg(unix)]
 impl PortScanPort for SystemPortScan {
     fn scan(&mut self) -> Result<PortScanObservation, PortScanError> {
         let listeners = run_lsof(
@@ -52,6 +76,7 @@ impl PortScanPort for SystemPortScan {
     }
 }
 
+#[cfg(unix)]
 /// `lsof` exits with 1 when its selection matched nothing, or when some of it vanished
 /// while it ran, and prints nothing to standard error for either.
 const LSOF_NO_MATCH: i32 = 1;
@@ -59,6 +84,7 @@ const LSOF_NO_MATCH: i32 = 1;
 /// Runs `lsof` off the Core lock with its deadline and byte budget. Empty output is an
 /// answer (nothing listens) only when `lsof` itself says so; a failed or unfinished run
 /// is an error.
+#[cfg(unix)]
 fn run_lsof(
     program: &Path,
     timeout: Duration,
@@ -79,6 +105,7 @@ fn run_lsof(
 /// Status 0 is a listing. Status 1 is one too, possibly empty, unless standard error says
 /// why the run failed (a bad option, no permission) and nothing was listed. Any other
 /// status, or a signal, is a failure.
+#[cfg(unix)]
 fn listing(output: soyeht_process::Output) -> Result<Vec<u8>, PortScanError> {
     let nothing_to_explain = !output.stdout.is_empty() || output.stderr.is_empty();
     if output.success() || (output.status.code() == Some(LSOF_NO_MATCH) && nothing_to_explain) {
@@ -91,7 +118,7 @@ fn listing(output: soyeht_process::Output) -> Result<Vec<u8>, PortScanError> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::{fs, os::unix::fs::PermissionsExt};

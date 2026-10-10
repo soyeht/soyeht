@@ -7,7 +7,7 @@ use soyeht_protocol::{
 };
 use soyeht_writing::SectionEntryInput;
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -26,9 +26,10 @@ struct ScannedWritingSectionList {
 
 impl PreparedWritingSectionList {
     fn scan(self) -> Result<ScannedWritingSectionList> {
-        let workspace_root = fs::canonicalize(&self.workspace_root).map_err(errors::io)?;
+        let workspace_root =
+            soyeht_platform::fs::canonicalize(&self.workspace_root).map_err(errors::io)?;
         let folder = soyeht_writing::folder_for(&self.request.section);
-        let section_root = match fs::canonicalize(workspace_root.join(folder)) {
+        let section_root = match soyeht_platform::fs::canonicalize(&workspace_root.join(folder)) {
             Ok(path) => path,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 return Ok(ScannedWritingSectionList {
@@ -219,8 +220,9 @@ fn timestamp(value: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soyeht_platform::testing::{allow_owner, deny_everyone};
     use soyeht_protocol::WritingSection;
-    use std::os::unix::fs::PermissionsExt;
+    use std::fs;
 
     struct Fixture {
         root: PathBuf,
@@ -238,7 +240,7 @@ mod tests {
             fs::create_dir_all(&protected).unwrap();
             fs::write(root.join("Writing/Texts/Research/notes.md"), "# Notes\n").unwrap();
             fs::write(protected.join("private.md"), "private\n").unwrap();
-            fs::set_permissions(&protected, fs::Permissions::from_mode(0o000)).unwrap();
+            deny_everyone(&protected).unwrap();
             Self { root, protected }
         }
 
@@ -257,7 +259,7 @@ mod tests {
 
     impl Drop for Fixture {
         fn drop(&mut self) {
-            let _ = fs::set_permissions(&self.protected, fs::Permissions::from_mode(0o700));
+            allow_owner(&self.protected).unwrap();
             let _ = fs::remove_dir_all(&self.root);
         }
     }

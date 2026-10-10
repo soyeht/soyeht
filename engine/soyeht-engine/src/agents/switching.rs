@@ -1058,6 +1058,6 @@ mod tests {
 
         core.recover_harness_switches(&[]).unwrap();
         core.cleanup_retired_agent_processes().unwrap();
-        fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 }
