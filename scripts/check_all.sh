@@ -53,6 +53,12 @@ uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
         terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
         -- --ignored --exact --nocapture --test-threads=1
 )
+(
+    cd apps/desktop
+    cargo fmt --all --check
+    cargo clippy --locked --workspace --all-targets -- -D warnings
+    cargo test --locked --workspace
+)
 uv run python -m unittest discover -s scripts -p 'test_tcc_guard.py'
 uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
 uv run python scripts/e2e.py --report .cache/e2e.json

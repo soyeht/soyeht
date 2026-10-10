@@ -1,10 +1,10 @@
 use crate::{Error, Result};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttachmentRef, AuthChallengeEvent, Role, Welcome,
+    AttachmentRef, Role, Welcome,
     attachment::AttachmentAssembler,
     frame::{Frame, read_json, write_json},
-    limits,
+    handshake, limits,
 };
 use std::{
     os::unix::net::UnixStream,
@@ -62,23 +62,14 @@ impl Client {
     }
 
     fn handshake(&mut self) -> Result<()> {
-        let challenge = self.read()?;
-        if challenge["method"] != "auth.challenge" {
-            return Err(Error::EngineChallengeExpected);
-        }
-        let _: AuthChallengeEvent = serde_json::from_value(challenge["params"].clone())?;
-        let welcome: Welcome = self.request_typed(
-            "hello",
-            json!({
-                "client":"soyeht-mcp",
-                "clientVersion":env!("CARGO_PKG_VERSION"),
-                "protocolVersion":1,
-                "binding":self.binding.clone()
-            }),
-        )?;
-        if welcome.protocol_version != 1 || !matches!(welcome.role, Role::Agent | Role::Chief) {
-            return Err(Error::UnexpectedHandshake);
-        }
+        handshake::expect_challenge(&self.read()?)?;
+        let hello = serde_json::to_value(handshake::hello(
+            "soyeht-mcp",
+            env!("CARGO_PKG_VERSION"),
+            Some(&self.binding),
+        ))?;
+        let welcome: Welcome = self.request_typed("hello", hello)?;
+        handshake::expect_welcome(&welcome, true)?;
         self.role = welcome.role;
         Ok(())
     }

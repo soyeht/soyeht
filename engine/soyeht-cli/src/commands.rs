@@ -92,9 +92,7 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
     match args.as_slice() {
         ["status"] => rpc::<EngineStatusResult>(client, "engine.status", json!({})),
         ["__experiment-hook", capability] => experiment_hook(client, capability),
-        ["pane", "list"] => {
-            Ok(json!({"items":client.snapshot()?.sections.remove("panes").unwrap_or_default()}))
-        }
+        ["pane", "list"] => Ok(json!({"items":client.snapshot()?.take(&SnapshotSection::Panes)})),
         ["pane", "create", rest @ ..] => create(client, rest, &key),
         ["pane", "close", id] => rpc::<PaneCloseResult>(
             client,
@@ -216,10 +214,8 @@ fn agent_option(
 ) -> Result<Option<Value>> {
     let snapshot = client.snapshot()?;
     Ok(snapshot
-        .sections
-        .get("panes")
-        .into_iter()
-        .flatten()
+        .section(&SnapshotSection::Panes)
+        .iter()
         .find(|item| item["paneId"] == pane)
         .and_then(|item| item["agent"]["options"].as_array())
         .and_then(|options| options.iter().find(|option| matches(option)).cloned()))
@@ -323,10 +319,8 @@ fn permission(
     let options = options(rest, &[("--request", "requestId")])?;
     let snapshot = client.snapshot()?;
     let requests: Vec<_> = snapshot
-        .sections
-        .get("requests")
-        .into_iter()
-        .flatten()
+        .section(&SnapshotSection::Requests)
+        .iter()
         .filter(|entry| entry["kind"] == "permission" && entry["request"]["paneId"] == pane)
         .map(|entry| &entry["request"])
         .filter(|request| {

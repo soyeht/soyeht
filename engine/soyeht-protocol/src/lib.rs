@@ -9,8 +9,10 @@ pub mod attachment;
 mod error;
 pub use error::{Error, Result};
 pub mod frame;
+pub mod handshake;
 pub mod ndjson;
 pub mod profile;
+pub mod snapshot;
 pub mod validate;
 
 /// The wire schema is embedded for tooling and compatibility diagnostics.

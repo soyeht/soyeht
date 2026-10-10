@@ -1,12 +1,16 @@
 {
   "duplication": {
+    "desktop": {
+      "clones": 0,
+      "duplicated_lines": 0
+    },
     "dictation": {
       "clones": 0,
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 406,
-      "duplicated_lines": 3615
+      "clones": 405,
+      "duplicated_lines": 3611
     },
     "ios": {
       "clones": 6,

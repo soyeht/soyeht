@@ -6,13 +6,13 @@ pub use error::{Error, Result};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AuthChallengeEvent, HelloParams, SnapshotSection, StateSnapshotPartEvent, StateSnapshotResult,
-    Welcome,
+    StateSnapshotPartEvent, Welcome,
     frame::{read_json, write_json},
+    handshake,
     profile::DEV_ENGINE_SOCKET,
+    snapshot::SnapshotAssembler,
 };
 use std::{
-    collections::BTreeMap,
     io,
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
@@ -26,10 +26,7 @@ pub struct Client {
     binding: Option<String>,
     client_name: &'static str,
 }
-pub struct Snapshot {
-    pub metadata: StateSnapshotResult,
-    pub sections: BTreeMap<String, Vec<Value>>,
-}
+pub use soyeht_protocol::snapshot::Snapshot;
 
 impl Client {
     pub fn connect(directory: &Path) -> Result<Self> {
@@ -59,32 +56,14 @@ impl Client {
             binding: binding.map(str::to_owned),
             client_name,
         };
-        let challenge = client.read()?;
-        if challenge["method"] != "auth.challenge" {
-            return Err(Error::EngineChallengeExpected);
-        }
-        let _: AuthChallengeEvent = serde_json::from_value(challenge["params"].clone())?;
-        let hello = serde_json::to_value(HelloParams {
-            client: client_name.into(),
-            client_version: env!("CARGO_PKG_VERSION").into(),
-            protocol_version: 1,
-            device_token: None,
-            proof: None,
-            binding: binding.map(str::to_owned),
-            capabilities: None,
-        })?;
+        handshake::expect_challenge(&client.read()?)?;
+        let hello = serde_json::to_value(handshake::hello(
+            client_name,
+            env!("CARGO_PKG_VERSION"),
+            binding,
+        ))?;
         let welcome: Welcome = client.request("hello", hello)?;
-        let expected_role = if binding.is_some() {
-            matches!(
-                welcome.role,
-                soyeht_protocol::Role::Agent | soyeht_protocol::Role::Chief
-            )
-        } else {
-            welcome.role == soyeht_protocol::Role::HumanLocal
-        };
-        if welcome.protocol_version != 1 || !expected_role {
-            return Err(Error::UnexpectedHandshake);
-        }
+        handshake::expect_welcome(&welcome, binding.is_some())?;
         Ok(client)
     }
     fn read(&mut self) -> Result<Value> {
@@ -132,61 +111,18 @@ impl Client {
     }
     pub fn snapshot(&mut self) -> Result<Snapshot> {
         let id = self.begin("state.snapshot", json!({}))?;
-        let mut sections: BTreeMap<String, Vec<Value>> = BTreeMap::new();
-        let mut identity = None;
-        let mut count = 0u32;
-        let mut total = None;
+        let mut assembler = SnapshotAssembler::default();
         loop {
             let response = self.read()?;
             if response["id"] == id {
-                let metadata: StateSnapshotResult = result(response)?;
-                if Some(&metadata.snapshot_id) != identity.as_ref()
-                    || metadata.parts != count
-                    || Some(count) != total
-                {
-                    return Err(Error::IncompleteSnapshot);
-                }
-                return Ok(Snapshot { metadata, sections });
+                return Ok(assembler.finish(result(response)?)?);
             }
-            if response["method"] != "state.snapshot_part" {
-                continue;
+            if response["method"] == "state.snapshot_part" {
+                let part: StateSnapshotPartEvent =
+                    serde_json::from_value(response["params"].clone())?;
+                assembler.push(part)?;
             }
-            let part: StateSnapshotPartEvent = serde_json::from_value(response["params"].clone())?;
-            if identity
-                .as_ref()
-                .is_some_and(|prior| prior != &part.snapshot_id)
-                || total.is_some_and(|prior| prior != part.of)
-                || part.index != count
-                || part.index >= part.of
-            {
-                return Err(Error::InconsistentSnapshotPages);
-            }
-            identity = Some(part.snapshot_id);
-            total = Some(part.of);
-            count += 1;
-            let name = snapshot_section_name(&part.section).to_owned();
-            let items = part.data.as_array().ok_or(Error::SnapshotSectionNotArray)?;
-            sections
-                .entry(name)
-                .or_default()
-                .extend(items.iter().cloned());
         }
-    }
-}
-
-fn snapshot_section_name(section: &SnapshotSection) -> &'static str {
-    match section {
-        SnapshotSection::Workspaces => "workspaces",
-        SnapshotSection::Panes => "panes",
-        SnapshotSection::Tasks => "tasks",
-        SnapshotSection::Loops => "loops",
-        SnapshotSection::Requests => "requests",
-        SnapshotSection::Attention => "attention",
-        SnapshotSection::Devices => "devices",
-        SnapshotSection::Capabilities => "capabilities",
-        SnapshotSection::Streams => "streams",
-        SnapshotSection::Files => "files",
-        SnapshotSection::Writing => "writing",
     }
 }
 

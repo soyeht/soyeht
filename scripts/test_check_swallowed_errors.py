@@ -62,6 +62,13 @@ class SwallowedErrorTests(unittest.TestCase):
         (root / "engine/crate/src/lib.rs").write_text(RUST)
         (root / "engine/crate/src/test_support.rs").write_text("let _ = x;\n")
         (root / "engine/crate/tests/it.rs").write_text("let _ = x.ok();\n")
+        (root / "apps/desktop/crates/client/src").mkdir(parents=True)
+        (root / "apps/desktop/crates/client/tests").mkdir(parents=True)
+        (root / "apps/desktop/crates/client/src/lib.rs").write_text(
+            "fn send() { let _ = tx.send(1).ok(); }\n"
+            "#[cfg(test)]\nmod tests { fn t() { let _ = x.ok(); } }\n"
+        )
+        (root / "apps/desktop/crates/client/tests/it.rs").write_text("let _ = x.ok();\n")
         for area in ("apps/shared/Sources", "apps/mac/Sources", "apps/ios/Sources"):
             (root / area).mkdir(parents=True)
         (root / "apps/mac/Sources/View.swift").write_text(SWIFT)
@@ -73,9 +80,10 @@ class SwallowedErrorTests(unittest.TestCase):
         root = self.fixture()
         self.assertEqual(
             measure(root),
-            {"swift_try_optional": 1, "rust_ok": 1, "rust_let_underscore": 1},
+            {"swift_try_optional": 1, "rust_ok": 2, "rust_let_underscore": 2},
         )
         self.assertIn(("rust_let_underscore", "engine/crate/src/lib.rs", 3), sites(root))
+        self.assertIn(("rust_ok", "apps/desktop/crates/client/src/lib.rs", 1), sites(root))
 
     def test_the_quality_ratchet_holds_each_count_exactly(self):
         baseline = {SWALLOWED_KEY: {"swift_try_optional": 1, "rust_ok": 1}}

@@ -24,6 +24,7 @@ TOOL_TIMEOUT = 60
 FILE_LIMIT = 800
 AREAS = {
     "engine": ("engine", "rust", ".rs"),
+    "desktop": ("apps/desktop", "rust", ".rs"),
     "shared": ("apps/shared", "swift", ".swift"),
     "dictation": ("apps/dictation", "swift", ".swift"),
     "mac": ("apps/mac/Sources", "swift", ".swift"),
@@ -154,8 +155,19 @@ def source_files(repo: Path, relative_dir: str, suffix: str) -> list[Path]:
     )
 
 
+def rust_roots(repo: Path) -> list[Path]:
+    """The Rust areas present in `repo`; a base from before an area existed lacks it."""
+    return [
+        repo / relative_dir
+        for relative_dir, language, _ in AREAS.values()
+        if language == "rust" and (repo / relative_dir).is_dir()
+    ]
+
+
 def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int | float]:
     paths, language = DUPLICATION_SCANS[area]
+    if not any((repo / path).is_dir() for path in paths):
+        return {"clones": 0, "duplicated_lines": 0, "percent": 0}
     with tempfile.TemporaryDirectory(prefix="soyeht-quality-jscpd-") as output:
         command = [
             str(jscpd),
@@ -229,18 +241,23 @@ def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str,
 
 
 def engine_production_panics(repo: Path) -> int:
-    """unwrap/expect/panic! in engine production code; the ceiling is 0."""
+    """unwrap/expect/panic! in engine and desktop production code; the ceiling is 0."""
     return count_engine_panics(
         {
             path.relative_to(repo).as_posix(): path.read_text(encoding="utf-8")
-            for path in source_files(repo, "engine", ".rs")
+            for root in rust_roots(repo)
+            for path in source_files(repo, root.relative_to(repo).as_posix(), ".rs")
         }
     )
 
 
 def machete_status(repo: Path, executable: str) -> str:
     result = subprocess.run(
-        [executable, "--skip-target-dir", str(repo / "engine")],
+        [
+            executable,
+            "--skip-target-dir",
+            *map(str, rust_roots(repo)),
+        ],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -411,6 +428,8 @@ def differences(baseline: dict, actual: dict) -> list[Change]:
 
 def baseline_relaxations(before: dict, after: dict) -> list[Change]:
     """Every loosened baseline entry, including exception caps."""
+    # A duplication area the older baseline did not scan yet has nothing to compare.
+    before = {**before, "duplication": {**after["duplication"], **before["duplication"]}}
     return [
         change for change in differences(before, after) if change.direction == "RELAXATION"
     ]

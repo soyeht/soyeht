@@ -23,7 +23,7 @@ SWIFT_AREAS = {
     "mac": "apps/mac/Sources",
     "ios": "apps/ios/Sources",
 }
-RUST_ROOT = "engine"
+RUST_ROOTS = ("engine", "apps/desktop")
 IGNORED_PARTS = {"target", ".build", ".cache", "node_modules", "tests", "Tests"}
 # Test-only helper modules compiled under `#[cfg(test)]` or a test-support feature.
 IGNORED_FILES = {
@@ -124,7 +124,8 @@ def sites(root: Path) -> list[tuple[str, str, int]]:
         for path in production_files(root, relative, ".swift")
     ] + [
         (path, ("rust_ok", "rust_let_underscore"))
-        for path in production_files(root, RUST_ROOT, ".rs")
+        for relative in RUST_ROOTS
+        for path in production_files(root, relative, ".rs")
     ]
     for path, metrics in files:
         code = blank_literals_and_comments(path.read_text(encoding="utf-8"))

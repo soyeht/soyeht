@@ -21,6 +21,7 @@ from quality_core import (
     SWALLOWED_KEY,
     QualityError,
     baseline_from_measurement,
+    baseline_relaxations,
     duplicate_measurement,
     differences,
     engine_production_panics,
@@ -98,6 +99,13 @@ class QualityRatchetTests(unittest.TestCase):
         self.assertEqual(differences(baseline, actual)[0][0], "RELAXATION")
         self.assertEqual(differences(actual, baseline)[0][0], "IMPROVEMENT")
 
+    def test_an_area_the_older_baseline_did_not_scan_has_nothing_to_compare(self):
+        after = empty_measurement()
+        before = copy.deepcopy(after)
+        del before["duplication"]["desktop"]
+        after["duplication"]["desktop"]["clones"] = 3
+        self.assertEqual(baseline_relaxations(before, after), [])
+
     def test_percentage_is_informational_not_in_the_baseline(self):
         measured = empty_measurement()
         baseline = baseline_from_measurement(measured)
@@ -173,6 +181,20 @@ class QualityRatchetTests(unittest.TestCase):
                 extra.mkdir()
                 (extra / "it.rs").write_text("fn t() { None::<u8>.expect(\"x\"); }\n")
             self.assertEqual(engine_production_panics(root), 2)
+
+    def test_desktop_production_code_counts_toward_the_same_panic_ceiling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "apps/desktop/crates/demo/src"
+            source.mkdir(parents=True)
+            (source / "lib.rs").write_text(
+                "pub fn live(v: Option<u8>) -> u8 { v.unwrap() }\n"
+                "#[cfg(test)]\nmod tests { fn t() { None::<u8>.unwrap(); } }\n"
+            )
+            tests = root / "apps/desktop/crates/demo/tests"
+            tests.mkdir()
+            (tests / "it.rs").write_text("fn t() { None::<u8>.expect(\"x\"); }\n")
+            self.assertEqual(engine_production_panics(root), 1)
 
     def test_engine_panics_skip_test_modules_in_their_own_files(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -491,6 +513,15 @@ class GateFixture:
             '[package]\nname = "demo"\nversion = "0.1.0"\nedition = "2021"\n'
         )
         (self.crate / "src/lib.rs").write_text(REPEATED_RUST)
+        desktop = root / "apps/desktop/crates/demo"
+        (desktop / "src").mkdir(parents=True)
+        (root / "apps/desktop/Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/demo"]\n'
+        )
+        (desktop / "Cargo.toml").write_text(
+            '[package]\nname = "demo"\nversion = "0.1.0"\nedition = "2021"\n'
+        )
+        (desktop / "src/lib.rs").write_text(REPEATED_RUST)
         for area, relative in (
             ("shared", "apps/shared/Sources/SoyehtClient/Item.swift"),
             ("dictation", "apps/dictation/Sources/SoyehtDictation/Item.swift"),

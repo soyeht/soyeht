@@ -11,9 +11,12 @@ Each layer depends only on the layers listed above it.
 1. `contracts/`: `protocol.json` (wire methods, events, limits, error codes) and
    `profiles.json` (installed profile values). This is the only place where wire
    values are defined.
-2. `engine/soyeht-protocol`: generated wire models, limits and framing. It has no
-   Soyeht dependencies. `engine/soyeht-process`, the bounded runner for every
-   external command the engine starts, has none either (ADR 0079).
+2. `engine/soyeht-protocol`: generated wire models, limits and framing, plus the
+   transport-agnostic rules every client shares: the greeting and `hello`
+   validation (`handshake`) and snapshot page assembly (`snapshot`). It has no
+   Soyeht dependencies and no IO or async runtime. `engine/soyeht-process`, the
+   bounded runner for every external command the engine starts, has none either
+   (ADR 0079).
 3. Engine building blocks, each depending only on `soyeht-protocol`, and on
    `soyeht-process` where they run a command:
    - `soyeht-ptyd`: the process supervisor that holds pseudoterminals.
@@ -37,6 +40,10 @@ Each layer depends only on the layers listed above it.
    engines (ADR 0083).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling.
+7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
+   its own cargo workspace and depends on `engine/soyeht-protocol` only. Its
+   `soyeht-client` crate holds the connection and state, `soyeht-desktop` the
+   views, and its `theme` module mirrors the Swift palette (a test fails on drift).
 
 Every feature starts in `docs/contracts/`. Decisions live in `docs/adr/`; add an
 ADR when you change a boundary.
@@ -64,8 +71,9 @@ ADR when you change a boundary.
 - Loose Swift padding, corner-radius, font-size and font-name literals, and Rust
   `4096`/`512` literals, may not grow per file. Use a token, a policy or the
   generated limits.
-- Engine production code has no `unwrap`/`expect`/`panic!` calls. The limit is
-  0, and no baseline edit or written reason can raise it. Test code is exempt:
+- Engine and `apps/desktop` production code has no `unwrap`/`expect`/`panic!`
+  calls. The limit is 0, and no baseline edit or written reason can raise it.
+  Test code is exempt:
   crate `tests/` and `benches/`, inline `#[cfg(test)]` and
   `#[cfg(all(test, ...))]` items, and modules declared `#[cfg(test)] mod x;`,
   including their submodules. Clippy denies these calls through the workspace

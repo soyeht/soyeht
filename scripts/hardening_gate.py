@@ -258,15 +258,22 @@ def parse_python(source: str) -> ast.Module | None:
         return None
 
 
-def is_engine_production_source(path: str) -> bool:
+# Where Rust crates live: `<root>/<crate>/src/...`.
+RUST_CRATE_ROOTS = (("engine",), ("apps", "desktop", "crates"))
+
+
+def is_rust_production_source(path: str) -> bool:
     """A crate's `src/` tree; `tests/` and `benches/` are never production."""
     parts = path.split("/")
     return (
-        len(parts) >= 4
-        and parts[0] == "engine"
-        and parts[2] == "src"
-        and path.endswith(".rs")
+        path.endswith(".rs")
         and parts[-1] not in GENERATED_PARTS
+        and any(
+            tuple(parts[: len(root)]) == root
+            and len(parts) >= len(root) + 3
+            and parts[len(root) + 1] == "src"
+            for root in RUST_CRATE_ROOTS
+        )
     )
 
 
@@ -312,7 +319,7 @@ def test_module_files(masked: dict[str, str]) -> set[str]:
 
 
 def engine_production_panics(sources: dict[str, str]) -> int:
-    """The one panic counter: unwrap, expect and panic! in engine production code.
+    """The one panic counter: unwrap, expect and panic! in engine and desktop production code.
 
     `sources` maps repository paths to text. Crate `tests/` and `benches/`,
     inline `#[cfg(test)]` items and test modules kept in their own files are
@@ -321,7 +328,7 @@ def engine_production_panics(sources: dict[str, str]) -> int:
     masked = {
         path: mask(source)[0]
         for path, source in sources.items()
-        if is_engine_production_source(path)
+        if is_rust_production_source(path)
     }
     excluded = test_module_files(masked)
     return sum(
@@ -557,7 +564,7 @@ def metrics(tree: Tree) -> Metrics:
                 and not sql_allowed):
             if re.search(r"(?m)^\s*rusqlite(?:\.|\s*=)", source):
                 manifests.add(path)
-        if is_engine_production_source(path):
+        if is_rust_production_source(path):
             if not path.startswith("engine/soyeht-store/") and not sql_allowed:
                 _, strings = mask(source, keep_strings=True)
                 matches = sum(len(SQL.findall(value)) for value in strings)

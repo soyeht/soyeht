@@ -7,14 +7,9 @@ pub enum Error {
     Protocol(soyeht_protocol::Error),
     Json(serde_json::Error),
     Remote(RpcError),
-    EngineChallengeExpected,
-    UnexpectedHandshake,
     UnexpectedFrame,
     RequestIdExhausted,
     AttemptsExhausted,
-    IncompleteSnapshot,
-    InconsistentSnapshotPages,
-    SnapshotSectionNotArray,
     ResponseMissingResult,
     InvalidArguments(String),
     HomeMissing,
@@ -45,22 +40,11 @@ impl fmt::Display for Error {
             Self::Remote(error) => {
                 write!(formatter, "remote error {}: {}", error.code, error.message)
             }
-            Self::EngineChallengeExpected => {
-                formatter.write_str("engine did not send an authentication challenge")
-            }
-            Self::UnexpectedHandshake => formatter.write_str("unexpected engine handshake"),
             Self::UnexpectedFrame => {
                 formatter.write_str("engine closed or sent an unexpected binary frame")
             }
             Self::RequestIdExhausted => formatter.write_str("request identifiers exhausted"),
             Self::AttemptsExhausted => formatter.write_str("request attempts exhausted"),
-            Self::IncompleteSnapshot => formatter.write_str("incomplete snapshot"),
-            Self::InconsistentSnapshotPages => {
-                formatter.write_str("snapshot pages are inconsistent")
-            }
-            Self::SnapshotSectionNotArray => {
-                formatter.write_str("snapshot section must be an array")
-            }
             Self::ResponseMissingResult => formatter.write_str("response has no result"),
             Self::InvalidArguments(message) => formatter.write_str(message),
             Self::HomeMissing => formatter.write_str("HOME is required"),

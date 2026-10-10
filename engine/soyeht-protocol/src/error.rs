@@ -25,6 +25,11 @@ pub enum Error {
     InvalidEmbeddedSchema,
     UnknownMethod,
     InvalidParameters,
+    EngineChallengeExpected,
+    UnexpectedHandshake,
+    IncompleteSnapshot,
+    InconsistentSnapshotPages,
+    SnapshotSectionNotArray,
 }
 
 impl fmt::Display for Error {
@@ -62,6 +67,17 @@ impl fmt::Display for Error {
             Self::InvalidEmbeddedSchema => formatter.write_str("compiled schema is invalid"),
             Self::UnknownMethod => formatter.write_str("unknown method"),
             Self::InvalidParameters => formatter.write_str("invalid parameters"),
+            Self::EngineChallengeExpected => {
+                formatter.write_str("engine did not send an authentication challenge")
+            }
+            Self::UnexpectedHandshake => formatter.write_str("unexpected engine handshake"),
+            Self::IncompleteSnapshot => formatter.write_str("incomplete snapshot"),
+            Self::InconsistentSnapshotPages => {
+                formatter.write_str("snapshot pages are inconsistent")
+            }
+            Self::SnapshotSectionNotArray => {
+                formatter.write_str("snapshot section must be an array")
+            }
         }
     }
 }

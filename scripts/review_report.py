@@ -37,6 +37,20 @@ from quality_core import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def present_at(commit: str, directories: list[str]) -> list[str]:
+    """The directories that exist at `commit`; a base can predate an area."""
+    return [
+        directory
+        for directory in directories
+        if subprocess.run(
+            ["git", "cat-file", "-e", f"{commit}:{directory}"],
+            cwd=ROOT,
+            capture_output=True,
+        ).returncode
+        == 0
+    ]
+
+
 def base_measurement(commit: str, jscpd: Path, machete: str) -> dict:
     # Scan the base even when it has a baseline: percent is report-only.
     archive = subprocess.run(
@@ -45,10 +59,7 @@ def base_measurement(commit: str, jscpd: Path, machete: str) -> dict:
             "archive",
             "--format=tar",
             commit,
-            "engine",
-            "apps/shared",
-            "apps/mac/Sources",
-            "apps/ios/Sources",
+            *present_at(commit, [relative_dir for relative_dir, _, _ in AREAS.values()]),
         ],
         cwd=ROOT,
         capture_output=True,
@@ -67,7 +78,7 @@ def base_baseline(commit: str, measured: dict) -> dict:
 
 def literal_totals(measurement: dict, area: str) -> dict[str, int]:
     prefix = AREAS[area][0] + "/"
-    kinds = ("rust_limits",) if area == "engine" else SWIFT_LITERAL_PATTERNS
+    kinds = ("rust_limits",) if AREAS[area][1] == "rust" else SWIFT_LITERAL_PATTERNS
     return {
         kind: sum(
             counts.get(kind, 0)

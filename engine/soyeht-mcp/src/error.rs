@@ -8,8 +8,6 @@ pub enum Error {
     Protocol(soyeht_protocol::Error),
     Remote(RpcError),
     InvalidArguments(&'static str),
-    EngineChallengeExpected,
-    UnexpectedHandshake,
     UnexpectedFrame,
     IncompleteLine,
     RequestIdExhausted,
@@ -30,8 +28,6 @@ impl fmt::Display for Error {
                 write!(formatter, "remote error {}: {}", error.code, error.message)
             }
             Self::InvalidArguments(message) => formatter.write_str(message),
-            Self::EngineChallengeExpected => formatter.write_str("engine challenge expected"),
-            Self::UnexpectedHandshake => formatter.write_str("unexpected engine handshake"),
             Self::UnexpectedFrame => formatter.write_str("unexpected engine frame"),
             Self::IncompleteLine => formatter.write_str("incomplete JSON-RPC line"),
             Self::RequestIdExhausted => formatter.write_str("request identifiers exhausted"),

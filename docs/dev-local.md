@@ -124,7 +124,7 @@ Enable the versioned fast pre-push hook with
 
 The measurements must match `scripts/quality_baseline.json` exactly. More
 clones or duplicated lines, a file growing past its cap, more loose literals in
-a file fail as regressions. Engine production code may contain no
+a file fail as regressions. Engine and desktop-client production code may contain no
 `unwrap`/`expect`/`panic!` calls at all: `engine_production_panics` is fixed
 at 0, and no reason can raise it. Crate `tests/` and `benches/`, inline
 `#[cfg(test)]`/`#[cfg(all(test, ...))]` items, and modules declared
