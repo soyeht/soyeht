@@ -44,36 +44,36 @@ extension LocalizedStringKey.StringInterpolation {
   static var agentSand: Color { SoyehtThemeColors.agentSand }
 
   enum Radius {
-    static let compact: CGFloat = 10
-    static let control: CGFloat = 12
-    static let card: CGFloat = 20
-    static let pill: CGFloat = 999
+    static let compact: CGFloat = DesignTokens.Radius.compact
+    static let control: CGFloat = DesignTokens.Radius.control
+    static let card: CGFloat = DesignTokens.Radius.card
+    static let pill: CGFloat = DesignTokens.Radius.pill
   }
 
   enum Space {
-    static let x2: CGFloat = 2
-    static let x3: CGFloat = 3
-    static let x4: CGFloat = 4
-    static let x5: CGFloat = 5
-    static let x6: CGFloat = 6
-    static let x7: CGFloat = 7
-    static let x8: CGFloat = 8
-    static let x10: CGFloat = 10
-    static let x12: CGFloat = 12
-    static let x14: CGFloat = 14
-    static let x16: CGFloat = 16
-    static let x18: CGFloat = 18
+    static let x2: CGFloat = DesignTokens.Space.x2
+    static let x3: CGFloat = DesignTokens.Space.x3
+    static let x4: CGFloat = DesignTokens.Space.x4
+    static let x5: CGFloat = DesignTokens.Space.x5
+    static let x6: CGFloat = DesignTokens.Space.x6
+    static let x7: CGFloat = DesignTokens.Space.x7
+    static let x8: CGFloat = DesignTokens.Space.x8
+    static let x10: CGFloat = DesignTokens.Space.x10
+    static let x12: CGFloat = DesignTokens.Space.x12
+    static let x14: CGFloat = DesignTokens.Space.x14
+    static let x16: CGFloat = DesignTokens.Space.x16
+    static let x18: CGFloat = DesignTokens.Space.x18
   }
 
   enum TypeScale {
-    static let micro: CGFloat = 10
-    static let small: CGFloat = 11
-    static let control: CGFloat = 12
-    static let caption: CGFloat = 13
-    static let body: CGFloat = 15
-    static let subheading: CGFloat = 18
-    static let heading: CGFloat = 20
-    static let title: CGFloat = 28
+    static let micro: CGFloat = DesignTokens.TypeScale.micro
+    static let small: CGFloat = DesignTokens.TypeScale.small
+    static let control: CGFloat = DesignTokens.TypeScale.control
+    static let caption: CGFloat = DesignTokens.TypeScale.caption
+    static let body: CGFloat = DesignTokens.TypeScale.body
+    static let subheading: CGFloat = DesignTokens.TypeScale.subheading
+    static let heading: CGFloat = DesignTokens.TypeScale.heading
+    static let title: CGFloat = DesignTokens.TypeScale.title
   }
 
   struct Elevation: Sendable {
@@ -96,20 +96,26 @@ extension LocalizedStringKey.StringInterpolation {
       self.darkBlur = darkBlur
     }
 
-    static let chip = Elevation(offset: 3, blur: 5)
-    static let toggle = Elevation(offset: 2, blur: 4)
-    static let taskCard = Elevation(offset: 3, blur: 6)
-    static let action = Elevation(offset: 4, blur: 8)
-    static let card = Elevation(offset: 4, blur: 9)
-    static let pill = Elevation(offset: 6, blur: 10)
-    static let panel = Elevation(offset: 9, blur: 18)
-    static let balloon = Elevation(lightOffset: 4, lightBlur: 10, darkOffset: 6, darkBlur: 14)
+    init(_ token: DesignTokens.Elevation) {
+      self.init(
+        lightOffset: token.lightOffset, lightBlur: token.lightBlur,
+        darkOffset: token.darkOffset, darkBlur: token.darkBlur)
+    }
+
+    static let chip = Elevation(DesignTokens.Elevation.chip)
+    static let toggle = Elevation(DesignTokens.Elevation.toggle)
+    static let taskCard = Elevation(DesignTokens.Elevation.taskCard)
+    static let action = Elevation(DesignTokens.Elevation.action)
+    static let card = Elevation(DesignTokens.Elevation.card)
+    static let pill = Elevation(DesignTokens.Elevation.pill)
+    static let panel = Elevation(DesignTokens.Elevation.panel)
+    static let balloon = Elevation(DesignTokens.Elevation.balloon)
   }
 
   /// The bundled families, named once.
-  static let chromeFamily = "Nunito"
+  static let chromeFamily = DesignTokens.Fonts.chrome
   static let monoFamily = PaneInteriorFont.monoFamily
-  static let screenplayFamily = "Courier Prime"
+  static let screenplayFamily = DesignTokens.Fonts.screenplay
 
   static func chrome(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
     .custom(chromeFamily, size: size).weight(weight)

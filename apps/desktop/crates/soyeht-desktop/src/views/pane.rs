@@ -1,0 +1,337 @@
+//! A pane: the raised card, its header, and the body of its kind. The card is the only raised
+//! surface; the header and everything under it are flat.
+
+use super::ui::{OwnPress, column, icon, id, row, rule};
+use crate::{
+    assets::Icon,
+    neo, terminal_view,
+    theme::{Palette, desktop, pane_interior, pane_layout, radius, space, type_scale},
+    workbench::{Menu, Workbench},
+};
+use gpui::{
+    Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, IntoElement, ParentElement,
+    SharedString, Styled, div, prelude::FluentBuilder, px, rgb,
+};
+use gpui::{InteractiveElement, MouseButton, StatefulInteractiveElement};
+use soyeht_client::agent::status_word;
+use soyeht_protocol::{Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis};
+
+/// The buttons of the header, left to right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Action {
+    History,
+    List,
+    SplitColumns,
+    SplitRows,
+    Close,
+}
+
+impl Action {
+    fn icon(self) -> Icon {
+        match self {
+            Self::History => Icon::History,
+            Self::List => Icon::List,
+            Self::SplitColumns => Icon::Columns,
+            Self::SplitRows => Icon::Rows,
+            Self::Close => Icon::Close,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::History => "history",
+            Self::List => "list",
+            Self::SplitColumns => "split-columns",
+            Self::SplitRows => "split-rows",
+            Self::Close => "close",
+        }
+    }
+
+    /// What the button says when this client does not serve it yet.
+    fn unavailable(self) -> Option<&'static str> {
+        match self {
+            Self::History => Some("Loops are not available in the desktop client yet."),
+            Self::List => Some("Tasks are not available in the desktop client yet."),
+            _ => None,
+        }
+    }
+}
+
+fn actions(mode: &PaneMode) -> Vec<Action> {
+    let mut all = Vec::new();
+    if *mode == PaneMode::Agent {
+        all.push(Action::History);
+    }
+    all.extend([
+        Action::List,
+        Action::SplitColumns,
+        Action::SplitRows,
+        Action::Close,
+    ]);
+    all
+}
+
+impl Workbench {
+    pub(super) fn pane_card(
+        &mut self,
+        pane: &Pane,
+        focused: bool,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let pane_id = pane.pane_id.clone();
+        let body = match pane.mode {
+            PaneMode::Terminal => self.terminal_body(&pane.pane_id, focused, palette, cx),
+            PaneMode::Agent => self.agent_body(pane, palette, cx),
+            _ => notice_body(palette, mode_notice(&pane.mode)),
+        };
+        neo::pane_shell(palette)
+            .id(id("pane", &pane.pane_id))
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .p(px(pane_layout::PANE_CARD_INSET))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, window, cx| this.focus_pane(&pane_id, window, cx)),
+            )
+            .child(self.pane_header(pane, palette, cx))
+            .child(rule(palette.well, desktop::HAIRLINE))
+            .child(body)
+            .into_any_element()
+    }
+
+    fn pane_header(
+        &mut self,
+        pane: &Pane,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let is_agent = pane.mode == PaneMode::Agent;
+        let view = self.state.agent(&pane.pane_id);
+        let needs_you = pane.state == PaneState::WaitingForYou
+            || view.is_some_and(|view| view.permission.is_some());
+        let session = pane.agent.as_ref();
+        let status = status_word(
+            &pane.state,
+            session.is_some_and(|agent| !agent.auth_methods.is_empty()),
+            session.is_some_and(|agent| agent.session_id.is_some()),
+        );
+        let ticker = view.and_then(|view| view.ticker());
+        let detail = pane_detail(pane, self.state.has_gap(&pane.pane_id));
+        let buttons: Vec<AnyElement> = actions(&pane.mode)
+            .into_iter()
+            .map(|action| self.header_button(pane, action, palette, cx))
+            .collect();
+        row()
+            .h(px(pane_layout::HEADER_HEIGHT))
+            .flex_none()
+            .px(px(space::X12))
+            .gap(px(space::X7))
+            .font_weight(FontWeight::MEDIUM)
+            .text_size(px(type_scale::CONTROL))
+            .text_color(rgb(palette.secondary))
+            .child(
+                div()
+                    .size(px(pane_layout::HEADER_STATE_DOT))
+                    .flex_none()
+                    .rounded_full()
+                    .bg(rgb(state_color(&pane.state, palette))),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .max_w(px(desktop::PANE_TITLE_MAX_WIDTH))
+                    .truncate()
+                    .font_weight(FontWeight::EXTRA_BOLD)
+                    .text_size(px(type_scale::BODY))
+                    .text_color(rgb(palette.ink))
+                    .child(SharedString::from(pane.name.clone())),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .px(px(space::X2))
+                    .child(SharedString::from(if is_agent {
+                        ticker.unwrap_or_default()
+                    } else {
+                        detail
+                    })),
+            )
+            .when(is_agent, |header| {
+                header.child(
+                    div()
+                        .flex_none()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_size(px(type_scale::SMALL))
+                        .text_color(rgb(if needs_you {
+                            palette.accent
+                        } else {
+                            palette.secondary
+                        }))
+                        .child(SharedString::from(status)),
+                )
+            })
+            .children(buttons)
+    }
+
+    fn header_button(
+        &mut self,
+        pane: &Pane,
+        action: Action,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let pane_id = pane.pane_id.clone();
+        let key = id(action.name(), &pane.pane_id);
+        let notice = action.unavailable().map(|_| Menu::Notice {
+            pane_id: pane.pane_id.clone(),
+            button: action.name(),
+        });
+        let open = notice.is_some() && self.menu == notice;
+        let connected = self.state.connection == soyeht_client::Connection::Connected;
+        let enabled = notice.is_some() || connected;
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                row()
+                    .id(key)
+                    .w(px(pane_layout::HEADER_ACTION_WIDTH))
+                    .h(px(pane_layout::HEADER_HEIGHT))
+                    .justify_center()
+                    .rounded(px(radius::COMPACT))
+                    .when(!enabled, |button| {
+                        button.opacity(pane_interior::DISABLED_OPACITY)
+                    })
+                    .when(enabled, |button| {
+                        button
+                            .cursor_pointer()
+                            .hover(|style| style.bg(rgb(palette.hover)))
+                    })
+                    .own_press()
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        if let Some(menu) = notice.clone() {
+                            this.toggle_menu(menu, cx);
+                        } else if connected {
+                            match action {
+                                Action::SplitColumns => this.split_pane(
+                                    &pane_id,
+                                    WorkspacePaneLayoutAxis::Horizontal,
+                                    cx,
+                                ),
+                                Action::SplitRows => {
+                                    this.split_pane(&pane_id, WorkspacePaneLayoutAxis::Vertical, cx)
+                                }
+                                Action::Close => this.close_pane(&pane_id),
+                                Action::History | Action::List => {}
+                            }
+                        }
+                    }))
+                    .child(icon(
+                        action.icon(),
+                        desktop::HEADER_ACTION_GLYPH,
+                        palette.secondary,
+                    )),
+            )
+            .when(open, |slot| {
+                slot.child(super::menus::popup(
+                    palette,
+                    Anchor::TopRight,
+                    (
+                        pane_layout::HEADER_ACTION_WIDTH,
+                        pane_layout::HEADER_HEIGHT + space::X4,
+                    ),
+                    super::menus::note(palette, action.unavailable().unwrap_or_default()),
+                    cx,
+                ))
+            })
+            .into_any_element()
+    }
+
+    fn terminal_body(
+        &self,
+        pane_id: &str,
+        focused: bool,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = pane_id.to_owned();
+        column()
+            .id(super::ui::id("terminal", pane_id))
+            .flex_1()
+            .min_h_0()
+            .px(px(space::X2))
+            .pt(px(space::X8))
+            .on_scroll_wheel(cx.listener({
+                let id = id.clone();
+                move |this, event, _, cx| this.scroll_terminal(&id, event, cx)
+            }))
+            .child(terminal_view::surface(cx.entity(), id, palette, focused))
+            .into_any_element()
+    }
+}
+
+fn notice_body(palette: &Palette, message: &str) -> AnyElement {
+    div()
+        .flex_1()
+        .flex()
+        .items_center()
+        .justify_center()
+        .px(px(space::X18))
+        .text_color(rgb(palette.muted))
+        .child(SharedString::from(message.to_owned()))
+        .into_any_element()
+}
+
+fn mode_notice(mode: &PaneMode) -> &'static str {
+    match mode {
+        PaneMode::Editor => "Editor panes are not available in the desktop client yet.",
+        PaneMode::Web => "Web panes are not available in the desktop client yet.",
+        PaneMode::Writing => "Writing panes are not available in the desktop client yet.",
+        PaneMode::Terminal | PaneMode::Agent => "",
+    }
+}
+
+/// The line beside a terminal's name. The two notices mirror `TerminalStatePresentation`.
+fn pane_detail(pane: &Pane, has_gap: bool) -> String {
+    match pane.state {
+        PaneState::Dead => "Terminal process exited.".into(),
+        _ if has_gap => "Some output was not recorded. The screen contains a gap.".into(),
+        _ => pane.phrase.clone(),
+    }
+}
+
+fn state_color(state: &PaneState, palette: &Palette) -> u32 {
+    match state {
+        PaneState::Working | PaneState::Starting | PaneState::Recovering => palette.accent,
+        PaneState::WaitingForYou | PaneState::NoSignal | PaneState::Cancelling => palette.warning(),
+        PaneState::Dead => palette.danger(),
+        PaneState::Idle => palette.success(),
+        PaneState::Unknown => palette.muted,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agents_have_the_loop_button_and_terminals_do_not() {
+        assert_eq!(actions(&PaneMode::Agent)[0], Action::History);
+        assert_eq!(actions(&PaneMode::Terminal)[0], Action::List);
+        assert_eq!(actions(&PaneMode::Agent).len(), 5);
+        assert_eq!(*actions(&PaneMode::Terminal).last().unwrap(), Action::Close);
+    }
+
+    #[test]
+    fn only_the_buttons_without_a_desktop_feature_explain_themselves() {
+        assert!(Action::History.unavailable().is_some());
+        assert!(Action::List.unavailable().is_some());
+        assert!(Action::Close.unavailable().is_none());
+    }
+}

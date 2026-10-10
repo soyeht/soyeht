@@ -1,8 +1,8 @@
 //! Paints a terminal screen: backgrounds, text and the cursor, on the character grid.
 
 use crate::{
-    fonts::{MONO_FAMILY, TERMINAL_SIZE},
-    theme::Palette,
+    fonts::TERMINAL_SIZE,
+    theme::{Palette, desktop, fonts::MONO as MONO_FAMILY},
     workbench::Workbench,
 };
 use gpui::{
@@ -181,7 +181,7 @@ fn draw_text(
         color: style.color,
         background_color: None,
         underline: style.underline.then_some(UnderlineStyle {
-            thickness: px(1.0),
+            thickness: px(desktop::HAIRLINE),
             color: Some(style.color),
             wavy: false,
         }),

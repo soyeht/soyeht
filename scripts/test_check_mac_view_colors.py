@@ -69,23 +69,25 @@ Text("x").shadow(color: MacTheme.shadowDark, radius: 2)
                 for theme in EXPECTED_THEMES
             )
             definitions = "\n".join(
-                f"fileprivate static let {theme.removeprefix('neo')[:1].lower() + theme.removeprefix('neo')[1:]} = make()"
+                f"static let {theme.removeprefix('neo')[:1].lower() + theme.removeprefix('neo')[1:]} = make()"
                 for theme in EXPECTED_THEMES
             )
             self.write_theme_sources(
                 root,
-                f"public enum TerminalColorTheme {{\n{declarations}\n{mappings}\n}}\n{definitions}",
+                f"public enum TerminalColorTheme {{\n{declarations}\n{mappings}\n}}\n",
                 """
 let palette = TerminalColorTheme.seededDefault.palette
 let active = SoyehtThemeColorSet(palette: palette)
 """,
+                palettes=definitions,
             )
             self.assertEqual(theme_catalog_violations(root), [])
 
     @staticmethod
-    def write_theme_sources(root: Path, catalog: str, colors: str) -> None:
+    def write_theme_sources(root: Path, catalog: str, colors: str, palettes: str = "") -> None:
         paths = {
             "apps/shared/Sources/SoyehtClient/ThemePalette.swift": catalog,
+            "apps/shared/Sources/SoyehtClient/Generated.swift": palettes,
             "apps/shared/Sources/SoyehtClient/ThemeColors.swift": colors,
         }
         for relative, source in paths.items():

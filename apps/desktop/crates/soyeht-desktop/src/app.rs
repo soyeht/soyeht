@@ -1,19 +1,21 @@
 //! Application start-up: fonts, shortcuts, menus and the one window.
 
 use crate::{
+    assets::Assets,
     fonts,
+    theme::desktop,
+    window_size::{self, opening_size},
     workbench::{NewTerminal, Paste, Quit, Workbench},
 };
 use gpui::{
     App, AppContext, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds,
-    WindowOptions, point, px, size,
+    WindowDecorations, WindowOptions, point, px, size,
 };
 use gpui_platform::application;
 use soyeht_client::{Engine, profile};
 
-const WINDOW_SIZE: (f32, f32) = (1280.0, 800.0);
-/// Where the window buttons sit; the rail leaves room for them.
-const TRAFFIC_LIGHTS: (f32, f32) = (16.0, 16.0);
+/// Where the macOS window buttons sit; the top bar leaves room for them.
+const TRAFFIC_LIGHTS: (f32, f32) = (desktop::TRAFFIC_LIGHT_INSET, desktop::TRAFFIC_LIGHT_INSET);
 
 /// The platform key: Command on macOS, Control+Shift elsewhere, so that shortcuts never
 /// collide with the keys a terminal program needs.
@@ -31,7 +33,7 @@ pub fn run() {
             std::process::exit(2);
         }
     };
-    application().run(move |cx: &mut App| {
+    application().with_assets(Assets).run(move |cx: &mut App| {
         fonts::register(cx);
         let (engine, inbox) = Engine::start(socket);
         cx.on_action(|_: &Quit, cx| cx.quit());
@@ -47,9 +49,17 @@ pub fn run() {
                 MenuItem::action("Paste", Paste),
             ]),
         ]);
-        let bounds = Bounds::centered(None, size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)), cx);
+        let display = cx
+            .primary_display()
+            .map(|display| display.bounds().size)
+            .map(|extent| (f32::from(extent.width), f32::from(extent.height)));
+        let (width, height) = opening_size(display);
+        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_min_size: Some(size(px(window_size::MINIMUM.0), px(window_size::MINIMUM.1))),
+            // The application draws its own title bar and window buttons: the top bar.
+            window_decorations: Some(WindowDecorations::Client),
             titlebar: Some(TitlebarOptions {
                 title: Some("Soyeht".into()),
                 appears_transparent: true,

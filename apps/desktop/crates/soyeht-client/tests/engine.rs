@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
-use soyeht_client::{Command, Connection, Engine, Error, Event, State};
+use soyeht_client::{Command, Connection, Effect, Engine, Error, Event, State};
 use soyeht_protocol::{
     EventName,
     frame::{Frame, read_json, write_json},
@@ -141,7 +141,7 @@ fn connects_lists_state_streams_terminal_output_and_sends_input() {
     assert_eq!(state.connection, Connection::Connected);
     assert_eq!(state.workspaces()[0].name, "api");
     assert_eq!(state.focused_pane().unwrap().pane_id, "t1");
-    assert_eq!(effects.len(), 1);
+    assert!(effects.contains(&Effect::SubscribeTerminal("t1".into())));
 
     // The application subscribes the terminal; the engine replays, then streams live.
     let subscribe = subscribe_t1(&engine, &mut remote);
@@ -257,6 +257,73 @@ fn a_refused_request_becomes_a_problem_not_a_crash() {
         Event::Problem(message) => assert_eq!(message, "Pane not found"),
         other => panic!("expected a problem, got {other:?}"),
     }
+
+    finish(&engine, remote, &path);
+}
+
+#[test]
+fn typing_is_sent_while_fetches_still_wait_for_their_answers() {
+    let (engine, inbox, mut remote, path) = connected("priority");
+    assert!(matches!(next(&inbox), Event::Connected(_)));
+
+    // A connection starts several fetches; the engine is slow to answer all of them.
+    for pane in ["a1", "a2", "a3"] {
+        engine
+            .send(Command::LoadTranscript {
+                pane_id: pane.into(),
+            })
+            .unwrap();
+    }
+    engine.send(Command::LoadUsage).unwrap();
+    engine
+        .send(Command::Input {
+            pane_id: "t1".into(),
+            bytes: b"ls".to_vec(),
+        })
+        .unwrap();
+    // The keystroke arrives although no fetch has been answered.
+    let mut fetches = Vec::new();
+    let input = loop {
+        let request = remote.request();
+        if request["method"] == "pane.input" {
+            break request;
+        }
+        fetches.push(request);
+    };
+    assert!(fetches.len() <= 4);
+    remote.reply(&input, json!({"acceptedBytes": 2}));
+    finish(&engine, remote, &path);
+}
+
+#[test]
+fn opening_a_pane_is_answered_with_its_ticket_and_a_failure_releases_it() {
+    let (engine, inbox, mut remote, path) = connected("tickets");
+    assert!(matches!(next(&inbox), Event::Connected(_)));
+
+    engine
+        .send(Command::CreateTerminal {
+            workspace_id: "w1".into(),
+            ticket: 5,
+        })
+        .unwrap();
+    let create = remote.expect("pane.create");
+    remote.reply(&create, json!({"paneId": "t9"}));
+    assert!(matches!(
+        next(&inbox),
+        Event::Opened { ticket: 5, pane_id } if pane_id == "t9"
+    ));
+
+    engine
+        .send(Command::CreateTerminal {
+            workspace_id: "w1".into(),
+            ticket: 6,
+        })
+        .unwrap();
+    let refused = remote.expect("pane.create");
+    remote.send(&json!({"jsonrpc": "2.0", "id": refused["id"], "error": {
+        "code": -32001, "message": "No such workspace", "data": {"kind": "not_found"}}}));
+    assert!(matches!(next(&inbox), Event::OpenFailed { ticket: 6 }));
+    assert!(matches!(next(&inbox), Event::Problem(_)));
 
     finish(&engine, remote, &path);
 }

@@ -53,6 +53,8 @@ impl Shared {
 pub struct Engine {
     shared: Arc<Shared>,
     commands: mpsc::SyncSender<Command>,
+    /// Fetches wait in a queue of their own, served by a second worker.
+    fetches: mpsc::SyncSender<Command>,
 }
 
 impl Engine {
@@ -60,27 +62,40 @@ impl Engine {
     pub fn start(socket: PathBuf) -> (Self, async_channel::Receiver<Event>) {
         let (events, inbox) = async_channel::bounded(EVENT_QUEUE);
         let (commands, queue) = mpsc::sync_channel(COMMAND_QUEUE);
+        let (fetches, fetch_queue) = mpsc::sync_channel(COMMAND_QUEUE);
         let shared = Arc::new(Shared::default());
         {
             let (shared, events) = (Arc::clone(&shared), events.clone());
             std::thread::spawn(move || supervise(&socket, &events, &shared));
         }
-        {
-            let (shared, events) = (Arc::clone(&shared), events);
+        // One worker for what the person does, one for fetching: a transcript per pane, usage and
+        // the harness list queue up at every connection and must not delay a keystroke.
+        for queue in [queue, fetch_queue] {
+            let (shared, events) = (Arc::clone(&shared), events.clone());
             std::thread::spawn(move || work(&queue, &events, &shared));
         }
-        (Self { shared, commands }, inbox)
+        (
+            Self {
+                shared,
+                commands,
+                fetches,
+            },
+            inbox,
+        )
     }
 
     /// Queues a command. It runs after the ones before it. Never blocks the interface: when the
     /// queue is full the command is refused and the caller tells the user.
     pub fn send(&self, command: Command) -> Result<()> {
-        self.commands
-            .try_send(command)
-            .map_err(|error| match error {
-                mpsc::TrySendError::Full(_) => Error::Busy,
-                mpsc::TrySendError::Disconnected(_) => Error::Disconnected,
-            })
+        let queue = if command.is_background() {
+            &self.fetches
+        } else {
+            &self.commands
+        };
+        queue.try_send(command).map_err(|error| match error {
+            mpsc::TrySendError::Full(_) => Error::Busy,
+            mpsc::TrySendError::Disconnected(_) => Error::Disconnected,
+        })
     }
 
     /// Drops the current connection so the supervisor reconnects and starts again from a fresh
@@ -162,13 +177,22 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
             },
         };
         let command = commands::coalesce(next, queue, &mut carry);
-        let failure = match shared.rpc() {
-            Some(rpc) => execute(&rpc, &command).err(),
-            None => Some(Error::Disconnected),
+        let outcome = match shared.rpc() {
+            Some(rpc) => execute(&rpc, &command),
+            None => Err(Error::Disconnected),
         };
-        if let Some(error) = failure
-            && !report(events, &error)
-        {
+        let delivered = match outcome {
+            Ok(Some(event)) => events.send_blocking(event).is_ok(),
+            Ok(None) => true,
+            Err(error) => {
+                // A request to open a pane that failed releases what waited for it.
+                let released = command.ticket().is_none_or(|ticket| {
+                    events.send_blocking(Event::OpenFailed { ticket }).is_ok()
+                });
+                released && report(events, &error)
+            }
+        };
+        if !delivered {
             return;
         }
     }
@@ -181,13 +205,13 @@ fn report(events: &EventSink, error: &Error) -> bool {
         .is_ok()
 }
 
-fn execute(rpc: &Rpc, command: &Command) -> Result<()> {
+fn execute(rpc: &Rpc, command: &Command) -> Result<Option<Event>> {
     if let Command::Input { pane_id, bytes } = command {
-        return send_input(rpc, pane_id, bytes);
+        return send_input(rpc, pane_id, bytes).map(|()| None);
     }
     match commands::request(command) {
-        Some(request) => rpc.call(&request).map(|_| ()),
-        None => Ok(()),
+        Some(request) => commands::outcome(command, rpc.call(&request)?),
+        None => Ok(None),
     }
 }
 

@@ -8,6 +8,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from design_tokens import TOKENS_PATH, render_tokens
+
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "contracts/protocol.json"
 PROFILES_PATH = ROOT / "contracts/profiles.json"
@@ -512,6 +514,8 @@ def main():
     profiles = json.loads(profile_data)
     validate_profiles(profiles)
     outputs.update(render_profiles(profiles, hashlib.sha256(profile_data).hexdigest()))
+    token_data = (ROOT / TOKENS_PATH).read_bytes()
+    outputs.update(render_tokens(json.loads(token_data), token_data))
     mismatches = []
     for relative, content in outputs.items():
         path = ROOT / relative

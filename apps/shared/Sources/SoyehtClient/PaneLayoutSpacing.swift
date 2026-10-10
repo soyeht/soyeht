@@ -14,11 +14,11 @@
 /// between two cards.
 public enum PaneLayoutSpacing {
   /// The visible space between two neighbouring pane cards.
-  public static let paneGap = 18.0
+  public static let paneGap = Double(DesignTokens.PaneLayout.paneGap)
   /// The window content's padding inside the screen edges, where the open rail starts.
-  public static let screenPadding = 18.0
+  public static let screenPadding = Double(DesignTokens.PaneLayout.screenPadding)
   /// The grid's padding around its cards, also the space between the open rail and a card.
-  public static let gridPadding = 6.0
+  public static let gridPadding = Double(DesignTokens.PaneLayout.gridPadding)
   /// The visible space between the outermost pane cards and the window's content edges.
   public static let outerMargin = screenPadding + gridPadding
   /// The pane footprint keeps no halo of its own; see the type's documentation.

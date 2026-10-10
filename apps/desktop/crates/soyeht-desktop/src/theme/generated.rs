@@ -1,6 +1,4 @@
-//! The nine reviewed palettes, mirrored from `apps/shared/Sources/SoyehtClient/ThemePalette.swift`.
-//! The parity test in `theme::tests` fails when the two files drift apart.
-
+// Generated from contracts/design-tokens.json (sha256 15d89f77b32fe6d38a7281af0469ad6a996dfdc7fb98c3766b13ed6d1f34ef13). Do not edit.
 use super::Palette;
 
 pub(super) static MILK: Palette = Palette {
@@ -237,3 +235,210 @@ pub(super) static DEEP_HARBOR: Palette = Palette {
     syntax_type: 0xFB00FA,
     diff_added: 0x00D9A3,
 };
+pub mod radius {
+    pub const COMPACT: f32 = 10.0;
+    pub const CONTROL: f32 = 12.0;
+    pub const CARD: f32 = 20.0;
+    pub const PILL: f32 = 999.0;
+}
+pub mod space {
+    pub const X2: f32 = 2.0;
+    pub const X3: f32 = 3.0;
+    pub const X4: f32 = 4.0;
+    pub const X5: f32 = 5.0;
+    pub const X6: f32 = 6.0;
+    pub const X7: f32 = 7.0;
+    pub const X8: f32 = 8.0;
+    pub const X10: f32 = 10.0;
+    pub const X12: f32 = 12.0;
+    pub const X14: f32 = 14.0;
+    pub const X16: f32 = 16.0;
+    pub const X18: f32 = 18.0;
+}
+pub mod type_scale {
+    pub const MICRO: f32 = 10.0;
+    pub const SMALL: f32 = 11.0;
+    pub const CONTROL: f32 = 12.0;
+    pub const CAPTION: f32 = 13.0;
+    pub const BODY: f32 = 15.0;
+    pub const SUBHEADING: f32 = 18.0;
+    pub const HEADING: f32 = 20.0;
+    pub const TITLE: f32 = 28.0;
+}
+pub mod pane_shell {
+    pub const CORNER_RADIUS: f32 = 20.0;
+    pub const SHADOW_OFFSET: f32 = 5.0;
+    pub const SHADOW_BLUR: f32 = 10.0;
+}
+pub mod pane_layout {
+    pub const PANE_GAP: f32 = 18.0;
+    pub const SCREEN_PADDING: f32 = 18.0;
+    pub const GRID_PADDING: f32 = 6.0;
+    pub const PANE_CARD_INSET: f32 = 10.0;
+    pub const PANE_STACK_SPACING: f32 = 8.0;
+    pub const HEADER_HEIGHT: f32 = 26.0;
+    pub const HEADER_STATE_DOT: f32 = 8.0;
+    pub const HEADER_ACTION_WIDTH: f32 = 24.0;
+}
+pub mod layout {
+    pub const RAIL_WIDTH: f32 = 56.0;
+    pub const RAIL_BUTTON_SIZE: f32 = 36.0;
+    pub const RAIL_DIVIDER_WIDTH: f32 = 24.0;
+    pub const TOP_BAR_HEIGHT: f32 = 42.0;
+    pub const TOP_BAR_LEADING_INSET: f32 = 52.0;
+    pub const TOP_BAR_CONTROL_HEIGHT: f32 = 34.0;
+    pub const WORKSPACE_TAB_HEIGHT: f32 = 36.0;
+    pub const WORKSPACE_TAB_MAXIMUM_WIDTH: f32 = 216.0;
+    pub const WORKSPACE_OVERFLOW_BUTTON_WIDTH: f32 = 44.0;
+    pub const WORKSPACE_OVERFLOW_POPOVER_WIDTH: f32 = 340.0;
+    pub const WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT: f32 = 420.0;
+}
+pub mod glyph {
+    pub const RAIL: f32 = 18.0;
+    pub const TOP_BAR_TOGGLE: f32 = 15.0;
+    pub const TOP_BAR_NEW_PANE: f32 = 14.0;
+    pub const TAB_CLOSE: f32 = 9.0;
+    pub const CHEVRON: f32 = 11.0;
+}
+pub mod usage_ring {
+    pub const DIAMETER: f32 = 40.0;
+    pub const FACE_DIAMETER: f32 = 34.0;
+    pub const ARC_WIDTH: f32 = 3.0;
+    pub const TRACK_WIDTH: f32 = 5.0;
+    pub const GLYPH_SIZE: f32 = 16.0;
+    pub const PERCENTAGE_SIZE: f32 = 9.0;
+    pub const PERCENTAGE_HEIGHT: f32 = 15.0;
+    pub const HEIGHT: f32 = 55.0;
+}
+pub mod pane_interior {
+    pub const CARD_RADIUS: f32 = 12.0;
+    pub const COMPOSER_RADIUS: f32 = 14.0;
+    pub const WELL_RADIUS: f32 = 8.0;
+    pub const CARD_PADDING: f32 = 14.0;
+    pub const PHONE_INSET: f32 = 16.0;
+    pub const CARD_VERTICAL_PADDING: f32 = 12.0;
+    pub const STACK_SPACING: f32 = 12.0;
+    pub const COMPACT_SPACING: f32 = 8.0;
+    pub const TIGHT_SPACING: f32 = 4.0;
+    pub const ROW_SPACING: f32 = 10.0;
+    pub const ROW_VERTICAL_PADDING: f32 = 8.0;
+    pub const SEPARATOR_WIDTH: f32 = 1.0;
+    pub const SEND_BUTTON_SIZE: f32 = 28.0;
+    pub const PILL_HORIZONTAL_PADDING: f32 = 16.0;
+    pub const PILL_VERTICAL_PADDING: f32 = 8.0;
+    pub const BODY_POINT_SIZE: f32 = 14.0;
+    pub const CAPTION_POINT_SIZE: f32 = 12.0;
+    pub const HEADING_POINT_SIZE: f32 = 13.0;
+    pub const MONO_POINT_SIZE: f32 = 12.0;
+    pub const MONO_SMALL_POINT_SIZE: f32 = 11.0;
+    pub const PRESSED_OPACITY: f32 = 0.78;
+    pub const DISABLED_OPACITY: f32 = 0.45;
+}
+pub mod composer {
+    pub const ROW_SPACING: f32 = 10.0;
+    pub const CONTROL_SPACING: f32 = 4.0;
+    pub const CONTROL_HEIGHT: f32 = 28.0;
+    pub const CHIP_HORIZONTAL_PADDING: f32 = 8.0;
+    pub const CHIP_SPACING: f32 = 5.0;
+    pub const ICON_SIZE: f32 = 16.0;
+    pub const CHEVRON_SIZE: f32 = 11.0;
+    pub const SHIELD_SIZE: f32 = 13.0;
+    pub const HARNESS_LOGO_SIZE: f32 = 14.0;
+    pub const SEND_WIDTH: f32 = 40.0;
+    pub const STOP_SIZE: f32 = 10.0;
+    pub const STOP_RADIUS: f32 = 2.0;
+    pub const RING_DIAMETER: f32 = 16.0;
+    pub const RING_LINE_WIDTH: f32 = 3.0;
+    pub const CONTEXT_SPACING: f32 = 6.0;
+    pub const CONTEXT_HORIZONTAL_PADDING: f32 = 4.0;
+}
+pub mod desktop {
+    pub const WINDOW_WIDTH: f32 = 1280.0;
+    pub const WINDOW_HEIGHT: f32 = 800.0;
+    pub const WINDOW_MINIMUM_WIDTH: f32 = 640.0;
+    pub const WINDOW_MINIMUM_HEIGHT: f32 = 440.0;
+    pub const WINDOW_WIDTH_MARGIN: f32 = 64.0;
+    pub const WINDOW_HEIGHT_MARGIN: f32 = 120.0;
+    pub const TRAFFIC_LIGHT_INSET: f32 = 16.0;
+    pub const TAB_CHARACTER_WIDTH: f32 = 7.4;
+    pub const TAB_MINIMUM_WIDTH: f32 = 84.0;
+    pub const MINIMUM_DRAG_WIDTH: f32 = 48.0;
+    pub const WINDOW_CONTROL_GLYPH: f32 = 12.0;
+    pub const RESIZE_EDGE: f32 = 5.0;
+    pub const RESIZE_CORNER: f32 = 12.0;
+    pub const HEADER_ACTION_GLYPH: f32 = 14.0;
+    pub const COMPOSER_GLYPH: f32 = 14.0;
+    pub const CHEVRON_GLYPH: f32 = 9.0;
+    pub const EMPTY_STATE_GLYPH: f32 = 28.0;
+    pub const STATUS_DOT: f32 = 7.0;
+    pub const CHIP_MAX_WIDTH: f32 = 180.0;
+    pub const MENU_MIN_WIDTH: f32 = 180.0;
+    pub const PANE_TITLE_MAX_WIDTH: f32 = 260.0;
+    pub const POPUP_GAP: f32 = 4.0;
+    pub const WELL_DEPTH: f32 = 3.0;
+    pub const HAIRLINE: f32 = 1.0;
+}
+pub mod elevation {
+    /// An outer shadow pair of a raised surface: light up and left, dark down and right.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct Elevation {
+        pub light_offset: f32,
+        pub light_blur: f32,
+        pub dark_offset: f32,
+        pub dark_blur: f32,
+    }
+    pub const CHIP: Elevation = Elevation {
+        light_offset: 3.0,
+        light_blur: 5.0,
+        dark_offset: 3.0,
+        dark_blur: 5.0,
+    };
+    pub const TOGGLE: Elevation = Elevation {
+        light_offset: 2.0,
+        light_blur: 4.0,
+        dark_offset: 2.0,
+        dark_blur: 4.0,
+    };
+    pub const TASK_CARD: Elevation = Elevation {
+        light_offset: 3.0,
+        light_blur: 6.0,
+        dark_offset: 3.0,
+        dark_blur: 6.0,
+    };
+    pub const ACTION: Elevation = Elevation {
+        light_offset: 4.0,
+        light_blur: 8.0,
+        dark_offset: 4.0,
+        dark_blur: 8.0,
+    };
+    pub const CARD: Elevation = Elevation {
+        light_offset: 4.0,
+        light_blur: 9.0,
+        dark_offset: 4.0,
+        dark_blur: 9.0,
+    };
+    pub const PILL: Elevation = Elevation {
+        light_offset: 6.0,
+        light_blur: 10.0,
+        dark_offset: 6.0,
+        dark_blur: 10.0,
+    };
+    pub const PANEL: Elevation = Elevation {
+        light_offset: 9.0,
+        light_blur: 18.0,
+        dark_offset: 9.0,
+        dark_blur: 18.0,
+    };
+    pub const BALLOON: Elevation = Elevation {
+        light_offset: 4.0,
+        light_blur: 10.0,
+        dark_offset: 6.0,
+        dark_blur: 14.0,
+    };
+}
+pub mod fonts {
+    pub const CHROME: &str = "Nunito";
+    pub const UI: &str = "Inter";
+    pub const MONO: &str = "JetBrains Mono";
+    pub const SCREENPLAY: &str = "Courier Prime";
+}

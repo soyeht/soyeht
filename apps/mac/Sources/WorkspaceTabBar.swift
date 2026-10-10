@@ -5,10 +5,10 @@ import SwiftUI
 
 /// Point sizes of the top bar's SF Symbols, kept with the bar that draws them.
 private enum WorkspaceTabBarGlyph {
-  static let toggle: CGFloat = 15
-  static let newPane: CGFloat = 14
-  static let tabClose: CGFloat = 9
-  static let chevron: CGFloat = 11
+  static let toggle: CGFloat = DesignTokens.Glyph.topBarToggle
+  static let newPane: CGFloat = DesignTokens.Glyph.topBarNewPane
+  static let tabClose: CGFloat = DesignTokens.Glyph.tabClose
+  static let chevron: CGFloat = DesignTokens.Glyph.chevron
 }
 
 private struct WorkspaceTabFramePreferenceKey: PreferenceKey {
@@ -57,7 +57,9 @@ struct WorkspaceTopBar: View {
   var body: some View {
     ScrollViewReader { proxy in
       HStack(spacing: MacTheme.Space.x10) {
-        Color.clear.frame(width: 52, height: MacPaneLayoutMetrics.topBarControlHeight)
+        Color.clear.frame(
+          width: DesignTokens.Layout.topBarLeadingInset,
+          height: MacPaneLayoutMetrics.topBarControlHeight)
         Button(action: onToggleAppBar) {
           Image(systemName: "rectangle.grid.2x2")
             .font(.system(size: WorkspaceTabBarGlyph.toggle, weight: .semibold))

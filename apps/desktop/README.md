@@ -11,21 +11,35 @@ It also builds and runs on macOS, which is how it is developed.
 
 | Crate | Role |
 | --- | --- |
-| `crates/soyeht-client` | Engine connection, handshake, terminal streams, client state, terminal screen, key encoding. No window system. |
-| `crates/soyeht-desktop` | The GPUI window: palette tokens (`theme`), pane shell, terminal painter, views. |
+| `crates/soyeht-client` | Engine connection, handshake, terminal streams, client state (workspaces, panes, split layout, agent transcripts, usage), terminal screen, key encoding. No window system. |
+| `crates/soyeht-desktop` | The GPUI window: design tokens (`theme`), neumorphic surfaces (`neo`), the top bar, rail, pane cards, agent panes and composer (`views`), terminal painter. |
 
 This is its own cargo workspace with its own `Cargo.lock`; `engine/` does not
 build it and it does not build the engine.
 
 ## What works
 
+The window is laid out as the Mac app is: a top bar of workspace tabs (rounded pills with a
+close mark, a "+N" pill for the tabs that do not fit, a "+" that opens a terminal or an agent),
+the rail down the left (the places, the usage rings with their percentages, settings), and the
+panes of the selected workspace as neumorphic cards with a flat interior.
+
 - Connects to a running engine on its local socket, as the Mac app does, and
   reconnects when the engine restarts.
-- Lists workspaces and their panes; selecting a workspace shows its panes.
+- Panes are tiled as the workspace's split tree says (`workspace.layout`), and the split buttons
+  of a pane header split it to the right or below and store the new arrangement.
 - Terminal panes show live output (the engine streams raw terminal bytes, parsed
   with `vt100`), accept typing, paste, resize with the window, and scroll back.
-- New terminal in the selected workspace; close a pane.
-- Agent, editor, web and writing panes are listed with a notice.
+- Agent panes show the transcript (the person's messages, replies, tool rows, plans), take a
+  message from the composer (text comes through GPUI's input handler, so dead keys, input
+  methods and emoji work), and offer the harness, model, effort and permission pickers, the
+  context ring and send or stop. Permission requests are answered in a card.
+- A pane opened from "+" or a split takes the keyboard.
+- Settings: the color theme (nine palettes) and the engine connection.
+- On Linux and Windows the top bar carries the window controls (minimize, maximize, close),
+  drags the window, and on Linux the window edges resize it. The window opens no larger than
+  its display.
+- Editor, web and writing panes, tasks, loops, attachments and dictation are listed with a notice.
 
 ## Run
 
@@ -36,8 +50,8 @@ cd apps/desktop
 cargo run --release -p soyeht-desktop
 ```
 
-On macOS the socket is found from the Dev profile directory. Anywhere else, or
-to reach another engine, set the socket path:
+The socket is found from the Dev profile directory under the user's home, which is where the
+engine keeps it on macOS, Linux and Windows. To reach another engine, set the socket path:
 
 ```sh
 SOYEHT_ENGINE_SOCKET=/path/to/engine.sock cargo run -p soyeht-desktop
@@ -64,12 +78,30 @@ cargo test --locked --workspace
 fetches the Zed git dependencies and compiles GPUI, which takes several minutes.
 The client crate tests
 include an end-to-end run against a scripted engine on a real local socket; the
-theme test compares every color with `ThemePalette.swift`.
+palettes and tokens in `theme` are generated from `contracts/design-tokens.json`.
 
 ## Rules
 
-- Colors come only from `theme`, which mirrors the Swift palette. No literals.
+- Colors and sizes come only from `theme`, generated from `contracts/design-tokens.json`
+  (also the source of the Swift palette). No literals.
 - Only the pane shell is raised; everything inside a pane is flat.
 - Wire types, framing and method names come from `soyeht-protocol`. A missing
   engine capability is a contract change, not a client-side guess.
 - GPUI is pinned to one commit; an upgrade is its own pull request.
+
+## Assets
+
+Fonts and the provider logos are the Mac app's own resources, embedded from `apps/mac` and
+`apps/shared`, so no second copy exists to drift.
+
+- The fonts (Inter, Nunito, JetBrains Mono) are under the SIL Open Font License 1.1. The license
+  texts that must travel with a binary are in `crates/soyeht-desktop/assets/licenses/`.
+- The line icons in `crates/soyeht-desktop/assets/icons` are Lucide: ISC license, and the MIT
+  license for the icons derived from Feather. Both are in
+  `crates/soyeht-desktop/assets/LICENSE-lucide.txt`. They are the closest open equivalent of the
+  Mac client's system symbols, which cannot be redistributed.
+- The provider logos are the marks of their owners. They are drawn only to identify a provider's
+  agent and usage, as in the Mac app, and are not covered by the licenses above.
+- Desktop-only measurements (window frame, popups, glyph sizes) are in the `desktop` section of
+  `contracts/design-tokens.json`. They are generated for Rust only: the Mac output does not
+  mention them and does not change when they do.

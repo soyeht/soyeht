@@ -6,16 +6,18 @@ import SoyehtProtocol
 @MainActor enum MacPaneLayoutMetrics {
   /// Named from the smallest width and height exercised by the accepted floor report.
   static let minimumExercisedViewport = PaneLayoutSize(width: 375, height: 375)
-  static let topBarHeight = 42.0
-  static let workspaceTabHeight = 36.0
-  static let topBarControlHeight = 34.0
-  static let workspaceTabMaximumWidth = 216.0
-  static let workspaceOverflowButtonWidth = 44.0
-  static let workspaceOverflowPopoverWidth = 340.0
-  static let workspaceOverflowPopoverMaximumHeight = 420.0
+  static let topBarHeight = Double(DesignTokens.Layout.topBarHeight)
+  static let workspaceTabHeight = Double(DesignTokens.Layout.workspaceTabHeight)
+  static let topBarControlHeight = Double(DesignTokens.Layout.topBarControlHeight)
+  static let workspaceTabMaximumWidth = Double(DesignTokens.Layout.workspaceTabMaximumWidth)
+  static let workspaceOverflowButtonWidth = Double(DesignTokens.Layout.workspaceOverflowButtonWidth)
+  static let workspaceOverflowPopoverWidth = Double(
+    DesignTokens.Layout.workspaceOverflowPopoverWidth)
+  static let workspaceOverflowPopoverMaximumHeight = Double(
+    DesignTokens.Layout.workspaceOverflowPopoverMaximumHeight)
   static let workspaceTabFadeWidth = Double(MacTheme.Space.x18)
-  static let railWidth = 56.0
-  static let railButtonSize = 36.0
+  static let railWidth = Double(DesignTokens.Layout.railWidth)
+  static let railButtonSize = Double(DesignTokens.Layout.railButtonSize)
 
   /// Pane cards fill their footprints; their shadows share the gap (`PaneLayoutSpacing`).
   static let paneHalo = PaneLayoutSpacing.paneHalo

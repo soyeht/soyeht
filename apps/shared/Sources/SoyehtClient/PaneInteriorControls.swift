@@ -4,30 +4,30 @@ import SwiftUI
 /// frames "Interior da pane · APROVADO"). The pane shell is the only raised surface; cards,
 /// rows and controls inside it are flat.
 public enum PaneInteriorMetrics {
-  public static let cardRadius: CGFloat = 12
-  public static let composerRadius: CGFloat = 14
-  public static let wellRadius: CGFloat = 8
-  public static let cardPadding: CGFloat = 14
+  public static let cardRadius: CGFloat = DesignTokens.PaneInterior.cardRadius
+  public static let composerRadius: CGFloat = DesignTokens.PaneInterior.composerRadius
+  public static let wellRadius: CGFloat = DesignTokens.PaneInterior.wellRadius
+  public static let cardPadding: CGFloat = DesignTokens.PaneInterior.cardPadding
   /// The phone's wider margin around the transcript and its cards.
-  public static let phoneInset: CGFloat = 16
-  public static let cardVerticalPadding: CGFloat = 12
-  public static let stackSpacing: CGFloat = 12
-  public static let compactSpacing: CGFloat = 8
-  public static let tightSpacing: CGFloat = 4
-  public static let rowSpacing: CGFloat = 10
-  public static let rowVerticalPadding: CGFloat = 8
-  public static let separatorWidth: CGFloat = 1
-  public static let sendButtonSize: CGFloat = 28
-  public static let pillHorizontalPadding: CGFloat = 16
-  public static let pillVerticalPadding: CGFloat = 8
+  public static let phoneInset: CGFloat = DesignTokens.PaneInterior.phoneInset
+  public static let cardVerticalPadding: CGFloat = DesignTokens.PaneInterior.cardVerticalPadding
+  public static let stackSpacing: CGFloat = DesignTokens.PaneInterior.stackSpacing
+  public static let compactSpacing: CGFloat = DesignTokens.PaneInterior.compactSpacing
+  public static let tightSpacing: CGFloat = DesignTokens.PaneInterior.tightSpacing
+  public static let rowSpacing: CGFloat = DesignTokens.PaneInterior.rowSpacing
+  public static let rowVerticalPadding: CGFloat = DesignTokens.PaneInterior.rowVerticalPadding
+  public static let separatorWidth: CGFloat = DesignTokens.PaneInterior.separatorWidth
+  public static let sendButtonSize: CGFloat = DesignTokens.PaneInterior.sendButtonSize
+  public static let pillHorizontalPadding: CGFloat = DesignTokens.PaneInterior.pillHorizontalPadding
+  public static let pillVerticalPadding: CGFloat = DesignTokens.PaneInterior.pillVerticalPadding
   /// Type sizes of the approved interior: Inter for prose and controls, mono for code.
-  public static let bodyPointSize: CGFloat = 14
-  public static let captionPointSize: CGFloat = 12
-  public static let headingPointSize: CGFloat = 13
-  public static let monoPointSize: CGFloat = 12
-  public static let monoSmallPointSize: CGFloat = 11
-  public static let pressedOpacity = 0.78
-  public static let disabledOpacity = 0.45
+  public static let bodyPointSize: CGFloat = DesignTokens.PaneInterior.bodyPointSize
+  public static let captionPointSize: CGFloat = DesignTokens.PaneInterior.captionPointSize
+  public static let headingPointSize: CGFloat = DesignTokens.PaneInterior.headingPointSize
+  public static let monoPointSize: CGFloat = DesignTokens.PaneInterior.monoPointSize
+  public static let monoSmallPointSize: CGFloat = DesignTokens.PaneInterior.monoSmallPointSize
+  public static let pressedOpacity = Double(DesignTokens.PaneInterior.pressedOpacity)
+  public static let disabledOpacity = Double(DesignTokens.PaneInterior.disabledOpacity)
 }
 
 /// A flat pill button: `primary` is `ink` with `face` text, `secondary` is `well` with `ink`

@@ -6,11 +6,14 @@
 //! method names all come from `soyeht-protocol`; nothing about the protocol is defined here.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod agent;
+mod agents;
 pub mod commands;
 mod engine;
 mod error;
 mod event;
 pub mod keys;
+pub mod layout;
 pub mod profile;
 mod rpc;
 pub mod screen;
@@ -21,6 +24,7 @@ pub mod streams;
 #[cfg(test)]
 mod testing;
 pub mod transport;
+pub mod usage;
 
 pub use commands::Command;
 pub use engine::Engine;

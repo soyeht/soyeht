@@ -2,15 +2,48 @@
 //! engine events into state changes, and turns keyboard and pointer input into commands.
 //! Rendering lives in `views`.
 
-use crate::theme::ThemeName;
-use gpui::{Context, FocusHandle, KeyDownEvent, ScrollWheelEvent, Task, Window, actions};
+use crate::{
+    composer_field::{ComposerEvent, ComposerField, new_field},
+    destination::Destination,
+    theme::ThemeName,
+    views::menus::{Dismissed, reopened_by_the_dismissing_click},
+};
+use gpui::{
+    Context, Entity, FocusHandle, Focusable, KeyDownEvent, ScrollHandle, ScrollWheelEvent, Task,
+    Window, actions,
+};
 use soyeht_client::{
     Command, Connection, Effect, Engine, Error, Event, State,
     keys::{self, Modifiers},
     screen::TerminalScreen,
 };
+use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 actions!(soyeht, [Quit, NewTerminal, Paste]);
+
+/// The popup that is open, if any. Only one is open at a time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Menu {
+    /// "+" in the top bar: what to open in the workspace.
+    NewPane,
+    /// "+N" in the top bar: the workspaces that did not fit.
+    Overflow,
+    /// The harness chip of an agent pane's composer.
+    Harness(String),
+    /// A model, effort or permission chip: the pane and the option.
+    Config { pane_id: String, config_id: String },
+    /// The settings entry at the bottom of the rail.
+    Settings,
+    /// A header button the desktop client does not serve yet: the pane and the button.
+    Notice {
+        pane_id: String,
+        button: &'static str,
+    },
+}
 
 /// Engine events applied per frame at most, so a burst of output cannot starve painting.
 const EVENTS_PER_BATCH: usize = 256;
@@ -19,7 +52,21 @@ pub struct Workbench {
     engine: Engine,
     pub(crate) state: State,
     pub(crate) theme: ThemeName,
+    /// Keyboard focus of the window; terminals take their keys from it.
     pub(crate) focus: FocusHandle,
+    pub(crate) destination: Destination,
+    pub(crate) rail_open: bool,
+    pub(crate) menu: Option<Menu>,
+    dismissed: Dismissed,
+    /// The message line of each agent pane's composer.
+    fields: HashMap<String, Entity<ComposerField>>,
+    /// Numbers the requests that open a pane, so each answer is matched to its request.
+    next_ticket: u64,
+    transcripts: HashMap<String, (ScrollHandle, usize)>,
+    /// The thoughts of an agent the person has opened, by message.
+    pub(crate) open_thoughts: HashSet<String>,
+    /// The pane whose input takes keyboard focus on the next frame.
+    focus_request: Option<String>,
     _events: Task<()>,
 }
 
@@ -48,6 +95,15 @@ impl Workbench {
             state: State::default(),
             theme: ThemeName::DEFAULT,
             focus: cx.focus_handle(),
+            destination: Destination::default(),
+            rail_open: true,
+            menu: None,
+            dismissed: None,
+            fields: HashMap::new(),
+            next_ticket: 0,
+            transcripts: HashMap::new(),
+            open_thoughts: HashSet::new(),
+            focus_request: None,
             _events: events,
         }
     }
@@ -64,10 +120,51 @@ impl Workbench {
                         self.send(Command::Subscribe { pane_id });
                     }
                     Effect::Resync => self.engine.resync(),
+                    Effect::LoadTranscript(pane_id) => {
+                        self.send(Command::LoadTranscript { pane_id });
+                    }
+                    Effect::LoadUsage => {
+                        self.send(Command::LoadUsage);
+                    }
+                    Effect::LoadHarnesses => {
+                        self.send(Command::LoadHarnesses);
+                    }
+                    Effect::StoreLayout {
+                        workspace_id,
+                        layout,
+                    } => {
+                        self.send(Command::SetLayout {
+                            workspace_id,
+                            layout,
+                        });
+                    }
+                    // The pane the person opened takes the keyboard, as a new terminal does on the Mac.
+                    Effect::FocusPane(pane_id) => {
+                        self.state.focus_pane(&pane_id);
+                        self.announce_focus();
+                        self.focus_request = Some(pane_id);
+                    }
                 }
             }
         }
+        self.forget_closed_panes();
         cx.notify();
+    }
+
+    /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
+    fn forget_closed_panes(&mut self) {
+        let state = &self.state;
+        self.fields.retain(|id, _| state.agent(id).is_some());
+        self.transcripts.retain(|id, _| state.agent(id).is_some());
+        if !self.open_thoughts.is_empty() {
+            self.open_thoughts.retain(|message| {
+                state.agent_ids().any(|id| {
+                    state
+                        .agent(id)
+                        .is_some_and(|view| view.messages.iter().any(|m| &m.local_id == message))
+                })
+            });
+        }
     }
 
     /// Called while painting a terminal: fits its screen to the room it has and tells the
@@ -85,6 +182,16 @@ impl Workbench {
     pub(crate) fn select_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
         self.state.select_workspace(workspace_id);
         self.announce_focus();
+        self.menu = None;
+        self.focus_request = self.state.focused_pane().map(|pane| pane.pane_id.clone());
+        cx.notify();
+    }
+
+    pub(crate) fn close_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
+        self.send(Command::CloseWorkspace {
+            workspace_id: workspace_id.to_owned(),
+        });
+        self.menu = None;
         cx.notify();
     }
 
@@ -96,15 +203,87 @@ impl Workbench {
     ) {
         self.state.focus_pane(pane_id);
         self.announce_focus();
-        window.focus(&self.focus, cx);
+        self.menu = None;
+        self.focus_input(pane_id, window, cx);
         cx.notify();
     }
 
+    /// Moves keyboard focus to where `pane_id` takes its input: the composer of an agent, the
+    /// window for a terminal.
+    pub(crate) fn focus_input(
+        &mut self,
+        pane_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let handle = self.input_focus(pane_id, cx);
+        window.focus(&handle, cx);
+    }
+
+    pub(crate) fn input_focus(&mut self, pane_id: &str, cx: &mut Context<Self>) -> FocusHandle {
+        let is_agent = self
+            .state
+            .panes()
+            .iter()
+            .any(|pane| pane.pane_id == pane_id && pane.mode == PaneMode::Agent);
+        if !is_agent {
+            return self.focus.clone();
+        }
+        self.composer_field(pane_id, cx).focus_handle(cx)
+    }
+
+    /// The message line of an agent's composer, made when first needed.
+    pub(crate) fn composer_field(
+        &mut self,
+        pane_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Entity<ComposerField> {
+        if let Some(field) = self.fields.get(pane_id) {
+            return field.clone();
+        }
+        let field = new_field(self.theme.palette(), cx);
+        let owner = pane_id.to_owned();
+        cx.subscribe(
+            &field,
+            move |this, _, event: &ComposerEvent, cx| match event {
+                ComposerEvent::Submit => this.submit_prompt(&owner, cx),
+                ComposerEvent::Dismiss => this.close_menu(cx),
+            },
+        )
+        .detach();
+        self.fields.insert(pane_id.to_owned(), field.clone());
+        field
+    }
+
+    /// The scroll state of an agent's transcript, following the newest message while it grows.
+    pub(crate) fn transcript_scroll(&mut self, pane_id: &str, messages: usize) -> ScrollHandle {
+        let (handle, seen) = self
+            .transcripts
+            .entry(pane_id.to_owned())
+            .or_insert_with(|| (ScrollHandle::new(), 0));
+        if *seen != messages {
+            *seen = messages;
+            handle.scroll_to_bottom();
+        }
+        handle.clone()
+    }
+
+    /// Called at the start of a frame: honours a request to move keyboard focus.
+    pub(crate) fn apply_focus_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(pane_id) = self.focus_request.take() {
+            self.focus_input(&pane_id, window, cx);
+        }
+    }
+
     /// Queues a command for the engine. Typing and clicking never wait for the engine, so a
-    /// command the queue cannot take is reported to the user instead.
-    fn send(&mut self, command: Command) {
-        if let Err(error) = self.engine.send(command) {
-            self.state.problem = Some(error.to_string());
+    /// command the queue cannot take is reported to the user instead; false means it was not taken.
+    fn send(&mut self, command: Command) -> bool {
+        match self.engine.send(command) {
+            Ok(()) => true,
+            Err(error) => {
+                self.state.problem = Some(error.to_string());
+                false
+            }
         }
     }
 
@@ -120,17 +299,189 @@ impl Workbench {
         });
     }
 
-    pub(crate) fn new_terminal(&mut self, _: &NewTerminal, _: &mut Window, _: &mut Context<Self>) {
-        if let Some(workspace) = self.state.selected_workspace() {
-            let workspace_id = workspace.workspace_id.clone();
-            self.send(Command::CreateTerminal { workspace_id });
+    pub(crate) fn new_terminal(&mut self, _: &NewTerminal, _: &mut Window, cx: &mut Context<Self>) {
+        self.open_pane(None, cx);
+    }
+
+    /// Opens a terminal, or an agent running `harness`, in the selected workspace.
+    pub(crate) fn open_pane(&mut self, harness: Option<String>, cx: &mut Context<Self>) {
+        let Some(workspace) = self.state.selected_workspace() else {
+            return;
+        };
+        let workspace_id = workspace.workspace_id.clone();
+        let ticket = self.next_ticket();
+        self.state.expect_open(ticket, &workspace_id);
+        self.request_pane(workspace_id, harness, ticket, cx);
+    }
+
+    /// Splits a pane: the new pane opens beside it, of the same kind.
+    pub(crate) fn split_pane(
+        &mut self,
+        pane_id: &str,
+        axis: WorkspacePaneLayoutAxis,
+        cx: &mut Context<Self>,
+    ) {
+        let harness = self
+            .state
+            .panes()
+            .iter()
+            .find(|pane| pane.pane_id == pane_id)
+            .and_then(|pane| pane.agent.as_ref().map(|agent| agent.harness.clone()));
+        let ticket = self.next_ticket();
+        if let Some(workspace_id) = self.state.expect_split(ticket, pane_id, axis) {
+            self.request_pane(workspace_id, harness, ticket, cx);
         }
+    }
+
+    fn next_ticket(&mut self) -> u64 {
+        self.next_ticket += 1;
+        self.next_ticket
+    }
+
+    /// Asks the engine to open the pane that request `ticket` waits for. A request the queue
+    /// refuses releases it at once.
+    fn request_pane(
+        &mut self,
+        workspace_id: String,
+        harness: Option<String>,
+        ticket: u64,
+        cx: &mut Context<Self>,
+    ) {
+        self.menu = None;
+        let taken = self.send(match harness {
+            Some(harness) => Command::CreateAgent {
+                workspace_id,
+                harness,
+                ticket,
+            },
+            None => Command::CreateTerminal {
+                workspace_id,
+                ticket,
+            },
+        });
+        if !taken {
+            self.state.apply(Event::OpenFailed { ticket });
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_menu(&mut self, menu: Menu, cx: &mut Context<Self>) {
+        if reopened_by_the_dismissing_click(&mut self.dismissed, &menu) {
+            return;
+        }
+        self.menu = if self.menu.as_ref() == Some(&menu) {
+            None
+        } else {
+            Some(menu)
+        };
+        cx.notify();
+    }
+
+    pub(crate) fn close_menu(&mut self, cx: &mut Context<Self>) {
+        if self.menu.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// A click outside the open menu closed it.
+    pub(crate) fn dismiss_menu(&mut self, cx: &mut Context<Self>) {
+        if let Some(menu) = self.menu.take() {
+            self.dismissed = Some((menu, Instant::now()));
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn toggle_rail(&mut self, cx: &mut Context<Self>) {
+        self.rail_open = !self.rail_open;
+        cx.notify();
+    }
+
+    pub(crate) fn select_destination(&mut self, destination: Destination, cx: &mut Context<Self>) {
+        self.destination = destination;
+        cx.notify();
+    }
+
+    /// Sends the composer's text to the agent. The text leaves the composer only once the
+    /// engine's queue has taken it: a message that could not be sent stays to be sent again.
+    pub(crate) fn submit_prompt(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        let Some(field) = self.fields.get(pane_id).cloned() else {
+            return;
+        };
+        let Some(text) = field.read(cx).draft().to_send() else {
+            return;
+        };
+        if self.state.connection != Connection::Connected {
+            self.state.problem = Some(Error::Disconnected.to_string());
+            cx.notify();
+            return;
+        }
+        if self.send(Command::Prompt {
+            pane_id: pane_id.to_owned(),
+            text,
+        }) {
+            field.update(cx, |field, cx| field.clear(cx));
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_thought(&mut self, message_id: &str, cx: &mut Context<Self>) {
+        if !self.open_thoughts.remove(message_id) {
+            self.open_thoughts.insert(message_id.to_owned());
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_turn(&mut self, pane_id: &str) {
+        self.send(Command::Cancel {
+            pane_id: pane_id.to_owned(),
+        });
+    }
+
+    pub(crate) fn set_config(
+        &mut self,
+        pane_id: &str,
+        config_id: &str,
+        value: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.send(Command::SetConfig {
+            pane_id: pane_id.to_owned(),
+            config_id: config_id.to_owned(),
+            value: value.to_owned(),
+        });
+        self.menu = None;
+        cx.notify();
+    }
+
+    pub(crate) fn switch_harness(&mut self, pane_id: &str, harness: &str, cx: &mut Context<Self>) {
+        self.send(Command::SwitchHarness {
+            pane_id: pane_id.to_owned(),
+            harness: harness.to_owned(),
+        });
+        self.menu = None;
+        cx.notify();
+    }
+
+    pub(crate) fn answer_permission(&mut self, pane_id: &str, request_id: &str, option_id: &str) {
+        self.send(Command::AnswerPermission {
+            pane_id: pane_id.to_owned(),
+            request_id: request_id.to_owned(),
+            option_id: option_id.to_owned(),
+        });
     }
 
     pub(crate) fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+        if let Some(pane) = self.state.focused_pane()
+            && pane.mode == PaneMode::Agent
+        {
+            let pane_id = pane.pane_id.clone();
+            let field = self.composer_field(&pane_id, cx);
+            field.update(cx, |field, cx| field.insert(&text, cx));
+            return;
+        }
         let Some(pane_id) = self.focused_terminal() else {
             return;
         };

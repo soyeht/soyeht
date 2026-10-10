@@ -1,9 +1,15 @@
 //! What the user can ask of the engine, and the typed protocol requests that carry it out.
 
+use crate::{Error, Result, agent::TRANSCRIPT_PAGE, event::Event};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde_json::Value;
 use soyeht_protocol::{
-    PaneCloseParams, PaneCreateParams, PaneFocusParams, PaneInputParams, PaneMode,
-    PaneResizeParams, PaneStreamSubscribeParams, ReplayFrom, Request, TailSelector,
+    ConfigValue, HarnessInfo, HarnessListParams, HarnessListResult, PaneCancelParams,
+    PaneCloseParams, PaneConfigSetParams, PaneCreateParams, PaneCreateResult, PaneFocusParams,
+    PaneHarnessSwitchParams, PaneInputParams, PaneMode, PanePermissionAnswerParams,
+    PanePromptParams, PaneResizeParams, PaneStreamSubscribeParams, PaneTranscriptParams,
+    PaneTranscriptResult, PromptOrigin, ReplayFrom, Request, TailSelector, UsageListParams,
+    UsageListResult, WorkspaceCloseParams, WorkspaceLayoutSetParams, WorkspacePaneLayoutEnvelope,
 };
 use std::sync::mpsc;
 use uuid::Uuid;
@@ -11,7 +17,7 @@ use uuid::Uuid;
 /// Raw input goes out in pieces of this size, as on the Mac client.
 pub const INPUT_CHUNK_BYTES: usize = 16 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Input {
         pane_id: String,
@@ -30,9 +36,53 @@ pub enum Command {
     },
     CreateTerminal {
         workspace_id: String,
+        /// Names this request in the answer (`Event::Opened`, `Event::OpenFailed`).
+        ticket: u64,
     },
     ClosePane {
         pane_id: String,
+    },
+    /// A new agent pane running `harness`, started with the harness's own defaults.
+    CreateAgent {
+        workspace_id: String,
+        harness: String,
+        ticket: u64,
+    },
+    /// Send the person's message to an agent.
+    Prompt {
+        pane_id: String,
+        text: String,
+    },
+    /// Stop the running turn.
+    Cancel {
+        pane_id: String,
+    },
+    LoadTranscript {
+        pane_id: String,
+    },
+    LoadUsage,
+    LoadHarnesses,
+    /// Choose a value of one of the pane's agent options (model, effort, permission mode).
+    SetConfig {
+        pane_id: String,
+        config_id: String,
+        value: String,
+    },
+    SwitchHarness {
+        pane_id: String,
+        harness: String,
+    },
+    AnswerPermission {
+        pane_id: String,
+        request_id: String,
+        option_id: String,
+    },
+    SetLayout {
+        workspace_id: String,
+        layout: WorkspacePaneLayoutEnvelope,
+    },
+    CloseWorkspace {
+        workspace_id: String,
     },
 }
 
@@ -70,29 +120,150 @@ pub fn request(command: &Command) -> Option<Request> {
             pane_id: pane_id.clone(),
             idempotency_key: key(),
         }),
-        Command::CreateTerminal { workspace_id } => Request::PaneCreate(PaneCreateParams {
-            workspace_id: workspace_id.clone(),
-            mode: PaneMode::Terminal,
-            cwd: None,
-            name: None,
-            cols: None,
-            rows: None,
-            idempotency_key: key(),
-            harness: None,
-            model: None,
-            effort: None,
-            permission_mode: None,
-            url: None,
-            incognito: None,
-            path: None,
-            writing_kind: None,
-            writing_section: None,
-        }),
+        Command::CreateTerminal { workspace_id, .. } => {
+            create(workspace_id, PaneMode::Terminal, None)
+        }
+        Command::CreateAgent {
+            workspace_id,
+            harness,
+            ..
+        } => create(workspace_id, PaneMode::Agent, Some(harness)),
         Command::ClosePane { pane_id } => Request::PaneClose(PaneCloseParams {
             pane_id: pane_id.clone(),
             idempotency_key: key(),
         }),
+        Command::Prompt { pane_id, text } => Request::PanePrompt(PanePromptParams {
+            pane_id: pane_id.clone(),
+            text: text.clone(),
+            origin: Some(PromptOrigin::Human),
+            attachments: None,
+            idempotency_key: key(),
+        }),
+        Command::Cancel { pane_id } => Request::PaneCancel(PaneCancelParams {
+            pane_id: pane_id.clone(),
+            idempotency_key: key(),
+        }),
+        Command::LoadTranscript { pane_id } => Request::PaneTranscript(PaneTranscriptParams {
+            pane_id: pane_id.clone(),
+            before: None,
+            limit: Some(TRANSCRIPT_PAGE),
+        }),
+        Command::LoadUsage => Request::UsageList(UsageListParams {}),
+        Command::LoadHarnesses => Request::HarnessList(HarnessListParams {
+            cursor: None,
+            limit: None,
+            rescan: None,
+        }),
+        Command::SetConfig {
+            pane_id,
+            config_id,
+            value,
+        } => Request::PaneConfigSet(PaneConfigSetParams {
+            pane_id: pane_id.clone(),
+            config_id: config_id.clone(),
+            value: ConfigValue::V0(value.clone()),
+            idempotency_key: key(),
+        }),
+        Command::SwitchHarness { pane_id, harness } => {
+            Request::PaneHarnessSwitch(PaneHarnessSwitchParams {
+                pane_id: pane_id.clone(),
+                harness: harness.clone(),
+                model: None,
+                effort: None,
+                idempotency_key: key(),
+            })
+        }
+        Command::AnswerPermission {
+            pane_id,
+            request_id,
+            option_id,
+        } => Request::PanePermissionAnswer(PanePermissionAnswerParams {
+            pane_id: pane_id.clone(),
+            request_id: request_id.clone(),
+            option_id: option_id.clone(),
+            idempotency_key: key(),
+        }),
+        Command::SetLayout {
+            workspace_id,
+            layout,
+        } => Request::WorkspaceLayoutSet(WorkspaceLayoutSetParams {
+            workspace_id: workspace_id.clone(),
+            layout: layout.clone(),
+            idempotency_key: key(),
+        }),
+        Command::CloseWorkspace { workspace_id } => Request::WorkspaceClose(WorkspaceCloseParams {
+            workspace_id: workspace_id.clone(),
+            idempotency_key: key(),
+        }),
     })
+}
+
+fn create(workspace_id: &str, mode: PaneMode, harness: Option<&String>) -> Request {
+    Request::PaneCreate(PaneCreateParams {
+        workspace_id: workspace_id.to_owned(),
+        mode,
+        cwd: None,
+        name: None,
+        cols: None,
+        rows: None,
+        idempotency_key: key(),
+        harness: harness.cloned(),
+        model: None,
+        effort: None,
+        permission_mode: None,
+        url: None,
+        incognito: None,
+        path: None,
+        writing_kind: None,
+        writing_section: None,
+    })
+}
+
+impl Command {
+    /// The request that opens a pane names it, so the answer can be matched to it.
+    pub fn ticket(&self) -> Option<u64> {
+        match self {
+            Self::CreateTerminal { ticket, .. } | Self::CreateAgent { ticket, .. } => Some(*ticket),
+            _ => None,
+        }
+    }
+
+    /// Fetches that the interface does not wait on. They run apart from the commands that carry
+    /// the person's typing, so a burst of them never delays a keystroke.
+    pub fn is_background(&self) -> bool {
+        matches!(
+            self,
+            Self::LoadTranscript { .. } | Self::LoadUsage | Self::LoadHarnesses
+        )
+    }
+}
+
+/// What the engine's answer to `command` tells the application, for the commands that fetch
+/// something.
+pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
+    Ok(match command {
+        Command::LoadTranscript { pane_id } => Some(Event::Transcript {
+            pane_id: pane_id.clone(),
+            items: serde_json::from_value::<PaneTranscriptResult>(result)?.items,
+        }),
+        Command::LoadUsage => Some(Event::Usage(
+            serde_json::from_value::<UsageListResult>(result)?.providers,
+        )),
+        Command::LoadHarnesses => Some(Event::Harnesses(harnesses(result)?)),
+        Command::CreateTerminal { ticket, .. } | Command::CreateAgent { ticket, .. } => {
+            Some(Event::Opened {
+                ticket: *ticket,
+                pane_id: serde_json::from_value::<PaneCreateResult>(result)?.pane_id,
+            })
+        }
+        _ => None,
+    })
+}
+
+fn harnesses(result: Value) -> Result<Vec<HarnessInfo>> {
+    serde_json::from_value::<HarnessListResult>(result)
+        .map(|list| list.items)
+        .map_err(Error::from)
 }
 
 /// Merges queued commands that a single request can carry: keystrokes for the same pane go out
@@ -265,6 +436,7 @@ mod tests {
         );
         let create = body(Command::CreateTerminal {
             workspace_id: "w".into(),
+            ticket: 7,
         });
         assert_eq!(create["method"], "pane.create");
         assert_eq!(create["params"]["mode"], "terminal");
@@ -273,6 +445,34 @@ mod tests {
                 .as_str()
                 .is_some_and(|key| key.len() == 36)
         );
+    }
+
+    #[test]
+    fn only_fetches_run_in_the_background_and_only_opening_a_pane_has_a_ticket() {
+        assert!(Command::LoadUsage.is_background());
+        assert!(
+            Command::LoadTranscript {
+                pane_id: "p".into()
+            }
+            .is_background()
+        );
+        assert!(!input("p", "x").is_background());
+        let open = Command::CreateTerminal {
+            workspace_id: "w".into(),
+            ticket: 3,
+        };
+        assert_eq!(open.ticket(), Some(3));
+        assert_eq!(input("p", "x").ticket(), None);
+    }
+
+    #[test]
+    fn the_answer_to_opening_a_pane_carries_its_ticket() {
+        let open = Command::CreateTerminal {
+            workspace_id: "w".into(),
+            ticket: 3,
+        };
+        let event = outcome(&open, serde_json::json!({"paneId": "p9"})).unwrap();
+        assert!(matches!(event, Some(Event::Opened { ticket: 3, pane_id }) if pane_id == "p9"));
     }
 
     #[test]

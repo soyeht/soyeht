@@ -37,8 +37,8 @@ public struct PaneLayoutFontMetrics: Equatable, Sendable {
 /// Dimensions shared by the measured floor formulas and the views that own them.
 /// Fixture-only rulers remain named here as policy, rather than masquerading as view literals.
 public enum PaneLayoutContentMetrics {
-  public static let paneCardInset = 10.0
-  public static let paneStackSpacing = 8.0
+  public static let paneCardInset = Double(DesignTokens.PaneLayout.paneCardInset)
+  public static let paneStackSpacing = Double(DesignTokens.PaneLayout.paneStackSpacing)
 
   /// Common writing chrome measured from the accepted P5/P2 writing-pane design.
   public static let writingHeaderHeight = 40.0
@@ -66,12 +66,12 @@ public enum PaneLayoutContentMetrics {
   public static let writingRailDividerWidth = 1.0
   public static let companionTabStripHeight = 36.0
 
-  public static let genericPaneHeaderHeight = 26.0
-  public static let genericPaneHeaderStateDotWidth = 8.0
+  public static let genericPaneHeaderHeight = Double(DesignTokens.PaneLayout.headerHeight)
+  public static let genericPaneHeaderStateDotWidth = Double(DesignTokens.PaneLayout.headerStateDot)
   public static let genericPaneHeaderReadableTitleCharacters = 8.0
   public static let genericPaneHeaderSummaryCharacters = 12.0
   public static let genericPaneHeaderStatusCharacters = 15.0
-  public static let genericPaneHeaderActionWidth = 24.0
+  public static let genericPaneHeaderActionWidth = Double(DesignTokens.PaneLayout.headerActionWidth)
   public static let terminalFontPointSize = 13.0
   public static let terminalStateVerticalInset = 7.0
 

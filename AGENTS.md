@@ -8,9 +8,10 @@ fix one of them in the same PR.
 
 Each layer depends only on the layers listed above it.
 
-1. `contracts/`: `protocol.json` (wire methods, events, limits, error codes) and
-   `profiles.json` (installed profile values). This is the only place where wire
-   values are defined.
+1. `contracts/`: `protocol.json` (wire methods, events, limits, error codes),
+   `profiles.json` (installed profile values) and `design-tokens.json` (palettes,
+   radii, spacing, type scale, shadows, layout metrics, fonts). This is the only
+   place where wire values and design tokens are defined.
 2. `engine/soyeht-protocol`: generated wire models, limits and framing, plus the
    transport-agnostic rules every client shares: the greeting and `hello`
    validation (`handshake`) and snapshot page assembly (`snapshot`). It has no
@@ -43,14 +44,16 @@ Each layer depends only on the layers listed above it.
 7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
    its own cargo workspace and depends on `engine/soyeht-protocol` only. Its
    `soyeht-client` crate holds the connection and state, `soyeht-desktop` the
-   views, and its `theme` module mirrors the Swift palette (a test fails on drift).
+   views, and its `theme` module holds the palettes and tokens generated from
+   `contracts/design-tokens.json`, the same source the Swift side is generated from.
 
 Every feature starts in `docs/contracts/`. Decisions live in `docs/adr/`; add an
 ADR when you change a boundary.
 
 ## Single source of truth
 
-- `contracts/protocol.json` and `contracts/profiles.json` are the sources.
+- `contracts/protocol.json`, `contracts/profiles.json` and `contracts/design-tokens.json`
+  are the sources.
   `uv run python contracts/generate.py` writes the Rust, Swift, TypeScript and
   Python outputs. A file whose first line starts with `// Generated from
   contracts/` (or `# Generated from contracts/`) is an output: never edit it by
@@ -124,7 +127,10 @@ inherit the main actor.
 ## Design
 
 - Colors come only from the palette: `SoyehtThemeColors`/`MacTheme`, backed by
-  `ThemePalette.swift` (ADR 0065). Do not add literal or system colors, and do not
+  `ThemePalette.swift` and the palettes generated from `contracts/design-tokens.json`
+  (ADR 0065). Radii, spacing, type sizes, shadows and layout metrics are tokens of the
+  same file (`DesignTokens` in Swift, `theme::{radius, space, ...}` in Rust); to change
+  one, edit the JSON and regenerate. Do not add literal or system colors, and do not
   add new colors. `check_mac_view_colors.py` enforces this.
 - Pane interiors are flat. `paneShell()` is the only raised (neumorphic) surface.
   Inside a pane, use no shadows, no raised or inset modifiers, and palette roles

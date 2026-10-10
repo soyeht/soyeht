@@ -13,6 +13,15 @@ nor explicitly classified, and also fails when a listed name becomes unused.
 This exhaustiveness covers only `Id`-typed parameters: a future pane route
 represented as a plain string under another name must be declared separately.
 
+`design-tokens.json` is the single source for the design tokens: the nine
+palettes (colors per role, ANSI slots, agent plates), radii, spacing, type scale,
+elevations, layout metrics, composer metrics and font families. The generator emits
+`apps/shared/Sources/SoyehtClient/Generated.swift` (the palettes and `DesignTokens`)
+and `apps/desktop/crates/soyeht-desktop/src/theme/generated.rs` (the palettes and
+`f32` constants per section). Names are the JSON keys: `radius.compact` is
+`DesignTokens.Radius.compact` in Swift and `theme::radius::COMPACT` in Rust. The
+Mac values are pinned to the pre-generation ones by `test_design_tokens.py`.
+
 `profiles.json` is the single source for installed profile values. It defines
 the Dev data directory, socket names, TCP port and launchd labels. The same
 generator emits constants for Rust, Swift and Python, plus the launchd service

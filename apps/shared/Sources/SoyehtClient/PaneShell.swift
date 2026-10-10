@@ -4,9 +4,9 @@ import SwiftUI
 /// card with corner radius 20 and two outer shadows, `shadow-dark` at (5, 5) and `shadow-light`
 /// at (−5, −5), both with blur 10. It is the only neumorphic surface a pane draws.
 public enum PaneShellMetrics {
-  public static let cornerRadius: CGFloat = 20
-  public static let shadowOffset: CGFloat = 5
-  public static let shadowBlur: CGFloat = 10
+  public static let cornerRadius: CGFloat = DesignTokens.PaneShell.cornerRadius
+  public static let shadowOffset: CGFloat = DesignTokens.PaneShell.shadowOffset
+  public static let shadowBlur: CGFloat = DesignTokens.PaneShell.shadowBlur
   /// How far the shell's shadows reach past the card (offset plus blur). The approved frames
   /// draw this whole halo, so nothing around a pane may clip it.
   public static var halo: CGFloat { shadowOffset + shadowBlur }

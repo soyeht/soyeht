@@ -4,24 +4,25 @@ import SwiftUI
 /// Measurements of the approved composer (`DCzvR`, "Composer · APROVADO (Opção A)").
 public enum AgentComposerMetrics {
   /// Between the message line and the control row.
-  public static let rowSpacing: CGFloat = 10
+  public static let rowSpacing: CGFloat = DesignTokens.Composer.rowSpacing
   /// Between the controls of the row.
-  public static let controlSpacing: CGFloat = 4
-  public static let controlHeight: CGFloat = 28
-  public static let chipHorizontalPadding: CGFloat = 8
-  public static let chipSpacing: CGFloat = 5
-  public static let iconSize: CGFloat = 16
-  public static let chevronSize: CGFloat = 11
-  public static let shieldSize: CGFloat = 13
-  public static let harnessLogoSize: CGFloat = 14
-  public static let sendWidth: CGFloat = 40
-  public static let stopSize: CGFloat = 10
-  public static let stopRadius: CGFloat = 2
-  public static let ringDiameter: CGFloat = 16
+  public static let controlSpacing: CGFloat = DesignTokens.Composer.controlSpacing
+  public static let controlHeight: CGFloat = DesignTokens.Composer.controlHeight
+  public static let chipHorizontalPadding: CGFloat = DesignTokens.Composer.chipHorizontalPadding
+  public static let chipSpacing: CGFloat = DesignTokens.Composer.chipSpacing
+  public static let iconSize: CGFloat = DesignTokens.Composer.iconSize
+  public static let chevronSize: CGFloat = DesignTokens.Composer.chevronSize
+  public static let shieldSize: CGFloat = DesignTokens.Composer.shieldSize
+  public static let harnessLogoSize: CGFloat = DesignTokens.Composer.harnessLogoSize
+  public static let sendWidth: CGFloat = DesignTokens.Composer.sendWidth
+  public static let stopSize: CGFloat = DesignTokens.Composer.stopSize
+  public static let stopRadius: CGFloat = DesignTokens.Composer.stopRadius
+  public static let ringDiameter: CGFloat = DesignTokens.Composer.ringDiameter
   /// 16 × (1 − 0.62) / 2: the design's ring is an ellipse with an inner radius of 0.62.
-  public static let ringLineWidth: CGFloat = 3
-  public static let contextSpacing: CGFloat = 6
-  public static let contextHorizontalPadding: CGFloat = 4
+  public static let ringLineWidth: CGFloat = DesignTokens.Composer.ringLineWidth
+  public static let contextSpacing: CGFloat = DesignTokens.Composer.contextSpacing
+  public static let contextHorizontalPadding: CGFloat = DesignTokens.Composer
+    .contextHorizontalPadding
 }
 
 /// A borderless chip of the control row: optional leading mark, the label and a chevron.

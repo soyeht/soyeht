@@ -4936,6 +4936,7 @@ name = "soyeht-desktop"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "base64",
  "gpui",
  "gpui_platform",
  "soyeht-client",

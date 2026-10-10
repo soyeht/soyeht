@@ -24,7 +24,7 @@ struct AppRail: View {
           }
           Rectangle()
             .fill(MacTheme.shadowDark)
-            .frame(width: 24, height: 1)
+            .frame(width: DesignTokens.Layout.railDividerWidth, height: 1)
             .padding(.vertical, MacTheme.Space.x2)
           ForEach(client.usageReadings, id: \.provider) { reading in
             UsageRing(reading: reading, onDetails: onUsageDetails)
@@ -114,7 +114,7 @@ private struct AppRailButton: View {
     switch glyph {
     case .system(let name):
       Image(systemName: name)
-        .font(.system(size: 18, weight: .medium))
+        .font(.system(size: DesignTokens.Glyph.rail, weight: .medium))
     case .writing:
       WritingQuillGlyph()
         .stroke(style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))

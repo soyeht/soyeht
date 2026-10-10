@@ -23,6 +23,8 @@ DIRECT_SHADOW = re.compile(
 )
 SOURCE_ROOTS = (pathlib.Path("apps/mac/Sources"), pathlib.Path("apps/ios/Sources"))
 THEME_CATALOG = pathlib.Path("apps/shared/Sources/SoyehtClient/ThemePalette.swift")
+# The nine authored palettes are generated from contracts/design-tokens.json.
+THEME_PALETTES = pathlib.Path("apps/shared/Sources/SoyehtClient/Generated.swift")
 THEME_COLORS = pathlib.Path("apps/shared/Sources/SoyehtClient/ThemeColors.swift")
 EXPECTED_THEMES = (
     "neoMilk",
@@ -112,13 +114,15 @@ def scan(root: pathlib.Path = pathlib.Path(".")) -> list[tuple[pathlib.Path, int
 def theme_catalog_violations(root: pathlib.Path = pathlib.Path(".")) -> list[str]:
     catalog_path = root / THEME_CATALOG
     colors_path = root / THEME_COLORS
-    missing = [path for path in (catalog_path, colors_path) if not path.is_file()]
+    palettes_path = root / THEME_PALETTES
+    missing = [path for path in (catalog_path, palettes_path, colors_path) if not path.is_file()]
     if missing:
         return [f"missing required theme source: {path.relative_to(root)}" for path in missing]
 
     catalog = code_only(catalog_path.read_text(encoding="utf-8"))
     raw_colors = colors_path.read_text(encoding="utf-8")
     colors = code_only(raw_colors)
+    palettes = code_only(palettes_path.read_text(encoding="utf-8"))
     enum_source = catalog.split("public struct SoyehtThemePalette", maxsplit=1)[0]
     found_themes = tuple(THEME_CASE.findall(enum_source))
     found_counts = {theme: found_themes.count(theme) for theme in set(found_themes)}
@@ -137,9 +141,9 @@ def theme_catalog_violations(root: pathlib.Path = pathlib.Path(".")) -> list[str
         if len(mapping.findall(enum_source)) != 1:
             problems.append(f"theme {theme} must map to its authored palette exactly once")
         definition = re.compile(
-            rf"fileprivate\s+static\s+let\s+{palette_name}\s*=\s*make\s*\("
+            rf"static\s+let\s+{palette_name}\s*=\s*make\s*\("
         )
-        if len(definition.findall(catalog)) != 1:
+        if len(definition.findall(palettes)) != 1:
             problems.append(f"theme {theme} must have exactly one authored palette")
 
     if HEX_LITERAL.search(raw_colors):

@@ -2,12 +2,16 @@
 //! terminal pane. It is a plain value that applies [`Event`]s, so every rule here is testable
 //! without a window or a connection.
 
-use crate::{event::Event, screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput};
+use crate::{
+    agent::AgentView, event::Event, screen::TerminalScreen, snapshot::Snapshot,
+    streams::StreamOutput,
+};
 use serde_json::Value;
 use soyeht_protocol::{
-    EventName, Pane, PaneClosedEvent, PaneCreatedEvent, PaneMode, PaneStateChangedEvent,
-    PaneUpdatedEvent, Workspace, WorkspaceClosedEvent, WorkspaceCreatedEvent,
-    WorkspaceLayoutUpdatedEvent, WorkspaceRenamedEvent,
+    EventName, HarnessInfo, Pane, PaneClosedEvent, PaneCreatedEvent, PaneMode,
+    PaneStateChangedEvent, PaneUpdatedEvent, UsageReading, Workspace, WorkspaceClosedEvent,
+    WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent, WorkspacePaneLayoutAxis,
+    WorkspacePaneLayoutEnvelope, WorkspaceRenamedEvent,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -19,23 +23,55 @@ pub enum Connection {
 }
 
 /// Work the application must do because the state changed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
     /// Ask the engine for this terminal's output.
     SubscribeTerminal(String),
     /// The replica can no longer be trusted: reconnect and start again from a fresh snapshot.
     Resync,
+    /// Fetch an agent pane's transcript.
+    LoadTranscript(String),
+    /// Fetch the usage of every provider.
+    LoadUsage,
+    /// Fetch the agent harnesses the engine can start.
+    LoadHarnesses,
+    /// The pane the person asked to open has arrived: it takes the keyboard.
+    FocusPane(String),
+    /// Store this arrangement for a workspace: a pane was split.
+    StoreLayout {
+        workspace_id: String,
+        layout: WorkspacePaneLayoutEnvelope,
+    },
+}
+
+/// A pane the person asked to open, until it arrives: named by the ticket of the request, so a
+/// pane that someone else opens is never mistaken for it. A split also says which pane the new
+/// one goes beside.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Expected {
+    pub(crate) ticket: u64,
+    pub(crate) workspace_id: String,
+    pub(crate) split: Option<(String, WorkspacePaneLayoutAxis)>,
+    /// Known once the engine has answered the request.
+    pub(crate) pane_id: Option<String>,
 }
 
 pub struct State {
     pub connection: Connection,
     pub problem: Option<String>,
-    workspaces: Vec<Workspace>,
-    panes: Vec<Pane>,
+    pub(crate) workspaces: Vec<Workspace>,
+    pub(crate) panes: Vec<Pane>,
     selected_workspace: Option<String>,
     focused_pane: Option<String>,
     screens: HashMap<String, TerminalScreen>,
     gaps: HashSet<String>,
+    pub(crate) agents: HashMap<String, AgentView>,
+    pub(crate) usage: Vec<UsageReading>,
+    pub(crate) harnesses: Vec<HarnessInfo>,
+    pub(crate) expected: Vec<Expected>,
+    /// Panes closed since the last snapshot. The engine may still announce one more update
+    /// about a pane as it closes; it must not bring the pane back.
+    closed: HashSet<String>,
 }
 
 impl Default for State {
@@ -49,6 +85,11 @@ impl Default for State {
             focused_pane: None,
             screens: HashMap::new(),
             gaps: HashSet::new(),
+            agents: HashMap::new(),
+            usage: Vec::new(),
+            harnesses: Vec::new(),
+            expected: Vec::new(),
+            closed: HashSet::new(),
         }
     }
 }
@@ -132,6 +173,8 @@ impl State {
             }
             Event::Disconnected(reason) => {
                 self.connection = Connection::Disconnected(reason);
+                // A request in flight is lost with the connection.
+                self.expected.clear();
                 Vec::new()
             }
             Event::Notification { name, params } => self.notify(name, params),
@@ -143,18 +186,44 @@ impl State {
                 self.problem = Some(message);
                 Vec::new()
             }
+            Event::Transcript { pane_id, items } => {
+                if self.agents.contains_key(&pane_id)
+                    && let Err(error) = self.agents.entry(pane_id).or_default().merge_page(items)
+                {
+                    self.problem = Some(error.to_string());
+                }
+                Vec::new()
+            }
+            Event::Opened { ticket, pane_id } => self.opened(ticket, pane_id),
+            Event::OpenFailed { ticket } => {
+                self.expected.retain(|expected| expected.ticket != ticket);
+                Vec::new()
+            }
+            Event::Usage(readings) => {
+                self.usage = readings;
+                Vec::new()
+            }
+            Event::Harnesses(items) => {
+                self.harnesses = items;
+                Vec::new()
+            }
         }
     }
 
     fn adopt(&mut self, snapshot: Snapshot) -> Vec<Effect> {
+        for workspace in &snapshot.workspaces {
+            self.check_layout(workspace);
+        }
         self.workspaces = snapshot.workspaces;
         self.panes = snapshot.panes;
+        self.expected.clear();
         self.screens.retain(|id, _| {
             self.panes
                 .iter()
                 .any(|pane| is_terminal(pane) && pane.pane_id == *id)
         });
         self.gaps.clear();
+        self.closed.clear();
         let mut effects = Vec::new();
         for pane in self.panes.iter().filter(|pane| is_terminal(pane)) {
             self.screens
@@ -162,6 +231,7 @@ impl State {
                 .or_insert_with(|| screen_for(pane));
             effects.push(Effect::SubscribeTerminal(pane.pane_id.clone()));
         }
+        effects.extend(self.adopt_agents(&snapshot.requests));
         let focus = snapshot.focus;
         let keep =
             |id: &Option<String>, exists: &dyn Fn(&str) -> bool| id.clone().filter(|id| exists(id));
@@ -257,7 +327,7 @@ impl State {
                 self.change_pane_state(serde_json::from_value(params)?);
                 Vec::new()
             }
-            _ => Vec::new(),
+            _ => self.agent_notification(name, params)?,
         })
     }
 
@@ -280,6 +350,7 @@ impl State {
     }
 
     fn upsert_workspace(&mut self, workspace: Workspace) -> Vec<Effect> {
+        self.check_layout(&workspace);
         match self
             .workspaces
             .iter_mut()
@@ -296,7 +367,17 @@ impl State {
     }
 
     fn upsert_pane(&mut self, pane: Pane) -> Vec<Effect> {
+        if self.closed.contains(&pane.pane_id) {
+            return Vec::new();
+        }
         let mut effects = Vec::new();
+        let pane_id = pane.pane_id.clone();
+        let arrived = !self.panes.iter().any(|known| known.pane_id == pane_id);
+        if pane.mode == PaneMode::Agent && !self.agents.contains_key(&pane.pane_id) {
+            self.agents
+                .insert(pane.pane_id.clone(), AgentView::default());
+            effects.push(Effect::LoadTranscript(pane.pane_id.clone()));
+        }
         let new_terminal = is_terminal(&pane) && !self.screens.contains_key(&pane.pane_id);
         if new_terminal {
             self.screens.insert(pane.pane_id.clone(), screen_for(&pane));
@@ -311,12 +392,17 @@ impl State {
             None => self.panes.push(pane),
         }
         self.repair_selection();
+        if arrived {
+            effects.extend(self.settle(&pane_id));
+        }
         effects
     }
 
     fn remove_pane(&mut self, pane_id: &str) {
+        self.closed.insert(pane_id.to_owned());
         self.panes.retain(|pane| pane.pane_id != pane_id);
         self.screens.remove(pane_id);
+        self.agents.remove(pane_id);
         self.gaps.remove(pane_id);
         if self.focused_pane.as_deref() == Some(pane_id) {
             self.focused_pane = None;
@@ -370,6 +456,7 @@ mod tests {
                 .collect(),
             focus: None,
             cursor: 1,
+            requests: Vec::new(),
         }
     }
 
@@ -413,7 +500,10 @@ mod tests {
             effects,
             [
                 Effect::SubscribeTerminal("t1".into()),
-                Effect::SubscribeTerminal("t2".into())
+                Effect::SubscribeTerminal("t2".into()),
+                Effect::LoadUsage,
+                Effect::LoadHarnesses,
+                Effect::LoadTranscript("a1".into()),
             ]
         );
         assert!(state.screen("t1").is_some() && state.screen("a1").is_none());
@@ -444,7 +534,8 @@ mod tests {
         assert_eq!(state.connection, Connection::Disconnected("lost".into()));
         let effects = state.apply(Event::Connected(across_workspaces()));
         assert_eq!(state.focused_pane().unwrap().pane_id, "t2");
-        assert_eq!(effects.len(), 2);
+        assert!(effects.contains(&Effect::SubscribeTerminal("t1".into())));
+        assert!(effects.contains(&Effect::SubscribeTerminal("t2".into())));
     }
 
     #[test]
@@ -502,6 +593,23 @@ mod tests {
     }
 
     #[test]
+    fn an_update_that_trails_a_close_does_not_bring_the_pane_back() {
+        let (mut state, _) = connected(side_by_side());
+        state.apply(notification(
+            EventName::PaneClosed,
+            json!({"eventId": "4", "at": "now", "paneId": "t1", "workspaceId": "w"}),
+        ));
+        let mut dead = pane_json("t1", "w", "terminal");
+        dead["state"] = json!("dead");
+        state.apply(notification(
+            EventName::PaneUpdated,
+            json!({"eventId": "5", "at": "now", "pane": dead}),
+        ));
+        assert_eq!(state.panes().len(), 1);
+        assert!(state.screen("t1").is_none());
+    }
+
+    #[test]
     fn closing_the_focused_pane_moves_focus_to_a_neighbour() {
         let (mut state, _) = connected(side_by_side());
         assert_eq!(state.focused_pane().unwrap().pane_id, "t1");
@@ -551,7 +659,7 @@ mod tests {
     #[test]
     fn unrelated_notifications_change_nothing() {
         let (mut state, _) = connected(snapshot(&["w"], &[("t1", "w", "terminal")]));
-        let effects = state.apply(notification(EventName::UsageChanged, json!({})));
+        let effects = state.apply(notification(EventName::TaskCreated, json!({})));
         assert!(effects.is_empty() && state.problem.is_none());
         assert_eq!(state.panes().len(), 1);
     }

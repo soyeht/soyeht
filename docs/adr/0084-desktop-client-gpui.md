@@ -121,10 +121,9 @@ terminal. Typing is `pane.input` in base64; the view size is `pane.resize`.
 
 ### Design
 
-Colors come only from the palette (ADR 0065). The Swift catalogue
-(`ThemePalette.swift`) stays the source; `theme` mirrors all nine themes as
-data, with Neo Milk the seeded default, and a unit test parses the Swift file
-and fails if any value differs. Views take roles from the active palette and
+Colors come only from the palette (ADR 0065). The palettes are not hand-copied: both clients are generated from
+`contracts/design-tokens.json`, and `theme` holds all nine themes as generated
+data, with Neo Milk the seeded default. Views take roles from the active palette and
 never write a literal. The pane shell is the only raised surface: `face`, radius
 20, two outer shadows at (5, 5) and (-5, -5) with blur 10, as in
 `PaneShellMetrics`. Everything inside a pane is flat. Fonts are the approved

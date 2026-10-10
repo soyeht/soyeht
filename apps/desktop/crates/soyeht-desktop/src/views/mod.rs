@@ -1,0 +1,136 @@
+//! Rendering of the workbench, laid out as the Mac window is: a top bar of workspace tabs, the
+//! rail down the left, and the panes of the selected workspace as neumorphic cards.
+//!
+//! Only chrome and the pane shell are raised; the inside of a pane is flat. Every color is a
+//! role of the active palette and every size is a design token.
+
+mod agent;
+mod composer;
+pub(crate) mod menus;
+mod pane;
+mod rail;
+mod resize_handles;
+mod tiles;
+mod top_bar;
+mod ui;
+mod usage_ring;
+mod window_controls;
+
+use crate::{
+    assets::Icon,
+    theme::{fonts, glyph, pane_layout, space, type_scale},
+    workbench::Workbench,
+};
+use gpui::{
+    AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement, Render,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rgb,
+};
+use soyeht_client::Connection;
+
+impl Render for Workbench {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.apply_focus_request(window, cx);
+        let palette = self.theme.palette();
+        let width = f32::from(window.viewport_size().width);
+        div()
+            .id("workbench")
+            .key_context("Workbench")
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::key_down))
+            .on_action(cx.listener(Self::new_terminal))
+            .on_action(cx.listener(Self::paste))
+            .relative()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(rgb(palette.canvas))
+            .text_color(rgb(palette.ink))
+            .font_family(fonts::UI)
+            .text_size(px(type_scale::CAPTION))
+            .child(self.top_bar(palette, width, window, cx))
+            .children(self.problem_banner(palette, cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_row()
+                    .children(self.rail_open.then(|| self.rail(palette, cx)))
+                    .child(self.stage(palette, cx)),
+            )
+            .children(resize_handles::handles(window))
+    }
+}
+
+impl Workbench {
+    /// A request that failed, in one line under the top bar until the person dismisses it.
+    fn problem_banner(
+        &mut self,
+        palette: &'static crate::theme::Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let problem = self.state.problem.clone()?;
+        Some(
+            ui::row()
+                .id("problem")
+                .flex_none()
+                .gap(px(space::X8))
+                .px(px(pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING))
+                .text_size(px(type_scale::CONTROL))
+                .text_color(rgb(palette.warning()))
+                .cursor_pointer()
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.state.problem = None;
+                    cx.notify();
+                }))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(SharedString::from(problem)),
+                )
+                .child(ui::icon(Icon::Close, glyph::TAB_CLOSE, palette.warning()))
+                .into_any_element(),
+        )
+    }
+
+    /// The panes of the selected workspace, tiled as its layout says.
+    fn stage(&mut self, palette: &'static crate::theme::Palette, cx: &mut Context<Self>) -> Div {
+        let outer = pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING;
+        let stage = div()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .pt(px(space::X8))
+            .pb(px(outer))
+            .px(px(outer));
+        stage.child(self.tiles(palette, cx))
+    }
+}
+
+/// How the engine connection is told: a short status for the settings menu, and what the stage
+/// says when there is nothing else to show.
+pub(crate) struct ConnectionNotice {
+    pub status: SharedString,
+    pub hint: &'static str,
+}
+
+pub(crate) fn connection_notice(connection: &Connection) -> ConnectionNotice {
+    match connection {
+        Connection::Connecting => ConnectionNotice {
+            status: "Connecting to the engine\u{2026}".into(),
+            hint: "Connecting to the engine\u{2026}",
+        },
+        Connection::Connected => ConnectionNotice {
+            status: "Connected".into(),
+            hint: "No workspaces yet. Create one with the soyeht command line.",
+        },
+        Connection::Disconnected(reason) => ConnectionNotice {
+            status: format!("Engine unavailable \u{b7} {reason}").into(),
+            hint: "The engine is not running. Start it and this window reconnects.",
+        },
+    }
+}

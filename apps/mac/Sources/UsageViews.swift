@@ -16,22 +16,27 @@ struct UsageRing: View {
         ZStack {
           Circle()
             .fill(MacTheme.face)
-            .overlay { Circle().stroke(MacTheme.well, lineWidth: 5) }
-            .frame(width: 34, height: 34)
-          UsageRingArc(presentation, lineWidth: 3)
-            .frame(width: 40, height: 40)
+            .overlay {
+              Circle().stroke(MacTheme.well, lineWidth: DesignTokens.UsageRing.trackWidth)
+            }
+            .frame(
+              width: DesignTokens.UsageRing.faceDiameter,
+              height: DesignTokens.UsageRing.faceDiameter)
+          UsageRingArc(presentation, lineWidth: DesignTokens.UsageRing.arcWidth)
+            .frame(width: DesignTokens.UsageRing.diameter, height: DesignTokens.UsageRing.diameter)
           ProviderGlyph(reading.provider)
             .foregroundStyle(MacTheme.ink)
-            .frame(width: 16, height: 16)
+            .frame(
+              width: DesignTokens.UsageRing.glyphSize, height: DesignTokens.UsageRing.glyphSize)
         }
-        .frame(width: 40, height: 40)
+        .frame(width: DesignTokens.UsageRing.diameter, height: DesignTokens.UsageRing.diameter)
         Text(presentation.percentage)
-          .font(MacTheme.chrome(9, weight: .bold))
+          .font(MacTheme.chrome(DesignTokens.UsageRing.percentageSize, weight: .bold))
           .foregroundStyle(presentation.isStale ? MacTheme.muted : MacTheme.secondary)
-          .frame(height: 15)
+          .frame(height: DesignTokens.UsageRing.percentageHeight)
       }
       .opacity(presentation.emphasis.ringOpacity)
-      .frame(width: 40, height: 55)
+      .frame(width: DesignTokens.UsageRing.diameter, height: DesignTokens.UsageRing.height)
     }
     .buttonStyle(.plain)
     .help("\(reading.provider.displayName) usage")

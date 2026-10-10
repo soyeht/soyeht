@@ -1,10 +1,16 @@
 //! The Soyeht palette tokens: the one place the desktop client gets a color from (ADR 0065).
 //!
 //! A view asks the active [`Palette`] for a role. It never writes a color literal and never
-//! derives a new color; the catalogue below is data mirrored from the Swift client, and the
-//! parity test fails when the two drift apart.
+//! derives a new color. The palettes and every numeric token (radii, spacing, type scale,
+//! shadows, layout metrics, fonts) are generated from `contracts/design-tokens.json`, the same
+//! source the Mac client is generated from (`generated.rs`).
 
-mod palettes;
+mod generated;
+
+pub use generated::{
+    composer, desktop, elevation, fonts, glyph, layout, pane_interior, pane_layout, pane_shell,
+    radius, space, type_scale, usage_ring,
+};
 
 use soyeht_client::screen::CellColor;
 
@@ -99,15 +105,15 @@ impl ThemeName {
 
     pub fn palette(self) -> &'static Palette {
         match self {
-            Self::NeoMilk => &palettes::MILK,
-            Self::NeoPaleMist => &palettes::PALE_MIST,
-            Self::NeoMistyBlue => &palettes::MISTY_BLUE,
-            Self::NeoSunlitChartreuse => &palettes::SUNLIT_CHARTREUSE,
-            Self::NeoSunriseGold => &palettes::SUNRISE_GOLD,
-            Self::NeoDeepVine => &palettes::DEEP_VINE,
-            Self::NeoDeepForest => &palettes::DEEP_FOREST,
-            Self::NeoMidnightTeal => &palettes::MIDNIGHT_TEAL,
-            Self::NeoDeepHarbor => &palettes::DEEP_HARBOR,
+            Self::NeoMilk => &generated::MILK,
+            Self::NeoPaleMist => &generated::PALE_MIST,
+            Self::NeoMistyBlue => &generated::MISTY_BLUE,
+            Self::NeoSunlitChartreuse => &generated::SUNLIT_CHARTREUSE,
+            Self::NeoSunriseGold => &generated::SUNRISE_GOLD,
+            Self::NeoDeepVine => &generated::DEEP_VINE,
+            Self::NeoDeepForest => &generated::DEEP_FOREST,
+            Self::NeoMidnightTeal => &generated::MIDNIGHT_TEAL,
+            Self::NeoDeepHarbor => &generated::DEEP_HARBOR,
         }
     }
 
@@ -129,99 +135,6 @@ impl ThemeName {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The Swift catalogue, the source this module mirrors.
-    fn swift_source() -> String {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../shared/Sources/SoyehtClient/ThemePalette.swift"
-        );
-        std::fs::read_to_string(path).unwrap()
-    }
-
-    fn swift_name(theme: ThemeName) -> &'static str {
-        match theme {
-            ThemeName::NeoMilk => "milk",
-            ThemeName::NeoPaleMist => "paleMist",
-            ThemeName::NeoMistyBlue => "mistyBlue",
-            ThemeName::NeoSunlitChartreuse => "sunlitChartreuse",
-            ThemeName::NeoSunriseGold => "sunriseGold",
-            ThemeName::NeoDeepVine => "deepVine",
-            ThemeName::NeoDeepForest => "deepForest",
-            ThemeName::NeoMidnightTeal => "midnightTeal",
-            ThemeName::NeoDeepHarbor => "deepHarbor",
-        }
-    }
-
-    fn block<'a>(source: &'a str, name: &str) -> &'a str {
-        let start = source
-            .find(&format!("fileprivate static let {name} = make("))
-            .unwrap();
-        let rest = &source[start..];
-        &rest[..rest.find("\n\n").unwrap()]
-    }
-
-    fn hex(text: &str) -> u32 {
-        u32::from_str_radix(text.trim_start_matches('#'), 16).unwrap()
-    }
-
-    fn field(block: &str, label: &str) -> Option<u32> {
-        let key = format!("{label}: \"#");
-        let at = block.find(&key)? + key.len();
-        Some(hex(&block[at..at + 6]))
-    }
-
-    fn list(block: &str, label: &str) -> Vec<u32> {
-        let key = format!("{label}: [");
-        let at = block.find(&key).unwrap() + key.len();
-        let body = &block[at..at + block[at..].find(']').unwrap()];
-        body.split('"')
-            .filter(|piece| piece.starts_with('#'))
-            .map(hex)
-            .collect()
-    }
-
-    #[test]
-    fn every_theme_matches_the_swift_catalogue() {
-        let source = swift_source();
-        for theme in ThemeName::ALL {
-            let swift = block(&source, swift_name(theme));
-            let rust = theme.palette();
-            let expect = |label: &str, value: u32| {
-                let found = field(swift, label);
-                assert_eq!(found, Some(value), "{theme:?} {label}");
-            };
-            expect("screen", rust.screen);
-            expect("canvas", rust.canvas);
-            expect("face", rust.face);
-            expect("hover", rust.hover);
-            expect("well", rust.well);
-            expect("ink", rust.ink);
-            expect("secondary", rust.secondary);
-            expect("muted", rust.muted);
-            expect("accent", rust.accent);
-            expect("onAccent", rust.on_accent);
-            expect("shadowDark", rust.shadow_dark);
-            expect("shadowLight", rust.shadow_light);
-            expect("wellShadow", rust.well_shadow);
-            expect("wellRim", rust.well_rim);
-            expect("selection", rust.selection);
-            expect("presentationLetterbox", rust.presentation_letterbox);
-            assert_eq!(field(swift, "wellLip"), rust.well_lip, "{theme:?} wellLip");
-            assert_eq!(list(swift, "agents"), rust.agent_plates, "{theme:?} agents");
-            let ansi = list(swift, "ansi");
-            assert_eq!(ansi, rust.ansi, "{theme:?} ansi");
-            // The Swift `make` falls back to these two ANSI slots.
-            assert_eq!(
-                field(swift, "syntaxType").unwrap_or(ansi[13]),
-                rust.syntax_type
-            );
-            assert_eq!(
-                field(swift, "diffAdded").unwrap_or(ansi[10]),
-                rust.diff_added
-            );
-        }
-    }
 
     #[test]
     fn the_seeded_default_is_neo_milk() {
@@ -250,5 +163,17 @@ mod tests {
         assert_eq!(palette.terminal(CellColor::Indexed(232)), 0x080808);
         assert_eq!(palette.terminal(CellColor::Indexed(255)), 0xEEEEEE);
         assert_eq!(palette.terminal(CellColor::Rgb(1, 2, 3)), 0x010203);
+    }
+
+    #[test]
+    fn every_theme_has_its_own_palette_and_the_generated_tokens_are_reachable() {
+        let canvases: std::collections::HashSet<u32> = ThemeName::ALL
+            .iter()
+            .map(|theme| theme.palette().canvas)
+            .collect();
+        assert_eq!(canvases.len(), ThemeName::ALL.len());
+        assert_eq!(radius::PILL, 999.0);
+        assert_eq!(elevation::BALLOON.dark_offset, 6.0);
+        assert_eq!(fonts::UI, "Inter");
     }
 }

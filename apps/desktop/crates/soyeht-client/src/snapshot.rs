@@ -10,6 +10,8 @@ pub struct Snapshot {
     pub workspaces: Vec<Workspace>,
     pub panes: Vec<Pane>,
     pub focus: Option<ClientFocus>,
+    /// The requests agents are waiting on (permissions), as the engine lists them.
+    pub requests: Vec<Value>,
     /// The event cursor to subscribe from.
     pub cursor: u64,
 }
@@ -24,6 +26,7 @@ impl Snapshot {
         Ok(Self {
             workspaces: decode(pages.take(&SnapshotSection::Workspaces))?,
             panes: decode(pages.take(&SnapshotSection::Panes))?,
+            requests: pages.take(&SnapshotSection::Requests),
             focus: pages.metadata.focus,
             cursor,
         })
