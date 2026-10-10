@@ -245,6 +245,24 @@ struct AgentComposerIconButton: View {
   }
 }
 
+/// Why the mic did not listen. The bubble has a fixed width and the text wraps onto as many
+/// lines as it needs: a popover sizes itself from its content's ideal size, and a text with only
+/// a maximum width takes the ideal size of a single line, so the reason was cut off.
+struct AgentDictationFailureBubble: View {
+  static let width: CGFloat = 280
+
+  let message: String
+  let style: AgentConversationStyle
+
+  var body: some View {
+    Text(message).font(style.captionFont).foregroundStyle(style.ink)
+      .multilineTextAlignment(.leading)
+      .frame(width: Self.width, alignment: .leading)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(PaneInteriorMetrics.cardPadding)
+  }
+}
+
 /// The mic: tap to dictate, tap again to stop; the transcript lands at the cursor. The name of
 /// the engine that listens shows above it while it listens, and for a moment after the
 /// keyboard switches engine.
@@ -268,8 +286,7 @@ struct AgentDictationButton: View {
     .overlay(alignment: .top) { badge }
     .onChange(of: dictation.failure) { _, failure in showsFailure = failure != nil }
     .popover(isPresented: $showsFailure) {
-      Text(dictation.failure ?? "").font(style.captionFont).foregroundStyle(style.ink)
-        .padding(PaneInteriorMetrics.cardPadding).frame(maxWidth: 280)
+      AgentDictationFailureBubble(message: dictation.failure ?? "", style: style)
         .presentationCompactAdaptation(.popover)
     }
     .task(id: engines.switchedAt) { await flashSwitch() }

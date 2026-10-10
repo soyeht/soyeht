@@ -55,4 +55,26 @@
       try bitmap.representation(using: .png, properties: [:])?.write(to: url)
     }
   }
+
+  /// The mic's failure bubble wraps a long reason instead of cutting it: it grows by whole
+  /// lines at a fixed width, so the popover that sizes itself from it shows every word.
+  @MainActor @Test func micFailureBubbleWrapsALongReasonAtAFixedWidth() {
+    PaneInteriorRendering.registerFonts()
+    let palette = TerminalColorTheme.neoMilk.palette
+    let style = AgentConversationStyle.pane(SoyehtThemeColorSet(palette: palette))
+    func fitting(_ message: String) -> CGSize {
+      NSHostingView(rootView: AgentDictationFailureBubble(message: message, style: style))
+        .fittingSize
+    }
+    let short = fitting("No microphone.")
+    let long = fitting(
+      "Microphone access is off for Soyeht. Open System Settings, choose Privacy and Security, "
+        + "then Microphone, and turn Soyeht on before you dictate again.")
+    let padding = PaneInteriorMetrics.cardPadding * 2
+    #expect(short.width == AgentDictationFailureBubble.width + padding)
+    #expect(long.width == short.width)
+    // One line of 12 pt text is under 20 pt tall; the long reason needs at least three.
+    #expect(short.height - padding < 20)
+    #expect(long.height - padding > 40)
+  }
 #endif

@@ -12,12 +12,6 @@ import SoyehtClient
 final class NemotronModelHolder: @unchecked Sendable {
   static let shared = NemotronModelHolder()
 
-  enum Failure: LocalizedError {
-    case noCacheDirectory
-
-    var errorDescription: String? { "The model folder could not be created." }
-  }
-
   /// Written after a complete download and load, so a download that was cut short does not
   /// count as installed.
   private static let installedMarker = ".soyeht-installed"
@@ -30,25 +24,24 @@ final class NemotronModelHolder: @unchecked Sendable {
 
   var current: NemotronStreamingASRModel? { lock.withLock { model } }
 
-  private var directory: URL? {
-    do {
-      return try HuggingFaceDownloader.getCacheDirectory(
-        for: NemotronStreamingASRModel.defaultModelId)
-    } catch {
-      return nil
-    }
+  private let location: ModelCacheLocation
+
+  init(
+    location: ModelCacheLocation = ModelCacheLocation(
+      modelId: NemotronStreamingASRModel.defaultModelId)
+  ) {
+    self.location = location
   }
 
   var isInstalled: Bool {
-    guard let directory else { return false }
-    return FileManager.default.fileExists(
-      atPath: directory.appendingPathComponent(Self.installedMarker).path)
+    FileManager.default.fileExists(
+      atPath: location.directory.appendingPathComponent(Self.installedMarker).path)
   }
 
   /// Loads the installed model from disk, or downloads it first when it is not installed. The
   /// app only reaches the download branch from the Install button.
   func install(report: @escaping @Sendable (DictationModelStage) -> Void) async throws {
-    guard let directory else { throw Failure.noCacheDirectory }
+    let directory = location.directory
     let marker = directory.appendingPathComponent(Self.installedMarker)
     let loaded: NemotronStreamingASRModel
     if FileManager.default.fileExists(atPath: marker.path) {
@@ -66,11 +59,11 @@ final class NemotronModelHolder: @unchecked Sendable {
     lock.withLock { model = loaded }
   }
 
-  /// Drops the loaded model and deletes the files, which frees the disk.
+  /// Drops the loaded model and deletes the files and the folders around them, which frees the
+  /// disk and leaves nothing behind.
   func remove() throws {
     lock.withLock { model = nil }
-    guard let directory else { return }
-    try FileManager.default.removeItem(at: directory)
+    try location.removeAll()
   }
 }
 
