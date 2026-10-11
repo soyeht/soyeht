@@ -1,4 +1,4 @@
-use super::Exit;
+use super::{Exit, Reach};
 use soyeht_platform::process::windows::{Console, Job, Spawned};
 use std::{io, os::windows::io::OwnedHandle, sync::Arc, time::Duration};
 use windows_sys::Win32::System::Threading::INFINITE;
@@ -65,19 +65,12 @@ impl Child {
         Ok(Some(exit))
     }
 
-    /// Ends the child and everything it started.
-    pub fn kill_group(&self) {
+    /// Ends the child and everything it started: the job holds all of it, so both reaches are
+    /// the same.
+    pub fn kill(&self, _: Reach) {
         if let Err(error) = self.spawned.kill_tree(END_WAIT) {
-            eprintln!(
-                "{{\"event\":\"ptyd.kill_tree_failed\",\"error\":\"{:?}\"}}",
-                error.kind()
-            );
+            soyeht_platform::log::io_failure("ptyd.kill_tree_failed", &error);
         }
-    }
-
-    /// Ends the child and everything it started.
-    pub fn kill_tree(&self) {
-        self.kill_group();
     }
 
     /// Hangs up the child's terminal, as closing its window would. A child without a terminal
@@ -85,7 +78,7 @@ impl Child {
     pub fn request_stop(&self) {
         match &self.console {
             Some(console) => console.close_in_background(),
-            None => self.kill_group(),
+            None => self.kill(Reach::Tree),
         }
     }
 }

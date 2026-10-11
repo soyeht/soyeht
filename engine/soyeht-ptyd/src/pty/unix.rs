@@ -1,5 +1,8 @@
 use super::{Resizer, Session};
-use crate::{child::Child, io::Output};
+use crate::{
+    child::{Child, Reach},
+    io::Output,
+};
 use std::{
     fs::File,
     io,
@@ -104,7 +107,7 @@ pub(super) fn spawn(mut command: Command, rows: u16, cols: u16) -> io::Result<Se
             resizer: Resizer(Arc::new(terminal)),
         }),
         Err(error) => {
-            child.kill_group();
+            child.kill(Reach::Group);
             // Reap only: the group was just terminated; an error means it is already gone.
             let _ = child.wait();
             Err(error)

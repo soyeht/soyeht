@@ -34,7 +34,6 @@ pub enum Error {
     EmptyCommand,
     IncompatibleRegistryVersion,
     SupervisorGenerationExhausted,
-    HomeMissing,
     InvalidGuardianFd,
     InvalidArguments,
 }
@@ -101,7 +100,6 @@ impl fmt::Display for Error {
             Self::SupervisorGenerationExhausted => {
                 formatter.write_str("supervisor generation exhausted")
             }
-            Self::HomeMissing => formatter.write_str("HOME is required"),
             Self::InvalidGuardianFd => formatter.write_str("invalid pipe guardian descriptor"),
             Self::InvalidArguments => {
                 formatter.write_str("usage: soyeht-ptyd [--data-dir <isolated-directory>]")

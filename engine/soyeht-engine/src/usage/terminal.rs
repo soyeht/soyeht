@@ -4,7 +4,11 @@
 //! rendered with a VT100 emulator for the source's driver, and afterwards the process group is
 //! stopped, the scratch directory removed and the session transcript deleted.
 
-use soyeht_ptyd::{child::Child, io::Output, pty::Session};
+use soyeht_ptyd::{
+    child::{Child, Reach},
+    io::Output,
+    pty::Session,
+};
 use soyeht_usage::host::{TerminalDriver, TerminalRequest, TerminalRun, TerminalStep};
 use std::{
     fs::{self, File},
@@ -206,7 +210,7 @@ fn stop(child: &mut Child) {
         }
         thread::sleep(POLL);
     }
-    child.kill_group();
+    child.kill(Reach::Group);
     let _ = child.wait();
 }
 

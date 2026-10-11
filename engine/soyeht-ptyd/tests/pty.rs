@@ -1,7 +1,7 @@
 //! The pseudo-terminal session, without the supervisor around it; the same on every system.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use soyeht_ptyd::{io::Output, pty};
+use soyeht_ptyd::{child::Reach, io::Output, pty};
 use std::{
     io::{Read, Write},
     process::Command,
@@ -64,7 +64,7 @@ fn typed_input_reaches_the_child_and_a_resize_is_accepted() {
     assert!(session.resizer.resize(0, 30).is_err());
     session.input.write_all(b"typed-line\r\n").unwrap();
     read_until(&mut session.output, "typed-line");
-    session.child.kill_group();
+    session.child.kill(Reach::Group);
     session.child.wait().unwrap();
 }
 
@@ -73,7 +73,7 @@ fn a_killed_terminal_is_collected_within_a_bound_even_when_nobody_reads_its_outp
     let program = if cfg!(windows) { "cmd.exe" } else { "/bin/cat" };
     let mut session = pty::spawn(Command::new(program), 24, 80).unwrap();
     session.input.write_all(b"unread-output\r\n").unwrap();
-    session.child.kill_group();
+    session.child.kill(Reach::Group);
     let exit = session
         .child
         .wait_within(std::time::Duration::from_secs(10))

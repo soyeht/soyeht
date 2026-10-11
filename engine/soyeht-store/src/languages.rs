@@ -51,22 +51,6 @@ impl Change<'_> {
         )?;
         Ok(())
     }
-
-    pub fn delete_language_server_checkpoint(
-        &self,
-        workspace_id: &str,
-        language: &EditorLanguage,
-    ) -> Result<()> {
-        let language = serde_json::to_value(language)?;
-        let language = language
-            .as_str()
-            .ok_or(Error::InvalidLanguageServerCheckpoint)?;
-        self.connection().execute(
-            "DELETE FROM language_server_checkpoints WHERE workspace_id=?1 AND language=?2",
-            params![workspace_id, language],
-        )?;
-        Ok(())
-    }
 }
 
 fn validate(checkpoint: &LanguageServerCheckpoint) -> Result<()> {

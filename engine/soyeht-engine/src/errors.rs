@@ -58,7 +58,6 @@ pub enum Error {
     AlreadyRunning,
     ListenerAddressNotPermitted,
     SocketPathNotSocket,
-    HomeMissing,
     MissingDataDirectoryArgument,
     MissingListenAddressArgument,
     InvalidArguments,
@@ -348,7 +347,6 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::EngineStatePoisoned
         | Error::AlreadyRunning
         | Error::SocketPathNotSocket
-        | Error::HomeMissing
         | Error::RandomUnavailable
         | Error::ConnectionClosed => ErrorKind::InternalError,
         Error::ListenerAddressNotPermitted
@@ -468,7 +466,6 @@ fn message(error: &Error) -> String {
             "Engine accepts only loopback or tailnet listener addresses".into()
         }
         Error::SocketPathNotSocket => "Engine socket path is not a socket".into(),
-        Error::HomeMissing => "HOME is required".into(),
         Error::MissingDataDirectoryArgument => "--data-dir requires a path".into(),
         Error::MissingListenAddressArgument => "--listen requires an address".into(),
         Error::InvalidArguments => "Expected --data-dir or --listen".into(),

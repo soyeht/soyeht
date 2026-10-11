@@ -83,13 +83,6 @@ impl BeatBoard {
     pub fn cards(&self) -> &[BeatCard] {
         &self.cards
     }
-
-    pub fn beats_for_scene(&self, scene_id: &str) -> Vec<&BeatCard> {
-        self.cards
-            .iter()
-            .filter(|card| card.scene_id.as_deref() == Some(scene_id))
-            .collect()
-    }
 }
 
 fn validate_card(card: &BeatCard, scenes: &HashSet<&str>) -> Result<()> {

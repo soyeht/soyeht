@@ -47,18 +47,6 @@ pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
-/// Other Unix systems have no single-step call here, so the check comes first.
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
-    if fs::symlink_metadata(to).is_ok() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "an entry with that name already exists",
-        ));
-    }
-    fs::rename(from, to)
-}
-
 pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     DirBuilder::new().mode(0o700).create(path)
 }

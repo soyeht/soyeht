@@ -9,8 +9,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 402,
-      "duplicated_lines": 3589
+      "clones": 399,
+      "duplicated_lines": 3564
     },
     "ios": {
       "clones": 6,
@@ -242,17 +242,17 @@
     "engine/soyeht-engine/src/editor/service.rs": 1027,
     "engine/soyeht-engine/src/experiment_export.rs": 1194,
     "engine/soyeht-engine/src/pane_observations.rs": 1657,
-    "engine/soyeht-engine/src/server.rs": 1081,
+    "engine/soyeht-engine/src/server.rs": 1080,
     "engine/soyeht-engine/src/tasks/feedback.rs": 907,
     "engine/soyeht-engine/src/tasks/review.rs": 817,
-    "engine/soyeht-engine/src/terminal_capture.rs": 1565,
+    "engine/soyeht-engine/src/terminal_capture.rs": 1561,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1115,
     "engine/soyeht-engine/tests/runtime.rs": 8672,
     "engine/soyeht-mcp/src/tools.rs": 1189,
-    "engine/soyeht-store/src/editor.rs": 848,
+    "engine/soyeht-store/src/editor.rs": 840,
     "engine/soyeht-store/tests/agents.rs": 1085,
-    "engine/soyeht-store/tests/tasks.rs": 992
+    "engine/soyeht-store/tests/tasks.rs": 978
   },
   "swallowed_errors": {
     "rust_let_underscore": 49,

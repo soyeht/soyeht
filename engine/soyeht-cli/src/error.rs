@@ -12,7 +12,6 @@ pub enum Error {
     AttemptsExhausted,
     ResponseMissingResult,
     InvalidArguments(String),
-    HomeMissing,
     MissingArgument,
     UnsupportedProfile,
     MissingDataDirectory,
@@ -47,7 +46,6 @@ impl fmt::Display for Error {
             Self::AttemptsExhausted => formatter.write_str("request attempts exhausted"),
             Self::ResponseMissingResult => formatter.write_str("response has no result"),
             Self::InvalidArguments(message) => formatter.write_str(message),
-            Self::HomeMissing => formatter.write_str("HOME is required"),
             Self::MissingArgument => formatter.write_str("missing command-line argument"),
             Self::UnsupportedProfile => {
                 formatter.write_str("only the new dev profile is available")

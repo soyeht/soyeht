@@ -1,11 +1,11 @@
-//! Worktree process boundary and resumable dispatch steps.
+//! Worktree process boundary and the first prompt of a dispatch.
 
 use crate::errors::{self, Result};
 use serde::Deserialize;
 use serde_json::Value;
 use soyeht_process::{Limits, Output};
 use soyeht_protocol::{Comment, Subitem, Task, TaskExecutor};
-use soyeht_store::{database::Store, tasks::DispatchCheckpoint};
+use soyeht_store::tasks::DispatchCheckpoint;
 use std::{path::Path, process::Command, time::Duration};
 
 const OUTPUT_LIMIT: usize = 1_048_576;
@@ -338,47 +338,6 @@ fn checked_prepared(path: String, branch: &str) -> Result<PreparedWorktree> {
     })
 }
 
-pub trait DispatchJournal {
-    fn checkpoint(&self, workspace: &str, task: &str) -> Result<Option<DispatchCheckpoint>>;
-    fn save_checkpoint(
-        &mut self,
-        workspace: &str,
-        task: &str,
-        checkpoint: &DispatchCheckpoint,
-    ) -> Result<()>;
-}
-
-impl DispatchJournal for Store {
-    fn checkpoint(&self, workspace: &str, task: &str) -> Result<Option<DispatchCheckpoint>> {
-        self.dispatch_checkpoint(workspace, task)
-            .map_err(errors::storage)
-    }
-
-    fn save_checkpoint(
-        &mut self,
-        workspace: &str,
-        task: &str,
-        checkpoint: &DispatchCheckpoint,
-    ) -> Result<()> {
-        self.record_dispatch_checkpoint(workspace, task, checkpoint)
-            .map_err(errors::storage)
-    }
-}
-
-#[derive(Clone)]
-pub struct AgentPaneSpec {
-    pub pane_id: String,
-    pub workspace_id: String,
-    pub cwd: String,
-    pub name: String,
-    pub preset: TaskExecutor,
-}
-
-pub trait TaskPanePort {
-    fn open(&mut self, spec: &AgentPaneSpec) -> Result<()>;
-    fn send_first_prompt(&mut self, pane: &str, prompt_id: &str, text: &str) -> Result<()>;
-}
-
 pub struct DispatchRequest<'request> {
     pub repository: &'request Path,
     pub task: &'request Task,
@@ -388,85 +347,8 @@ pub struct DispatchRequest<'request> {
     pub pane_id: String,
 }
 
-pub fn resume_dispatch(
-    journal: &mut impl DispatchJournal,
-    worktrees: &mut impl WorktreePort,
-    panes: &mut impl TaskPanePort,
-    request: &DispatchRequest<'_>,
-) -> Result<DispatchCheckpoint> {
-    let workspace = &request.task.workspace_id;
-    let task = &request.task.task_id;
-    let branch = task_branch(task);
-    let mut checkpoint = match journal.checkpoint(workspace, task)? {
-        Some(checkpoint) => checkpoint,
-        None => {
-            let checkpoint = reserved_checkpoint(&request.pane_id, &branch);
-            journal.save_checkpoint(workspace, task, &checkpoint)?;
-            checkpoint
-        }
-    };
-    validate_checkpoint(&checkpoint, &request.pane_id, &branch)?;
-    if checkpoint.stage == "reserved" {
-        let prepared = worktrees.prepare(request.repository, &branch)?;
-        checkpoint.stage = "worktree_created".into();
-        checkpoint.worktree_path = Some(prepared.path);
-        checkpoint.branch = Some(prepared.branch);
-        journal.save_checkpoint(workspace, task, &checkpoint)?;
-    }
-    if checkpoint.stage == "worktree_created" {
-        panes.open(&pane_spec(request, &checkpoint)?)?;
-        checkpoint.stage = "pane_opened".into();
-        journal.save_checkpoint(workspace, task, &checkpoint)?;
-    }
-    if checkpoint.stage == "pane_opened" {
-        let prompt_id = format!("task:{workspace}:{task}:{}", request.task.current_attempt);
-        let prompt = first_prompt(request, &checkpoint)?;
-        panes.send_first_prompt(&request.pane_id, &prompt_id, &prompt)?;
-        checkpoint.stage = "prompt_accepted".into();
-        journal.save_checkpoint(workspace, task, &checkpoint)?;
-    }
-    if checkpoint.stage != "prompt_accepted" {
-        return Err(errors::internal("Unknown dispatch checkpoint stage"));
-    }
-    Ok(checkpoint)
-}
-
 pub(crate) fn task_branch(task: &str) -> String {
     format!("task/{}", task.to_ascii_lowercase())
-}
-
-fn reserved_checkpoint(pane: &str, branch: &str) -> DispatchCheckpoint {
-    DispatchCheckpoint {
-        stage: "reserved".into(),
-        worktree_path: None,
-        branch: Some(branch.into()),
-        pane_id: Some(pane.into()),
-    }
-}
-
-fn validate_checkpoint(checkpoint: &DispatchCheckpoint, pane: &str, branch: &str) -> Result<()> {
-    if checkpoint.pane_id.as_deref() != Some(pane) || checkpoint.branch.as_deref() != Some(branch) {
-        return Err(errors::internal(
-            "Dispatch checkpoint does not match its task attempt",
-        ));
-    }
-    Ok(())
-}
-
-fn pane_spec(
-    request: &DispatchRequest<'_>,
-    checkpoint: &DispatchCheckpoint,
-) -> Result<AgentPaneSpec> {
-    Ok(AgentPaneSpec {
-        pane_id: request.pane_id.clone(),
-        workspace_id: request.task.workspace_id.clone(),
-        cwd: checkpoint
-            .worktree_path
-            .clone()
-            .ok_or_else(|| errors::internal("Dispatch checkpoint has no worktree"))?,
-        name: request.task.title.clone(),
-        preset: request.preset.clone(),
-    })
 }
 
 pub(crate) fn first_prompt(
@@ -527,11 +409,8 @@ pub(crate) fn first_prompt(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::rules::tests::task_fixture;
     use serde_json::json;
-    use soyeht_protocol::TaskState;
     use std::{
-        collections::BTreeMap,
         fs,
         path::{Path, PathBuf},
     };
@@ -554,164 +433,6 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
-    }
-
-    #[derive(Default)]
-    struct MemoryJournal {
-        value: Option<DispatchCheckpoint>,
-        writes: Vec<String>,
-    }
-
-    impl DispatchJournal for MemoryJournal {
-        fn checkpoint(&self, _: &str, _: &str) -> Result<Option<DispatchCheckpoint>> {
-            Ok(self.value.clone())
-        }
-
-        fn save_checkpoint(
-            &mut self,
-            _: &str,
-            _: &str,
-            checkpoint: &DispatchCheckpoint,
-        ) -> Result<()> {
-            self.writes.push(checkpoint.stage.clone());
-            self.value = Some(checkpoint.clone());
-            Ok(())
-        }
-    }
-
-    #[derive(Default)]
-    struct FakeWorktree {
-        calls: u32,
-        path: String,
-    }
-
-    impl WorktreePort for FakeWorktree {
-        fn prepare(&mut self, _: &Path, branch: &str) -> Result<PreparedWorktree> {
-            self.calls += 1;
-            Ok(PreparedWorktree {
-                path: self.path.clone(),
-                branch: branch.into(),
-            })
-        }
-
-        fn clean(&mut self, _: &Path, _: &Path, _: &str) -> Result<CleanOutcome> {
-            Ok(CleanOutcome {
-                cleaned: true,
-                reason: None,
-            })
-        }
-    }
-
-    #[derive(Default)]
-    struct FakePanes {
-        opens: BTreeMap<String, AgentPaneSpec>,
-        prompts: BTreeMap<String, String>,
-    }
-
-    impl TaskPanePort for FakePanes {
-        fn open(&mut self, spec: &AgentPaneSpec) -> Result<()> {
-            self.opens
-                .entry(spec.pane_id.clone())
-                .or_insert_with(|| spec.clone());
-            Ok(())
-        }
-
-        fn send_first_prompt(&mut self, _: &str, prompt_id: &str, text: &str) -> Result<()> {
-            self.prompts
-                .entry(prompt_id.into())
-                .or_insert_with(|| text.into());
-            Ok(())
-        }
-    }
-
-    fn preset() -> TaskExecutor {
-        TaskExecutor {
-            workspace_default: false,
-            harness: Some("test-acp".into()),
-            model: Some("test-model".into()),
-            effort: None,
-            permission_mode: Some("ask".into()),
-        }
-    }
-
-    #[test]
-    fn coordinator_resumes_after_every_checkpoint_without_duplicate_effects() {
-        let directory = TestDirectory::new();
-        let mut task = task_fixture(TaskState::InProgress);
-        task.current_attempt = 4;
-        let request = DispatchRequest {
-            repository: directory.path(),
-            task: &task,
-            subitems: &[],
-            comments: &[],
-            preset: preset(),
-            pane_id: "pane-7".into(),
-        };
-        let mut journal = MemoryJournal::default();
-        let mut worktrees = FakeWorktree {
-            path: directory.path().to_string_lossy().into(),
-            ..FakeWorktree::default()
-        };
-        let mut panes = FakePanes::default();
-
-        let first = resume_dispatch(&mut journal, &mut worktrees, &mut panes, &request).unwrap();
-        let second = resume_dispatch(&mut journal, &mut worktrees, &mut panes, &request).unwrap();
-        assert_eq!(first.stage, "prompt_accepted");
-        assert_eq!(second, first);
-        assert_eq!(worktrees.calls, 1);
-        assert_eq!(panes.opens.len(), 1);
-        assert_eq!(panes.prompts.len(), 1);
-        assert_eq!(
-            journal.writes,
-            [
-                "reserved",
-                "worktree_created",
-                "pane_opened",
-                "prompt_accepted"
-            ]
-        );
-        let prompt = panes.prompts.values().next().unwrap();
-        for required in [
-            &task.title,
-            &task.description,
-            &task.must_not_change,
-            directory.path().to_str().unwrap(),
-        ] {
-            assert!(prompt.contains(required));
-        }
-    }
-
-    #[test]
-    fn dispatch_after_worktree_checkpoint_starts_with_opening_the_pane() {
-        let directory = TestDirectory::new();
-        let task = task_fixture(TaskState::InProgress);
-        let request = DispatchRequest {
-            repository: directory.path(),
-            task: &task,
-            subitems: &[],
-            comments: &[],
-            preset: preset(),
-            pane_id: "pane-7".into(),
-        };
-        let mut journal = MemoryJournal {
-            value: Some(DispatchCheckpoint {
-                stage: "worktree_created".into(),
-                worktree_path: Some(directory.path().to_string_lossy().into()),
-                branch: Some(task_branch(&task.task_id)),
-                pane_id: Some("pane-7".into()),
-            }),
-            ..MemoryJournal::default()
-        };
-        let mut worktrees = FakeWorktree::default();
-        let mut panes = FakePanes::default();
-
-        let result = resume_dispatch(&mut journal, &mut worktrees, &mut panes, &request).unwrap();
-
-        assert_eq!(result.stage, "prompt_accepted");
-        assert_eq!(worktrees.calls, 0);
-        assert_eq!(panes.opens.len(), 1);
-        assert_eq!(panes.prompts.len(), 1);
-        assert_eq!(journal.writes, ["pane_opened", "prompt_accepted"]);
     }
 
     #[cfg(unix)]

@@ -7,13 +7,11 @@ mod task_commands;
 use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
-use soyeht_protocol::profile::DEV_DATA_DIRECTORY_FROM_HOME;
+use soyeht_protocol::data_directory::dev_data_directory;
 use std::path::PathBuf;
 
 fn run() -> Result<Value> {
-    let mut directory = std::env::home_dir()
-        .ok_or(Error::HomeMissing)?
-        .join(DEV_DATA_DIRECTORY_FROM_HOME);
+    let mut directory = dev_data_directory(std::env::home_dir())?;
     let mut args = std::env::args().skip(1).peekable();
     let mut bound = false;
     while args.peek().is_some_and(|s| s.starts_with("--")) {

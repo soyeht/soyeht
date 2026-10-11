@@ -32,13 +32,20 @@ IGNORED_FILES = {
     "tests.rs",
     "test_support.rs",
     "test_fixture.rs",
+    "testing.rs",
 }
 PATTERNS = {
     "swift_try_optional": re.compile(r"\btry\?"),
     "rust_ok": re.compile(r"\.ok\(\)"),
     "rust_let_underscore": re.compile(r"\blet\s+_\s*="),
 }
-CFG_TEST = re.compile(r"#\[cfg\(test\)\]")
+CFG_TEST = re.compile(r"#\[cfg\(\s*(?:test|all\(\s*test\b[^\]]*)\)\]")
+INNER_CFG_TEST = re.compile(r"\A\s*#!\[cfg\(test\)\]")
+OTHER_ATTRIBUTE = re.compile(r"\s*#\[")
+ITEM_OR_STATEMENT = re.compile(
+    r"\s*(?:pub\b|mod\b|fn\b|impl\b|use\b|const\b|static\b|struct\b|enum\b|trait\b"
+    r"|type\b|async\b|unsafe\b|extern\b|let\b|if\b|match\b|for\b|while\b|loop\b|\{)"
+)
 RAW_STRING = re.compile(r'b?r(#*)"')
 
 
@@ -85,24 +92,64 @@ def blank_literals_and_comments(source: str) -> str:
 
 
 def without_test_items(code: str) -> str:
-    """Blank every item that follows a `#[cfg(test)]` attribute."""
+    """Blank every item, statement or field that follows a `#[cfg(test)]` attribute.
+
+    A file that starts with `#![cfg(test)]` is blanked whole.
+    """
+    if INNER_CFG_TEST.search(code):
+        return re.sub(r"[^\n]", " ", code)
     chars = list(code)
-    for match in reversed(list(CFG_TEST.finditer(code))):
-        depth, j = 0, match.end()
-        while j < len(code):
-            if code[j] == "{":
-                depth += 1
-            elif code[j] == "}":
-                depth -= 1
-                if depth == 0:
-                    break
-            elif code[j] == ";" and depth == 0:
-                break
-            j += 1
-        for k in range(match.start(), min(j + 1, len(code))):
+    copied = 0
+    for match in CFG_TEST.finditer(code):
+        if match.start() < copied:
+            continue
+        end = test_item_end(code, match.end())
+        for k in range(match.start(), end):
             if chars[k] != "\n":
                 chars[k] = " "
+        copied = end
     return "".join(chars)
+
+
+def test_item_end(code: str, start: int) -> int:
+    """The offset after the item, statement or field that begins after an attribute."""
+    index = start
+    while True:
+        match = OTHER_ATTRIBUTE.match(code, index)
+        if not match:
+            break
+        index = skip_balanced(code, match.end() - 1)
+    # An item or a statement ends at its `;` or its closing brace; a field or an
+    # argument, which starts with a name, ends at the next comma.
+    ends_at_comma = not ITEM_OR_STATEMENT.match(code, index)
+    depth = 0
+    while index < len(code):
+        char = code[index]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth == 0:
+                return index
+            depth -= 1
+            if depth == 0 and char == "}" and not ends_at_comma:
+                return index + 1
+        elif depth == 0 and (char == ";" or (ends_at_comma and char == ",")):
+            return index + 1
+        index += 1
+    return len(code)
+
+
+def skip_balanced(code: str, opening: int) -> int:
+    """The offset after the bracket group that opens at `opening`."""
+    depth = 0
+    for index in range(opening, len(code)):
+        if code[index] in "([{":
+            depth += 1
+        elif code[index] in ")]}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return len(code)
 
 
 def production_files(root: Path, relative: str, suffix: str) -> list[Path]:

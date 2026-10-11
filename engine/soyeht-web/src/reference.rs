@@ -22,12 +22,6 @@ impl NavigationReferences {
         self.generation
     }
 
-    pub fn begin_navigation(&mut self, generation: u64) {
-        self.generation = generation;
-        self.next = 1;
-        self.issued.clear();
-    }
-
     pub fn issue(&mut self) -> Result<String> {
         let reference = self.next_reference();
         self.next = self.next.checked_add(1).ok_or(Error::ReferenceExhausted)?;

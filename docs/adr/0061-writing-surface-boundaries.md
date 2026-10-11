@@ -42,7 +42,8 @@ from ADR 0052. No second file writer is introduced.
 A new `soyeht-writing` crate contains bounded, deterministic modules for:
 
 - Markdown toolbar transformations and slide segmentation;
-- Fountain parsing, ordered elements, scenes, and SmartType suggestions;
+- Fountain parsing, ordered elements and scenes (the shared Swift client builds the
+  SmartType suggestions);
 - ordered per-line variants with a selected index;
 - beat cards and their scene links;
 - three disjoint document sections and their relative paths.

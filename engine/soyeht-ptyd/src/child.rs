@@ -9,6 +9,17 @@ pub(crate) mod system;
 
 pub use system::Child;
 
+/// How much of a child's processes ending it reaches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reach {
+    /// The child and its process group. On Unix a process a person detached from the shell with
+    /// its own session stays. On Windows the job holds every process of the child, so this
+    /// reaches the whole tree.
+    Group,
+    /// The child and everything below it, including processes that left its group.
+    Tree,
+}
+
 use std::{
     io, thread,
     time::{Duration, Instant},

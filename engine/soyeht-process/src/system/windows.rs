@@ -1,6 +1,7 @@
 //! A command that runs in its own job object, which is terminated as a whole.
 
 use crate::Streams;
+use soyeht_platform::log;
 use soyeht_platform::process::windows::{self as winproc, Job, Launch, Spawned, Stdio};
 use std::{
     fs::File,
@@ -16,14 +17,6 @@ const END_WAIT: Duration = Duration::from_secs(5);
 pub(crate) struct Running {
     spawned: Spawned,
     streams: Option<Streams>,
-}
-
-/// Reports a failure that nothing in the caller's result carries, as one structured line.
-fn report(event: &str, error: &io::Error) {
-    eprintln!(
-        "{{\"event\":\"process.{event}\",\"error\":\"{:?}\"}}",
-        error.kind()
-    );
 }
 
 impl Running {
@@ -83,10 +76,10 @@ impl Running {
     /// reports the timeout, so a failure here is only logged.
     pub(crate) fn kill(&mut self) {
         if let Err(error) = self.spawned.kill_tree(END_WAIT) {
-            report("kill_tree_failed", &error);
+            log::io_failure("process.kill_tree_failed", &error);
         }
         if let Err(error) = self.spawned.wait_exit(0) {
-            report("wait_failed", &error);
+            log::io_failure("process.wait_failed", &error);
         }
     }
 
@@ -95,7 +88,7 @@ impl Running {
         // If the job keeps its kill-on-close limit, a leftover process ends with it, which
         // is the safe outcome; the caller's result does not depend on it.
         if let Err(error) = self.spawned.release() {
-            report("release_failed", &error);
+            log::io_failure("process.release_failed", &error);
         }
     }
 }

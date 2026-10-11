@@ -18,8 +18,10 @@ Each layer depends only on the layers listed above it.
    Soyeht dependencies and no IO or async runtime.
    `engine/soyeht-platform` sits at the same level: the operating-system seams
    (the local endpoint, owner-only files, process launch and termination, the user's
-   identity). It has no Soyeht dependencies, and code that differs between macOS, Linux
-   and Windows for these concerns lives only there (ADR 0086).
+   identity, the structured log line). It has no Soyeht dependencies, and these system
+   calls live there (ADR 0086). A crate above it may keep a `cfg` module for a concern
+   specific to its own job (`soyeht-ptyd`'s child and pty, the engine's log rotation),
+   under the rule below: the same public shape on every system.
    `engine/soyeht-process`, the bounded runner for every external command the engine
    starts, depends on nothing but `soyeht-platform` (ADR 0079).
 3. Engine building blocks, each depending only on `soyeht-protocol` and
@@ -94,6 +96,10 @@ ADR when you change a boundary.
   in production code may not grow. Log, propagate or surface the error instead, or
   keep it with a one-line comment saying why ignoring it is correct.
   `uv run python scripts/check_swallowed_errors.py` lists every counted site.
+- Dead code: `scripts/check_dead_pub.py` fails on a `pub fn` of an engine crate that no
+  production code references (`pub` hides it from the compiler's unused-code lint). Delete
+  it and the tests that only exercise it. An entry of `scripts/dead_pub_allowlist.json`
+  needs a reason, and fails once it is no longer needed.
 - When a number improves, lower the baseline in the same PR:
   `uv run python scripts/check_quality.py --print-baseline > scripts/quality_baseline.json`.
   The check fails until you do.
@@ -164,6 +170,8 @@ inherit the main actor.
   (`docs/platforms.md`). New platform-specific code goes behind `soyeht-platform`
   or a `cfg` module with the same public shape on every system; where a feature
   cannot exist on a system it returns a typed `Unsupported` error.
+  The merge gate lints `soyeht-platform`, `soyeht-process` and `soyeht-ptyd` for
+  `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`).
 
 ## Repository hygiene
 

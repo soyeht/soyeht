@@ -1,7 +1,7 @@
 //! A command that leads its own process group, which is killed as a whole.
 
 use crate::Streams;
-use soyeht_platform::process::{GroupSignal, signal_group};
+use soyeht_platform::process::kill_tree;
 use std::{
     fs::File,
     io,
@@ -39,7 +39,7 @@ impl Running {
 
     /// Ends the command with everything it started and reaps it.
     pub(crate) fn kill(&mut self) {
-        signal_group(self.0.id(), GroupSignal::Kill);
+        kill_tree(self.0.id());
         // Best effort: the caller reports the timeout, whatever happens to the child here.
         // kill fails only when the child already exited, which is the goal.
         let _ = self.0.kill();

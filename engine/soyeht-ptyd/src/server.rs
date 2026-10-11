@@ -1,11 +1,20 @@
 use crate::{
-    Error, Result, child::Child, io::Output, pending::Pending, pipe_guard::Guard, process,
-    pty::Resizer, registry::Registry, retention::Retention, wire::*,
+    Error, Result,
+    child::{Child, Reach},
+    io::Output,
+    pending::Pending,
+    pipe_guard::Guard,
+    process,
+    pty::Resizer,
+    registry::Registry,
+    retention::Retention,
+    wire::*,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
     fs::{LockError, lock_singleton},
     local::{BindError, Listener, Stream},
+    log,
 };
 use soyeht_protocol::{
     frame::{read_json, write_json},
@@ -87,14 +96,16 @@ pub fn run(directory: &Path) -> Result<()> {
         active: None,
         inputs: BTreeMap::new(),
     }));
-    println!("{{\"event\":\"ptyd.ready\",\"version\":{VERSION}}}");
+    println!(
+        "{}",
+        log::record("ptyd.ready", &[("version", &VERSION.to_string())])
+    );
     for incoming in listener.incoming() {
         let stream = incoming?;
         let state = Arc::clone(&state);
         thread::spawn(move || {
             if let Err(error) = connection(stream, state) {
-                let record = serde_json::json!({"event":"ptyd.connection_failed","error":error_label(&error)});
-                eprintln!("{record}");
+                log::event("ptyd.connection_failed", &[("error", &error_label(&error))]);
             }
         });
     }
@@ -111,10 +122,7 @@ impl Drop for EndpointFile {
         match std::fs::remove_file(&self.0) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => eprintln!(
-                "{{\"event\":\"ptyd.endpoint_not_removed\",\"error\":\"{:?}\"}}",
-                error.kind()
-            ),
+            Err(error) => log::io_failure("ptyd.endpoint_not_removed", &error),
         }
     }
 }
@@ -334,11 +342,11 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
 /// Ends an instance's process. A guarded process is an agent adapter or a
 /// language server, whose whole process tree must go with it.
 fn terminate(live: &Live, child: &Child) {
-    if live.guard.is_some() {
-        child.kill_tree();
+    child.kill(if live.guard.is_some() {
+        Reach::Tree
     } else {
-        child.kill_group();
-    }
+        Reach::Group
+    });
 }
 
 /// How long a kill waits for the child to be gone while holding its lock.
@@ -350,12 +358,9 @@ const REAP_LIMIT: Duration = Duration::from_secs(2);
 fn reap(child: &mut Child) {
     match child.wait_within(REAP_LIMIT) {
         Ok(Some(_)) => {}
-        Ok(None) => eprintln!("{{\"event\":\"ptyd.child_still_running_after_kill\"}}"),
+        Ok(None) => log::event("ptyd.child_still_running_after_kill", &[]),
         // The child could not be queried; the watcher reports it.
-        Err(error) => eprintln!(
-            "{{\"event\":\"ptyd.child_wait_failed\",\"error\":\"{:?}\"}}",
-            error.kind()
-        ),
+        Err(error) => log::io_failure("ptyd.child_wait_failed", &error),
     }
 }
 
@@ -548,14 +553,14 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 Ok(0) => break,
                 Ok(count) => {
                     let Ok(mut output) = reading.output.lock() else {
-                        eprintln!("{{\"event\":\"ptyd.output_lock_poisoned\"}}");
+                        log::event("ptyd.output_lock_poisoned", &[]);
                         break;
                     };
                     if let Some(pending) = &mut output.pending {
                         pending.output(&bytes[..count]);
                     }
                     if output.retention.append(&bytes[..count]).is_err() {
-                        eprintln!("{{\"event\":\"ptyd.output_offset_exhausted\"}}");
+                        log::event("ptyd.output_offset_exhausted", &[]);
                         break;
                     }
                 }
@@ -575,7 +580,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
             let exit = match live.child.lock() {
                 Ok(mut child) => child.try_wait(),
                 Err(_) => {
-                    eprintln!("{{\"event\":\"ptyd.child_lock_poisoned\"}}");
+                    log::event("ptyd.child_lock_poisoned", &[]);
                     live.exited.store(true, Ordering::Release);
                     break;
                 }
@@ -585,21 +590,21 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     live.exited.store(true, Ordering::Release);
                     let guarded_code = live.guard.as_ref().and_then(|control| {
                         let Ok(mut control) = control.lock() else {
-                            eprintln!("{{\"event\":\"ptyd.guard_lock_poisoned\"}}");
+                            log::event("ptyd.guard_lock_poisoned", &[]);
                             return None;
                         };
                         control.exit_code()
                     });
                     let code = guarded_code.unwrap_or_else(|| status.code().unwrap_or(-1));
                     let Ok(mut state) = shared.lock() else {
-                        eprintln!("{{\"event\":\"ptyd.state_lock_poisoned\"}}");
+                        log::event("ptyd.state_lock_poisoned", &[]);
                         break;
                     };
                     if let Some(instance) = state.registry.instances.get_mut(&key) {
                         instance.exit_code = Some(code);
                     }
                     if state.registry.save(&state.directory).is_err() {
-                        eprintln!("{{\"event\":\"ptyd.registry_write_failed\"}}");
+                        log::event("ptyd.registry_write_failed", &[]);
                     }
                     break;
                 }

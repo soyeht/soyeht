@@ -30,6 +30,7 @@ pub enum Error {
     IncompleteSnapshot,
     InconsistentSnapshotPages,
     SnapshotSectionNotArray,
+    HomeMissing,
 }
 
 impl fmt::Display for Error {
@@ -78,6 +79,7 @@ impl fmt::Display for Error {
             Self::SnapshotSectionNotArray => {
                 formatter.write_str("snapshot section must be an array")
             }
+            Self::HomeMissing => formatter.write_str("the home directory is unknown"),
         }
     }
 }

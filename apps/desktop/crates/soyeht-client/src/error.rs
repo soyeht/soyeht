@@ -19,8 +19,6 @@ pub enum Error {
     Invalid(&'static str),
     /// The command queue is full: the engine answers more slowly than the user acts.
     Busy,
-    /// No engine socket location is known for this platform yet.
-    NoEngineSocket,
 }
 
 impl fmt::Display for Error {
@@ -38,9 +36,6 @@ impl fmt::Display for Error {
                 write!(formatter, "The engine sent an invalid message: {reason}.")
             }
             Self::Busy => formatter.write_str("The engine is busy. The last action was not sent."),
-            Self::NoEngineSocket => formatter.write_str(
-                "No engine socket is known for this platform. Set SOYEHT_ENGINE_SOCKET.",
-            ),
         }
     }
 }

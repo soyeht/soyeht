@@ -583,16 +583,6 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
         store.dispatch_checkpoint("workspace-1", "WS-1").unwrap(),
         Some(checkpoint)
     );
-    store
-        .mutate("test", "clear", "clear", |change| {
-            change.clear_dispatch_checkpoint("workspace-1", "WS-1")?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
-    assert_eq!(
-        store.dispatch_checkpoint("workspace-1", "WS-1").unwrap(),
-        None
-    );
     let mut stopped = config;
     stopped.enabled = false;
     store
@@ -871,10 +861,6 @@ fn dispatch_journal_lists_updates_and_removes_internal_steps() {
         store.dispatch_checkpoint("workspace-1", "WS-1").unwrap(),
         Some(advanced)
     );
-    store
-        .remove_dispatch_checkpoint("workspace-1", "WS-1")
-        .unwrap();
-    assert!(store.dispatch_checkpoints().unwrap().is_empty());
 }
 
 #[test]

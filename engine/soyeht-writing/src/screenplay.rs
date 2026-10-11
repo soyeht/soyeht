@@ -1,19 +1,10 @@
 use crate::{Error, Result};
 use soyeht_protocol::{ScreenplayElement, ScreenplayElementKind, ScreenplayScene, limits};
-use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Screenplay {
     pub elements: Vec<ScreenplayElement>,
     pub scenes: Vec<ScreenplayScene>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SmartType {
-    pub transitions: Vec<String>,
-    pub character_extensions: Vec<String>,
-    pub character_names: Vec<String>,
-    pub locations: Vec<String>,
 }
 
 pub fn parse_screenplay(source: &str) -> Result<Screenplay> {
@@ -64,36 +55,6 @@ pub fn parse_screenplay(source: &str) -> Result<Screenplay> {
         return Err(Error::SceneLimit);
     }
     Ok(Screenplay { elements, scenes })
-}
-
-impl Screenplay {
-    pub fn smart_type(&self) -> SmartType {
-        let mut names = BTreeSet::new();
-        let mut locations = BTreeSet::new();
-        for element in &self.elements {
-            if element.kind == ScreenplayElementKind::Character {
-                names.insert(character_name(&element.text).to_owned());
-            }
-            if element.kind == ScreenplayElementKind::SceneHeading {
-                locations.insert(scene_location(&element.text).to_owned());
-            }
-        }
-        SmartType {
-            transitions: ["CUT TO:", "DISSOLVE TO:", "FADE IN:", "FADE OUT:"]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            character_extensions: ["(V.O.)", "(O.S.)", "(CONT'D)"]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            character_names: names.into_iter().filter(|name| !name.is_empty()).collect(),
-            locations: locations
-                .into_iter()
-                .filter(|name| !name.is_empty())
-                .collect(),
-        }
-    }
 }
 
 pub fn advance_after(kind: &ScreenplayElementKind, tab: bool) -> ScreenplayElementKind {
@@ -220,17 +181,4 @@ fn scene(scene_id: String, ordinal: usize, line: u32, heading: &str) -> Result<S
         prompt_idea: None,
         linked_beat_ids: Vec::new(),
     })
-}
-
-fn character_name(text: &str) -> &str {
-    text.split_once(" (").map_or(text, |(name, _)| name).trim()
-}
-
-fn scene_location(text: &str) -> &str {
-    let after_prefix = text.split_once('.').map_or(text, |(_, rest)| rest).trim();
-    after_prefix
-        .split(" - ")
-        .next()
-        .unwrap_or(after_prefix)
-        .trim()
 }

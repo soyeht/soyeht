@@ -1,5 +1,5 @@
-use super::Exit;
-use soyeht_platform::process::{GroupSignal, signal_group};
+use super::{Exit, Reach};
+use soyeht_platform::process::{GroupSignal, kill_tree, signal_group};
 use std::io;
 
 /// A child that leads its own process group (a terminal's session, or a pipe guardian).
@@ -32,34 +32,16 @@ impl Child {
         Ok(Exit(self.0.wait()?.code()))
     }
 
-    /// Ends the child's process group. A process a person detached from the shell with its own
-    /// session stays.
-    pub fn kill_group(&self) {
-        signal_group(self.0.id(), GroupSignal::Kill);
+    /// Ends the child's processes as far as `reach` says.
+    pub fn kill(&self, reach: Reach) {
+        match reach {
+            Reach::Group => signal_group(self.0.id(), GroupSignal::Kill),
+            Reach::Tree => kill_tree(self.0.id()),
+        }
     }
 
     /// Asks the child's process group to stop, as a terminal being closed does.
     pub fn request_stop(&self) {
         signal_group(self.0.id(), GroupSignal::Terminate);
-    }
-
-    /// Ends a guarded (agent or language server) process and everything below it, including
-    /// children that left its process group.
-    pub fn kill_tree(&self) {
-        // Snapshot first: once the leader dies its children are reparented and no longer
-        // reachable from it.
-        let escaped = crate::tree::descendants(self.0.id());
-        self.kill_group();
-        for descendant in escaped {
-            if let Ok(descendant) = i32::try_from(descendant)
-                && descendant > 1
-            {
-                // SAFETY: the pid was read from the process table an instant ago, as a
-                // descendant of the instance this supervisor spawned.
-                unsafe {
-                    libc::kill(descendant, libc::SIGKILL);
-                }
-            }
-        }
     }
 }

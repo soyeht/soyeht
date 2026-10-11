@@ -6,7 +6,6 @@ use crate::{Error, Result};
 pub struct NormalizedUrl {
     value: String,
     host: String,
-    local: bool,
 }
 
 impl NormalizedUrl {
@@ -32,10 +31,6 @@ impl NormalizedUrl {
 
     pub fn host(&self) -> &str {
         &self.host
-    }
-
-    pub const fn is_local(&self) -> bool {
-        self.local
     }
 }
 
@@ -69,11 +64,9 @@ fn from_url(url: Url) -> Result<NormalizedUrl> {
         return Err(Error::InvalidUrl);
     }
     let host = url.host_str().ok_or(Error::MissingHost)?.to_owned();
-    let local = is_loopback(url.host());
     Ok(NormalizedUrl {
         value: url.into(),
         host,
-        local,
     })
 }
 

@@ -1,0 +1,8 @@
+{
+  "engine/soyeht-pane-state/src/evaluation.rs::same_dataset_as": "Comparability rule of ADR 0069 for evaluation reports; the experiment tooling that compares two reports is not built yet.",
+  "engine/soyeht-pane-state/src/metrics.rs::can_rank_against": "Candidate ranking rule of ADR 0069 (coverage within five percentage points); the experiment tooling that ranks candidates is not built yet.",
+  "engine/soyeht-store/src/editor.rs::active_file_replacements": "Read-back of persisted replacements, used by the store and engine integration tests to check durability; no production reader.",
+  "engine/soyeht-store/src/usage.rs::usage_reading": "Read-back of one persisted usage reading, used by the store and engine tests; production reads them all through usage_readings.",
+  "engine/soyeht-store/src/web.rs::web_session_grants": "Read-back of persisted session grants, used by the store tests to check durability; no production reader.",
+  "engine/soyeht-store/src/writing.rs::writing_sidecar_versions": "Read-back of persisted sidecar versions, used by the store tests to check retention; no production reader."
+}

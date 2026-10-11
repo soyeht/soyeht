@@ -218,7 +218,7 @@ fn slide_count_is_bounded() {
 }
 
 #[test]
-fn fountain_parser_builds_ordered_elements_scenes_and_smart_type() {
+fn fountain_parser_builds_ordered_elements_scenes_and_advances() {
     let source = concat!(
         "INT. KITCHEN - NIGHT\n",
         "A clock ticks.\n",
@@ -262,11 +262,6 @@ fn fountain_parser_builds_ordered_elements_scenes_and_smart_type() {
         Some("scene-1-9")
     );
 
-    let smart = screenplay.smart_type();
-    assert_eq!(smart.character_names, vec!["ARIA"]);
-    assert_eq!(smart.locations, vec!["KITCHEN", "STATION"]);
-    assert!(smart.transitions.contains(&"DISSOLVE TO:".to_owned()));
-    assert!(smart.character_extensions.contains(&"(CONT'D)".to_owned()));
     assert_eq!(
         advance_after(&ScreenplayElementKind::Character, false),
         ScreenplayElementKind::Dialogue
@@ -423,7 +418,7 @@ fn beat_board_links_both_directions_reorders_and_survives_reload() {
     let mut board = BeatBoard::restore(Vec::new(), &scenes).unwrap();
     board.put(beat("a", 0, Some("scene-a")), &scenes).unwrap();
     board.put(beat("b", 1, None), &scenes).unwrap();
-    assert_eq!(board.beats_for_scene("scene-a")[0].beat_id, "a");
+    assert_eq!(board.cards()[0].scene_id.as_deref(), Some("scene-a"));
     board.move_to("b", 0).unwrap();
     assert_eq!(board.cards()[0].beat_id, "b");
     assert_eq!(board.cards()[1].order, 1);

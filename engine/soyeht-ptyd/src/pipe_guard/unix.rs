@@ -2,7 +2,7 @@
 //! EOF is not a sufficient lifetime contract for a native process's stdin.
 use crate::{
     Error, Result,
-    child::Child,
+    child::{Child, Reach},
     io::Output,
     process::{self, Spawned},
     wire::Spawn,
@@ -98,7 +98,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
             guard: Some(Guard(parent)),
         }),
         Err(error) => {
-            child.kill_tree();
+            child.kill(Reach::Tree);
             // Reap only: the group was just terminated; an error means it is already gone.
             let _ = child.wait();
             Err(error)

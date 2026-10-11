@@ -59,8 +59,3 @@ pub(super) fn descriptor_path(file: &File) -> Option<PathBuf> {
         }
     }
 }
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub(super) fn descriptor_path(_: &File) -> Option<PathBuf> {
-    None
-}

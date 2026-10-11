@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from check_swallowed_errors import measure, sites
+from check_swallowed_errors import measure, sites, without_test_items
 from quality_core import DUPLICATION_SCANS, SWALLOWED_KEY, differences
 
 
@@ -84,6 +84,23 @@ class SwallowedErrorTests(unittest.TestCase):
         )
         self.assertIn(("rust_let_underscore", "engine/crate/src/lib.rs", 3), sites(root))
         self.assertIn(("rust_ok", "apps/desktop/crates/client/src/lib.rs", 1), sites(root))
+
+    def test_a_test_only_field_or_statement_does_not_hide_production_code_after_it(self):
+        code = (
+            "fn run(\n    #[cfg(test)] gate: Gate,\n) {\n    let _ = reply.send(1);\n"
+            "    #[cfg(test)]\n    { let _ = ignored(); }\n"
+            "    #[cfg(all(test, feature = \"test-support\"))]\n    let _ = also_ignored();\n"
+            "    let _ = counted();\n}\n"
+        )
+        kept = without_test_items(code)
+        self.assertEqual(kept.count("let _ ="), 2)
+        self.assertIn("reply.send", kept)
+        self.assertNotIn("ignored", kept)
+        self.assertEqual(kept.count("\n"), code.count("\n"))
+
+    def test_a_file_that_is_test_only_as_a_whole_is_blank(self):
+        code = "#![cfg(test)]\nfn helper() { let _ = x(); }\n"
+        self.assertNotIn("let", without_test_items(code))
 
     def test_the_quality_ratchet_holds_each_count_exactly(self):
         baseline = {SWALLOWED_KEY: {"swift_try_optional": 1, "rust_ok": 1}}

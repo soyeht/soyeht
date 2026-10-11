@@ -40,11 +40,6 @@ impl SyntaxDocument {
     pub fn last_changed_ranges(&self) -> &[std::ops::Range<usize>] {
         &self.last_changed_ranges
     }
-    pub fn has_syntax_error(&self) -> bool {
-        self.syntax
-            .as_ref()
-            .is_some_and(|syntax| syntax.tree.root_node().has_error())
-    }
 
     pub fn apply(&mut self, edit: &soyeht_protocol::TextEdit) -> Result<AppliedEdit> {
         let mut applied = self.apply_all(std::slice::from_ref(edit))?;

@@ -18,18 +18,20 @@ fn edit(line: u32, start: u32, end: u32, text: &str) -> TextEdit {
 
 #[test]
 fn every_closed_language_uses_its_parser_and_plain_text_is_explicit() {
+    // The Markdown and shell grammars ship no highlight query; they must still parse.
     let fixtures = [
-        (EditorLanguage::Rust, "fn main() {}"),
-        (EditorLanguage::Swift, "func main() {}"),
-        (EditorLanguage::Typescript, "function main() {}"),
-        (EditorLanguage::Python, "def main():\n    pass"),
-        (EditorLanguage::Json, "{\"ok\": true}"),
-        (EditorLanguage::Markdown, "# Title\n"),
-        (EditorLanguage::Shell, "echo ok"),
+        (EditorLanguage::Rust, "fn main() {}", true),
+        (EditorLanguage::Swift, "func main() {}", true),
+        (EditorLanguage::Typescript, "function main() {}", true),
+        (EditorLanguage::Python, "def main():\n    pass", true),
+        (EditorLanguage::Json, "{\"ok\": true}", true),
+        (EditorLanguage::Markdown, "# Title\n", false),
+        (EditorLanguage::Shell, "echo ok", false),
     ];
-    for (language, source) in fixtures {
+    for (language, source, highlighted) in fixtures {
         let document = SyntaxDocument::new(source, language).unwrap();
-        assert!(!document.has_syntax_error(), "{source}");
+        let spans = document.highlights(0, source.lines().count()).unwrap();
+        assert_eq!(!spans.is_empty(), highlighted, "{source}");
     }
     let plain = SyntaxDocument::new("any bytes", EditorLanguage::PlainText).unwrap();
     assert!(plain.highlights(0, 1).unwrap().is_empty());

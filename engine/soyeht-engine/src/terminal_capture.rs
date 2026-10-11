@@ -353,7 +353,7 @@ impl Drop for TerminalCapture {
         self.test_projection_gate.set_paused(false);
         self.sender.take();
         if let Some(Err(_)) = self.worker.take().map(|worker| worker.join()) {
-            eprintln!("{{\"event\":\"engine.terminal_capture_panicked\"}}");
+            soyeht_platform::log::event("engine.terminal_capture_panicked", &[]);
         }
     }
 }
@@ -409,13 +409,7 @@ fn projection_loop(
                 #[cfg(test)]
                 test_projection_gate.wait();
                 let result = (|| {
-                    if let Some(gap) = take_raw_gap(&overflow, &overflow_active)? {
-                        recorder.try_record_gap(projection.record_byte_gap(
-                            gap.first_timestamp_ms,
-                            gap.last_timestamp_ms,
-                            gap.dropped_bytes,
-                        )?)?;
-                    }
+                    flush_gap(&overflow, &overflow_active, &mut projection, &recorder)?;
                     recorder.record_label(projection.label(
                         timestamp_ms,
                         state,
@@ -424,16 +418,14 @@ fn projection_loop(
                     )?)
                 })();
                 let reply_result = result.as_ref().map(|_| ()).map_err(ToString::to_string);
-                let _ = reply.send(reply_result);
+                if reply.send(reply_result).is_err() {
+                    // The requester stopped waiting; the outcome still returns below.
+                    soyeht_platform::log::event("engine.label_requester_gone", &[]);
+                }
                 result?;
             }
             Err(channel::RecvTimeoutError::Timeout) => {
-                if let Some(gap) = take_raw_gap(&overflow, &overflow_active)? {
-                    recorder.try_record_gap(projection.record_byte_gap(
-                        gap.first_timestamp_ms,
-                        gap.last_timestamp_ms,
-                        gap.dropped_bytes,
-                    )?)?;
+                if flush_gap(&overflow, &overflow_active, &mut projection, &recorder)? {
                     continue;
                 }
                 if let Some(failure) = recorder.failure()? {
@@ -441,29 +433,33 @@ fn projection_loop(
                 }
             }
             Err(channel::RecvTimeoutError::Disconnected) => {
-                if let Some(gap) = take_raw_gap(&overflow, &overflow_active)? {
-                    recorder.try_record_gap(projection.record_byte_gap(
-                        gap.first_timestamp_ms,
-                        gap.last_timestamp_ms,
-                        gap.dropped_bytes,
-                    )?)?;
-                }
+                flush_gap(&overflow, &overflow_active, &mut projection, &recorder)?;
                 return recorder.finish();
             }
         }
     }
 }
 
-fn take_raw_gap(
+/// Records the gap of bytes the handoff dropped, if any. True when there was one.
+fn flush_gap(
     overflow: &Mutex<Option<RawByteGap>>,
     overflow_active: &AtomicBool,
-) -> Result<Option<RawByteGap>> {
+    projection: &mut TerminalProjection,
+    recorder: &ObservationRecorder,
+) -> Result<bool> {
     let gap = overflow
         .lock()
         .map_err(|_| errors::internal("Terminal projection gap lock was poisoned"))?
         .take();
     overflow_active.store(false, Ordering::Release);
-    Ok(gap)
+    let Some(gap) = gap else { return Ok(false) };
+    let record = projection.record_byte_gap(
+        gap.first_timestamp_ms,
+        gap.last_timestamp_ms,
+        gap.dropped_bytes,
+    )?;
+    recorder.try_record_gap(record)?;
+    Ok(true)
 }
 
 impl Core {

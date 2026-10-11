@@ -395,16 +395,6 @@ impl Store {
         change.transaction.commit()?;
         Ok(())
     }
-
-    pub fn remove_dispatch_checkpoint(&mut self, workspace_id: &str, task_id: &str) -> Result<()> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let change = Change { transaction };
-        change.clear_dispatch_checkpoint(workspace_id, task_id)?;
-        change.transaction.commit()?;
-        Ok(())
-    }
 }
 
 impl Change<'_> {
@@ -769,14 +759,6 @@ impl Change<'_> {
         if changed != 1 {
             return Err(Error::ReviewVersionConflict);
         }
-        Ok(())
-    }
-
-    pub fn clear_dispatch_checkpoint(&self, workspace_id: &str, task_id: &str) -> Result<()> {
-        self.transaction.execute(
-            "DELETE FROM task_dispatch WHERE workspace_id=?1 AND task_id=?2",
-            params![workspace_id, task_id],
-        )?;
         Ok(())
     }
 }

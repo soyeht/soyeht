@@ -358,14 +358,6 @@ impl Change<'_> {
         prune_history(self, &version.version.file_id)
     }
 
-    pub fn clear_file_history(&self, file_id: &str) -> Result<()> {
-        self.transaction.execute(
-            "DELETE FROM editor_file_versions WHERE file_id=?1",
-            [file_id],
-        )?;
-        Ok(())
-    }
-
     pub fn mark_file_replacement_applied(
         &self,
         operation_id: &str,

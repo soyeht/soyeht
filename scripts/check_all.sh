@@ -31,6 +31,8 @@ uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
 uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
 uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
 uv run python scripts/check_quality.py
+uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
+uv run python scripts/check_dead_pub.py
 
 uv run python contracts/generate.py --check
 uv run python -m unittest discover -s contracts -p 'test_*.py'
@@ -42,6 +44,12 @@ uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
     cargo clippy --locked --workspace --all-targets -- -D warnings
     cargo build --locked --workspace
     cargo test --locked --workspace
+    # Windows-only code has no host build here, so lint it for the Windows target.
+    if rustup target list --installed | grep -qx x86_64-pc-windows-msvc; then
+        cargo clippy --locked --target x86_64-pc-windows-msvc -p soyeht-platform -p soyeht-process -p soyeht-ptyd --all-targets -- -D warnings
+    else
+        echo 'check_all: skipped the Windows lint; run: rustup target add x86_64-pc-windows-msvc'
+    fi
     run_exact_rust_test \
         terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage \
         cargo test --locked -p soyeht-engine \

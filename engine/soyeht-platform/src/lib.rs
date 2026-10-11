@@ -6,6 +6,7 @@
 //! - [`local`]: the endpoint other processes of the same user connect to. A Unix socket on
 //!   macOS and Linux; an authenticated loopback connection on Windows.
 //! - [`user`]: who is running the process.
+//! - [`log`]: one structured, escaped log line on standard error.
 //! - [`shutdown`]: when a stop is requested (the `tokio` feature).
 //! - [`process`]: ending a process together with everything it started (a process group on
 //!   Unix, a job object on Windows), and the Windows launch of a child into one.
@@ -15,6 +16,7 @@
 
 pub mod fs;
 pub mod local;
+pub mod log;
 pub mod process;
 #[cfg(feature = "tokio")]
 pub mod shutdown;

@@ -233,15 +233,6 @@ fn grants_replace_and_revoke_atomically_without_broadening_scope() {
             .unwrap()
             .is_none()
     );
-
-    let removed = store
-        .mutate("test", "remove", "remove", |change| {
-            let removed = change.remove_web_session_grant("workspace-1", "example.test", &scope)?;
-            Ok((json!({"removed": removed}), vec![]))
-        })
-        .unwrap();
-    assert_eq!(removed.result, json!({"removed": true}));
-    assert!(store.web_session_grants("workspace-1").unwrap().is_empty());
 }
 
 #[test]

@@ -6,6 +6,7 @@ pub mod limits;
 pub mod modes;
 pub use generated::*;
 pub mod attachment;
+pub mod data_directory;
 mod error;
 pub use error::{Error, Result};
 pub mod frame;

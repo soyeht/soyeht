@@ -17,17 +17,16 @@ fn urls_normalize_bare_hosts_and_keep_only_http_schemes() {
     let remote = NormalizedUrl::parse("example.com/a?q=1#part").unwrap();
     assert_eq!(remote.as_str(), "https://example.com/a?q=1#part");
     assert_eq!(remote.host(), "example.com");
-    assert!(!remote.is_local());
 
     for input in ["localhost:5173", "127.0.0.1:3000", "[::1]:8080"] {
         let local = NormalizedUrl::parse(input).unwrap();
         assert!(local.as_str().starts_with("http://"));
-        assert!(local.is_local());
     }
-    assert!(
+    assert_eq!(
         NormalizedUrl::parse("https://localhost:5173/")
             .unwrap()
-            .is_local()
+            .as_str(),
+        "https://localhost:5173/"
     );
     assert_eq!(
         NormalizedUrl::parse("file:///tmp/index.html"),
@@ -131,10 +130,7 @@ fn navigation_references_expire_atomically() {
     let first = references.issue().unwrap();
     assert_eq!(first, "e1");
     assert!(references.contains(7, &first).unwrap());
-    references.begin_navigation(8);
-    assert_eq!(references.contains(7, &first), Err(Error::StaleReference));
-    assert!(!references.contains(8, &first).unwrap());
-    assert_eq!(references.issue().unwrap(), "e1");
+    assert_eq!(references.contains(8, &first), Err(Error::StaleReference));
 }
 
 #[test]

@@ -5,7 +5,7 @@ use soyeht_engine::{
     log_rotation::{self, LOG_KEEP_ROTATED, LOG_MAX_BYTES},
     server::{self, Config},
 };
-use soyeht_protocol::profile::{DEV_DATA_DIRECTORY_FROM_HOME, DEV_TCP_PORT};
+use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_TCP_PORT};
 use std::{net::SocketAddr, path::PathBuf};
 
 #[tokio::main]
@@ -21,9 +21,7 @@ async fn main() -> Result<()> {
             None
         }
     };
-    let mut directory = std::env::home_dir()
-        .ok_or(Error::HomeMissing)?
-        .join(DEV_DATA_DIRECTORY_FROM_HOME);
+    let mut directory = dev_data_directory(std::env::home_dir())?;
     let mut listen = vec![];
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {

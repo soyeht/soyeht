@@ -105,7 +105,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
     tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
     let socket = config.directory.join(DEV_ENGINE_SOCKET);
-    let mut unix = match Listener::bind(&socket) {
+    let local = match Listener::bind(&socket) {
         Ok(listener) => listener,
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
         Err(BindError::Io(error)) => return Err(error.into()),
@@ -134,38 +134,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         let tailnet = network::TailnetListeners::system(port, serve);
         tasks.spawn(network::follow_tailnet(tailnet, Arc::clone(&core)).await?);
     }
-    {
-        let Accept {
-            core,
-            permits,
-            catalog_tx,
-        } = accept;
-        tasks.spawn(async move {
-            loop {
-                let stream = unix.accept().await?;
-                let Some(peer_audit_token) = local_peer_audit_token(&stream) else {
-                    continue;
-                };
-                let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
-                    continue;
-                };
-                let core = Arc::clone(&core);
-                let catalog_tx = catalog_tx.clone();
-                tokio::spawn(async move {
-                    let _permit = permit;
-                    let signed_ui = tokio::task::spawn_blocking(move || {
-                        ui_attestation::signed_ui_peer(peer_audit_token)
-                    })
-                    .await
-                    .unwrap_or(false);
-                    let (reader, writer) = transport::local(stream);
-                    connection(core, catalog_tx, true, signed_ui, reader, writer).await;
-                });
-            }
-            #[allow(unreachable_code)]
-            Ok::<(), Error>(())
-        });
-    }
+    tasks.spawn(serve_local(local, accept));
     tasks.spawn(crate::tick::run(Arc::clone(&core)));
     println!(
         "{}",
@@ -194,6 +163,36 @@ struct Accept {
     core: Shared,
     permits: Arc<Semaphore>,
     catalog_tx: mpsc::Sender<CatalogJob>,
+}
+
+/// Accepts the connections of this user on the local endpoint, for as long as the engine runs.
+async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Result<()> {
+    let Accept {
+        core,
+        permits,
+        catalog_tx,
+    } = accept;
+    loop {
+        let stream = local.accept().await?;
+        let Some(peer_audit_token) = local_peer_audit_token(&stream) else {
+            continue;
+        };
+        let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
+            continue;
+        };
+        let core = Arc::clone(&core);
+        let catalog_tx = catalog_tx.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            let signed_ui = tokio::task::spawn_blocking(move || {
+                ui_attestation::signed_ui_peer(peer_audit_token)
+            })
+            .await
+            .unwrap_or(false);
+            let (reader, writer) = transport::local(stream);
+            connection(core, catalog_tx, true, signed_ui, reader, writer).await;
+        });
+    }
 }
 
 async fn serve_tcp(listener: TcpListener, accept: Accept) -> io::Result<()> {

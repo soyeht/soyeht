@@ -4,8 +4,8 @@
 //! `soyeht_protocol::profile` constants. A client never invents its own location: the engine
 //! keeps its socket there on macOS, Linux and Windows alike, so the default needs no setup.
 
-use crate::{Error, Result};
-use soyeht_protocol::profile::{DEV_DATA_DIRECTORY_FROM_HOME, DEV_ENGINE_SOCKET};
+use crate::Result;
+use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_ENGINE_SOCKET};
 use std::path::PathBuf;
 
 /// Overrides the profile location, for example to reach a disposable engine.
@@ -24,15 +24,14 @@ fn resolve(override_path: Option<PathBuf>, home: Option<PathBuf>) -> Result<Path
     if let Some(path) = override_path.filter(|path| !path.as_os_str().is_empty()) {
         return Ok(path);
     }
-    let home = home.ok_or(Error::NoEngineSocket)?;
-    Ok(home
-        .join(DEV_DATA_DIRECTORY_FROM_HOME)
-        .join(DEV_ENGINE_SOCKET))
+    Ok(dev_data_directory(home)?.join(DEV_ENGINE_SOCKET))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Error;
+    use soyeht_protocol::profile::DEV_DATA_DIRECTORY_FROM_HOME;
 
     #[test]
     fn override_wins_over_the_profile_directory() {
@@ -57,6 +56,9 @@ mod tests {
 
     #[test]
     fn without_a_home_directory_there_is_no_default() {
-        assert!(matches!(resolve(None, None), Err(Error::NoEngineSocket)));
+        assert!(matches!(
+            resolve(None, None),
+            Err(Error::Protocol(soyeht_protocol::Error::HomeMissing))
+        ));
     }
 }

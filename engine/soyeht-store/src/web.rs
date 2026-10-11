@@ -202,27 +202,6 @@ impl Change<'_> {
         Ok(())
     }
 
-    pub fn remove_web_session_grant(
-        &self,
-        workspace_id: &str,
-        domain: &str,
-        scope: &WebSessionGrantScope,
-    ) -> Result<bool> {
-        validate_lookup(
-            workspace_id,
-            domain,
-            match scope {
-                WebSessionGrantScope::Task(task_id) => Some(task_id),
-                WebSessionGrantScope::Workspace => None,
-            },
-        )?;
-        let (scope, task_id) = encode_scope(scope);
-        Ok(self.transaction.execute(
-            "DELETE FROM web_session_grants WHERE workspace_id=?1 AND domain=?2 AND scope=?3 AND task_id IS ?4",
-            params![workspace_id, domain, scope, task_id],
-        )? == 1)
-    }
-
     pub fn save_web_permission_request(&self, request: &WebPermissionRequest) -> Result<()> {
         valid_permission(request.clone())?;
         if request.result.is_some() {

@@ -15,6 +15,4 @@ mod registry;
 pub mod retention;
 pub mod server;
 pub mod shell;
-#[cfg(unix)]
-mod tree;
 pub mod wire;
