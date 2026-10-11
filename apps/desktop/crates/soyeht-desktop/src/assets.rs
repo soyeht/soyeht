@@ -57,6 +57,14 @@ icons! {
     Minimize => "minus",
     Maximize => "square",
     Grid => "layout-grid",
+    ClipboardList => "clipboard-list",
+    Circle => "circle",
+    Check => "check",
+    Refresh => "refresh-cw",
+    Alert => "triangle-alert",
+    Stopped => "circle-stop",
+    ChevronRight => "chevron-right",
+    ChevronLeft => "chevron-left",
 }
 
 macro_rules! logo {

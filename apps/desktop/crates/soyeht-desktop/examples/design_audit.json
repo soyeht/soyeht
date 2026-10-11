@@ -1,0 +1,1576 @@
+{
+ "gaps": [
+  "t1"
+ ],
+ "focus": {
+  "workspaceId": "ws-ci"
+ },
+ "workspaces": [
+  {
+   "workspaceId": "ws-ci",
+   "name": "Soyeht CI",
+   "path": "/home/dev/soyeht",
+   "layout": {
+    "version": 2,
+    "mode": "custom",
+    "tree": {
+     "axis": "horizontal",
+     "children": [
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "claude",
+        "kind": "agent"
+       }
+      },
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "codex",
+        "kind": "agent"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "workspaceId": "ws-mix",
+   "name": "Soyeht Apps",
+   "path": "/home/dev/soyeht",
+   "layout": {
+    "version": 2,
+    "mode": "custom",
+    "tree": {
+     "axis": "horizontal",
+     "children": [
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "victoria",
+        "kind": "terminal"
+       }
+      },
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "aria",
+        "kind": "agent"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "workspaceId": "ws-cinema",
+   "name": "Cinema",
+   "path": "/home/dev/soyeht",
+   "layout": {
+    "version": 2,
+    "mode": "custom",
+    "tree": {
+     "axis": "horizontal",
+     "children": [
+      {
+       "weight": 1.0,
+       "node": {
+        "axis": "vertical",
+        "children": [
+         {
+          "weight": 1.0,
+          "node": {
+           "paneId": "t1",
+           "kind": "terminal"
+          }
+         },
+         {
+          "weight": 1.0,
+          "node": {
+           "paneId": "t2",
+           "kind": "terminal"
+          }
+         }
+        ]
+       }
+      },
+      {
+       "weight": 1.0,
+       "node": {
+        "axis": "vertical",
+        "children": [
+         {
+          "weight": 1.0,
+          "node": {
+           "paneId": "claude2",
+           "kind": "agent"
+          }
+         },
+         {
+          "weight": 1.0,
+          "node": {
+           "paneId": "t3",
+           "kind": "terminal"
+          }
+         }
+        ]
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "workspaceId": "ws-pdf",
+   "name": "PDFs",
+   "path": "/home/dev/soyeht",
+   "layout": {}
+  },
+  {
+   "workspaceId": "ws-arch",
+   "name": "Arquiteturas de Agentes",
+   "path": "/home/dev/soyeht",
+   "layout": {}
+  },
+  {
+   "workspaceId": "ws-aulas",
+   "name": "Aulas de IA",
+   "path": "/home/dev/soyeht",
+   "layout": {}
+  },
+  {
+   "workspaceId": "ws-kaggle",
+   "name": "Kaggle",
+   "path": "/home/dev/soyeht",
+   "layout": {}
+  },
+  {
+   "workspaceId": "ws-rows",
+   "name": "Rows",
+   "path": "/home/dev/soyeht",
+   "layout": {
+    "version": 2,
+    "mode": "custom",
+    "tree": {
+     "axis": "horizontal",
+     "children": [
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "rows-a",
+        "kind": "agent"
+       }
+      },
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "rows-b",
+        "kind": "agent"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "workspaceId": "ws-empty",
+   "name": "Empty",
+   "path": "/home/dev/soyeht",
+   "layout": {}
+  }
+ ],
+ "panes": [
+  {
+   "paneId": "claude",
+   "workspaceId": "ws-ci",
+   "name": "Claude",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.claude-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opus",
+      "options": [
+       {
+        "value": "opus",
+        "name": "Opus 5 (1M)"
+       },
+       {
+        "value": "sonnet",
+        "name": "Sonnet 5.5"
+       },
+       {
+        "value": "haiku",
+        "name": "Haiku 5"
+       }
+      ]
+     },
+     {
+      "id": "effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "high",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "max",
+        "name": "max"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "acceptEdits",
+      "options": [
+       {
+        "value": "default",
+        "name": "Manual"
+       },
+       {
+        "value": "acceptEdits",
+        "name": "Accept edits"
+       },
+       {
+        "value": "plan",
+        "name": "Plan"
+       },
+       {
+        "value": "auto",
+        "name": "Auto"
+       },
+       {
+        "value": "bypass",
+        "name": "Bypass"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": null,
+    "role": "worker"
+   },
+   "title": "Implement the ACP v2 client (+84 -3), asked Codex to run the contract tests"
+  },
+  {
+   "paneId": "codex",
+   "workspaceId": "ws-ci",
+   "name": "Codex",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "waiting_for_you",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.codex-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.codex-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "gpt-6-astra",
+      "options": [
+       {
+        "value": "gpt-6-astra",
+        "name": "gpt-6-astra"
+       },
+       {
+        "value": "gpt-6-mini",
+        "name": "gpt-6-mini"
+       }
+      ]
+     },
+     {
+      "id": "reasoning_effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "medium",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "xhigh",
+        "name": "extra high"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "ask",
+      "options": [
+       {
+        "value": "ask",
+        "name": "Ask for approval"
+       },
+       {
+        "value": "auto",
+        "name": "Approve for me"
+       },
+       {
+        "value": "full",
+        "name": "Full access"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": "p-1",
+    "role": "worker"
+   },
+   "title": "Green ACP contract tests"
+  },
+  {
+   "paneId": "victoria",
+   "workspaceId": "ws-mix",
+   "name": "victoria",
+   "cwd": "/home/dev/soyeht",
+   "mode": "terminal",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false
+  },
+  {
+   "paneId": "aria",
+   "workspaceId": "ws-mix",
+   "name": "aria",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "working",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.claude-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opus",
+      "options": [
+       {
+        "value": "opus",
+        "name": "Opus 5 (1M)"
+       },
+       {
+        "value": "sonnet",
+        "name": "Sonnet 5.5"
+       },
+       {
+        "value": "haiku",
+        "name": "Haiku 5"
+       }
+      ]
+     },
+     {
+      "id": "effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "high",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "max",
+        "name": "max"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "acceptEdits",
+      "options": [
+       {
+        "value": "default",
+        "name": "Manual"
+       },
+       {
+        "value": "acceptEdits",
+        "name": "Accept edits"
+       },
+       {
+        "value": "plan",
+        "name": "Plan"
+       },
+       {
+        "value": "auto",
+        "name": "Auto"
+       },
+       {
+        "value": "bypass",
+        "name": "Bypass"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": "p-aria",
+    "role": "worker"
+   },
+   "title": "ACP adapter: session, prompt, permissions"
+  },
+  {
+   "paneId": "t1",
+   "workspaceId": "ws-cinema",
+   "name": "build",
+   "cwd": "/home/dev/soyeht",
+   "mode": "terminal",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false
+  },
+  {
+   "paneId": "t2",
+   "workspaceId": "ws-cinema",
+   "name": "logs",
+   "cwd": "/home/dev/soyeht",
+   "mode": "terminal",
+   "state": "dead",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false
+  },
+  {
+   "paneId": "claude2",
+   "workspaceId": "ws-cinema",
+   "name": "Claude",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.claude-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opus",
+      "options": [
+       {
+        "value": "opus",
+        "name": "Opus 5 (1M)"
+       },
+       {
+        "value": "sonnet",
+        "name": "Sonnet 5.5"
+       },
+       {
+        "value": "haiku",
+        "name": "Haiku 5"
+       }
+      ]
+     },
+     {
+      "id": "effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "high",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "max",
+        "name": "max"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "acceptEdits",
+      "options": [
+       {
+        "value": "default",
+        "name": "Manual"
+       },
+       {
+        "value": "acceptEdits",
+        "name": "Accept edits"
+       },
+       {
+        "value": "plan",
+        "name": "Plan"
+       },
+       {
+        "value": "auto",
+        "name": "Auto"
+       },
+       {
+        "value": "bypass",
+        "name": "Bypass"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": null,
+    "role": "worker"
+   }
+  },
+  {
+   "paneId": "t3",
+   "workspaceId": "ws-cinema",
+   "name": "shell",
+   "cwd": "/home/dev/soyeht",
+   "mode": "terminal",
+   "state": "no_signal",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false
+  },
+  {
+   "paneId": "t4",
+   "workspaceId": "ws-pdf",
+   "name": "shell",
+   "cwd": "/home/dev/soyeht",
+   "mode": "terminal",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false
+  },
+  {
+   "paneId": "rows-a",
+   "workspaceId": "ws-rows",
+   "name": "Claude",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.claude-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opus",
+      "options": [
+       {
+        "value": "opus",
+        "name": "Opus 5 (1M)"
+       },
+       {
+        "value": "sonnet",
+        "name": "Sonnet 5.5"
+       },
+       {
+        "value": "haiku",
+        "name": "Haiku 5"
+       }
+      ]
+     },
+     {
+      "id": "effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "high",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "max",
+        "name": "max"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "acceptEdits",
+      "options": [
+       {
+        "value": "default",
+        "name": "Manual"
+       },
+       {
+        "value": "acceptEdits",
+        "name": "Accept edits"
+       },
+       {
+        "value": "plan",
+        "name": "Plan"
+       },
+       {
+        "value": "auto",
+        "name": "Auto"
+       },
+       {
+        "value": "bypass",
+        "name": "Bypass"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": null,
+    "role": "worker"
+   },
+   "title": "Rows of the transcript"
+  },
+  {
+   "paneId": "rows-b",
+   "workspaceId": "ws-rows",
+   "name": "Claude 2",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "working",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.claude-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opus",
+      "options": [
+       {
+        "value": "opus",
+        "name": "Opus 5 (1M)"
+       },
+       {
+        "value": "sonnet",
+        "name": "Sonnet 5.5"
+       },
+       {
+        "value": "haiku",
+        "name": "Haiku 5"
+       }
+      ]
+     },
+     {
+      "id": "effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "high",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "max",
+        "name": "max"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "acceptEdits",
+      "options": [
+       {
+        "value": "default",
+        "name": "Manual"
+       },
+       {
+        "value": "acceptEdits",
+        "name": "Accept edits"
+       },
+       {
+        "value": "plan",
+        "name": "Plan"
+       },
+       {
+        "value": "auto",
+        "name": "Auto"
+       },
+       {
+        "value": "bypass",
+        "name": "Bypass"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": "p-rows",
+    "role": "worker"
+   },
+   "title": "More rows"
+  }
+ ],
+ "requests": [
+  {
+   "kind": "permission",
+   "request": {
+    "requestId": "r1",
+    "paneId": "codex",
+    "generation": 1,
+    "promptId": "p-1",
+    "title": "Codex asks to run",
+    "detail": "",
+    "presentation": {
+     "command": "$ cargo test -p acp contract_session_new",
+     "executionDetails": [
+      "cwd /home/dev/soyeht"
+     ],
+     "fileChanges": [],
+     "previewOmitted": false
+    },
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "options": [
+     {
+      "optionId": "allow",
+      "kind": "allow_once",
+      "name": "Allow"
+     },
+     {
+      "optionId": "always",
+      "kind": "allow_always",
+      "name": "Always in this pane"
+     },
+     {
+      "optionId": "deny",
+      "kind": "reject_once",
+      "name": "Deny"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "permission",
+   "request": {
+    "requestId": "r2",
+    "paneId": "aria",
+    "generation": 1,
+    "promptId": "p-1",
+    "title": "aria asks to edit",
+    "detail": "",
+    "presentation": {
+     "targetPath": "engine/acp/client.rs",
+     "fileChanges": [
+      {
+       "path": "engine/acp/client.rs",
+       "oldText": "let session = self.open(params)?;",
+       "newText": "let session = self.open(params).await?;"
+      }
+     ],
+     "previewOmitted": false
+    },
+    "expiresAt": "2030-01-01T00:00:00Z",
+    "options": [
+     {
+      "optionId": "allow",
+      "kind": "allow_once",
+      "name": "Allow"
+     },
+     {
+      "optionId": "always",
+      "kind": "allow_always",
+      "name": "Always in this pane"
+     },
+     {
+      "optionId": "deny",
+      "kind": "reject_once",
+      "name": "Deny"
+     }
+    ]
+   }
+  }
+ ],
+ "transcripts": {
+  "claude": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "user",
+    "kind": "message",
+    "text": "Ask Codex to run the ACP contract tests on its side and tell me the result.",
+    "complete": true
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "thought",
+    "text": "The person wants the contract tests run by the other agent. I should send a message to Codex through Soyeht and wait.",
+    "complete": true
+   },
+   {
+    "localId": "m3",
+    "generation": 1,
+    "seq": "3",
+    "role": "assistant",
+    "kind": "message",
+    "text": "Sent to Codex through Soyeht. I'll continue once it answers.",
+    "complete": true
+   },
+   {
+    "localId": "m4",
+    "generation": 1,
+    "seq": "4",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c4",
+     "title": "schema/v2/meta.json",
+     "kind": "read",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m5",
+    "generation": 1,
+    "seq": "5",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c5",
+     "title": "engine/acp/client.rs  +84 -3",
+     "kind": "edit",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m6",
+    "generation": 1,
+    "seq": "6",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c6",
+     "title": "Soyeht message_agent -> Codex",
+     "kind": "other",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m7",
+    "generation": 1,
+    "seq": "7",
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "complete": true,
+    "usage": {
+     "inputTokens": "70000",
+     "outputTokens": "14000",
+     "totalTokens": "84000",
+     "contextSize": "200000"
+    }
+   }
+  ],
+  "rows-a": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "user",
+    "kind": "message",
+    "text": "Run the contract tests and fix whatever they report.",
+    "complete": true
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "thought",
+    "text": "Plan first, then run the tests.",
+    "complete": true
+   },
+   {
+    "localId": "m3",
+    "generation": 1,
+    "seq": "3",
+    "role": "assistant",
+    "kind": "message",
+    "text": "Starting with the plan.",
+    "complete": true
+   },
+   {
+    "localId": "m4",
+    "generation": 1,
+    "seq": "4",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c4",
+     "title": "schema/v2/meta.json",
+     "kind": "read",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m5",
+    "generation": 1,
+    "seq": "5",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c5",
+     "title": "engine/acp/client.rs  +84 -3",
+     "kind": "edit",
+     "status": "completed",
+     "locations": [
+      {
+       "path": "engine/acp/client.rs",
+       "line": 41
+      }
+     ]
+    }
+   },
+   {
+    "localId": "m6",
+    "generation": 1,
+    "seq": "6",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c6",
+     "title": "Soyeht message_agent -> Codex",
+     "kind": "other",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m7",
+    "generation": 1,
+    "seq": "7",
+    "role": "assistant",
+    "kind": "plan",
+    "text": "",
+    "complete": true,
+    "plan": [
+     {
+      "content": "Read the v2 schema and the SDK",
+      "priority": "high",
+      "status": "completed"
+     },
+     {
+      "content": "Write the session/new and session/prompt handlers",
+      "priority": "high",
+      "status": "completed"
+     },
+     {
+      "content": "Ask Codex to run the contract tests",
+      "priority": "medium",
+      "status": "in_progress"
+     },
+     {
+      "content": "Fix whatever the tests report",
+      "priority": "medium",
+      "status": "pending"
+     }
+    ]
+   },
+   {
+    "localId": "m8",
+    "generation": 1,
+    "seq": "8",
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "complete": true,
+    "usage": {
+     "inputTokens": "30000",
+     "outputTokens": "6000",
+     "totalTokens": "36000",
+     "contextSize": "200000"
+    }
+   }
+  ],
+  "rows-b": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": false,
+    "tool": {
+     "toolCallId": "c1",
+     "title": "cargo test -p acp contract_session_new",
+     "kind": "execute",
+     "status": "in_progress",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c2",
+     "title": "Grep session/new in rust-sdk/src with a rather long title that has to be cut by the row",
+     "kind": "search",
+     "status": "failed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m3",
+    "generation": 1,
+    "seq": "3",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": false,
+    "tool": {
+     "toolCallId": "c3",
+     "title": "https://example.com/spec",
+     "kind": "fetch",
+     "status": "pending",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m4",
+    "generation": 1,
+    "seq": "4",
+    "role": "assistant",
+    "kind": "terminal",
+    "text": "",
+    "complete": true,
+    "terminal": {
+     "terminalId": "term-1",
+     "bytes": "cnVubmluZyAzIHRlc3RzCnRlc3QgY29udHJhY3Q6OnNlc3Npb25fbmV3IC4uLiBvawp0ZXN0IGNvbnRyYWN0OjpzZXNzaW9uX3Byb21wdCAuLi4gb2sKdGVzdCBjb250cmFjdDo6cGVybWlzc2lvbnMgLi4uIEZBSUxFRAoKZmFpbHVyZXM6CiAgICBjb250cmFjdDo6cGVybWlzc2lvbnMKCnRlc3QgcmVzdWx0OiBGQUlMRUQuIDIgcGFzc2VkOyAxIGZhaWxlZAo=",
+     "offset": "0",
+     "truncated": false,
+     "exitCode": 1
+    }
+   },
+   {
+    "localId": "m5",
+    "generation": 1,
+    "seq": "5",
+    "role": "system",
+    "kind": "system",
+    "text": "The agent was restarted after the last turn.",
+    "complete": true
+   },
+   {
+    "localId": "m6",
+    "generation": 1,
+    "seq": "6",
+    "role": "assistant",
+    "kind": "handover",
+    "text": "Codex",
+    "complete": true
+   },
+   {
+    "localId": "m7",
+    "generation": 1,
+    "seq": "7",
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "complete": true,
+    "usage": {
+     "inputTokens": "70000",
+     "outputTokens": "14000",
+     "totalTokens": "84000",
+     "contextSize": "200000"
+    }
+   }
+  ],
+  "codex": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "user",
+    "kind": "message",
+    "text": "Please run cargo test -p acp contract_session_new and tell me if it passes.",
+    "complete": true,
+    "agentMessage": {
+     "paneId": "claude",
+     "name": "Claude",
+     "harness": "claude"
+    }
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "message",
+    "text": "Running the contract tests now.",
+    "complete": true
+   },
+   {
+    "localId": "m3",
+    "generation": 1,
+    "seq": "3",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c3",
+     "title": "schema/v2/meta.json",
+     "kind": "read",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m4",
+    "generation": 1,
+    "seq": "4",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": false,
+    "tool": {
+     "toolCallId": "c4",
+     "title": "cargo test -p acp contract_session_new",
+     "kind": "execute",
+     "status": "in_progress",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m5",
+    "generation": 1,
+    "seq": "5",
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "complete": true,
+    "usage": {
+     "inputTokens": "30000",
+     "outputTokens": "6000",
+     "totalTokens": "36000",
+     "contextSize": "200000"
+    }
+   }
+  ],
+  "aria": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "user",
+    "kind": "message",
+    "text": "Implement the ACP client in the engine: initialize, session/new, session/prompt and session/update. Start with the contract tests, and keep the diff small enough to review.",
+    "complete": true
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "message",
+    "text": "I read the v2 schema and the SDK. I will start with the handshake and the session/new contract test, then the prompt turn.\n\nThe update stream is the part with the most edge cases, so it comes last.",
+    "complete": true
+   },
+   {
+    "localId": "m3",
+    "generation": 1,
+    "seq": "3",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c3",
+     "title": "schema/v2/meta.json",
+     "kind": "read",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m4",
+    "generation": 1,
+    "seq": "4",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c4",
+     "title": "session/new  rust-sdk/src",
+     "kind": "search",
+     "status": "completed",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m5",
+    "generation": 1,
+    "seq": "5",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": true,
+    "tool": {
+     "toolCallId": "c5",
+     "title": "engine/acp/client.rs  +84 -3",
+     "kind": "edit",
+     "status": "completed",
+     "locations": [
+      {
+       "path": "engine/acp/client.rs",
+       "line": 41
+      }
+     ]
+    }
+   },
+   {
+    "localId": "m6",
+    "generation": 1,
+    "seq": "6",
+    "role": "assistant",
+    "kind": "tool",
+    "text": "",
+    "complete": false,
+    "tool": {
+     "toolCallId": "c6",
+     "title": "cargo test -p acp contract_session_new",
+     "kind": "execute",
+     "status": "in_progress",
+     "locations": []
+    }
+   },
+   {
+    "localId": "m7",
+    "generation": 1,
+    "seq": "7",
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "complete": true,
+    "usage": {
+     "inputTokens": "40000",
+     "outputTokens": "5000",
+     "totalTokens": "45000",
+     "contextSize": "200000"
+    }
+   }
+  ],
+  "claude2": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "user",
+    "kind": "message",
+    "text": "oi",
+    "complete": true
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "message",
+    "text": "Hello! How can I help?",
+    "complete": true
+   }
+  ]
+ },
+ "terminals": {
+  "victoria": "\u001b[1m$\u001b[0m mkdir -p ~/soyeht/design && ls -la\r\ntotal 8\r\ndrwx------  3 dev  dev   96 Sep 10 00:02 \u001b[34m.\u001b[0m\r\n-rw-------  1 dev  dev   33 Sep 10 00:02 soyeht-desktop.pen\r\n\u001b[32m$\u001b[0m cargo test -p acp\r\n\u001b[2mrunning 3 tests\u001b[0m\r\ntest contract::session_new ... \u001b[32mok\u001b[0m\r\ntest contract::permissions ... \u001b[31mFAILED\u001b[0m\r\n$ ",
+  "t1": "$ ls\r\nCargo.toml  src  target\r\n$ ",
+  "t2": "$ tail -f log\r\nlog: stream closed\r\n",
+  "t3": "$ ",
+  "t4": "$ "
+ },
+ "usage": [
+  {
+   "provider": "claude",
+   "state": "ok",
+   "source": "claude_oauth_endpoint",
+   "fetchedAt": "2026-10-10T00:00:00Z",
+   "primary": {
+    "used": 0.73,
+    "resetsAt": "2026-10-17T00:00:00Z",
+    "label": "Week"
+   }
+  },
+  {
+   "provider": "codex",
+   "state": "ok",
+   "source": "codex_app_server",
+   "fetchedAt": "2026-10-10T00:00:00Z",
+   "primary": {
+    "used": 0.21,
+    "resetsAt": "2026-10-17T00:00:00Z",
+    "label": "Week"
+   }
+  },
+  {
+   "provider": "cursor",
+   "state": "ok",
+   "source": "cursor_current_period",
+   "fetchedAt": "2026-10-10T00:00:00Z",
+   "primary": {
+    "used": 0.52,
+    "resetsAt": "2026-10-17T00:00:00Z",
+    "label": "Month"
+   }
+  }
+ ],
+ "harnesses": [
+  {
+   "id": "registry.claude-acp",
+   "name": "Claude",
+   "available": true,
+   "installed": true,
+   "version": "1.0",
+   "capabilities": [],
+   "options": [],
+   "authMethods": [],
+   "setupState": "ready"
+  },
+  {
+   "id": "registry.codex-acp",
+   "name": "Codex",
+   "available": true,
+   "installed": true,
+   "version": "1.0",
+   "capabilities": [],
+   "options": [],
+   "authMethods": [],
+   "setupState": "ready"
+  },
+  {
+   "id": "registry.cursor-acp",
+   "name": "Cursor",
+   "available": true,
+   "installed": true,
+   "version": "1.0",
+   "capabilities": [],
+   "options": [],
+   "authMethods": [],
+   "setupState": "not_checked"
+  },
+  {
+   "id": "registry.gemini-acp",
+   "name": "Gemini CLI",
+   "available": true,
+   "installed": true,
+   "version": "1.0",
+   "capabilities": [],
+   "options": [],
+   "authMethods": [],
+   "setupState": "sign_in"
+  },
+  {
+   "id": "registry.goose-acp",
+   "name": "Goose",
+   "available": false,
+   "installed": false,
+   "version": "1.0",
+   "capabilities": [],
+   "options": [],
+   "authMethods": [],
+   "setupState": "not_installed"
+  },
+  {
+   "id": "registry.opencode-acp",
+   "name": "OpenCode",
+   "available": false,
+   "installed": false,
+   "version": "1.0",
+   "capabilities": [],
+   "options": [],
+   "authMethods": [],
+   "setupState": "not_installed"
+  }
+ ]
+}

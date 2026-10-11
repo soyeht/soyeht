@@ -9,11 +9,11 @@ mod assets;
 mod composer_field;
 mod destination;
 mod draft;
+mod fixture;
 mod fonts;
 mod gallery;
 mod neo;
 mod open_menu;
-mod tab_plan;
 mod terminal_view;
 pub mod theme;
 mod views;
@@ -21,4 +21,5 @@ mod window_size;
 mod workbench;
 
 pub use app::run;
+pub use fixture::run as run_fixture;
 pub use gallery::run as run_gallery;

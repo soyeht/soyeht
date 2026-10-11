@@ -5,22 +5,22 @@
 use super::{
     harness_menu::Pick,
     menus,
-    ui::{OwnPress, icon, id, row, spacer},
+    ui::{
+        OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer, waiting_badge,
+        working_dot,
+    },
     window_controls,
 };
 use crate::{
     assets::Icon,
     neo,
     open_menu::Menu,
-    tab_plan,
-    theme::{
-        Palette, desktop, elevation, fonts, glyph, layout, pane_interior, radius, space, type_scale,
-    },
+    theme::{Palette, desktop, elevation, glyph, layout, pane_interior, radius, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
     Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, div, point,
     prelude::FluentBuilder, px, rgb,
 };
 use soyeht_client::Connection;
@@ -33,12 +33,10 @@ impl Workbench {
     pub(super) fn top_bar(
         &mut self,
         palette: &'static Palette,
-        width: f32,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Div {
         let gap = space::X10;
-        let control = layout::TOP_BAR_CONTROL_HEIGHT;
         let on_mac = cfg!(target_os = "macos");
         let leading = if on_mac {
             layout::TOP_BAR_LEADING_INSET
@@ -50,48 +48,8 @@ impl Workbench {
         } else {
             window_controls::visible(window)
         };
-        let controls = if shown.is_empty() {
-            0.0
-        } else {
-            window_controls::width(shown.len()) + gap
-        };
-        let fixed = leading + 2.0 * (control + gap) + controls + space::X12 + MINIMUM_DRAG;
-        let available = (width - fixed).max(0.0);
-
-        let workspaces = self.state.workspaces();
-        let names: Vec<&str> = workspaces.iter().map(|w| w.name.as_str()).collect();
-        let selected = self
-            .state
-            .selected_workspace()
-            .map(|w| w.workspace_id.clone());
-        let active = workspaces
-            .iter()
-            .position(|w| Some(&w.workspace_id) == selected.as_ref());
-        let plan = tab_plan::plan(&names, active, available);
-        let tabs: Vec<AnyElement> = plan
-            .visible
-            .iter()
-            .map(|&index| {
-                let workspace = &workspaces[index];
-                self.tab(
-                    &workspace.workspace_id,
-                    &workspace.name,
-                    Some(index) == active,
-                    palette,
-                    cx,
-                )
-            })
-            .collect();
-        let hidden: Vec<(String, String)> = plan
-            .hidden
-            .iter()
-            .map(|&index| {
-                (
-                    workspaces[index].workspace_id.clone(),
-                    workspaces[index].name.clone(),
-                )
-            })
-            .collect();
+        let strip = self.tab_strip(palette, cx);
+        let hidden = strip.hidden;
         let connected = self.state.connection == Connection::Connected;
         let reconnecting = !connected && !matches!(self.state.connection, Connection::Connecting);
 
@@ -103,12 +61,116 @@ impl Workbench {
             .pl(px(leading))
             .pr(px(space::X12))
             .child(self.rail_toggle(palette, cx))
-            .children(tabs)
-            .child(window_controls::drag_area(spacer()))
+            .child(strip.element)
+            .child(window_controls::drag_area(spacer().min_w(px(MINIMUM_DRAG))))
             .children((!hidden.is_empty()).then(|| self.overflow(&hidden, palette, cx)))
             .child(self.new_pane_button(connected, palette, cx))
             .children(reconnecting.then(|| reconnecting_note(palette)))
             .children((!shown.is_empty()).then(|| window_controls::controls(&shown, palette, cx)))
+    }
+
+    /// The workspace tabs in a strip that scrolls sideways, as the Mac's does: a fade over each end
+    /// that hides tabs, with a chevron on it that moves the strip to the next hidden tab, and the
+    /// active tab scrolled into view when it changes. The tabs that are not wholly in view, as
+    /// the last frame laid them out, are the ones the "+N" button lists.
+    fn tab_strip(&mut self, palette: &'static Palette, cx: &mut Context<Self>) -> TabStrip {
+        let workspaces = self.state.workspaces();
+        let ids: Vec<(String, String)> = workspaces
+            .iter()
+            .map(|w| (w.workspace_id.clone(), w.name.clone()))
+            .collect();
+        let selected = self
+            .state
+            .selected_workspace()
+            .map(|w| w.workspace_id.clone());
+        let active = ids.iter().position(|(id, _)| Some(id) == selected.as_ref());
+        let viewport = self.tab_scroll.bounds();
+        // The active tab is brought into view by the smallest move that shows all of it, once the
+        // strip has been laid out and its tab has a place.
+        if self.revealed_tab != selected
+            && viewport.size.width > px(0.0)
+            && let Some(tab) = active.and_then(|index| self.tab_scroll.bounds_for_item(index))
+        {
+            let clearance = px(shadow_clearance());
+            let shift = if tab.left() < viewport.left() + clearance {
+                viewport.left() + clearance - tab.left()
+            } else if tab.right() > viewport.right() - clearance {
+                viewport.right() - clearance - tab.right()
+            } else {
+                px(0.0)
+            };
+            let offset = self.tab_scroll.offset();
+            self.tab_scroll
+                .set_offset(point(offset.x + shift, offset.y));
+            self.revealed_tab.clone_from(&selected);
+        }
+        let hidden: Vec<usize> = (0..ids.len())
+            .filter(|&index| {
+                self.tab_scroll.bounds_for_item(index).is_some_and(|tab| {
+                    viewport.size.width > px(0.0)
+                        && (tab.left() < viewport.left() || tab.right() > viewport.right())
+                })
+            })
+            .collect();
+        if hidden.len() != self.hidden_tabs {
+            // The "+N" button changes the strip's room: lay it out again with the new count.
+            self.hidden_tabs = hidden.len();
+            cx.notify();
+        }
+        let (left, right) = hidden_ends(&self.tab_scroll);
+        let first_hidden = hidden.first().copied();
+        let last_hidden = hidden.last().copied();
+        let tabs: Vec<AnyElement> = ids
+            .iter()
+            .enumerate()
+            .map(|(index, (id, name))| self.tab(id, name, Some(index) == active, palette, cx))
+            .collect();
+        let clearance = shadow_clearance();
+        let chevron = |key: &'static str, glyph: Icon, target: Option<usize>| {
+            row()
+                .id(key)
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .when(key == "tabs-scroll-left", |end| end.left(px(space::X2)))
+                .when(key == "tabs-scroll-right", |end| end.right(px(space::X2)))
+                .cursor_pointer()
+                .own_press()
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    if let Some(index) = target {
+                        this.tab_scroll.scroll_to_item(index);
+                        cx.notify();
+                    }
+                }))
+                .child(icon(glyph, glyph::CHEVRON, palette.ink))
+                .into_any_element()
+        };
+        let mut strip = div()
+            .id("workspace-tabs")
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(space::X10))
+            .p(px(clearance))
+            .overflow_x_scroll()
+            .track_scroll(&self.tab_scroll)
+            .children(tabs);
+        strip.style().flex_shrink = Some(1.0);
+        let element = div()
+            .relative()
+            .flex()
+            .flex_shrink(1.0)
+            .min_w_0()
+            .h(px(layout::WORKSPACE_TAB_HEIGHT + 2.0 * clearance))
+            .child(strip)
+            .children(edge_fades(&self.tab_scroll, palette))
+            .children(left.then(|| chevron("tabs-scroll-left", Icon::ChevronLeft, first_hidden)))
+            .children(right.then(|| chevron("tabs-scroll-right", Icon::ChevronRight, last_hidden)))
+            .into_any_element();
+        TabStrip {
+            element,
+            hidden: hidden.into_iter().map(|index| ids[index].clone()).collect(),
+        }
     }
 
     fn rail_toggle(&self, palette: &'static Palette, cx: &mut Context<Self>) -> AnyElement {
@@ -120,6 +182,7 @@ impl Workbench {
             .items_center()
             .justify_center()
             .cursor_pointer()
+            .tooltip(hint("Toggle app bar", palette))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_rail(cx)))
             .child(icon(Icon::Grid, glyph::TOP_BAR_TOGGLE, palette.ink))
             .into_any_element()
@@ -133,6 +196,10 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        // Beside the name: how many requests wait in the workspace, else a dot while an agent
+        // of it works.
+        let waiting = self.state.waiting_requests(Some(workspace_id));
+        let working = self.state.has_working_agent(Some(workspace_id));
         let select_id = workspace_id.to_owned();
         let close_id = workspace_id.to_owned();
         let surface = if selected {
@@ -157,19 +224,27 @@ impl Workbench {
                     this.focus_input(&pane_id, window, cx);
                 }
             }))
+            .tooltip(hint(name.to_owned(), palette))
             .child(
-                div()
+                row()
                     .min_w_0()
-                    .truncate()
-                    .font_family(fonts::CHROME)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(type_scale::CAPTION))
-                    .text_color(rgb(if selected {
-                        palette.accent
-                    } else {
-                        palette.ink
-                    }))
-                    .child(SharedString::from(name.to_owned())),
+                    .gap(px(space::X8))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .chrome()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_size(px(type_scale::CAPTION))
+                            .text_color(rgb(if selected {
+                                palette.accent
+                            } else {
+                                palette.ink
+                            }))
+                            .child(SharedString::from(name.to_owned())),
+                    )
+                    .children((waiting > 0).then(|| waiting_badge(waiting, palette)))
+                    .children((waiting == 0 && working).then(|| working_dot(palette))),
             )
             .child(
                 div()
@@ -178,6 +253,7 @@ impl Workbench {
                     .p(px(space::X2))
                     .cursor_pointer()
                     .own_press()
+                    .tooltip(hint(format!("Close {name}"), palette))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.close_workspace(&close_id, cx);
                         cx.stop_propagation();
@@ -220,10 +296,14 @@ impl Workbench {
                     .items_center()
                     .justify_center()
                     .cursor_pointer()
-                    .font_family(fonts::CHROME)
+                    .chrome()
                     .font_weight(FontWeight::BOLD)
                     .text_size(px(type_scale::CAPTION))
                     .text_color(rgb(palette.accent))
+                    .tooltip(hint(
+                        format!("Show {} more workspaces", hidden.len()),
+                        palette,
+                    ))
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.toggle_menu(Menu::Overflow, cx)
                     }))
@@ -280,6 +360,7 @@ impl Workbench {
                         button.opacity(pane_interior::DISABLED_OPACITY)
                     })
                     .when(connected, |button| button.cursor_pointer())
+                    .tooltip(hint("Open a terminal or agent pane", palette))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         if connected {
                             this.toggle_menu(Menu::NewPane, cx);
@@ -303,6 +384,19 @@ impl Workbench {
     }
 }
 
+/// The strip of tabs and the workspaces whose tabs are not wholly in view.
+struct TabStrip {
+    element: AnyElement,
+    hidden: Vec<(String, String)>,
+}
+
+/// How far a raised pill's shadow reaches past its edge: the room a strip that clips its tabs
+/// leaves around them.
+fn shadow_clearance() -> f32 {
+    let pill = elevation::PILL;
+    (pill.light_offset + pill.light_blur).max(pill.dark_offset + pill.dark_blur)
+}
+
 fn reconnecting_note(palette: &Palette) -> AnyElement {
     row()
         .flex_none()
@@ -315,7 +409,7 @@ fn reconnecting_note(palette: &Palette) -> AnyElement {
         )
         .child(
             div()
-                .font_family(fonts::MONO)
+                .mono()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(px(type_scale::MICRO))
                 .text_color(rgb(palette.secondary))

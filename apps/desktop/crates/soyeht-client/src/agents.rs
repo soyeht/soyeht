@@ -4,19 +4,54 @@
 use crate::{
     agent::{self, AgentView},
     layout,
-    state::{Effect, Expected, State},
+    state::{Connection, Effect, Expected, State},
 };
 use serde_json::Value;
 use soyeht_protocol::{
     EventName, HarnessInfo, Pane, PaneConfigChangedEvent, PaneMode, PanePermissionAnsweredEvent,
-    PanePermissionRequestedEvent, PaneSessionLostEvent, PaneSessionStartedEvent, PaneUpdateEvent,
-    PermissionRequest, UsageChangedEvent, UsageReading, Workspace, WorkspacePaneLayoutAxis,
-    WorkspacePaneLayoutEnvelope, WorkspacePaneLayoutNode,
+    PanePermissionRequestedEvent, PaneSessionLostEvent, PaneSessionStartedEvent, PaneState,
+    PaneUpdateEvent, PermissionRequest, UsageChangedEvent, UsageReading, Workspace,
+    WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope, WorkspacePaneLayoutNode,
 };
 
 impl State {
     pub fn agent(&self, pane_id: &str) -> Option<&AgentView> {
         self.agents.get(pane_id)
+    }
+
+    /// How many requests agents wait on, in `workspace` or in all of them, as the badges of the rail
+    /// and the tabs count them. Nothing waits while the engine is out of reach.
+    pub fn waiting_requests(&self, workspace: Option<&str>) -> usize {
+        if self.connection != Connection::Connected {
+            return 0;
+        }
+        self.agent_panes(workspace)
+            .filter(|pane| {
+                self.agents
+                    .get(&pane.pane_id)
+                    .is_some_and(|view| view.permission.is_some())
+            })
+            .count()
+    }
+
+    /// Whether an agent of `workspace`, or of any, is working: the dot beside the badges.
+    pub fn has_working_agent(&self, workspace: Option<&str>) -> bool {
+        self.connection == Connection::Connected
+            && self
+                .agent_panes(workspace)
+                .any(|pane| pane.state == PaneState::Working)
+    }
+
+    /// Whether any agent is in the middle of a turn, so that the time in its header must tick.
+    pub fn has_running_turn(&self) -> bool {
+        self.agent_panes(None)
+            .any(|pane| agent::is_running(&pane.state))
+    }
+
+    fn agent_panes<'a>(&'a self, workspace: Option<&'a str>) -> impl Iterator<Item = &'a Pane> {
+        self.panes.iter().filter(move |pane| {
+            pane.mode == PaneMode::Agent && workspace.is_none_or(|id| pane.workspace_id == id)
+        })
     }
 
     /// The panes that have an agent transcript.
@@ -171,6 +206,11 @@ impl State {
             view.permission = None;
             effects.push(Effect::LoadTranscript(id));
         }
+        for pane in &self.panes {
+            if let Some(view) = self.agents.get_mut(&pane.pane_id) {
+                observe_turn(view, pane);
+            }
+        }
         for entry in requests {
             if entry.get("kind").and_then(Value::as_str) != Some("permission") {
                 continue;
@@ -319,6 +359,15 @@ impl State {
     }
 }
 
+/// Tells an agent's clock which prompt its pane is answering.
+pub(crate) fn observe_turn(view: &mut AgentView, pane: &Pane) {
+    let prompt = pane
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.active_prompt_id.as_deref());
+    view.turn.observe(prompt, std::time::Instant::now());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +390,31 @@ mod tests {
 
     fn notification(name: EventName, params: Value) -> Event {
         Event::Notification { name, params }
+    }
+
+    #[test]
+    fn the_badges_count_requests_waiting_and_agents_working_per_workspace() {
+        let (mut state, _) = connected(&[("a", "agent"), ("b", "agent"), ("t", "terminal")]);
+        assert_eq!(state.waiting_requests(None), 0);
+        assert!(!state.has_working_agent(None));
+        state.agents.get_mut("a").unwrap().permission = serde_json::from_value(json!({
+            "requestId": "r", "paneId": "a", "generation": 1, "promptId": "p", "title": "t",
+            "detail": "", "options": [], "expiresAt": "2030-01-01T00:00:00Z"
+        }))
+        .ok();
+        state
+            .panes
+            .iter_mut()
+            .find(|p| p.pane_id == "b")
+            .unwrap()
+            .state = PaneState::Working;
+        assert_eq!(state.waiting_requests(None), 1);
+        assert_eq!(state.waiting_requests(Some("w")), 1);
+        assert_eq!(state.waiting_requests(Some("other")), 0);
+        assert!(state.has_working_agent(Some("w")) && !state.has_working_agent(Some("other")));
+        state.apply(Event::Disconnected("gone".into()));
+        assert_eq!(state.waiting_requests(None), 0);
+        assert!(!state.has_working_agent(None));
     }
 
     #[test]

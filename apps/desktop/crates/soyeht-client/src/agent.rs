@@ -5,11 +5,13 @@
 //! replaces the message with the same `localId`.
 
 use crate::{Error, Result};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{
     AgentMessageUpdateKind, ConfigOption, ConfigValue, Pane, PaneState, PaneUpdateEvent,
-    PermissionRequest, PlanStatus, ToolCall, ToolStatus, TranscriptKind, TranscriptMessage,
-    TranscriptRole,
+    PermissionRequest, PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind,
+    TranscriptMessage, TranscriptRole,
 };
+use std::time::{Duration, Instant};
 
 /// The transcript page the client asks for, as on the Mac client.
 pub const TRANSCRIPT_PAGE: u32 = 100;
@@ -17,10 +19,58 @@ pub const TRANSCRIPT_PAGE: u32 = 100;
 pub const TAIL: usize = 200;
 /// The tool calls the header ticker lists after the current activity.
 const TICKER_HISTORY: usize = 3;
+/// What stands between two entries of the header ticker.
+pub const TICKER_SEPARATOR: &str = "   \u{2022}   ";
+
+/// Whether an agent in `state` is in the middle of a turn: its composer offers stop and queues
+/// what is typed, and its header counts the time.
+pub fn is_running(state: &PaneState) -> bool {
+    matches!(
+        state,
+        PaneState::Working | PaneState::WaitingForYou | PaneState::Cancelling | PaneState::NoSignal
+    )
+}
+
+/// When the running turn started, as this device saw it: the engine does not report a turn's
+/// start, so the clock notes the moment the active prompt first appeared.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TurnClock {
+    prompt: Option<String>,
+    started: Option<Instant>,
+}
+
+impl TurnClock {
+    /// The pane says `prompt` is the one being answered (none when it is not answering one).
+    pub fn observe(&mut self, prompt: Option<&str>, now: Instant) {
+        if prompt == self.prompt.as_deref() {
+            return;
+        }
+        self.prompt = prompt.map(str::to_owned);
+        self.started = prompt.map(|_| now);
+    }
+
+    pub fn elapsed(&self, now: Instant) -> Option<Duration> {
+        self.started
+            .map(|started| now.saturating_duration_since(started))
+    }
+}
+
+/// A turn's length as the header shows it: "2m 5s", or "1h 3m" from an hour on.
+pub fn elapsed_text(elapsed: Duration) -> String {
+    let seconds = elapsed.as_secs();
+    let (hours, minutes) = (seconds / 3_600, seconds % 3_600 / 60);
+    if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else {
+        format!("{minutes}m {}s", seconds % 60)
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AgentView {
     pub messages: Vec<TranscriptMessage>,
+    /// How long the running turn has been going.
+    pub turn: TurnClock,
     /// The request the agent is waiting on, if any.
     pub permission: Option<PermissionRequest>,
     /// Why the session is not usable, when the engine said so.
@@ -62,17 +112,18 @@ impl AgentView {
         (&self.messages[hidden..], hidden)
     }
 
-    /// The newest activity first, as the header's ticker shows it: the plan step in progress and
-    /// the latest tool call.
-    pub fn ticker(&self) -> Option<String> {
-        let mut parts = Vec::new();
+    /// What the header's ticker says, newest first and one entry after the other: the plan step in
+    /// progress with the latest tool call, the tool calls before it, then the session's title.
+    pub fn ticker(&self, title: Option<&str>) -> Option<String> {
+        let tools: Vec<&ToolCall> = self.tools().collect();
+        let mut items = Vec::new();
+        let mut now = Vec::new();
         if let Some(plan) = self
             .messages
             .iter()
             .rev()
             .find(|message| message.kind == TranscriptKind::Plan)
             .and_then(|message| message.plan.as_ref())
-            .filter(|plan| !plan.is_empty())
         {
             let step = plan
                 .iter()
@@ -82,7 +133,7 @@ impl AgentView {
                         .position(|entry| entry.status == PlanStatus::Pending)
                 });
             if let Some(step) = step {
-                parts.push(format!(
+                now.push(format!(
                     "Step {}/{}: {}",
                     step + 1,
                     plan.len(),
@@ -90,10 +141,21 @@ impl AgentView {
                 ));
             }
         }
-        if let Some(tool) = self.tools().next() {
-            parts.push(describe(tool));
+        now.extend(tools.first().map(|tool| describe(tool)));
+        let current = !now.is_empty();
+        if current {
+            items.push(now.join(" \u{b7} "));
         }
-        (!parts.is_empty()).then(|| parts.join(" \u{b7} "))
+        items.extend(
+            tools
+                .iter()
+                .skip(usize::from(current))
+                .take(TICKER_HISTORY)
+                .map(|tool| describe(tool)),
+        );
+        let title = title.map(str::trim).filter(|title| !title.is_empty());
+        items.extend(title.map(str::to_owned));
+        (!items.is_empty()).then(|| items.join(TICKER_SEPARATOR))
     }
 
     /// The latest tool calls, newest first, for callers that list more than the current one.
@@ -120,6 +182,15 @@ impl AgentView {
         };
         (size > 0.0).then(|| (used / size).clamp(0.0, 1.0))
     }
+}
+
+/// The text of a command's output, as the Mac shows it: the bytes the engine kept, read as UTF-8
+/// (what is not valid becomes the replacement character). Output that is not base64 is empty.
+pub fn terminal_text(output: &TerminalOutput) -> String {
+    STANDARD
+        .decode(&output.bytes)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default()
 }
 
 fn sequence(message: &TranscriptMessage) -> Result<u64> {
@@ -387,13 +458,7 @@ impl Controls {
         let find = |wanted: &dyn Fn(&ConfigOption) -> bool| {
             agent.options.iter().find(|option| wanted(option))
         };
-        let running = matches!(
-            pane.state,
-            PaneState::Working
-                | PaneState::WaitingForYou
-                | PaneState::Cancelling
-                | PaneState::NoSignal
-        );
+        let running = is_running(&pane.state);
         let harness = harness_name.unwrap_or(&agent.harness).to_owned();
         Some(Self {
             model: find(&|option| category(option) == "model").and_then(Menu::new),
@@ -563,7 +628,79 @@ mod tests {
         assert!(message.complete);
         let mut view = AgentView::default();
         view.merge(message).unwrap();
-        assert_eq!(view.ticker().as_deref(), Some("Done: ls"));
+        assert_eq!(view.ticker(None).as_deref(), Some("Done: ls"));
+    }
+
+    #[test]
+    fn a_commands_output_is_its_bytes_read_as_text() {
+        let output = |bytes: &str| -> TerminalOutput {
+            serde_json::from_value(json!({
+                "terminalId": "t", "bytes": bytes, "offset": "0", "truncated": false
+            }))
+            .unwrap()
+        };
+        assert_eq!(terminal_text(&output("aGkKb2s=")), "hi\nok");
+        assert_eq!(terminal_text(&output("/w==")), "\u{fffd}");
+        assert_eq!(terminal_text(&output("not base64!")), "");
+    }
+
+    #[test]
+    fn the_ticker_lists_the_current_step_then_earlier_tool_calls_then_the_title() {
+        let tool = |seq: &str, title: &str, status: &str| {
+            let mut value = message_json(seq, seq, "tool", "");
+            value["tool"] = json!({"toolCallId": seq, "title": title, "status": status,
+                                   "locations": []});
+            serde_json::from_value::<TranscriptMessage>(value).unwrap()
+        };
+        let mut view = AgentView::default();
+        assert_eq!(view.ticker(None), None);
+        assert_eq!(view.ticker(Some("  ")), None);
+        for (seq, title, status) in [
+            ("1", "read a", "completed"),
+            ("2", "edit b", "completed"),
+            ("3", "test c", "in_progress"),
+        ] {
+            view.merge(tool(seq, title, status)).unwrap();
+        }
+        let mut plan = message_json("p", "4", "plan", "");
+        plan["plan"] = json!([
+            {"content": "write", "priority": "high", "status": "completed"},
+            {"content": "check", "priority": "high", "status": "in_progress"}
+        ]);
+        view.merge(serde_json::from_value(plan).unwrap()).unwrap();
+        let line = view.ticker(Some("The title")).unwrap();
+        assert_eq!(
+            line,
+            [
+                "Step 2/2: check \u{b7} Running test c",
+                "Done: edit b",
+                "Done: read a",
+                "The title"
+            ]
+            .join(TICKER_SEPARATOR)
+        );
+    }
+
+    #[test]
+    fn a_turn_is_timed_from_the_moment_its_prompt_appears() {
+        let start = Instant::now();
+        let mut clock = TurnClock::default();
+        assert_eq!(clock.elapsed(start), None);
+        clock.observe(Some("p1"), start);
+        clock.observe(Some("p1"), start + Duration::from_secs(5));
+        assert_eq!(
+            clock.elapsed(start + Duration::from_secs(65)),
+            Some(Duration::from_secs(65))
+        );
+        clock.observe(Some("p2"), start + Duration::from_secs(70));
+        assert_eq!(
+            clock.elapsed(start + Duration::from_secs(71)),
+            Some(Duration::from_secs(1))
+        );
+        clock.observe(None, start + Duration::from_secs(80));
+        assert_eq!(clock.elapsed(start + Duration::from_secs(90)), None);
+        assert_eq!(elapsed_text(Duration::from_secs(125)), "2m 5s");
+        assert_eq!(elapsed_text(Duration::from_secs(3_780)), "1h 3m");
     }
 
     #[test]

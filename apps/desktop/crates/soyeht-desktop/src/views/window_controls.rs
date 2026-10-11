@@ -28,12 +28,6 @@ use gpui::{
 use gpui::{ClickEvent, StatefulInteractiveElement};
 use std::ffi::OsStr;
 
-/// The width of `count` buttons and the gaps between them.
-pub fn width(count: usize) -> f32 {
-    let count = count as f32;
-    count * layout::TOP_BAR_CONTROL_HEIGHT + (count - 1.0).max(0.0) * space::X10
-}
-
 /// Makes `area` the part of the bar that moves the window; a double click maximizes.
 pub fn drag_area(area: Div) -> AnyElement {
     area.window_control_area(WindowControlArea::Drag)
@@ -305,14 +299,5 @@ mod tests {
         assert!(!tiling_desktop(Some(OsStr::new("ubuntu:GNOME"))));
         assert!(!tiling_desktop(Some(OsStr::new("KDE"))));
         assert!(!tiling_desktop(None));
-    }
-
-    #[test]
-    fn the_bar_width_counts_the_gaps_between_the_buttons() {
-        assert_eq!(width(1), layout::TOP_BAR_CONTROL_HEIGHT);
-        assert_eq!(
-            width(3),
-            3.0 * layout::TOP_BAR_CONTROL_HEIGHT + 2.0 * space::X10
-        );
     }
 }

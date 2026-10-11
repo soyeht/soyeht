@@ -1,7 +1,7 @@
 //! A pane: the raised card, its header, and the body of its kind. The card is the only raised
 //! surface; the header and everything under it are flat.
 
-use super::ui::{OwnPress, column, icon, id, row, rule};
+use super::ui::{OwnPress, Typeface, column, hint, icon, id, row, rule};
 use crate::{
     assets::Icon,
     neo,
@@ -15,8 +15,12 @@ use gpui::{
     SharedString, Styled, div, prelude::FluentBuilder, px, rgb,
 };
 use gpui::{InteractiveElement, MouseButton, StatefulInteractiveElement};
-use soyeht_client::agent::status_word;
+use soyeht_client::{
+    agent::{elapsed_text, is_running, status_word},
+    terminal_state::{self, Severity},
+};
 use soyeht_protocol::{Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis};
+use std::time::Instant;
 
 /// The buttons of the header, left to right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +50,17 @@ impl Action {
             Self::SplitColumns => "split-columns",
             Self::SplitRows => "split-rows",
             Self::Close => "close",
+        }
+    }
+
+    /// The button's tooltip, named as on the Mac.
+    fn title(self) -> &'static str {
+        match self {
+            Self::History => "Loop and lead controls",
+            Self::List => "Open workspace tasks",
+            Self::SplitColumns => "Split pane into columns",
+            Self::SplitRows => "Split pane into rows",
+            Self::Close => "Close this pane",
         }
     }
 
@@ -83,7 +98,7 @@ impl Workbench {
     ) -> AnyElement {
         let pane_id = pane.pane_id.clone();
         let body = match pane.mode {
-            PaneMode::Terminal => self.terminal_body(&pane.pane_id, focused, palette, cx),
+            PaneMode::Terminal => self.terminal_body(pane, focused, palette, cx),
             PaneMode::Agent => self.agent_body(pane, palette, cx),
             _ => notice_body(palette, mode_notice(&pane.mode)),
         };
@@ -121,8 +136,11 @@ impl Workbench {
             session.is_some_and(|agent| !agent.auth_methods.is_empty()),
             session.is_some_and(|agent| agent.session_id.is_some()),
         );
-        let ticker = view.and_then(|view| view.ticker());
-        let detail = pane_detail(pane, self.state.has_gap(&pane.pane_id));
+        let ticker = view.and_then(|view| view.ticker(pane.title.as_deref()));
+        let elapsed = view
+            .filter(|_| is_running(&pane.state))
+            .and_then(|view| view.turn.elapsed(Instant::now()))
+            .map(elapsed_text);
         let buttons: Vec<AnyElement> = actions(&pane.mode)
             .into_iter()
             .map(|action| self.header_button(pane, action, palette, cx))
@@ -154,15 +172,30 @@ impl Workbench {
                     .child(SharedString::from(pane.name.clone())),
             )
             .child(
-                div()
+                row()
                     .flex_1()
                     .min_w_0()
-                    .truncate()
-                    .px(px(space::X2))
-                    .child(SharedString::from(if is_agent {
-                        ticker.unwrap_or_default()
-                    } else {
-                        detail
+                    .gap(px(space::X4))
+                    .pr(px(space::X12))
+                    .child(
+                        // The line is cut at the pane's width: the whole of it is in the tooltip.
+                        div()
+                            .id(id("ticker", &pane.pane_id))
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .when(ticker.is_some(), |line| {
+                                line.tooltip(hint(ticker.clone().unwrap_or_default(), palette))
+                            })
+                            .child(SharedString::from(ticker.unwrap_or_default())),
+                    )
+                    .children(elapsed.map(|elapsed| {
+                        div()
+                            .flex_none()
+                            .mono()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(px(type_scale::SMALL))
+                            .child(format!("\u{b7} {elapsed}"))
                     })),
             )
             .when(is_agent, |header| {
@@ -217,6 +250,7 @@ impl Workbench {
                             .hover(|style| style.bg(rgb(palette.hover)))
                     })
                     .own_press()
+                    .tooltip(hint(action.title(), palette))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         if let Some(menu) = notice.clone() {
                             this.toggle_menu(menu, cx);
@@ -256,27 +290,74 @@ impl Workbench {
             .into_any_element()
     }
 
+    /// A terminal: the notice its state calls for above the screen, the screen, and under it the
+    /// notice for output that was not recorded.
     fn terminal_body(
         &self,
-        pane_id: &str,
+        pane: &Pane,
         focused: bool,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let id = pane_id.to_owned();
+        let id = pane.pane_id.clone();
+        let gap = self
+            .state
+            .has_gap(&pane.pane_id)
+            .then_some(terminal_state::RECORDED_GAP);
         column()
-            .id(super::ui::id("terminal", pane_id))
             .flex_1()
             .min_h_0()
-            .px(px(space::X2))
-            .pt(px(space::X8))
-            .on_scroll_wheel(cx.listener({
-                let id = id.clone();
-                move |this, event, _, cx| this.scroll_terminal(&id, event, cx)
+            .children(terminal_state::notice(&pane.state).map(|notice| banner(notice, palette)))
+            .child(
+                column()
+                    .id(super::ui::id("terminal", &pane.pane_id))
+                    .flex_1()
+                    .min_h_0()
+                    .px(px(space::X2))
+                    .pt(px(space::X8))
+                    .on_scroll_wheel(cx.listener({
+                        let id = id.clone();
+                        move |this, event, _, cx| this.scroll_terminal(&id, event, cx)
+                    }))
+                    .child(terminal_view::surface(cx.entity(), id, palette, focused)),
+            )
+            .children(gap.map(|notice| {
+                div()
+                    .flex_none()
+                    .p(px(space::X10))
+                    .child(notice_label(notice, palette))
             }))
-            .child(terminal_view::surface(cx.entity(), id, palette, focused))
             .into_any_element()
     }
+}
+
+/// The line above a terminal's screen: on the pane's face when it only informs, on a well when
+/// something is wrong.
+fn banner(notice: terminal_state::Notice, palette: &Palette) -> AnyElement {
+    row()
+        .flex_none()
+        .px(px(space::X10))
+        .py(px(space::X7))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(px(type_scale::CONTROL))
+        .when(notice.severity == Severity::Warning, |line| {
+            line.bg(rgb(palette.well))
+        })
+        .child(notice_label(notice, palette))
+        .into_any_element()
+}
+
+/// A notice's icon and words, in the secondary ink or the warning color.
+fn notice_label(notice: terminal_state::Notice, palette: &Palette) -> Div {
+    let (glyph, color) = match notice.severity {
+        Severity::Neutral => (Icon::Stopped, palette.secondary),
+        Severity::Warning => (Icon::Alert, palette.warning()),
+    };
+    row()
+        .gap(px(space::X6))
+        .text_color(rgb(color))
+        .child(icon(glyph, desktop::INLINE_GLYPH, color))
+        .child(div().flex_1().min_w_0().child(notice.text))
 }
 
 fn notice_body(palette: &Palette, message: &str) -> AnyElement {
@@ -300,22 +381,16 @@ fn mode_notice(mode: &PaneMode) -> &'static str {
     }
 }
 
-/// The line beside a terminal's name. The two notices mirror `TerminalStatePresentation`.
-fn pane_detail(pane: &Pane, has_gap: bool) -> String {
-    match pane.state {
-        PaneState::Dead => "Terminal process exited.".into(),
-        _ if has_gap => "Some output was not recorded. The screen contains a gap.".into(),
-        _ => pane.phrase.clone(),
-    }
-}
-
+/// The color of the state dot, as the Mac's pane header picks it: green while the agent runs or
+/// rests, the accent when it waits for the person, the warning when it has gone quiet, muted when
+/// the process is gone or unknown, and the secondary ink while it starts, recovers or stops.
 fn state_color(state: &PaneState, palette: &Palette) -> u32 {
     match state {
-        PaneState::Working | PaneState::Starting | PaneState::Recovering => palette.accent,
-        PaneState::WaitingForYou | PaneState::NoSignal | PaneState::Cancelling => palette.warning(),
-        PaneState::Dead => palette.danger(),
-        PaneState::Idle => palette.success(),
-        PaneState::Unknown => palette.muted,
+        PaneState::Working | PaneState::Idle => palette.success(),
+        PaneState::WaitingForYou => palette.accent,
+        PaneState::NoSignal => palette.warning(),
+        PaneState::Dead | PaneState::Unknown => palette.muted,
+        PaneState::Starting | PaneState::Cancelling | PaneState::Recovering => palette.secondary,
     }
 }
 
@@ -329,6 +404,26 @@ mod tests {
         assert_eq!(actions(&PaneMode::Terminal)[0], Action::List);
         assert_eq!(actions(&PaneMode::Agent).len(), 5);
         assert_eq!(*actions(&PaneMode::Terminal).last().unwrap(), Action::Close);
+    }
+
+    #[test]
+    fn the_state_dot_follows_the_macs_colors() {
+        let palette = crate::theme::ThemeName::NeoMilk.palette();
+        assert_eq!(state_color(&PaneState::Working, palette), palette.success());
+        assert_eq!(state_color(&PaneState::Idle, palette), palette.success());
+        assert_eq!(
+            state_color(&PaneState::WaitingForYou, palette),
+            palette.accent
+        );
+        assert_eq!(
+            state_color(&PaneState::NoSignal, palette),
+            palette.warning()
+        );
+        assert_eq!(state_color(&PaneState::Dead, palette), palette.muted);
+        assert_eq!(
+            state_color(&PaneState::Cancelling, palette),
+            palette.secondary
+        );
     }
 
     #[test]

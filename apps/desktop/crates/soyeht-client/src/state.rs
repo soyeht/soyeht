@@ -383,6 +383,9 @@ impl State {
             self.screens.insert(pane.pane_id.clone(), screen_for(&pane));
             effects.push(Effect::SubscribeTerminal(pane.pane_id.clone()));
         }
+        if let Some(view) = self.agents.get_mut(&pane.pane_id) {
+            crate::agents::observe_turn(view, &pane);
+        }
         match self
             .panes
             .iter_mut()

@@ -6,14 +6,7 @@ use soyeht_desktop::theme::ThemeName;
 
 fn main() {
     let wanted = std::env::args().nth(1).unwrap_or_else(|| "milk".into());
-    let theme = ThemeName::ALL.into_iter().find(|theme| {
-        let name = theme
-            .display_name()
-            .replace([' ', '\u{b7}'], "")
-            .to_lowercase();
-        name.ends_with(&wanted.to_lowercase())
-    });
-    match theme {
+    match ThemeName::named(&wanted) {
         Some(theme) => soyeht_desktop::run_gallery(theme),
         None => {
             eprintln!("no theme named {wanted}");

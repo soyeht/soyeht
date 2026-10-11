@@ -4940,6 +4940,7 @@ dependencies = [
  "base64",
  "gpui",
  "gpui_platform",
+ "serde_json",
  "soyeht-client",
  "soyeht-protocol",
 ]

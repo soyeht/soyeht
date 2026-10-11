@@ -15,6 +15,7 @@ mod event;
 pub mod harness_picker;
 pub mod keys;
 pub mod layout;
+pub mod permission_preview;
 pub mod profile;
 mod rpc;
 pub mod screen;
@@ -22,6 +23,7 @@ mod session;
 mod snapshot;
 pub mod state;
 pub mod streams;
+pub mod terminal_state;
 #[cfg(test)]
 mod testing;
 pub mod transport;

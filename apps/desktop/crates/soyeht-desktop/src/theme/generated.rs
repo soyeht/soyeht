@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 d7849914684571f1420f45467b9d2db44bd77df4055439f1b2bf7b364cbf7cdc). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 f7bdae38ff3eb90abe195535ea6680ce13a19fcd3e496ebbb42d9b3e32825622). Do not edit.
 use super::Palette;
 
 pub(super) static MILK: Palette = Palette {
@@ -361,7 +361,6 @@ pub mod desktop {
     pub const WINDOW_HEIGHT_MARGIN: f32 = 120.0;
     pub const TRAFFIC_LIGHT_INSET: f32 = 16.0;
     pub const TAB_CHARACTER_WIDTH: f32 = 7.4;
-    pub const TAB_MINIMUM_WIDTH: f32 = 84.0;
     pub const MINIMUM_DRAG_WIDTH: f32 = 48.0;
     pub const WINDOW_CONTROL_GLYPH: f32 = 12.0;
     pub const RESIZE_EDGE: f32 = 5.0;
@@ -369,16 +368,37 @@ pub mod desktop {
     pub const HEADER_ACTION_GLYPH: f32 = 14.0;
     pub const COMPOSER_GLYPH: f32 = 14.0;
     pub const CHEVRON_GLYPH: f32 = 9.0;
-    pub const EMPTY_STATE_GLYPH: f32 = 28.0;
+    pub const EMPTY_STATE_GLYPH: f32 = 42.0;
+    pub const INLINE_GLYPH: f32 = 12.0;
+    pub const CHECK_GLYPH: f32 = 8.0;
+    pub const DISCLOSURE_GLYPH: f32 = 10.0;
     pub const STATUS_DOT: f32 = 7.0;
     pub const CHIP_MAX_WIDTH: f32 = 180.0;
     pub const MENU_MIN_WIDTH: f32 = 180.0;
+    pub const TOOLTIP_MAX_WIDTH: f32 = 360.0;
+    pub const THEME_CARD_WIDTH: f32 = 300.0;
+    pub const THEME_CARD_HEIGHT: f32 = 76.0;
+    pub const THEME_CARD_SELECTED_BORDER: f32 = 2.0;
+    pub const THEME_CHECK_SIZE: f32 = 15.0;
+    pub const SWATCH_WIDTH: f32 = 88.0;
+    pub const SWATCH_HEIGHT: f32 = 50.0;
+    pub const SWATCH_PLATE_LEFT: f32 = 8.0;
+    pub const SWATCH_PLATE_WIDTH: f32 = 48.0;
+    pub const SWATCH_PLATE_HEIGHT: f32 = 28.0;
+    pub const SWATCH_ACCENT_HEIGHT: f32 = 18.0;
+    pub const SWATCH_WELL_LEFT: f32 = 59.0;
+    pub const SWATCH_WELL_SIZE: f32 = 22.0;
+    pub const MENU_CHECK_GLYPH: f32 = 14.0;
+    pub const MENU_HARNESS_ROW_HEIGHT: f32 = 42.0;
     pub const PANE_TITLE_MAX_WIDTH: f32 = 260.0;
     pub const POPUP_GAP: f32 = 4.0;
     pub const FADE_WIDTH: f32 = 28.0;
     pub const PANE_FLOOR_LABEL_CHARACTERS: f32 = 8.0;
     pub const WELL_DEPTH: f32 = 3.0;
     pub const HAIRLINE: f32 = 1.0;
+    pub const LINE_HEIGHT_UI: f32 = 1.21;
+    pub const LINE_HEIGHT_MONO: f32 = 1.32;
+    pub const LINE_HEIGHT_CHROME: f32 = 1.364;
     pub const SHADOW_DARK_OFFSET_SCALE: f32 = 0.908;
     pub const SHADOW_DARK_SIGMA_SCALE: f32 = 0.914;
     pub const SHADOW_DARK_OPACITY: f32 = 0.964;

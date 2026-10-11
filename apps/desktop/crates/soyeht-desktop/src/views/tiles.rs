@@ -1,14 +1,15 @@
 //! The panes of a workspace laid out as its split tree says: a branch is a row or a column of
 //! children that share the room by weight, a leaf is a pane card.
 
-use super::ui::{column, icon};
+use super::ui::{Typeface, column, icon};
 use crate::{
     assets::Icon,
     theme::{Palette, desktop, pane_layout, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
-    AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, point, px, rgb,
+    AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div, point,
+    px, rgb,
 };
 use soyeht_client::layout::{minimum_width, pane_span, reveal_offset};
 use soyeht_protocol::{Pane, WorkspacePaneLayoutAxis, WorkspacePaneLayoutNode as Node};
@@ -144,16 +145,23 @@ impl Workbench {
     }
 }
 
-/// A calm message where the panes would be, with the icon of the place when it has one.
+/// What stands where the panes would be, as the Mac's empty workspace draws it: the icon of the
+/// place when it has one, large and light, over a heading of the window's chrome face.
 fn empty(palette: &Palette, glyph: Option<Icon>, message: &str) -> AnyElement {
     column()
         .flex_1()
         .items_center()
         .justify_center()
-        .gap(px(space::X12))
-        .text_size(px(type_scale::CAPTION))
-        .text_color(rgb(palette.muted))
-        .children(glyph.map(|glyph| icon(glyph, desktop::EMPTY_STATE_GLYPH, palette.muted)))
-        .child(SharedString::from(message.to_owned()))
+        .gap(px(space::X18))
+        .px(px(space::X18))
+        .children(glyph.map(|glyph| icon(glyph, desktop::EMPTY_STATE_GLYPH, palette.secondary)))
+        .child(
+            div()
+                .chrome()
+                .font_weight(FontWeight::BOLD)
+                .text_size(px(type_scale::HEADING))
+                .text_color(rgb(palette.ink))
+                .child(SharedString::from(message.to_owned())),
+        )
         .into_any_element()
 }

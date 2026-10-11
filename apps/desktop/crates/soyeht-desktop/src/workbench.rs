@@ -20,7 +20,7 @@ use soyeht_client::{
 use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
 use std::{
     collections::{HashMap, HashSet},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 actions!(soyeht, [Quit, NewTerminal, Paste]);
@@ -46,6 +46,12 @@ pub struct Workbench {
     pub(crate) open_thoughts: HashSet<String>,
     /// The sideways scroll of the stage, when the panes need more room than the window has.
     pub(crate) stage_scroll: ScrollHandle,
+    /// The sideways scroll of the workspace tabs.
+    pub(crate) tab_scroll: ScrollHandle,
+    /// The workspace whose tab was last scrolled into view.
+    pub(crate) revealed_tab: Option<String>,
+    /// How many tabs were not wholly in view when the last frame was laid out.
+    pub(crate) hidden_tabs: usize,
     /// The sideways scroll of each agent composer's chip strip.
     chip_scrolls: HashMap<String, ScrollHandle>,
     /// The pane to bring into view on the next frame, once the stage has been laid out.
@@ -53,6 +59,8 @@ pub struct Workbench {
     /// The pane whose input takes keyboard focus on the next frame.
     focus_request: Option<String>,
     _events: Task<()>,
+    /// Repaints once a second while an agent runs a turn, so the time in its header counts.
+    _clock: Task<()>,
 }
 
 impl Workbench {
@@ -75,6 +83,19 @@ impl Workbench {
                 }
             }
         });
+        let clock = cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let repaint = this.update(cx, |this, cx| {
+                    if this.state.has_running_turn() {
+                        cx.notify();
+                    }
+                });
+                if repaint.is_err() {
+                    break;
+                }
+            }
+        });
         Self {
             engine,
             state: State::default(),
@@ -88,10 +109,14 @@ impl Workbench {
             transcripts: HashMap::new(),
             open_thoughts: HashSet::new(),
             stage_scroll: ScrollHandle::new(),
+            tab_scroll: ScrollHandle::new(),
+            revealed_tab: None,
+            hidden_tabs: 0,
             chip_scrolls: HashMap::new(),
             reveal: None,
             focus_request: None,
             _events: events,
+            _clock: clock,
         }
     }
 

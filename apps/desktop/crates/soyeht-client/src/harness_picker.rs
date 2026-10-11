@@ -57,7 +57,8 @@ fn setup_state(harness: &HarnessInfo) -> HarnessSetupState {
     HarnessSetupState::NotChecked
 }
 
-fn group(harness: &HarnessInfo) -> Group {
+/// How ready `harness` is: the group its row belongs to.
+pub fn group_of(harness: &HarnessInfo) -> Group {
     match setup_state(harness) {
         HarnessSetupState::Ready => Group::Ready,
         HarnessSetupState::NotChecked => Group::NotChecked,
@@ -70,7 +71,7 @@ fn group(harness: &HarnessInfo) -> Group {
 /// The second line of a harness row: how ready it is, which tells apart two harnesses that
 /// share a name.
 pub fn status_label(harness: &HarnessInfo) -> &'static str {
-    group(harness).title()
+    group_of(harness).title()
 }
 
 /// Whether "More harnesses" is open: when asked to be, and also when it is all there is, as
@@ -108,7 +109,7 @@ pub fn layout(harnesses: &[HarnessInfo]) -> Layout<'_> {
     for wanted in GROUPS {
         let mut items: Vec<&HarnessInfo> = harnesses
             .iter()
-            .filter(|harness| group(harness) == wanted)
+            .filter(|harness| group_of(harness) == wanted)
             .collect();
         items.sort_by(|left, right| ordered(left, right));
         let (installed, other): (Vec<_>, Vec<_>) =

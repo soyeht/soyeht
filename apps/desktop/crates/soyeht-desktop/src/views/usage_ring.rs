@@ -1,10 +1,10 @@
 //! A usage ring of the rail: the provider's logo in a disc, a band-colored arc for the share
 //! used, and the percentage under it.
 
-use super::ui::{column, logo};
+use super::ui::{Typeface, column, logo};
 use crate::{
     assets,
-    theme::{Palette, fonts, usage_ring},
+    theme::{Palette, usage_ring},
 };
 use gpui::{
     AnyElement, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder, Styled, canvas,
@@ -75,7 +75,7 @@ pub fn ring(reading: &UsageReading, palette: &Palette) -> AnyElement {
                 .h(px(usage_ring::PERCENTAGE_HEIGHT))
                 .flex()
                 .items_center()
-                .font_family(fonts::CHROME)
+                .chrome()
                 .font_weight(gpui::FontWeight::BOLD)
                 .text_size(px(usage_ring::PERCENTAGE_SIZE))
                 .text_color(rgb(if shown.is_stale() {

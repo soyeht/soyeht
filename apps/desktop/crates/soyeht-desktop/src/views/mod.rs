@@ -9,8 +9,10 @@ mod composer;
 mod harness_menu;
 pub(crate) mod menus;
 mod pane;
+mod permission;
 mod rail;
 mod resize_handles;
+mod settings;
 mod tiles;
 mod top_bar;
 mod ui;
@@ -19,12 +21,13 @@ mod window_controls;
 
 use crate::{
     assets::Icon,
-    theme::{fonts, glyph, pane_layout, space, type_scale},
+    theme::{desktop, fonts, glyph, pane_layout, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rgb,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
+    relative, rgb,
 };
 use soyeht_client::Connection;
 
@@ -32,7 +35,6 @@ impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_focus_request(window, cx);
         let palette = self.theme.palette();
-        let width = f32::from(window.viewport_size().width);
         div()
             .id("workbench")
             .key_context("Workbench")
@@ -47,8 +49,11 @@ impl Render for Workbench {
             .bg(rgb(palette.canvas))
             .text_color(rgb(palette.ink))
             .font_family(fonts::UI)
+            .line_height(relative(desktop::LINE_HEIGHT_UI))
             .text_size(px(type_scale::CAPTION))
-            .child(self.top_bar(palette, width, window, cx))
+            // The Mac's top inset: the bar floats this far under the window's edge.
+            .pt(px(space::X8))
+            .child(self.top_bar(palette, window, cx))
             .children(self.problem_banner(palette, cx))
             .child(
                 div()
@@ -56,6 +61,12 @@ impl Render for Workbench {
                     .min_h_0()
                     .flex()
                     .flex_row()
+                    // The open rail starts in the screen padding, and the first pane follows it
+                    // after the grid's padding (Tela 12); without the rail the panes keep the
+                    // whole margin.
+                    .when(self.rail_open, |row| {
+                        row.pl(px(pane_layout::SCREEN_PADDING))
+                    })
                     .children(self.rail_open.then(|| self.rail(palette, cx)))
                     .child(self.stage(palette, cx)),
             )
@@ -96,7 +107,9 @@ impl Workbench {
         )
     }
 
-    /// The panes of the selected workspace, tiled as its layout says.
+    /// The panes of the selected workspace, tiled as its layout says. The outermost panes keep
+    /// the margin the design gives them from the window and the top bar (24); beside the open
+    /// rail the first one follows it after the grid's padding.
     fn stage(&mut self, palette: &'static crate::theme::Palette, cx: &mut Context<Self>) -> Div {
         let outer = pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING;
         let stage = div()
@@ -105,9 +118,14 @@ impl Workbench {
             .min_h_0()
             .flex()
             .flex_col()
-            .pt(px(space::X8))
+            .pt(px(outer))
             .pb(px(outer))
-            .px(px(outer));
+            .pr(px(outer))
+            .pl(px(if self.rail_open {
+                pane_layout::GRID_PADDING
+            } else {
+                outer
+            }));
         stage.child(self.tiles(palette, cx))
     }
 }

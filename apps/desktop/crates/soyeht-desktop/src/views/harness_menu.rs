@@ -4,10 +4,14 @@
 //! every other one under a collapsed "More harnesses" entry. A harness that cannot start is
 //! listed there, dimmed, and does nothing when pressed.
 
-use super::menus;
-use crate::{theme::Palette, workbench::Workbench};
+use super::{menus, ui::icon};
+use crate::{
+    assets::Icon,
+    theme::{Palette, desktop},
+    workbench::Workbench,
+};
 use gpui::{AnyElement, Context, IntoElement};
-use soyeht_client::harness_picker::{self, MORE_TITLE};
+use soyeht_client::harness_picker::{self, Group, MORE_TITLE};
 use soyeht_protocol::HarnessInfo;
 use std::rc::Rc;
 
@@ -44,15 +48,11 @@ impl Workbench {
         if !layout.more.is_empty() {
             let expanded = harness_picker::more_expanded(&layout, self.menus.more_harnesses());
             rows.push(menus::on_pick(
-                menus::item(
+                menus::disclosure(
                     palette,
                     "more-harnesses",
-                    format!(
-                        "{MORE_TITLE} \u{b7} {} {}",
-                        layout.more.len(),
-                        if expanded { "\u{25be}" } else { "\u{25b8}" }
-                    ),
-                    false,
+                    &format!("{MORE_TITLE} \u{b7} {}", layout.more.len()),
+                    expanded,
                 ),
                 cx,
                 |this, cx| this.toggle_more_harnesses(cx),
@@ -79,9 +79,9 @@ fn harness_row(
     let row = menus::detail_item(
         palette,
         &harness.id,
+        readiness_mark(harness_picker::group_of(harness), palette),
         harness.name.clone(),
         harness_picker::status_label(harness),
-        false,
         harness.available,
     );
     if !harness.available {
@@ -89,4 +89,16 @@ fn harness_row(
     }
     let (id, pick) = (harness.id.clone(), Rc::clone(pick));
     menus::on_pick(row, cx, move |this, cx| pick(this, &id, cx))
+}
+
+/// The mark before a harness row, in the Mac's colors: a check while it is ready, an alert while
+/// it needs the person, and a muted circle or dash while it is unchecked or not installed.
+fn readiness_mark(group: Group, palette: &Palette) -> AnyElement {
+    let (glyph, color) = match group {
+        Group::Ready => (Icon::Check, palette.success()),
+        Group::NotChecked => (Icon::Circle, palette.muted),
+        Group::SignIn | Group::CheckSetup => (Icon::Alert, palette.warning()),
+        Group::NotInstalled => (Icon::Minimize, palette.muted),
+    };
+    icon(glyph, desktop::INLINE_GLYPH, color).into_any_element()
 }

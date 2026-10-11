@@ -2,13 +2,35 @@
 
 use crate::{
     assets::Icon,
-    theme::{Palette, desktop},
+    neo,
+    theme::{Palette, desktop, elevation, fonts, radius, space, type_scale},
 };
 use gpui::{
-    AnyElement, Div, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Svg, div, linear_color_stop,
-    linear_gradient, px, rgb, svg,
+    AnyElement, AnyView, App, AppContext, Context, Div, ElementId, FontWeight, Hsla,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, Render, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, Svg, Window, div, linear_color_stop,
+    linear_gradient, px, relative, rgb, svg,
 };
+
+/// The two faces besides the interface's own, each with the line height its font has. GPUI's
+/// default line is 1.618 times the size, loose beside the Mac, where SwiftUI sets a line as
+/// tall as its font says (`desktop.lineHeight*`); the window sets the interface face's height
+/// once at its root, and these set a mono or chrome element's.
+pub trait Typeface: Styled + Sized {
+    /// JetBrains Mono: code, terminal output, tool rows.
+    fn mono(self) -> Self {
+        self.font_family(fonts::MONO)
+            .line_height(relative(desktop::LINE_HEIGHT_MONO))
+    }
+
+    /// Nunito: the window's chrome (tabs, menus, usage percentages).
+    fn chrome(self) -> Self {
+        self.font_family(fonts::CHROME)
+            .line_height(relative(desktop::LINE_HEIGHT_CHROME))
+    }
+}
+
+impl<T: Styled> Typeface for T {}
 
 /// A line icon of `size` points in a palette color.
 pub fn icon(icon: Icon, size: f32, color: u32) -> Svg {
@@ -26,6 +48,63 @@ pub fn logo(path: &'static str, size: f32, color: u32) -> Svg {
         .size(px(size))
         .flex_none()
         .text_color(rgb(color))
+}
+
+/// What a tooltip says, in a small raised chip of the palette.
+struct Hint {
+    text: SharedString,
+    palette: &'static Palette,
+}
+
+impl Render for Hint {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        neo::raised(self.palette, radius::COMPACT, elevation::CHIP)
+            .max_w(px(desktop::TOOLTIP_MAX_WIDTH))
+            .px(px(space::X8))
+            .py(px(space::X4))
+            .text_size(px(type_scale::CONTROL))
+            .text_color(rgb(self.palette.ink))
+            .child(self.text.clone())
+    }
+}
+
+/// The tooltip of an element, as the Mac's `.help` gives its controls: `.tooltip(hint(..))`.
+pub fn hint(
+    text: impl Into<SharedString>,
+    palette: &'static Palette,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let text = text.into();
+    move |_, cx| {
+        cx.new(|_| Hint {
+            text: text.clone(),
+            palette,
+        })
+        .into()
+    }
+}
+
+/// How many requests wait, in the warning color: the badge of a tab and of the rail's agents.
+pub fn waiting_badge(count: usize, palette: &Palette) -> Div {
+    div()
+        .flex_none()
+        .px(px(space::X6))
+        .py(px(space::X2))
+        .rounded_full()
+        .bg(rgb(palette.warning()))
+        .chrome()
+        .font_weight(FontWeight::BOLD)
+        .text_size(px(type_scale::MICRO))
+        .text_color(rgb(palette.ink))
+        .child(count.to_string())
+}
+
+/// The dot that says an agent is working: the accent, seven points wide.
+pub fn working_dot(palette: &Palette) -> Div {
+    div()
+        .flex_none()
+        .size(px(space::X7))
+        .rounded_full()
+        .bg(rgb(palette.accent))
 }
 
 /// A stable element id from a kind and the thing it belongs to.
@@ -97,16 +176,22 @@ pub fn sideways_scroller(
         .flex_1()
         .min_w_0()
         .child(scroller)
-        .children(horizontal_fades(handle, palette))
+        .children(edge_fades(handle, palette))
+}
+
+/// Whether a sideways scroller hides more at its left end and at its right end. A scroller that
+/// has not been laid out yet hides nothing.
+pub fn hidden_ends(handle: &ScrollHandle) -> (bool, bool) {
+    let offset = f32::from(handle.offset().x);
+    let hidden_right = f32::from(handle.max_offset().x) + offset;
+    (offset < -FADE_THRESHOLD, hidden_right > FADE_THRESHOLD)
 }
 
 /// A fade of the canvas color over each end of a sideways scroller that hides more, so that a
 /// clipped control reads as scrollable. Place the result inside the `relative` parent of the
-/// scroller, after it. The handle is the scroller's own `track_scroll` handle; a scroller that
-/// has not been laid out yet shows no fade.
-fn horizontal_fades(handle: &ScrollHandle, palette: &Palette) -> Vec<AnyElement> {
-    let offset = f32::from(handle.offset().x);
-    let hidden_right = f32::from(handle.max_offset().x) + offset;
+/// scroller, after it. The handle is the scroller's own `track_scroll` handle.
+pub fn edge_fades(handle: &ScrollHandle, palette: &Palette) -> Vec<AnyElement> {
+    let (left, right) = hidden_ends(handle);
     let solid: Hsla = rgb(palette.canvas).into();
     let clear = Hsla { a: 0.0, ..solid };
     let fade = |from: Hsla, to: Hsla| {
@@ -122,10 +207,10 @@ fn horizontal_fades(handle: &ScrollHandle, palette: &Palette) -> Vec<AnyElement>
             ))
     };
     let mut fades = Vec::new();
-    if offset < -FADE_THRESHOLD {
+    if left {
         fades.push(fade(solid, clear).left_0().into_any_element());
     }
-    if hidden_right > FADE_THRESHOLD {
+    if right {
         fades.push(fade(clear, solid).right_0().into_any_element());
     }
     fades

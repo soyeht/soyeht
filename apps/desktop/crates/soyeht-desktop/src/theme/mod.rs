@@ -117,6 +117,18 @@ impl ThemeName {
         }
     }
 
+    /// The theme whose name, without example, ends with `wanted` (`milk`, `deepharbor`, ...):
+    /// how the examples that compare themes are told which one to draw.
+    pub fn named(wanted: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|theme| {
+            let name = theme
+                .display_name()
+                .replace([' ', '\u{b7}'], "")
+                .to_lowercase();
+            name.ends_with(&wanted.to_lowercase())
+        })
+    }
+
     pub fn display_name(self) -> &'static str {
         match self {
             Self::NeoMilk => "Neo \u{b7} Milk",
@@ -141,6 +153,16 @@ mod tests {
         assert_eq!(ThemeName::DEFAULT, ThemeName::NeoMilk);
         assert_eq!(ThemeName::DEFAULT.palette().canvas, 0xE0E5EC);
         assert_eq!(ThemeName::DEFAULT.display_name(), "Neo \u{b7} Milk");
+    }
+
+    #[test]
+    fn a_theme_is_found_by_the_end_of_its_name() {
+        assert_eq!(ThemeName::named("Milk"), Some(ThemeName::NeoMilk));
+        assert_eq!(
+            ThemeName::named("deepharbor"),
+            Some(ThemeName::NeoDeepHarbor)
+        );
+        assert_eq!(ThemeName::named("nothing"), None);
     }
 
     #[test]

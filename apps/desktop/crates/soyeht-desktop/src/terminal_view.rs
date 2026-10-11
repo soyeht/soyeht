@@ -11,8 +11,6 @@ use gpui::{
 };
 use soyeht_client::screen::{CellColor, Cursor, Run};
 
-/// Line height as a multiple of the font size; the result is snapped to whole pixels.
-const LINE_HEIGHT_FACTOR: f32 = 1.32;
 /// Dim text keeps its hue and loses this much opacity.
 const DIM_OPACITY: f32 = 0.7;
 
@@ -33,7 +31,7 @@ impl CellSize {
             .map_or(size * 0.6, |advance| advance.width);
         Self {
             width,
-            height: px((TERMINAL_SIZE * LINE_HEIGHT_FACTOR).round()),
+            height: px((TERMINAL_SIZE * desktop::LINE_HEIGHT_MONO).round()),
         }
     }
 

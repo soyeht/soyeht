@@ -2,18 +2,20 @@
 //! card headed "YOU", the agent's reply is plain text, a tool call is a plain row over a thin
 //! line, and the composer sits at the bottom. Nothing in here has a shadow.
 
-use super::ui::{column, id, row};
+use super::ui::{Typeface, column, icon, id, row};
 use crate::{
-    theme::{Palette, fonts, pane_interior, type_scale},
+    assets::Icon,
+    theme::{Palette, desktop, pane_interior, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
     ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
 };
+use soyeht_client::agent::terminal_text;
 use soyeht_protocol::{
-    PermissionOptionKind, PermissionRequest, PlanStatus, ToolCall, ToolStatus, TranscriptKind,
-    TranscriptMessage, TranscriptRole,
+    PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind, TranscriptMessage,
+    TranscriptRole,
 };
 
 impl Workbench {
@@ -44,7 +46,7 @@ impl Workbench {
                 let permission = view
                     .permission
                     .as_ref()
-                    .map(|request| permission_card(&pane.pane_id, request, palette, cx));
+                    .map(|request| super::permission::card(&pane.pane_id, request, palette, cx));
                 (rows, hidden, view.notice.clone(), permission)
             }
             None => (Vec::new(), 0, None, None),
@@ -80,61 +82,6 @@ impl Workbench {
     }
 }
 
-/// The agent asks to run something: the request in a flat card, Allow as the primary pill.
-fn permission_card(
-    pane_id: &str,
-    request: &PermissionRequest,
-    palette: &'static Palette,
-    cx: &mut Context<Workbench>,
-) -> AnyElement {
-    let buttons: Vec<AnyElement> = request
-        .options
-        .iter()
-        .map(|option| {
-            let (pane_id, request_id, option_id) = (
-                pane_id.to_owned(),
-                request.request_id.clone(),
-                option.option_id.clone(),
-            );
-            let (fill, ink) = match option.kind {
-                PermissionOptionKind::AllowOnce => (palette.ink, palette.face),
-                PermissionOptionKind::AllowAlways => (palette.well, palette.ink),
-                PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
-                    (palette.well, palette.danger())
-                }
-            };
-            pill(id("permission", &option.option_id), fill, ink)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, _| {
-                    this.answer_permission(&pane_id, &request_id, &option_id)
-                }))
-                .child(SharedString::from(option.name.clone()))
-                .into_any_element()
-        })
-        .collect();
-    column()
-        .gap(px(pane_interior::ROW_SPACING))
-        .p(px(pane_interior::CARD_PADDING))
-        .rounded(px(pane_interior::CARD_RADIUS))
-        .bg(rgb(palette.canvas))
-        .child(
-            div()
-                .font_weight(FontWeight::EXTRA_BOLD)
-                .text_size(px(pane_interior::HEADING_POINT_SIZE))
-                .child(SharedString::from(request.title.clone())),
-        )
-        .children((!request.detail.is_empty()).then(|| {
-            div()
-                .text_color(rgb(palette.secondary))
-                .child(SharedString::from(request.detail.clone()))
-        }))
-        .child(
-            row()
-                .gap(px(pane_interior::COMPACT_SPACING))
-                .children(buttons),
-        )
-        .into_any_element()
-}
-
 /// A flat pill: the shape of Allow, Deny and every other button inside a pane.
 pub(super) fn pill(key: SharedString, fill: u32, ink: u32) -> gpui::Stateful<Div> {
     div()
@@ -147,6 +94,7 @@ pub(super) fn pill(key: SharedString, fill: u32, ink: u32) -> gpui::Stateful<Div
         .font_weight(FontWeight::BOLD)
         .text_size(px(type_scale::CONTROL))
         .cursor_pointer()
+        .active(|style| style.opacity(pane_interior::PRESSED_OPACITY))
 }
 
 fn earlier_line(hidden: usize, palette: &Palette) -> AnyElement {
@@ -160,12 +108,18 @@ fn earlier_line(hidden: usize, palette: &Palette) -> AnyElement {
         .into_any_element()
 }
 
-fn notice_line(text: &str, palette: &Palette) -> AnyElement {
-    div()
+/// A caption with the small icon the Mac's `Label` puts before it.
+fn labelled(glyph: Icon, color: u32, text: impl Into<SharedString>) -> Div {
+    row()
+        .gap(px(space::X6))
         .text_size(px(pane_interior::CAPTION_POINT_SIZE))
-        .text_color(rgb(palette.warning()))
-        .child(SharedString::from(format!("\u{26a0} {text}")))
-        .into_any_element()
+        .text_color(rgb(color))
+        .child(icon(glyph, desktop::INLINE_GLYPH, color))
+        .child(div().flex_1().min_w_0().child(text.into()))
+}
+
+fn notice_line(text: &str, palette: &Palette) -> AnyElement {
+    labelled(Icon::Alert, palette.warning(), text.to_owned()).into_any_element()
 }
 
 fn transcript_row(
@@ -179,16 +133,18 @@ fn transcript_row(
         TranscriptKind::Thought => Some(thought_row(message, open, palette, cx)),
         TranscriptKind::Plan => message.plan.as_ref().map(|plan| plan_card(plan, palette)),
         TranscriptKind::Handover => Some(
-            div()
-                .text_size(px(pane_interior::CAPTION_POINT_SIZE))
-                .text_color(rgb(palette.secondary))
-                .child(SharedString::from(format!(
-                    "Conversation continued with {}",
-                    message.text
-                )))
-                .into_any_element(),
+            labelled(
+                Icon::Refresh,
+                palette.secondary,
+                format!("Conversation continued with {}", message.text),
+            )
+            .into_any_element(),
         ),
-        TranscriptKind::Usage | TranscriptKind::Terminal | TranscriptKind::Subagent => None,
+        TranscriptKind::Terminal => message
+            .terminal
+            .as_ref()
+            .map(|output| terminal_block(output, palette)),
+        TranscriptKind::Usage | TranscriptKind::Subagent => None,
         TranscriptKind::Message | TranscriptKind::System => Some(text_row(message, palette)),
     }
 }
@@ -253,7 +209,7 @@ fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
             None => location.path.clone(),
         };
         div()
-            .font_family(fonts::MONO)
+            .mono()
             .text_size(px(pane_interior::MONO_SMALL_POINT_SIZE))
             .text_color(rgb(palette.secondary))
             .child(SharedString::from(text))
@@ -264,7 +220,7 @@ fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
         .py(px(pane_interior::ROW_VERTICAL_PADDING))
         .border_b_1()
         .border_color(rgb(palette.well))
-        .font_family(fonts::MONO)
+        .mono()
         .text_size(px(pane_interior::MONO_POINT_SIZE))
         .child(
             column()
@@ -318,20 +274,41 @@ fn thought_row(
     let message_id = message.local_id.clone();
     column()
         .gap(px(pane_interior::COMPACT_SPACING))
-        .text_size(px(pane_interior::CAPTION_POINT_SIZE))
+        .text_size(px(pane_interior::BODY_POINT_SIZE))
         .text_color(rgb(palette.secondary))
         .child(
             row()
                 .id(id("thought", &message.local_id))
-                .gap(px(pane_interior::TIGHT_SPACING))
+                .gap(px(space::X6))
                 .cursor_pointer()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.toggle_thought(&message_id, cx)
                 }))
-                .child(if open { "\u{25be}" } else { "\u{25b8}" })
+                .child(icon(
+                    if open {
+                        Icon::ChevronDown
+                    } else {
+                        Icon::ChevronRight
+                    },
+                    desktop::DISCLOSURE_GLYPH,
+                    palette.secondary,
+                ))
                 .child("Thought"),
         )
         .children(open.then(|| div().child(SharedString::from(message.text.clone()))))
+        .into_any_element()
+}
+
+/// A command's output: the text in a mono well, as the Mac shows it.
+fn terminal_block(output: &TerminalOutput, palette: &Palette) -> AnyElement {
+    div()
+        .w_full()
+        .p(px(pane_interior::ROW_SPACING))
+        .rounded(px(pane_interior::WELL_RADIUS))
+        .bg(rgb(palette.well))
+        .mono()
+        .text_size(px(pane_interior::MONO_POINT_SIZE))
+        .child(SharedString::from(terminal_text(output)))
         .into_any_element()
 }
 
@@ -345,20 +322,40 @@ fn capitalized(text: &str) -> String {
     })
 }
 
+/// The plan: its name with the clipboard icon, then each step with a filled mark when done and an
+/// empty circle while it is not.
 fn plan_card(plan: &[soyeht_protocol::PlanEntry], palette: &Palette) -> AnyElement {
     column()
         .gap(px(pane_interior::COMPACT_SPACING))
         .text_size(px(pane_interior::CAPTION_POINT_SIZE))
-        .child(div().font_weight(FontWeight::SEMIBOLD).child("Plan"))
+        .child(
+            row()
+                .gap(px(space::X6))
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(icon(
+                    Icon::ClipboardList,
+                    desktop::INLINE_GLYPH,
+                    palette.ink,
+                ))
+                .child("Plan"),
+        )
         .children(plan.iter().map(|entry| {
             let mark = if entry.status == PlanStatus::Completed {
-                "\u{2713}"
+                div()
+                    .size(px(desktop::INLINE_GLYPH))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(rgb(palette.ink))
+                    .child(icon(Icon::Check, desktop::CHECK_GLYPH, palette.face))
+                    .into_any_element()
             } else {
-                "\u{25cb}"
+                icon(Icon::Circle, desktop::INLINE_GLYPH, palette.ink).into_any_element()
             };
             row()
-                .gap(px(pane_interior::COMPACT_SPACING))
-                .child(div().text_color(rgb(palette.secondary)).child(mark))
+                .gap(px(space::X6))
+                .child(mark)
                 .child(div().child(SharedString::from(entry.content.clone())))
         }))
         .into_any_element()

@@ -5,13 +5,13 @@
 use super::{
     harness_menu::Pick,
     menus,
-    ui::{OwnPress, column, icon, id, logo, row, sideways_scroller},
+    ui::{OwnPress, Typeface, column, icon, id, logo, row, sideways_scroller},
     usage_ring::ring_canvas,
 };
 use crate::{
     assets::{self, Icon},
     open_menu::Menu,
-    theme::{Palette, composer, desktop, fonts, pane_interior, pane_layout},
+    theme::{Palette, composer, desktop, pane_interior, pane_layout},
     workbench::Workbench,
 };
 use gpui::{
@@ -208,7 +208,11 @@ impl Workbench {
             .justify_center()
             .rounded_full()
             .bg(rgb(palette.ink))
-            .when(enabled, |button| button.cursor_pointer())
+            .when(enabled, |button| {
+                button
+                    .cursor_pointer()
+                    .active(|style| style.opacity(pane_interior::PRESSED_OPACITY))
+            })
             .own_press()
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 if enabled {
@@ -478,7 +482,7 @@ fn context_gauge(controls: &Controls, palette: &Palette) -> AnyElement {
         )
         .child(
             div()
-                .font_family(fonts::MONO)
+                .mono()
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(pane_interior::MONO_SMALL_POINT_SIZE))
                 .text_color(rgb(color))
