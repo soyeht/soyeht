@@ -4,9 +4,11 @@
 use super::ui::{OwnPress, column, icon, id, row, rule};
 use crate::{
     assets::Icon,
-    neo, terminal_view,
+    neo,
+    open_menu::Menu,
+    terminal_view,
     theme::{Palette, desktop, pane_interior, pane_layout, radius, space, type_scale},
-    workbench::{Menu, Workbench},
+    workbench::Workbench,
 };
 use gpui::{
     Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, IntoElement, ParentElement,
@@ -141,8 +143,9 @@ impl Workbench {
                     .bg(rgb(state_color(&pane.state, palette))),
             )
             .child(
+                // The title gives way first, so the header buttons always fit a narrow pane.
                 div()
-                    .flex_none()
+                    .min_w_0()
                     .max_w(px(desktop::PANE_TITLE_MAX_WIDTH))
                     .truncate()
                     .font_weight(FontWeight::EXTRA_BOLD)
@@ -192,7 +195,7 @@ impl Workbench {
             pane_id: pane.pane_id.clone(),
             button: action.name(),
         });
-        let open = notice.is_some() && self.menu == notice;
+        let open = notice.as_ref().is_some_and(|menu| self.menus.is_open(menu));
         let connected = self.state.connection == soyeht_client::Connection::Connected;
         let enabled = notice.is_some() || connected;
         div()

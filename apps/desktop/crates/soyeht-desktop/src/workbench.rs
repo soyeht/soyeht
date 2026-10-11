@@ -5,8 +5,8 @@
 use crate::{
     composer_field::{ComposerEvent, ComposerField, new_field},
     destination::Destination,
+    open_menu::{Menu, OpenMenu},
     theme::ThemeName,
-    views::menus::{Dismissed, reopened_by_the_dismissing_click},
 };
 use gpui::{
     Context, Entity, FocusHandle, Focusable, KeyDownEvent, ScrollHandle, ScrollWheelEvent, Task,
@@ -25,26 +25,6 @@ use std::{
 
 actions!(soyeht, [Quit, NewTerminal, Paste]);
 
-/// The popup that is open, if any. Only one is open at a time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Menu {
-    /// "+" in the top bar: what to open in the workspace.
-    NewPane,
-    /// "+N" in the top bar: the workspaces that did not fit.
-    Overflow,
-    /// The harness chip of an agent pane's composer.
-    Harness(String),
-    /// A model, effort or permission chip: the pane and the option.
-    Config { pane_id: String, config_id: String },
-    /// The settings entry at the bottom of the rail.
-    Settings,
-    /// A header button the desktop client does not serve yet: the pane and the button.
-    Notice {
-        pane_id: String,
-        button: &'static str,
-    },
-}
-
 /// Engine events applied per frame at most, so a burst of output cannot starve painting.
 const EVENTS_PER_BATCH: usize = 256;
 
@@ -56,8 +36,7 @@ pub struct Workbench {
     pub(crate) focus: FocusHandle,
     pub(crate) destination: Destination,
     pub(crate) rail_open: bool,
-    pub(crate) menu: Option<Menu>,
-    dismissed: Dismissed,
+    pub(crate) menus: OpenMenu,
     /// The message line of each agent pane's composer.
     fields: HashMap<String, Entity<ComposerField>>,
     /// Numbers the requests that open a pane, so each answer is matched to its request.
@@ -65,6 +44,12 @@ pub struct Workbench {
     transcripts: HashMap<String, (ScrollHandle, usize)>,
     /// The thoughts of an agent the person has opened, by message.
     pub(crate) open_thoughts: HashSet<String>,
+    /// The sideways scroll of the stage, when the panes need more room than the window has.
+    pub(crate) stage_scroll: ScrollHandle,
+    /// The sideways scroll of each agent composer's chip strip.
+    chip_scrolls: HashMap<String, ScrollHandle>,
+    /// The pane to bring into view on the next frame, once the stage has been laid out.
+    pub(crate) reveal: Option<String>,
     /// The pane whose input takes keyboard focus on the next frame.
     focus_request: Option<String>,
     _events: Task<()>,
@@ -97,12 +82,14 @@ impl Workbench {
             focus: cx.focus_handle(),
             destination: Destination::default(),
             rail_open: true,
-            menu: None,
-            dismissed: None,
+            menus: OpenMenu::default(),
             fields: HashMap::new(),
             next_ticket: 0,
             transcripts: HashMap::new(),
             open_thoughts: HashSet::new(),
+            stage_scroll: ScrollHandle::new(),
+            chip_scrolls: HashMap::new(),
+            reveal: None,
             focus_request: None,
             _events: events,
         }
@@ -142,6 +129,7 @@ impl Workbench {
                     Effect::FocusPane(pane_id) => {
                         self.state.focus_pane(&pane_id);
                         self.announce_focus();
+                        self.reveal = Some(pane_id.clone());
                         self.focus_request = Some(pane_id);
                     }
                 }
@@ -156,6 +144,7 @@ impl Workbench {
         let state = &self.state;
         self.fields.retain(|id, _| state.agent(id).is_some());
         self.transcripts.retain(|id, _| state.agent(id).is_some());
+        self.chip_scrolls.retain(|id, _| state.agent(id).is_some());
         if !self.open_thoughts.is_empty() {
             self.open_thoughts.retain(|message| {
                 state.agent_ids().any(|id| {
@@ -182,8 +171,9 @@ impl Workbench {
     pub(crate) fn select_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
         self.state.select_workspace(workspace_id);
         self.announce_focus();
-        self.menu = None;
+        self.menus.close();
         self.focus_request = self.state.focused_pane().map(|pane| pane.pane_id.clone());
+        self.reveal.clone_from(&self.focus_request);
         cx.notify();
     }
 
@@ -191,7 +181,7 @@ impl Workbench {
         self.send(Command::CloseWorkspace {
             workspace_id: workspace_id.to_owned(),
         });
-        self.menu = None;
+        self.menus.close();
         cx.notify();
     }
 
@@ -203,7 +193,8 @@ impl Workbench {
     ) {
         self.state.focus_pane(pane_id);
         self.announce_focus();
-        self.menu = None;
+        self.menus.close();
+        self.reveal = Some(pane_id.to_owned());
         self.focus_input(pane_id, window, cx);
         cx.notify();
     }
@@ -253,6 +244,14 @@ impl Workbench {
         .detach();
         self.fields.insert(pane_id.to_owned(), field.clone());
         field
+    }
+
+    /// The sideways scroll of an agent composer's chip strip, made when first needed.
+    pub(crate) fn chip_scroll(&mut self, pane_id: &str) -> ScrollHandle {
+        self.chip_scrolls
+            .entry(pane_id.to_owned())
+            .or_default()
+            .clone()
     }
 
     /// The scroll state of an agent's transcript, following the newest message while it grows.
@@ -347,7 +346,7 @@ impl Workbench {
         ticket: u64,
         cx: &mut Context<Self>,
     ) {
-        self.menu = None;
+        self.menus.close();
         let taken = self.send(match harness {
             Some(harness) => Command::CreateAgent {
                 workspace_id,
@@ -366,29 +365,28 @@ impl Workbench {
     }
 
     pub(crate) fn toggle_menu(&mut self, menu: Menu, cx: &mut Context<Self>) {
-        if reopened_by_the_dismissing_click(&mut self.dismissed, &menu) {
-            return;
+        if self.menus.toggle(menu, Instant::now()) {
+            cx.notify();
         }
-        self.menu = if self.menu.as_ref() == Some(&menu) {
-            None
-        } else {
-            Some(menu)
-        };
-        cx.notify();
     }
 
     pub(crate) fn close_menu(&mut self, cx: &mut Context<Self>) {
-        if self.menu.take().is_some() {
+        if self.menus.close() {
             cx.notify();
         }
     }
 
     /// A click outside the open menu closed it.
     pub(crate) fn dismiss_menu(&mut self, cx: &mut Context<Self>) {
-        if let Some(menu) = self.menu.take() {
-            self.dismissed = Some((menu, Instant::now()));
+        if self.menus.dismiss(Instant::now()) {
             cx.notify();
         }
+    }
+
+    /// Opens or closes the "More harnesses" entry of the open harness picker.
+    pub(crate) fn toggle_more_harnesses(&mut self, cx: &mut Context<Self>) {
+        self.menus.toggle_more_harnesses();
+        cx.notify();
     }
 
     pub(crate) fn toggle_rail(&mut self, cx: &mut Context<Self>) {
@@ -449,7 +447,7 @@ impl Workbench {
             config_id: config_id.to_owned(),
             value: value.to_owned(),
         });
-        self.menu = None;
+        self.menus.close();
         cx.notify();
     }
 
@@ -458,7 +456,7 @@ impl Workbench {
             pane_id: pane_id.to_owned(),
             harness: harness.to_owned(),
         });
-        self.menu = None;
+        self.menus.close();
         cx.notify();
     }
 
@@ -499,6 +497,12 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         let keystroke = &event.keystroke;
+        // Escape closes an open menu, as on the Mac, and is not typed into the terminal.
+        if keystroke.key == "escape" && self.menus.escape() {
+            cx.notify();
+            cx.stop_propagation();
+            return;
+        }
         // The platform key belongs to application shortcuts, never to the terminal.
         if keystroke.modifiers.platform {
             return;

@@ -4926,6 +4926,7 @@ dependencies = [
  "base64",
  "serde",
  "serde_json",
+ "soyeht-platform",
  "soyeht-protocol",
  "uuid",
  "vt100",
@@ -4941,6 +4942,17 @@ dependencies = [
  "gpui_platform",
  "soyeht-client",
  "soyeht-protocol",
+]
+
+[[package]]
+name = "soyeht-platform"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.4.3",
+ "hmac",
+ "libc",
+ "sha2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -6,6 +6,7 @@
 
 mod agent;
 mod composer;
+mod harness_menu;
 pub(crate) mod menus;
 mod pane;
 mod rail;

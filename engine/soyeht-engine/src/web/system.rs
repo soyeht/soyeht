@@ -4,7 +4,7 @@ use std::{path::PathBuf, time::Duration};
 use {
     soyeht_protocol::limits,
     soyeht_web::LocalServerScan,
-    std::{path::Path, process::Command},
+    std::{ffi::OsStr, path::Path, process::Command},
 };
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -20,14 +20,44 @@ pub struct SystemPortScan {
 impl Default for SystemPortScan {
     fn default() -> Self {
         Self {
-            program: if cfg!(target_os = "macos") {
-                "/usr/sbin/lsof".into()
-            } else {
-                "lsof".into()
-            },
+            #[cfg(unix)]
+            program: lsof_program(),
+            #[cfg(windows)]
+            program: PathBuf::new(),
             timeout: SCAN_TIMEOUT,
         }
     }
+}
+
+/// Where `lsof` lives when `PATH` does not say: `/usr/sbin` on macOS and many Linux
+/// distributions, which a minimal `PATH` such as `/usr/bin:/bin` leaves out.
+#[cfg(unix)]
+const LSOF_FALLBACKS: [&str; 2] = ["/usr/sbin/lsof", "/usr/bin/lsof"];
+
+/// The `lsof` to run: the first on `PATH`, else the first standard place that has one, else
+/// the bare name, which the run then reports as a program that cannot start.
+#[cfg(unix)]
+pub(crate) fn lsof_program() -> PathBuf {
+    find_lsof(std::env::var_os("PATH").as_deref(), &LSOF_FALLBACKS)
+}
+
+#[cfg(unix)]
+fn find_lsof(path: Option<&OsStr>, fallbacks: &[&str]) -> PathBuf {
+    let on_path = path
+        .into_iter()
+        .flat_map(std::env::split_paths)
+        .map(|directory| directory.join("lsof"));
+    on_path
+        .chain(fallbacks.iter().map(PathBuf::from))
+        .find(|candidate| is_executable_file(candidate))
+        .unwrap_or_else(|| "lsof".into())
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
 /// Windows has no `lsof`, and the working directory of another process is not readable
@@ -144,6 +174,56 @@ mod tests {
         let result = scanner(program.clone()).scan();
         fs::remove_file(program).unwrap();
         result
+    }
+
+    fn directory_with(name: &str, mode: u32) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!("soyeht-lsof-find-{}", Uuid::new_v4()));
+        fs::create_dir_all(&directory).unwrap();
+        let file = directory.join(name);
+        fs::write(&file, "#!/bin/sh\n").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(mode)).unwrap();
+        directory
+    }
+
+    #[test]
+    fn lsof_is_found_on_path_first() {
+        let first = directory_with("lsof", 0o700);
+        let second = directory_with("lsof", 0o700);
+        let path = std::env::join_paths([&first, &second]).unwrap();
+        assert_eq!(find_lsof(Some(&path), &[]), first.join("lsof"));
+        fs::remove_dir_all(first).unwrap();
+        fs::remove_dir_all(second).unwrap();
+    }
+
+    #[test]
+    fn a_path_without_lsof_falls_back_to_the_standard_places() {
+        let standard = directory_with("lsof", 0o700);
+        let wanted = standard.join("lsof");
+        let empty = directory_with("other", 0o700);
+        let path = std::env::join_paths([&empty]).unwrap();
+        let missing = std::env::temp_dir().join(format!("soyeht-lsof-none-{}", Uuid::new_v4()));
+        let fallbacks = [
+            missing.join("lsof").to_str().unwrap().to_owned(),
+            wanted.to_str().unwrap().to_owned(),
+        ];
+        let fallbacks: Vec<&str> = fallbacks.iter().map(String::as_str).collect();
+        assert_eq!(find_lsof(Some(&path), &fallbacks), wanted);
+        assert_eq!(find_lsof(None, &fallbacks), wanted);
+        fs::remove_dir_all(standard).unwrap();
+        fs::remove_dir_all(empty).unwrap();
+    }
+
+    #[test]
+    fn a_file_that_is_not_executable_is_not_lsof() {
+        let plain = directory_with("lsof", 0o600);
+        let path = std::env::join_paths([&plain]).unwrap();
+        assert_eq!(find_lsof(Some(&path), &[]), PathBuf::from("lsof"));
+        fs::remove_dir_all(plain).unwrap();
+    }
+
+    #[test]
+    fn no_lsof_anywhere_is_the_bare_name() {
+        assert_eq!(find_lsof(Some(OsStr::new("")), &[]), PathBuf::from("lsof"));
     }
 
     #[test]

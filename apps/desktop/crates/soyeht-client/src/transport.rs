@@ -2,6 +2,7 @@
 //! only produces the two halves of a connection and a way to cut it.
 
 use crate::Result;
+use soyeht_platform::local;
 use std::{
     io::{Read, Write},
     path::Path,
@@ -17,23 +18,13 @@ pub struct Link {
     pub close: Closer,
 }
 
-/// Connects to the engine's local socket.
-#[cfg(unix)]
+/// Connects to the engine's local endpoint: a Unix socket, or on Windows the loopback port
+/// named by the owner-only endpoint file (contract 08, section 2.5).
 pub fn connect(path: &Path) -> Result<Link> {
-    link(std::os::unix::net::UnixStream::connect(path)?)
+    link(local::connect(path)?)
 }
 
-/// The engine port defines the Windows local transport; until it lands there is none.
-#[cfg(not(unix))]
-pub fn connect(_path: &Path) -> Result<Link> {
-    Err(crate::Error::Io(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "the engine has no Windows local transport yet",
-    )))
-}
-
-#[cfg(unix)]
-pub fn link(stream: std::os::unix::net::UnixStream) -> Result<Link> {
+pub fn link(stream: local::Stream) -> Result<Link> {
     let reader = stream.try_clone()?;
     let writer = stream.try_clone()?;
     Ok(Link {

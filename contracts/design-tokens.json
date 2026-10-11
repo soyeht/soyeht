@@ -348,6 +348,8 @@
     "menuMinWidth": 180,
     "paneTitleMaxWidth": 260,
     "popupGap": 4,
+    "fadeWidth": 28,
+    "paneFloorLabelCharacters": 8,
     "wellDepth": 3,
     "hairline": 1
   }

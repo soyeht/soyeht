@@ -11,7 +11,8 @@ pub fn handles(window: &Window) -> Vec<AnyElement> {
     };
 
     use crate::theme::desktop::{RESIZE_CORNER as CORNER, RESIZE_EDGE as EDGE};
-    if window.is_maximized() || window.is_fullscreen() {
+    // A maximized, full-screen or tiled window is sized by the window system, not by its edges.
+    if window.is_fullscreen() || !super::window_controls::resizable(window) {
         return Vec::new();
     }
     let strip = |edge: ResizeEdge, cursor: CursorStyle, place: fn(gpui::Div) -> gpui::Div| {

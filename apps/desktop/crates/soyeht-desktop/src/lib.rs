@@ -11,6 +11,7 @@ mod destination;
 mod draft;
 mod fonts;
 mod neo;
+mod open_menu;
 mod tab_plan;
 mod terminal_view;
 pub mod theme;

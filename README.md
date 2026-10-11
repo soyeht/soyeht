@@ -20,13 +20,13 @@ One agent is a chat. Five harnesses running side by side are an operations probl
 
 ## Status
 
-Early. macOS is the supported platform. The engine builds on Linux, but Linux is not supported yet. Windows comes later. There is no release yet; installation instructions will land with the first one.
+Early. macOS is the supported platform. The engine and the desktop client build and pass their checks on Linux and Windows, but those two are not supported yet. There is no release yet; installation instructions will land with the first one.
 
 ## Architecture
 
 - `engine/` (Rust): the process supervisor, workspace state, orchestrator and identity, behind one local socket and WebSocket API. The same workspace builds the MCP server and the CLI.
 - `apps/mac/` and `apps/ios/` (Swift): the native macOS and iPhone apps, clients of the engine API.
-- `apps/desktop/` (TypeScript): the desktop app for Linux and Windows, a client of the same API.
+- `apps/desktop/` (Rust, GPUI): the desktop app for Linux and Windows, a client of the same API.
 - `contracts/`: the protocol schema, the single source for the types generated in Rust, Swift and TypeScript.
 - Connectivity between your devices goes over Tailscale.
 

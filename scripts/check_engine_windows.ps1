@@ -1,4 +1,5 @@
-# Builds and tests the Rust engine on Windows: format, lints, build and the whole test suite.
+# Builds and tests the Rust engine on Windows, and the desktop client (apps\desktop): format,
+# lints, build and the whole test suite of each.
 # It is not a merge-gate step (scripts/check_all.sh stays the only list of those); run it on a
 # Windows machine or through scripts/vmpal_check_engine.sh from a Mac.
 #
@@ -42,4 +43,10 @@ Invoke-Step 'cargo fmt' { cargo fmt --all --check }
 Invoke-Step 'cargo clippy' { cargo clippy --locked --workspace --all-targets -j $jobs -- -D warnings }
 Invoke-Step 'cargo build' { cargo build --locked --workspace -j $jobs }
 Invoke-Step 'cargo test' { cargo test --locked --workspace -j $jobs }
+
+# The desktop client is its own workspace; its Windows code compiles only here.
+Set-Location (Join-Path $repoRoot 'apps\desktop')
+Invoke-Step 'desktop cargo fmt' { cargo fmt --all --check }
+Invoke-Step 'desktop cargo clippy' { cargo clippy --locked --workspace --all-targets -j $jobs -- -D warnings }
+Invoke-Step 'desktop cargo test' { cargo test --locked --workspace -j $jobs }
 Write-Host 'check_engine_windows: passed'

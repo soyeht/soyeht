@@ -55,7 +55,10 @@ member of `engine/`. Reasons:
 - GPUI needs patched forks that do not belong in the engine's dependency graph.
 - The layering of `AGENTS.md` already puts clients above `soyeht-protocol`; a
   client depends on the protocol crate by path (`../../engine/soyeht-protocol`)
-  and on nothing else in `engine/`.
+  and on the platform crate (`../../engine/soyeht-platform`, ADR 0086), which owns the
+  local endpoint: a Unix socket on Linux and macOS, and on Windows the loopback endpoint
+  file the engine writes. The client reaches the engine through it so that no system has
+  its own copy of that transport. It depends on nothing else in `engine/`.
 
 The desktop workspace keeps the engine's lints (`unwrap_used`, `expect_used` and
 `panic` denied; tests exempt), edition and toolchain.
@@ -140,14 +143,20 @@ colors.
 - macOS: built and run on the host for development. It is not a shipped target
   of this client; the Swift app is.
 - Linux (Wayland and X11) and Windows 11: the shipped targets. Both compile GPUI
-  from the same revision. Running the client inside the Linux and Windows VMs is
-  the next step.
+  from the same revision, and the client has been run on Ubuntu, Fedora, Omarchy
+  (Hyprland) and Windows 11 against a disposable engine. `scripts/check_engine_linux.sh`
+  and `scripts/check_engine_windows.ps1` format-check, lint and test it there.
 
-Two things wait on the engine port. The profile contract defines a data
-directory only for macOS, so on Linux and Windows the client needs
-`SOYEHT_ENGINE_SOCKET` until the port defines the location. And the local
-transport exists only as a Unix socket; on Windows the client reports that no
-local transport exists until the port provides one.
+The engine's socket is found from the Dev profile directory under the user's home on
+every system (the generated `soyeht_protocol::profile` constants); `SOYEHT_ENGINE_SOCKET`
+overrides it. The local transport is `soyeht_platform::local` (ADR 0086): a Unix socket,
+or on Windows the loopback endpoint file with its proof of the shared secret.
+
+Window chrome follows the window system. The application draws its own title bar, so on
+Linux and Windows the top bar carries the window buttons. A tiling desktop (Hyprland, sway
+and the like, told by `XDG_CURRENT_DESKTOP`) ignores minimize and maximize, so it gets only
+the close button; a tiled edge only removes the resize edges, because a window snapped to
+half of the screen on GNOME or KDE can still be minimized and maximized.
 
 ## Consequences
 
@@ -156,8 +165,10 @@ local transport exists until the port provides one.
 - GPUI upgrades are deliberate: one revision, two patch revisions, one pull
   request.
 - Scope of the first version: workspaces, panes, live terminal panes with
-  typing, paste, scrollback and resize. Editor, agent, web and writing panes show
-  a notice. Text selection and copy, IME composition, the saved pane layout tree,
-  menus beyond Quit, New Terminal and Paste, and workspace creation are later.
+  typing, paste, scrollback and resize. Agent panes (transcript, composer and its
+  pickers, harness switch) came with the Mac parity work; editor, web and writing
+  panes show a notice. Text selection and copy, IME composition, the Mac's harness
+  switch sheet (explanation, model and effort before switching) and account section,
+  and workspace creation are later.
 - `input chunk size` (16 KiB per `pane.input`) is a Mac client convention, not a
   contract limit; it should move to `contracts/protocol.json`.

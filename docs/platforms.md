@@ -1,14 +1,15 @@
 # Platforms
 
 The engine (`engine/`, the Rust workspace) builds and passes its tests on macOS,
-Linux and Windows. The apps are macOS and iOS only; the engine is what other
-platforms need first.
+Linux and Windows. The native apps are Swift on macOS and iOS; Linux and Windows
+have the desktop client (`apps/desktop`, Rust with GPUI, ADR 0084), which the same
+check scripts format-check, lint and test.
 
-| Platform | Engine builds | Engine tests | Check script |
-| --- | --- | --- | --- |
-| macOS (Apple silicon) | yes | yes | `scripts/check_all.sh` |
-| Linux (Ubuntu 26.04, arm64) | yes | yes | `scripts/check_engine_linux.sh` |
-| Windows (11 24H2, arm64) | yes | yes, see "Tests" | `scripts/check_engine_windows.ps1` |
+| Platform | Engine builds | Engine tests | Desktop client | Check script |
+| --- | --- | --- | --- | --- |
+| macOS (Apple silicon) | yes | yes | builds (development only) | `scripts/check_all.sh` |
+| Linux (Ubuntu 26.04, arm64) | yes | yes | yes | `scripts/check_engine_linux.sh` |
+| Windows (11 24H2, arm64) | yes | yes, see "Tests" | yes | `scripts/check_engine_windows.ps1` |
 
 Behaviour that exists on only some systems sits behind `cfg` and keeps the same
 public shape everywhere. The calls that differ for the local endpoint, owner-only
@@ -70,8 +71,16 @@ bash scripts/check_engine_linux.sh
 ```
 
 It runs `cargo fmt --check`, `cargo clippy -D warnings`, `cargo build` and
-`cargo test` for the whole workspace, with `SOYEHT_JOBS` (default 4) build jobs.
+`cargo test` for the whole workspace, with `SOYEHT_JOBS` (default 4) build jobs, then
+`fmt`, `clippy` and `test` for the desktop client's own workspace (`apps/desktop`).
 The pinned toolchain in `rust-toolchain.toml` installs itself on first use.
+
+The desktop client compiles GPUI, which needs `cmake`, `clang` and the development
+libraries of Wayland, X11, xkbcommon, fontconfig, freetype, OpenSSL and ALSA (on
+Ubuntu: `libwayland-dev libx11-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev
+libxcursor-dev libxrandr-dev libxi-dev libfontconfig-dev libfreetype-dev libssl-dev
+libasound2-dev`; on Fedora the same names ending in `-devel`). To run it, the system
+needs a Vulkan driver (`mesa-vulkan-drivers`); its tests open no window.
 
 ## Running the Windows check
 
@@ -83,8 +92,8 @@ in an elevated PowerShell (symbolic links):
 powershell -ExecutionPolicy Bypass -File scripts\check_engine_windows.ps1
 ```
 
-It runs the same four steps as the Linux script and first checks that the account can
-create symbolic links.
+It runs the same four steps as the Linux script, then the desktop client's three, and
+first checks that the account can create symbolic links.
 
 ## Running them through VMPal
 

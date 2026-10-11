@@ -4,8 +4,8 @@
 #   scripts/vmpal_check_engine.sh linux   "Ubuntu VM 1"
 #   scripts/vmpal_check_engine.sh windows "Windows VM 1"
 #
-# It sends the committed engine sources (`git archive HEAD`, never `target/` or
-# local changes) and unpacks them into a source folder of their own, named after
+# It sends the committed engine and desktop client sources (`git archive HEAD`, never
+# `target/` or local changes) and unpacks them into a source folder of their own, named after
 # the commit: `soyeht-check/src-<short sha>` in the VM account's home. A run
 # never sees a file of an earlier commit, so a deleted or moved file cannot leak
 # into it. Every run shares one build folder, `soyeht-check/target`
@@ -30,9 +30,11 @@ scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 source_folder="soyeht-check/src-$(git -C "$repo_root" rev-parse --short=12 HEAD)"
 
-# The engine reads only these top-level paths at build and test time.
+# The engine and the desktop client read only these paths at build and test time (the
+# desktop embeds the fonts and provider icons of the apps).
 git -C "$repo_root" archive --format=tar.gz --output="$scratch/soyeht-check.tgz" HEAD \
-    engine contracts docs/contracts rust-toolchain.toml scripts
+    engine apps/desktop apps/mac/Resources apps/shared/Sources/SoyehtClient/Resources \
+    contracts docs/contracts rust-toolchain.toml scripts
 "$vmpal" --cli cp "$scratch/soyeht-check.tgz" "$vm:soyeht-check.tgz"
 
 case "$target" in

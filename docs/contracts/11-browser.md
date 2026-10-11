@@ -7,7 +7,7 @@ marked "(assumed)"; they follow the recommendation given at the time.
 ## 1. What it is
 A fourth pane type next to terminal, agent and editor: `mode: "web"`. It
 renders a real web page with the platform's native web view (WebKit on Mac;
-the platform web view in the TypeScript app). It lives in the workspace grid
+the platform web view in the desktop app). It lives in the workspace grid
 like every other pane (assumed), so it can be split, resized, moved and
 opened several times per workspace (limit in §8). Opening a URL that already
 has a web pane in the workspace focuses that pane instead of creating a new

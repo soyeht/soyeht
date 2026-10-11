@@ -10,6 +10,8 @@ mod system;
 
 pub use host::WebWaiter;
 pub use system::SystemPortScan;
+#[cfg(unix)]
+pub(crate) use system::lsof_program;
 
 use crate::{
     core::Core,

@@ -210,6 +210,64 @@ pub fn envelope(tree: Node) -> Envelope {
     }
 }
 
+/// The width a tree needs so that no pane is narrower than `floor`: panes side by side add up
+/// with the `gap` between them, and panes stacked share the widest.
+pub fn minimum_width(node: &Node, floor: f32, gap: f32) -> f32 {
+    match node {
+        Node::V0(_) => floor,
+        Node::V1(split) => {
+            let widths = split
+                .children
+                .iter()
+                .map(|branch| minimum_width(&branch.node, floor, gap));
+            match split.axis {
+                Axis::Horizontal => {
+                    let count = split.children.len().saturating_sub(1) as f32;
+                    widths.sum::<f32>() + count * gap
+                }
+                Axis::Vertical => widths.fold(0.0, f32::max),
+            }
+        }
+    }
+}
+
+/// Where pane `pane_id` sits across the width `minimum_width` asks for: its left edge and its
+/// width. When a tree needs more room than the window has, every pane is drawn at exactly this
+/// size, so it says how far to scroll to bring the pane into view.
+pub fn pane_span(node: &Node, pane_id: &str, floor: f32, gap: f32) -> Option<(f32, f32)> {
+    match node {
+        Node::V0(leaf) => (leaf.pane_id == pane_id).then_some((0.0, floor)),
+        Node::V1(split) => {
+            let mut offset = 0.0;
+            for branch in &split.children {
+                if let Some((start, width)) = pane_span(&branch.node, pane_id, floor, gap) {
+                    return Some(match split.axis {
+                        Axis::Horizontal => (offset + start, width),
+                        Axis::Vertical => (start, width),
+                    });
+                }
+                if split.axis == Axis::Horizontal {
+                    offset += minimum_width(&branch.node, floor, gap) + gap;
+                }
+            }
+            None
+        }
+    }
+}
+
+/// The scroll offset that brings the span `start..start + width` into a viewport of
+/// `viewport` points that now shows `scrolled..scrolled + viewport`: unchanged when it is
+/// already inside, else the least move that shows it (its left edge first when it is wider).
+pub fn reveal_offset(start: f32, width: f32, scrolled: f32, viewport: f32) -> f32 {
+    if start < scrolled || width > viewport {
+        start
+    } else if start + width > scrolled + viewport {
+        start + width - viewport
+    } else {
+        scrolled
+    }
+}
+
 /// The panes of a tree, left to right and top to bottom.
 pub fn pane_ids(node: &Node) -> Vec<&str> {
     match node {
@@ -242,6 +300,18 @@ mod tests {
 
     fn leaf_json(id: &str) -> Value {
         json!({"paneId": id, "kind": "terminal"})
+    }
+
+    /// Pane `a`, then to its right a column of `b` over `c`.
+    fn beside_a_stack() -> Node {
+        let panes = panes(&["a", "b", "c"]);
+        let layout = stored(json!({"axis": "horizontal", "children": [
+            {"weight": 1.0, "node": leaf_json("a")},
+            {"weight": 1.0, "node": {"axis": "vertical", "children": [
+                {"weight": 1.0, "node": leaf_json("b")}, {"weight": 1.0, "node": leaf_json("c")}
+            ]}}
+        ]}));
+        resolve(&layout, &refs(&panes)).unwrap()
     }
 
     #[test]
@@ -323,6 +393,36 @@ mod tests {
         assert_eq!(root.children.len(), 3);
         let weights: Vec<f64> = root.children.iter().map(|child| child.weight).collect();
         assert_eq!(weights, [0.5, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn a_layout_needs_the_floor_of_every_pane_that_sits_beside_another() {
+        let tree = beside_a_stack();
+        assert_eq!(minimum_width(&tree, 300.0, 18.0), 618.0);
+        let one = panes(&["a"]);
+        let single = resolve(&json!({}), &refs(&one)).unwrap();
+        assert_eq!(minimum_width(&single, 300.0, 18.0), 300.0);
+    }
+
+    #[test]
+    fn a_pane_sits_after_the_panes_beside_it_and_under_none_stacked_above_it() {
+        let tree = beside_a_stack();
+        assert_eq!(pane_span(&tree, "a", 300.0, 18.0), Some((0.0, 300.0)));
+        assert_eq!(pane_span(&tree, "b", 300.0, 18.0), Some((318.0, 300.0)));
+        assert_eq!(pane_span(&tree, "c", 300.0, 18.0), Some((318.0, 300.0)));
+        assert_eq!(pane_span(&tree, "gone", 300.0, 18.0), None);
+    }
+
+    #[test]
+    fn revealing_moves_the_view_the_least_that_shows_the_pane() {
+        // Inside: no move.
+        assert_eq!(reveal_offset(100.0, 300.0, 50.0, 800.0), 50.0);
+        // Past the right edge: its right edge meets the viewport's.
+        assert_eq!(reveal_offset(600.0, 300.0, 0.0, 800.0), 100.0);
+        // Before the left edge: its left edge meets the viewport's.
+        assert_eq!(reveal_offset(100.0, 300.0, 400.0, 800.0), 100.0);
+        // Wider than the viewport: its left edge wins.
+        assert_eq!(reveal_offset(500.0, 900.0, 0.0, 800.0), 500.0);
     }
 
     #[test]

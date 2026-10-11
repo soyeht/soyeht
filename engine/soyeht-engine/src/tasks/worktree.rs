@@ -294,7 +294,7 @@ fn process_uses(_worktree: &Path) -> Result<bool> {
 
 #[cfg(unix)]
 fn process_uses(worktree: &Path) -> Result<bool> {
-    let mut command = Command::new("lsof");
+    let mut command = Command::new(crate::web::lsof_program());
     command.args(["-a", "-d", "cwd", "-Fp", "+D"]).arg(worktree);
     let output = bounded_command(command, PROCESS_SCAN_TIMEOUT)?;
     if output.stdout.contains(&b'p') {

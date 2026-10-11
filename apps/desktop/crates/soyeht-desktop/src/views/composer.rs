@@ -3,22 +3,25 @@
 //! the mic and a round send button (stop while the agent runs).
 
 use super::{
+    harness_menu::Pick,
     menus,
-    ui::{OwnPress, column, icon, id, logo, row},
+    ui::{OwnPress, column, icon, id, logo, row, sideways_scroller},
     usage_ring::ring_canvas,
 };
 use crate::{
     assets::{self, Icon},
-    theme::{Palette, composer, desktop, fonts, pane_interior},
-    workbench::{Menu, Workbench},
+    open_menu::Menu,
+    theme::{Palette, composer, desktop, fonts, pane_interior, pane_layout},
+    workbench::Workbench,
 };
 use gpui::{
     Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, SharedString, StatefulInteractiveElement, Styled, div,
-    prelude::FluentBuilder, px, rgb,
+    MouseButton, ParentElement, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
+    div, prelude::FluentBuilder, px, rgb,
 };
 use soyeht_client::agent::{Action, Controls, Menu as ConfigMenu};
 use soyeht_protocol::Pane;
+use std::rc::Rc;
 
 impl Workbench {
     pub(super) fn composer(
@@ -121,13 +124,15 @@ impl Workbench {
                 palette,
                 cx,
             ))
-            .child(
-                row()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(composer::CONTROL_SPACING))
-                    .children(chips),
-            )
+            // As on the Mac, the chips keep their size and the strip scrolls sideways when the
+            // pane is too narrow for all of them. A fade at an end that hides more says so, and
+            // the wheel moves the strip only sideways.
+            .child(chip_strip(
+                &self.chip_scroll(&pane_id),
+                &pane_id,
+                chips,
+                palette,
+            ))
             .child(context_gauge(controls, palette))
             .child(self.round_button(
                 "mic",
@@ -152,7 +157,7 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let open = self.menu.as_ref() == Some(&menu);
+        let open = self.menus.is_open(&menu);
         let toggled = menu.clone();
         div()
             .relative()
@@ -236,32 +241,19 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let menu = Menu::Harness(pane_id.to_owned());
-        let open = self.menu.as_ref() == Some(&menu);
+        let open = self.menus.is_open(&menu);
         let label = name.or(current).unwrap_or("Agent").to_owned();
         let mark = current
             .and_then(assets::logo_path)
             .map(|path| logo(path, composer::HARNESS_LOGO_SIZE, palette.ink).into_any_element());
-        let rows: Vec<AnyElement> = self
-            .state
-            .harnesses()
-            .iter()
-            .filter(|harness| harness.available || Some(harness.id.as_str()) == current)
-            .map(|harness| {
-                let (pane_id, picked) = (pane_id.to_owned(), harness.id.clone());
-                let checked = Some(harness.id.as_str()) == current;
-                menus::on_pick(
-                    menus::item(palette, &harness.id, harness.name.clone(), checked),
-                    cx,
-                    move |this, cx| {
-                        if checked {
-                            this.close_menu(cx);
-                        } else {
-                            this.switch_harness(&pane_id, &picked, cx);
-                        }
-                    },
-                )
-            })
-            .collect();
+        let rows = if open {
+            let pane_id = pane_id.to_owned();
+            let pick: Pick =
+                Rc::new(move |this, harness, cx| this.switch_harness(&pane_id, harness, cx));
+            self.harness_rows(current, palette, &pick, cx)
+        } else {
+            Vec::new()
+        };
         chip(
             palette,
             id("harness-chip", pane_id),
@@ -288,7 +280,7 @@ impl Workbench {
             pane_id: pane_id.to_owned(),
             config_id: menu.config_id.clone(),
         };
-        let open = self.menu.as_ref() == Some(&open_menu);
+        let open = self.menus.is_open(&open_menu);
         let rows: Vec<AnyElement> = menu
             .choices
             .iter()
@@ -341,8 +333,7 @@ fn chip(
     let toggled = menu;
     div()
         .relative()
-        .when(emphasized, |chip| chip.flex_none())
-        .when(!emphasized, |chip| chip.flex_shrink(1.0).min_w_0())
+        .flex_none()
         .child(
             row()
                 .id(key)
@@ -401,6 +392,53 @@ fn chip(
         .into_any_element()
 }
 
+/// The chips in a strip that scrolls sideways when the pane is too narrow for them all.
+fn chip_strip(
+    scroll: &ScrollHandle,
+    pane_id: &str,
+    chips: Vec<AnyElement>,
+    palette: &Palette,
+) -> AnyElement {
+    let row = row()
+        .flex_none()
+        .gap(px(composer::CONTROL_SPACING))
+        .children(chips);
+    sideways_scroller(id("composer-chips", pane_id), scroll, row, palette)
+        .h(px(composer::CONTROL_HEIGHT))
+        .into_any_element()
+}
+
+/// The narrowest a pane is drawn: the composer's controls (attach, a harness chip showing a
+/// short name, the context gauge, the mic and send) side by side, inside the card, the
+/// composer's own padding and the pane's inset. Below that the controls would not fit even
+/// with the model, effort and permission chips scrolled out of sight. The widths are the
+/// composer's design tokens; the label and the percentage are estimated at the width of a
+/// character of the tab caption, as the Mac sizes its floor from characters of the agent font.
+pub fn minimum_pane_width() -> f32 {
+    let character = desktop::TAB_CHARACTER_WIDTH;
+    let harness_chip = 2.0 * composer::CHIP_HORIZONTAL_PADDING
+        + composer::HARNESS_LOGO_SIZE
+        + 2.0 * composer::CHIP_SPACING
+        + desktop::PANE_FLOOR_LABEL_CHARACTERS * character
+        + desktop::CHEVRON_GLYPH;
+    let gauge = composer::RING_DIAMETER
+        + composer::CONTEXT_SPACING
+        + 4.0 * character
+        + 2.0 * composer::CONTEXT_HORIZONTAL_PADDING;
+    let controls = [
+        composer::CONTROL_HEIGHT,
+        harness_chip,
+        gauge,
+        composer::CONTROL_HEIGHT,
+        composer::SEND_WIDTH,
+    ];
+    let row =
+        controls.iter().sum::<f32>() + (controls.len() - 1) as f32 * composer::CONTROL_SPACING;
+    // The composer card sits inside the pane's body with its own margin and padding.
+    let card = 4.0 * pane_interior::CARD_PADDING;
+    row + card + 2.0 * pane_layout::PANE_CARD_INSET
+}
+
 fn separator(palette: &Palette) -> AnyElement {
     div()
         .flex_none()
@@ -447,4 +485,19 @@ fn context_gauge(controls: &Controls, palette: &Palette) -> AnyElement {
                 .child(SharedString::from(controls.context_label())),
         )
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_floor_holds_every_fixed_control_and_the_card_around_them() {
+        let floor = minimum_pane_width();
+        let fixed = 2.0 * composer::CONTROL_HEIGHT + composer::SEND_WIDTH;
+        let card = 4.0 * pane_interior::CARD_PADDING + 2.0 * pane_layout::PANE_CARD_INSET;
+        assert!(floor > fixed + card, "{floor}");
+        // A bounded floor: wider than a phone sliver, narrower than half a small window.
+        assert!((300.0..400.0).contains(&floor), "{floor}");
+    }
 }

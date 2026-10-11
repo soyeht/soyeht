@@ -157,7 +157,9 @@ impl<T> Admission<T> {
         self.entries.retain(|(entry, _)| *entry != number);
     }
 
-    /// Forgets the connections `keep` rejects.
+    /// Forgets the connections `keep` rejects. Only the asynchronous flavour sweeps its
+    /// finished handshakes this way.
+    #[cfg(feature = "tokio")]
     pub(super) fn retain(&mut self, mut keep: impl FnMut(&T) -> bool) {
         self.entries.retain(|(_, item)| keep(item));
     }

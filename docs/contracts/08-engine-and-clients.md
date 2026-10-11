@@ -3,8 +3,8 @@
 Status: v2 CLEARED FOR SLICE 1 by aria's review on 2026-09-10 (“slice 1 cleared”);
 the rest of v1 remains open to adjustments. Rewritten after aria's review
 (internal contract review, findings R01, R02, R05, R06, R10, R11, R14, R18, R19,
-R20 applied here). Clients: new Swift app (Mac and iPhone), TypeScript app
-(Linux and Windows), CLI and agents' MCP server.
+R20 applied here). Clients: new Swift app (Mac and iPhone), Rust desktop app (GPUI, Linux
+and Windows), CLI and agents' MCP server.
 
 ## 1. Unchanging rules
 1. **One contract** for every client. The iPhone is the same client with a
@@ -40,7 +40,7 @@ R20 applied here). Clients: new Swift app (Mac and iPhone), TypeScript app
 ## 2. Transport, authentication and roles (R10, R11)
 | Client | Path | Identity proof |
 |---|---|---|
-| Mac (Swift), Linux/Windows (TS), CLI | Unix socket at `<data>/engine.sock`; directory 0700, socket 0600; on Windows, the loopback endpoint described in §2.5 | same OS user + `hello` |
+| Mac (Swift), Linux/Windows (Rust desktop), CLI | Unix socket at `<data>/engine.sock`; directory 0700, socket 0600; on Windows, the loopback endpoint described in §2.5 | same OS user + `hello` |
 | MCP server (one per agent pane) | same local socket | `hello` with `binding` issued by the engine when creating the pane (short secret + paneId); without a valid `binding`, becomes a “local human” client without a role |
 | iPhone | plaintext WebSocket on the Soyeht port at Tailscale addresses (contract 06) | `deviceToken` issued during pairing (§2.2) |
 

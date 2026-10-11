@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 15d89f77b32fe6d38a7281af0469ad6a996dfdc7fb98c3766b13ed6d1f34ef13). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 793423a48c5d4cfcc06ed2ba2072c4857ad52da62e301ea312cf70362f528068). Do not edit.
 use super::Palette;
 
 pub(super) static MILK: Palette = Palette {
@@ -375,6 +375,8 @@ pub mod desktop {
     pub const MENU_MIN_WIDTH: f32 = 180.0;
     pub const PANE_TITLE_MAX_WIDTH: f32 = 260.0;
     pub const POPUP_GAP: f32 = 4.0;
+    pub const FADE_WIDTH: f32 = 28.0;
+    pub const PANE_FLOOR_LABEL_CHARACTERS: f32 = 8.0;
     pub const WELL_DEPTH: f32 = 3.0;
     pub const HAIRLINE: f32 = 1.0;
 }

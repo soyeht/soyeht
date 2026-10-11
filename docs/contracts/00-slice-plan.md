@@ -15,7 +15,7 @@ Date: 2026-09-10.
 | 6 | **Harness switching** | continuation prompt from the single file, 6 messages, transcript location, switch and return, frozen queue, failure with restoration | 01 | real multi-harness support |
 | 7 | **Raw terminal and the experiment** | frame recording + hook labels + export; detector interface; current app's regex as baseline; “no signal” and “unknown” states | 05 | the detector can be measured and chosen using data |
 | 8 | **Complete iPhone** | task board, dispatch, yolo, change model, push (APNs through the engine), Live Activity, reconnection on every screen | 06, 03 | supervision away from home |
-| 9 | **Linux and Windows** | TypeScript app with the same protocol client, terminal and agent pane; named pipe on Windows | 08 | the product beyond Mac |
+| 9 | **Linux and Windows** | Rust desktop app (GPUI) with the same protocol client, terminal and agent pane; loopback endpoint on Windows | 08 | the product beyond Mac |
 | 10 | **Production** | signing and notarization, TestFlight, engine updater that does not kill ptyd, migration from the current app to the new one (workspaces, paired devices), production profile, changelog | 07 | replacing today's app with the new one |
 
 After slice 10 come the open proposals you wanted to discuss later:

@@ -47,7 +47,8 @@ Each layer depends only on the layers listed above it.
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling.
 7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
-   its own cargo workspace and depends on `engine/soyeht-protocol` only. Its
+   its own cargo workspace and depends on `engine/soyeht-protocol` and, for the local endpoint
+   (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`. Its
    `soyeht-client` crate holds the connection and state, `soyeht-desktop` the
    views, and its `theme` module holds the palettes and tokens generated from
    `contracts/design-tokens.json`, the same source the Swift side is generated from.

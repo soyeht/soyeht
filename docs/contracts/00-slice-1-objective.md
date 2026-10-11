@@ -35,7 +35,7 @@ contracts/            protocol.json (single source) + test vectors + generator
 engine/               Cargo workspace: soyeht-engine, soyeht-ptyd, soyeht-cli, soyeht-protocol (generated types), soyeht-store
 apps/mac/             Xcode: Swift app (SwiftUI/AppKit) for macOS, Dev target
 apps/ios/             Xcode: Swift app for iPhone, Dev target (may be one project with two targets)
-apps/desktop/         (empty in this slice; TypeScript, Linux/Windows, later)
+apps/desktop/         (empty in this slice; Rust with GPUI, Linux/Windows, later)
 design/               soyeht-desktop.pen (copy from ~/Documents/soyeht/design/)
 docs/contracts/       versioned contracts 01–08 and 00-slice-1 (internal analysis NEVER enters the repository)
 docs/adr/             decisions

@@ -3,17 +3,20 @@
 //! Linux and Windows the window controls.
 
 use super::{
+    harness_menu::Pick,
     menus,
     ui::{OwnPress, icon, id, row, spacer},
     window_controls,
 };
 use crate::{
     assets::Icon,
-    neo, tab_plan,
+    neo,
+    open_menu::Menu,
+    tab_plan,
     theme::{
         Palette, desktop, elevation, fonts, glyph, layout, pane_interior, radius, space, type_scale,
     },
-    workbench::{Menu, Workbench},
+    workbench::Workbench,
 };
 use gpui::{
     Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
@@ -21,6 +24,7 @@ use gpui::{
     prelude::FluentBuilder, px, rgb,
 };
 use soyeht_client::Connection;
+use std::rc::Rc;
 
 /// Room kept for dragging the window by the bar.
 const MINIMUM_DRAG: f32 = desktop::MINIMUM_DRAG_WIDTH;
@@ -41,10 +45,15 @@ impl Workbench {
         } else {
             space::X12
         };
-        let controls = if on_mac {
+        let shown = if on_mac {
+            Vec::new()
+        } else {
+            window_controls::visible(window)
+        };
+        let controls = if shown.is_empty() {
             0.0
         } else {
-            window_controls::WIDTH + gap
+            window_controls::width(shown.len()) + gap
         };
         let fixed = leading + 2.0 * (control + gap) + controls + space::X12 + MINIMUM_DRAG;
         let available = (width - fixed).max(0.0);
@@ -99,7 +108,7 @@ impl Workbench {
             .children((!hidden.is_empty()).then(|| self.overflow(&hidden, palette, cx)))
             .child(self.new_pane_button(connected, palette, cx))
             .children(reconnecting.then(|| reconnecting_note(palette)))
-            .children((!on_mac).then(|| window_controls::controls(palette, window, cx)))
+            .children((!shown.is_empty()).then(|| window_controls::controls(&shown, palette, cx)))
     }
 
     fn rail_toggle(&self, palette: &'static Palette, cx: &mut Context<Self>) -> AnyElement {
@@ -184,7 +193,7 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let open = self.menu == Some(Menu::Overflow);
+        let open = self.menus.is_open(&Menu::Overflow);
         let rows: Vec<AnyElement> = hidden
             .iter()
             .map(|(workspace_id, name)| {
@@ -228,7 +237,7 @@ impl Workbench {
                         layout::WORKSPACE_OVERFLOW_BUTTON_WIDTH,
                         layout::TOP_BAR_CONTROL_HEIGHT + space::X6,
                     ),
-                    menus::list(rows).max_h(px(layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT)),
+                    menus::list(rows),
                     cx,
                 ))
             })
@@ -241,27 +250,22 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let open = self.menu == Some(Menu::NewPane);
-        let mut rows = vec![menus::on_pick(
-            menus::item(palette, "terminal", "Terminal", false),
-            cx,
-            |this, cx| this.open_pane(None, cx),
-        )];
-        let agents: Vec<(String, String)> = self
-            .state
-            .harnesses()
-            .iter()
-            .filter(|harness| harness.available)
-            .map(|harness| (harness.id.clone(), harness.name.clone()))
-            .collect();
-        for (harness_id, name) in agents {
-            let picked = harness_id.clone();
-            rows.push(menus::on_pick(
-                menus::item(palette, &harness_id, name, false),
-                cx,
-                move |this, cx| this.open_pane(Some(picked.clone()), cx),
-            ));
-        }
+        let open = self.menus.is_open(&Menu::NewPane);
+        let rows = if open {
+            let pick: Pick =
+                Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
+            let agents = self.harness_rows(None, palette, &pick, cx);
+            std::iter::once(menus::heading(palette, "Open a pane").into_any_element())
+                .chain(std::iter::once(menus::on_pick(
+                    menus::item(palette, "terminal", "Terminal", false),
+                    cx,
+                    |this, cx| this.open_pane(None, cx),
+                )))
+                .chain(agents)
+                .collect()
+        } else {
+            Vec::new()
+        };
         div()
             .relative()
             .flex_none()
@@ -291,11 +295,7 @@ impl Workbench {
                         layout::TOP_BAR_CONTROL_HEIGHT,
                         layout::TOP_BAR_CONTROL_HEIGHT + space::X6,
                     ),
-                    menus::list(
-                        std::iter::once(menus::heading(palette, "Open a pane").into_any_element())
-                            .chain(rows)
-                            .collect(),
-                    ),
+                    menus::list(rows),
                     cx,
                 ))
             })

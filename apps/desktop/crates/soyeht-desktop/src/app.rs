@@ -17,6 +17,11 @@ use soyeht_client::{Engine, profile};
 /// Where the macOS window buttons sit; the top bar leaves room for them.
 const TRAFFIC_LIGHTS: (f32, f32) = (desktop::TRAFFIC_LIGHT_INSET, desktop::TRAFFIC_LIGHT_INSET);
 
+/// The application's identity to the window system: Wayland's `app_id`, and the class X11 window
+/// managers group windows by. Without it a compositor shows the window as nameless and cannot
+/// match a rule or an icon to it.
+const APP_ID: &str = "soyeht";
+
 /// The platform key: Command on macOS, Control+Shift elsewhere, so that shortcuts never
 /// collide with the keys a terminal program needs.
 #[cfg(target_os = "macos")]
@@ -60,6 +65,7 @@ pub fn run() {
             window_min_size: Some(size(px(window_size::MINIMUM.0), px(window_size::MINIMUM.1))),
             // The application draws its own title bar and window buttons: the top bar.
             window_decorations: Some(WindowDecorations::Client),
+            app_id: Some(APP_ID.into()),
             titlebar: Some(TitlebarOptions {
                 title: Some("Soyeht".into()),
                 appears_transparent: true,

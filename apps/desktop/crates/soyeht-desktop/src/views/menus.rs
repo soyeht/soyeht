@@ -4,32 +4,14 @@
 use super::ui::{OwnPress, column, id, row};
 use crate::{
     neo,
-    theme::{Palette, desktop, elevation, fonts, radius, space, type_scale},
+    theme::{Palette, desktop, elevation, fonts, layout, pane_interior, radius, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
     Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
     ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, anchored, deferred,
-    div, point, px, rgb,
+    div, point, prelude::FluentBuilder, px, rgb,
 };
-use std::time::{Duration, Instant};
-
-/// A click that closes a menu from outside lands before the click on its button. Within this
-/// time the button's click is the same click and must not open the menu again.
-const SAME_CLICK: Duration = Duration::from_millis(350);
-
-/// What was dismissed by a click elsewhere, and when.
-pub type Dismissed = Option<(crate::workbench::Menu, Instant)>;
-
-pub fn reopened_by_the_dismissing_click(
-    dismissed: &mut Dismissed,
-    menu: &crate::workbench::Menu,
-) -> bool {
-    match dismissed.take() {
-        Some((closed, at)) => closed == *menu && at.elapsed() < SAME_CLICK,
-        None => false,
-    }
-}
 
 /// `body` opened below or beside the element it is placed in. The element must be `relative`.
 pub fn popup(
@@ -44,6 +26,11 @@ pub fn popup(
         .flex_col()
         .p(px(space::X6))
         .min_w(px(desktop::MENU_MIN_WIDTH))
+        // The Mac's popover height: a longer list scrolls inside the card, and the card snaps
+        // into the window.
+        .max_h(px(layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT))
+        .id("menu")
+        .overflow_y_scroll()
         .occlude()
         .on_mouse_down_out(cx.listener(|this, _, _, cx| this.dismiss_menu(cx)))
         .child(body);
@@ -61,13 +48,9 @@ pub fn popup(
         .into_any_element()
 }
 
-/// A selectable row of a menu.
-pub fn item(
-    palette: &Palette,
-    key: &str,
-    label: impl Into<SharedString>,
-    checked: bool,
-) -> Stateful<Div> {
+/// The frame of a row: the check mark column, hover and the padding. `enabled` false draws it
+/// dimmed and without hover or a pointer.
+fn row_frame(palette: &Palette, key: &str, checked: bool, enabled: bool) -> Stateful<Div> {
     row()
         .id(id("menu-item", key))
         .gap(px(space::X8))
@@ -76,8 +59,11 @@ pub fn item(
         .rounded(px(radius::COMPACT))
         .text_size(px(type_scale::CAPTION))
         .text_color(rgb(palette.ink))
-        .cursor_pointer()
-        .hover(|style| style.bg(rgb(palette.hover)))
+        .when(enabled, |row| {
+            row.cursor_pointer()
+                .hover(|style| style.bg(rgb(palette.hover)))
+        })
+        .when(!enabled, |row| row.opacity(pane_interior::DISABLED_OPACITY))
         .child(
             div()
                 .w(px(space::X12))
@@ -85,7 +71,42 @@ pub fn item(
                 .text_color(rgb(palette.accent))
                 .child(if checked { "\u{2713}" } else { "" }),
         )
+}
+
+/// A selectable row of a menu.
+pub fn item(
+    palette: &Palette,
+    key: &str,
+    label: impl Into<SharedString>,
+    checked: bool,
+) -> Stateful<Div> {
+    row_frame(palette, key, checked, true)
         .child(div().flex_1().min_w_0().truncate().child(label.into()))
+}
+
+/// A row with a second, smaller line under its label, such as how ready an agent is, so that
+/// two rows with the same label can be told apart.
+pub fn detail_item(
+    palette: &Palette,
+    key: &str,
+    label: impl Into<SharedString>,
+    detail: impl Into<SharedString>,
+    checked: bool,
+    enabled: bool,
+) -> Stateful<Div> {
+    row_frame(palette, key, checked, enabled).child(
+        column()
+            .flex_1()
+            .min_w_0()
+            .child(div().truncate().child(label.into()))
+            .child(
+                div()
+                    .truncate()
+                    .text_size(px(type_scale::SMALL))
+                    .text_color(rgb(palette.muted))
+                    .child(detail.into()),
+            ),
+    )
 }
 
 /// A small heading above a group of rows.

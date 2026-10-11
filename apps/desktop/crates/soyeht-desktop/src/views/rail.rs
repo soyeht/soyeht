@@ -9,8 +9,9 @@ use super::{
 use crate::{
     assets::Icon,
     destination::Destination,
+    open_menu::Menu,
     theme::{Palette, ThemeName, desktop, layout, radius, space},
-    workbench::{Menu, Workbench},
+    workbench::Workbench,
 };
 use gpui::{
     Anchor, AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
@@ -95,7 +96,7 @@ impl Workbench {
     }
 
     fn settings_button(&mut self, palette: &'static Palette, cx: &mut Context<Self>) -> AnyElement {
-        let open = self.menu == Some(Menu::Settings);
+        let open = self.menus.is_open(&Menu::Settings);
         div()
             .relative()
             .flex_none()
@@ -154,18 +155,20 @@ impl Workbench {
                 )
             })
             .collect();
+        // The connection comes first: it is the short part, and a menu that scrolls keeps it in sight.
         menus::list(
-            std::iter::once(menus::heading(palette, "Theme").into_any_element())
-                .chain(themes)
-                .chain([
-                    menus::heading(palette, "Engine").into_any_element(),
-                    menus::note(
-                        palette,
-                        super::connection_notice(&self.state.connection).status,
-                    )
-                    .into_any_element(),
-                ])
-                .collect(),
+            [
+                menus::heading(palette, "Engine").into_any_element(),
+                menus::note(
+                    palette,
+                    super::connection_notice(&self.state.connection).status,
+                )
+                .into_any_element(),
+                menus::heading(palette, "Theme").into_any_element(),
+            ]
+            .into_iter()
+            .chain(themes)
+            .collect(),
         )
     }
 }

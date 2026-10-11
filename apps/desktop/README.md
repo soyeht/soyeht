@@ -24,8 +24,9 @@ close mark, a "+N" pill for the tabs that do not fit, a "+" that opens a termina
 the rail down the left (the places, the usage rings with their percentages, settings), and the
 panes of the selected workspace as neumorphic cards with a flat interior.
 
-- Connects to a running engine on its local socket, as the Mac app does, and
-  reconnects when the engine restarts.
+- Connects to a running engine on its local endpoint, as the Mac app does (a Unix socket on
+  Linux and macOS, the engine's loopback endpoint file on Windows, through `soyeht-platform`),
+  and reconnects when the engine restarts.
 - Panes are tiled as the workspace's split tree says (`workspace.layout`), and the split buttons
   of a pane header split it to the right or below and store the new arrangement.
 - Terminal panes show live output (the engine streams raw terminal bytes, parsed
@@ -38,7 +39,20 @@ panes of the selected workspace as neumorphic cards with a flat interior.
 - Settings: the color theme (nine palettes) and the engine connection.
 - On Linux and Windows the top bar carries the window controls (minimize, maximize, close),
   drags the window, and on Linux the window edges resize it. The window opens no larger than
-  its display.
+  its display. A tiling desktop (Hyprland, sway and the like, told by `XDG_CURRENT_DESKTOP`)
+  ignores minimize and maximize, so a window there gets only the close button and no resize
+  edges; a window snapped to half of the screen on GNOME or KDE keeps the buttons and loses the
+  resize edges. The window announces itself as `soyeht` (Wayland `app_id`, X11 class) for window
+  rules.
+- A pane never gets narrower than its composer's controls need. When the panes need more room
+  than the window has, the stage scrolls sideways (the wheel moves it only sideways, so
+  transcripts and terminals keep their own scrolling) and fades at each end that hides more;
+  the pane that was focused or just opened is scrolled into view. The composer keeps its chips at
+  full size and scrolls them sideways in the same way.
+- The "+" menu and the harness chip list the installed agents by readiness, each with how ready
+  it is, and the others under a collapsed "More harnesses" entry; an agent that cannot start is
+  shown dimmed. Popup menus are as tall as the Mac's popover at most, scroll inside, and close on
+  Escape.
 - Editor, web and writing panes, tasks, loops, attachments and dictation are listed with a notice.
 
 ## Run

@@ -12,6 +12,7 @@ pub mod commands;
 mod engine;
 mod error;
 mod event;
+pub mod harness_picker;
 pub mod keys;
 pub mod layout;
 pub mod profile;

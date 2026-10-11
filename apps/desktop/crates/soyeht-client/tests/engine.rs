@@ -1,25 +1,22 @@
-//! The whole client against a scripted engine on a real local socket.
-#![cfg(unix)]
+//! The whole client against a scripted engine on a real local endpoint: a Unix socket, or on
+//! Windows the loopback endpoint file.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
 use soyeht_client::{Command, Connection, Effect, Engine, Error, Event, State};
+use soyeht_platform::local::{Listener, Stream};
 use soyeht_protocol::{
     EventName,
     frame::{Frame, read_json, write_json},
 };
-use std::{
-    os::unix::net::{UnixListener, UnixStream},
-    path::PathBuf,
-    time::Duration,
-};
+use std::{path::PathBuf, time::Duration};
 
 /// The engine side of one connection.
-struct FakeEngine(UnixStream);
+struct FakeEngine(Stream);
 
 impl FakeEngine {
-    fn accept(listener: &UnixListener) -> Self {
-        let (stream, _) = listener.accept().unwrap();
+    fn accept(listener: &Listener) -> Self {
+        let stream = listener.accept().unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
@@ -96,10 +93,10 @@ fn next(inbox: &async_channel::Receiver<Event>) -> Event {
     inbox.recv_blocking().unwrap()
 }
 
-fn listen(name: &str) -> (UnixListener, PathBuf) {
+fn listen(name: &str) -> (Listener, PathBuf) {
     let path = socket_path(name);
     let _ = std::fs::remove_file(&path);
-    (UnixListener::bind(&path).unwrap(), path)
+    (Listener::bind(&path).unwrap(), path)
 }
 
 /// An engine listening on a fresh socket, already connected and handshaken.
@@ -232,7 +229,7 @@ fn an_engine_that_is_not_running_is_reported_and_retried() {
     let (engine, inbox) = Engine::start(path.clone());
     assert!(matches!(next(&inbox), Event::Disconnected(_)));
 
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = Listener::bind(&path).unwrap();
     let mut remote = FakeEngine::accept(&listener);
     remote.handshake();
     assert!(matches!(next(&inbox), Event::Connected(_)));
