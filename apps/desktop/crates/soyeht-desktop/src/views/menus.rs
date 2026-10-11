@@ -21,7 +21,8 @@ pub fn popup(
     body: Div,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let card = neo::raised(palette, radius::CONTROL, elevation::BALLOON)
+    // The card of the approved harness picker: radius 20 and the panel elevation.
+    let card = neo::raised(palette, radius::CARD, elevation::PANEL)
         .flex()
         .flex_col()
         .p(px(space::X6))

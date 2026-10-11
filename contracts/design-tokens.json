@@ -351,6 +351,14 @@
     "fadeWidth": 28,
     "paneFloorLabelCharacters": 8,
     "wellDepth": 3,
-    "hairline": 1
+    "hairline": 1,
+    "shadowDarkOffsetScale": 0.908,
+    "shadowDarkSigmaScale": 0.914,
+    "shadowDarkOpacity": 0.964,
+    "shadowHaloOffsetScale": 0.434,
+    "shadowHaloSigmaScale": 0.865,
+    "shadowHaloOpacity": 0.8,
+    "shadowLightOffsetScale": 0.964,
+    "shadowLightSigmaScale": 0.63
   }
 }

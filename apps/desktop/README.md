@@ -94,6 +94,20 @@ The client crate tests
 include an end-to-end run against a scripted engine on a real local socket; the
 palettes and tokens in `theme` are generated from `contracts/design-tokens.json`.
 
+## Neumorphic surfaces
+
+`neo.rs` draws the raised, inset and pane-shell surfaces from the same tokens as the Mac. GPUI's
+`blur_radius` is a Gaussian's standard deviation, so it is half the token's blur (the design
+tool's blur). The Mac stacks its two shadows, so its dark shadow is cast by the light halo too; the
+desktop emulates that with three shadows whose scales are in the `desktop` section of the tokens
+(`shadow*Scale`, `shadow*Opacity`), fitted against renders of the Mac's own `neoRaised`. The wells
+(`neoWell`) use the plain inset pair. GPUI has no squircle corners, no blend modes and no rounded
+clipping of children, so corners are circular arcs and content that touches a rounded corner is
+rounded by its own radius.
+
+`cargo run --release --example neo_gallery -- milk` opens every surface on one canvas at fixed
+positions (no text), for comparing with the Mac's render of the same surfaces pixel by pixel.
+
 ## Rules
 
 - Colors and sizes come only from `theme`, generated from `contracts/design-tokens.json`

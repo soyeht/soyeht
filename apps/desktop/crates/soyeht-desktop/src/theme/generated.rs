@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 793423a48c5d4cfcc06ed2ba2072c4857ad52da62e301ea312cf70362f528068). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 d7849914684571f1420f45467b9d2db44bd77df4055439f1b2bf7b364cbf7cdc). Do not edit.
 use super::Palette;
 
 pub(super) static MILK: Palette = Palette {
@@ -379,6 +379,14 @@ pub mod desktop {
     pub const PANE_FLOOR_LABEL_CHARACTERS: f32 = 8.0;
     pub const WELL_DEPTH: f32 = 3.0;
     pub const HAIRLINE: f32 = 1.0;
+    pub const SHADOW_DARK_OFFSET_SCALE: f32 = 0.908;
+    pub const SHADOW_DARK_SIGMA_SCALE: f32 = 0.914;
+    pub const SHADOW_DARK_OPACITY: f32 = 0.964;
+    pub const SHADOW_HALO_OFFSET_SCALE: f32 = 0.434;
+    pub const SHADOW_HALO_SIGMA_SCALE: f32 = 0.865;
+    pub const SHADOW_HALO_OPACITY: f32 = 0.8;
+    pub const SHADOW_LIGHT_OFFSET_SCALE: f32 = 0.964;
+    pub const SHADOW_LIGHT_SIGMA_SCALE: f32 = 0.63;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.
