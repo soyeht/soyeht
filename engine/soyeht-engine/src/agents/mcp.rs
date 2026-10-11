@@ -20,7 +20,7 @@ pub fn declaration(
     state: &State,
     saved: &StoredPane,
 ) -> Result<StdioMcpServer> {
-    let executable = sibling_executable("soyeht-mcp")?;
+    let executable = installed(sibling_executable("soyeht-mcp")?)?;
     declaration_with_executable(store, data_directory, &executable, state, saved)
 }
 
@@ -30,6 +30,19 @@ pub(super) fn sibling_executable(name: &str) -> Result<PathBuf> {
         .map_err(errors::io)?
         .with_file_name(name)
         .with_extension(std::env::consts::EXE_EXTENSION))
+}
+
+/// `program` when it exists. An agent never starts with tools its harness could not launch: a
+/// missing `soyeht-mcp` is reported here, where the cause is known, instead of as a harness
+/// that silently lacks its tools.
+fn installed(program: PathBuf) -> Result<PathBuf> {
+    if program.is_file() {
+        return Ok(program);
+    }
+    Err(errors::internal(format!(
+        "{} is not installed next to the engine; build the whole workspace",
+        program.display()
+    )))
 }
 
 fn declaration_with_executable(
@@ -189,6 +202,23 @@ mod tests {
                 .windows(2)
                 .any(|pair| pair == ["--attempt", "3"])
         );
+    }
+
+    #[test]
+    fn a_program_is_used_only_when_it_is_installed() {
+        let folder = std::env::temp_dir().join(format!("mcp-installed-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let mcp = folder.join(format!("soyeht-mcp{}", std::env::consts::EXE_SUFFIX));
+        let missing = installed(mcp.clone()).unwrap_err();
+        assert!(
+            missing
+                .to_string()
+                .contains("is not installed next to the engine")
+        );
+
+        std::fs::write(&mcp, b"program").unwrap();
+        assert_eq!(installed(mcp.clone()).unwrap(), mcp);
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

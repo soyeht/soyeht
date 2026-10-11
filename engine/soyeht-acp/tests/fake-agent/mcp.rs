@@ -192,6 +192,57 @@ pub fn task_turn(runtime: &Runtime, session: &str, instruction: &str) -> Option<
     })
 }
 
+/// A peer exchange through the pane's own MCP server, like a harness calling its tools.
+///
+/// `list-peers` lists the other agent panes. `peer-send:<paneId>:<text>` queues `<text>` for that
+/// pane. A queued message that arrives with the reply route and whose text starts with `ask:` is
+/// answered with `answer: <rest>` to the route's pane. Any other peer message is only reported,
+/// so two fake agents never loop.
+pub fn peer_turn(runtime: &Runtime, session: &str, instruction: &str) -> Option<String> {
+    let mut clients = runtime.mcp_clients.lock().ok()?;
+    let client = clients.get_mut(session)?;
+    let message = |client: &mut Client, pane: &str, text: &str| {
+        client.call_tool("message_agent", json!({"targetPaneId":pane,"text":text}))
+    };
+    let outcome = if instruction == "list-peers" {
+        client.call_tool("list_agents", json!({})).map(|peers| {
+            let names = peers["items"].as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(|peer| peer["name"].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            });
+            format!("Peers: {}", names.unwrap_or_default())
+        })
+    } else if let Some((pane, text)) = instruction
+        .strip_prefix("peer-send:")
+        .and_then(|rest| rest.split_once(':'))
+    {
+        message(client, pane, text).map(|_| format!("Sent to {pane}: {text}"))
+    } else if let Some((sender, route, body)) = incoming_peer(instruction) {
+        match body.strip_prefix("ask:") {
+            Some(question) => message(client, route, &format!("answer:{question}"))
+                .map(|_| format!("Answered {sender}:{question}")),
+            None => Ok(format!("Received from {sender}: {body}")),
+        }
+    } else {
+        return None;
+    };
+    Some(match outcome {
+        Ok(value) => value,
+        Err(error) => format!("Peer operation failed: {error}"),
+    })
+}
+
+/// The sender, the reply pane and the text of a prompt the engine built for a peer message.
+fn incoming_peer(prompt: &str) -> Option<(&str, &str, &str)> {
+    let rest = prompt.strip_prefix("Message from the Soyeht agent ")?;
+    let (header, body) = rest.split_once(".\n\n")?;
+    let (sender, route) = header.rsplit_once(" MCP server using targetPaneId=")?;
+    Some((sender.split(" (").next()?, route, body))
+}
+
 fn execute(client: &mut Client) -> Result<Value> {
     for (text, instructions) in [
         ("Plan the change", "Identify the affected surface"),

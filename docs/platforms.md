@@ -62,6 +62,28 @@ supervisor tests for terminals, pipe processes and jobs
 (`engine/soyeht-ptyd/tests/supervisor_windows.rs`). Tests that create symbolic links
 need the right to create them on Windows (Developer Mode, or an elevated shell).
 
+## Agents messaging each other
+
+An agent pane of one harness can message a pane of another on every system, the same
+way as on the Mac. Each ACP session gets the engine's own MCP server
+(`soyeht-workspace`, the `soyeht-mcp` program installed next to the engine) in
+`mcpServers`; the program connects to the engine through `soyeht_platform::local`
+(the Unix socket, or on Windows the loopback endpoint file), so nothing about it differs
+per system. A pane calls `list_agents` and `message_agent`; the engine queues the text,
+and the recipient's harness receives a peer prompt naming the sender and the reply route
+once its input is clean. The engine refuses to open an agent whose `soyeht-mcp` is not
+installed next to the engine, so build the whole workspace (`cargo build --workspace`),
+not only `soyeht-engine`.
+
+`engine/soyeht-engine/tests/agent_messaging.rs` proves the exchange end to end between
+two fake harnesses named like Codex and Claude: each calls `list_agents`, a `message_agent`
+from either reaches the other as an attributed peer turn, and the answer comes back the
+same way. It is part of `cargo test` and so of both check scripts. The real-harness
+check, `scripts/e2e_real_agent_messaging.py`, runs its services under launchd and is
+macOS only; on Linux and Windows it needs the person to sign Claude Code and Codex in
+first (Claude's adapter starts `soyeht-mcp` even when signed out, Codex's creates no
+session until it is signed in).
+
 ## Running the Linux check
 
 On a Linux machine with `build-essential`, `git`, `bash` and `rustup`:

@@ -174,11 +174,20 @@ impl Rig {
         self.open_installed_agent(client, workspace)
     }
     /// Opens a pane on the test agent already written to harnesses.json.
-    pub fn open_installed_agent(&self, mut client: Client, workspace: &Value) -> (Client, String) {
+    pub fn open_installed_agent(&self, client: Client, workspace: &Value) -> (Client, String) {
+        self.open_harness_agent(client, workspace, "test-agent")
+    }
+    /// Opens a pane on the harness `harness` already written to harnesses.json.
+    pub fn open_harness_agent(
+        &self,
+        mut client: Client,
+        workspace: &Value,
+        harness: &str,
+    ) -> (Client, String) {
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent",
-            "harness":"test-agent","idempotencyKey":Uuid::new_v4().to_string()}),
+            "harness":harness,"idempotencyKey":Uuid::new_v4().to_string()}),
         )["paneId"]
             .as_str()
             .unwrap()

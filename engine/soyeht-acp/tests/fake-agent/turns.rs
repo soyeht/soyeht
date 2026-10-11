@@ -418,7 +418,9 @@ fn execute_turn(
         emit(runtime, session, &output);
         return output;
     }
-    if let Some(output) = crate::mcp::task_turn(runtime, session, text) {
+    if let Some(output) = crate::mcp::task_turn(runtime, session, text)
+        .or_else(|| crate::mcp::peer_turn(runtime, session, text))
+    {
         emit(runtime, session, &output);
         return output;
     }
