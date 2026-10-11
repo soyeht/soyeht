@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Run the six slice-one acceptances with isolated services under launchd."""
+"""Run the six slice-one acceptances with isolated services (launchd on macOS)."""
 import argparse
 import base64
 import hashlib
 import json
 import os
-import plistlib
-import shutil
-import socket
 import struct
 import subprocess
 import tempfile
@@ -15,6 +12,16 @@ import time
 import uuid
 from pathlib import Path
 
+from e2e_platform import (
+    MACOS,
+    connect_endpoint,
+    executable,
+    make_launcher,
+    read_exact,
+    remove_directory,
+    require,
+    short_temp_root,
+)
 from generated_profile import (
     DEV_ENGINE_SOCKET,
     DEV_LAUNCHD_PREFIX,
@@ -22,22 +29,8 @@ from generated_profile import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-PRODUCT_EXECUTABLES = ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")
-
-
-def require(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
-def read_exact(stream, size):
-    result = bytearray()
-    while len(result) < size:
-        chunk = stream.recv(size - len(result))
-        if not chunk:
-            raise EOFError("service disconnected")
-        result.extend(chunk)
-    return bytes(result)
+PRODUCT_EXECUTABLES = tuple(executable(name) for name in
+                            ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd"))
 
 
 def send(stream, value):
@@ -61,10 +54,8 @@ def receive(stream):
 
 class Client:
     def __init__(self, data, name="acceptance", capabilities=None):
-        self.stream = socket.socket(socket.AF_UNIX)
-        self.stream.settimeout(10)
+        self.stream = connect_endpoint(data / DEV_ENGINE_SOCKET)
         try:
-            self.stream.connect(str(data / DEV_ENGINE_SOCKET))
             require(receive(self.stream).get("method") == "auth.challenge", "missing challenge")
             self.next = 0
             self.pending = []
@@ -179,7 +170,7 @@ class Services:
     def __init__(self, binaries):
         identity = str(uuid.uuid4())
         # Keep Unix socket paths below the macOS sockaddr_un limit.
-        self.data = Path("/tmp") / f"sn-e2e-{identity}"
+        self.data = short_temp_root() / f"sn-e2e-{identity}"
         self.data.mkdir(mode=0o700)
         self.data = self.data.resolve()
         shell_config=self.data/"shell-config"
@@ -189,48 +180,36 @@ class Services:
         # `self.programs`, which is stable for this checkout.
         self.binaries=self.data / "bin"
         self.binaries.mkdir(mode=0o700)
-        self.programs = stage_programs(binaries)
+        # Only macOS privacy (TCC) needs a stable copy; elsewhere the build's own are used.
+        self.programs = stage_programs(binaries) if MACOS else binaries
         self.ptyd_version = int(subprocess.check_output(
-            [str(self.programs / "soyeht-ptyd"), "--protocol-version"], text=True))
-        self.prefix = f"{DEV_LAUNCHD_PREFIX}.e2e.{identity}"
-        self.attempted = set()
+            [str(self.programs / executable("soyeht-ptyd")), "--protocol-version"], text=True))
+        self.launcher = make_launcher(self.data, f"{DEV_LAUNCHD_PREFIX}.e2e.{identity}", ROOT)
         self.clients = []
-        self.domain = f"gui/{os.getuid()}"
-        if subprocess.run(["launchctl", "print", self.domain], capture_output=True).returncode:
-            self.domain = f"user/{os.getuid()}"
-        subprocess.run(["launchctl", "print", self.domain], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.definitions = {}
         for component in ("ptyd", "engine"):
-            source = ROOT / f"engine/soyeht-{component}/launchd/dev.plist"
-            values = plistlib.loads(source.read_bytes())
-            values["Label"] = f"{self.prefix}.{component}"
-            values["ProgramArguments"] = [str(self.programs / f"soyeht-{component}"), "--data-dir", str(self.data)]
+            argv = [self.programs / executable(f"soyeht-{component}"), "--data-dir", self.data]
             if component == "engine":
-                values["ProgramArguments"].extend(["--listen", "127.0.0.1:0"])
-            values["EnvironmentVariables"] = {"HOME": str(Path.home()), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin","ZDOTDIR":str(shell_config)}
-            values["StandardOutPath"] = values["StandardErrorPath"] = str(self.data / f"{component}.log")
-            (self.data / f"{component}.log").touch(mode=0o600)
-            destination = self.data / f"{component}.plist"
-            destination.write_bytes(plistlib.dumps(values))
-            destination.chmod(0o600)
+                argv.extend(["--listen", "127.0.0.1:0"])
+            self.definitions[component] = (argv, {"ZDOTDIR": str(shell_config)})
+            self.set_environment(component)
 
-    def target(self, component):
-        return f"{self.domain}/{self.prefix}.{component}"
+    def set_environment(self, component, **values):
+        """Add environment variables to a service before it starts."""
+        argv, environment = self.definitions[component]
+        environment.update(values)
+        self.launcher.define(component, argv, environment, self.data / f"{component}.log")
+
+    def prepend_path(self, component, directory):
+        """Put `directory` first on a service's PATH, ahead of the launcher's base PATH."""
+        self.set_environment(component, PATH=f"{directory}{os.pathsep}{self.launcher.base_path}")
 
     def start(self, component):
-        require(subprocess.run(["launchctl", "print", self.target(component)], capture_output=True).returncode != 0,
-                "test service already exists")
-        self.attempted.add(component)
-        subprocess.run(["launchctl", "bootstrap", self.domain, str(self.data / f"{component}.plist")], check=True)
+        require(not self.launcher.exists(component), "test service already exists")
+        self.launcher.start(component)
 
     def stop_engine(self):
-        subprocess.run(["launchctl", "bootout", self.target("engine")], check=True)
-        # bootout can return before launchd forgets the label; a busy host shows the
-        # old service to the next start's "already exists" check.
-        deadline = time.monotonic() + 20
-        while subprocess.run(["launchctl", "print", self.target("engine")], capture_output=True).returncode == 0:
-            require(time.monotonic() < deadline, "launchd did not remove the stopped engine")
-            time.sleep(0.05)
+        self.launcher.stop("engine")
 
     def client(self, name="acceptance", capabilities=None):
         deadline = time.monotonic() + 20
@@ -247,7 +226,7 @@ class Services:
         client = self.client()
         generation = client.call("engine.status", {})["generation"]
         client.close()
-        subprocess.run(["launchctl", "kill", "SIGKILL", self.target("engine")], check=True)
+        self.launcher.crash("engine")
         deadline = time.monotonic() + 20
         while True:
             try:
@@ -257,23 +236,18 @@ class Services:
                 client.close()
             except (OSError, EOFError):
                 pass
-            require(time.monotonic() < deadline, "launchd did not restart the engine")
+            require(time.monotonic() < deadline, "the engine did not restart")
             time.sleep(0.05)
 
     def cli(self, *args):
-        output = subprocess.run([str(self.programs / "soyeht"), "--profile", "dev", "--data-dir",
-                                 str(self.data), *args], cwd=self.data, capture_output=True, check=True)
+        output = subprocess.run([str(self.programs / executable("soyeht")), "--profile", "dev",
+                                 "--data-dir", str(self.data), *args], cwd=self.data,
+                                capture_output=True, check=True)
         return json.loads(output.stdout)
 
-    def close(self):
-        for client in self.clients:
-            client.close()
-        if "engine" in self.attempted:
-            subprocess.run(["launchctl", "bootout", self.target("engine")], capture_output=True)
+    def close_supervised_processes(self):
         try:
-            with socket.socket(socket.AF_UNIX) as stream:
-                stream.settimeout(5)
-                stream.connect(str(self.data / DEV_PTYD_SOCKET))
+            with connect_endpoint(self.data / DEV_PTYD_SOCKET, timeout=5) as stream:
                 send(stream, {"method": "hello", "params": {"version": self.ptyd_version, "engine_generation": 18446744073709551615}})
                 require(receive(stream)["status"] == "welcome", "cleanup supervisor handshake")
                 send(stream, {"method": "list"})
@@ -282,10 +256,19 @@ class Services:
                     require(receive(stream)["status"] == "ok", "cleanup process close")
         except (OSError, EOFError):
             pass
+
+    def close(self):
+        for client in self.clients:
+            client.close()
+        if self.launcher.exists("engine"):
+            self.launcher.stop("engine")
+        try:
+            self.close_supervised_processes()
         finally:
-            if "ptyd" in self.attempted:
-                subprocess.run(["launchctl", "bootout", self.target("ptyd")], capture_output=True)
-        shutil.rmtree(self.data)
+            if self.launcher.exists("ptyd"):
+                self.launcher.stop("ptyd")
+        # Every service has exited by now, so no process holds a file of the folder.
+        remove_directory(self.data)
 
 
 def wait_pane(client, pane_id):

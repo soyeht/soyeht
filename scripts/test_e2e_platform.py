@@ -1,0 +1,292 @@
+import hmac
+import os
+import socket
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import e2e
+import e2e_platform as platform
+from generated_profile import DEV_ENGINE_SOCKET
+
+
+def serve_loopback(listener, secret, outcome):
+    """The listener side of contract 08, section 2.5."""
+    connection, _ = listener.accept()
+    with connection:
+        client_nonce = platform.read_exact(connection, platform.NONCE_BYTES)
+        server_nonce = os.urandom(platform.NONCE_BYTES)
+        connection.sendall(server_nonce + platform.endpoint_proof(
+            secret, "server", client_nonce, server_nonce))
+        try:
+            presented = platform.read_exact(connection, 32)
+        except EOFError:
+            outcome.append("dropped")
+            return
+        valid = hmac.compare_digest(
+            presented, platform.endpoint_proof(secret, "client", client_nonce, server_nonce))
+        outcome.append("accepted" if valid else "dropped")
+        if valid:
+            connection.sendall(b"hello")
+
+
+class LauncherKind(unittest.TestCase):
+    def test_launchd_on_macos_with_launchctl_and_processes_elsewhere(self):
+        self.assertEqual(platform.launcher_kind({}, "darwin", "/bin/launchctl"), "launchd")
+        self.assertEqual(platform.launcher_kind({}, "darwin", ""), "process")
+        self.assertEqual(platform.launcher_kind({}, "linux", ""), "process")
+        self.assertEqual(platform.launcher_kind({}, "win32", ""), "process")
+
+    def test_the_environment_forces_a_launcher(self):
+        forced = {platform.LAUNCHER_ENV: "process"}
+        self.assertEqual(platform.launcher_kind(forced, "darwin", "/bin/launchctl"), "process")
+        forced = {platform.LAUNCHER_ENV: "launchd"}
+        self.assertEqual(platform.launcher_kind(forced, "linux", "/bin/launchctl"), "launchd")
+
+    def test_a_forced_launcher_must_exist(self):
+        with self.assertRaises(AssertionError):
+            platform.launcher_kind({platform.LAUNCHER_ENV: "launchd"}, "linux", "")
+        with self.assertRaises(AssertionError):
+            platform.launcher_kind({platform.LAUNCHER_ENV: "systemd"}, "linux", "/bin/launchctl")
+
+
+class Paths(unittest.TestCase):
+    def test_programs_get_the_exe_suffix_on_windows_only(self):
+        with mock.patch.object(platform, "WINDOWS", True):
+            self.assertEqual(platform.executable("soyeht-engine"), "soyeht-engine.exe")
+        with mock.patch.object(platform, "WINDOWS", False):
+            self.assertEqual(platform.executable("soyeht-engine"), "soyeht-engine")
+
+    def test_data_roots_stay_short_for_unix_sockets(self):
+        with mock.patch.object(platform, "WINDOWS", False):
+            self.assertEqual(platform.short_temp_root(), Path("/tmp"))
+        with mock.patch.object(platform, "WINDOWS", True):
+            self.assertEqual(platform.short_temp_root(), Path(tempfile.gettempdir()))
+
+    def test_the_cache_folder_follows_the_system(self):
+        with tempfile.TemporaryDirectory() as home, mock.patch.object(Path, "home",
+                                                                       return_value=Path(home)):
+            clean = {key: value for key, value in os.environ.items()
+                     if key not in ("XDG_CACHE_HOME", "LOCALAPPDATA")}
+            with mock.patch.dict(os.environ, clean, clear=True):
+                with mock.patch.object(platform, "MACOS", True), \
+                        mock.patch.object(platform, "WINDOWS", False):
+                    self.assertEqual(platform.user_cache_directory(),
+                                     Path(home) / "Library/Caches")
+                with mock.patch.object(platform, "MACOS", False), \
+                        mock.patch.object(platform, "WINDOWS", True):
+                    self.assertEqual(platform.user_cache_directory(),
+                                     Path(home) / "AppData/Local")
+                with mock.patch.object(platform, "MACOS", False), \
+                        mock.patch.object(platform, "WINDOWS", False):
+                    self.assertEqual(platform.user_cache_directory(), Path(home) / ".cache")
+            with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": f"{home}/xdg"}), \
+                    mock.patch.object(platform, "MACOS", False), \
+                    mock.patch.object(platform, "WINDOWS", False):
+                self.assertEqual(platform.user_cache_directory(), Path(home) / "xdg")
+
+
+class LauncherScripts(unittest.TestCase):
+    def test_a_shell_script_exports_and_forwards_arguments(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(platform, "WINDOWS", False):
+            path = platform.write_launcher_script(
+                Path(directory) / "run", {"KEY": "a b"}, ["/bin/echo", "x y"])
+            self.assertEqual(path.name, "run")
+            self.assertEqual(path.read_text(), "#!/bin/sh\nexport KEY='a b'\n"
+                                               "exec /bin/echo 'x y' \"$@\"\n")
+            self.assertTrue(os.access(path, os.X_OK))
+            output = subprocess.run([str(path), "z"], capture_output=True, text=True).stdout
+            self.assertEqual(output, "x y z\n")
+
+    def test_windows_gets_a_cmd_file(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(platform, "WINDOWS", True):
+            path = platform.write_launcher_script(
+                Path(directory) / "run", {"KEY": "50%"}, [r"C:\Program Files\node.exe", "a.js"])
+            self.assertEqual(path.name, "run.cmd")
+            self.assertEqual(path.read_bytes().decode(),
+                             '@echo off\r\nset "KEY=50%%"\r\n'
+                             '"C:\\Program Files\\node.exe" a.js %*\r\n')
+
+    def test_a_cmd_value_cannot_hold_a_quote(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(platform, "WINDOWS", True), self.assertRaises(AssertionError):
+            platform.write_launcher_script(Path(directory) / "run", {"KEY": '"'}, ["a"])
+
+
+class Endpoints(unittest.TestCase):
+    def loopback(self, secret_for_file, secret_for_listener):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        listener = socket.socket()
+        self.addCleanup(listener.close)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        path = Path(directory.name) / DEV_ENGINE_SOCKET
+        path.write_text(f"{platform.ENDPOINT_MAGIC} {listener.getsockname()[1]} "
+                        f"{secret_for_file.hex()}\n")
+        outcome = []
+        thread = threading.Thread(
+            target=serve_loopback, args=(listener, secret_for_listener, outcome))
+        thread.start()
+        self.addCleanup(thread.join)
+        return path, outcome, thread
+
+    def test_the_endpoint_file_leads_to_a_proven_connection(self):
+        secret = os.urandom(32)
+        path, outcome, thread = self.loopback(secret, secret)
+        with platform.connect_endpoint(path) as stream:
+            self.assertEqual(stream.recv(5), b"hello")
+        thread.join()
+        self.assertEqual(outcome, ["accepted"])
+
+    def test_a_listener_without_the_secret_is_refused(self):
+        path, outcome, thread = self.loopback(os.urandom(32), os.urandom(32))
+        with self.assertRaises(PermissionError):
+            platform.connect_endpoint(path)
+        thread.join()
+        self.assertEqual(outcome, ["dropped"])
+
+    def test_a_unix_socket_path_connects_directly(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            path = Path(directory) / DEV_ENGINE_SOCKET
+            with socket.socket(socket.AF_UNIX) as listener:
+                listener.bind(str(path))
+                listener.listen(1)
+                with platform.connect_endpoint(path) as stream:
+                    peer, _ = listener.accept()
+                    with peer:
+                        stream.sendall(b"ping")
+                        self.assertEqual(peer.recv(4), b"ping")
+
+    def test_a_missing_endpoint_is_a_missing_file(self):
+        with tempfile.TemporaryDirectory() as directory, self.assertRaises(FileNotFoundError):
+            platform.connect_endpoint(Path(directory) / DEV_ENGINE_SOCKET)
+
+
+class ProcessLauncherTest(unittest.TestCase):
+    def test_start_stop_and_crash_restarts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            launcher = platform.ProcessLauncher(data)
+            launcher.define("engine", [sys.executable, "-c", "import time; time.sleep(60)"],
+                            {"SOYEHT_MARK": "1"}, data / "engine.log")
+            self.assertFalse(launcher.exists("engine"))
+            launcher.start("engine")
+            self.addCleanup(launcher.stop, "engine")
+            self.assertTrue(launcher.exists("engine"))
+            first = launcher.processes["engine"].pid
+            launcher.crash("engine")
+            self.assertTrue(launcher.exists("engine"))
+            self.assertNotEqual(launcher.processes["engine"].pid, first)
+            launcher.take_down("engine")
+            self.assertFalse(launcher.exists("engine"))
+            launcher.start("engine")
+            launcher.stop("engine")
+            launcher.wait_gone("engine")
+            self.assertFalse(launcher.exists("engine"))
+
+
+class DatabaseHelper(unittest.TestCase):
+    def test_the_connection_is_committed_and_closed_on_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.db"
+            with platform.database(path) as db:
+                db.execute("CREATE TABLE item (value TEXT)")
+                db.execute("INSERT INTO item VALUES ('kept')")
+            with self.assertRaises(sqlite3.ProgrammingError):
+                db.execute("SELECT 1")
+            with platform.database(path) as other:
+                self.assertEqual(other.execute("SELECT value FROM item").fetchall(), [("kept",)])
+
+    def test_the_connection_is_closed_and_rolled_back_when_the_block_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.db"
+            with platform.database(path) as db:
+                db.execute("CREATE TABLE item (value TEXT)")
+            with self.assertRaises(RuntimeError), platform.database(path) as db:
+                db.execute("INSERT INTO item VALUES ('lost')")
+                raise RuntimeError
+            with self.assertRaises(sqlite3.ProgrammingError):
+                db.execute("SELECT 1")
+            with platform.database(path) as other:
+                self.assertEqual(other.execute("SELECT count(*) FROM item").fetchone(), (0,))
+
+
+class Teardown(unittest.TestCase):
+    def test_a_sharing_violation_is_retried_for_a_bounded_time_on_windows(self):
+        failures = [PermissionError(32, "in use")] * 2
+        with mock.patch.object(platform, "WINDOWS", True), \
+                mock.patch.object(platform.shutil, "rmtree", side_effect=[*failures, None]) as rmtree, \
+                mock.patch.object(platform.time, "sleep"):
+            platform.remove_directory(Path("data"))
+        self.assertEqual(rmtree.call_count, 3)
+        with mock.patch.object(platform, "WINDOWS", True), \
+                mock.patch.object(platform.shutil, "rmtree", side_effect=PermissionError), \
+                mock.patch.object(platform.time, "sleep"), \
+                mock.patch.object(platform.time, "monotonic", side_effect=[0, 0, 11]), \
+                self.assertRaises(PermissionError):
+            platform.remove_directory(Path("data"))
+
+    def test_other_systems_fail_at_the_first_error(self):
+        with mock.patch.object(platform, "WINDOWS", False), \
+                mock.patch.object(platform.shutil, "rmtree", side_effect=PermissionError) as rmtree, \
+                self.assertRaises(PermissionError):
+            platform.remove_directory(Path("data"))
+        self.assertEqual(rmtree.call_count, 1)
+
+    def test_the_folder_goes_only_after_every_service_has_exited(self):
+        events = []
+        running = {"engine", "ptyd"}
+
+        class FakeLauncher:
+            def exists(self, component):
+                return component in running
+
+            def stop(self, component):
+                running.discard(component)
+                events.append(f"stopped {component}")
+
+        services = e2e.Services.__new__(e2e.Services)
+        services.clients = []
+        services.launcher = FakeLauncher()
+        services.data = Path("data")
+        services.close_supervised_processes = lambda: events.append("closed supervised")
+        with mock.patch.object(e2e, "remove_directory",
+                               lambda path: events.append(f"removed {path} with {sorted(running)}")):
+            services.close()
+        self.assertEqual(events, ["stopped engine", "closed supervised", "stopped ptyd",
+                                  "removed data with []"])
+
+    @unittest.skipIf(platform.WINDOWS, "the sweep is by process group on POSIX")
+    def test_stopping_a_service_also_ends_what_it_started(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            child = data / "child.pid"
+            script = ("import subprocess, sys, time\n"
+                      "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                      f"open({str(child)!r}, 'w').write(str(p.pid))\n"
+                      "time.sleep(60)\n")
+            launcher = platform.ProcessLauncher(data)
+            launcher.define("engine", [sys.executable, "-c", script], {}, data / "engine.log")
+            launcher.start("engine")
+            deadline = platform.time.monotonic() + 10
+            while not child.exists() or not child.read_text():
+                self.assertLess(platform.time.monotonic(), deadline)
+                platform.time.sleep(0.05)
+            pid = int(child.read_text())
+            launcher.stop("engine")
+            with self.assertRaises(ProcessLookupError):
+                for _ in range(100):
+                    os.kill(pid, 0)
+                    platform.time.sleep(0.05)
+
+
+if __name__ == "__main__":
+    unittest.main()

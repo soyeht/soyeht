@@ -2,7 +2,6 @@
 """Exercise workspace-task flows with fake agents under disposable launchd jobs."""
 import argparse
 import json
-import plistlib
 import shutil
 import subprocess
 import time
@@ -116,10 +115,7 @@ class TaskServices(AgentServices):
         executable = self.binaries / "wt"
         executable.write_text(FAKE_WORKTRUNK)
         executable.chmod(0o700)
-        plist_path = self.data / "engine.plist"
-        values = plistlib.loads(plist_path.read_bytes())
-        values["EnvironmentVariables"]["PATH"] = f"{self.binaries}:/usr/bin:/bin:/usr/sbin:/sbin"
-        plist_path.write_bytes(plistlib.dumps(values))
+        self.prepend_path("engine", self.binaries)
 
 
 def repository(services):

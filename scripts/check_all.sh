@@ -70,6 +70,7 @@ uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
     uv run python scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
     uv run python scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
+    uv run python scripts/e2e_real_harnesses.py --report .cache/e2e-real-harnesses.json
 fi
 uv run python scripts/tcc_guard.py check .cache/tcc-guard.json
 

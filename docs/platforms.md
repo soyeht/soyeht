@@ -78,11 +78,22 @@ not only `soyeht-engine`.
 `engine/soyeht-engine/tests/agent_messaging.rs` proves the exchange end to end between
 two fake harnesses named like Codex and Claude: each calls `list_agents`, a `message_agent`
 from either reaches the other as an attributed peer turn, and the answer comes back the
-same way. It is part of `cargo test` and so of both check scripts. The real-harness
-check, `scripts/e2e_real_agent_messaging.py`, runs its services under launchd and is
-macOS only; on Linux and Windows it needs the person to sign Claude Code and Codex in
-first (Claude's adapter starts `soyeht-mcp` even when signed out, Codex's creates no
-session until it is signed in).
+same way. It is part of `cargo test` and so of both check scripts.
+
+The real-harness checks (`scripts/e2e_real_acp.py`, `e2e_real_agent_messaging.py` and
+`e2e_real_harnesses.py`) run on every system. Their services start through one seam,
+`scripts/e2e_platform.py`: launchd on macOS, plain child processes elsewhere
+(`SOYEHT_E2E_LAUNCHER=process|launchd` forces one), and a client reaches the engine
+through the Unix socket or, on Windows, the loopback endpoint file of contract 08, section
+2.5. They are opt-in (`SOYEHT_REAL_ACP=1`) and need the person to sign Claude Code and
+Codex in first; a harness that is not signed in is skipped by name in
+`e2e_real_harnesses.py` (Claude's adapter starts `soyeht-mcp` even when signed out,
+Codex's creates no session until it is signed in). That script proves, with one-line
+prompts, a real reply from each harness, a pane switched Claude to Codex and back, and
+Codex and Claude messaging each other through `list_agents` and `message_agent`. On the
+Mac run it with `SOYEHT_REAL_ACP=1 uv run python scripts/e2e_real_harnesses.py`; from a
+Mac into a VM use `scripts/vmpal_check_real_agents.sh linux|windows "<VM>"` (the VM needs
+Node.js 22 or later and Python 3.10 or later besides the engine prerequisites).
 
 ## Running the Linux check
 

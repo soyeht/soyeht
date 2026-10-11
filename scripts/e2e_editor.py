@@ -4,15 +4,14 @@ import argparse
 import base64
 import json
 import os
-import plistlib
 import shutil
 import signal
-import sqlite3
 import subprocess
 import time
 from pathlib import Path
 
 from e2e import ROOT, require
+from e2e_platform import database
 from e2e_agents import AgentServices, request, until
 
 
@@ -32,9 +31,9 @@ class EditorServices(AgentServices):
         self.claude_login.parent.mkdir(parents=True)
         cursor_state = home / "Library/Application Support/Cursor/User/globalStorage/state.vscdb"
         cursor_state.parent.mkdir(parents=True)
-        with sqlite3.connect(cursor_state) as database:
-            database.execute("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB)")
-            database.execute("INSERT INTO ItemTable VALUES (?, ?)",
+        with database(cursor_state) as db:
+            db.execute("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB)")
+            db.execute("INSERT INTO ItemTable VALUES (?, ?)",
                              ("cursorAuth/accessToken", fake_jwt({"sub": "auth0|e2e", "exp": 4102444800})))
         self.usage_mode = readers / "mode.json"
         self.set_usage_modes(first="ok", second="ok", third="ok")
@@ -65,14 +64,9 @@ class EditorServices(AgentServices):
 
     def _set_service_environment(self, readers):
         for component in ("engine", "ptyd"):
-            path = self.data / f"{component}.plist"
-            values = plistlib.loads(path.read_bytes())
-            environment = values["EnvironmentVariables"]
-            environment["PATH"] = f"{self.binaries}:/usr/bin:/bin:/usr/sbin:/sbin"
-            if component == "engine":
-                environment["SOYEHT_TEST_USAGE_READER_DIR"] = str(readers)
-                environment["SOYEHT_TEST_USAGE_MODE"] = str(self.usage_mode)
-            path.write_bytes(plistlib.dumps(values))
+            self.prepend_path(component, self.binaries)
+        self.set_environment("engine", SOYEHT_TEST_USAGE_READER_DIR=str(readers),
+                             SOYEHT_TEST_USAGE_MODE=str(self.usage_mode))
 
 
 SECOND_SOURCE = """#!/usr/bin/env python3

@@ -6,8 +6,6 @@ import base64
 import json
 import os
 import platform
-import resource
-import shlex
 import shutil
 import subprocess
 import sys
@@ -18,7 +16,10 @@ import zlib
 from pathlib import Path
 
 from e2e import ROOT, Services, require
-from e2e_agents import ended, events, question, until
+from e2e_agents import assistant_text, ended, events, question, turn_items, until
+from e2e_platform import (
+    WINDOWS, executable, raise_file_limit, user_cache_directory, write_launcher_script,
+)
 
 
 # The engine's registry snapshot pins the adapter versions the app launches.
@@ -35,14 +36,6 @@ CODEX_PROJECT = "codex-project.toml"
 
 class NotSignedIn(Exception):
     """The adapter asked for sign-in; the harness is skipped, not failed."""
-
-
-def raise_file_limit():
-    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-    ceiling = 4096 if hard == resource.RLIM_INFINITY else hard
-    target = min(4096, ceiling)
-    if soft < target:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
 
 
 def pinned_package(registry_id):
@@ -68,35 +61,34 @@ def install_adapter(directory, package, version, environment=None):
     adapter = directory / f"node_modules/{package}/dist/index.js"
     require(adapter.is_file(), f"npm did not install the pinned {package}")
     environment = {**(environment or {}), **quiet_launcher(directory, package, node, environment)}
-    return write_script(directory / "run-real-acp", [
-        *(f"export {key}={shlex.quote(value)}" for key, value in environment.items()),
-        f"exec {shlex.quote(node)} {shlex.quote(str(adapter))}",
-    ])
-
-
-def write_script(path, lines):
-    path.write_text("#!/bin/sh\n" + "\n".join(lines) + "\n")
-    path.chmod(0o700)
-    return path
+    return write_launcher_script(directory / "run-real-acp", environment, [node, str(adapter)])
 
 
 def installed_file(directory, package, relative):
-    # npm hoists a dependency unless another version already holds its place.
-    candidates = (directory / "node_modules" / relative,
-                  directory / "node_modules" / package / "node_modules" / relative)
-    found = next((path for path in candidates if path.is_file()), None)
+    # npm hoists a dependency unless another version already holds its place; a platform
+    # package may carry a suffix (such as -musl), so `relative` is a glob.
+    roots = (directory / "node_modules", directory / "node_modules" / package / "node_modules")
+    found = next((path for root in roots for path in sorted(root.glob(relative))
+                  if path.is_file()), None)
     require(found is not None, f"npm did not install {relative} for {package}")
     return found
 
 
 def quiet_launcher(directory, package, node, environment=None):
-    """Environment that makes the adapter start its CLI without user extensions."""
+    """Environment that makes the adapter start its CLI without user extensions.
+
+    Windows has no privacy prompts to avoid, and Node cannot start a `.cmd` shim, so the
+    adapters start their own CLI there.
+    """
+    if WINDOWS:
+        return {}
     if package.endswith("/claude-agent-acp"):
-        arch = {"x86_64": "x64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
+        arch = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64"}.get(
+            platform.machine().lower(), platform.machine().lower())
         claude = installed_file(
-            directory, package, f"@anthropic-ai/claude-agent-sdk-{sys.platform}-{arch}/claude")
-        shim = write_script(directory / "claude-quiet", [
-            f'exec {shlex.quote(str(claude))} --strict-mcp-config "$@"'])
+            directory, package, f"@anthropic-ai/claude-agent-sdk-{sys.platform}-{arch}*/claude")
+        shim = write_launcher_script(directory / "claude-quiet", {},
+                                     [str(claude), "--strict-mcp-config"])
         return {"CLAUDE_CODE_EXECUTABLE": str(shim)}
     codex = installed_file(directory, package, "@openai/codex/bin/codex.js")
     features = [item for name in CODEX_FEATURES_OFF for item in ("-c", f"features.{name}=false")]
@@ -114,8 +106,8 @@ def quiet_launcher(directory, package, node, environment=None):
     (directory / CODEX_PROJECT).write_text("".join(
         f"[mcp_servers.{name}]\nenabled = false\n\n" for name in names))
     disabled = [item for name in names for item in ("-c", f"mcp_servers.{name}.enabled=false")]
-    shim = write_script(directory / "codex-quiet", [
-        "exec " + shlex.join([node, str(codex), *features, *disabled]) + ' "$@"'])
+    shim = write_launcher_script(directory / "codex-quiet", {},
+                                 [node, str(codex), *features, *disabled])
     return {"CODEX_PATH": str(shim)}
 
 
@@ -186,7 +178,7 @@ def open_real_agent(services, name, adapter, version):
 
     agent = until(opened_or_needs_sign_in, "the ACP session did not open", seconds=90)
     if not agent.get("sessionId"):
-        raise NotSignedIn(f"{name} is not signed in on this Mac")
+        raise NotSignedIn(f"{name} is not signed in on this machine")
     return client, pane
 
 
@@ -196,8 +188,8 @@ def shell_turn(client, pane_id, target):
     return client.mutate(
         "pane.prompt",
         paneId=pane_id,
-        text=f"Use the shell to run: printf SAFE > {target}. If a sandbox blocks it, "
-             "request approval to run it outside the sandbox. Then reply DONE.",
+        text=f"Use the shell to write the text SAFE into the file {target}. If a sandbox "
+             "blocks it, request approval to run it outside the sandbox. Then reply DONE.",
     )["promptId"]
 
 
@@ -224,7 +216,7 @@ def approval_mode_asks(services, mac, phone, pane_id, approval, outside):
         "pane.permission.answer", paneId=pane_id, requestId=pending["requestId"], optionId=allow
     )
     until(lambda: ended(services, prompt_id), "permission turn did not end", seconds=180)
-    require(target.read_text() == "SAFE", "the approved harmless action did not complete")
+    require(target.read_text().strip() == "SAFE", "the approved harmless action did not complete")
 
 
 def full_access_runs_without_asking(services, mac, pane_id, full_access, approval, outside):
@@ -234,7 +226,7 @@ def full_access_runs_without_asking(services, mac, pane_id, full_access, approva
     prompt_id = shell_turn(mac, pane_id, target)
     until(lambda: ended(services, prompt_id), "full-access turn did not end", seconds=180)
     require(
-        target.read_text() == "SAFE"
+        target.read_text().strip() == "SAFE"
         and len(events(services, "pane.permission_requested", pane_id)) == count,
         "the harness's full-access mode still asked",
     )
@@ -332,10 +324,8 @@ def image_attachment_is_described(services, mac, pane_id):
     }])["promptId"]
     until(lambda: signed_in(mac, pane_id) and ended(services, prompt_id),
           "the image turn did not finish", seconds=240)
-    items = mac.call("pane.transcript", {"paneId": pane_id, "limit": 100})["items"]
-    turn = [item for item in items if item.get("promptId") == prompt_id]
-    reply = " ".join(item["text"] for item in turn
-                     if item["role"] == "assistant" and item["kind"] == "message").strip()
+    turn = turn_items(mac, pane_id, prompt_id)
+    reply = assistant_text(turn)
     sent = [item for item in turn if item["role"] == "user" and item.get("attachments")]
     require(sent and sent[0]["attachments"][0]["name"] == "square.png",
             "the user message does not show its attachment")
@@ -355,7 +345,7 @@ def run_harness(binaries, name, adapter, version, report, model=None, only=None)
     # Harness sandboxes let shell commands write the workspace and temporary
     # directories; a disposable directory under the user cache is outside both.
     outside = Path(tempfile.mkdtemp(
-        prefix=f"soyeht-real-{name}-outside-", dir=Path.home() / "Library/Caches")).resolve()
+        prefix=f"soyeht-real-{name}-outside-", dir=user_cache_directory())).resolve()
     mac = pane_id = None
     try:
         mac, pane_id = open_real_agent(services, name, adapter, version)
@@ -520,7 +510,7 @@ def main():
         raise SystemExit("Set SOYEHT_REAL_ACP=1 to authorize the authenticated local test")
     raise_file_limit()
     binaries = args.bin_dir.resolve()
-    require(all((binaries / name).is_file() for name in
+    require(all((binaries / executable(name)).is_file() for name in
                 ("soyeht", "soyeht-engine", "soyeht-ptyd")),
             "build workspace binaries before running the real ACP acceptance")
     models = dict(value.split("=", 1) for value in args.model)

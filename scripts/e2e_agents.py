@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Exercise slice-two agent sessions with disposable services under launchd."""
+"""Exercise slice-two agent sessions with disposable services (launchd on macOS)."""
 import argparse
 import json
 import shutil
-import socket
-import sqlite3
-import subprocess
 import time
 from pathlib import Path
 
 from e2e import ROOT, Services, receive, require, send
+from e2e_platform import connect_endpoint, database
 from generated_profile import DEV_PTYD_SOCKET
 
 
@@ -23,16 +21,11 @@ def until(action, message, seconds=20):
         time.sleep(0.02)
 
 
-class AgentServices(Services):
-    def stop_engine(self):
-        super().stop_engine()
-        until(lambda: subprocess.run(["launchctl", "print", self.target("engine")],
-                                      capture_output=True).returncode != 0,
-              "engine job did not leave launchd")
+AgentServices = Services
 
 
 def query(services, sql, args=()):
-    with sqlite3.connect(services.data / "soyeht.db", timeout=5) as db:
+    with database(services.data / "soyeht.db") as db:
         return db.execute(sql, args).fetchall()
 
 
@@ -67,6 +60,17 @@ def question(client, pane, kind="permission"):
                  if entry["kind"] == kind and entry["request"]["paneId"] == pane), None)
 
 
+def turn_items(client, pane, prompt):
+    """The transcript rows that belong to one prompt."""
+    items = client.call("pane.transcript", {"paneId": pane, "limit": 100})["items"]
+    return [item for item in items if item.get("promptId") == prompt]
+
+
+def assistant_text(items):
+    return " ".join(item["text"] for item in items
+                    if item["role"] == "assistant" and item["kind"] == "message").strip()
+
+
 def transcript(client, pane):
     values, cursor = [], None
     while True:
@@ -89,24 +93,8 @@ def open_agent(client, workspace, harness):
     return pane
 
 
-def hold_engine(services):
-    # Disable only this randomly named job so the test can inspect an outage
-    # before permitting launchd to load its replacement.
-    subprocess.run(["launchctl", "disable", services.target("engine")], check=True)
-    try:
-        subprocess.run(["launchctl", "kill", "SIGKILL", services.target("engine")], check=True)
-        subprocess.run(["launchctl", "bootout", services.target("engine")], check=True)
-        until(lambda: subprocess.run(["launchctl", "print", services.target("engine")],
-                                      capture_output=True).returncode != 0,
-              "killed engine job did not leave launchd")
-    finally:
-        subprocess.run(["launchctl", "enable", services.target("engine")], check=True)
-
-
 def supervisor_pending(services, generation, instance):
-    with socket.socket(socket.AF_UNIX) as stream:
-        stream.settimeout(5)
-        stream.connect(str(services.data / DEV_PTYD_SOCKET))
+    with connect_endpoint(services.data / DEV_PTYD_SOCKET, timeout=5) as stream:
         send(stream, {"method": "hello", "params": {"version": services.ptyd_version,
                                                      "engine_generation": generation}})
         require(receive(stream)["status"] == "welcome", "supervisor handshake failed")
@@ -177,8 +165,8 @@ def acceptance_permission(services, client, pane, results):
     client.mutate("pane.prompt", paneId=pane, text="permission")
     expiry = until(lambda: question(client, pane), "expiring permission missing")
     services.stop_engine()
-    with sqlite3.connect(services.data / "soyeht.db") as database:
-        database.execute("UPDATE agent_requests SET expires_ms=0 WHERE request_id=?", (expiry["requestId"],))
+    with database(services.data / "soyeht.db") as db:
+        db.execute("UPDATE agent_requests SET expires_ms=0 WHERE request_id=?", (expiry["requestId"],))
     services.start("engine")
     client = services.client()
     until(lambda: any(item.get("attentionId") == expiry["requestId"] for item in client.snapshot()[1]["attention"]),
@@ -211,7 +199,7 @@ def acceptance_engine_outage(services, client, pane, results):
     generation = client.call("engine.status", {})["generation"]
     turn_id = client.mutate("pane.prompt", paneId=pane, text="permission-delayed")["promptId"]
     until(lambda: client.pane(pane)["state"] == "working", "delayed turn did not start")
-    hold_engine(services)
+    services.launcher.take_down("engine")
     supervisor = json.loads((services.data / "ptyd-registry.json").read_text())
     instance = next(value["instance_id"] for value in supervisor["instances"].values()
                     if value.get("pid") == original["pid"])
@@ -292,7 +280,7 @@ def acceptance_supervisor_loss(services, client, workspace, pane, results):
     old = {key: client.pane(key) for key in (pane, without)}
     preserved = [(item["role"], item["text"]) for item in transcript(client, pane)
                  if item["kind"] == "message"]
-    subprocess.run(["launchctl", "kill", "SIGKILL", services.target("ptyd")], check=True)
+    services.launcher.crash("ptyd")
     for key in (pane, without):
         until(lambda key=key: client.pane(key)["generation"] > old[key]["generation"]
               and client.pane(key)["state"] in ("idle", "starting")

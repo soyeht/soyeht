@@ -19,10 +19,8 @@ from pathlib import Path
 
 from e2e import ROOT, Services, require
 from e2e_agents import events, question, transcript
-from e2e_real_acp import (
-    HARNESSES, install_adapter, pinned_package, quiet_workspace, raise_file_limit,
-    set_mode,
-)
+from e2e_platform import executable, raise_file_limit
+from e2e_real_acp import HARNESSES, install_adapter, pinned_package, quiet_workspace, set_mode
 
 
 SERVER = "soyeht-workspace"
@@ -101,9 +99,17 @@ class Run:
     def open(self, workspace, key, model=None, mode=None):
         pane = self.client.mutate("pane.create", workspaceId=workspace, mode="agent",
                                   harness=f"real-{key}")["paneId"]
-        self.agents.append(Agent(key, pane, None))
-        self.until(lambda: self.client.pane(pane)["agent"].get("sessionId"),
-                   f"{key} session did not open", seconds=240)
+        agent = Agent(key, pane, None)
+        self.agents.append(agent)
+        def session_or_sign_in():
+            session = self.client.pane(pane).get("agent", {})
+            return session if session.get("sessionId") or session.get("authMethods") else None
+
+        if not self.until(session_or_sign_in, f"{key} session did not open",
+                          seconds=240).get("sessionId"):
+            # The adapter offers sign-in methods instead of a session.
+            self.agents.remove(agent)
+            raise SignedOut(key)
         if model:
             # A host's default model may not be available through the pinned adapter.
             changed = self.client.mutate("pane.config.set", paneId=pane,
@@ -259,7 +265,7 @@ def main():
         raise SystemExit("Set SOYEHT_REAL_ACP=1 to authorize the authenticated local test")
     raise_file_limit()
     binaries = args.bin_dir.resolve()
-    require(all((binaries / name).is_file() for name in
+    require(all((binaries / executable(name)).is_file() for name in
                 ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")),
             "build workspace binaries before running the real messaging acceptance")
     started = time.monotonic()

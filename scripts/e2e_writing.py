@@ -4,8 +4,6 @@ import argparse
 import hashlib
 import json
 import shutil
-import socket
-import sqlite3
 import struct
 import time
 import uuid
@@ -13,20 +11,19 @@ from pathlib import Path
 
 from e2e import Client, ROOT, receive, require, send
 from e2e_agents import AgentServices, harness_registry, open_agent, request, until
+from e2e_platform import connect_endpoint, database
 from generated_profile import DEV_ENGINE_SOCKET
 
 
 class WritingServices(AgentServices):
     def binding_client(self, pane_id):
-        with sqlite3.connect(self.data / "soyeht.db", timeout=5) as database:
-            raw = database.execute(
+        with database(self.data / "soyeht.db") as db:
+            raw = db.execute(
                 "SELECT payload FROM agent_runtime WHERE pane_id=?", (pane_id,)
             ).fetchone()[0]
         binding = json.loads(raw)["binding"]
         client = object.__new__(Client)
-        client.stream = socket.socket(socket.AF_UNIX)
-        client.stream.settimeout(10)
-        client.stream.connect(str(self.data / DEV_ENGINE_SOCKET))
+        client.stream = connect_endpoint(self.data / DEV_ENGINE_SOCKET)
         require(receive(client.stream).get("method") == "auth.challenge", "missing challenge")
         client.next = 0
         client.pending = []

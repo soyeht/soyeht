@@ -7,8 +7,8 @@ remains disabled by project decision.
 
 The suite copies the four built executables into one directory per checkout
 under `~/Library/Caches/soyeht-e2e/`, replacing a file only when the build
-changed it, and loads uniquely named engine and supervisor jobs into launchd
-with a disposable data directory. It never uses an installed profile or an
+changed it, and loads uniquely named engine and supervisor jobs into launchd (plain
+child processes where launchd is missing) with a disposable data directory. It never uses an installed profile or an
 authenticated provider. Its only peer is the deterministic native test process.
 Cleanup closes the supervised processes and removes the jobs and data
 directory, including after a failed assertion.
@@ -102,6 +102,13 @@ waits, sends the draft and requires the typed text first, intact, and the agent
 message after it on its own. `--pair SENDER RECIPIENT` chooses other harnesses and
 `--model codex=MODEL` selects a model the account accepts through the pinned
 adapter. A harness that is not signed in fails the run with its name.
+
+The same opt-in check for every system is `scripts/e2e_real_harnesses.py`: a real reply
+from each signed-in harness, one pane switched Claude to Codex and back (it answers on
+each side and the transcript shows both handovers), and Claude and Codex messaging each
+other. It skips a harness that is not signed in by name instead of failing, and reports
+the model each harness used. It runs on macOS, Linux and Windows; see "Agents messaging
+each other" in `platforms.md`.
 
 Permission expiry is accelerated by changing only the pending test request's
 timestamp while the disposable engine is stopped. No shorter production timeout
